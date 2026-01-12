@@ -5,30 +5,35 @@ import { Suspense } from 'react';
 import { AuthButton } from '@/components/auth-button';
 
 async function getPublishedJobs() {
-  const supabase = await createClient();
+  try {
+    const supabase = await createClient();
 
-  const { data: jobs, error } = await supabase
-    .from('jobs')
-    .select(
+    const { data: jobs, error } = await supabase
+      .from('jobs')
+      .select(
+        `
+        id,
+        slug,
+        city,
+        image_url,
+        gps_fuzzy_lat,
+        gps_fuzzy_lng,
+        service:services(name)
       `
-      id,
-      slug,
-      city,
-      image_url,
-      gps_fuzzy_lat,
-      gps_fuzzy_lng,
-      service:services(name)
-    `
-    )
-    .eq('status', 'published')
-    .order('published_at', { ascending: false });
+      )
+      .eq('status', 'published')
+      .order('published_at', { ascending: false });
 
-  if (error) {
-    console.error('Error fetching jobs:', error);
+    if (error) {
+      console.error('Error fetching jobs:', error);
+      return [];
+    }
+
+    return jobs || [];
+  } catch (err) {
+    console.error('Failed to fetch published jobs:', err);
     return [];
   }
-
-  return jobs || [];
 }
 
 export default async function Home() {
