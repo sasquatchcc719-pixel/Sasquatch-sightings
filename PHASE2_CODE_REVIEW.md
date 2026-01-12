@@ -1,3 +1,125 @@
+# Phase 2 Code Review - EXIF Extraction & Image Compression
+
+This document contains the complete code for Phase 2 implementation for review.
+
+---
+
+## File 1: `/src/lib/image-utils.ts`
+
+```typescript
+/**
+ * Image utility functions for EXIF extraction and compression
+ * Per .cursorrules: Extract EXIF BEFORE compression (compression strips metadata)
+ */
+
+import exifr from 'exifr'
+import imageCompression from 'browser-image-compression'
+
+export type GpsCoordinates = {
+  lat: number
+  lng: number
+}
+
+/**
+ * Extract GPS coordinates from image EXIF data
+ * Returns null if no GPS data is found
+ * @param file - Image file to extract GPS from
+ */
+export async function extractExifGps(
+  file: File
+): Promise<GpsCoordinates | null> {
+  try {
+    // Parse EXIF data from the image file
+    const exifData = await exifr.parse(file, {
+      gps: true, // Only parse GPS-related tags
+      pick: ['latitude', 'longitude'], // Only extract what we need
+    })
+
+    // Check if GPS coordinates exist
+    if (
+      exifData &&
+      typeof exifData.latitude === 'number' &&
+      typeof exifData.longitude === 'number'
+    ) {
+      return {
+        lat: exifData.latitude,
+        lng: exifData.longitude,
+      }
+    }
+
+    return null
+  } catch (error) {
+    console.error('Error extracting EXIF GPS data:', error)
+    return null
+  }
+}
+
+/**
+ * Compress image file to max 500KB
+ * Uses browser-image-compression library
+ * @param file - Image file to compress
+ */
+export async function compressImage(file: File): Promise<File> {
+  try {
+    const options = {
+      maxSizeMB: 0.5, // 500KB max
+      maxWidthOrHeight: 1920, // Max dimension
+      useWebWorker: true, // Use web worker for better performance
+      fileType: file.type as 'image/jpeg' | 'image/png' | 'image/webp', // Preserve file type
+    }
+
+    const compressedFile = await imageCompression(file, options)
+
+    // Return compressed file with original name
+    return new File([compressedFile], file.name, {
+      type: compressedFile.type,
+      lastModified: Date.now(),
+    })
+  } catch (error) {
+    console.error('Error compressing image:', error)
+    // If compression fails, return original file
+    return file
+  }
+}
+
+/**
+ * Get current device location using browser Geolocation API
+ * Returns null if geolocation is not available or user denies permission
+ */
+export async function getCurrentLocation(): Promise<GpsCoordinates | null> {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) {
+      console.error('Geolocation is not supported by this browser')
+      resolve(null)
+      return
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        resolve({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        })
+      },
+      (error) => {
+        console.error('Error getting current location:', error)
+        resolve(null)
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0,
+      }
+    )
+  })
+}
+```
+
+---
+
+## File 2: `/src/components/admin/upload-form.tsx`
+
+```typescript
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -24,16 +146,13 @@ import {
   type GpsCoordinates,
 } from '@/lib/image-utils'
 
-// Form validation schema - using z.any() with runtime checks to avoid SSR FileList error
+// Form validation schema
 const uploadFormSchema = z.object({
   image: z
-    .any()
+    .instanceof(FileList)
+    .refine((files) => files.length > 0, 'Image is required')
     .refine(
-      (files) => files instanceof FileList && files.length > 0,
-      'Image is required'
-    )
-    .refine(
-      (files) => files instanceof FileList && files[0]?.type.startsWith('image/'),
+      (files) => files[0]?.type.startsWith('image/'),
       'File must be an image'
     ),
   serviceId: z.string().min(1, 'Service type is required'),
@@ -311,3 +430,53 @@ export function UploadForm() {
     </form>
   )
 }
+```
+
+---
+
+## Implementation Summary
+
+### ✅ Requirements Met:
+
+1. **EXIF Extraction** (`extractExifGps`)
+   - Uses `exifr` library
+   - Extracts GPS coordinates from photo metadata
+   - Returns null if no GPS data found
+
+2. **Image Compression** (`compressImage`)
+   - Uses `browser-image-compression`
+   - Compresses to max 500KB
+   - Preserves file type and name
+
+3. **Correct Processing Order** (per .cursorrules)
+   - ✅ STEP 1: Extract EXIF BEFORE compression
+   - ✅ STEP 2: Compress image AFTER extraction
+   - ✅ STEP 3: Generate preview
+
+4. **GPS Status Indicator**
+   - Shows "GPS: Found in photo" (from EXIF)
+   - Shows "GPS: Using device location" (from browser)
+   - Shows "GPS: Not available" with action button
+
+5. **Device Location Fallback**
+   - "Use Current Location" button appears when no EXIF GPS
+   - Uses browser Geolocation API
+   - High accuracy mode enabled
+
+6. **Console Logging**
+   - Logs compressed file info
+   - Logs GPS coordinates and source
+   - Shows compression ratio (original vs compressed)
+
+### 📦 Dependencies Added:
+- `exifr` (v7.1.3) - EXIF parser
+
+### 🚫 NOT Implemented (As Requested):
+- Server upload logic
+- Database insertion
+- Additional packages beyond exifr
+
+---
+
+## Ready for Review
+This code is ready for analysis and follows all .cursorrules requirements.
