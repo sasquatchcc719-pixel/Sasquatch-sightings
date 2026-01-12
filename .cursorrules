@@ -1,0 +1,72 @@
+# SASQUATCH JOB PINNER — PROJECT RULES
+# These rules govern ALL code decisions. No exceptions.
+
+## RULE 1: No invention. Only proven patterns.
+If it's not documented in the official docs of Next.js, Supabase, Vercel AI SDK, Mapbox, or the libraries in package.json, we don't do it. No clever workarounds. No "I think this should work." If you can't link to documentation supporting the approach, don't use it.
+
+## RULE 2: Stay inside the boilerplate.
+The `supa-next-starter` structure is law. All code goes under `src/`. Auth uses the existing Supabase auth flow in `src/app/auth/`. Protected routes use the existing `src/app/protected/` pattern. We extend the boilerplate, we don't restructure it.
+
+## RULE 3: One feature at a time.
+Complete and test each task before starting the next. No parallel work. No "I'll also add this while I'm here." Finish what was asked, confirm it works, then stop.
+
+## RULE 4: If it breaks, we stop.
+No patching around bugs to keep moving. If something breaks, diagnose the root cause and fix it properly. No band-aids. No "temporary" workarounds that become permanent.
+
+## RULE 5: Copy-paste from docs, not memory.
+When implementing Mapbox, Nominatim, Sharp, Vercel AI SDK, or any library, use exact syntax from official documentation. Do not generate API calls from training data. If unsure, say so and ask for documentation.
+
+## RULE 6: Human approves before merge.
+No code goes into `main` without Charles reviewing it. Propose changes, explain what they do, wait for approval.
+
+## RULE 7: All work happens on feature branches.
+Never code directly on `main`. Every task gets its own branch. If a branch gets messy, delete it and start fresh. Main stays clean.
+
+## RULE 8: Branch naming convention.
+Use: `feature/[phase]-[short-description]`
+Examples:
+- feature/p1-database-schema
+- feature/p2-upload-form
+- feature/p3-ai-generation
+
+---
+
+## PROJECT CONTEXT
+
+This is a "Neighborhood Authority Engine" PWA for Sasquatch Carpet Cleaning. It converts field photos + voice notes into local SEO pages with map pins.
+
+### The Stack (Strict)
+- Next.js 16 (App Router) — already configured
+- Supabase (Auth + Database + Storage) — auth already built
+- Anthropic Claude 3.5 Sonnet via Vercel AI SDK
+- Mapbox GL JS (public map view)
+- OpenStreetMap/Nominatim (backend geocoding — NOT Mapbox, due to TOS)
+- Sharp (server-side image optimization)
+- browser-image-compression (client-side, before upload)
+
+### Key Directories
+- `src/app/protected/` — Admin upload interface (requires auth)
+- `src/app/work/[city]/[slug]/` — Public SEO pages
+- `src/app/api/` — Server actions (upload, generate, publish)
+- `src/components/admin/` — Upload form, job cards, publish button
+- `src/components/public/` — Map view, job page layout
+- `src/lib/` — Utilities (image-utils, geocode, ai, slug, fuzz-location)
+
+### Database Tables
+- `services` — Lookup table of service types
+- `jobs` — Core table (image, location, voice input, AI description, status)
+
+### Data Flow
+Photo + voice → EXIF extraction → compression → upload → geocode (Nominatim) → Sharp optimization → Supabase storage → draft job record → AI description → human review → publish → public map + SEO page
+
+---
+
+## WHAT NOT TO DO
+
+- Do NOT use Google Maps API (cost)
+- Do NOT use Mapbox for geocoding storage (TOS violation)
+- Do NOT auto-publish jobs (human review required)
+- Do NOT restructure the auth system
+- Do NOT add packages without explicit approval
+- Do NOT create files outside the established structure
+- Do NOT compress images before extracting EXIF data (compression strips metadata)
