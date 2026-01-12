@@ -124,8 +124,12 @@ export default async function JobPage({ params }: PageProps) {
         <header className="bg-white border-b sticky top-0 z-10">
           <div className="container mx-auto px-4 py-4">
             <div className="flex items-center justify-between">
-              <a href="/" className="text-2xl font-bold text-green-600">
-                🦍 Sasquatch Carpet Cleaning
+              <a href="/" className="flex items-center">
+                <img 
+                  src="/logo.svg" 
+                  alt="Sasquatch Carpet Cleaning" 
+                  className="h-10 md:h-12 w-auto"
+                />
               </a>
               <Button asChild>
                 <a href="https://sasquatchcarpetcleaning.com" target="_blank" rel="noopener noreferrer">

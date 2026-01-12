@@ -41,9 +41,11 @@ export default async function Home() {
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl md:text-3xl font-bold text-green-600">
-                🦍 Sasquatch Carpet Cleaning
-              </h1>
+              <img 
+                src="/logo.svg" 
+                alt="Sasquatch Carpet Cleaning" 
+                className="h-12 md:h-14 w-auto"
+              />
             </div>
             <div className="flex items-center gap-4">
               <Button size="sm" variant="outline" asChild className="hidden sm:inline-flex">
