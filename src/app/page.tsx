@@ -44,7 +44,7 @@ export default async function Home() {
               <img 
                 src="/logo.svg" 
                 alt="Sasquatch Carpet Cleaning" 
-                className="h-24 md:h-28 w-auto"
+                className="h-16 md:h-20 w-auto"
               />
             </div>
             <div className="flex items-center gap-4">
