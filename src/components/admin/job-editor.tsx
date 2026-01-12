@@ -22,7 +22,7 @@ type Job = {
   created_at: string
   services: {
     name: string
-  }
+  }[]
 }
 
 type JobEditorProps = {
@@ -116,7 +116,7 @@ export function JobEditor({ job }: JobEditorProps) {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-3xl font-bold">{job.services.name}</h1>
+          <h1 className="text-3xl font-bold">{job.services[0]?.name}</h1>
           <p className="text-muted-foreground">
             {job.neighborhood ? `${job.neighborhood}, ` : ''}
             {job.city}
@@ -158,7 +158,7 @@ export function JobEditor({ job }: JobEditorProps) {
               <p className="text-sm font-medium text-muted-foreground">
                 Service Type
               </p>
-              <p className="text-lg">{job.services.name}</p>
+              <p className="text-lg">{job.services[0]?.name}</p>
             </div>
 
             <div>

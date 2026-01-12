@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
       neighborhood: job.neighborhood,
       hasVoiceInput: !!job.raw_voice_input,
       hasDescription: !!job.ai_description,
-      serviceName: job.services?.name,
+      serviceName: (job.services as any)?.[0]?.name,
     })
 
     // Check if job already has a description
@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get service name from the joined data
-    const serviceName = job.services?.name || 'Service'
+    const serviceName = (job.services as any)?.[0]?.name || 'Service'
     console.log('📋 [GENERATE] Service name:', serviceName)
 
     // Generate description using AI

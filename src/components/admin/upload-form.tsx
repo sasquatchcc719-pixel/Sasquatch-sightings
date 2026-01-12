@@ -238,7 +238,7 @@ export function UploadForm() {
           disabled={isProcessingImage}
         />
         {errors.image && (
-          <p className="text-sm text-destructive">{errors.image.message}</p>
+          <p className="text-sm text-destructive">{String(errors.image.message)}</p>
         )}
 
         {/* Processing Indicator */}

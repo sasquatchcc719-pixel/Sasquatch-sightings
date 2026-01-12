@@ -54,7 +54,6 @@ export async function generateJobDescription(
     const { text } = await generateText({
       model: anthropic('claude-3-5-sonnet-20241022'),
       prompt,
-      maxTokens: 300,
       temperature: 0.7,
     })
 

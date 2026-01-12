@@ -50,7 +50,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     };
   }
 
-  const serviceName = job.service?.name || 'Carpet Cleaning';
+  const serviceName = (job.service as any)?.[0]?.name || 'Carpet Cleaning';
   const location = job.neighborhood ? `${job.neighborhood}, ${job.city}` : job.city;
   const title = `${serviceName} in ${location} | Sasquatch Carpet Cleaning`;
   const description = job.ai_description?.substring(0, 160) || `Professional ${serviceName.toLowerCase()} services in ${location}. Quality results from Sasquatch Carpet Cleaning.`;
@@ -81,7 +81,7 @@ export default async function JobPage({ params }: PageProps) {
     notFound();
   }
 
-  const serviceName = job.service?.name || 'Carpet Cleaning';
+  const serviceName = (job.service as any)?.[0]?.name || 'Carpet Cleaning';
   const location = job.neighborhood ? `${job.neighborhood}, ${job.city}` : job.city;
   const publishedDate = job.published_at
     ? new Date(job.published_at).toLocaleDateString('en-US', {

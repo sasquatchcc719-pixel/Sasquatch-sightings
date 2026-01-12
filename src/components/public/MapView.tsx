@@ -13,7 +13,7 @@ interface Job {
   gps_fuzzy_lng: number;
   service: {
     name: string;
-  };
+  }[];
 }
 
 interface MapViewProps {
@@ -69,14 +69,15 @@ export function MapView({ jobs }: MapViewProps) {
       if (!job.gps_fuzzy_lat || !job.gps_fuzzy_lng) return;
 
       // Create popup content
+      const serviceName = job.service?.[0]?.name || 'Service';
       const popupContent = `
         <div style="min-width: 200px;">
           <img 
             src="${job.image_url}" 
-            alt="${job.service.name}" 
+            alt="${serviceName}" 
             style="width: 100%; height: 120px; object-fit: cover; border-radius: 4px; margin-bottom: 8px;"
           />
-          <h3 style="margin: 0 0 4px 0; font-size: 14px; font-weight: 600;">${job.service.name}</h3>
+          <h3 style="margin: 0 0 4px 0; font-size: 14px; font-weight: 600;">${serviceName}</h3>
           <p style="margin: 0 0 8px 0; font-size: 12px; color: #666;">${job.city}</p>
           <a 
             href="/work/${encodeURIComponent(job.city)}/${job.slug}" 
