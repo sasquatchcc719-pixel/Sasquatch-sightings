@@ -61,6 +61,9 @@ export function UploadForm() {
   const [compressedFile, setCompressedFile] = useState<File | null>(null)
   const [isProcessingImage, setIsProcessingImage] = useState(false)
   const [isGettingLocation, setIsGettingLocation] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [uploadSuccess, setUploadSuccess] = useState(false)
 
   const {
     register,
@@ -162,20 +165,62 @@ export function UploadForm() {
     }
   }
 
-  const onSubmit = (data: UploadFormData) => {
-    console.log('Form submitted:', {
-      image: {
-        name: compressedFile?.name || data.image[0]?.name,
-        size: compressedFile?.size || data.image[0]?.size,
-        type: compressedFile?.type || data.image[0]?.type,
-        originalSize: data.image[0]?.size,
-        compressedSize: compressedFile?.size,
-      },
-      gpsCoordinates,
-      gpsSource,
-      serviceId: data.serviceId,
-      voiceNote: data.voiceNote,
-    })
+  const onSubmit = async (data: UploadFormData) => {
+    // Validate GPS coordinates are available
+    if (!gpsCoordinates) {
+      setUploadError('GPS coordinates are required. Please use current location.')
+      return
+    }
+
+    // Validate compressed file is available
+    if (!compressedFile) {
+      setUploadError('Image processing failed. Please try again.')
+      return
+    }
+
+    setIsUploading(true)
+    setUploadError(null)
+
+    try {
+      // Prepare form data for upload
+      const formData = new FormData()
+      formData.append('image', compressedFile)
+      formData.append('serviceId', data.serviceId)
+      formData.append('gpsLat', gpsCoordinates.lat.toString())
+      formData.append('gpsLng', gpsCoordinates.lng.toString())
+      
+      if (data.voiceNote) {
+        formData.append('voiceNote', data.voiceNote)
+      }
+
+      // Send to API
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Upload failed')
+      }
+
+      // Success!
+      setUploadSuccess(true)
+      console.log('Job created successfully:', result.job)
+
+      // Reset form after short delay
+      setTimeout(() => {
+        window.location.reload()
+      }, 2000)
+    } catch (error) {
+      console.error('Upload error:', error)
+      setUploadError(
+        error instanceof Error ? error.message : 'Failed to upload job'
+      )
+    } finally {
+      setIsUploading(false)
+    }
   }
 
   return (
@@ -303,10 +348,38 @@ export function UploadForm() {
         </p>
       </div>
 
+      {/* Error Message */}
+      {uploadError && (
+        <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+          {uploadError}
+        </div>
+      )}
+
+      {/* Success Message */}
+      {uploadSuccess && (
+        <div className="rounded-md bg-green-500/10 p-3 text-sm text-green-700 dark:text-green-400">
+          ✓ Job created successfully! Redirecting...
+        </div>
+      )}
+
       {/* Submit Button */}
-      <Button type="submit" className="w-full" size="lg">
-        <Upload className="mr-2 h-4 w-4" />
-        Create Job (Console Log)
+      <Button
+        type="submit"
+        className="w-full"
+        size="lg"
+        disabled={isUploading || uploadSuccess}
+      >
+        {isUploading ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            Uploading...
+          </>
+        ) : (
+          <>
+            <Upload className="mr-2 h-4 w-4" />
+            Create Job
+          </>
+        )}
       </Button>
     </form>
   )
