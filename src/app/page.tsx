@@ -4,6 +4,9 @@ import { Button } from '@/components/ui/button';
 import { Suspense } from 'react';
 import { AuthButton } from '@/components/auth-button';
 
+// Force dynamic rendering since we're fetching real-time data
+export const dynamic = 'force-dynamic';
+
 async function getPublishedJobs() {
   try {
     const supabase = await createClient();
