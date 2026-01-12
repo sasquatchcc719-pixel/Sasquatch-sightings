@@ -15,25 +15,25 @@ export default async function ProtectedPage() {
     redirect('/auth/login')
   }
 
-  // Fetch draft jobs with service details
-  const { data: draftJobs } = await supabase
+  // Fetch published jobs with service details
+  const { data: publishedJobs } = await supabase
     .from('jobs')
     .select(
       `
       id,
+      slug,
       image_url,
       city,
       neighborhood,
-      raw_voice_input,
       ai_description,
-      created_at,
+      published_at,
       services (
         name
       )
     `
     )
-    .eq('status', 'draft')
-    .order('created_at', { ascending: false })
+    .eq('status', 'published')
+    .order('published_at', { ascending: false })
 
   return (
     <div className="flex w-full flex-1 flex-col gap-12">
@@ -42,10 +42,10 @@ export default async function ProtectedPage() {
         <div className="space-y-2">
           <h1 className="flex items-center gap-2 text-3xl font-bold">
             <Briefcase className="h-8 w-8" />
-            New Job
+            Publish New Job
           </h1>
           <p className="text-muted-foreground">
-            Upload a photo and add job details to create a new entry
+            Upload a photo and add a description to publish a job directly to the map
           </p>
         </div>
 
@@ -54,19 +54,19 @@ export default async function ProtectedPage() {
         </div>
       </div>
 
-      {/* Draft Jobs Section */}
+      {/* Published Jobs Section */}
       <div className="space-y-6">
         <div className="space-y-2">
           <h2 className="flex items-center gap-2 text-2xl font-bold">
             <FileText className="h-7 w-7" />
-            Draft Jobs
+            Published Jobs
           </h2>
           <p className="text-sm text-muted-foreground">
-            Edit descriptions and publish jobs to make them visible to the public
+            View and edit your published jobs
           </p>
         </div>
 
-        <DraftJobsList initialJobs={draftJobs || []} />
+        <DraftJobsList initialJobs={publishedJobs || []} />
       </div>
     </div>
   )

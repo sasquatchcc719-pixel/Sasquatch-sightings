@@ -37,7 +37,7 @@ const uploadFormSchema = z.object({
       'File must be an image'
     ),
   serviceId: z.string().min(1, 'Service type is required'),
-  voiceNote: z.string().optional(),
+  description: z.string().min(10, 'Description is required (minimum 10 characters)'),
 })
 
 type UploadFormData = z.infer<typeof uploadFormSchema>
@@ -188,10 +188,7 @@ export function UploadForm() {
       formData.append('serviceId', data.serviceId)
       formData.append('gpsLat', gpsCoordinates.lat.toString())
       formData.append('gpsLng', gpsCoordinates.lng.toString())
-      
-      if (data.voiceNote) {
-        formData.append('voiceNote', data.voiceNote)
-      }
+      formData.append('description', data.description)
 
       // Send to API
       const response = await fetch('/api/upload', {
@@ -207,11 +204,11 @@ export function UploadForm() {
 
       // Success!
       setUploadSuccess(true)
-      console.log('Job created successfully:', result.job)
+      console.log('Job published successfully:', result.job)
 
-      // Reset form after short delay
+      // Redirect to homepage to see the published job on the map
       setTimeout(() => {
-        window.location.reload()
+        window.location.href = '/'
       }, 2000)
     } catch (error) {
       console.error('Upload error:', error)
@@ -334,17 +331,20 @@ export function UploadForm() {
         )}
       </div>
 
-      {/* Voice Note Text Field */}
+      {/* Description Field */}
       <div className="space-y-2">
-        <Label htmlFor="voiceNote">Voice Note (Optional)</Label>
+        <Label htmlFor="description">Description *</Label>
         <Textarea
-          id="voiceNote"
-          placeholder="Add notes about this job..."
-          rows={4}
-          {...register('voiceNote')}
+          id="description"
+          placeholder="Describe the work completed, challenges overcome, and results achieved..."
+          rows={6}
+          {...register('description')}
         />
+        {errors.description && (
+          <p className="text-sm text-destructive">{errors.description.message}</p>
+        )}
         <p className="text-xs text-muted-foreground">
-          Voice input will be added in a future update
+          This description will appear on the public job page
         </p>
       </div>
 
@@ -358,7 +358,7 @@ export function UploadForm() {
       {/* Success Message */}
       {uploadSuccess && (
         <div className="rounded-md bg-green-500/10 p-3 text-sm text-green-700 dark:text-green-400">
-          ✓ Job created successfully! Redirecting...
+          ✓ Job published successfully! Redirecting to map...
         </div>
       )}
 
@@ -372,12 +372,12 @@ export function UploadForm() {
         {isUploading ? (
           <>
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Uploading...
+            Publishing...
           </>
         ) : (
           <>
             <Upload className="mr-2 h-4 w-4" />
-            Create Job
+            Publish Job
           </>
         )}
       </Button>

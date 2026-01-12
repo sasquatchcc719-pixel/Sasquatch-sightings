@@ -1,9 +1,9 @@
 /**
  * Upload API Route Handler
- * Handles job creation: image upload, geocoding, Sharp optimization, and database insertion
+ * Handles job creation: image upload, geocoding, Sharp optimization, and immediate publishing
  * Per .cursorrules data flow:
  * Photo → EXIF extraction (client) → compression (client) → upload (here) →
- * geocode (Nominatim) → Sharp optimization → Supabase storage → draft job record
+ * geocode (Nominatim) → Sharp optimization → Supabase storage → published job record
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -28,14 +28,14 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData()
     const imageFile = formData.get('image') as File
     const serviceId = formData.get('serviceId') as string
-    const voiceNote = formData.get('voiceNote') as string | null
+    const description = formData.get('description') as string | null
     const gpsLat = formData.get('gpsLat') as string | null
     const gpsLng = formData.get('gpsLng') as string | null
 
     // Validate required fields
-    if (!imageFile || !serviceId) {
+    if (!imageFile || !serviceId || !description) {
       return NextResponse.json(
-        { error: 'Image and service type are required' },
+        { error: 'Image, service type, and description are required' },
         { status: 400 }
       )
     }
@@ -113,7 +113,7 @@ export async function POST(request: NextRequest) {
     // Generate job slug
     const slug = generateJobSlug(service.name, city)
 
-    // Insert job record into database (draft status)
+    // Insert job record into database (published immediately)
     const { data: job, error: insertError } = await supabase
       .from('jobs')
       .insert({
@@ -126,9 +126,11 @@ export async function POST(request: NextRequest) {
         gps_fuzzy_lng: fuzzLng,
         city,
         neighborhood,
-        raw_voice_input: voiceNote,
+        raw_voice_input: description,
+        ai_description: description,
         slug,
-        status: 'draft',
+        status: 'published',
+        published_at: new Date().toISOString(),
       })
       .select()
       .single()
