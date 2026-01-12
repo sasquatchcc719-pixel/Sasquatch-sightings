@@ -128,7 +128,7 @@ export default async function JobPage({ params }: PageProps) {
                 <img 
                   src="/logo.svg" 
                   alt="Sasquatch Carpet Cleaning" 
-                  className="h-10 md:h-12 w-auto"
+                  className="h-20 md:h-24 w-auto"
                 />
               </a>
               <Button asChild>
