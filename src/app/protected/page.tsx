@@ -3,7 +3,7 @@ import { createClient } from '@/supabase/server'
 import { UploadForm } from '@/components/admin/upload-form'
 import { DraftJobsList } from '@/components/admin/draft-jobs-list'
 import { Button } from '@/components/ui/button'
-import { Briefcase, FileText, Map } from 'lucide-react'
+import { Briefcase, FileText, Map, Camera } from 'lucide-react'
 import Link from 'next/link'
 
 export default async function ProtectedPage() {
@@ -41,7 +41,7 @@ export default async function ProtectedPage() {
     <div className="flex w-full flex-1 flex-col gap-12">
       {/* Upload Section */}
       <div className="space-y-8">
-        <div className="space-y-2">
+        <div className="space-y-4">
           <h1 className="flex items-center gap-2 text-3xl font-bold">
             <Briefcase className="h-8 w-8" />
             Publish New Job
@@ -49,6 +49,16 @@ export default async function ProtectedPage() {
           <p className="text-muted-foreground">
             Upload a photo and add a description to publish a job directly to the map
           </p>
+          
+          {/* Quick Test Button */}
+          <div className="flex gap-2 pt-2">
+            <Button asChild variant="outline" size="sm">
+              <Link href="/sightings" target="_blank">
+                <Camera className="mr-2 h-4 w-4" />
+                Test Contest Page
+              </Link>
+            </Button>
+          </div>
         </div>
 
         <div className="mx-auto w-full max-w-2xl">
