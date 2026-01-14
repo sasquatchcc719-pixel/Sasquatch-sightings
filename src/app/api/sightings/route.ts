@@ -23,16 +23,19 @@ export async function POST(request: NextRequest) {
     // Parse form data
     const formData = await request.formData()
     const imageFile = formData.get('image') as File
+    const fullName = formData.get('fullName') as string
+    const phoneNumber = formData.get('phoneNumber') as string
     const email = formData.get('email') as string
+    const zipCode = formData.get('zipCode') as string | null
     const gpsLat = formData.get('gpsLat') as string | null
     const gpsLng = formData.get('gpsLng') as string | null
     const socialPlatform = formData.get('socialPlatform') as string | null
     const socialLink = formData.get('socialLink') as string | null
 
     // Validate required fields
-    if (!imageFile || !email || !socialPlatform || !socialLink) {
+    if (!imageFile || !fullName || !phoneNumber || !email || !socialPlatform || !socialLink) {
       return NextResponse.json(
-        { error: 'Image, email, social platform, and social link are required' },
+        { error: 'Image, full name, phone number, email, social platform, and social link are required' },
         { status: 400 }
       )
     }
@@ -143,7 +146,10 @@ export async function POST(request: NextRequest) {
         image_filename: filename,
         gps_lat: lat,
         gps_lng: lng,
+        full_name: fullName,
+        phone_number: phoneNumber,
         email,
+        zip_code: zipCode || null,
         social_platform: socialPlatform,
         social_link: socialLink,
         coupon_code: couponCode,

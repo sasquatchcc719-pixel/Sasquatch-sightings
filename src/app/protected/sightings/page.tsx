@@ -24,7 +24,10 @@ import Link from 'next/link'
 type Sighting = {
   id: string
   image_url: string
+  full_name: string
+  phone_number: string
   email: string
+  zip_code: string | null
   coupon_code: string
   contest_eligible: boolean
   coupon_redeemed: boolean
@@ -79,6 +82,8 @@ export default function SightingsAdminPage() {
     if (searchTerm) {
       const term = searchTerm.toLowerCase()
       filtered = filtered.filter(s => 
+        s.full_name.toLowerCase().includes(term) ||
+        s.phone_number.toLowerCase().includes(term) ||
         s.email.toLowerCase().includes(term) ||
         s.coupon_code.toLowerCase().includes(term)
       )
@@ -117,9 +122,12 @@ export default function SightingsAdminPage() {
   // Export to CSV
   const handleExportCSV = () => {
     const csvContent = [
-      ['Email', 'Coupon Code', 'Contest Eligible', 'Coupon Redeemed', 'Date Submitted'],
+      ['Full Name', 'Phone Number', 'Email', 'Zip Code', 'Coupon Code', 'Contest Eligible', 'Coupon Redeemed', 'Date Submitted'],
       ...filteredSightings.map(s => [
+        s.full_name,
+        s.phone_number,
         s.email,
+        s.zip_code || '',
         s.coupon_code,
         s.contest_eligible ? 'Yes' : 'No',
         s.coupon_redeemed ? 'Yes' : 'No',
@@ -179,7 +187,7 @@ export default function SightingsAdminPage() {
         <div className="relative flex-1 md:max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search by email or coupon code..."
+            placeholder="Search by name, phone, email, or coupon..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-9"
@@ -245,14 +253,32 @@ export default function SightingsAdminPage() {
 
                 {/* Details */}
                 <div className="flex-1 space-y-3">
-                  {/* Top Row: Email & Status */}
+                  {/* Top Row: Contact Info & Status */}
                   <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <Mail className="h-4 w-4 text-muted-foreground" />
-                        <span className="font-semibold">{sighting.email}</span>
+                    <div className="space-y-2">
+                      {/* Full Name */}
+                      <div>
+                        <span className="font-semibold text-lg">{sighting.full_name}</span>
                       </div>
-                      <p className="mt-1 text-sm font-mono text-muted-foreground">
+                      
+                      {/* Contact Details */}
+                      <div className="space-y-1 text-sm">
+                        <div className="flex items-center gap-2">
+                          <Mail className="h-4 w-4 text-muted-foreground" />
+                          <span>{sighting.email}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">📱 {sighting.phone_number}</span>
+                        </div>
+                        {sighting.zip_code && (
+                          <div>
+                            <span className="text-muted-foreground">📍 Zip: {sighting.zip_code}</span>
+                          </div>
+                        )}
+                      </div>
+                      
+                      {/* Coupon Code */}
+                      <p className="text-sm font-mono text-muted-foreground">
                         {sighting.coupon_code}
                       </p>
                     </div>

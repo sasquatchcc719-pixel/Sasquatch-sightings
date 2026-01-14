@@ -35,7 +35,10 @@ const sightingFormSchema = z.object({
       (files) => files instanceof FileList && files[0]?.type.startsWith('image/'),
       'File must be an image'
     ),
+  fullName: z.string().min(2, 'Name required'),
+  phoneNumber: z.string().regex(/^\(\d{3}\) \d{3}-\d{4}$/, 'Valid phone required (e.g., (720) 555-1234)'),
   email: z.string().email('Valid email is required'),
+  zipCode: z.string().regex(/^\d{5}$/, 'Valid 5-digit zip').optional().or(z.literal('')),
   socialPlatform: z.enum(['facebook', 'instagram'] as const),
   socialLink: z.string().url('Valid social media post link is required').min(1, 'Social media share link is required'),
 })
@@ -238,7 +241,12 @@ export default function SightingsPage() {
       // Prepare form data for upload
       const formData = new FormData()
       formData.append('image', compressedFile)
+      formData.append('fullName', data.fullName)
+      formData.append('phoneNumber', data.phoneNumber)
       formData.append('email', data.email)
+      if (data.zipCode) {
+        formData.append('zipCode', data.zipCode)
+      }
       formData.append('socialPlatform', data.socialPlatform)
       formData.append('socialLink', data.socialLink)
       
@@ -507,9 +515,37 @@ export default function SightingsPage() {
               )}
             </div>
 
+            {/* Full Name Input */}
+            <div className="space-y-2">
+              <Label htmlFor="fullName">Full Name *</Label>
+              <Input
+                id="fullName"
+                type="text"
+                placeholder="John Smith"
+                {...register('fullName')}
+              />
+              {errors.fullName && (
+                <p className="text-sm text-destructive">{errors.fullName.message}</p>
+              )}
+            </div>
+
+            {/* Phone Number Input */}
+            <div className="space-y-2">
+              <Label htmlFor="phoneNumber">Phone Number *</Label>
+              <Input
+                id="phoneNumber"
+                type="tel"
+                placeholder="(720) 555-1234"
+                {...register('phoneNumber')}
+              />
+              {errors.phoneNumber && (
+                <p className="text-sm text-destructive">{errors.phoneNumber.message}</p>
+              )}
+            </div>
+
             {/* Email Input */}
             <div className="space-y-2">
-              <Label htmlFor="email">Your Email *</Label>
+              <Label htmlFor="email">Email Address *</Label>
               <Input
                 id="email"
                 type="email"
@@ -521,6 +557,24 @@ export default function SightingsPage() {
               )}
               <p className="text-xs text-muted-foreground">
                 We'll contact you here if you win!
+              </p>
+            </div>
+
+            {/* Zip Code Input */}
+            <div className="space-y-2">
+              <Label htmlFor="zipCode">Zip Code (Optional)</Label>
+              <Input
+                id="zipCode"
+                type="text"
+                placeholder="80521"
+                maxLength={5}
+                {...register('zipCode')}
+              />
+              {errors.zipCode && (
+                <p className="text-sm text-destructive">{errors.zipCode.message}</p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Helps us serve your area better
               </p>
             </div>
 
