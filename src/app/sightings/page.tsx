@@ -37,7 +37,7 @@ const sightingFormSchema = z.object({
     ),
   email: z.string().email('Valid email is required'),
   socialPlatform: z.enum(['facebook', 'instagram'], {
-    required_error: 'Please select a platform',
+    message: 'Please select a platform',
   }),
   socialLink: z.string().url('Valid social media post link is required').min(1, 'Social media share link is required'),
 })
