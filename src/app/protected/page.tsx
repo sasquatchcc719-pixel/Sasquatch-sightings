@@ -2,7 +2,9 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/supabase/server'
 import { UploadForm } from '@/components/admin/upload-form'
 import { DraftJobsList } from '@/components/admin/draft-jobs-list'
-import { Briefcase, FileText } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Briefcase, FileText, Map } from 'lucide-react'
+import Link from 'next/link'
 
 export default async function ProtectedPage() {
   // Check authentication
@@ -56,14 +58,22 @@ export default async function ProtectedPage() {
 
       {/* Published Jobs Section */}
       <div className="space-y-6">
-        <div className="space-y-2">
-          <h2 className="flex items-center gap-2 text-2xl font-bold">
-            <FileText className="h-7 w-7" />
-            Published Jobs
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            View and edit your published jobs
-          </p>
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-2">
+            <h2 className="flex items-center gap-2 text-2xl font-bold">
+              <FileText className="h-7 w-7" />
+              Published Jobs
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              View and edit your published jobs
+            </p>
+          </div>
+          <Button asChild variant="default">
+            <Link href="/">
+              <Map className="mr-2 h-4 w-4" />
+              View Map
+            </Link>
+          </Button>
         </div>
 
         <DraftJobsList initialJobs={publishedJobs || []} />

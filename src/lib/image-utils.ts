@@ -93,7 +93,19 @@ export async function getCurrentLocation(): Promise<GpsCoordinates | null> {
         })
       },
       (error) => {
-        console.error('Error getting current location:', error)
+        // Geolocation error codes:
+        // 1 = PERMISSION_DENIED
+        // 2 = POSITION_UNAVAILABLE
+        // 3 = TIMEOUT
+        const errorMessages: Record<number, string> = {
+          1: 'User denied location permission',
+          2: 'Location unavailable',
+          3: 'Location request timed out',
+        }
+        console.warn(
+          'Location access:',
+          errorMessages[error.code] || error.message
+        )
         resolve(null)
       },
       {

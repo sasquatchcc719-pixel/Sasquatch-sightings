@@ -132,7 +132,7 @@ export default async function JobPage({ params }: PageProps) {
                 />
               </a>
               <Button asChild>
-                <a href="https://sasquatchcarpetcleaning.com" target="_blank" rel="noopener noreferrer">
+                <a href="https://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true" target="_blank" rel="noopener noreferrer">
                   Book Now
                 </a>
               </Button>
@@ -194,7 +194,7 @@ export default async function JobPage({ params }: PageProps) {
                   <div className="flex flex-col sm:flex-row gap-4 justify-center">
                     <Button size="lg" asChild>
                       <a
-                        href="https://sasquatchcarpetcleaning.com"
+                        href="https://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true"
                         target="_blank"
                         rel="noopener noreferrer"
                       >
@@ -202,8 +202,8 @@ export default async function JobPage({ params }: PageProps) {
                       </a>
                     </Button>
                     <Button size="lg" variant="outline" asChild>
-                      <a href="tel:+17205551234">
-                        📞 Call Us: (720) 555-1234
+                      <a href="tel:+17192498791">
+                        📞 Call Us: (719) 249-8791
                       </a>
                     </Button>
                   </div>

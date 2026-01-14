@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Camera, Upload, MapPin, Loader2 } from 'lucide-react'
+import { Camera, Upload, MapPin, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
 import {
   extractExifGps,
   compressImage,
@@ -64,6 +64,9 @@ export function UploadForm() {
   const [isUploading, setIsUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [uploadSuccess, setUploadSuccess] = useState(false)
+  const [showManualGps, setShowManualGps] = useState(false)
+  const [manualCoords, setManualCoords] = useState<string>('')
+  const [manualGpsError, setManualGpsError] = useState<string | null>(null)
 
   const {
     register,
@@ -165,6 +168,51 @@ export function UploadForm() {
     }
   }
 
+  // Handle manual GPS coordinates
+  const handleManualGpsApply = () => {
+    setManualGpsError(null)
+
+    // Validate input
+    if (!manualCoords.trim()) {
+      setManualGpsError('Please enter coordinates')
+      return
+    }
+
+    // Parse comma-separated coordinates (handles both "lat, lng" and "lat,lng")
+    const parts = manualCoords.split(',').map(part => part.trim())
+
+    if (parts.length !== 2) {
+      setManualGpsError('Invalid format. Use: latitude, longitude (e.g., 38.9072, -104.8586)')
+      return
+    }
+
+    const lat = parseFloat(parts[0])
+    const lng = parseFloat(parts[1])
+
+    // Check if valid numbers
+    if (isNaN(lat) || isNaN(lng)) {
+      setManualGpsError('Please enter valid decimal numbers')
+      return
+    }
+
+    // Validate latitude range (-90 to 90)
+    if (lat < -90 || lat > 90) {
+      setManualGpsError('Latitude must be between -90 and 90')
+      return
+    }
+
+    // Validate longitude range (-180 to 180)
+    if (lng < -180 || lng > 180) {
+      setManualGpsError('Longitude must be between -180 and 180')
+      return
+    }
+
+    // Set manual coordinates
+    setGpsCoordinates({ lat, lng })
+    setGpsSource('device') // Use 'device' as source for manual entry
+    setManualGpsError(null)
+  }
+
   const onSubmit = async (data: UploadFormData) => {
     // Validate GPS coordinates are available
     if (!gpsCoordinates) {
@@ -232,7 +280,6 @@ export function UploadForm() {
           id="image"
           type="file"
           accept="image/*"
-          capture="environment"
           {...register('image')}
           className="cursor-pointer file:cursor-pointer"
           disabled={isProcessingImage}
@@ -300,6 +347,69 @@ export function UploadForm() {
                 {gpsCoordinates.lng.toFixed(6)}
               </p>
             )}
+
+            {/* Manual GPS Override Section */}
+            <div className="mt-3 space-y-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowManualGps(!showManualGps)}
+                className="flex w-full items-center justify-between p-2 text-sm"
+              >
+                <span className="font-medium">Manual Location Override</span>
+                {showManualGps ? (
+                  <ChevronUp className="h-4 w-4" />
+                ) : (
+                  <ChevronDown className="h-4 w-4" />
+                )}
+              </Button>
+
+              {showManualGps && (
+                <div className="space-y-3 rounded-md border bg-muted/30 p-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="manualCoords" className="text-sm">
+                      Manual Coordinates
+                    </Label>
+                    <Input
+                      id="manualCoords"
+                      type="text"
+                      placeholder="Paste from Google Maps (e.g., 38.9072, -104.8586)"
+                      value={manualCoords}
+                      onChange={(e) => setManualCoords(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Format: latitude, longitude
+                    </p>
+                  </div>
+
+                  {manualGpsError && (
+                    <p className="text-xs text-destructive">{manualGpsError}</p>
+                  )}
+
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleManualGpsApply}
+                    className="w-full"
+                  >
+                    Apply Manual Coordinates
+                  </Button>
+
+                  <p className="text-xs text-muted-foreground">
+                    Need help?{' '}
+                    <a
+                      href="https://www.google.com/maps"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline"
+                    >
+                      Get coordinates from Google Maps
+                    </a>
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
