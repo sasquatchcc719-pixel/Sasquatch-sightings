@@ -36,7 +36,7 @@ const sightingFormSchema = z.object({
       'File must be an image'
     ),
   fullName: z.string().min(2, 'Name required'),
-  phoneNumber: z.string().regex(/^\(\d{3}\) \d{3}-\d{4}$/, 'Valid phone required (e.g., (720) 555-1234)'),
+  phoneNumber: z.string().min(10, 'Valid phone required'),
   email: z.string().email('Valid email is required'),
   zipCode: z.string().regex(/^\d{5}$/, 'Valid 5-digit zip').optional().or(z.literal('')),
   socialPlatform: z.enum(['facebook', 'instagram'] as const),
@@ -537,10 +537,29 @@ export default function SightingsPage() {
                 type="tel"
                 placeholder="(720) 555-1234"
                 {...register('phoneNumber')}
+                onChange={(e) => {
+                  // Auto-format phone number as user types
+                  const value = e.target.value.replace(/\D/g, '') // Remove non-digits
+                  let formatted = value
+                  
+                  if (value.length >= 3) {
+                    formatted = `(${value.slice(0, 3)}) ${value.slice(3)}`
+                  }
+                  if (value.length >= 6) {
+                    formatted = `(${value.slice(0, 3)}) ${value.slice(3, 6)}-${value.slice(6, 10)}`
+                  }
+                  
+                  e.target.value = formatted
+                  register('phoneNumber').onChange(e)
+                }}
+                maxLength={14}
               />
               {errors.phoneNumber && (
                 <p className="text-sm text-destructive">{errors.phoneNumber.message}</p>
               )}
+              <p className="text-xs text-muted-foreground">
+                Enter 10 digits - we'll format it for you
+              </p>
             </div>
 
             {/* Email Input */}
