@@ -4,6 +4,7 @@ import { ThemeSwitcher } from '@/components/theme-switcher'
 import { hasEnvVars } from '@/utils/env'
 import Link from 'next/link'
 import { Suspense } from 'react'
+import { ProtectedNavigation } from '@/components/protected-navigation'
 
 type ProtectedLayoutProps = {
   children: React.ReactNode
@@ -27,7 +28,8 @@ export default function ProtectedLayout({ children }: ProtectedLayoutProps) {
             )}
           </div>
         </nav>
-        <div className="flex max-w-5xl flex-1 flex-col gap-20 p-5">
+        <div className="flex max-w-5xl flex-1 flex-col gap-8 p-5">
+          <ProtectedNavigation />
           {children}
         </div>
 

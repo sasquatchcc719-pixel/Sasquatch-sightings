@@ -1,10 +1,12 @@
 'use client'
 
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Edit, CheckCircle2 } from 'lucide-react'
+import { Edit, CheckCircle2, Trash2, Loader2 } from 'lucide-react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
 type Job = {
   id: string
@@ -28,6 +30,46 @@ type DraftJobsListProps = {
 }
 
 export function DraftJobsList({ initialJobs }: DraftJobsListProps) {
+  const [deletingJobId, setDeletingJobId] = useState<string | null>(null)
+  const router = useRouter()
+
+  const handleDelete = async (jobId: string, jobTitle: string) => {
+    // Confirm deletion
+    const confirmed = window.confirm(
+      `Are you sure you want to delete this job?\n\n"${jobTitle}"\n\nThis will permanently delete the job and its image from storage. This action cannot be undone.`
+    )
+
+    if (!confirmed) {
+      return
+    }
+
+    setDeletingJobId(jobId)
+
+    try {
+      const response = await fetch(`/api/jobs/${jobId}/delete`, {
+        method: 'DELETE',
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to delete job')
+      }
+
+      // Refresh the page to show updated list
+      router.refresh()
+    } catch (error) {
+      console.error('Delete error:', error)
+      alert(
+        error instanceof Error
+          ? error.message
+          : 'Failed to delete job. Please try again.'
+      )
+    } finally {
+      setDeletingJobId(null)
+    }
+  }
+
   if (initialJobs.length === 0) {
     return (
       <div className="text-center text-muted-foreground">
@@ -89,20 +131,44 @@ export function DraftJobsList({ initialJobs }: DraftJobsListProps) {
               )}
 
               {/* Action Buttons */}
-              <div className="flex gap-2">
-                <Link href={`/protected/jobs/${job.id}`} className="flex-1">
+              <div className="flex flex-wrap gap-2">
+                <Link href={`/protected/jobs/${job.id}`} className="flex-1 min-w-[140px]">
                   <Button size="sm" variant="outline" className="w-full">
                     <Edit className="mr-2 h-4 w-4" />
                     Edit Job
                   </Button>
                 </Link>
                 {job.slug && (
-                  <Link href={`/work/${encodeURIComponent(job.city)}/${job.slug}`} className="flex-1">
+                  <Link href={`/work/${encodeURIComponent(job.city)}/${job.slug}`} className="flex-1 min-w-[140px]">
                     <Button size="sm" className="w-full">
                       View Public Page
                     </Button>
                   </Link>
                 )}
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={() =>
+                    handleDelete(
+                      job.id,
+                      `${Array.isArray(job.services) ? job.services[0]?.name : job.services.name} - ${job.city}`
+                    )
+                  }
+                  disabled={deletingJobId === job.id}
+                  className="min-w-[100px]"
+                >
+                  {deletingJobId === job.id ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Delete
+                    </>
+                  )}
+                </Button>
               </div>
             </div>
           </div>
