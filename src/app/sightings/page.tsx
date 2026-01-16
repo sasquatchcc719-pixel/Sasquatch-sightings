@@ -196,7 +196,7 @@ export default function SightingsPage() {
 
   // Generate social media share URL based on platform
   const generateShareUrl = (platform: 'facebook' | 'instagram') => {
-    const shareText = "I just spotted a Sasquatch in [City]! 🦍"
+    const shareText = "I just spotted the Sasquatch Carpet Cleaning truck in [City]! 🚛"
     
     if (platform === 'facebook') {
       const encodedText = encodeURIComponent(shareText + " #SasquatchSighting")
@@ -389,7 +389,7 @@ export default function SightingsPage() {
           </div>
 
           <Button onClick={() => window.location.reload()} size="lg" className="w-full">
-            Submit Another Sighting
+            Submit Another Truck Photo
           </Button>
         </Card>
       </div>
@@ -401,18 +401,27 @@ export default function SightingsPage() {
       <div className="w-full max-w-2xl space-y-8">
         {/* Header */}
         <div className="text-center">
+          {/* Logo */}
+          <div className="mb-6 flex justify-center">
+            <img 
+              src="/sasquatch-logo.png" 
+              alt="Sasquatch Carpet Cleaning" 
+              className="h-24 w-auto"
+            />
+          </div>
+          
           <h1 className="mb-4 text-4xl font-bold">
-            Have You Seen The Sasquatch?
+            Spotted Our Truck?
           </h1>
           <Card className="bg-gradient-to-r from-green-50 to-blue-50 p-6 dark:from-green-950 dark:to-blue-950">
             <div className="mb-3 flex justify-center">
               <Trophy className="h-12 w-12 text-yellow-500" />
             </div>
             <h2 className="mb-2 text-2xl font-bold">
-              Report Your Sasquatch Sighting
+              Report Your Truck Sighting & Win!
             </h2>
             <p className="text-lg">
-              Spotted our Sasquatch in the wild? Upload proof, share on social media, and get an instant $20 off coupon + a chance to win a FREE whole house carpet cleaning (up to $350 value)!
+              See our Sasquatch Carpet Cleaning truck in your neighborhood? Upload a photo, share on social media, and get an instant $20 off coupon + a chance to win a FREE whole house carpet cleaning (up to $350 value)!
             </p>
             <div className="mt-4 space-y-3">
               <div className="rounded-md bg-green-100 p-3 text-sm dark:bg-green-900/30">
@@ -431,7 +440,7 @@ export default function SightingsPage() {
             <div className="space-y-2">
               <Label htmlFor="image">
                 <Camera className="mr-2 inline-block h-4 w-4" />
-                Photo of Sasquatch Truck *
+                Photo of Our Truck *
               </Label>
               <Input
                 id="image"
@@ -506,7 +515,7 @@ export default function SightingsPage() {
               {gpsSource === 'none' && locationAttempted && !gpsCoordinates && (
                 <div className="rounded-md bg-yellow-50 p-3 text-sm dark:bg-yellow-950/30">
                   <p className="text-yellow-800 dark:text-yellow-200">
-                    Location helps us track Sasquatch! You can still submit without it.
+                    Location helps us verify your sighting! You can still submit without it.
                   </p>
                 </div>
               )}
@@ -602,7 +611,7 @@ export default function SightingsPage() {
               <div className="flex items-center gap-2">
                 <Share2 className="h-5 w-5 text-red-600" />
                 <Label className="text-base font-semibold">
-                  Share Your Sighting (Required for $20 coupon) *
+                  Share Your Photo (Required for $20 coupon) *
                 </Label>
               </div>
               
@@ -622,7 +631,7 @@ export default function SightingsPage() {
                   Copy this text for your post:
                 </p>
                 <p className="text-sm italic">
-                  "I just spotted a Sasquatch in [City]! 🦍 #SasquatchSighting"
+                  "I just spotted the Sasquatch Carpet Cleaning truck in [City]! 🚛 #SasquatchSighting"
                 </p>
               </div>
 
@@ -703,7 +712,7 @@ export default function SightingsPage() {
               ) : (
                 <>
                   <Upload className="mr-2 h-4 w-4" />
-                  Submit Sighting
+                  Submit Photo
                 </>
               )}
             </Button>
