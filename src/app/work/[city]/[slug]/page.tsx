@@ -153,7 +153,7 @@ export default async function JobPage({ params }: PageProps) {
             <span className="text-gray-900">{serviceName}</span>
           </nav>
 
-          <Card className="overflow-hidden">
+          <Card className="overflow-hidden bg-white">
             {/* Hero Image */}
             <div className="relative w-full h-[400px] md:h-[500px]">
               <img
@@ -164,19 +164,19 @@ export default async function JobPage({ params }: PageProps) {
             </div>
 
             {/* Content */}
-            <div className="p-6 md:p-8">
+            <div className="p-6 md:p-8 bg-white">
               <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">
                 {serviceName} in {location}
               </h1>
 
               {publishedDate && (
-                <p className="text-sm text-gray-500 mb-6">Completed {publishedDate}</p>
+                <p className="text-sm text-gray-600 mb-6">Completed {publishedDate}</p>
               )}
 
               {/* Description */}
               {job.ai_description && (
                 <div className="prose prose-lg max-w-none mb-8">
-                  <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">
+                  <p className="text-gray-800 leading-relaxed whitespace-pre-wrap">
                     {job.ai_description}
                   </p>
                 </div>
@@ -212,29 +212,29 @@ export default async function JobPage({ params }: PageProps) {
 
               {/* Services List */}
               <div className="mt-8 border-t pt-8">
-                <h3 className="text-xl font-semibold mb-4">Our Services</h3>
+                <h3 className="text-xl font-semibold text-gray-900 mb-4">Our Services</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="flex items-center gap-2 text-gray-700">
+                  <div className="flex items-center gap-2 text-gray-800">
                     <span className="text-green-600">✓</span>
                     <span>Standard Carpet Cleaning</span>
                   </div>
-                  <div className="flex items-center gap-2 text-gray-700">
+                  <div className="flex items-center gap-2 text-gray-800">
                     <span className="text-green-600">✓</span>
                     <span>Urine Treatment</span>
                   </div>
-                  <div className="flex items-center gap-2 text-gray-700">
+                  <div className="flex items-center gap-2 text-gray-800">
                     <span className="text-green-600">✓</span>
                     <span>Deep Carpet Restoration</span>
                   </div>
-                  <div className="flex items-center gap-2 text-gray-700">
+                  <div className="flex items-center gap-2 text-gray-800">
                     <span className="text-green-600">✓</span>
                     <span>Upholstery Cleaning</span>
                   </div>
-                  <div className="flex items-center gap-2 text-gray-700">
+                  <div className="flex items-center gap-2 text-gray-800">
                     <span className="text-green-600">✓</span>
                     <span>Tile & Grout Cleaning</span>
                   </div>
-                  <div className="flex items-center gap-2 text-gray-700">
+                  <div className="flex items-center gap-2 text-gray-800">
                     <span className="text-green-600">✓</span>
                     <span>Commercial Services</span>
                   </div>
