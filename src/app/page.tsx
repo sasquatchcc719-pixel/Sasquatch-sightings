@@ -2,7 +2,6 @@ import { createClient } from '@/supabase/server';
 import { MapView } from '@/components/public/MapView';
 import { Button } from '@/components/ui/button';
 import { Suspense } from 'react';
-import { AuthButton } from '@/components/auth-button';
 import { AdminLink } from '@/components/admin-link';
 import { unstable_noStore as noStore } from 'next/cache';
 
@@ -99,9 +98,6 @@ export default async function Home() {
               </Button>
               <Suspense>
                 <AdminLink />
-              </Suspense>
-              <Suspense>
-                <AuthButton />
               </Suspense>
             </div>
           </div>
