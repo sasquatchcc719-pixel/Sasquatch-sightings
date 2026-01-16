@@ -32,16 +32,16 @@ export async function POST(request: NextRequest) {
     const socialPlatform = formData.get('socialPlatform') as string | null
     const socialLink = formData.get('socialLink') as string | null
 
-    // Validate required fields
-    if (!imageFile || !fullName || !phoneNumber || !email || !socialPlatform || !socialLink) {
+    // Validate required fields (social fields are now optional)
+    if (!imageFile || !fullName || !phoneNumber || !email) {
       return NextResponse.json(
-        { error: 'Image, full name, phone number, email, social platform, and social link are required' },
+        { error: 'Image, full name, phone number, and email are required' },
         { status: 400 }
       )
     }
 
-    // Validate social platform value
-    if (socialPlatform !== 'facebook' && socialPlatform !== 'instagram') {
+    // Validate social platform value if provided
+    if (socialPlatform && socialPlatform !== 'facebook' && socialPlatform !== 'instagram') {
       return NextResponse.json(
         { error: 'Invalid social platform' },
         { status: 400 }
@@ -51,11 +51,11 @@ export async function POST(request: NextRequest) {
     // Parse GPS coordinates (optional - may be null)
     let lat: number | null = null
     let lng: number | null = null
-    
+
     if (gpsLat && gpsLng) {
       lat = parseFloat(gpsLat)
       lng = parseFloat(gpsLng)
-      
+
       // Validate coordinates if provided
       if (isNaN(lat) || isNaN(lng)) {
         return NextResponse.json(
@@ -135,8 +135,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Since social link is now required, everyone is contest eligible
-    const contestEligible = true
+    // Contest eligible only if social link was provided
+    const contestEligible = !!(socialLink && socialLink.trim())
 
     // Insert sighting record into database
     const { data: sighting, error: insertError } = await supabase

@@ -39,8 +39,8 @@ const sightingFormSchema = z.object({
   phoneNumber: z.string().min(10, 'Valid phone required'),
   email: z.string().email('Valid email is required'),
   zipCode: z.string().regex(/^\d{5}$/, 'Valid 5-digit zip').optional().or(z.literal('')),
-  socialPlatform: z.enum(['facebook', 'instagram'] as const),
-  socialLink: z.string().url('Valid social media post link is required').min(1, 'Social media share link is required'),
+  socialPlatform: z.enum(['facebook', 'instagram'] as const).optional(),
+  socialLink: z.string().url('Valid social media post link is required').optional().or(z.literal('')),
 })
 
 type SightingFormData = z.infer<typeof sightingFormSchema>
@@ -139,7 +139,7 @@ export default function SightingsPage() {
   const handleUseCurrentLocation = async () => {
     setIsGettingLocation(true)
     setLocationAttempted(true)
-    
+
     try {
       const location = await getCurrentLocation()
       if (location) {
@@ -220,7 +220,7 @@ export default function SightingsPage() {
   // Generate social media share URL based on platform
   const generateShareUrl = (platform: 'facebook' | 'instagram') => {
     const shareText = "I just spotted the Sasquatch Carpet Cleaning truck in [City]! 🚛"
-    
+
     if (platform === 'facebook') {
       const encodedText = encodeURIComponent(shareText + " #SasquatchSighting")
       const shareUrl = encodeURIComponent(window.location.origin + '/sightings')
@@ -251,11 +251,7 @@ export default function SightingsPage() {
       return
     }
 
-    // Validate social media share link is provided (required for coupon)
-    if (!data.socialLink || !data.socialLink.trim()) {
-      setSubmitError('Social media share required to receive your coupon code')
-      return
-    }
+
 
     setIsSubmitting(true)
     setSubmitError(null)
@@ -270,9 +266,13 @@ export default function SightingsPage() {
       if (data.zipCode) {
         formData.append('zipCode', data.zipCode)
       }
-      formData.append('socialPlatform', data.socialPlatform)
-      formData.append('socialLink', data.socialLink)
-      
+      if (data.socialPlatform) {
+        formData.append('socialPlatform', data.socialPlatform)
+      }
+      if (data.socialLink) {
+        formData.append('socialLink', data.socialLink)
+      }
+
       // GPS coordinates are optional if location attempt was made
       if (gpsCoordinates) {
         formData.append('gpsLat', gpsCoordinates.lat.toString())
@@ -313,7 +313,7 @@ export default function SightingsPage() {
           <h1 className="mb-6 text-4xl font-bold">
             SUCCESS! 🎉
           </h1>
-          
+
           {/* Coupon Code Display */}
           <div className="mb-6 rounded-lg bg-gradient-to-r from-green-100 to-green-200 p-6 dark:from-green-900 dark:to-green-800">
             <p className="mb-2 text-sm font-medium text-green-800 dark:text-green-200">
@@ -402,66 +402,121 @@ export default function SightingsPage() {
             </p>
           </div>
 
-          {/* Contest Entry Status */}
-          <div className="mb-6 rounded-lg bg-yellow-100 p-4 dark:bg-yellow-900/30">
-            <div className="mb-2 flex justify-center">
-              <Trophy className="h-12 w-12 text-yellow-600" />
-            </div>
-            <p className="font-semibold text-yellow-800 dark:text-yellow-200">
-              PLUS - You're entered in this month's drawing for a FREE whole house carpet cleaning (up to $350 value)!
-            </p>
-          </div>
 
-          {/* Share Section - Boost Your Entry! */}
-          <div className="mb-6 rounded-lg border-2 border-purple-500 bg-gradient-to-br from-purple-50 to-pink-50 p-6 dark:border-purple-700 dark:from-purple-950/30 dark:to-pink-950/30">
-            <div className="mb-4 flex items-center justify-center gap-2">
-              <Share2 className="h-6 w-6 text-purple-600 dark:text-purple-400" />
-              <h3 className="text-xl font-bold text-purple-900 dark:text-purple-100">
-                Share Your Sighting!
-              </h3>
-            </div>
-            <p className="mb-4 text-center text-sm text-purple-800 dark:text-purple-200">
-              Share your photo on Facebook to show your friends and increase your chances in the drawing!
-            </p>
-            
-            {/* Share Link Display */}
-            <div className="mb-4 rounded-md bg-white p-3 dark:bg-gray-800">
-              <p className="mb-2 text-xs font-medium text-gray-600 dark:text-gray-400">Your Share Link:</p>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 overflow-x-auto text-xs text-gray-800 dark:text-gray-200">
-                  {`https://sightings.sasquatchcarpet.com/sightings/share/${sightingId}`}
-                </code>
-                <Button
-                  onClick={handleCopyShareLink}
-                  size="sm"
-                  variant="outline"
-                >
-                  {shareLinkCopied ? (
-                    <>
-                      <Check className="h-4 w-4" />
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-4 w-4" />
-                    </>
-                  )}
-                </Button>
+          {/* Contest Entry Status - Only show if eligible */}
+          {contestEligible && (
+            <div className="mb-6 rounded-lg bg-yellow-100 p-4 dark:bg-yellow-900/30">
+              <div className="mb-2 flex justify-center">
+                <Trophy className="h-12 w-12 text-yellow-600" />
               </div>
+              <p className="font-semibold text-yellow-800 dark:text-yellow-200">
+                PLUS - You're entered in this month's drawing for a FREE whole house carpet cleaning (up to $350 value)!
+              </p>
             </div>
+          )}
 
-            {/* Facebook Share Button */}
-            <Button
-              onClick={handleFacebookShare}
-              size="lg"
-              className="w-full bg-[#1877F2] hover:bg-[#166FE5]"
-            >
-              <Share2 className="mr-2 h-5 w-5" />
-              Share on Facebook
-            </Button>
-            <p className="mt-2 text-center text-xs text-purple-700 dark:text-purple-300">
-              When you share, your photo will show up with your sighting!
-            </p>
-          </div>
+          {/* Share Section - Show different version based on contest eligibility */}
+          {contestEligible ? (
+            <div className="mb-6 rounded-lg border-2 border-purple-500 bg-gradient-to-br from-purple-50 to-pink-50 p-6 dark:border-purple-700 dark:from-purple-950/30 dark:to-pink-950/30">
+              <div className="mb-4 flex items-center justify-center gap-2">
+                <Share2 className="h-6 w-6 text-purple-600 dark:text-purple-400" />
+                <h3 className="text-xl font-bold text-purple-900 dark:text-purple-100">
+                  Share Your Sighting!
+                </h3>
+              </div>
+              <p className="mb-4 text-center text-sm text-purple-800 dark:text-purple-200">
+                Share your photo on Facebook to show your friends and increase your chances in the drawing!
+              </p>
+
+              {/* Share Link Display */}
+              <div className="mb-4 rounded-md bg-white p-3 dark:bg-gray-800">
+                <p className="mb-2 text-xs font-medium text-gray-600 dark:text-gray-400">Your Share Link:</p>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 overflow-x-auto text-xs text-gray-800 dark:text-gray-200">
+                    {`https://sightings.sasquatchcarpet.com/sightings/share/${sightingId}`}
+                  </code>
+                  <Button
+                    onClick={handleCopyShareLink}
+                    size="sm"
+                    variant="outline"
+                  >
+                    {shareLinkCopied ? (
+                      <>
+                        <Check className="h-4 w-4" />
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-4 w-4" />
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Facebook Share Button */}
+              <Button
+                onClick={handleFacebookShare}
+                size="lg"
+                className="w-full bg-[#1877F2] hover:bg-[#166FE5]"
+              >
+                <Share2 className="mr-2 h-5 w-5" />
+                Share on Facebook
+              </Button>
+              <p className="mt-2 text-center text-xs text-purple-700 dark:text-purple-300">
+                When you share, your photo will show up with your sighting!
+              </p>
+            </div>
+          ) : (
+            <div className="mb-6 rounded-lg border-2 border-purple-500 bg-gradient-to-br from-purple-50 to-pink-50 p-6 dark:border-purple-700 dark:from-purple-950/30 dark:to-pink-950/30">
+              <div className="mb-4 flex items-center justify-center gap-2">
+                <Trophy className="h-8 w-8 text-purple-600 dark:text-purple-400" />
+                <h3 className="text-xl font-bold text-purple-900 dark:text-purple-100">
+                  Want to Win?
+                </h3>
+              </div>
+              <p className="mb-4 text-center text-purple-800 dark:text-purple-200">
+                Share your photo on social media and you'll be entered in this month's drawing for a FREE whole house carpet cleaning (up to $350 value)!
+              </p>
+
+              {/* Share Link Display */}
+              <div className="mb-4 rounded-md bg-white p-3 dark:bg-gray-800">
+                <p className="mb-2 text-xs font-medium text-gray-600 dark:text-gray-400">Your Share Link:</p>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 overflow-x-auto text-xs text-gray-800 dark:text-gray-200">
+                    {`https://sightings.sasquatchcarpet.com/sightings/share/${sightingId}`}
+                  </code>
+                  <Button
+                    onClick={handleCopyShareLink}
+                    size="sm"
+                    variant="outline"
+                  >
+                    {shareLinkCopied ? (
+                      <>
+                        <Check className="h-4 w-4" />
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-4 w-4" />
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Facebook Share Button */}
+              <Button
+                onClick={handleFacebookShare}
+                size="lg"
+                className="w-full bg-[#1877F2] hover:bg-[#166FE5]"
+              >
+                <Share2 className="mr-2 h-5 w-5" />
+                Share on Facebook to Enter Contest
+              </Button>
+              <p className="mt-2 text-center text-xs text-purple-700 dark:text-purple-300">
+                Share now to be eligible for the monthly drawing!
+              </p>
+            </div>
+          )}
 
           <Button onClick={() => window.location.reload()} size="lg" className="w-full">
             Submit Another Truck Photo
@@ -478,13 +533,13 @@ export default function SightingsPage() {
         <div className="text-center">
           {/* Logo */}
           <div className="mb-6 flex justify-center">
-            <img 
-              src="/sasquatch-logo.png" 
-              alt="Sasquatch Carpet Cleaning" 
+            <img
+              src="/sasquatch-logo.png"
+              alt="Sasquatch Carpet Cleaning"
               className="h-24 w-auto"
             />
           </div>
-          
+
           <h1 className="mb-4 text-4xl font-bold">
             Spotted Our Truck?
           </h1>
@@ -496,11 +551,16 @@ export default function SightingsPage() {
               Report Your Truck Sighting & Win!
             </h2>
             <p className="text-lg">
-              See our Sasquatch Carpet Cleaning truck in your neighborhood? Upload a photo, share on social media, and get an instant $20 off coupon + a chance to win a FREE whole house carpet cleaning (up to $350 value)!
+              See our Sasquatch Carpet Cleaning truck in your neighborhood? Upload a photo and get an instant $20 off coupon! Share on social media to enter the drawing for a FREE whole house carpet cleaning (up to $350 value)!
             </p>
             <div className="mt-4 space-y-3">
               <div className="rounded-md bg-green-100 p-3 text-sm dark:bg-green-900/30">
                 <p className="font-semibold text-green-800 dark:text-green-200">
+                  📸 Photo = $20 Coupon
+                </p>
+              </div>
+              <div className="rounded-md bg-purple-100 p-3 text-sm dark:bg-purple-900/30">
+                <p className="font-semibold text-purple-800 dark:text-purple-200">
                   📸 Photo + Social Share = $20 Coupon + Contest Entry
                 </p>
               </div>
@@ -548,53 +608,53 @@ export default function SightingsPage() {
                     className="h-48 w-full rounded-lg object-cover"
                   />
 
-            {/* GPS Status Indicator */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between rounded-md border bg-muted/50 p-3">
-                <div className="flex items-center gap-2">
-                  <MapPin className="h-4 w-4" />
-                  <span className="text-sm font-medium">
-                    {gpsSource === 'exif' && '✓ Location detected'}
-                    {gpsSource === 'device' && '✓ Location detected'}
-                    {gpsSource === 'none' && !locationAttempted && 'Location needed'}
-                    {gpsSource === 'none' && locationAttempted && 'Location attempt made'}
-                  </span>
-                </div>
+                  {/* GPS Status Indicator */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between rounded-md border bg-muted/50 p-3">
+                      <div className="flex items-center gap-2">
+                        <MapPin className="h-4 w-4" />
+                        <span className="text-sm font-medium">
+                          {gpsSource === 'exif' && '✓ Location detected'}
+                          {gpsSource === 'device' && '✓ Location detected'}
+                          {gpsSource === 'none' && !locationAttempted && 'Location needed'}
+                          {gpsSource === 'none' && locationAttempted && 'Location attempt made'}
+                        </span>
+                      </div>
 
-                {/* Show "Use Current Location" button if no GPS and not attempted */}
-                {gpsSource === 'none' && !locationAttempted && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="default"
-                    onClick={handleUseCurrentLocation}
-                    disabled={isGettingLocation}
-                    className="bg-blue-600 hover:bg-blue-700"
-                  >
-                    {isGettingLocation ? (
-                      <>
-                        <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-                        Getting...
-                      </>
-                    ) : (
-                      <>
-                        <MapPin className="mr-2 h-3 w-3" />
-                        Use Current Location
-                      </>
+                      {/* Show "Use Current Location" button if no GPS and not attempted */}
+                      {gpsSource === 'none' && !locationAttempted && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="default"
+                          onClick={handleUseCurrentLocation}
+                          disabled={isGettingLocation}
+                          className="bg-blue-600 hover:bg-blue-700"
+                        >
+                          {isGettingLocation ? (
+                            <>
+                              <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                              Getting...
+                            </>
+                          ) : (
+                            <>
+                              <MapPin className="mr-2 h-3 w-3" />
+                              Use Current Location
+                            </>
+                          )}
+                        </Button>
+                      )}
+                    </div>
+
+                    {/* Show message after location attempt if denied/failed */}
+                    {gpsSource === 'none' && locationAttempted && !gpsCoordinates && (
+                      <div className="rounded-md bg-yellow-50 p-3 text-sm dark:bg-yellow-950/30">
+                        <p className="text-yellow-800 dark:text-yellow-200">
+                          Location helps us verify your sighting! You can still submit without it.
+                        </p>
+                      </div>
                     )}
-                  </Button>
-                )}
-              </div>
-
-              {/* Show message after location attempt if denied/failed */}
-              {gpsSource === 'none' && locationAttempted && !gpsCoordinates && (
-                <div className="rounded-md bg-yellow-50 p-3 text-sm dark:bg-yellow-950/30">
-                  <p className="text-yellow-800 dark:text-yellow-200">
-                    Location helps us verify your sighting! You can still submit without it.
-                  </p>
-                </div>
-              )}
-            </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -625,14 +685,14 @@ export default function SightingsPage() {
                   // Auto-format phone number as user types
                   const value = e.target.value.replace(/\D/g, '') // Remove non-digits
                   let formatted = value
-                  
+
                   if (value.length >= 3) {
                     formatted = `(${value.slice(0, 3)}) ${value.slice(3)}`
                   }
                   if (value.length >= 6) {
                     formatted = `(${value.slice(0, 3)}) ${value.slice(3, 6)}-${value.slice(6, 10)}`
                   }
-                  
+
                   e.target.value = formatted
                   register('phoneNumber').onChange(e)
                 }}
@@ -681,22 +741,57 @@ export default function SightingsPage() {
               </p>
             </div>
 
+            {/* Error Message */}
+            {submitError && (
+              <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+                {submitError}
+              </div>
+            )}
+
+            {/* Submit Button */}
+            <Button
+              type="submit"
+              className="w-full"
+              size="lg"
+              disabled={isSubmitting || !canSubmit}
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Submitting...
+                </>
+              ) : (
+                <>
+                  <Upload className="mr-2 h-4 w-4" />
+                  Submit Photo
+                </>
+              )}
+            </Button>
+
+            {/* Show helper text if submit is disabled */}
+            {!canSubmit && imagePreview && gpsSource === 'none' && !locationAttempted && (
+              <p className="text-center text-sm text-muted-foreground">
+                Click "Use Current Location" to enable submission
+              </p>
+            )}
+
+
             {/* Social Media Share Section */}
-            <div className="space-y-3 rounded-lg border-2 border-red-300 bg-red-50/50 p-4 dark:border-red-700 dark:bg-red-950/20">
+            <div className="space-y-3 rounded-lg border-2 border-purple-300 bg-purple-50/50 p-4 dark:border-purple-700 dark:bg-purple-950/20">
               <div className="flex items-center gap-2">
-                <Share2 className="h-5 w-5 text-red-600" />
+                <Share2 className="h-5 w-5 text-purple-600" />
                 <Label className="text-base font-semibold">
-                  Share Your Photo (Required for $20 coupon) *
+                  Share Your Photo (Optional - for contest entry)
                 </Label>
               </div>
-              
-              {/* Important Note - Moved to top */}
-              <div className="rounded-md bg-yellow-100 p-3 text-sm dark:bg-yellow-900/30">
-                <p className="font-semibold text-yellow-800 dark:text-yellow-200">
-                  📝 Important:
+
+              {/* Important Note */}
+              <div className="rounded-md bg-purple-100 p-3 text-sm dark:bg-purple-900/30">
+                <p className="font-semibold text-purple-800 dark:text-purple-200">
+                  ✨ Bonus:
                 </p>
-                <p className="mt-1 text-yellow-700 dark:text-yellow-300">
-                  Upload your photo first, then share to social media and paste your post link below to claim your coupon.
+                <p className="mt-1 text-purple-700 dark:text-purple-300">
+                  Share your photo on social media to enter the monthly drawing for a FREE whole house carpet cleaning (up to $350 value)!
                 </p>
               </div>
 
@@ -713,7 +808,7 @@ export default function SightingsPage() {
               {/* Platform Selection */}
               <div className="space-y-2">
                 <Label htmlFor="socialPlatform">
-                  Share on: *
+                  Share on:
                 </Label>
                 <Select
                   onValueChange={(value) => setValue('socialPlatform', value as 'facebook' | 'instagram')}
@@ -749,7 +844,7 @@ export default function SightingsPage() {
               {/* Social Link Input */}
               <div className="space-y-2">
                 <Label htmlFor="socialLink">
-                  Paste your post link here *
+                  Paste your post link here
                 </Label>
                 <Input
                   id="socialLink"
@@ -765,39 +860,6 @@ export default function SightingsPage() {
               </div>
             </div>
 
-            {/* Error Message */}
-            {submitError && (
-              <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-                {submitError}
-              </div>
-            )}
-
-            {/* Submit Button */}
-            <Button
-              type="submit"
-              className="w-full"
-              size="lg"
-              disabled={isSubmitting || !canSubmit}
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Submitting...
-                </>
-              ) : (
-                <>
-                  <Upload className="mr-2 h-4 w-4" />
-                  Submit Photo
-                </>
-              )}
-            </Button>
-            
-            {/* Show helper text if submit is disabled */}
-            {!canSubmit && imagePreview && gpsSource === 'none' && !locationAttempted && (
-              <p className="text-center text-sm text-muted-foreground">
-                Click "Use Current Location" to enable submission
-              </p>
-            )}
           </form>
         </Card>
 
