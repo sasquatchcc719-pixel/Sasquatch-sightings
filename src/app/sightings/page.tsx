@@ -61,8 +61,10 @@ export default function SightingsPage() {
   const [submitSuccess, setSubmitSuccess] = useState(false)
   const [couponCode, setCouponCode] = useState<string>('')
   const [contestEligible, setContestEligible] = useState(false)
+  const [sightingId, setSightingId] = useState<string>('')
   const [copied, setCopied] = useState(false)
   const [phoneCopied, setPhoneCopied] = useState(false)
+  const [shareLinkCopied, setShareLinkCopied] = useState(false)
   const [locationAttempted, setLocationAttempted] = useState(false)
   const [canSubmit, setCanSubmit] = useState(false)
 
@@ -194,6 +196,27 @@ export default function SightingsPage() {
     }
   }
 
+  // Handle copying share link to clipboard
+  const handleCopyShareLink = async () => {
+    const shareUrl = `https://sightings.sasquatchcarpet.com/sightings/share/${sightingId}`
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(shareUrl)
+        setShareLinkCopied(true)
+        setTimeout(() => setShareLinkCopied(false), 2000)
+      }
+    } catch (error) {
+      console.error('Failed to copy:', error)
+    }
+  }
+
+  // Handle Facebook share
+  const handleFacebookShare = () => {
+    const shareUrl = `https://sightings.sasquatchcarpet.com/sightings/share/${sightingId}`
+    const facebookShareUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`
+    window.open(facebookShareUrl, '_blank', 'width=600,height=400')
+  }
+
   // Generate social media share URL based on platform
   const generateShareUrl = (platform: 'facebook' | 'instagram') => {
     const shareText = "I just spotted the Sasquatch Carpet Cleaning truck in [City]! 🚛"
@@ -269,6 +292,7 @@ export default function SightingsPage() {
       }
 
       // Success!
+      setSightingId(result.sighting.id)
       setCouponCode(result.sighting.couponCode)
       setContestEligible(result.sighting.contestEligible)
       setSubmitSuccess(true)
@@ -385,6 +409,57 @@ export default function SightingsPage() {
             </div>
             <p className="font-semibold text-yellow-800 dark:text-yellow-200">
               PLUS - You're entered in this month's drawing for a FREE whole house carpet cleaning (up to $350 value)!
+            </p>
+          </div>
+
+          {/* Share Section - Boost Your Entry! */}
+          <div className="mb-6 rounded-lg border-2 border-purple-500 bg-gradient-to-br from-purple-50 to-pink-50 p-6 dark:border-purple-700 dark:from-purple-950/30 dark:to-pink-950/30">
+            <div className="mb-4 flex items-center justify-center gap-2">
+              <Share2 className="h-6 w-6 text-purple-600 dark:text-purple-400" />
+              <h3 className="text-xl font-bold text-purple-900 dark:text-purple-100">
+                Share Your Sighting!
+              </h3>
+            </div>
+            <p className="mb-4 text-center text-sm text-purple-800 dark:text-purple-200">
+              Share your photo on Facebook to show your friends and increase your chances in the drawing!
+            </p>
+            
+            {/* Share Link Display */}
+            <div className="mb-4 rounded-md bg-white p-3 dark:bg-gray-800">
+              <p className="mb-2 text-xs font-medium text-gray-600 dark:text-gray-400">Your Share Link:</p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 overflow-x-auto text-xs text-gray-800 dark:text-gray-200">
+                  {`https://sightings.sasquatchcarpet.com/sightings/share/${sightingId}`}
+                </code>
+                <Button
+                  onClick={handleCopyShareLink}
+                  size="sm"
+                  variant="outline"
+                >
+                  {shareLinkCopied ? (
+                    <>
+                      <Check className="h-4 w-4" />
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-4 w-4" />
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+
+            {/* Facebook Share Button */}
+            <Button
+              onClick={handleFacebookShare}
+              size="lg"
+              className="w-full bg-[#1877F2] hover:bg-[#166FE5]"
+            >
+              <Share2 className="mr-2 h-5 w-5" />
+              Share on Facebook
+            </Button>
+            <p className="mt-2 text-center text-xs text-purple-700 dark:text-purple-300">
+              When you share, your photo will show up with your sighting!
             </p>
           </div>
 
