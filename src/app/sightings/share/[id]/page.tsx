@@ -37,10 +37,10 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     }
   }
 
-  const location = sighting.city && sighting.state 
-    ? `${sighting.city}, ${sighting.state}` 
+  const location = sighting.city && sighting.state
+    ? `${sighting.city}, ${sighting.state}`
     : 'Colorado'
-  
+
   const title = `Sasquatch Spotted in ${location}!`
   const description = 'I just saw the Sasquatch Carpet Cleaning truck! Check out my photo and join the contest to win a free whole house carpet cleaning!'
   const url = `https://sightings.sasquatchcarpet.com/sightings/share/${id}`
@@ -51,23 +51,28 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     openGraph: {
       title,
       description,
+      url,
+      siteName: 'Sasquatch Carpet Cleaning',
+      locale: 'en_US',
+      type: 'article',
       images: [
         {
           url: sighting.image_url,
           width: 1200,
           height: 630,
           alt: `Sasquatch Carpet Cleaning truck spotted in ${location}`,
+          type: 'image/jpeg', // Explicitly set type
         },
       ],
-      url,
-      type: 'website',
-      siteName: 'Sasquatch Carpet Cleaning',
     },
     twitter: {
       card: 'summary_large_image',
       title,
       description,
-      images: [sighting.image_url],
+      images: [sighting.image_url], // Next.js handles this correctly, but single string is safer for some parsers
+    },
+    alternates: {
+      canonical: url,
     },
   }
 }
@@ -80,10 +85,10 @@ export default async function SharePage({ params }: PageProps) {
     notFound()
   }
 
-  const location = sighting.city && sighting.state 
-    ? `${sighting.city}, ${sighting.state}` 
+  const location = sighting.city && sighting.state
+    ? `${sighting.city}, ${sighting.state}`
     : 'Colorado'
-  
+
   const formattedDate = new Date(sighting.created_at).toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'long',
@@ -97,9 +102,9 @@ export default async function SharePage({ params }: PageProps) {
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <a href="/" className="flex items-center">
-              <img 
-                src="/sasquatch-logo.png" 
-                alt="Sasquatch Carpet Cleaning" 
+              <img
+                src="/sasquatch-logo.png"
+                alt="Sasquatch Carpet Cleaning"
                 className="h-16 md:h-20 w-auto"
               />
             </a>
@@ -131,14 +136,14 @@ export default async function SharePage({ params }: PageProps) {
               <h1 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-2">
                 🦍 Sasquatch Spotted!
               </h1>
-              
+
               {sighting.city && sighting.state && (
                 <div className="flex items-center justify-center gap-2 text-lg text-gray-600 dark:text-gray-300 mb-2">
                   <MapPin className="h-5 w-5" />
                   <span>{location}</span>
                 </div>
               )}
-              
+
               <p className="text-sm text-gray-500 dark:text-gray-400">
                 Spotted on {formattedDate}
               </p>

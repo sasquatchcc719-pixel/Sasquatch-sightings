@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/supabase/server'
 import sharp from 'sharp'
+import { createSightingPost } from '@/lib/google-business'
 
 // Generate unique coupon code in format SCC-XXXX
 function generateCouponCode(): string {
@@ -29,8 +30,6 @@ export async function POST(request: NextRequest) {
     const zipCode = formData.get('zipCode') as string | null
     const gpsLat = formData.get('gpsLat') as string | null
     const gpsLng = formData.get('gpsLng') as string | null
-    const socialPlatform = formData.get('socialPlatform') as string | null
-    const socialLink = formData.get('socialLink') as string | null
 
     // Validate required fields (social fields are now optional)
     if (!imageFile || !fullName || !phoneNumber || !email) {
@@ -40,13 +39,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Validate social platform value if provided
-    if (socialPlatform && socialPlatform !== 'facebook' && socialPlatform !== 'instagram') {
-      return NextResponse.json(
-        { error: 'Invalid social platform' },
-        { status: 400 }
-      )
-    }
+
 
     // Parse GPS coordinates (optional - may be null)
     let lat: number | null = null
@@ -135,8 +128,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Contest eligible only if social link was provided
-    const contestEligible = !!(socialLink && socialLink.trim())
+    // Contest eligible by default for all valid submissions (Google Maps Pivot)
+    const contestEligible = true
 
     // Insert sighting record into database
     const { data: sighting, error: insertError } = await supabase
@@ -150,8 +143,8 @@ export async function POST(request: NextRequest) {
         phone_number: phoneNumber,
         email,
         zip_code: zipCode || null,
-        social_platform: socialPlatform,
-        social_link: socialLink,
+        // social_platform: null, // Removed
+        // social_link: null, // Removed
         coupon_code: couponCode,
         contest_eligible: contestEligible,
         coupon_redeemed: false,
@@ -165,6 +158,20 @@ export async function POST(request: NextRequest) {
         { error: 'Failed to create sighting record' },
         { status: 500 }
       )
+    }
+
+    // Trigger Google Business Profile Post (Best Effort)
+    if (publicUrl) {
+      try {
+        console.log('Triggering Google Business Post...')
+        await createSightingPost(
+          publicUrl,
+          `Check out this Sasquatch Sighting! 📸 spotted by ${fullName}.`
+        )
+      } catch (googleError) {
+        // Log error but don't fail the submission
+        console.error('Failed to post to Google Business Profile:', googleError)
+      }
     }
 
     // Return success with sighting details including coupon code
