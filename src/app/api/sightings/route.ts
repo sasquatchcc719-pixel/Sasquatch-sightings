@@ -7,7 +7,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/supabase/server'
 import sharp from 'sharp'
-import { createSightingPost } from '@/lib/google-business'
 
 // Generate unique coupon code in format SCC-XXXX
 function generateCouponCode(): string {
@@ -160,36 +159,43 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Trigger Google Business Profile Post (Best Effort)
-    if (publicUrl) {
-      try {
-        console.log('Triggering Google Business Post...')
-        await createSightingPost(
-          publicUrl,
-          `Check out this Sasquatch Sighting! 📸 spotted by ${fullName}.`
-        )
-      } catch (googleError) {
-        // Log error but don't fail the submission
-        console.error('Failed to post to Google Business Profile:', googleError)
+    // Trigger Zapier webhook for instant Google posting
+    try {
+      if (process.env.ZAPIER_WEBHOOK_URL) {
+        await fetch(process.env.ZAPIER_WEBHOOK_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            // Mapped to match Zapier requirements
+            service: 'Sasquatch Sighting',
+            neighborhood: zipCode || 'Unknown',
+            photo_url: publicUrl,
+
+            // Keeping these for debug/completeness
+            full_name: fullName,
+            email: email
+          })
+        });
       }
+    } catch (error) {
+      // Log error but don't fail the request
+      console.error('Zapier webhook failed:', error);
     }
 
-    // Return success with sighting details including coupon code
-    return NextResponse.json(
-      {
-        success: true,
-        sighting: {
-          id: sighting.id,
-          couponCode: sighting.coupon_code,
-          contestEligible: sighting.contest_eligible,
-        },
-      },
-      { status: 201 }
-    )
+    // Return success with coupon
+    return NextResponse.json({
+      success: true,
+      message: 'Sighting logged successfully',
+      data: sighting,
+      couponCode: 'SASQUATCH2026',
+    }, { status: 201 })
+
   } catch (error) {
-    console.error('Sightings API error:', error)
+    console.error('Error logging sighting:', error)
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: 'Failed to log sighting' },
       { status: 500 }
     )
   }

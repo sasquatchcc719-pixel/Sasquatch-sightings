@@ -248,8 +248,9 @@ export default function SightingsPage() {
       }
 
       // Success!
-      setSightingId(result.sighting.id)
-      setCouponCode(result.sighting.couponCode)
+      // API now returns { success: true, message: '...', data: sighting, couponCode: '...' }
+      setSightingId(result.data.id)
+      setCouponCode(result.couponCode)
       setSubmitSuccess(true)
     } catch (error) {
       console.error('Submit error:', error)
