@@ -4,8 +4,6 @@ import { createClient } from '@/supabase/client'
 // Initialize Supabase Client (created freshly to avoid caching issues in polling)
 const supabase = createClient()
 
-export const dynamic = 'force-dynamic' // Ensure this is not cached by Next.js
-
 export async function GET(req: NextRequest) {
     try {
         // Calculate timestamp for 24 hours ago
