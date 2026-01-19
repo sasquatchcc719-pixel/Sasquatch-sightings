@@ -61,6 +61,7 @@ export async function reverseGeocode(
     // Return fallback values on error
     return {
       city: 'Unknown',
+      state: null,
       neighborhood: null,
     }
   }
