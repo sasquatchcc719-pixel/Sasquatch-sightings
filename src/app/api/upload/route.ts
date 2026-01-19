@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/supabase/server'
 import { reverseGeocode } from '@/lib/geocode'
 import { generateJobSlug } from '@/lib/slug'
+import { generateSEOFilename } from '@/lib/seo-filename'
 import sharp from 'sharp'
 
 export async function POST(request: NextRequest) {
@@ -64,8 +65,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Reverse geocode to get city and neighborhood
-    const { city, neighborhood } = await reverseGeocode(lat, lng)
+    // Reverse geocode to get city, state, and neighborhood
+    const { city, state, neighborhood } = await reverseGeocode(lat, lng)
 
     // Convert File to Buffer for Sharp processing
     const arrayBuffer = await imageFile.arrayBuffer()
@@ -80,9 +81,15 @@ export async function POST(request: NextRequest) {
       .jpeg({ quality: 85 })
       .toBuffer()
 
-    // Generate unique filename
-    const timestamp = Date.now()
-    const filename = `${timestamp}-${imageFile.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`
+    // Generate SEO-friendly filename
+    // Format: {service-slug}-in-{city}-{state}-{timestamp}.jpg
+    // Example: pet-urine-removal-in-monument-co-1705634892.jpg
+    const filename = generateSEOFilename(
+      service.slug,
+      city,
+      state,
+      imageFile.name
+    )
 
     // Upload optimized image to Supabase Storage
     const { data: uploadData, error: uploadError } = await supabase.storage

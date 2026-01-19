@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/supabase/server'
 import { reverseGeocode } from '@/lib/geocode'
+import { generateSightingSEOFilename } from '@/lib/seo-filename'
 import sharp from 'sharp'
 
 // Generate unique coupon code in format SCC-XXXX
@@ -71,12 +72,32 @@ export async function POST(request: NextRequest) {
       .jpeg({ quality: 85 })
       .toBuffer()
 
-    // Generate unique filename
-    const timestamp = Date.now()
-    const filename = `${timestamp}-${imageFile.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`
-
     // Create Supabase client (no auth required for public submissions)
     const supabase = await createClient()
+
+    // Reverse geocode GPS coordinates to get city and state (for SEO filename)
+    let city: string | null = null
+    let state: string | null = null
+    
+    if (lat !== null && lng !== null) {
+      try {
+        const geocodeResult = await reverseGeocode(lat, lng)
+        city = geocodeResult.city
+        state = geocodeResult.state
+      } catch (error) {
+        console.error('Geocoding error:', error)
+        // Continue without location data if geocoding fails
+      }
+    }
+
+    // Generate SEO-friendly filename
+    // Format: sasquatch-sighting-in-{city}-{state}-{timestamp}.jpg
+    // Example: sasquatch-sighting-in-denver-co-1705634892.jpg
+    const filename = generateSightingSEOFilename(
+      city,
+      state,
+      imageFile.name
+    )
 
     // Upload optimized image to Supabase Storage
     const { data: uploadData, error: uploadError } = await supabase.storage
@@ -126,21 +147,6 @@ export async function POST(request: NextRequest) {
         { error: 'Failed to generate unique coupon code. Please try again.' },
         { status: 500 }
       )
-    }
-
-    // Reverse geocode GPS coordinates to get city and state
-    let city: string | null = null
-    let state: string | null = null
-    
-    if (lat !== null && lng !== null) {
-      try {
-        const geocodeResult = await reverseGeocode(lat, lng)
-        city = geocodeResult.city
-        state = geocodeResult.state
-      } catch (error) {
-        console.error('Geocoding error:', error)
-        // Continue without location data if geocoding fails
-      }
     }
 
     // Contest eligible by default for all valid submissions (Google Maps Pivot)
