@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/supabase/server'
+import { reverseGeocode } from '@/lib/geocode'
 import sharp from 'sharp'
 
 // Generate unique coupon code in format SCC-XXXX
@@ -127,6 +128,21 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Reverse geocode GPS coordinates to get city and state
+    let city: string | null = null
+    let state: string | null = null
+    
+    if (lat !== null && lng !== null) {
+      try {
+        const geocodeResult = await reverseGeocode(lat, lng)
+        city = geocodeResult.city
+        state = geocodeResult.state
+      } catch (error) {
+        console.error('Geocoding error:', error)
+        // Continue without location data if geocoding fails
+      }
+    }
+
     // Contest eligible by default for all valid submissions (Google Maps Pivot)
     const contestEligible = true
 
@@ -138,6 +154,8 @@ export async function POST(request: NextRequest) {
         image_filename: filename,
         gps_lat: lat,
         gps_lng: lng,
+        city,
+        state,
         full_name: fullName,
         phone_number: phoneNumber,
         email,

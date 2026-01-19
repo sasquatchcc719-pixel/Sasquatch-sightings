@@ -42,7 +42,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     : 'Colorado'
 
   const title = `Sasquatch Spotted in ${location}!`
-  const description = 'I just saw the Sasquatch Carpet Cleaning truck! Check out my photo and join the contest to win a free whole house carpet cleaning!'
+  const description = `A Sasquatch Carpet Cleaning truck was spotted in ${location} on ${new Date(sighting.created_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}. Join our contest to win a free whole house carpet cleaning!`
   const url = `https://sightings.sasquatchcarpet.com/sightings/share/${id}`
 
   return {
@@ -52,16 +52,17 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       title,
       description,
       url,
-      siteName: 'Sasquatch Carpet Cleaning',
+      siteName: 'Sasquatch Carpet Cleaning Sightings',
       locale: 'en_US',
       type: 'article',
+      publishedTime: sighting.created_at,
       images: [
         {
           url: sighting.image_url,
           width: 1200,
           height: 630,
           alt: `Sasquatch Carpet Cleaning truck spotted in ${location}`,
-          type: 'image/jpeg', // Explicitly set type
+          type: 'image/jpeg',
         },
       ],
     },
@@ -69,10 +70,19 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       card: 'summary_large_image',
       title,
       description,
-      images: [sighting.image_url], // Next.js handles this correctly, but single string is safer for some parsers
+      images: [sighting.image_url],
+      creator: '@SasquatchCC',
+      site: '@SasquatchCC',
     },
     alternates: {
       canonical: url,
+    },
+    robots: {
+      index: true,
+      follow: true,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+      'max-video-preview': -1,
     },
   }
 }
@@ -95,8 +105,40 @@ export default async function SharePage({ params }: PageProps) {
     day: 'numeric',
   })
 
+  // JSON-LD structured data for SEO
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'ImageObject',
+    name: `Sasquatch Carpet Cleaning Truck Spotted in ${location}`,
+    description: 'Sasquatch Carpet Cleaning truck sighting photo from our community contest',
+    contentUrl: sighting.image_url,
+    url: `https://sightings.sasquatchcarpet.com/sightings/share/${id}`,
+    datePublished: sighting.created_at,
+    author: {
+      '@type': 'Organization',
+      name: 'Sasquatch Carpet Cleaning',
+      url: 'https://sasquatchcarpet.com',
+    },
+    ...(sighting.gps_lat && sighting.gps_lng && {
+      contentLocation: {
+        '@type': 'Place',
+        name: location,
+        geo: {
+          '@type': 'GeoCoordinates',
+          latitude: sighting.gps_lat,
+          longitude: sighting.gps_lng,
+        },
+      },
+    }),
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white dark:from-gray-900 dark:to-gray-800">
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+      <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white dark:from-gray-900 dark:to-gray-800">
       {/* Header */}
       <header className="bg-white border-b shadow-sm dark:bg-gray-800 dark:border-gray-700">
         <div className="container mx-auto px-4 py-4">
@@ -196,6 +238,7 @@ export default async function SharePage({ params }: PageProps) {
           </p>
         </div>
       </footer>
-    </div>
+      </div>
+    </>
   )
 }

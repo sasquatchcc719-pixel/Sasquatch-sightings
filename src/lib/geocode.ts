@@ -5,6 +5,7 @@
 
 export type GeocodeResult = {
   city: string
+  state: string | null
   neighborhood: string | null
 }
 
@@ -43,12 +44,16 @@ export async function reverseGeocode(
       data.address?.municipality ||
       'Unknown'
 
+    // Extract state (use state_code for abbreviation like 'CO')
+    const state = data.address?.state_code || data.address?.state || null
+
     // Extract neighborhood (optional)
     const neighborhood =
       data.address?.neighbourhood || data.address?.suburb || null
 
     return {
       city,
+      state,
       neighborhood,
     }
   } catch (error) {
