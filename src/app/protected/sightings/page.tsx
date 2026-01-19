@@ -17,7 +17,8 @@ import {
   Calendar,
   ExternalLink,
   Loader2,
-  Map
+  Map,
+  Trash2
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -45,6 +46,7 @@ export default function SightingsAdminPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [filter, setFilter] = useState<'all' | 'eligible' | 'coupon-only'>('all')
   const [updatingId, setUpdatingId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   // Fetch sightings
   useEffect(() => {
@@ -116,6 +118,33 @@ export default function SightingsAdminPage() {
       console.error('Error updating coupon status:', error)
     } finally {
       setUpdatingId(null)
+    }
+  }
+
+  // Handle delete sighting
+  const handleDelete = async (id: string, name: string) => {
+    if (!confirm(`Are you sure you want to delete the entry from ${name}? This cannot be undone.`)) {
+      return
+    }
+
+    setDeletingId(id)
+    try {
+      const response = await fetch(`/api/sightings/${id}/delete`, {
+        method: 'DELETE',
+      })
+
+      if (response.ok) {
+        // Remove from local state
+        setSightings(prev => prev.filter(s => s.id !== id))
+      } else {
+        const data = await response.json()
+        alert(`Failed to delete entry: ${data.error || 'Unknown error'}`)
+      }
+    } catch (error) {
+      console.error('Error deleting sighting:', error)
+      alert('Failed to delete entry. Please try again.')
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -345,29 +374,49 @@ export default function SightingsAdminPage() {
                     </div>
                   </div>
 
-                  {/* Coupon Redeemed Checkbox */}
-                  <div className="flex items-center space-x-2 rounded-md border bg-muted/30 p-2">
-                    <Checkbox
-                      id={`redeemed-${sighting.id}`}
-                      checked={sighting.coupon_redeemed}
-                      onCheckedChange={() =>
-                        handleToggleRedeemed(sighting.id, sighting.coupon_redeemed)
-                      }
-                      disabled={updatingId === sighting.id}
-                    />
-                    <Label
-                      htmlFor={`redeemed-${sighting.id}`}
-                      className="cursor-pointer text-sm font-medium"
+                  {/* Coupon Redeemed Checkbox & Delete Button */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center space-x-2 rounded-md border bg-muted/30 p-2">
+                      <Checkbox
+                        id={`redeemed-${sighting.id}`}
+                        checked={sighting.coupon_redeemed}
+                        onCheckedChange={() =>
+                          handleToggleRedeemed(sighting.id, sighting.coupon_redeemed)
+                        }
+                        disabled={updatingId === sighting.id}
+                      />
+                      <Label
+                        htmlFor={`redeemed-${sighting.id}`}
+                        className="cursor-pointer text-sm font-medium"
+                      >
+                        {updatingId === sighting.id ? (
+                          <span className="flex items-center gap-2">
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            Updating...
+                          </span>
+                        ) : (
+                          'Coupon Redeemed'
+                        )}
+                      </Label>
+                    </div>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => handleDelete(sighting.id, sighting.full_name)}
+                      disabled={deletingId === sighting.id}
                     >
-                      {updatingId === sighting.id ? (
-                        <span className="flex items-center gap-2">
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                          Updating...
-                        </span>
+                      {deletingId === sighting.id ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Deleting...
+                        </>
                       ) : (
-                        'Coupon Redeemed'
+                        <>
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Delete
+                        </>
                       )}
-                    </Label>
+                    </Button>
                   </div>
                 </div>
               </div>
