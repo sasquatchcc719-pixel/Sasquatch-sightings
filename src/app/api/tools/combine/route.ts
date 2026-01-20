@@ -54,44 +54,39 @@ export async function POST(request: NextRequest) {
       .resize(targetWidth, targetHeight, { fit: 'cover', position: 'center' })
       .toBuffer()
 
-    // Create text label SVGs
-    const fontSize = Math.round(targetHeight * 0.08) // 8% of height
-    const padding = Math.round(fontSize * 0.8)
+    // Create text label SVGs (with stroke for visibility)
+    const fontSize = Math.round(targetHeight * 0.1) // 10% of height - bigger and more visible
+    const padding = 20
+    const strokeWidth = Math.round(fontSize * 0.15)
 
     const beforeLabel = Buffer.from(`
       <svg width="${targetWidth}" height="${targetHeight}">
-        <defs>
-          <filter id="shadow">
-            <feDropShadow dx="2" dy="2" stdDeviation="3" flood-opacity="0.8"/>
-          </filter>
-        </defs>
         <text 
           x="${padding}" 
           y="${padding + fontSize}" 
-          font-family="Arial, sans-serif" 
-          font-size="${fontSize}" 
+          font-family="Arial, Helvetica, sans-serif" 
+          font-size="${fontSize}px" 
           font-weight="bold"
           fill="white" 
-          filter="url(#shadow)"
+          stroke="black"
+          stroke-width="${strokeWidth}"
+          paint-order="stroke"
         >BEFORE</text>
       </svg>
     `)
 
     const afterLabel = Buffer.from(`
       <svg width="${targetWidth}" height="${targetHeight}">
-        <defs>
-          <filter id="shadow">
-            <feDropShadow dx="2" dy="2" stdDeviation="3" flood-opacity="0.8"/>
-          </filter>
-        </defs>
         <text 
           x="${padding}" 
           y="${padding + fontSize}" 
-          font-family="Arial, sans-serif" 
-          font-size="${fontSize}" 
+          font-family="Arial, Helvetica, sans-serif" 
+          font-size="${fontSize}px" 
           font-weight="bold"
           fill="white" 
-          filter="url(#shadow)"
+          stroke="black"
+          stroke-width="${strokeWidth}"
+          paint-order="stroke"
         >AFTER</text>
       </svg>
     `)
