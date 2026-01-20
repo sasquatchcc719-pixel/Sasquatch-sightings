@@ -55,57 +55,58 @@ export async function POST(request: NextRequest) {
       .toBuffer()
 
     // Create text label SVGs with background boxes for maximum visibility
-    const fontSize = 80 // Large, fixed size
+    const fontSize = 60 // Large, fixed size
     const padding = 20
-    const boxWidth = 250
-    const boxHeight = 100
+    const boxWidth = 220
+    const boxHeight = 80
+    const boxY = targetHeight - boxHeight - padding // Position at bottom
 
     const beforeLabel = Buffer.from(`
-      <svg width="${targetWidth}" height="${targetHeight}">
+      <svg width="${targetWidth}" height="${targetHeight}" xmlns="http://www.w3.org/2000/svg">
         <!-- Background box -->
         <rect 
           x="${padding}" 
-          y="${padding}" 
+          y="${boxY}" 
           width="${boxWidth}" 
           height="${boxHeight}" 
-          fill="rgba(0, 0, 0, 0.7)" 
+          fill="black" 
+          opacity="0.7"
           rx="10"
         />
         <!-- Text -->
         <text 
           x="${padding + boxWidth / 2}" 
-          y="${padding + boxHeight / 2 + 10}" 
-          font-family="Arial, Helvetica, sans-serif" 
-          font-size="${fontSize}px" 
+          y="${boxY + boxHeight / 2 + 20}" 
+          font-family="Arial" 
+          font-size="${fontSize}" 
           font-weight="bold"
           fill="white" 
           text-anchor="middle"
-          dominant-baseline="middle"
         >BEFORE</text>
       </svg>
     `)
 
     const afterLabel = Buffer.from(`
-      <svg width="${targetWidth}" height="${targetHeight}">
+      <svg width="${targetWidth}" height="${targetHeight}" xmlns="http://www.w3.org/2000/svg">
         <!-- Background box -->
         <rect 
           x="${padding}" 
-          y="${padding}" 
+          y="${boxY}" 
           width="${boxWidth}" 
           height="${boxHeight}" 
-          fill="rgba(0, 0, 0, 0.7)" 
+          fill="black" 
+          opacity="0.7"
           rx="10"
         />
         <!-- Text -->
         <text 
           x="${padding + boxWidth / 2}" 
-          y="${padding + boxHeight / 2 + 10}" 
-          font-family="Arial, Helvetica, sans-serif" 
-          font-size="${fontSize}px" 
+          y="${boxY + boxHeight / 2 + 20}" 
+          font-family="Arial" 
+          font-size="${fontSize}" 
           font-weight="bold"
           fill="white" 
           text-anchor="middle"
-          dominant-baseline="middle"
         >AFTER</text>
       </svg>
     `)
@@ -127,15 +128,15 @@ export async function POST(request: NextRequest) {
     // Now work with the combined image for watermark
     let finalImage = sharp(combinedImage)
 
-    // Add watermark if requested
+    // Add watermark if requested (top-right corner to avoid label conflict)
     if (addWatermark) {
       try {
         // Use the actual Sasquatch logo from public folder
         const logoPath = path.join(process.cwd(), 'public', 'sasquatch-logo.png')
         const logoBuffer = fs.readFileSync(logoPath)
 
-        // Resize logo to reasonable size (10% of image height)
-        const logoHeight = Math.round(targetHeight * 0.10)
+        // Resize logo to reasonable size (8% of image height)
+        const logoHeight = Math.round(targetHeight * 0.08)
         const resizedLogo = await sharp(logoBuffer)
           .resize({ height: logoHeight, fit: 'contain' })
           .toBuffer()
@@ -143,7 +144,7 @@ export async function POST(request: NextRequest) {
         finalImage = finalImage.composite([
           {
             input: resizedLogo,
-            gravity: 'southeast',
+            gravity: 'northeast', // Top-right corner
             left: padding,
             top: padding,
           },
