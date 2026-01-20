@@ -128,24 +128,25 @@ export async function POST(request: NextRequest) {
     // Now work with the combined image for watermark
     let finalImage = sharp(combinedImage)
 
-    // Add watermark if requested (top-right corner to avoid label conflict)
+    // Add watermark if requested (centered at bottom)
     if (addWatermark) {
       try {
         // Use the actual Sasquatch logo from public folder
         const logoPath = path.join(process.cwd(), 'public', 'sasquatch-logo.png')
         const logoBuffer = fs.readFileSync(logoPath)
 
-        // Resize logo to reasonable size (8% of image height)
-        const logoHeight = Math.round(targetHeight * 0.08)
+        // Resize logo for bottom watermark (wider logo works better centered at bottom)
+        // Set width to 30% of combined image width
+        const logoWidth = Math.round((targetWidth * 2) * 0.30)
         const resizedLogo = await sharp(logoBuffer)
-          .resize({ height: logoHeight, fit: 'contain' })
+          .resize({ width: logoWidth, fit: 'contain' })
           .toBuffer()
 
         finalImage = finalImage.composite([
           {
             input: resizedLogo,
-            gravity: 'northeast', // Top-right corner
-            left: padding,
+            gravity: 'south', // Bottom center
+            left: 0,
             top: padding,
           },
         ])
