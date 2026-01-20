@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ArrowLeft, Download, Loader2, Upload, Image as ImageIcon } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import imageCompression from 'browser-image-compression'
 
 export default function BeforeAfterCombinePage() {
   const router = useRouter()
@@ -61,9 +62,25 @@ export default function BeforeAfterCombinePage() {
     setError(null)
 
     try {
+      // Compress images before uploading (to avoid 413 Payload Too Large error)
+      const compressionOptions = {
+        maxSizeMB: 2, // Max 2MB per image
+        maxWidthOrHeight: 2048, // Max dimension
+        useWebWorker: true,
+        fileType: 'image/jpeg' as const,
+      }
+
+      console.log('Compressing before image...')
+      const compressedBefore = await imageCompression(beforeImage, compressionOptions)
+      console.log('Before image compressed:', beforeImage.size, '->', compressedBefore.size)
+
+      console.log('Compressing after image...')
+      const compressedAfter = await imageCompression(afterImage, compressionOptions)
+      console.log('After image compressed:', afterImage.size, '->', compressedAfter.size)
+
       const formData = new FormData()
-      formData.append('before', beforeImage)
-      formData.append('after', afterImage)
+      formData.append('before', compressedBefore)
+      formData.append('after', compressedAfter)
       formData.append('watermark', addWatermark.toString())
 
       const response = await fetch('/api/tools/combine', {
