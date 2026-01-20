@@ -49,12 +49,10 @@ Keep it 2-3 sentences. Mention the location. Sound professional but friendly. In
 
     console.log('🤖 Calling Gemini REST API...')
 
-    // Try multiple model names
+    // Use gemini-2.0-flash (confirmed working - got 429 which means it exists)
     const models = [
+      'gemini-2.0-flash-exp',
       'gemini-2.0-flash',
-      'gemini-1.5-flash',
-      'gemini-1.5-pro',
-      'gemini-pro',
     ]
 
     let description = null
