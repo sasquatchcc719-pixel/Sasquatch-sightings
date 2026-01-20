@@ -3,7 +3,7 @@ import { createClient } from '@/supabase/server'
 import { UploadForm } from '@/components/admin/upload-form'
 import { DraftJobsList } from '@/components/admin/draft-jobs-list'
 import { Button } from '@/components/ui/button'
-import { Briefcase, FileText, Map, Camera } from 'lucide-react'
+import { Briefcase, FileText, Map, Camera, Image } from 'lucide-react'
 import Link from 'next/link'
 
 export default async function ProtectedPage() {
@@ -50,8 +50,14 @@ export default async function ProtectedPage() {
             Upload a photo and add a description to publish a job directly to the map
           </p>
           
-          {/* Quick Test Button */}
+          {/* Quick Actions */}
           <div className="flex gap-2 pt-2">
+            <Button asChild variant="outline" size="sm">
+              <Link href="/protected/tools/combine">
+                <Image className="mr-2 h-4 w-4" />
+                Before/After Tool
+              </Link>
+            </Button>
             <Button asChild variant="outline" size="sm">
               <Link href="/sightings" target="_blank">
                 <Camera className="mr-2 h-4 w-4" />
