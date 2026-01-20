@@ -40,9 +40,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Initialize Gemini
+    // Initialize Gemini (using latest model)
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-    const model = genAI.getGenerativeModel({ model: 'gemini-pro' })
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
 
     // Build prompt
     const prompt = `Write a short, professional job description for a carpet cleaning company.
@@ -53,30 +53,52 @@ ${notes ? `Additional notes: ${notes}` : ''}
 Keep it 2-3 sentences. Mention the location. Sound professional but friendly. Include relevant keywords for local SEO. No hashtags. No emojis.`
 
     // Generate description
+    console.log('Calling Gemini API with prompt:', prompt.substring(0, 100) + '...')
     const result = await model.generateContent(prompt)
     const response = await result.response
     const description = response.text().trim()
 
-    // Log for debugging (optional)
-    console.log('Generated description:', description.substring(0, 100) + '...')
+    // Log for debugging
+    console.log('✅ Generated description:', description.substring(0, 100) + '...')
 
     return NextResponse.json({
       success: true,
       description,
     })
   } catch (error) {
-    console.error('Gemini API error:', error)
+    console.error('❌ Gemini API error:', error)
     
-    // Handle specific error types
-    if (error instanceof Error && error.message.includes('API key')) {
-      return NextResponse.json(
-        { error: 'AI service authentication failed' },
-        { status: 500 }
-      )
+    // Log full error details for debugging
+    if (error instanceof Error) {
+      console.error('Error name:', error.name)
+      console.error('Error message:', error.message)
+      console.error('Error stack:', error.stack)
+    }
+    
+    // Handle specific error types with helpful messages
+    if (error instanceof Error) {
+      if (error.message.includes('API_KEY_INVALID') || error.message.includes('API key')) {
+        return NextResponse.json(
+          { error: 'Invalid API key. Check GEMINI_API_KEY in Vercel.' },
+          { status: 500 }
+        )
+      }
+      if (error.message.includes('quota') || error.message.includes('billing')) {
+        return NextResponse.json(
+          { error: 'API quota exceeded or billing issue.' },
+          { status: 500 }
+        )
+      }
+      if (error.message.includes('model not found')) {
+        return NextResponse.json(
+          { error: 'Model not available. Check model name.' },
+          { status: 500 }
+        )
+      }
     }
 
     return NextResponse.json(
-      { error: 'Failed to generate description' },
+      { error: 'Failed to generate description. Check Vercel logs for details.' },
       { status: 500 }
     )
   }
