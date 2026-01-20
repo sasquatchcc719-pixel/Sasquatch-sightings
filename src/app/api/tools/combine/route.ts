@@ -54,39 +54,58 @@ export async function POST(request: NextRequest) {
       .resize(targetWidth, targetHeight, { fit: 'cover', position: 'center' })
       .toBuffer()
 
-    // Create text label SVGs (with stroke for visibility)
-    const fontSize = Math.round(targetHeight * 0.1) // 10% of height - bigger and more visible
+    // Create text label SVGs with background boxes for maximum visibility
+    const fontSize = 80 // Large, fixed size
     const padding = 20
-    const strokeWidth = Math.round(fontSize * 0.15)
+    const boxWidth = 250
+    const boxHeight = 100
 
     const beforeLabel = Buffer.from(`
       <svg width="${targetWidth}" height="${targetHeight}">
-        <text 
+        <!-- Background box -->
+        <rect 
           x="${padding}" 
-          y="${padding + fontSize}" 
+          y="${padding}" 
+          width="${boxWidth}" 
+          height="${boxHeight}" 
+          fill="rgba(0, 0, 0, 0.7)" 
+          rx="10"
+        />
+        <!-- Text -->
+        <text 
+          x="${padding + boxWidth / 2}" 
+          y="${padding + boxHeight / 2 + 10}" 
           font-family="Arial, Helvetica, sans-serif" 
           font-size="${fontSize}px" 
           font-weight="bold"
           fill="white" 
-          stroke="black"
-          stroke-width="${strokeWidth}"
-          paint-order="stroke"
+          text-anchor="middle"
+          dominant-baseline="middle"
         >BEFORE</text>
       </svg>
     `)
 
     const afterLabel = Buffer.from(`
       <svg width="${targetWidth}" height="${targetHeight}">
-        <text 
+        <!-- Background box -->
+        <rect 
           x="${padding}" 
-          y="${padding + fontSize}" 
+          y="${padding}" 
+          width="${boxWidth}" 
+          height="${boxHeight}" 
+          fill="rgba(0, 0, 0, 0.7)" 
+          rx="10"
+        />
+        <!-- Text -->
+        <text 
+          x="${padding + boxWidth / 2}" 
+          y="${padding + boxHeight / 2 + 10}" 
           font-family="Arial, Helvetica, sans-serif" 
           font-size="${fontSize}px" 
           font-weight="bold"
           fill="white" 
-          stroke="black"
-          stroke-width="${strokeWidth}"
-          paint-order="stroke"
+          text-anchor="middle"
+          dominant-baseline="middle"
         >AFTER</text>
       </svg>
     `)
