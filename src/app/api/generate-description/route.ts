@@ -1,11 +1,10 @@
 /**
  * AI Description Generator API Route
- * Uses Google Gemini to generate professional job descriptions
+ * Uses Google Gemini REST API directly
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/supabase/server'
-import { GoogleGenerativeAI } from '@google/generative-ai'
 
 export async function POST(request: NextRequest) {
   try {
@@ -20,7 +19,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Check for API key
-    if (!process.env.GEMINI_API_KEY) {
+    const apiKey = process.env.GEMINI_API_KEY
+    if (!apiKey) {
       console.error('GEMINI_API_KEY not configured')
       return NextResponse.json(
         { error: 'AI service not configured' },
@@ -39,11 +39,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Initialize Gemini with Google Cloud key
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-    // Use gemini-1.5-pro model (available with Google Cloud billing)
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' })
-
     // Build prompt
     const prompt = `Write a short, professional job description for a carpet cleaning company.
 Service: ${serviceType}
@@ -52,13 +47,66 @@ ${notes ? `Additional notes: ${notes}` : ''}
 
 Keep it 2-3 sentences. Mention the location. Sound professional but friendly. Include relevant keywords for local SEO. No hashtags. No emojis.`
 
-    // Generate description
-    console.log('🤖 Calling Gemini API with prompt:', prompt.substring(0, 100) + '...')
-    const result = await model.generateContent(prompt)
-    const response = await result.response
-    const description = response.text().trim()
+    console.log('🤖 Calling Gemini REST API...')
 
-    // Log for debugging
+    // Try multiple model names
+    const models = [
+      'gemini-2.0-flash',
+      'gemini-1.5-flash',
+      'gemini-1.5-pro',
+      'gemini-pro',
+    ]
+
+    let description = null
+    let lastError = null
+
+    for (const modelName of models) {
+      try {
+        console.log(`Trying model: ${modelName}...`)
+        
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              contents: [{
+                parts: [{
+                  text: prompt
+                }]
+              }]
+            })
+          }
+        )
+
+        if (response.ok) {
+          const data = await response.json()
+          description = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim()
+          if (description) {
+            console.log(`✅ Success with model: ${modelName}`)
+            break
+          }
+        } else {
+          const errorData = await response.text()
+          console.log(`❌ Model ${modelName} failed:`, response.status, errorData.substring(0, 200))
+          lastError = errorData
+        }
+      } catch (err) {
+        console.log(`❌ Model ${modelName} error:`, err)
+        lastError = err
+      }
+    }
+
+    if (!description) {
+      console.error('All models failed. Last error:', lastError)
+      return NextResponse.json(
+        { error: 'Failed to generate description. No available models.' },
+        { status: 500 }
+      )
+    }
+
     console.log('✅ Generated description:', description.substring(0, 100) + '...')
 
     return NextResponse.json({
@@ -66,14 +114,9 @@ Keep it 2-3 sentences. Mention the location. Sound professional but friendly. In
       description,
     })
   } catch (error) {
-    console.error('❌ Gemini API error:', error)
-    
-    if (error instanceof Error) {
-      console.error('Error message:', error.message)
-    }
-    
+    console.error('❌ API error:', error)
     return NextResponse.json(
-      { error: 'Failed to generate description. Check Vercel logs.' },
+      { error: 'Failed to generate description.' },
       { status: 500 }
     )
   }
