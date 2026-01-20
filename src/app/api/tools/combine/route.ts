@@ -131,8 +131,8 @@ export async function POST(request: NextRequest) {
     // Add watermark if requested (centered at bottom)
     if (addWatermark) {
       try {
-        // Use the actual Sasquatch logo from public folder
-        const logoPath = path.join(process.cwd(), 'public', 'sasquatch-logo.png')
+        // Use the actual Sasquatch logo from public folder (SVG for perfect scaling)
+        const logoPath = path.join(process.cwd(), 'public', 'sasquatch-logo.svg')
         const logoBuffer = fs.readFileSync(logoPath)
 
         // Resize logo for bottom watermark (wider logo works better centered at bottom)
