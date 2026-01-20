@@ -49,8 +49,9 @@ Keep it 2-3 sentences. Mention the location. Sound professional but friendly. In
 
     console.log('🤖 Calling Gemini REST API...')
 
-    // Use gemini-2.0-flash (confirmed working - got 429 which means it exists)
+    // Use models that have quota (gemini-3-flash has 250,000!)
     const models = [
+      'gemini-3-flash',
       'gemini-2.0-flash-exp',
       'gemini-2.0-flash',
     ]
