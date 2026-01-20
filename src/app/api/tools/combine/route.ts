@@ -54,59 +54,69 @@ export async function POST(request: NextRequest) {
       .resize(targetWidth, targetHeight, { fit: 'cover', position: 'center' })
       .toBuffer()
 
-    // Create text label SVGs with background boxes for maximum visibility
-    const fontSize = 60 // Large, fixed size
+    // Create background boxes and text labels separately
     const padding = 20
     const boxWidth = 220
     const boxHeight = 80
     const boxY = targetHeight - boxHeight - padding // Position at bottom
 
-    const beforeLabel = Buffer.from(`
+    // Create black background boxes only (no text in SVG)
+    const beforeBox = Buffer.from(`
       <svg width="${targetWidth}" height="${targetHeight}" xmlns="http://www.w3.org/2000/svg">
-        <!-- Background box -->
         <rect 
           x="${padding}" 
           y="${boxY}" 
           width="${boxWidth}" 
           height="${boxHeight}" 
-          fill="black" 
-          opacity="0.7"
+          fill="rgba(0, 0, 0, 0.7)" 
           rx="10"
         />
-        <!-- Text -->
+      </svg>
+    `)
+
+    const afterBox = Buffer.from(`
+      <svg width="${targetWidth}" height="${targetHeight}" xmlns="http://www.w3.org/2000/svg">
+        <rect 
+          x="${padding}" 
+          y="${boxY}" 
+          width="${boxWidth}" 
+          height="${boxHeight}" 
+          fill="rgba(0, 0, 0, 0.7)" 
+          rx="10"
+        />
+      </svg>
+    `)
+
+    // Create text overlays using Sharp's composite with better SVG
+    const fontSize = 48
+    const textY = boxY + boxHeight / 2 + fontSize / 3
+
+    const beforeText = Buffer.from(`
+      <svg width="${targetWidth}" height="${targetHeight}" xmlns="http://www.w3.org/2000/svg">
         <text 
           x="${padding + boxWidth / 2}" 
-          y="${boxY + boxHeight / 2 + 20}" 
-          font-family="Arial" 
+          y="${textY}" 
+          font-family="Arial,Helvetica,sans-serif" 
           font-size="${fontSize}" 
           font-weight="bold"
-          fill="white" 
+          fill="#FFFFFF" 
           text-anchor="middle"
+          style="font-family: Arial, Helvetica, sans-serif; font-weight: bold;"
         >BEFORE</text>
       </svg>
     `)
 
-    const afterLabel = Buffer.from(`
+    const afterText = Buffer.from(`
       <svg width="${targetWidth}" height="${targetHeight}" xmlns="http://www.w3.org/2000/svg">
-        <!-- Background box -->
-        <rect 
-          x="${padding}" 
-          y="${boxY}" 
-          width="${boxWidth}" 
-          height="${boxHeight}" 
-          fill="black" 
-          opacity="0.7"
-          rx="10"
-        />
-        <!-- Text -->
         <text 
           x="${padding + boxWidth / 2}" 
-          y="${boxY + boxHeight / 2 + 20}" 
-          font-family="Arial" 
+          y="${textY}" 
+          font-family="Arial,Helvetica,sans-serif" 
           font-size="${fontSize}" 
           font-weight="bold"
-          fill="white" 
+          fill="#FFFFFF" 
           text-anchor="middle"
+          style="font-family: Arial, Helvetica, sans-serif; font-weight: bold;"
         >AFTER</text>
       </svg>
     `)
@@ -120,8 +130,10 @@ export async function POST(request: NextRequest) {
       })
       .composite([
         { input: afterResized, left: targetWidth, top: 0 },
-        { input: beforeLabel, left: 0, top: 0 },
-        { input: afterLabel, left: targetWidth, top: 0 },
+        { input: beforeBox, left: 0, top: 0 },
+        { input: afterBox, left: targetWidth, top: 0 },
+        { input: beforeText, left: 0, top: 0 },
+        { input: afterText, left: targetWidth, top: 0 },
       ])
       .toBuffer()
 
