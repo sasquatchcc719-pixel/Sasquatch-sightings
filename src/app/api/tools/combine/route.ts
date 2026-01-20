@@ -7,6 +7,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/supabase/server'
 import sharp from 'sharp'
+import path from 'path'
+import fs from 'fs'
 
 export async function POST(request: NextRequest) {
   try {
@@ -115,36 +117,29 @@ export async function POST(request: NextRequest) {
 
     // Add watermark if requested
     if (addWatermark) {
-      const watermarkSize = Math.round(targetHeight * 0.1) // 10% of height
-      const watermarkSvg = Buffer.from(`
-        <svg width="${watermarkSize * 3}" height="${watermarkSize}">
-          <defs>
-            <filter id="watermark-shadow">
-              <feDropShadow dx="1" dy="1" stdDeviation="2" flood-opacity="0.5"/>
-            </filter>
-          </defs>
-          <text 
-            x="${watermarkSize * 1.5}" 
-            y="${watermarkSize * 0.7}" 
-            font-family="Arial, sans-serif" 
-            font-size="${watermarkSize * 0.6}" 
-            font-weight="bold"
-            fill="white" 
-            text-anchor="middle"
-            filter="url(#watermark-shadow)"
-            opacity="0.7"
-          >🦍 SASQUATCH</text>
-        </svg>
-      `)
+      try {
+        // Use the actual Sasquatch logo from public folder
+        const logoPath = path.join(process.cwd(), 'public', 'sasquatch-logo.png')
+        const logoBuffer = fs.readFileSync(logoPath)
 
-      combinedImage = combinedImage.composite([
-        {
-          input: watermarkSvg,
-          gravity: 'southeast',
-          left: padding,
-          top: padding,
-        },
-      ])
+        // Resize logo to reasonable size (15% of image height)
+        const logoHeight = Math.round(targetHeight * 0.15)
+        const resizedLogo = await sharp(logoBuffer)
+          .resize({ height: logoHeight, fit: 'contain' })
+          .toBuffer()
+
+        combinedImage = combinedImage.composite([
+          {
+            input: resizedLogo,
+            gravity: 'southeast',
+            left: padding,
+            top: padding,
+          },
+        ])
+      } catch (logoError) {
+        console.error('Failed to add logo watermark:', logoError)
+        // Continue without watermark if logo fails
+      }
     }
 
     // Convert to JPEG with quality 90
