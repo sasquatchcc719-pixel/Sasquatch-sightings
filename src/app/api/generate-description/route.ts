@@ -40,9 +40,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Initialize Gemini (using stable model name)
+    // Initialize Gemini (using proven stable model)
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-latest' })
+    const model = genAI.getGenerativeModel({ model: 'gemini-pro' })
 
     // Build prompt
     const prompt = `Write a short, professional job description for a carpet cleaning company.
