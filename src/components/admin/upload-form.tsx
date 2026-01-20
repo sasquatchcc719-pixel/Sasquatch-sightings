@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Camera, Upload, MapPin, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
+import { Camera, Upload, MapPin, Loader2, ChevronDown, ChevronUp, Sparkles } from 'lucide-react'
 import {
   extractExifGps,
   compressImage,
@@ -67,6 +67,8 @@ export function UploadForm() {
   const [showManualGps, setShowManualGps] = useState(false)
   const [manualCoords, setManualCoords] = useState<string>('')
   const [manualGpsError, setManualGpsError] = useState<string | null>(null)
+  const [isGeneratingDescription, setIsGeneratingDescription] = useState(false)
+  const [generationError, setGenerationError] = useState<string | null>(null)
 
   const {
     register,
@@ -211,6 +213,63 @@ export function UploadForm() {
     setGpsCoordinates({ lat, lng })
     setGpsSource('device') // Use 'device' as source for manual entry
     setManualGpsError(null)
+  }
+
+  // Generate AI description using Gemini
+  const handleGenerateDescription = async () => {
+    const serviceId = watch('serviceId')
+    const currentDescription = watch('description')
+
+    // Validate required fields
+    if (!serviceId) {
+      setGenerationError('Please select a service type first')
+      return
+    }
+
+    if (!gpsCoordinates) {
+      setGenerationError('Please add location data first')
+      return
+    }
+
+    setIsGeneratingDescription(true)
+    setGenerationError(null)
+
+    try {
+      // Get service name
+      const selectedService = services.find((s) => s.id === serviceId)
+      if (!selectedService) {
+        throw new Error('Service not found')
+      }
+
+      // Call API to generate description
+      const response = await fetch('/api/generate-description', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          serviceType: selectedService.name,
+          city: 'Colorado Springs', // Will be updated with actual geocoded city
+          notes: currentDescription || '', // Include any existing text as notes
+        }),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to generate description')
+      }
+
+      // Set generated description
+      setValue('description', result.description)
+    } catch (error) {
+      console.error('Generate description error:', error)
+      setGenerationError(
+        error instanceof Error ? error.message : 'Failed to generate description'
+      )
+    } finally {
+      setIsGeneratingDescription(false)
+    }
   }
 
   const onSubmit = async (data: UploadFormData) => {
@@ -443,7 +502,28 @@ export function UploadForm() {
 
       {/* Description Field */}
       <div className="space-y-2">
-        <Label htmlFor="description">Description *</Label>
+        <div className="flex items-center justify-between">
+          <Label htmlFor="description">Description *</Label>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleGenerateDescription}
+            disabled={isGeneratingDescription || !watch('serviceId')}
+          >
+            {isGeneratingDescription ? (
+              <>
+                <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                Generating...
+              </>
+            ) : (
+              <>
+                <Sparkles className="mr-2 h-3 w-3" />
+                Generate with AI
+              </>
+            )}
+          </Button>
+        </div>
         <Textarea
           id="description"
           placeholder="Describe the work completed, challenges overcome, and results achieved..."
@@ -453,8 +533,11 @@ export function UploadForm() {
         {errors.description && (
           <p className="text-sm text-destructive">{errors.description.message}</p>
         )}
+        {generationError && (
+          <p className="text-sm text-destructive">{generationError}</p>
+        )}
         <p className="text-xs text-muted-foreground">
-          This description will appear on the public job page
+          This description will appear on the public job page. Use AI to generate a professional description, then edit as needed.
         </p>
       </div>
 
