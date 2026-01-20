@@ -22,6 +22,9 @@ export const metadata: Metadata = {
     siteName: 'Sasquatch Carpet Cleaning',
     type: 'website',
   },
+  icons: {
+    apple: '/apple-touch-icon.png',
+  },
 }
 
 const geistSans = Geist({
