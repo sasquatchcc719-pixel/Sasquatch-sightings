@@ -183,31 +183,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Trigger Zapier webhook for instant Google posting
-    try {
-      if (process.env.ZAPIER_WEBHOOK_URL) {
-        await fetch(process.env.ZAPIER_WEBHOOK_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            // Mapped to match Zapier requirements
-            service: 'Sasquatch Sighting',
-            neighborhood: zipCode || 'Unknown',
-            photo_url: publicUrl,
-
-            // Keeping these for debug/completeness
-            full_name: fullName,
-            email: email
-          })
-        });
-      }
-    } catch (error) {
-      // Log error but don't fail the request
-      console.error('Zapier webhook failed:', error);
-    }
-
     // Return success with coupon
     return NextResponse.json({
       success: true,

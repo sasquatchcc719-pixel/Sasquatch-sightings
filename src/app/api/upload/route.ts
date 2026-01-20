@@ -150,6 +150,33 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Trigger Zapier webhook for Google Business Profile posting
+    try {
+      if (process.env.ZAPIER_WEBHOOK_URL) {
+        await fetch(process.env.ZAPIER_WEBHOOK_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            // Job data for Google Business Profile
+            service: service.name,
+            city: city,
+            state: state || 'CO',
+            neighborhood: neighborhood || '',
+            image_url: publicUrl,
+            description: description,
+            job_id: job.id,
+            slug: job.slug,
+          })
+        });
+        console.log('Zapier webhook triggered for job:', job.id);
+      }
+    } catch (error) {
+      // Log error but don't fail the job submission
+      console.error('Zapier webhook failed:', error);
+    }
+
     // Return success with job details
     return NextResponse.json(
       {
