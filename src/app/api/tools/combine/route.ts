@@ -40,21 +40,20 @@ export async function POST(request: NextRequest) {
     const beforeBuffer = Buffer.from(await beforeImage.arrayBuffer())
     const afterBuffer = Buffer.from(await afterImage.arrayBuffer())
 
-    // Get image metadata
-    const beforeMeta = await sharp(beforeBuffer).metadata()
-    const afterMeta = await sharp(afterBuffer).metadata()
+    // Use fixed reasonable dimensions for web/social media
+    // Each image will be 600px wide, total combined width = 1200px
+    const targetWidth = 600
+    const targetHeight = 800 // 4:3 aspect ratio per image
 
-    // Calculate target dimensions (use the larger height)
-    const targetHeight = Math.max(beforeMeta.height || 800, afterMeta.height || 800)
-    const targetWidth = Math.round(targetHeight * 1.5) // 3:2 aspect ratio per image
-
-    // Resize both images to same dimensions
+    // Resize both images to same dimensions and convert to JPEG
     const beforeResized = await sharp(beforeBuffer)
-      .resize(targetWidth, targetHeight, { fit: 'cover' })
+      .resize(targetWidth, targetHeight, { fit: 'cover', position: 'center' })
+      .jpeg()
       .toBuffer()
 
     const afterResized = await sharp(afterBuffer)
-      .resize(targetWidth, targetHeight, { fit: 'cover' })
+      .resize(targetWidth, targetHeight, { fit: 'cover', position: 'center' })
+      .jpeg()
       .toBuffer()
 
     // Create text label SVGs
@@ -99,21 +98,22 @@ export async function POST(request: NextRequest) {
       </svg>
     `)
 
-    // Combine images side by side
+    // Combine images side by side (1200px total width)
+    const composites = [
+      { input: beforeResized, left: 0, top: 0 },
+      { input: afterResized, left: targetWidth, top: 0 },
+      { input: beforeLabel, left: 0, top: 0, blend: 'over' as const },
+      { input: afterLabel, left: targetWidth, top: 0, blend: 'over' as const },
+    ]
+
     let combinedImage = sharp({
       create: {
         width: targetWidth * 2,
         height: targetHeight,
         channels: 3,
-        background: { r: 0, g: 0, b: 0 },
+        background: { r: 255, g: 255, b: 255 },
       },
-    })
-      .composite([
-        { input: beforeResized, left: 0, top: 0 },
-        { input: afterResized, left: targetWidth, top: 0 },
-        { input: beforeLabel, left: 0, top: 0 },
-        { input: afterLabel, left: targetWidth, top: 0 },
-      ])
+    }).composite(composites)
 
     // Add watermark if requested
     if (addWatermark) {
