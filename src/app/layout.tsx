@@ -13,20 +13,13 @@ const defaultUrl = process.env.VERCEL_URL
 
 export const metadata: Metadata = {
   metadataBase: new URL(defaultUrl),
-  title: 'Sasquatch Sightings | Carpet Cleaning Truck Tracker',
-  description: 'Track Sasquatch Carpet Cleaning trucks across Colorado. Spot our truck, snap a photo, and win a free cleaning!',
+  title: 'Sasquatch Sightings | Colorado Carpet Cleaning Truck Tracker',
+  description: 'Track Sasquatch Carpet Cleaning trucks across Colorado. Spot our truck, snap a photo, and win a free whole house cleaning!',
   openGraph: {
-    title: 'Sasquatch Sightings | Carpet Cleaning Truck Tracker',
-    description: 'Track Sasquatch Carpet Cleaning trucks across Colorado. Spot our truck, snap a photo, and win a free cleaning!',
-    url: defaultUrl,
-    siteName: 'Sasquatch Carpet Cleaning Sightings',
-    locale: 'en_US',
+    title: 'Sasquatch Sightings | Colorado Carpet Cleaning Truck Tracker',
+    description: 'Track Sasquatch Carpet Cleaning trucks across Colorado. Spot our truck, snap a photo, and win a free whole house cleaning!',
+    siteName: 'Sasquatch Carpet Cleaning',
     type: 'website',
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'Sasquatch Sightings | Carpet Cleaning Truck Tracker',
-    description: 'Track Sasquatch Carpet Cleaning trucks across Colorado. Spot our truck, snap a photo, and win a free cleaning!',
   },
 }
 
