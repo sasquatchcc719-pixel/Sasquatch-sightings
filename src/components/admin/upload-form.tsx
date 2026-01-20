@@ -102,6 +102,37 @@ export function UploadForm() {
     fetchServices()
   }, [])
 
+  // Check for preloaded image from Before/After tool
+  useEffect(() => {
+    const preloadedImageData = sessionStorage.getItem('preloadedImage')
+    if (preloadedImageData) {
+      // Convert data URL to File
+      fetch(preloadedImageData)
+        .then(res => res.blob())
+        .then(async blob => {
+          const file = new File([blob], `combined-${Date.now()}.jpg`, { type: 'image/jpeg' })
+          
+          // Set the image preview
+          setImagePreview(preloadedImageData)
+          
+          // Set compressed file (already compressed by Before/After tool)
+          setCompressedFile(file)
+          
+          // Combined images don't have GPS, so user will need to add manually
+          setGpsCoordinates(null)
+          setGpsSource('none')
+          
+          // Clear sessionStorage
+          sessionStorage.removeItem('preloadedImage')
+          
+          console.log('✅ Loaded combined image from Before/After tool (ready to upload)')
+        })
+        .catch(err => {
+          console.error('Failed to load preloaded image:', err)
+        })
+    }
+  }, [])
+
   // Process image: Extract EXIF (BEFORE compression), then compress
   useEffect(() => {
     async function processImage() {
