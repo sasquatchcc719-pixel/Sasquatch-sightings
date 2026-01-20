@@ -45,15 +45,13 @@ export async function POST(request: NextRequest) {
     const targetWidth = 600
     const targetHeight = 800 // 4:3 aspect ratio per image
 
-    // Resize both images to same dimensions and convert to JPEG
+    // Resize both images to same dimensions (keep as raw for compositing)
     const beforeResized = await sharp(beforeBuffer)
       .resize(targetWidth, targetHeight, { fit: 'cover', position: 'center' })
-      .jpeg()
       .toBuffer()
 
     const afterResized = await sharp(afterBuffer)
       .resize(targetWidth, targetHeight, { fit: 'cover', position: 'center' })
-      .jpeg()
       .toBuffer()
 
     // Create text label SVGs
@@ -99,21 +97,21 @@ export async function POST(request: NextRequest) {
     `)
 
     // Combine images side by side (1200px total width)
-    const composites = [
-      { input: beforeResized, left: 0, top: 0 },
-      { input: afterResized, left: targetWidth, top: 0 },
-      { input: beforeLabel, left: 0, top: 0, blend: 'over' as const },
-      { input: afterLabel, left: targetWidth, top: 0, blend: 'over' as const },
-    ]
-
-    let combinedImage = sharp({
-      create: {
-        width: targetWidth * 2,
-        height: targetHeight,
-        channels: 3,
+    // Start with the before image as the base, extend it to fit both images
+    let combinedImage = await sharp(beforeResized)
+      .extend({
+        right: targetWidth,
         background: { r: 255, g: 255, b: 255 },
-      },
-    }).composite(composites)
+      })
+      .composite([
+        { input: afterResized, left: targetWidth, top: 0 },
+        { input: beforeLabel, left: 0, top: 0 },
+        { input: afterLabel, left: targetWidth, top: 0 },
+      ])
+      .toBuffer()
+
+    // Now work with the combined image for watermark
+    let finalImage = sharp(combinedImage)
 
     // Add watermark if requested
     if (addWatermark) {
@@ -122,13 +120,13 @@ export async function POST(request: NextRequest) {
         const logoPath = path.join(process.cwd(), 'public', 'sasquatch-logo.png')
         const logoBuffer = fs.readFileSync(logoPath)
 
-        // Resize logo to reasonable size (15% of image height)
-        const logoHeight = Math.round(targetHeight * 0.15)
+        // Resize logo to reasonable size (10% of image height)
+        const logoHeight = Math.round(targetHeight * 0.10)
         const resizedLogo = await sharp(logoBuffer)
           .resize({ height: logoHeight, fit: 'contain' })
           .toBuffer()
 
-        combinedImage = combinedImage.composite([
+        finalImage = finalImage.composite([
           {
             input: resizedLogo,
             gravity: 'southeast',
@@ -143,7 +141,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Convert to JPEG with quality 90
-    const outputBuffer = await combinedImage.jpeg({ quality: 90 }).toBuffer()
+    const outputBuffer = await finalImage.jpeg({ quality: 90 }).toBuffer()
 
     // Return as base64 for preview
     const base64 = outputBuffer.toString('base64')
