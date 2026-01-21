@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Briefcase, Trophy } from 'lucide-react'
+import { Briefcase, Trophy, Users } from 'lucide-react'
 
 export function ProtectedNavigation() {
   const pathname = usePathname()
@@ -19,6 +19,12 @@ export function ProtectedNavigation() {
       href: '/protected/sightings',
       icon: Trophy,
       active: pathname === '/protected/sightings',
+    },
+    {
+      name: 'Partners',
+      href: '/protected/partners',
+      icon: Users,
+      active: pathname === '/protected/partners',
     },
   ]
 

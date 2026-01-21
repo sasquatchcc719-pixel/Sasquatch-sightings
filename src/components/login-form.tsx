@@ -33,13 +33,26 @@ export function LoginForm({
     setError(null)
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
       if (error) throw error
-      // Update this route to redirect to an authenticated route. The user already has an active session.
-      router.push('/protected')
+
+      // Check if user has a partner record to determine role
+      const { data: partner } = await supabase
+        .from('partners')
+        .select('role')
+        .eq('user_id', data.user.id)
+        .single()
+
+      // Route based on role
+      if (partner?.role === 'partner') {
+        router.push('/partners')
+      } else {
+        // Admin or legacy user without partner record
+        router.push('/protected')
+      }
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : 'An error occurred')
     } finally {
