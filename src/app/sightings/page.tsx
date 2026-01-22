@@ -27,17 +27,15 @@ import {
 const sightingFormSchema = z.object({
   image: z
     .any()
+    .optional()
     .refine(
-      (files) => files instanceof FileList && files.length > 0,
-      'Photo is required'
-    )
-    .refine(
-      (files) => files instanceof FileList && files[0]?.type.startsWith('image/'),
+      (files) => !files || files.length === 0 || (files instanceof FileList && files[0]?.type.startsWith('image/')),
       'File must be an image'
     ),
   fullName: z.string().min(2, 'Name required'),
   phoneNumber: z.string().min(10, 'Valid phone required'),
   email: z.string().email('Valid email is required'),
+  locationText: z.string().min(2, 'Please tell us where you saw us').optional().or(z.literal('')),
   zipCode: z.string().regex(/^\d{5}$/, 'Valid 5-digit zip').optional().or(z.literal('')),
 })
 
@@ -194,25 +192,14 @@ export default function SightingsPage() {
 
 
   const onSubmit = async (data: SightingFormData) => {
-    // Check if submission is allowed
-    if (!canSubmit) {
-      setSubmitError('Please attempt to get your location first.')
+    // With optional photo, we always allow submission
+    // But if they have a photo without GPS and haven't tried location, prompt them
+    const hasPhoto = imageFiles && imageFiles.length > 0 && compressedFile
+    
+    if (hasPhoto && gpsSource === 'none' && !locationAttempted) {
+      setSubmitError('Please click "Use Current Location" to help verify your photo.')
       return
     }
-
-    // Validate GPS coordinates are available (but allow submission without if attempted)
-    if (!gpsCoordinates && !locationAttempted) {
-      setSubmitError('Please try to get your location first.')
-      return
-    }
-
-    // Validate compressed file is available
-    if (!compressedFile) {
-      setSubmitError('Image processing failed. Please try again.')
-      return
-    }
-
-
 
     setIsSubmitting(true)
     setSubmitError(null)
@@ -220,16 +207,26 @@ export default function SightingsPage() {
     try {
       // Prepare form data for upload
       const formData = new FormData()
-      formData.append('image', compressedFile)
+      
+      // Image is now optional
+      if (hasPhoto && compressedFile) {
+        formData.append('image', compressedFile)
+      }
+      
       formData.append('fullName', data.fullName)
       formData.append('phoneNumber', data.phoneNumber)
       formData.append('email', data.email)
+      
+      // Location text (where did you see us)
+      if (data.locationText) {
+        formData.append('locationText', data.locationText)
+      }
+      
       if (data.zipCode) {
         formData.append('zipCode', data.zipCode)
       }
 
-
-      // GPS coordinates are optional if location attempt was made
+      // GPS coordinates are optional
       if (gpsCoordinates) {
         formData.append('gpsLat', gpsCoordinates.lat.toString())
         formData.append('gpsLng', gpsCoordinates.lng.toString())
@@ -248,7 +245,6 @@ export default function SightingsPage() {
       }
 
       // Success!
-      // API now returns { success: true, message: '...', data: sighting, couponCode: '...' }
       setSightingId(result.data.id)
       setCouponCode(result.couponCode)
       setSubmitSuccess(true)
@@ -266,14 +262,17 @@ export default function SightingsPage() {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-4">
         <Card className="w-full max-w-2xl p-8 text-center">
-          <h1 className="mb-6 text-4xl font-bold">
-            SUCCESS! 🎉
+          <h1 className="mb-2 text-4xl font-bold">
+            YOU'RE ENTERED! 🎉
           </h1>
+          <p className="mb-6 text-lg text-green-600 dark:text-green-400 font-semibold">
+            You're in the drawing for a FREE Whole House Cleaning!
+          </p>
 
           {/* Coupon Code Display */}
           <div className="mb-6 rounded-lg bg-gradient-to-r from-green-100 to-green-200 p-6 dark:from-green-900 dark:to-green-800">
             <p className="mb-2 text-sm font-medium text-green-800 dark:text-green-200">
-              Your $20 Off Code:
+              🎁 Your Instant $20 Off Code:
             </p>
             <div className="flex items-center justify-center gap-3">
               <p className="text-4xl font-bold tracking-wider text-green-900 dark:text-green-100">
@@ -399,30 +398,32 @@ export default function SightingsPage() {
             <img
               src="/sasquatch-logo.png"
               alt="Sasquatch Carpet Cleaning"
-              className="h-24 w-auto"
+              className="h-28 w-auto"
             />
           </div>
 
-          <h1 className="mb-4 text-4xl font-bold">
-            Spotted Our Truck?
+          <h1 className="mb-2 text-5xl font-extrabold tracking-tight">
+            YOU FOUND SASQUATCH!
           </h1>
-          <Card className="bg-gradient-to-r from-green-50 to-blue-50 p-6 dark:from-green-950 dark:to-blue-950">
-            <div className="mb-3 flex justify-center">
-              <MapPin className="h-12 w-12 text-blue-500" />
-            </div>
-            <h2 className="mb-2 text-2xl font-bold">
-              Report Your Truck Sighting & Win!
-            </h2>
-            <p className="text-lg">
-              See our Sasquatch Carpet Cleaning truck in your neighborhood? Upload a photo and get an instant $20 off coupon!
-            </p>
-            <div className="mt-4 space-y-3">
-              <div className="rounded-md bg-green-100 p-3 text-sm dark:bg-green-900/30">
-                <p className="font-semibold text-green-800 dark:text-green-200">
-                  📸 Photo = $20 Coupon
+          <h2 className="mb-4 text-2xl font-bold text-green-500">
+            Enter to WIN a Free Whole House Cleaning! 🏆
+          </h2>
+          <p className="mb-6 text-sm text-muted-foreground">
+            (Plus get an instant $20 coupon just for entering!)
+          </p>
+          
+          <Card className="bg-gradient-to-r from-green-50 to-emerald-50 p-6 dark:from-green-950 dark:to-emerald-950">
+            <div className="space-y-3">
+              <div className="rounded-md bg-green-100 p-4 dark:bg-green-900/40">
+                <p className="text-lg font-bold text-green-800 dark:text-green-200">
+                  🎉 Everyone Gets $20 Off Just for Entering!
                 </p>
               </div>
-
+              <div className="rounded-md bg-yellow-100 p-3 text-sm dark:bg-yellow-900/30">
+                <p className="font-semibold text-yellow-800 dark:text-yellow-200">
+                  📸 Upload a Photo = Extra Entry in the Drawing!
+                </p>
+              </div>
             </div>
           </Card>
         </div>
@@ -430,11 +431,31 @@ export default function SightingsPage() {
         {/* Form */}
         <Card className="p-6">
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-            {/* Image Upload */}
+            {/* Where did you see us? */}
+            <div className="space-y-2">
+              <Label htmlFor="locationText">
+                <MapPin className="mr-2 inline-block h-4 w-4" />
+                Where did you see us?
+              </Label>
+              <Input
+                id="locationText"
+                type="text"
+                placeholder="e.g., Woodmen & Powers, near King Soopers"
+                {...register('locationText')}
+              />
+              {errors.locationText && (
+                <p className="text-sm text-destructive">{errors.locationText.message}</p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Intersection, neighborhood, or landmark
+              </p>
+            </div>
+
+            {/* Image Upload - OPTIONAL */}
             <div className="space-y-2">
               <Label htmlFor="image">
                 <Camera className="mr-2 inline-block h-4 w-4" />
-                Photo of Our Truck *
+                Upload Photo of Truck (Optional - Get an extra entry!)
               </Label>
               <Input
                 id="image"
@@ -449,6 +470,9 @@ export default function SightingsPage() {
                   {String(errors.image.message)}
                 </p>
               )}
+              <p className="text-xs text-muted-foreground">
+                📸 Photo uploads get an extra entry in the monthly drawing!
+              </p>
 
               {/* Processing Indicator */}
               {isProcessingImage && (
@@ -610,9 +634,9 @@ export default function SightingsPage() {
             {/* Submit Button */}
             <Button
               type="submit"
-              className="w-full"
+              className="w-full bg-green-600 hover:bg-green-700"
               size="lg"
-              disabled={isSubmitting || !canSubmit}
+              disabled={isSubmitting}
             >
               {isSubmitting ? (
                 <>
@@ -622,15 +646,15 @@ export default function SightingsPage() {
               ) : (
                 <>
                   <Upload className="mr-2 h-4 w-4" />
-                  Submit Photo
+                  Enter to Win! 🎉
                 </>
               )}
             </Button>
 
-            {/* Show helper text if submit is disabled */}
-            {!canSubmit && imagePreview && gpsSource === 'none' && !locationAttempted && (
-              <p className="text-center text-sm text-muted-foreground">
-                Click "Use Current Location" to enable submission
+            {/* Show helper text if photo uploaded but no GPS */}
+            {imagePreview && gpsSource === 'none' && !locationAttempted && (
+              <p className="text-center text-sm text-amber-600 dark:text-amber-400">
+                👆 Click "Use Current Location" above to verify your photo
               </p>
             )}
 

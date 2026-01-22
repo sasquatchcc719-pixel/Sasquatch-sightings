@@ -24,18 +24,19 @@ export async function POST(request: NextRequest) {
   try {
     // Parse form data
     const formData = await request.formData()
-    const imageFile = formData.get('image') as File
+    const imageFile = formData.get('image') as File | null
     const fullName = formData.get('fullName') as string
     const phoneNumber = formData.get('phoneNumber') as string
     const email = formData.get('email') as string
     const zipCode = formData.get('zipCode') as string | null
+    const locationText = formData.get('locationText') as string | null
     const gpsLat = formData.get('gpsLat') as string | null
     const gpsLng = formData.get('gpsLng') as string | null
 
-    // Validate required fields (social fields are now optional)
-    if (!imageFile || !fullName || !phoneNumber || !email) {
+    // Validate required fields (image is now optional)
+    if (!fullName || !phoneNumber || !email) {
       return NextResponse.json(
-        { error: 'Image, full name, phone number, and email are required' },
+        { error: 'Full name, phone number, and email are required' },
         { status: 400 }
       )
     }
@@ -59,19 +60,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Convert File to Buffer for Sharp processing
-    const arrayBuffer = await imageFile.arrayBuffer()
-    const buffer = Buffer.from(arrayBuffer)
-
-    // Optimize image with Sharp (server-side optimization)
-    const optimizedBuffer = await sharp(buffer)
-      .resize(1920, 1920, {
-        fit: 'inside',
-        withoutEnlargement: true,
-      })
-      .jpeg({ quality: 85 })
-      .toBuffer()
-
     // Create Supabase client (no auth required for public submissions)
     const supabase = await createClient()
 
@@ -90,35 +78,51 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Generate SEO-friendly filename
-    // Format: sasquatch-sighting-in-{city}-{state}-{timestamp}.jpg
-    // Example: sasquatch-sighting-in-denver-co-1705634892.jpg
-    const filename = generateSightingSEOFilename(
-      city,
-      state,
-      imageFile.name
-    )
+    // Handle image upload (optional)
+    let publicUrl: string | null = null
+    let filename: string | null = null
 
-    // Upload optimized image to Supabase Storage
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from('sighting-images')
-      .upload(filename, optimizedBuffer, {
-        contentType: 'image/jpeg',
-        upsert: false,
-      })
+    if (imageFile && imageFile.size > 0) {
+      // Convert File to Buffer for Sharp processing
+      const arrayBuffer = await imageFile.arrayBuffer()
+      const buffer = Buffer.from(arrayBuffer)
 
-    if (uploadError) {
-      console.error('Storage upload error:', uploadError)
-      return NextResponse.json(
-        { error: 'Failed to upload image' },
-        { status: 500 }
+      // Optimize image with Sharp (server-side optimization)
+      const optimizedBuffer = await sharp(buffer)
+        .resize(1920, 1920, {
+          fit: 'inside',
+          withoutEnlargement: true,
+        })
+        .jpeg({ quality: 85 })
+        .toBuffer()
+
+      // Generate SEO-friendly filename
+      filename = generateSightingSEOFilename(
+        city,
+        state,
+        imageFile.name
       )
-    }
 
-    // Get public URL for the uploaded image
-    const {
-      data: { publicUrl },
-    } = supabase.storage.from('sighting-images').getPublicUrl(filename)
+      // Upload optimized image to Supabase Storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('sighting-images')
+        .upload(filename, optimizedBuffer, {
+          contentType: 'image/jpeg',
+          upsert: false,
+        })
+
+      if (uploadError) {
+        console.error('Storage upload error:', uploadError)
+        return NextResponse.json(
+          { error: 'Failed to upload image' },
+          { status: 500 }
+        )
+      }
+
+      // Get public URL for the uploaded image
+      const { data } = supabase.storage.from('sighting-images').getPublicUrl(filename)
+      publicUrl = data.publicUrl
+    }
 
     // Generate unique coupon code
     let couponCode = generateCouponCode()
@@ -152,6 +156,9 @@ export async function POST(request: NextRequest) {
     // Contest eligible by default for all valid submissions (Google Maps Pivot)
     const contestEligible = true
 
+    // Determine if this entry gets extra contest entry (has photo)
+    const hasPhoto = publicUrl !== null
+
     // Insert sighting record into database
     const { data: sighting, error: insertError } = await supabase
       .from('sightings')
@@ -160,14 +167,12 @@ export async function POST(request: NextRequest) {
         image_filename: filename,
         gps_lat: lat,
         gps_lng: lng,
-        city,
+        city: city || (locationText ? locationText.substring(0, 100) : null), // Use locationText as fallback for city
         state,
         full_name: fullName,
         phone_number: phoneNumber,
         email,
         zip_code: zipCode || null,
-        // social_platform: null, // Removed
-        // social_link: null, // Removed
         coupon_code: couponCode,
         contest_eligible: contestEligible,
         coupon_redeemed: false,
@@ -181,6 +186,36 @@ export async function POST(request: NextRequest) {
         { error: 'Failed to create sighting record' },
         { status: 500 }
       )
+    }
+
+    // Trigger Zapier webhook for contest entries WITH photos (for Google Business Profile posting)
+    if (hasPhoto && publicUrl) {
+      try {
+        if (process.env.ZAPIER_SIGHTINGS_WEBHOOK_URL) {
+          const sightingLocation = locationText || city || 'Colorado'
+          
+          await fetch(process.env.ZAPIER_SIGHTINGS_WEBHOOK_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              // Sighting data for Google Business Profile
+              image_url: publicUrl,
+              location: sightingLocation,
+              city: city,
+              state: state || 'CO',
+              entry_id: sighting.id,
+              timestamp: new Date().toISOString(),
+              caption: `Spotted in ${sightingLocation}! 📍 Scan our truck to enter: sightings.sasquatchcarpet.com`,
+            })
+          });
+          console.log('Zapier sightings webhook triggered for entry:', sighting.id);
+        }
+      } catch (error) {
+        // Log error but don't fail the contest submission
+        console.error('Zapier sightings webhook failed:', error);
+      }
     }
 
     // Return success with coupon
