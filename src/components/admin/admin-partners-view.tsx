@@ -362,10 +362,10 @@ export function AdminPartnersView({
         </CardHeader>
         <CardContent>
           {/* Filters */}
-          <div className="mb-4 flex flex-wrap gap-4">
-            <div className="w-48">
+          <div className="mb-4 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:gap-4">
+            <div className="col-span-1 sm:w-48">
               <Select value={partnerFilter} onValueChange={setPartnerFilter}>
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue placeholder="Filter by partner" />
                 </SelectTrigger>
                 <SelectContent>
@@ -379,9 +379,9 @@ export function AdminPartnersView({
               </Select>
             </div>
 
-            <div className="w-48">
+            <div className="col-span-1 sm:w-48">
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue placeholder="Filter by status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -394,88 +394,144 @@ export function AdminPartnersView({
             </div>
           </div>
 
-          {/* Referrals Table */}
+          {/* Referrals - Cards on mobile, Table on desktop */}
           {filteredReferrals.length === 0 ? (
             <div className="py-8 text-center text-muted-foreground">
               No referrals found
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b text-left text-sm text-muted-foreground">
-                    <th className="pb-3 pr-4 font-medium">Partner</th>
-                    <th className="pb-3 pr-4 font-medium">Client</th>
-                    <th className="hidden pb-3 pr-4 font-medium md:table-cell">Phone</th>
-                    <th className="pb-3 pr-4 font-medium">Status</th>
-                    <th className="hidden pb-3 pr-4 font-medium sm:table-cell">Credit</th>
-                    <th className="hidden pb-3 pr-4 font-medium lg:table-cell">Date</th>
-                    <th className="pb-3 font-medium">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredReferrals.map((referral) => (
-                    <tr key={referral.id} className="border-b">
-                      <td className="py-3 pr-4">
-                        <div>
-                          <div className="font-medium">
-                            {referral.partners?.name}
-                          </div>
-                          <div className="text-sm text-muted-foreground">
-                            {referral.partners?.company_name}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-3 pr-4 font-medium">
-                        {referral.client_name}
-                      </td>
-                      <td className="hidden py-3 pr-4 md:table-cell">
+            <>
+              {/* Mobile: Card Layout */}
+              <div className="space-y-3 md:hidden">
+                {filteredReferrals.map((referral) => (
+                  <div key={referral.id} className="rounded-lg border bg-card p-4">
+                    <div className="mb-3 flex items-start justify-between">
+                      <div>
+                        <div className="font-semibold">{referral.client_name}</div>
                         <a 
                           href={`tel:${referral.client_phone}`} 
-                          className="text-blue-400 hover:text-blue-300 hover:underline"
+                          className="text-sm text-blue-400"
                         >
                           {referral.client_phone}
                         </a>
-                      </td>
-                      <td className="py-3 pr-4">{getStatusBadge(referral.status)}</td>
-                      <td className="hidden py-3 pr-4 sm:table-cell">
-                        ${referral.credit_amount.toFixed(2)}
-                      </td>
-                      <td className="hidden py-3 pr-4 text-muted-foreground lg:table-cell">
-                        {formatDate(referral.created_at)}
-                      </td>
-                      <td className="py-3">
-                        <div className="flex items-center gap-2">
-                          <Select
-                            value={referral.status}
-                            onValueChange={(value) =>
-                              handleUpdateStatus(referral.id, value)
-                            }
-                          >
-                            <SelectTrigger className="w-28">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="pending">Pending</SelectItem>
-                              <SelectItem value="booked">Booked</SelectItem>
-                              <SelectItem value="converted">Converted</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDeleteReferral(referral.id)}
-                            className="text-red-500 hover:text-red-400 hover:bg-red-500/10"
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </td>
+                      </div>
+                      {getStatusBadge(referral.status)}
+                    </div>
+                    <div className="mb-3 text-sm text-muted-foreground">
+                      <span className="font-medium text-foreground">{referral.partners?.name}</span>
+                      {' · '}{referral.partners?.company_name}
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm">
+                        <span className="font-medium">${referral.credit_amount.toFixed(2)}</span>
+                        <span className="text-muted-foreground"> · {formatDate(referral.created_at)}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Select
+                          value={referral.status}
+                          onValueChange={(value) => handleUpdateStatus(referral.id, value)}
+                        >
+                          <SelectTrigger className="h-8 w-24 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="pending">Pending</SelectItem>
+                            <SelectItem value="booked">Booked</SelectItem>
+                            <SelectItem value="converted">Converted</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDeleteReferral(referral.id)}
+                          className="h-8 w-8 p-0 text-red-500"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Desktop: Table Layout */}
+              <div className="hidden overflow-x-auto md:block">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b text-left text-sm text-muted-foreground">
+                      <th className="pb-3 pr-4 font-medium">Partner</th>
+                      <th className="pb-3 pr-4 font-medium">Client</th>
+                      <th className="pb-3 pr-4 font-medium">Phone</th>
+                      <th className="pb-3 pr-4 font-medium">Status</th>
+                      <th className="pb-3 pr-4 font-medium">Credit</th>
+                      <th className="hidden pb-3 pr-4 font-medium lg:table-cell">Date</th>
+                      <th className="pb-3 font-medium">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {filteredReferrals.map((referral) => (
+                      <tr key={referral.id} className="border-b">
+                        <td className="py-3 pr-4">
+                          <div>
+                            <div className="font-medium">
+                              {referral.partners?.name}
+                            </div>
+                            <div className="text-sm text-muted-foreground">
+                              {referral.partners?.company_name}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3 pr-4 font-medium">
+                          {referral.client_name}
+                        </td>
+                        <td className="py-3 pr-4">
+                          <a 
+                            href={`tel:${referral.client_phone}`} 
+                            className="text-blue-400 hover:text-blue-300 hover:underline"
+                          >
+                            {referral.client_phone}
+                          </a>
+                        </td>
+                        <td className="py-3 pr-4">{getStatusBadge(referral.status)}</td>
+                        <td className="py-3 pr-4">
+                          ${referral.credit_amount.toFixed(2)}
+                        </td>
+                        <td className="hidden py-3 pr-4 text-muted-foreground lg:table-cell">
+                          {formatDate(referral.created_at)}
+                        </td>
+                        <td className="py-3">
+                          <div className="flex items-center gap-2">
+                            <Select
+                              value={referral.status}
+                              onValueChange={(value) =>
+                                handleUpdateStatus(referral.id, value)
+                              }
+                            >
+                              <SelectTrigger className="w-28">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="pending">Pending</SelectItem>
+                                <SelectItem value="booked">Booked</SelectItem>
+                                <SelectItem value="converted">Converted</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeleteReferral(referral.id)}
+                              className="text-red-500 hover:text-red-400 hover:bg-red-500/10"
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
@@ -492,67 +548,114 @@ export function AdminPartnersView({
               No partners yet
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b text-left text-sm text-muted-foreground">
-                    <th className="pb-3 pr-4 font-medium">Partner</th>
-                    <th className="pb-3 pr-4 font-medium">Company</th>
-                    <th className="pb-3 pr-4 font-medium">Balance</th>
-                    <th className="pb-3 pr-4 font-medium">Backlink</th>
-                    <th className="pb-3 font-medium">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {partners.map((partner) => (
-                    <tr key={partner.id} className="border-b">
-                      <td className="py-3 pr-4">
-                        <div>
-                          <div className="font-medium">{partner.name}</div>
-                          <a 
-                            href={`mailto:${partner.email}`}
-                            className="text-sm text-blue-400 hover:text-blue-300 hover:underline"
-                          >
-                            {partner.email}
-                          </a>
+            <>
+              {/* Mobile: Card Layout */}
+              <div className="space-y-3 md:hidden">
+                {partners.map((partner) => (
+                  <div key={partner.id} className="rounded-lg border bg-card p-4">
+                    <div className="mb-2 flex items-start justify-between">
+                      <div>
+                        <div className="font-semibold">{partner.name}</div>
+                        <div className="text-sm text-muted-foreground">{partner.company_name}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-lg font-bold text-green-500">
+                          ${partner.credit_balance.toFixed(2)}
                         </div>
-                      </td>
-                      <td className="py-3 pr-4">{partner.company_name}</td>
-                      <td className="py-3 pr-4 font-medium">
-                        ${partner.credit_balance.toFixed(2)}
-                      </td>
-                      <td className="py-3 pr-4">
-                        {partner.backlink_opted_in ? (
+                        {partner.backlink_opted_in && (
                           partner.backlink_verified ? (
-                            <Badge className="bg-green-100 text-green-800">
-                              Verified
-                            </Badge>
+                            <Badge className="bg-green-100 text-green-800 text-xs">Verified</Badge>
                           ) : (
-                            <Badge className="bg-yellow-100 text-yellow-800">
-                              Pending
-                            </Badge>
+                            <Badge className="bg-yellow-100 text-yellow-800 text-xs">Pending</Badge>
                           )
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
                         )}
-                      </td>
-                      <td className="py-3">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setAdjustPartnerId(partner.id)
-                            setShowAdjustBalance(true)
-                          }}
-                        >
-                          Adjust
-                        </Button>
-                      </td>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <a 
+                        href={`mailto:${partner.email}`}
+                        className="text-sm text-blue-400"
+                      >
+                        {partner.email}
+                      </a>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setAdjustPartnerId(partner.id)
+                          setShowAdjustBalance(true)
+                        }}
+                      >
+                        Adjust
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Desktop: Table Layout */}
+              <div className="hidden overflow-x-auto md:block">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b text-left text-sm text-muted-foreground">
+                      <th className="pb-3 pr-4 font-medium">Partner</th>
+                      <th className="pb-3 pr-4 font-medium">Company</th>
+                      <th className="pb-3 pr-4 font-medium">Balance</th>
+                      <th className="pb-3 pr-4 font-medium">Backlink</th>
+                      <th className="pb-3 font-medium">Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {partners.map((partner) => (
+                      <tr key={partner.id} className="border-b">
+                        <td className="py-3 pr-4">
+                          <div>
+                            <div className="font-medium">{partner.name}</div>
+                            <a 
+                              href={`mailto:${partner.email}`}
+                              className="text-sm text-blue-400 hover:text-blue-300 hover:underline"
+                            >
+                              {partner.email}
+                            </a>
+                          </div>
+                        </td>
+                        <td className="py-3 pr-4">{partner.company_name}</td>
+                        <td className="py-3 pr-4 font-medium">
+                          ${partner.credit_balance.toFixed(2)}
+                        </td>
+                        <td className="py-3 pr-4">
+                          {partner.backlink_opted_in ? (
+                            partner.backlink_verified ? (
+                              <Badge className="bg-green-100 text-green-800">
+                                Verified
+                              </Badge>
+                            ) : (
+                              <Badge className="bg-yellow-100 text-yellow-800">
+                                Pending
+                              </Badge>
+                            )
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </td>
+                        <td className="py-3">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setAdjustPartnerId(partner.id)
+                              setShowAdjustBalance(true)
+                            }}
+                          >
+                            Adjust
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
@@ -567,7 +670,7 @@ export function AdminPartnersView({
           {/* Filter */}
           <div className="mb-4">
             <Select value={backlinkFilter} onValueChange={setBacklinkFilter}>
-              <SelectTrigger className="w-48">
+              <SelectTrigger className="w-full sm:w-48">
                 <SelectValue placeholder="Filter by status" />
               </SelectTrigger>
               <SelectContent>
@@ -587,83 +690,144 @@ export function AdminPartnersView({
               {backlinkFilter === 'pending' ? 'No pending verifications' : 'No partners found'}
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b text-left text-sm text-muted-foreground">
-                    <th className="pb-3 pr-4 font-medium">Partner</th>
-                    <th className="pb-3 pr-4 font-medium">Company</th>
-                    <th className="pb-3 pr-4 font-medium">Website</th>
-                    <th className="pb-3 pr-4 font-medium">Status</th>
-                    <th className="pb-3 font-medium">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {partners
-                    .filter((p) => {
-                      if (backlinkFilter === 'pending') return p.backlink_opted_in && !p.backlink_verified
-                      if (backlinkFilter === 'verified') return p.backlink_verified
-                      return true
-                    })
-                    .map((partner) => (
-                      <tr key={partner.id} className="border-b">
-                        <td className="py-3 pr-4 font-medium">{partner.name}</td>
-                        <td className="py-3 pr-4">{partner.company_name}</td>
-                        <td className="py-3 pr-4">
-                          {partner.company_website ? (
-                            <a
-                              href={partner.company_website.startsWith('http') ? partner.company_website : `https://${partner.company_website}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-blue-400 hover:text-blue-300 hover:underline"
-                            >
-                              {partner.company_website.replace(/^https?:\/\//, '').replace(/\/$/, '')}
-                            </a>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </td>
-                        <td className="py-3 pr-4">
+            <>
+              {/* Mobile: Card Layout */}
+              <div className="space-y-3 md:hidden">
+                {partners
+                  .filter((p) => {
+                    if (backlinkFilter === 'pending') return p.backlink_opted_in && !p.backlink_verified
+                    if (backlinkFilter === 'verified') return p.backlink_verified
+                    return true
+                  })
+                  .map((partner) => (
+                    <div key={partner.id} className="rounded-lg border bg-card p-4">
+                      <div className="mb-2 flex items-start justify-between">
+                        <div>
+                          <div className="font-semibold">{partner.name}</div>
+                          <div className="text-sm text-muted-foreground">{partner.company_name}</div>
+                        </div>
+                        <div>
                           {!partner.backlink_opted_in ? (
-                            <span className="flex items-center gap-1 text-muted-foreground">
-                              ❌ Not enrolled
-                            </span>
+                            <span className="text-sm text-muted-foreground">❌ Not enrolled</span>
                           ) : !partner.backlink_verified ? (
-                            <span className="flex items-center gap-1 text-yellow-500">
-                              ⏳ Pending
-                            </span>
+                            <span className="text-sm text-yellow-500">⏳ Pending</span>
                           ) : (
-                            <span className="flex items-center gap-1 text-green-500">
-                              ✅ Verified
-                            </span>
+                            <span className="text-sm text-green-500">✅ Verified</span>
                           )}
-                        </td>
-                        <td className="py-3">
-                          {partner.backlink_opted_in && !partner.backlink_verified && (
-                            <div className="flex gap-2">
-                              <Button
-                                size="sm"
-                                onClick={() => handleVerifyBacklink(partner.id)}
-                                className="bg-green-600 hover:bg-green-500"
+                        </div>
+                      </div>
+                      {partner.company_website && (
+                        <a
+                          href={partner.company_website.startsWith('http') ? partner.company_website : `https://${partner.company_website}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mb-3 block text-sm text-blue-400"
+                        >
+                          {partner.company_website.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+                        </a>
+                      )}
+                      {partner.backlink_opted_in && !partner.backlink_verified && (
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            onClick={() => handleVerifyBacklink(partner.id)}
+                            className="flex-1 bg-green-600 hover:bg-green-500"
+                          >
+                            ✓ Verify
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleRejectBacklink(partner.id)}
+                            className="flex-1 text-red-500 hover:text-red-400"
+                          >
+                            ✗ Reject
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+              </div>
+
+              {/* Desktop: Table Layout */}
+              <div className="hidden overflow-x-auto md:block">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b text-left text-sm text-muted-foreground">
+                      <th className="pb-3 pr-4 font-medium">Partner</th>
+                      <th className="pb-3 pr-4 font-medium">Company</th>
+                      <th className="pb-3 pr-4 font-medium">Website</th>
+                      <th className="pb-3 pr-4 font-medium">Status</th>
+                      <th className="pb-3 font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {partners
+                      .filter((p) => {
+                        if (backlinkFilter === 'pending') return p.backlink_opted_in && !p.backlink_verified
+                        if (backlinkFilter === 'verified') return p.backlink_verified
+                        return true
+                      })
+                      .map((partner) => (
+                        <tr key={partner.id} className="border-b">
+                          <td className="py-3 pr-4 font-medium">{partner.name}</td>
+                          <td className="py-3 pr-4">{partner.company_name}</td>
+                          <td className="py-3 pr-4">
+                            {partner.company_website ? (
+                              <a
+                                href={partner.company_website.startsWith('http') ? partner.company_website : `https://${partner.company_website}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-400 hover:text-blue-300 hover:underline"
                               >
-                                ✓ Verify
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleRejectBacklink(partner.id)}
-                                className="text-red-500 hover:text-red-400"
-                              >
-                                ✗ Reject
-                              </Button>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
+                                {partner.company_website.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+                              </a>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </td>
+                          <td className="py-3 pr-4">
+                            {!partner.backlink_opted_in ? (
+                              <span className="flex items-center gap-1 text-muted-foreground">
+                                ❌ Not enrolled
+                              </span>
+                            ) : !partner.backlink_verified ? (
+                              <span className="flex items-center gap-1 text-yellow-500">
+                                ⏳ Pending
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-1 text-green-500">
+                                ✅ Verified
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3">
+                            {partner.backlink_opted_in && !partner.backlink_verified && (
+                              <div className="flex gap-2">
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleVerifyBacklink(partner.id)}
+                                  className="bg-green-600 hover:bg-green-500"
+                                >
+                                  ✓ Verify
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleRejectBacklink(partner.id)}
+                                  className="text-red-500 hover:text-red-400"
+                                >
+                                  ✗ Reject
+                                </Button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
