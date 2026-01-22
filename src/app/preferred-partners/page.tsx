@@ -1,11 +1,26 @@
+import { Metadata } from 'next'
 import { createAdminClient } from '@/supabase/server'
 import { Card, CardContent } from '@/components/ui/card'
 import { ExternalLink } from 'lucide-react'
 import Link from 'next/link'
 
-export const metadata = {
+export const metadata: Metadata = {
   title: 'Our Preferred Partners | Sasquatch Carpet Cleaning',
   description: 'Trusted local businesses we proudly recommend. These partners refer their clients to us, and we refer ours to them.',
+  openGraph: {
+    title: 'Our Preferred Partners | Sasquatch Carpet Cleaning',
+    description: 'Trusted local businesses we proudly recommend. These partners refer their clients to us, and we refer ours to them.',
+    images: ['/partner-og-image.png'],
+    url: 'https://sightings.sasquatchcarpet.com/preferred-partners',
+    type: 'website',
+    siteName: 'Sasquatch Carpet Cleaning',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Our Preferred Partners | Sasquatch Carpet Cleaning',
+    description: 'Trusted local businesses we proudly recommend',
+    images: ['/partner-og-image.png'],
+  },
 }
 
 type Partner = {
