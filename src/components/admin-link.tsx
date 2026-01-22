@@ -11,7 +11,7 @@ export async function AdminLink() {
 
   return (
     <Button size="sm" variant="default" asChild>
-      <Link href="/protected">Admin</Link>
+      <Link href="/admin">Admin</Link>
     </Button>
   );
 }

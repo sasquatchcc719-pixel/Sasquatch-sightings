@@ -102,7 +102,7 @@ export function JobEditor({ job }: JobEditorProps) {
       }
 
       // Redirect back to dashboard with success message
-      router.push('/protected?published=true')
+      router.push('/admin?published=true')
     } catch (err) {
       console.error('Publish error:', err)
       setError(err instanceof Error ? err.message : 'Failed to publish')
