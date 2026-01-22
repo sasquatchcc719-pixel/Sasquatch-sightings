@@ -1,31 +1,22 @@
-import { redirect } from 'next/navigation'
-import { createClient } from '@/supabase/server'
-import { getUserWithRole } from '@/lib/auth'
+import { createAdminClient } from '@/supabase/server'
 import { AdminPartnersView } from '@/components/admin/admin-partners-view'
 
 export default async function AdminPartnersPage() {
-  const { user, role } = await getUserWithRole()
-
-  // Must be authenticated
-  if (!user) {
-    redirect('/auth/login')
-  }
-
-  // Must be an admin
-  if (role !== 'admin') {
-    redirect('/partners')
-  }
-
-  const supabase = await createClient()
+  // Use admin client to bypass RLS and see all partners/referrals
+  const supabase = createAdminClient()
 
   // Fetch all partners
-  const { data: partners } = await supabase
+  const { data: partners, error: partnersError } = await supabase
     .from('partners')
     .select('*')
     .order('created_at', { ascending: false })
 
+  if (partnersError) {
+    console.error('Error fetching partners:', partnersError)
+  }
+
   // Fetch all referrals with partner info
-  const { data: referrals } = await supabase
+  const { data: referrals, error: referralsError } = await supabase
     .from('referrals')
     .select(
       `
@@ -38,6 +29,10 @@ export default async function AdminPartnersPage() {
     `
     )
     .order('created_at', { ascending: false })
+
+  if (referralsError) {
+    console.error('Error fetching referrals:', referralsError)
+  }
 
   return (
     <div className="space-y-6">

@@ -1,4 +1,3 @@
-import { redirect } from 'next/navigation'
 import { createClient } from '@/supabase/server'
 import { UploadForm } from '@/components/admin/upload-form'
 import { DraftJobsList } from '@/components/admin/draft-jobs-list'
@@ -6,16 +5,8 @@ import { Button } from '@/components/ui/button'
 import { Briefcase, FileText, Map, Camera, Image } from 'lucide-react'
 import Link from 'next/link'
 
-export default async function ProtectedPage() {
-  // Check authentication
+export default async function AdminPage() {
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
-    redirect('/auth/login')
-  }
 
   // Fetch published jobs with service details
   const { data: publishedJobs } = await supabase
@@ -53,7 +44,7 @@ export default async function ProtectedPage() {
           {/* Quick Actions */}
           <div className="flex gap-2 pt-2">
             <Button asChild variant="outline" size="sm">
-              <Link href="/protected/tools/combine">
+              <Link href="/admin/tools/combine">
                 <Image className="mr-2 h-4 w-4" />
                 Before/After Tool
               </Link>

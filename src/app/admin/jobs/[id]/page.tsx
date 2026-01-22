@@ -10,16 +10,7 @@ type PageProps = {
 
 export default async function JobDetailPage({ params }: PageProps) {
   const { id } = await params
-
-  // Check authentication
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
-    redirect('/auth/login')
-  }
 
   // Fetch job with service details
   const { data: job, error } = await supabase
@@ -45,14 +36,14 @@ export default async function JobDetailPage({ params }: PageProps) {
     .single()
 
   if (error || !job) {
-    redirect('/protected')
+    redirect('/admin')
   }
 
   return (
     <div className="flex w-full flex-1 flex-col gap-6">
       {/* Back Button */}
       <Link
-        href="/protected"
+        href="/admin"
         className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="h-4 w-4" />

@@ -1,0 +1,13 @@
+ADD THIS LINE TO YOUR .env.local FILE:
+
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpvYWJnbXNidnpjcXB6bHJoc2Z6Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2ODE4NDU0OSwiZXhwIjoyMDgzNzYwNTQ5fQ.kFwGJZB1ah2Rxr81yRdePlF8MGLrmQBRWupiE6ePdWE
+
+STEPS:
+1. Open Finder
+2. Press Cmd+Shift+G
+3. Paste: ~/Sasquatch Sightings 
+4. Find .env.local file (it might be hidden - press Cmd+Shift+. to show hidden files)
+5. Open it with TextEdit
+6. Add the SUPABASE_SERVICE_ROLE_KEY line at the bottom
+7. Save and close
+8. Restart npm run dev

@@ -38,23 +38,35 @@ export async function getUserWithRole(): Promise<{
   }
 
   // Check if user has a partner record
-  const { data: partner } = await supabase
+  const { data: partner, error: partnerError } = await supabase
     .from('partners')
     .select('*')
     .eq('user_id', user.id)
     .single()
 
+  console.log('[Auth] User ID:', user.id)
+  console.log('[Auth] User email:', user.email)
+  console.log('[Auth] Partner query result:', JSON.stringify(partner))
+  console.log('[Auth] Partner query error:', partnerError?.message)
+
   if (partner) {
+    // Explicitly check the role value
+    const partnerRole = partner.role
+    console.log('[Auth] Found partner record. Role value:', partnerRole, 'Type:', typeof partnerRole)
+    
+    // Determine role - if role is 'partner', return 'partner', otherwise 'admin'
+    const finalRole: UserRole = partnerRole === 'partner' ? 'partner' : 'admin'
+    console.log('[Auth] Final role determination:', finalRole)
+    
     return {
       user: { id: user.id, email: user.email || '' },
-      role: partner.role as UserRole,
+      role: finalRole,
       partner: partner as PartnerData,
     }
   }
 
-  // No partner record - check if this is an existing admin user
-  // For now, users without partner records but with auth are considered admins
-  // (backward compatibility with existing admin users)
+  // No partner record = existing admin user (backward compatibility)
+  console.log('[Auth] No partner record found, user is legacy admin')
   return {
     user: { id: user.id, email: user.email || '' },
     role: 'admin',
