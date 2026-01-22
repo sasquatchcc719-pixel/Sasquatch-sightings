@@ -15,7 +15,6 @@ import {
   MapPin, 
   Mail, 
   Calendar,
-  ExternalLink,
   Loader2,
   Map,
   Trash2
@@ -188,36 +187,36 @@ export default function SightingsAdminPage() {
   }
 
   return (
-    <div className="w-full space-y-6">
+    <div className="w-full space-y-4 sm:space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="flex items-center gap-2 text-3xl font-bold">
-            <Trophy className="h-8 w-8" />
+          <h1 className="flex items-center gap-2 text-2xl font-bold sm:text-3xl">
+            <Trophy className="h-6 w-6 sm:h-8 sm:w-8" />
             Contest Entries
           </h1>
-          <p className="text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Manage Sasquatch sighting submissions
           </p>
         </div>
         <div className="flex gap-2">
-          <Button asChild variant="default">
+          <Button asChild variant="default" size="sm" className="sm:size-default">
             <Link href="/">
-              <Map className="mr-2 h-4 w-4" />
-              View Map
+              <Map className="mr-1 h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">View </span>Map
             </Link>
           </Button>
-          <Button onClick={handleExportCSV} variant="outline">
-            <Download className="mr-2 h-4 w-4" />
-            Export CSV
+          <Button onClick={handleExportCSV} variant="outline" size="sm" className="sm:size-default">
+            <Download className="mr-1 h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Export </span>CSV
           </Button>
         </div>
       </div>
 
       {/* Filters and Search */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+      <div className="space-y-3">
         {/* Search */}
-        <div className="relative flex-1 md:max-w-sm">
+        <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search by name, phone, email, or coupon..."
@@ -228,11 +227,12 @@ export default function SightingsAdminPage() {
         </div>
 
         {/* Filter Buttons */}
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button
             size="sm"
             variant={filter === 'all' ? 'default' : 'outline'}
             onClick={() => setFilter('all')}
+            className="text-xs sm:text-sm"
           >
             All ({sightings.length})
           </Button>
@@ -240,13 +240,15 @@ export default function SightingsAdminPage() {
             size="sm"
             variant={filter === 'eligible' ? 'default' : 'outline'}
             onClick={() => setFilter('eligible')}
+            className="text-xs sm:text-sm"
           >
-            Contest Eligible ({sightings.filter(s => s.contest_eligible).length})
+            <span className="hidden sm:inline">Contest </span>Eligible ({sightings.filter(s => s.contest_eligible).length})
           </Button>
           <Button
             size="sm"
             variant={filter === 'coupon-only' ? 'default' : 'outline'}
             onClick={() => setFilter('coupon-only')}
+            className="text-xs sm:text-sm"
           >
             Coupon Only ({sightings.filter(s => !s.contest_eligible).length})
           </Button>
@@ -254,7 +256,7 @@ export default function SightingsAdminPage() {
             size="sm"
             variant={filter === 'shared' ? 'default' : 'outline'}
             onClick={() => setFilter('shared')}
-            className={filter === 'shared' ? 'bg-blue-600 hover:bg-blue-700' : ''}
+            className={`text-xs sm:text-sm ${filter === 'shared' ? 'bg-blue-600 hover:bg-blue-700' : ''}`}
           >
             ✓ Shared ({sightings.filter(s => s.share_verified).length})
           </Button>
@@ -267,7 +269,7 @@ export default function SightingsAdminPage() {
       </p>
 
       {/* Sightings List */}
-      <div className="space-y-4">
+      <div className="space-y-3">
         {filteredSightings.length === 0 ? (
           <Card className="p-8 text-center text-muted-foreground">
             No entries found
@@ -275,7 +277,7 @@ export default function SightingsAdminPage() {
         ) : (
           filteredSightings.map((sighting) => (
             <Card key={sighting.id} className="overflow-hidden">
-              <div className="flex flex-col gap-4 p-4 md:flex-row">
+              <div className="flex gap-3 p-3 sm:gap-4 sm:p-4">
                 {/* Image Thumbnail */}
                 <div className="shrink-0">
                   <a
@@ -287,90 +289,61 @@ export default function SightingsAdminPage() {
                     <img
                       src={sighting.image_url}
                       alt="Sighting"
-                      className="h-32 w-32 rounded-md object-cover transition-opacity hover:opacity-80"
+                      className="h-24 w-24 rounded-md object-cover transition-opacity hover:opacity-80 sm:h-32 sm:w-32"
                     />
                   </a>
                 </div>
 
                 {/* Details */}
-                <div className="flex-1 space-y-3">
-                  {/* Top Row: Contact Info & Status */}
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div className="space-y-2">
-                      {/* Full Name */}
-                      <div>
-                        <span className="font-semibold text-lg">{sighting.full_name}</span>
-                      </div>
-                      
-                      {/* Contact Details */}
-                      <div className="space-y-1 text-sm">
-                        <div className="flex items-center gap-2">
-                          <Mail className="h-4 w-4 text-muted-foreground" />
-                          <span>{sighting.email}</span>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">📱 {sighting.phone_number}</span>
-                        </div>
-                        {sighting.zip_code && (
-                          <div>
-                            <span className="text-muted-foreground">📍 Zip: {sighting.zip_code}</span>
-                          </div>
-                        )}
-                      </div>
-                      
-                      {/* Coupon Code */}
-                      <p className="text-sm font-mono text-muted-foreground">
-                        {sighting.coupon_code}
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
+                <div className="min-w-0 flex-1 space-y-2 sm:space-y-3">
+                  {/* Top Row: Name & Badges */}
+                  <div className="flex flex-wrap items-start justify-between gap-1">
+                    <span className="font-semibold sm:text-lg">{sighting.full_name}</span>
+                    <div className="flex flex-wrap gap-1">
                       <Badge
                         variant={sighting.contest_eligible ? 'default' : 'secondary'}
-                        className={sighting.contest_eligible ? 'bg-green-600' : ''}
+                        className={`text-xs ${sighting.contest_eligible ? 'bg-green-600' : ''}`}
                       >
                         {sighting.contest_eligible ? '✓ Eligible' : 'Coupon Only'}
                       </Badge>
                       {sighting.share_verified && (
-                        <Badge variant="outline" className="border-blue-500 text-blue-600 dark:text-blue-400">
+                        <Badge variant="outline" className="border-blue-500 text-xs text-blue-600 dark:text-blue-400">
                           ✓ Shared
                         </Badge>
                       )}
                     </div>
                   </div>
-
-                  {/* Social Media Link */}
-                  {sighting.social_platform && sighting.social_link && (
-                    <div className="rounded-md bg-blue-50 p-2 dark:bg-blue-950/30">
-                      <p className="text-xs font-semibold text-blue-800 dark:text-blue-200">
-                        Shared on {sighting.social_platform}:
-                      </p>
-                      <a
-                        href={sighting.social_link}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-1 text-sm text-blue-600 hover:underline dark:text-blue-400"
-                      >
-                        View Post
-                        <ExternalLink className="h-3 w-3" />
-                      </a>
+                      
+                  {/* Contact Details */}
+                  <div className="space-y-0.5 text-xs sm:text-sm">
+                    <div className="flex items-center gap-1">
+                      <Mail className="h-3 w-3 text-muted-foreground" />
+                      <span className="truncate">{sighting.email}</span>
                     </div>
-                  )}
+                    <div className="text-muted-foreground">📱 {sighting.phone_number}</div>
+                    {sighting.zip_code && (
+                      <div className="text-muted-foreground">📍 Zip: {sighting.zip_code}</div>
+                    )}
+                  </div>
+                      
+                  {/* Coupon Code */}
+                  <p className="font-mono text-xs text-muted-foreground">
+                    {sighting.coupon_code}
+                  </p>
 
                   {/* View on Map Link */}
                   {sighting.gps_lat && sighting.gps_lng && (
-                    <div>
-                      <Link
-                        href="/"
-                        className="flex items-center gap-1 text-sm text-green-600 hover:underline dark:text-green-400"
-                      >
-                        <MapPin className="h-3 w-3" />
-                        View on Map
-                      </Link>
-                    </div>
+                    <Link
+                      href="/"
+                      className="flex items-center gap-1 text-xs text-green-600 hover:underline dark:text-green-400 sm:text-sm"
+                    >
+                      <MapPin className="h-3 w-3" />
+                      View on Map
+                    </Link>
                   )}
 
                   {/* Location & Date */}
-                  <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                  <div className="flex flex-wrap gap-2 text-xs text-muted-foreground sm:gap-4 sm:text-sm">
                     {sighting.gps_lat && sighting.gps_lng && (
                       <div className="flex items-center gap-1">
                         <MapPin className="h-3 w-3" />
@@ -383,7 +356,6 @@ export default function SightingsAdminPage() {
                       <Calendar className="h-3 w-3" />
                       <span>
                         {new Date(sighting.created_at).toLocaleDateString('en-US', {
-                          year: 'numeric',
                           month: 'short',
                           day: 'numeric',
                           hour: '2-digit',
@@ -394,8 +366,8 @@ export default function SightingsAdminPage() {
                   </div>
 
                   {/* Coupon Redeemed Checkbox & Delete Button */}
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center space-x-2 rounded-md border bg-muted/30 p-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center space-x-2 rounded-md border bg-muted/30 px-2 py-1.5">
                       <Checkbox
                         id={`redeemed-${sighting.id}`}
                         checked={sighting.coupon_redeemed}
@@ -403,15 +375,16 @@ export default function SightingsAdminPage() {
                           handleToggleRedeemed(sighting.id, sighting.coupon_redeemed)
                         }
                         disabled={updatingId === sighting.id}
+                        className="h-4 w-4"
                       />
                       <Label
                         htmlFor={`redeemed-${sighting.id}`}
-                        className="cursor-pointer text-sm font-medium"
+                        className="cursor-pointer text-xs font-medium sm:text-sm"
                       >
                         {updatingId === sighting.id ? (
-                          <span className="flex items-center gap-2">
+                          <span className="flex items-center gap-1">
                             <Loader2 className="h-3 w-3 animate-spin" />
-                            Updating...
+                            ...
                           </span>
                         ) : (
                           'Coupon Redeemed'
@@ -423,15 +396,13 @@ export default function SightingsAdminPage() {
                       size="sm"
                       onClick={() => handleDelete(sighting.id, sighting.full_name)}
                       disabled={deletingId === sighting.id}
+                      className="h-8 px-2 text-xs sm:px-3 sm:text-sm"
                     >
                       {deletingId === sighting.id ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Deleting...
-                        </>
+                        <Loader2 className="h-4 w-4 animate-spin" />
                       ) : (
                         <>
-                          <Trash2 className="mr-2 h-4 w-4" />
+                          <Trash2 className="mr-1 h-3 w-3 sm:mr-2 sm:h-4 sm:w-4" />
                           Delete
                         </>
                       )}
