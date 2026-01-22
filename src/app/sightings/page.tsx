@@ -15,7 +15,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Camera, Upload, MapPin, Loader2, Copy, Check, CalendarCheck } from 'lucide-react'
+import { Camera, Upload, MapPin, Loader2, Copy, Check, CalendarCheck, Share2, ExternalLink, CheckCircle } from 'lucide-react'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   extractExifGps,
   compressImage,
@@ -60,6 +61,8 @@ export default function SightingsPage() {
   const [sightingId, setSightingId] = useState<string>('')
   const [copied, setCopied] = useState(false)
   const [phoneCopied, setPhoneCopied] = useState(false)
+  const [shareTextCopied, setShareTextCopied] = useState(false)
+  const [entryVerified, setEntryVerified] = useState(false)
   const [locationAttempted, setLocationAttempted] = useState(false)
   const [canSubmit, setCanSubmit] = useState(false)
 
@@ -258,24 +261,186 @@ export default function SightingsPage() {
     }
   }
 
+  // Social share text for viral loop
+  const shareText = `I found the Sasquatch! 🦶📸 @SasquatchCarpetCleaning Enter to Win a Whole House Cleaning here: https://sightings.sasquatchcarpet.com`
+
+  const handleCopyShareText = async () => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(shareText)
+        setShareTextCopied(true)
+        setTimeout(() => setShareTextCopied(false), 3000)
+      } else {
+        alert(shareText)
+      }
+    } catch (error) {
+      console.error('Failed to copy:', error)
+      alert(shareText)
+    }
+  }
+
+  const openFacebook = () => {
+    // Try app first, fall back to web
+    const fbAppUrl = 'fb://feed'
+    const fbWebUrl = 'https://www.facebook.com/'
+    
+    // Copy text first
+    handleCopyShareText()
+    
+    // Try to open app, fall back to web
+    window.location.href = fbAppUrl
+    setTimeout(() => {
+      window.open(fbWebUrl, '_blank')
+    }, 500)
+  }
+
+  const openInstagram = () => {
+    // Try app first, fall back to web
+    const igAppUrl = 'instagram://user?username=sasquatchcarpet'
+    const igWebUrl = 'https://www.instagram.com/sasquatchcarpet/'
+    
+    // Copy text first
+    handleCopyShareText()
+    
+    // Try to open app, fall back to web
+    window.location.href = igAppUrl
+    setTimeout(() => {
+      window.open(igWebUrl, '_blank')
+    }, 500)
+  }
+
   if (submitSuccess) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-4">
-        <Card className="w-full max-w-2xl p-8 text-center">
-          <h1 className="mb-2 text-4xl font-bold">
-            YOU'RE ENTERED! 🎉
-          </h1>
-          <p className="mb-6 text-lg text-green-600 dark:text-green-400 font-semibold">
-            You're in the drawing for a FREE Whole House Cleaning!
-          </p>
+        <Card className="w-full max-w-2xl p-6 sm:p-8">
+          {/* Step 1 Complete Header */}
+          <div className="mb-6 text-center">
+            <div className="mb-2 inline-block rounded-full bg-green-100 px-4 py-1 text-sm font-semibold text-green-800 dark:bg-green-900 dark:text-green-200">
+              ✅ Step 1 Complete
+            </div>
+            <h1 className="mb-2 text-3xl font-bold sm:text-4xl">
+              You're Almost There!
+            </h1>
+            <p className="text-muted-foreground">
+              Your <span className="font-semibold text-green-600">$20 Coupon</span> is secured below.
+            </p>
+          </div>
+
+          {/* VIRAL LOOP: Share to Enter Grand Prize */}
+          <div className="mb-6 rounded-lg border-2 border-yellow-500 bg-yellow-50 p-5 dark:border-yellow-600 dark:bg-yellow-950/30">
+            <div className="mb-3 flex items-center justify-center gap-2">
+              <Share2 className="h-6 w-6 text-yellow-600 dark:text-yellow-400" />
+              <h2 className="text-lg font-bold text-yellow-900 dark:text-yellow-100 sm:text-xl">
+                Final Step: Post & Tag Us! 🏆
+              </h2>
+            </div>
+            <p className="mb-4 text-center text-sm text-yellow-800 dark:text-yellow-200">
+              To complete your entry for the <strong>FREE Whole House Cleaning</strong>, share your sighting on social media!
+            </p>
+
+            {/* Copy Share Text Button */}
+            <Button
+              onClick={handleCopyShareText}
+              size="lg"
+              className="mb-3 w-full bg-yellow-500 text-yellow-950 hover:bg-yellow-400"
+            >
+              {shareTextCopied ? (
+                <>
+                  <Check className="mr-2 h-5 w-5" />
+                  Copied! Now Paste & Post
+                </>
+              ) : (
+                <>
+                  <Copy className="mr-2 h-5 w-5" />
+                  Copy Tag & Link
+                </>
+              )}
+            </Button>
+
+            {/* Social Media Buttons */}
+            <div className="grid grid-cols-2 gap-3">
+              <Button
+                onClick={openFacebook}
+                size="lg"
+                className="bg-[#1877F2] hover:bg-[#166FE5]"
+              >
+                <ExternalLink className="mr-2 h-4 w-4" />
+                Facebook
+              </Button>
+              <Button
+                onClick={openInstagram}
+                size="lg"
+                className="bg-gradient-to-r from-[#833AB4] via-[#FD1D1D] to-[#F77737] hover:opacity-90"
+              >
+                <ExternalLink className="mr-2 h-4 w-4" />
+                Instagram
+              </Button>
+            </div>
+
+            <p className="mt-3 text-center text-xs text-yellow-700 dark:text-yellow-300">
+              💡 We copied the tag & link for you. Just Paste & Post!
+            </p>
+          </div>
+
+          {/* Verification Checkbox */}
+          <div 
+            className={`mb-6 rounded-lg border-2 p-4 transition-all ${
+              entryVerified 
+                ? 'border-green-500 bg-green-50 dark:border-green-600 dark:bg-green-950/30' 
+                : 'border-gray-300 bg-gray-50 dark:border-gray-600 dark:bg-gray-900/30'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <Checkbox
+                id="verify-entry"
+                checked={entryVerified}
+                onCheckedChange={async (checked) => {
+                  if (checked === true && sightingId) {
+                    setEntryVerified(true)
+                    // Call API to save verification
+                    try {
+                      await fetch(`/api/sightings/${sightingId}/verify`, {
+                        method: 'POST',
+                      })
+                    } catch (error) {
+                      console.error('Failed to save verification:', error)
+                    }
+                  }
+                }}
+                className="h-6 w-6"
+              />
+              <label 
+                htmlFor="verify-entry" 
+                className={`cursor-pointer text-sm font-semibold ${
+                  entryVerified 
+                    ? 'text-green-700 dark:text-green-300' 
+                    : 'text-gray-600 dark:text-gray-400'
+                }`}
+              >
+                {entryVerified ? (
+                  <span className="flex items-center gap-2">
+                    <CheckCircle className="h-5 w-5" />
+                    ENTRY VERIFIED! ✅
+                  </span>
+                ) : (
+                  'Verify My Entry'
+                )}
+              </label>
+            </div>
+            {entryVerified && (
+              <p className="mt-2 text-sm text-green-700 dark:text-green-300">
+                We will look for your tag to pick the winner. Good luck! 🍀
+              </p>
+            )}
+          </div>
 
           {/* Coupon Code Display */}
-          <div className="mb-6 rounded-lg bg-gradient-to-r from-green-100 to-green-200 p-6 dark:from-green-900 dark:to-green-800">
-            <p className="mb-2 text-sm font-medium text-green-800 dark:text-green-200">
-              🎁 Your Instant $20 Off Code:
+          <div className="mb-4 rounded-lg bg-gradient-to-r from-green-100 to-green-200 p-4 dark:from-green-900 dark:to-green-800">
+            <p className="mb-1 text-center text-xs font-medium text-green-800 dark:text-green-200">
+              Your Instant $20 Off Code:
             </p>
-            <div className="flex items-center justify-center gap-3">
-              <p className="text-4xl font-bold tracking-wider text-green-900 dark:text-green-100">
+            <div className="flex items-center justify-center gap-2">
+              <p className="text-2xl font-bold tracking-wider text-green-900 dark:text-green-100 sm:text-3xl">
                 {couponCode}
               </p>
               <Button
@@ -284,29 +449,19 @@ export default function SightingsPage() {
                 variant="outline"
                 className="border-green-700 bg-white/50 hover:bg-white dark:border-green-300 dark:bg-green-950/50"
               >
-                {copied ? (
-                  <>
-                    <Check className="mr-1 h-4 w-4" />
-                    Copied!
-                  </>
-                ) : (
-                  <>
-                    <Copy className="mr-1 h-4 w-4" />
-                    Copy
-                  </>
-                )}
+                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
               </Button>
             </div>
           </div>
 
           {/* Book Now Section */}
-          <div className="mb-6 space-y-3 rounded-lg border-2 border-blue-500 bg-blue-50 p-5 dark:border-blue-700 dark:bg-blue-950/30">
-            <p className="text-center text-sm font-semibold text-blue-900 dark:text-blue-100">
+          <div className="mb-6 space-y-3 rounded-lg border bg-muted/30 p-4">
+            <p className="text-center text-sm font-semibold">
               Ready to use your $20 off?
             </p>
             <Button
               size="lg"
-              className="w-full bg-blue-600 text-lg font-semibold hover:bg-blue-700"
+              className="w-full bg-blue-600 hover:bg-blue-700"
               asChild
             >
               <a
@@ -318,70 +473,13 @@ export default function SightingsPage() {
                 Book Online Now
               </a>
             </Button>
-            <p className="text-center text-xs text-blue-700 dark:text-blue-300">
+            <p className="text-center text-xs text-muted-foreground">
               Mention code <span className="font-bold">{couponCode}</span> when booking
             </p>
           </div>
 
-          {/* Redemption Instructions */}
-          <div className="mb-6 space-y-2 rounded-md border bg-muted/50 p-4">
-            <p className="text-sm font-semibold">Other Ways to Redeem:</p>
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-sm">
-                Call{' '}
-                <a href="tel:+17192498791" className="font-semibold text-blue-600 hover:underline">
-                  (719) 249-8791
-                </a>
-                {' '}and mention your code.
-              </p>
-              <Button
-                onClick={handleCopyPhone}
-                size="sm"
-                variant="outline"
-              >
-                {phoneCopied ? (
-                  <>
-                    <Check className="mr-1 h-3 w-3" />
-                    Copied
-                  </>
-                ) : (
-                  <>
-                    <Copy className="mr-1 h-3 w-3" />
-                    Copy
-                  </>
-                )}
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Valid on any service.
-            </p>
-          </div>
-
-
-          {/* Google Maps Success Message */}
-          <div className="mb-6 rounded-lg border-2 border-green-500 bg-green-50 p-6 dark:border-green-700 dark:bg-green-950/30">
-            <div className="mb-4 flex items-center justify-center gap-2">
-              <MapPin className="h-8 w-8 text-green-600 dark:text-green-400" />
-              <h3 className="text-xl font-bold text-green-900 dark:text-green-100">
-                Sighting Confirmed!
-              </h3>
-            </div>
-            <p className="mb-4 text-center text-green-800 dark:text-green-200">
-              This job has been logged to our Google Map to boost local rankings.
-            </p>
-
-            <Button
-              onClick={() => window.open('https://maps.app.goo.gl/XGHoTCuxw68SGzcQA', '_blank')}
-              size="lg"
-              className="w-full bg-[#4285F4] hover:bg-[#3367D6]"
-            >
-              <MapPin className="mr-2 h-5 w-5" />
-              Log Sighting to Google Maps
-            </Button>
-          </div>
-
-          <Button onClick={() => window.location.reload()} size="lg" className="w-full">
-            Submit Another Truck Photo
+          <Button onClick={() => window.location.reload()} variant="outline" size="lg" className="w-full">
+            Submit Another Sighting
           </Button>
         </Card>
       </div>

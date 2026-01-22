@@ -32,6 +32,7 @@ type Sighting = {
   coupon_code: string
   contest_eligible: boolean
   coupon_redeemed: boolean
+  share_verified: boolean | null
   social_platform: string | null
   social_link: string | null
   gps_lat: number | null
@@ -44,7 +45,7 @@ export default function SightingsAdminPage() {
   const [filteredSightings, setFilteredSightings] = useState<Sighting[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
-  const [filter, setFilter] = useState<'all' | 'eligible' | 'coupon-only'>('all')
+  const [filter, setFilter] = useState<'all' | 'eligible' | 'coupon-only' | 'shared'>('all')
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
@@ -78,6 +79,8 @@ export default function SightingsAdminPage() {
       filtered = filtered.filter(s => s.contest_eligible)
     } else if (filter === 'coupon-only') {
       filtered = filtered.filter(s => !s.contest_eligible)
+    } else if (filter === 'shared') {
+      filtered = filtered.filter(s => s.share_verified)
     }
 
     // Apply search
@@ -151,7 +154,7 @@ export default function SightingsAdminPage() {
   // Export to CSV
   const handleExportCSV = () => {
     const csvContent = [
-      ['Full Name', 'Phone Number', 'Email', 'Zip Code', 'Coupon Code', 'Contest Eligible', 'Coupon Redeemed', 'Date Submitted'],
+      ['Full Name', 'Phone Number', 'Email', 'Zip Code', 'Coupon Code', 'Contest Eligible', 'Shared', 'Coupon Redeemed', 'Date Submitted'],
       ...filteredSightings.map(s => [
         s.full_name,
         s.phone_number,
@@ -159,6 +162,7 @@ export default function SightingsAdminPage() {
         s.zip_code || '',
         s.coupon_code,
         s.contest_eligible ? 'Yes' : 'No',
+        s.share_verified ? 'Yes' : 'No',
         s.coupon_redeemed ? 'Yes' : 'No',
         new Date(s.created_at).toLocaleDateString(),
       ])
@@ -246,6 +250,14 @@ export default function SightingsAdminPage() {
           >
             Coupon Only ({sightings.filter(s => !s.contest_eligible).length})
           </Button>
+          <Button
+            size="sm"
+            variant={filter === 'shared' ? 'default' : 'outline'}
+            onClick={() => setFilter('shared')}
+            className={filter === 'shared' ? 'bg-blue-600 hover:bg-blue-700' : ''}
+          >
+            ✓ Shared ({sightings.filter(s => s.share_verified).length})
+          </Button>
         </div>
       </div>
 
@@ -311,12 +323,19 @@ export default function SightingsAdminPage() {
                         {sighting.coupon_code}
                       </p>
                     </div>
-                    <Badge
-                      variant={sighting.contest_eligible ? 'default' : 'secondary'}
-                      className={sighting.contest_eligible ? 'bg-green-600' : ''}
-                    >
-                      {sighting.contest_eligible ? '✓ Eligible' : 'Coupon Only'}
-                    </Badge>
+                    <div className="flex flex-wrap gap-2">
+                      <Badge
+                        variant={sighting.contest_eligible ? 'default' : 'secondary'}
+                        className={sighting.contest_eligible ? 'bg-green-600' : ''}
+                      >
+                        {sighting.contest_eligible ? '✓ Eligible' : 'Coupon Only'}
+                      </Badge>
+                      {sighting.share_verified && (
+                        <Badge variant="outline" className="border-blue-500 text-blue-600 dark:text-blue-400">
+                          ✓ Shared
+                        </Badge>
+                      )}
+                    </div>
                   </div>
 
                   {/* Social Media Link */}
