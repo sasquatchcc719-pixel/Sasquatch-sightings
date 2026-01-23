@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/supabase/server'
+import { createClient, createAdminClient } from '@/supabase/server'
 import { reverseGeocode } from '@/lib/geocode'
 import { generateSightingSEOFilename } from '@/lib/seo-filename'
 import sharp from 'sharp'
@@ -188,34 +188,27 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Trigger Zapier webhook for contest entries WITH photos (for Google Business Profile posting)
-    if (hasPhoto && publicUrl) {
-      try {
-        if (process.env.ZAPIER_SIGHTINGS_WEBHOOK_URL) {
-          const sightingLocation = locationText || city || 'Colorado'
-          
-          await fetch(process.env.ZAPIER_SIGHTINGS_WEBHOOK_URL, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              // Sighting data for Google Business Profile
-              image_url: publicUrl,
-              location: sightingLocation,
-              city: city,
-              state: state || 'CO',
-              entry_id: sighting.id,
-              timestamp: new Date().toISOString(),
-              caption: `Spotted in ${sightingLocation}! 📍 Scan our truck to enter: sightings.sasquatchcarpet.com`,
-            })
-          });
-          console.log('Zapier sightings webhook triggered for entry:', sighting.id);
-        }
-      } catch (error) {
-        // Log error but don't fail the contest submission
-        console.error('Zapier sightings webhook failed:', error);
+    // Also add to leads table for unified lead tracking (use admin client to bypass RLS)
+    try {
+      const adminClient = createAdminClient()
+      const leadLocation = locationText || city || null
+      const { error: leadError } = await adminClient.from('leads').insert({
+        source: 'contest',
+        name: fullName,
+        phone: phoneNumber,
+        email: email,
+        location: leadLocation,
+        status: 'new',
+        notes: hasPhoto ? 'Submitted with photo' : 'No photo submitted',
+      })
+      if (leadError) {
+        console.error('Failed to create lead:', leadError)
+      } else {
+        console.log('Lead created from contest entry:', sighting.id)
       }
+    } catch (leadError) {
+      // Log but don't fail - sighting was already saved
+      console.error('Failed to create lead from sighting:', leadError)
     }
 
     // Return success with coupon

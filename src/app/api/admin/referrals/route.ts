@@ -133,6 +133,22 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Also add to leads table for unified lead tracking
+    try {
+      await supabase.from('leads').insert({
+        source: 'partner',
+        name: client_name,
+        phone: client_phone,
+        notes: notes || null,
+        partner_id: partner_id,
+        status: 'new',
+      })
+      console.log('Lead created from partner referral')
+    } catch (leadError) {
+      // Log but don't fail - referral was already saved
+      console.error('Failed to create lead from referral:', leadError)
+    }
+
     return NextResponse.json({ success: true, data })
   } catch (error) {
     console.error('API error:', error)

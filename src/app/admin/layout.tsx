@@ -38,14 +38,12 @@ export default async function AdminLayout({ children }: AdminLayoutProps) {
   return (
     <main className="flex min-h-screen flex-col items-center">
       <div className="flex w-full flex-1 flex-col items-center gap-20">
-        <nav className="border-b-foreground/10 flex h-16 w-full justify-center border-b">
-          <div className="flex w-full max-w-5xl items-center justify-between p-3 px-5 text-sm">
-            <div className="flex items-center gap-5 font-semibold">
-              <Link href={'/admin'} className="flex items-center gap-2">
-                <img src="/logo.svg" alt="Sasquatch" className="h-8 w-auto" />
-                <span>Admin Dashboard</span>
-              </Link>
-            </div>
+        <nav className="border-b-foreground/10 flex h-14 w-full justify-center border-b">
+          <div className="flex w-full max-w-5xl items-center justify-between px-4 text-sm">
+            <Link href={'/admin'} className="flex items-center gap-2 font-semibold">
+              <img src="/logo.svg" alt="Sasquatch" className="h-7 w-auto" />
+              <span className="hidden sm:inline">Admin</span>
+            </Link>
             {!hasEnvVars ? (
               <EnvVarWarning />
             ) : (

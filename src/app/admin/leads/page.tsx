@@ -221,12 +221,12 @@ export default function LeadsDashboardPage() {
         />
       </div>
 
-      {/* Stats Row - Mobile */}
-      <div className="flex gap-2 overflow-x-auto pb-2 md:hidden">
+      {/* Stats Row - Mobile only (desktop uses Kanban headers) */}
+      <div className="grid grid-cols-3 gap-2 mb-4 md:hidden">
         {STATUSES.map(status => (
           <div
             key={status}
-            className={`flex-shrink-0 rounded-lg px-3 py-2 text-center ${STATUS_CONFIG[status].color} text-white`}
+            className={`rounded-lg px-3 py-2 text-center ${STATUS_CONFIG[status].color} text-white`}
           >
             <div className="text-lg font-bold">{leadsByStatus[status].length}</div>
             <div className="text-xs opacity-90">{STATUS_CONFIG[status].label}</div>
