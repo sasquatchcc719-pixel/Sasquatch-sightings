@@ -15,12 +15,6 @@ export function AdminNavigation() {
       active: pathname === '/admin',
     },
     {
-      name: 'Leads',
-      href: '/admin/leads',
-      icon: Phone,
-      active: pathname === '/admin/leads',
-    },
-    {
       name: 'Contest',
       href: '/admin/sightings',
       icon: Trophy,
@@ -58,15 +52,24 @@ export function AdminNavigation() {
           )
         })}
         
-        {/* External link to public partners page */}
-        <Link
-          href="/preferred-partners"
-          target="_blank"
-          className="ml-auto flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-        >
-          View Public Page
-          <ExternalLink className="h-3 w-3" />
-        </Link>
+        {/* Quick links */}
+        <div className="ml-auto flex items-center gap-4">
+          <Link
+            href="/dashboard/leads"
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Phone className="h-3 w-3" />
+            Leads
+          </Link>
+          <Link
+            href="/preferred-partners"
+            target="_blank"
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            View Public Page
+            <ExternalLink className="h-3 w-3" />
+          </Link>
+        </div>
       </nav>
     </div>
   )
