@@ -11,12 +11,10 @@ export async function AuthButton() {
 
   const user = data?.claims
 
-  const emailName = user.email?.split('@')[0] || 'User'
-  
   return user ? (
     <div className="flex items-center gap-2 sm:gap-3">
       <span className="text-xs sm:text-sm text-muted-foreground truncate max-w-[100px] sm:max-w-none">
-        {emailName}
+        {user.email?.split('@')[0] || 'User'}
       </span>
       <LogoutButton />
     </div>

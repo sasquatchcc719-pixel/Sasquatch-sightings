@@ -21,8 +21,10 @@ import {
   Globe,
   X,
   ChevronRight,
-  Save
+  Save,
+  Plus
 } from 'lucide-react'
+import { Label } from '@/components/ui/label'
 
 type Lead = {
   id: string
@@ -84,6 +86,18 @@ export default function LeadsDashboardPage() {
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [editingNotes, setEditingNotes] = useState('')
+  
+  // Add Lead Modal state
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [addingLead, setAddingLead] = useState(false)
+  const [newLead, setNewLead] = useState({
+    source: 'missed_call' as Lead['source'],
+    name: '',
+    phone: '',
+    email: '',
+    location: '',
+    notes: '',
+  })
 
   // Fetch leads
   useEffect(() => {
@@ -192,6 +206,54 @@ export default function LeadsDashboardPage() {
     setEditingNotes(lead.notes || '')
   }
 
+  // Add new lead
+  const handleAddLead = async () => {
+    if (!newLead.phone.trim()) {
+      alert('Phone number is required')
+      return
+    }
+
+    setAddingLead(true)
+    try {
+      const response = await fetch('/api/leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source: newLead.source,
+          name: newLead.name.trim() || null,
+          phone: newLead.phone.trim(),
+          email: newLead.email.trim() || null,
+          location: newLead.location.trim() || null,
+          notes: newLead.notes.trim() || null,
+        }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        // Add to local state
+        setLeads(prev => [data.lead, ...prev])
+        // Reset form
+        setNewLead({
+          source: 'missed_call',
+          name: '',
+          phone: '',
+          email: '',
+          location: '',
+          notes: '',
+        })
+        setShowAddModal(false)
+      } else {
+        const data = await response.json()
+        alert(data.error || 'Failed to add lead')
+      }
+    } catch (error) {
+      console.error('Error adding lead:', error)
+      alert('Failed to add lead')
+    } finally {
+      setAddingLead(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center">
@@ -205,8 +267,14 @@ export default function LeadsDashboardPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold md:text-2xl">Lead Tracker</h1>
-        <div className="text-sm text-muted-foreground">
-          {leads.length} total
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-muted-foreground hidden sm:inline">
+            {leads.length} total
+          </span>
+          <Button onClick={() => setShowAddModal(true)} size="sm">
+            <Plus className="h-4 w-4 mr-1" />
+            Add Lead
+          </Button>
         </div>
       </div>
 
@@ -547,6 +615,125 @@ export default function LeadsDashboardPage() {
               >
                 <Trash2 className="mr-2 h-4 w-4" />
                 Delete Lead
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ADD LEAD MODAL */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setShowAddModal(false)}>
+          <div 
+            className="bg-background rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="sticky top-0 flex items-center justify-between border-b bg-background p-4 rounded-t-xl">
+              <h2 className="text-lg font-semibold">Add New Lead</h2>
+              <button onClick={() => setShowAddModal(false)} className="p-2 hover:bg-muted rounded-lg">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              {/* Source */}
+              <div className="space-y-2">
+                <Label>Source</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {(['missed_call', 'website', 'contest', 'partner'] as const).map(source => {
+                    const Icon = SOURCE_ICONS[source]
+                    return (
+                      <button
+                        key={source}
+                        type="button"
+                        onClick={() => setNewLead(prev => ({ ...prev, source }))}
+                        className={`
+                          flex items-center gap-2 rounded-lg border p-3 text-sm font-medium transition-all
+                          ${newLead.source === source 
+                            ? 'border-primary bg-primary/10 text-primary' 
+                            : 'hover:bg-muted'}
+                        `}
+                      >
+                        <Icon className="h-4 w-4" />
+                        {SOURCE_LABELS[source]}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Phone (required) */}
+              <div className="space-y-2">
+                <Label htmlFor="add-phone">Phone Number *</Label>
+                <Input
+                  id="add-phone"
+                  type="tel"
+                  placeholder="(719) 555-1234"
+                  value={newLead.phone}
+                  onChange={(e) => setNewLead(prev => ({ ...prev, phone: e.target.value }))}
+                  className="h-12"
+                />
+              </div>
+
+              {/* Name */}
+              <div className="space-y-2">
+                <Label htmlFor="add-name">Name</Label>
+                <Input
+                  id="add-name"
+                  placeholder="John Smith"
+                  value={newLead.name}
+                  onChange={(e) => setNewLead(prev => ({ ...prev, name: e.target.value }))}
+                />
+              </div>
+
+              {/* Email */}
+              <div className="space-y-2">
+                <Label htmlFor="add-email">Email</Label>
+                <Input
+                  id="add-email"
+                  type="email"
+                  placeholder="john@example.com"
+                  value={newLead.email}
+                  onChange={(e) => setNewLead(prev => ({ ...prev, email: e.target.value }))}
+                />
+              </div>
+
+              {/* Location */}
+              <div className="space-y-2">
+                <Label htmlFor="add-location">Location</Label>
+                <Input
+                  id="add-location"
+                  placeholder="Colorado Springs, CO"
+                  value={newLead.location}
+                  onChange={(e) => setNewLead(prev => ({ ...prev, location: e.target.value }))}
+                />
+              </div>
+
+              {/* Notes */}
+              <div className="space-y-2">
+                <Label htmlFor="add-notes">Notes</Label>
+                <Textarea
+                  id="add-notes"
+                  placeholder="Add any notes..."
+                  value={newLead.notes}
+                  onChange={(e) => setNewLead(prev => ({ ...prev, notes: e.target.value }))}
+                  rows={3}
+                />
+              </div>
+
+              {/* Submit Button */}
+              <Button 
+                onClick={handleAddLead} 
+                disabled={addingLead || !newLead.phone.trim()}
+                className="w-full h-12"
+              >
+                {addingLead ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Plus className="mr-2 h-4 w-4" />
+                )}
+                Add Lead
               </Button>
             </div>
           </div>
