@@ -42,7 +42,13 @@ export default async function AdminPage() {
           </p>
           
           {/* Quick Actions */}
-          <div className="flex gap-2 pt-2">
+          <div className="flex flex-wrap gap-2 pt-2">
+            <Button asChild variant="default" size="sm">
+              <Link href="/">
+                <Map className="mr-2 h-4 w-4" />
+                View Map
+              </Link>
+            </Button>
             <Button asChild variant="outline" size="sm">
               <Link href="/admin/tools/combine">
                 <Image className="mr-2 h-4 w-4" />
@@ -52,7 +58,7 @@ export default async function AdminPage() {
             <Button asChild variant="outline" size="sm">
               <Link href="/sightings" target="_blank">
                 <Camera className="mr-2 h-4 w-4" />
-                Test Contest Page
+                Test Contest
               </Link>
             </Button>
           </div>
