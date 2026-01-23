@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
+import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -785,6 +786,14 @@ export default function SightingsPage() {
             </li>
           </ul>
         </Card>
+
+        {/* Privacy Link */}
+        <p className="text-center text-xs text-muted-foreground">
+          By entering, you agree to our{' '}
+          <Link href="/privacy" className="underline hover:text-foreground">
+            Privacy Policy
+          </Link>
+        </p>
       </div>
     </div>
   )
