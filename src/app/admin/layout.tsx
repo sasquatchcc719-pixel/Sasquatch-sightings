@@ -7,7 +7,6 @@ import { getUserWithRole } from '@/lib/auth'
 import Link from 'next/link'
 import { Suspense } from 'react'
 import { AdminNavigation } from '@/components/admin-navigation'
-import { OneSignalInit } from '@/components/onesignal-init'
 
 type AdminLayoutProps = {
   children: React.ReactNode
@@ -38,7 +37,6 @@ export default async function AdminLayout({ children }: AdminLayoutProps) {
 
   return (
     <main className="flex min-h-screen flex-col items-center">
-      <OneSignalInit />
       <div className="flex w-full flex-1 flex-col items-center gap-20">
         <nav className="border-b-foreground/10 flex h-14 w-full justify-center border-b">
           <div className="flex w-full max-w-5xl items-center justify-between px-4 text-sm">
