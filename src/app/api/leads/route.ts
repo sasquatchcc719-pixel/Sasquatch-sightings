@@ -227,12 +227,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Send OneSignal notification for new lead
-    const sourceLabel = {
+    const sourceLabels: Record<string, string> = {
       contest: 'Contest Entry',
       partner: 'Partner Referral',
       missed_call: 'Missed Call',
       website: 'Website Form',
-    }[source] || source
+    }
+    const sourceLabel = sourceLabels[source] || source
 
     await sendOneSignalNotification({
       heading: `🎯 New ${sourceLabel}`,
