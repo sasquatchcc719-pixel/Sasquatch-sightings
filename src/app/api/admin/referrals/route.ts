@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
+import { sendOneSignalNotification } from '@/lib/onesignal'
 
 // Delete referral
 export async function DELETE(request: NextRequest) {
@@ -148,6 +149,18 @@ export async function POST(request: NextRequest) {
       // Log but don't fail - referral was already saved
       console.error('Failed to create lead from referral:', leadError)
     }
+
+    // Send OneSignal notification for new partner referral
+    await sendOneSignalNotification({
+      heading: '🤝 New Partner Referral',
+      content: `${client_name} referred by partner`,
+      data: {
+        type: 'partner_referral',
+        referral_id: data[0].id,
+        partner_id,
+        client_name,
+      },
+    })
 
     return NextResponse.json({ success: true, data })
   } catch (error) {

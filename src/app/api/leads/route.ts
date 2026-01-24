@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
+import { sendOneSignalNotification } from '@/lib/onesignal'
+import { sendRingCentralSMS } from '@/lib/ringcentral'
 
 // Normalize phone number to consistent format
 function normalizePhone(phone: string): string {
@@ -17,10 +19,154 @@ function normalizePhone(phone: string): string {
   return digits.startsWith('+') ? phone : `+${digits}`
 }
 
-// Create new lead (for Zapier webhooks)
+// Format phone for display
+function formatPhoneDisplay(phone: string): string {
+  const normalized = normalizePhone(phone)
+  const match = normalized.match(/^\+1(\d{3})(\d{3})(\d{4})$/)
+  if (match) {
+    return `(${match[1]}) ${match[2]}-${match[3]}`
+  }
+  return phone
+}
+
+/**
+ * Detect if this is a RingCentral webhook for missed calls
+ */
+function isRingCentralWebhook(body: unknown): boolean {
+  if (typeof body !== 'object' || body === null) return false
+  const obj = body as Record<string, unknown>
+  return 'event' in obj && 'body' in obj && 'telephonyStatus' in (obj.body as Record<string, unknown>)
+}
+
+/**
+ * Parse RingCentral webhook to extract missed call info
+ */
+function parseRingCentralMissedCall(body: unknown): { phone: string; name?: string } | null {
+  if (typeof body !== 'object' || body === null) return null
+  
+  const payload = body as Record<string, unknown>
+  const webhookBody = payload.body as Record<string, unknown>
+  
+  // Check if telephonyStatus is "NoCall" (indicating call ended)
+  if (webhookBody.telephonyStatus !== 'NoCall') {
+    return null
+  }
+  
+  // Check for activeCalls array (may contain call that just ended)
+  const activeCalls = webhookBody.activeCalls as Array<Record<string, unknown>> | undefined
+  
+  if (!activeCalls || activeCalls.length === 0) {
+    // No active calls means the call ended - check if it was missed
+    // This is a simplified check - you may need to track state between webhooks
+    return null
+  }
+  
+  // Find inbound call that ended without being answered
+  const missedCall = activeCalls.find((call) => {
+    return (
+      call.direction === 'Inbound' &&
+      (call.telephonyStatus === 'NoCall' || call.telephonyStatus === 'Ringing')
+    )
+  })
+  
+  if (!missedCall) return null
+  
+  return {
+    phone: (missedCall.from as string) || '',
+    name: (missedCall.fromName as string) || undefined,
+  }
+}
+
+// Create new lead (for Zapier webhooks and RingCentral webhooks)
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
+    
+    // Check if this is a RingCentral webhook
+    if (isRingCentralWebhook(body)) {
+      console.log('RingCentral webhook received:', JSON.stringify(body, null, 2))
+      
+      const missedCallInfo = parseRingCentralMissedCall(body)
+      
+      if (!missedCallInfo) {
+        // Not a missed call event, acknowledge and return
+        return NextResponse.json({ success: true, message: 'Event processed' })
+      }
+      
+      // Extract missed call details
+      const { phone, name } = missedCallInfo
+      
+      if (!phone) {
+        return NextResponse.json(
+          { error: 'No phone number in missed call event' },
+          { status: 400 }
+        )
+      }
+      
+      const normalizedPhone = normalizePhone(phone)
+      const displayPhone = formatPhoneDisplay(phone)
+      const supabase = createAdminClient()
+      
+      // Check for duplicate within last 24 hours
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+      const { data: existingLead } = await supabase
+        .from('leads')
+        .select('id')
+        .eq('phone', normalizedPhone)
+        .eq('source', 'missed_call')
+        .gte('created_at', oneDayAgo)
+        .single()
+      
+      if (existingLead) {
+        console.log('Duplicate missed call within 24 hours, skipping')
+        return NextResponse.json(
+          { success: true, message: 'Duplicate call ignored' },
+          { status: 200 }
+        )
+      }
+      
+      // Create lead for missed call
+      const { data, error } = await supabase
+        .from('leads')
+        .insert({
+          source: 'missed_call',
+          name: name || 'Unknown Caller',
+          phone: normalizedPhone,
+          status: 'new',
+          notes: 'Missed call - auto-created',
+        })
+        .select()
+        .single()
+      
+      if (error) {
+        console.error('Error creating missed call lead:', error)
+        return NextResponse.json({ error: error.message }, { status: 500 })
+      }
+      
+      console.log('Missed call lead created:', data.id)
+      
+      // Send SMS response via RingCentral
+      await sendRingCentralSMS(
+        normalizedPhone,
+        "Thanks for calling Sasquatch Carpet Cleaning! Sorry we missed you. We'll call you back shortly. Text us anytime at this number!"
+      )
+      
+      // Send OneSignal push notification to admin
+      await sendOneSignalNotification({
+        heading: '📞 Missed Call',
+        content: `New missed call from ${name || displayPhone}`,
+        data: {
+          type: 'missed_call',
+          lead_id: data.id,
+          phone: normalizedPhone,
+          name: name || 'Unknown',
+        },
+      })
+      
+      return NextResponse.json({ success: true, lead: data }, { status: 201 })
+    }
+    
+    // Standard lead creation (from Zapier or manual)
     const { source, name, phone, email, location, notes, partner_id } = body
 
     // Validate required fields
@@ -79,6 +225,24 @@ export async function POST(request: NextRequest) {
       console.error('Error creating lead:', error)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
+
+    // Send OneSignal notification for new lead
+    const sourceLabel = {
+      contest: 'Contest Entry',
+      partner: 'Partner Referral',
+      missed_call: 'Missed Call',
+      website: 'Website Form',
+    }[source] || source
+
+    await sendOneSignalNotification({
+      heading: `🎯 New ${sourceLabel}`,
+      content: `${name || 'Unknown'} - ${formatPhoneDisplay(phone)}`,
+      data: {
+        type: 'new_lead',
+        lead_id: data.id,
+        source,
+      },
+    })
 
     return NextResponse.json({ success: true, lead: data }, { status: 201 })
   } catch (error) {

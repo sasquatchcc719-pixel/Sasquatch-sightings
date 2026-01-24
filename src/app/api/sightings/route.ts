@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/supabase/server'
 import { reverseGeocode } from '@/lib/geocode'
 import { generateSightingSEOFilename } from '@/lib/seo-filename'
+import { sendOneSignalNotification } from '@/lib/onesignal'
 import sharp from 'sharp'
 
 // Generate unique coupon code in format SCC-XXXX
@@ -210,6 +211,18 @@ export async function POST(request: NextRequest) {
       // Log but don't fail - sighting was already saved
       console.error('Failed to create lead from sighting:', leadError)
     }
+
+    // Send OneSignal notification for new contest entry
+    await sendOneSignalNotification({
+      heading: '🏆 New Contest Entry',
+      content: `${fullName} entered the contest${hasPhoto ? ' with photo' : ''}`,
+      data: {
+        type: 'contest_entry',
+        sighting_id: sighting.id,
+        has_photo: hasPhoto,
+        location: locationText || city || 'Unknown',
+      },
+    })
 
     // Return success with coupon
     return NextResponse.json({
