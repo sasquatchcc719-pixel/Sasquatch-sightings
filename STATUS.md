@@ -97,7 +97,7 @@ git push origin main --no-verify
    RINGCENTRAL_EXTENSION=
    RINGCENTRAL_PHONE_NUMBER=+17197498807
    ONESIGNAL_APP_ID=2279fd62-e36d-494b-b354-af67f233973b
-   ONESIGNAL_API_KEY=os_v2_app_ej472yxdnveuxm2uv5t7em4xhmyida6z5kfukx4acbpeb545prrjijulkd6byzfc55reurlsgu4lxzbol27ss4vw4425ttkwnbglqfy
+   ONESIGNAL_API_KEY=your-rest-api-key-here
    ```
 4. Click **Save** and redeploy
 
