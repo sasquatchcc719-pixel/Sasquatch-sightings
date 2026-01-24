@@ -7,6 +7,12 @@ export function OneSignalInit() {
     // Only initialize on client side
     if (typeof window === 'undefined') return
 
+    // Check if OneSignal is already loaded
+    if (document.querySelector('script[src*="OneSignalSDK"]')) {
+      console.log('OneSignal script already loaded')
+      return
+    }
+
     // Load OneSignal script
     const script = document.createElement('script')
     script.src = 'https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js'
@@ -15,21 +21,26 @@ export function OneSignalInit() {
 
     // Initialize OneSignal when script loads
     script.onload = () => {
+      console.log('OneSignal script loaded successfully')
       window.OneSignalDeferred = window.OneSignalDeferred || []
       window.OneSignalDeferred.push(async function (OneSignal: any) {
-        await OneSignal.init({
-          appId: '2279fd62-e36d-494b-b354-af67f233973b',
-          allowLocalhostAsSecureOrigin: true,
-        })
+        try {
+          await OneSignal.init({
+            appId: '2279fd62-e36d-494b-b354-af67f233973b',
+            allowLocalhostAsSecureOrigin: true,
+          })
+          console.log('OneSignal initialized successfully')
+        } catch (error) {
+          console.error('OneSignal initialization error:', error)
+        }
       })
     }
 
-    return () => {
-      // Cleanup
-      if (script.parentNode) {
-        script.parentNode.removeChild(script)
-      }
+    script.onerror = () => {
+      console.error('Failed to load OneSignal script')
     }
+
+    // Don't remove script on cleanup - it should persist
   }, [])
 
   return null
