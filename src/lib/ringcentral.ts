@@ -77,15 +77,17 @@ export async function sendRingCentralSMS(
 ): Promise<boolean> {
   const clientId = process.env.RINGCENTRAL_CLIENT_ID
   const clientSecret = process.env.RINGCENTRAL_CLIENT_SECRET
-  const jwtToken = process.env.RINGCENTRAL_JWT
+  const username = process.env.RINGCENTRAL_USERNAME
+  const password = process.env.RINGCENTRAL_PASSWORD
+  const extension = process.env.RINGCENTRAL_EXTENSION || ''
 
-  if (!clientId || !clientSecret || !jwtToken) {
+  if (!clientId || !clientSecret || !username || !password) {
     console.warn('RingCentral credentials not configured, skipping SMS')
     return false
   }
 
   try {
-    // Get access token using JWT
+    // Get access token using username/password
     const SDK = require('@ringcentral/sdk').SDK
 
     const rcsdk = new SDK({
@@ -95,7 +97,7 @@ export async function sendRingCentralSMS(
     })
 
     const platform = rcsdk.platform()
-    await platform.login({ jwt: jwtToken })
+    await platform.login({ username, password, extension })
 
     // Send SMS
     const response = await platform.post('/restapi/v1.0/account/~/extension/~/sms', {

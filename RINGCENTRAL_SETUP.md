@@ -26,14 +26,19 @@ When someone calls your business and you miss the call, the system automatically
 3. Note down:
    - **Client ID**: e.g., `WCfoTe4MMO8fPxAzLo3P6v`
    - **Client Secret**: e.g., `4gaHOBidjlldlmJeZSIS2PbVD8SKDFzo5bNbvKdy6WT9`
-4. Generate a JWT token for your account
+4. Get your RingCentral login credentials:
+   - **Username**: Your RingCentral phone number or email
+   - **Password**: Your RingCentral account password
+   - **Extension**: (optional) Leave blank if you don't use extensions
 
 ### Step 2: Add Credentials to `.env.local`
 
 ```bash
 RINGCENTRAL_CLIENT_ID=WCfoTe4MMO8fPxAzLo3P6v
 RINGCENTRAL_CLIENT_SECRET=4gaHOBidjlldlmJeZSIS2PbVD8SKDFzo5bNbvKdy6WT9
-RINGCENTRAL_JWT=your-jwt-token-here
+RINGCENTRAL_USERNAME=your_ringcentral_phone_number_or_email
+RINGCENTRAL_PASSWORD=your_ringcentral_password
+RINGCENTRAL_EXTENSION=
 RINGCENTRAL_PHONE_NUMBER=+17195551234
 ```
 
@@ -42,16 +47,24 @@ RINGCENTRAL_PHONE_NUMBER=+17195551234
 **IMPORTANT**: Only run this script AFTER deploying to Vercel, because RingCentral needs a publicly accessible webhook URL.
 
 ```bash
-# Set your JWT token
-export RINGCENTRAL_JWT="your-jwt-token-here"
-
-# Run the setup script
+# Make sure your credentials are in .env.local, then run:
 node setup-ringcentral-webhook.js
 ```
 
 This creates a webhook subscription that sends events to:
 ```
 https://sightings.sasquatchcarpet.com/api/leads
+```
+
+You should see output like:
+```
+Logging into RingCentral...
+✓ Login successful!
+Creating webhook subscription...
+✓ Webhook created successfully!
+Subscription ID: abc-123-def-456
+Webhook URL: https://sightings.sasquatchcarpet.com/api/leads
+Status: Active
 ```
 
 ### Step 4: Verify Webhook is Active
@@ -173,7 +186,9 @@ RingCentral sends webhooks when phone events occur. Here's what the system looks
 |----------|---------|--------------|
 | `RINGCENTRAL_CLIENT_ID` | RingCentral app authentication | [Developer Portal](https://developers.ringcentral.com/) |
 | `RINGCENTRAL_CLIENT_SECRET` | RingCentral app secret | [Developer Portal](https://developers.ringcentral.com/) |
-| `RINGCENTRAL_JWT` | Authentication token | Generated in RingCentral admin |
+| `RINGCENTRAL_USERNAME` | Your RingCentral login (phone or email) | Your RingCentral account |
+| `RINGCENTRAL_PASSWORD` | Your RingCentral password | Your RingCentral account |
+| `RINGCENTRAL_EXTENSION` | Extension number (optional) | Your RingCentral account |
 | `RINGCENTRAL_PHONE_NUMBER` | Your business phone (for SMS sending) | Your RingCentral account |
 | `ONESIGNAL_APP_ID` | OneSignal app identifier | [OneSignal Dashboard](https://onesignal.com/) |
 | `ONESIGNAL_API_KEY` | OneSignal REST API key | [OneSignal Dashboard](https://onesignal.com/) |

@@ -13,8 +13,17 @@ const rcsdk = new SDK({
 const platform = rcsdk.platform();
 
 async function setupWebhook() {
-  // Login using JWT (your credentials)
-  await platform.login({ jwt: process.env.RINGCENTRAL_JWT });
+  console.log('Logging into RingCentral...');
+  
+  // Login using username/password
+  await platform.login({
+    username: process.env.RINGCENTRAL_USERNAME,
+    password: process.env.RINGCENTRAL_PASSWORD,
+    extension: process.env.RINGCENTRAL_EXTENSION || ''
+  });
+  
+  console.log('✓ Login successful!');
+  console.log('Creating webhook subscription...');
   
   // Create webhook subscription for missed calls
   const response = await platform.post('/restapi/v1.0/subscription', {
@@ -25,7 +34,17 @@ async function setupWebhook() {
     }
   });
   
-  console.log('Webhook created:', response.json());
+  const result = await response.json();
+  console.log('✓ Webhook created successfully!');
+  console.log('Subscription ID:', result.id);
+  console.log('Webhook URL:', WEBHOOK_URL);
+  console.log('Status:', result.status);
 }
 
-setupWebhook().catch(console.error);
+setupWebhook().catch((error) => {
+  console.error('❌ Error:', error.message);
+  console.error('\nMake sure you have set in .env.local:');
+  console.error('  RINGCENTRAL_USERNAME');
+  console.error('  RINGCENTRAL_PASSWORD');
+  console.error('  RINGCENTRAL_EXTENSION (if needed)');
+});
