@@ -1,71 +1,64 @@
-# ⚠️ RingCentral Authentication Update Required
+# ⚠️ RingCentral JWT Setup Required
 
-## What Happened
+## What You Need
 
-RingCentral **deprecated password authentication** on March 31, 2024. We need to switch to **JWT authentication** instead.
-
-Your credentials have been added to `.env.local`, but we need a JWT token to complete the setup.
+RingCentral uses **JWT authentication** with a private key. You need to download this key from their Developer Console.
 
 ---
 
-## Quick Fix (5 minutes)
+## Quick Setup (5 minutes)
 
-### Step 1: Get Your JWT Token
+### Step 1: Download Your Private Key
 
-1. Go to **[RingCentral Developer Console](https://developers.ringcentral.com/)**
+1. Go to **https://developers.ringcentral.com/**
 2. Log in with: `sasquatchcc719@gmail.com`
-3. Go to **"My Apps"**
-4. Select your app (or create a new "Server/Bot" app if needed)
-5. Go to **"Credentials"** tab
-6. Under **"JWT Credentials"**, click **"Create JWT"**
-7. **Copy the entire JWT token** (it's very long, starts with `eyJ...`)
+3. Go to **"My Apps"** → Select your app (or create a "Server/Bot" app)
+4. Go to **"Credentials"** tab
+5. Under **"JWT Credentials"**, click **"Create/Download Private Key"**
+6. A file called `private_key.pem` will download
 
-### Step 2: Add JWT to `.env.local`
+### Step 2: Add Private Key to `.env.local`
 
-Open `.env.local` and add this line after the RingCentral section:
+1. Open `private_key.pem` in a text editor
+2. Copy the **entire content** (including BEGIN/END lines)
+3. Open `.env.local`
+4. Find `RINGCENTRAL_JWT_PRIVATE_KEY` and paste your key:
 
 ```bash
-RINGCENTRAL_JWT=your-very-long-jwt-token-here
+RINGCENTRAL_JWT_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----
+MIIEowIBAAKCAQEA1234567890abcdef...
+(many lines)
+...your key...
+-----END RSA PRIVATE KEY-----"
 ```
 
-Example:
-```bash
-RINGCENTRAL_JWT=eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IjEyMzQ1Njc4OSJ9.eyJpc3MiOiJodHRwczovL3BsYXRmb3JtLnJpbmdjZW50cmFsLmNvbS8iLCJzdWIiOiI0MDQ4NTc4MTIiLCJhdWQiOiJodHRwczovL3BsYXRmb3JtLnJpbmdjZW50cmFsLmNvbS9yZXN0YXBpL3YxLjAvYWNjb3VudC9+L2V4dGVuc2lvbi9+L3RvL...
-```
-
-### Step 3: Run Setup Script
+### Step 3: Run the Setup
 
 ```bash
 node setup-ringcentral-webhook-jwt.js
 ```
 
-You should see:
+Expected output:
 ```
-✓ Login successful!
+✓ Authentication successful!
 ✓ Webhook created successfully!
 ✅ Setup complete!
 ```
 
 ---
 
-## Alternative: Manual Setup (If JWT Script Fails)
+## Detailed Instructions
 
-If you prefer to set it up manually via the web UI:
-
-```bash
-node setup-ringcentral-webhook-manual.js
-```
-
-This will show you step-by-step instructions for using the RingCentral API Explorer.
+See **HOW_TO_GET_JWT_KEY.md** for step-by-step instructions with explanations.
 
 ---
 
 ## Current Status
 
-✅ **OneSignal** - Configured and ready
-✅ **RingCentral Credentials** - Added to `.env.local`
-⏳ **RingCentral JWT** - Waiting for you to add it
-⏳ **Webhook Setup** - Will be done after JWT is added
+✅ **OneSignal** - Configured and ready  
+✅ **RingCentral Credentials** - Added to `.env.local`  
+⏳ **RingCentral Private Key** - Need to download and add  
+⏳ **Webhook Setup** - Will run after adding private key
 
 ---
 
@@ -78,21 +71,24 @@ Even without the webhook, these features are working:
 
 **Once webhook is set up:**
 - ✅ Missed call detection
-- ✅ Automatic SMS responses
+- ✅ Automatic SMS responses to missed callers
 - ✅ Missed call push notifications
 
 ---
 
-## Files Created
+## Alternative: Manual Setup
 
-- `setup-ringcentral-webhook-jwt.js` - Automated setup with JWT
-- `setup-ringcentral-webhook-manual.js` - Manual setup guide
-- `UPDATE_REQUIRED.md` - This file
+If you prefer to set it up via the web UI:
+
+```bash
+node setup-ringcentral-webhook-manual.js
+```
 
 ---
 
-## Need Help?
+## Files Reference
 
-See the full guide: `RINGCENTRAL_SETUP.md`
-
-Or just run: `node setup-ringcentral-webhook-manual.js` for step-by-step instructions.
+- **HOW_TO_GET_JWT_KEY.md** ← Detailed guide with screenshots
+- **UPDATE_REQUIRED.md** ← This file (quick reference)
+- **setup-ringcentral-webhook-jwt.js** ← Automated setup script
+- **setup-ringcentral-webhook-manual.js** ← Manual setup guide
