@@ -162,13 +162,15 @@ export async function POST(request: NextRequest) {
     // Also add to leads table for unified lead tracking
     let leadId: string | undefined
     try {
+      const now = new Date().toISOString()
       const { data: leadData, error: leadInsertError } = await supabase.from('leads').insert({
         source: 'partner',
         name: client_name,
         phone: client_phone,
         notes: notes || null,
         partner_id: partner_id,
-        status: 'new',
+        status: 'contacted', // Auto-set to contacted since they receive SMS
+        contacted_at: now, // Set timestamp for contacted status
       }).select('id').single()
       
       if (leadInsertError) {
