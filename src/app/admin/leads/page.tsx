@@ -26,6 +26,14 @@ import {
 } from 'lucide-react'
 import { Label } from '@/components/ui/label'
 
+type SmsLog = {
+  id: string
+  message_type: string
+  message_content: string
+  status: string
+  sent_at: string
+}
+
 type Lead = {
   id: string
   source: 'contest' | 'partner' | 'missed_call' | 'website'
@@ -40,6 +48,7 @@ type Lead = {
     name: string
     company_name: string
   } | null
+  sms_logs: SmsLog[]
   created_at: string
   contacted_at: string | null
   scheduled_at: string | null
@@ -484,6 +493,44 @@ export default function LeadsDashboardPage() {
               )}
             </div>
 
+            {/* SMS History */}
+            {selectedLead.sms_logs && selectedLead.sms_logs.length > 0 && (
+              <div className="space-y-2">
+                <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                  <MessageSquare className="h-4 w-4" />
+                  SMS History ({selectedLead.sms_logs.length})
+                </h3>
+                <div className="space-y-2">
+                  {selectedLead.sms_logs.map((sms) => (
+                    <div
+                      key={sms.id}
+                      className="rounded-lg border p-3 space-y-2"
+                    >
+                      <div className="flex items-center justify-between">
+                        <Badge variant={sms.status === 'sent' ? 'default' : 'destructive'} className="text-xs">
+                          {sms.message_type.replace(/_/g, ' ')}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(sms.sent_at).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: 'numeric',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                      </div>
+                      <p className="text-sm whitespace-pre-wrap">{sms.message_content}</p>
+                      {sms.status !== 'sent' && (
+                        <Badge variant="destructive" className="text-xs">
+                          Failed
+                        </Badge>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Delete */}
             <Button
               variant="destructive"
@@ -604,6 +651,38 @@ export default function LeadsDashboardPage() {
                   </Button>
                 )}
               </div>
+
+              {/* SMS History */}
+              {selectedLead.sms_logs && selectedLead.sms_logs.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-2">
+                    SMS History ({selectedLead.sms_logs.length})
+                  </p>
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {selectedLead.sms_logs.map((sms) => (
+                      <div
+                        key={sms.id}
+                        className="rounded-lg border p-2 space-y-1 text-xs"
+                      >
+                        <div className="flex items-center justify-between">
+                          <Badge variant={sms.status === 'sent' ? 'default' : 'destructive'} className="text-xs">
+                            {sms.message_type.replace(/_/g, ' ')}
+                          </Badge>
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(sms.sent_at).toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                              hour: 'numeric',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                        </div>
+                        <p className="text-xs whitespace-pre-wrap text-muted-foreground">{sms.message_content}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Delete */}
               <Button

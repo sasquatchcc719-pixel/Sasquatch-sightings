@@ -380,7 +380,14 @@ export async function GET() {
       .from('leads')
       .select(`
         *,
-        partner:partners(name, company_name)
+        partner:partners(name, company_name),
+        sms_logs(
+          id,
+          message_type,
+          message_content,
+          status,
+          sent_at
+        )
       `)
       .order('created_at', { ascending: false })
 
