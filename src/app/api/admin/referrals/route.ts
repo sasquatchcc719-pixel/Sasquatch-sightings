@@ -98,7 +98,9 @@ export async function PATCH(request: NextRequest) {
           if (partner.phone && referral) {
             await sendPartnerSMS(
               partner.phone,
-              `🎉 Referral Converted!\n${referral.client_name} just booked a job!\nYou earned: $${credit_amount} credit\nYour balance: $${newBalance.toFixed(2)}\nTotal referrals: ${count || 1}\n- Sasquatch Carpet Cleaning`
+              `🎉 Referral Converted!\n${referral.client_name} just booked a job!\nYou earned: $${credit_amount} credit\nYour balance: $${newBalance.toFixed(2)}\nTotal referrals: ${count || 1}\n- Sasquatch Carpet Cleaning`,
+              partner_id,
+              'partner_credit'
             )
           }
         }
@@ -158,16 +160,23 @@ export async function POST(request: NextRequest) {
     }
 
     // Also add to leads table for unified lead tracking
+    let leadId: string | undefined
     try {
-      await supabase.from('leads').insert({
+      const { data: leadData, error: leadInsertError } = await supabase.from('leads').insert({
         source: 'partner',
         name: client_name,
         phone: client_phone,
         notes: notes || null,
         partner_id: partner_id,
         status: 'new',
-      })
-      console.log('Lead created from partner referral')
+      }).select('id').single()
+      
+      if (leadInsertError) {
+        console.error('Lead insert error:', leadInsertError)
+      } else if (leadData) {
+        leadId = leadData.id
+        console.log('Lead created from partner referral:', leadId)
+      }
     } catch (leadError) {
       // Log but don't fail - referral was already saved
       console.error('Failed to create lead from referral:', leadError)
@@ -195,21 +204,26 @@ export async function POST(request: NextRequest) {
 
     // Twilio SMS to admin (primary notification)
     await sendAdminSMS(
-      `🤝 New Partner Referral\n${client_name} - ${client_phone}\nReferred by: ${partner?.name || 'Unknown partner'}`
+      `🤝 New Partner Referral\n${client_name} - ${client_phone}\nReferred by: ${partner?.name || 'Unknown partner'}`,
+      'partner_referral_admin'
     )
 
     // Twilio SMS to partner (notify them they got a referral!)
     if (partner?.phone) {
       await sendPartnerSMS(
         partner.phone,
-        `🎉 New Referral!\n${client_name} mentioned you as their preferred partner.\nWe'll be in touch soon!\n- Sasquatch Carpet Cleaning`
+        `🎉 New Referral!\n${client_name} mentioned you as their preferred partner.\nWe'll be in touch soon!\n- Sasquatch Carpet Cleaning`,
+        partner_id,
+        'partner_new_referral'
       )
     }
 
     // Twilio SMS to customer (auto-response with booking link)
     await sendCustomerSMS(
       client_phone,
-      `Thanks for reaching out! ${partner?.name || 'Your partner'} recommended us.\nBook now or we'll call you within 24 hours:\nhttps://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true\n- Sasquatch Carpet Cleaning\n(719) 249-8791`
+      `Thanks for reaching out! ${partner?.name || 'Your partner'} recommended us.\nBook now or we'll call you within 24 hours:\nhttps://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true\n- Sasquatch Carpet Cleaning\n(719) 249-8791`,
+      leadId,
+      'partner_referral'
     )
 
     return NextResponse.json({ success: true, data })

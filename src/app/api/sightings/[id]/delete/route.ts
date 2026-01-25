@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/supabase/server'
+import { createClient, createAdminClient } from '@/supabase/server'
 
 export async function DELETE(
   request: NextRequest,
@@ -32,10 +32,10 @@ export async function DELETE(
       )
     }
 
-    // First, get the sighting to retrieve the image_url for storage path
+    // First, get the sighting to retrieve the image_url and phone_number
     const { data: sighting, error: fetchError } = await supabase
       .from('sightings')
-      .select('id, image_url')
+      .select('id, image_url, phone_number')
       .eq('id', id)
       .single()
 
@@ -66,6 +66,23 @@ export async function DELETE(
       }
     }
 
+    // Delete associated lead (using admin client to bypass RLS)
+    if (sighting.phone_number) {
+      const adminClient = createAdminClient()
+      const { error: leadDeleteError } = await adminClient
+        .from('leads')
+        .delete()
+        .eq('phone', sighting.phone_number)
+        .eq('source', 'contest')
+
+      if (leadDeleteError) {
+        console.error('Lead deletion error:', leadDeleteError)
+        // Continue with sighting deletion even if lead deletion fails
+      } else {
+        console.log(`Deleted lead associated with sighting ${id}`)
+      }
+    }
+
     // Delete the sighting record from database
     const { error: deleteError } = await supabase
       .from('sightings')
@@ -84,7 +101,7 @@ export async function DELETE(
     return NextResponse.json(
       {
         success: true,
-        message: 'Sighting and associated image deleted successfully',
+        message: 'Sighting, associated lead, and image deleted successfully',
       },
       { status: 200 }
     )

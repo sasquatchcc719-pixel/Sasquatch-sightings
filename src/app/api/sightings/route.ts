@@ -191,10 +191,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Also add to leads table for unified lead tracking (use admin client to bypass RLS)
+    let leadId: string | undefined
     try {
       const adminClient = createAdminClient()
       const leadLocation = locationText || city || null
-      const { error: leadError } = await adminClient.from('leads').insert({
+      const { data: leadData, error: leadError } = await adminClient.from('leads').insert({
         source: 'contest',
         name: fullName,
         phone: phoneNumber,
@@ -202,11 +203,13 @@ export async function POST(request: NextRequest) {
         location: leadLocation,
         status: 'new',
         notes: hasPhoto ? 'Submitted with photo' : 'No photo submitted',
-      })
+      }).select('id').single()
+      
       if (leadError) {
         console.error('Failed to create lead:', leadError)
-      } else {
-        console.log('Lead created from contest entry:', sighting.id)
+      } else if (leadData) {
+        leadId = leadData.id
+        console.log('Lead created from contest entry:', leadId)
       }
     } catch (leadError) {
       // Log but don't fail - sighting was already saved
@@ -231,13 +234,16 @@ export async function POST(request: NextRequest) {
     
     // Send admin notification
     await sendAdminSMS(
-      `🏆 New Contest Entry\n${fullName} - ${phoneNumber}\n${locationStr}${hasPhoto ? ' (with photo)' : ''}`
+      `🏆 New Contest Entry\n${fullName} - ${phoneNumber}\n${locationStr}${hasPhoto ? ' (with photo)' : ''}`,
+      'contest_entry_admin'
     )
 
     // Send customer auto-response with booking link and coupon
     await sendCustomerSMS(
       phoneNumber,
-      `Thanks for entering the Sasquatch contest! 🦶\nBook your carpet cleaning now and get $20 off:\nhttps://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true\nUse coupon: Contest20 (add to notes when booking)\nQuestions? Call (719) 249-8791`
+      `Thanks for entering the Sasquatch contest! 🦶\nBook your carpet cleaning now and get $20 off:\nhttps://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true\nUse coupon: Contest20 (add to notes when booking)\nQuestions? Call (719) 249-8791`,
+      leadId,
+      'contest_entry'
     )
 
     // Return success with coupon

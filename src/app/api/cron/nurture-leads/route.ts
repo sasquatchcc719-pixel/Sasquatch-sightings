@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
         try {
           const message = `Hi ${lead.name || 'there'}, still need carpet cleaning?\nYou have $20 off! Use coupon: Contest20 (add to notes)\nBook now: ${BOOKING_LINK}\n- Sasquatch Carpet Cleaning\n(719) 249-8791`
           
-          await sendCustomerSMS(lead.phone, message)
+          await sendCustomerSMS(lead.phone, message, lead.id, 'day_3_nurture')
           
           // Mark as sent
           await supabase
@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
         try {
           const message = `Special offer for ${lead.name || 'you'}!\nGet $25 off when you book this week.\nUse coupon: Contest25 (add to notes)\n${BOOKING_LINK}\n- Sasquatch Carpet Cleaning\n(719) 249-8791`
           
-          await sendCustomerSMS(lead.phone, message)
+          await sendCustomerSMS(lead.phone, message, lead.id, 'day_7_nurture')
           
           // Mark as sent
           await supabase
@@ -137,7 +137,7 @@ export async function GET(request: NextRequest) {
         try {
           const message = `Last chance, ${lead.name || 'friend'}!\nBook this week and get $30 off.\nUse coupon: Contest30 (add to notes)\n${BOOKING_LINK}\nReply STOP to unsubscribe\n- Sasquatch Carpet Cleaning\n(719) 249-8791`
           
-          await sendCustomerSMS(lead.phone, message)
+          await sendCustomerSMS(lead.phone, message, lead.id, 'day_14_nurture')
           
           // Mark as sent
           await supabase

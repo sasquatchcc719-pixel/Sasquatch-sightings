@@ -167,7 +167,8 @@ export async function POST(request: NextRequest) {
 
       // Twilio SMS (primary notification method)
       await sendAdminSMS(
-        `📞 Missed Call\n${name || 'Unknown'} - ${displayPhone}`
+        `📞 Missed Call\n${name || 'Unknown'} - ${displayPhone}`,
+        'missed_call'
       )
       
       return NextResponse.json({ success: true, lead: data }, { status: 201 })
@@ -256,7 +257,8 @@ export async function POST(request: NextRequest) {
 
     // Twilio SMS (primary notification method)
     await sendAdminSMS(
-      `🎯 New ${sourceLabel}\n${name || 'Unknown'} - ${formatPhoneDisplay(phone)}`
+      `🎯 New ${sourceLabel}\n${name || 'Unknown'} - ${formatPhoneDisplay(phone)}`,
+      `lead_${source}`
     )
 
     return NextResponse.json({ success: true, lead: data }, { status: 201 })
