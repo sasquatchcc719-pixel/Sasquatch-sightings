@@ -9,7 +9,7 @@ import { createClient, createAdminClient } from '@/supabase/server'
 import { reverseGeocode } from '@/lib/geocode'
 import { generateSightingSEOFilename } from '@/lib/seo-filename'
 import { sendOneSignalNotification } from '@/lib/onesignal'
-import { sendAdminSMS } from '@/lib/twilio'
+import { sendAdminSMS, sendCustomerSMS } from '@/lib/twilio'
 import sharp from 'sharp'
 
 // Generate unique coupon code in format SCC-XXXX
@@ -228,8 +228,16 @@ export async function POST(request: NextRequest) {
 
     // Twilio SMS (primary notification method)
     const locationStr = locationText || city || 'Unknown location'
+    
+    // Send admin notification
     await sendAdminSMS(
       `🏆 New Contest Entry\n${fullName} - ${phoneNumber}\n${locationStr}${hasPhoto ? ' (with photo)' : ''}`
+    )
+
+    // Send customer auto-response with booking link and coupon
+    await sendCustomerSMS(
+      phoneNumber,
+      `Thanks for entering the Sasquatch contest! 🦶\nBook your carpet cleaning now and get $20 off:\nhttps://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true\nUse coupon: Contest20 (add to notes when booking)\nQuestions? Call (719) 249-8791`
     )
 
     // Return success with coupon

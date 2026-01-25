@@ -61,3 +61,27 @@ export async function sendPartnerSMS(
     console.error(`Failed to send partner SMS to ${partnerPhone}:`, error)
   }
 }
+
+/**
+ * Send SMS to customer (contest entries, referrals, nurture sequences)
+ */
+export async function sendCustomerSMS(
+  customerPhone: string,
+  message: string
+): Promise<void> {
+  if (!client || !twilioPhone) {
+    console.warn('Twilio credentials not configured, skipping SMS')
+    return
+  }
+
+  try {
+    const result = await client.messages.create({
+      body: message,
+      from: twilioPhone,
+      to: customerPhone,
+    })
+    console.log(`Customer SMS sent successfully to ${customerPhone}:`, result.sid)
+  } catch (error) {
+    console.error(`Failed to send customer SMS to ${customerPhone}:`, error)
+  }
+}

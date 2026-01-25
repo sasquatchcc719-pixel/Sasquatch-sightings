@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 import { sendOneSignalNotification } from '@/lib/onesignal'
-import { sendAdminSMS, sendPartnerSMS } from '@/lib/twilio'
+import { sendAdminSMS, sendPartnerSMS, sendCustomerSMS } from '@/lib/twilio'
 
 // Delete referral
 export async function DELETE(request: NextRequest) {
@@ -69,7 +69,7 @@ export async function PATCH(request: NextRequest) {
     if (partner_id && credit_amount) {
       const { data: partner } = await supabase
         .from('partners')
-        .select('credit_balance')
+        .select('credit_balance, phone, name')
         .eq('id', partner_id)
         .single()
 
@@ -79,6 +79,28 @@ export async function PATCH(request: NextRequest) {
         // If changing TO converted, ADD credit
         if (status === 'converted' && previous_status !== 'converted') {
           newBalance = partner.credit_balance + credit_amount
+          
+          // Get referral details for notification
+          const { data: referral } = await supabase
+            .from('referrals')
+            .select('client_name')
+            .eq('id', referral_id)
+            .single()
+
+          // Count total converted referrals for this partner
+          const { count } = await supabase
+            .from('referrals')
+            .select('*', { count: 'exact', head: true })
+            .eq('partner_id', partner_id)
+            .eq('status', 'converted')
+
+          // Send partner credit notification
+          if (partner.phone && referral) {
+            await sendPartnerSMS(
+              partner.phone,
+              `🎉 Referral Converted!\n${referral.client_name} just booked a job!\nYou earned: $${credit_amount} credit\nYour balance: $${newBalance.toFixed(2)}\nTotal referrals: ${count || 1}\n- Sasquatch Carpet Cleaning`
+            )
+          }
         }
         // If changing FROM converted to something else, SUBTRACT credit
         else if (status !== 'converted' && previous_status === 'converted') {
@@ -183,6 +205,12 @@ export async function POST(request: NextRequest) {
         `🎉 New Referral!\n${client_name} mentioned you as their preferred partner.\nWe'll be in touch soon!\n- Sasquatch Carpet Cleaning`
       )
     }
+
+    // Twilio SMS to customer (auto-response with booking link)
+    await sendCustomerSMS(
+      client_phone,
+      `Thanks for reaching out! ${partner?.name || 'Your partner'} recommended us.\nBook now or we'll call you within 24 hours:\nhttps://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true\n- Sasquatch Carpet Cleaning\n(719) 249-8791`
+    )
 
     return NextResponse.json({ success: true, data })
   } catch (error) {
