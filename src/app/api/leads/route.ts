@@ -351,6 +351,30 @@ export async function DELETE(request: NextRequest) {
 
     const supabase = createAdminClient()
 
+    // First, check if this lead has an associated sighting
+    const { data: lead } = await supabase
+      .from('leads')
+      .select('sighting_id')
+      .eq('id', leadId)
+      .single()
+
+    // If lead has a sighting, delete the sighting (which will cascade delete the lead)
+    if (lead?.sighting_id) {
+      const { error: sightingError } = await supabase
+        .from('sightings')
+        .delete()
+        .eq('id', lead.sighting_id)
+
+      if (sightingError) {
+        console.error('Error deleting associated sighting:', sightingError)
+        // Fall through to try deleting lead directly
+      } else {
+        // Sighting deleted successfully, lead was cascade deleted
+        return NextResponse.json({ success: true, message: 'Lead and associated contest entry deleted' })
+      }
+    }
+
+    // Delete lead directly (if no sighting or sighting delete failed)
     const { error } = await supabase
       .from('leads')
       .delete()

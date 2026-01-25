@@ -32,10 +32,10 @@ export async function DELETE(
       )
     }
 
-    // First, get the sighting to retrieve the image_url and phone_number
+    // First, get the sighting to retrieve the image_url
     const { data: sighting, error: fetchError } = await supabase
       .from('sightings')
-      .select('id, image_url, phone_number')
+      .select('id, image_url')
       .eq('id', id)
       .single()
 
@@ -66,24 +66,7 @@ export async function DELETE(
       }
     }
 
-    // Delete associated lead (using admin client to bypass RLS)
-    if (sighting.phone_number) {
-      const adminClient = createAdminClient()
-      const { error: leadDeleteError } = await adminClient
-        .from('leads')
-        .delete()
-        .eq('phone', sighting.phone_number)
-        .eq('source', 'contest')
-
-      if (leadDeleteError) {
-        console.error('Lead deletion error:', leadDeleteError)
-        // Continue with sighting deletion even if lead deletion fails
-      } else {
-        console.log(`Deleted lead associated with sighting ${id}`)
-      }
-    }
-
-    // Delete the sighting record from database
+    // Delete the sighting record - associated lead will cascade delete automatically
     const { error: deleteError } = await supabase
       .from('sightings')
       .delete()

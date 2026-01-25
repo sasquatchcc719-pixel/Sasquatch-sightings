@@ -197,6 +197,7 @@ export async function POST(request: NextRequest) {
       const leadLocation = locationText || city || null
       const { data: leadData, error: leadError } = await adminClient.from('leads').insert({
         source: 'contest',
+        sighting_id: sighting.id, // Link to sighting for cascade delete
         name: fullName,
         phone: phoneNumber,
         email: email,
