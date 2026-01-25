@@ -7,10 +7,13 @@ export async function AdminLink() {
   const { data } = await supabase.auth.getClaims();
   const user = data?.claims;
 
-  if (!user) return null;
-
+  // Always show admin button - auth pages will handle login redirect
   return (
-    <Button size="sm" variant="default" asChild>
+    <Button 
+      size="sm" 
+      variant={user ? "default" : "outline"} 
+      asChild
+    >
       <Link href="/admin">Admin</Link>
     </Button>
   );
