@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 import { sendOneSignalNotification } from '@/lib/onesignal'
+import { sendAdminSMS } from '@/lib/twilio'
 import { sendRingCentralSMS } from '@/lib/ringcentral'
 
 // Normalize phone number to consistent format
@@ -151,7 +152,8 @@ export async function POST(request: NextRequest) {
         "Thanks for calling Sasquatch Carpet Cleaning! Sorry we missed you. We'll call you back shortly. Text us anytime at this number!"
       )
       
-      // Send OneSignal push notification to admin
+      // Send notifications to admin about missed call
+      // OneSignal (backup - for desktop browser notifications)
       await sendOneSignalNotification({
         heading: '📞 Missed Call',
         content: `New missed call from ${name || displayPhone}`,
@@ -162,6 +164,11 @@ export async function POST(request: NextRequest) {
           name: name || 'Unknown',
         },
       })
+
+      // Twilio SMS (primary notification method)
+      await sendAdminSMS(
+        `📞 Missed Call\n${name || 'Unknown'} - ${displayPhone}`
+      )
       
       return NextResponse.json({ success: true, lead: data }, { status: 201 })
     }
@@ -235,6 +242,8 @@ export async function POST(request: NextRequest) {
     }
     const sourceLabel = sourceLabels[source] || source
 
+    // Send notifications about new lead
+    // OneSignal (backup - for desktop browser notifications)
     await sendOneSignalNotification({
       heading: `🎯 New ${sourceLabel}`,
       content: `${name || 'Unknown'} - ${formatPhoneDisplay(phone)}`,
@@ -244,6 +253,11 @@ export async function POST(request: NextRequest) {
         source,
       },
     })
+
+    // Twilio SMS (primary notification method)
+    await sendAdminSMS(
+      `🎯 New ${sourceLabel}\n${name || 'Unknown'} - ${formatPhoneDisplay(phone)}`
+    )
 
     return NextResponse.json({ success: true, lead: data }, { status: 201 })
   } catch (error) {

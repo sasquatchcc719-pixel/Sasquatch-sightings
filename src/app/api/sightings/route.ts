@@ -9,6 +9,7 @@ import { createClient, createAdminClient } from '@/supabase/server'
 import { reverseGeocode } from '@/lib/geocode'
 import { generateSightingSEOFilename } from '@/lib/seo-filename'
 import { sendOneSignalNotification } from '@/lib/onesignal'
+import { sendAdminSMS } from '@/lib/twilio'
 import sharp from 'sharp'
 
 // Generate unique coupon code in format SCC-XXXX
@@ -212,7 +213,8 @@ export async function POST(request: NextRequest) {
       console.error('Failed to create lead from sighting:', leadError)
     }
 
-    // Send OneSignal notification for new contest entry
+    // Send notifications for new contest entry
+    // OneSignal (backup - for desktop browser notifications)
     await sendOneSignalNotification({
       heading: '🏆 New Contest Entry',
       content: `${fullName} entered the contest${hasPhoto ? ' with photo' : ''}`,
@@ -223,6 +225,12 @@ export async function POST(request: NextRequest) {
         location: locationText || city || 'Unknown',
       },
     })
+
+    // Twilio SMS (primary notification method)
+    const locationStr = locationText || city || 'Unknown location'
+    await sendAdminSMS(
+      `🏆 New Contest Entry\n${fullName} - ${phoneNumber}\n${locationStr}${hasPhoto ? ' (with photo)' : ''}`
+    )
 
     // Return success with coupon
     return NextResponse.json({

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 import { sendOneSignalNotification } from '@/lib/onesignal'
+import { sendAdminSMS, sendPartnerSMS } from '@/lib/twilio'
 
 // Delete referral
 export async function DELETE(request: NextRequest) {
@@ -150,10 +151,18 @@ export async function POST(request: NextRequest) {
       console.error('Failed to create lead from referral:', leadError)
     }
 
-    // Send OneSignal notification for new partner referral
+    // Get partner info for notifications
+    const { data: partner } = await supabase
+      .from('partners')
+      .select('name, phone')
+      .eq('id', partner_id)
+      .single()
+
+    // Send notifications about new partner referral
+    // OneSignal (backup - for desktop browser notifications)
     await sendOneSignalNotification({
       heading: '🤝 New Partner Referral',
-      content: `${client_name} referred by partner`,
+      content: `${client_name} referred by ${partner?.name || 'partner'}`,
       data: {
         type: 'partner_referral',
         referral_id: data[0].id,
@@ -161,6 +170,19 @@ export async function POST(request: NextRequest) {
         client_name,
       },
     })
+
+    // Twilio SMS to admin (primary notification)
+    await sendAdminSMS(
+      `🤝 New Partner Referral\n${client_name} - ${client_phone}\nReferred by: ${partner?.name || 'Unknown partner'}`
+    )
+
+    // Twilio SMS to partner (notify them they got a referral!)
+    if (partner?.phone) {
+      await sendPartnerSMS(
+        partner.phone,
+        `🎉 New Referral!\n${client_name} mentioned you as their preferred partner.\nWe'll be in touch soon!\n- Sasquatch Carpet Cleaning`
+      )
+    }
 
     return NextResponse.json({ success: true, data })
   } catch (error) {
