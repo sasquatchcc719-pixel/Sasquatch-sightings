@@ -35,6 +35,7 @@ type Partner = {
   id: string
   name: string
   email: string
+  phone: string
   company_name: string
   company_website: string | null
   credit_balance: number
@@ -571,12 +572,20 @@ export function AdminPartnersView({
                         )}
                       </div>
                     </div>
-                    <div className="flex items-center justify-between">
+                    <div className="mb-2 flex items-center justify-between">
                       <a 
                         href={`mailto:${partner.email}`}
                         className="text-sm text-blue-400"
                       >
                         {partner.email}
+                      </a>
+                    </div>
+                    <div className="mb-3 flex items-center justify-between">
+                      <a 
+                        href={`tel:${partner.phone}`}
+                        className="text-sm text-blue-400"
+                      >
+                        {partner.phone}
                       </a>
                       <Button
                         variant="outline"
@@ -600,6 +609,7 @@ export function AdminPartnersView({
                     <tr className="border-b text-left text-sm text-muted-foreground">
                       <th className="pb-3 pr-4 font-medium">Partner</th>
                       <th className="pb-3 pr-4 font-medium">Company</th>
+                      <th className="pb-3 pr-4 font-medium">Phone</th>
                       <th className="pb-3 pr-4 font-medium">Balance</th>
                       <th className="pb-3 pr-4 font-medium">Backlink</th>
                       <th className="pb-3 font-medium">Actions</th>
@@ -620,6 +630,14 @@ export function AdminPartnersView({
                           </div>
                         </td>
                         <td className="py-3 pr-4">{partner.company_name}</td>
+                        <td className="py-3 pr-4">
+                          <a 
+                            href={`tel:${partner.phone}`}
+                            className="text-blue-400 hover:text-blue-300 hover:underline"
+                          >
+                            {partner.phone}
+                          </a>
+                        </td>
                         <td className="py-3 pr-4 font-medium">
                           ${partner.credit_balance.toFixed(2)}
                         </td>
