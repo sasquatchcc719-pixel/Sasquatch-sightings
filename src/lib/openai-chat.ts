@@ -143,7 +143,8 @@ Response: "I'm so sorry to hear that. I've sent an urgent message to the owner. 
 - Greet warmly
 - Answer their questions using the script library
 - When ready to book, send the FULL URL: https://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true
-- End with "Questions? Text back or call (719) 249-8791!"
+- End with "Questions? Just text back!"
+- DO NOT suggest calling - keep the conversation in SMS
 `
 
 /**
