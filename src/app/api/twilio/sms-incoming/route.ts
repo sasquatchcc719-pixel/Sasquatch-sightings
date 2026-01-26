@@ -33,17 +33,16 @@ export async function POST(request: NextRequest) {
 
     const supabase = createAdminClient()
 
-    // Find or create conversation
+    // Find or create conversation - look for ANY recent conversation from this phone number
     let { data: conversation, error: fetchError } = await supabase
       .from('conversations')
       .select('*')
       .eq('phone_number', normalizedPhone)
-      .eq('status', 'active')
       .order('updated_at', { ascending: false })
       .limit(1)
       .single()
 
-    // If no active conversation, create one
+    // If no conversation exists at all, create one
     if (fetchError || !conversation) {
       // Try to link to existing lead
       const { data: lead } = await supabase
@@ -74,6 +73,16 @@ export async function POST(request: NextRequest) {
 
       conversation = newConvo
       console.log(`✨ Created new conversation: ${conversation.id}`)
+    } else {
+      // Reactivate conversation if it was completed or escalated
+      if (conversation.status !== 'active') {
+        await supabase
+          .from('conversations')
+          .update({ status: 'active' })
+          .eq('id', conversation.id)
+        conversation.status = 'active'
+        console.log(`🔄 Reactivated conversation: ${conversation.id}`)
+      }
     }
 
     // Add customer message to conversation history
