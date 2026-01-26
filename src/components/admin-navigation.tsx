@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Briefcase, Trophy, Users, ExternalLink, Phone } from 'lucide-react'
+import { Briefcase, Trophy, Users, ExternalLink, Phone, MessageSquare } from 'lucide-react'
 
 export function AdminNavigation() {
   const pathname = usePathname()
@@ -31,6 +31,12 @@ export function AdminNavigation() {
       href: '/admin/partners',
       icon: Users,
       active: pathname === '/admin/partners',
+    },
+    {
+      name: 'AI Chat',
+      href: '/admin/conversations',
+      icon: MessageSquare,
+      active: pathname === '/admin/conversations',
     },
   ]
 
