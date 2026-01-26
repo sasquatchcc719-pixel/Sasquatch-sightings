@@ -143,12 +143,19 @@ export async function sendCustomerSMS(
   }
 
   try {
+    console.log(`📤 SENDING SMS:`)
+    console.log(`   From: ${twilioPhone}`)
+    console.log(`   To: ${customerPhone}`)
+    console.log(`   Message: ${message.substring(0, 50)}...`)
+    
     const result = await client.messages.create({
       body: message,
       from: twilioPhone,
       to: customerPhone,
     })
-    console.log(`Customer SMS sent successfully to ${customerPhone}:`, result.sid)
+    console.log(`✅ Customer SMS sent successfully to ${customerPhone}`)
+    console.log(`   Twilio SID: ${result.sid}`)
+    console.log(`   Status: ${result.status}`)
     
     // Log the SMS
     await logSMS({

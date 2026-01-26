@@ -29,7 +29,8 @@ export async function POST(request: NextRequest) {
     }
 
     const normalizedPhone = normalizePhone(fromPhone)
-    console.log(`📱 Inbound SMS from ${normalizedPhone}: "${messageBody}"`)
+    console.log(`📱 Inbound SMS from ${fromPhone} → normalized to: ${normalizedPhone}`)
+    console.log(`📱 Message: "${messageBody}"`)
 
     const supabase = createAdminClient()
 
@@ -41,6 +42,12 @@ export async function POST(request: NextRequest) {
       .order('updated_at', { ascending: false })
       .limit(1)
       .single()
+    
+    if (conversation) {
+      console.log(`✅ Found existing conversation: ${conversation.id} with ${conversation.messages.length} messages`)
+    } else {
+      console.log(`⚠️ No existing conversation found for ${normalizedPhone}`)
+    }
 
     // If no conversation exists at all, create one
     if (fetchError || !conversation) {

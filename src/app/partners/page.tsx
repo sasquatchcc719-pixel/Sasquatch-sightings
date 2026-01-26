@@ -14,22 +14,10 @@ export default async function PartnersPage() {
     redirect('/auth/login')
   }
 
-  console.log('[PartnersPage] User:', user?.email)
-  console.log('[PartnersPage] Role:', role)
-
-  // CRITICAL: Only partners can access this page
-  if (role !== 'partner') {
-    console.log('[PartnersPage] User is NOT partner (role:', role, '), redirecting to /admin')
-    redirect('/admin')
+  // Must be a partner
+  if (role !== 'partner' || !partner) {
+    redirect('/protected')
   }
-
-  // Must have a partner record
-  if (!partner) {
-    console.log('[PartnersPage] No partner record, redirecting to login')
-    redirect('/auth/login')
-  }
-
-  console.log('[PartnersPage] Access granted - user is partner:', partner.name)
 
   // Fetch referrals for this partner
   const supabase = await createClient()
@@ -52,15 +40,11 @@ export default async function PartnersPage() {
     <main className="min-h-screen bg-gradient-to-br from-green-900 via-green-800 to-emerald-900">
       {/* Navigation */}
       <nav className="border-b border-white/10 bg-black/20 backdrop-blur-sm">
-        <div className="mx-auto flex h-14 max-w-4xl items-center justify-between px-3 sm:h-16 sm:px-4">
-          <Link href="/partners" className="flex items-center gap-2 sm:gap-3">
-            <img
-              src="/logo.svg"
-              alt="Sasquatch"
-              className="h-8 w-auto sm:h-10"
-            />
-            <span className="text-base font-bold text-white sm:text-lg">
-              Partner Portal
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
+          <Link href="/partners" className="flex items-center gap-2">
+            <span className="text-2xl">🦶</span>
+            <span className="text-lg font-bold text-white">
+              Sasquatch Partner Portal
             </span>
           </Link>
 
@@ -75,7 +59,7 @@ export default async function PartnersPage() {
       </nav>
 
       {/* Main Content */}
-      <div className="mx-auto max-w-4xl px-3 py-6 sm:px-4 sm:py-8">
+      <div className="mx-auto max-w-6xl px-4 py-8">
         <PartnerDashboard
           partner={partner}
           referrals={referrals || []}

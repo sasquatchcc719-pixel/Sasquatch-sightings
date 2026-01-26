@@ -195,7 +195,6 @@ export async function POST(request: NextRequest) {
     try {
       const adminClient = createAdminClient()
       const leadLocation = locationText || city || null
-      const now = new Date().toISOString()
       const { data: leadData, error: leadError } = await adminClient.from('leads').insert({
         source: 'contest',
         sighting_id: sighting.id, // Link to sighting for cascade delete
@@ -203,8 +202,7 @@ export async function POST(request: NextRequest) {
         phone: phoneNumber,
         email: email,
         location: leadLocation,
-        status: 'contacted', // Auto-set to contacted since they receive SMS
-        contacted_at: now, // Set timestamp for contacted status
+        status: 'new',
         notes: hasPhoto ? 'Submitted with photo' : 'No photo submitted',
       }).select('id').single()
       

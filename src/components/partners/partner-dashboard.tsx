@@ -115,47 +115,6 @@ export function PartnerDashboard({
     }
   }
 
-  // Complete booking for an existing pending referral
-  const handleCompleteBooking = async (referralId: string, creditAmount: number) => {
-    setIsSubmitting(true)
-    setSubmitError(null)
-
-    const supabase = createClient()
-
-    try {
-      // Update referral status to booked
-      const { error: updateError } = await supabase
-        .from('referrals')
-        .update({
-          status: 'booked',
-          booked_via_link: true,
-        })
-        .eq('id', referralId)
-
-      if (updateError) throw updateError
-
-      // Add credit to partner balance
-      const { error: balanceError } = await supabase
-        .from('partners')
-        .update({ credit_balance: partner.credit_balance + creditAmount })
-        .eq('id', partner.id)
-
-      if (balanceError) {
-        console.error('Error updating balance:', balanceError)
-      }
-
-      // Open HousecallPro in new tab
-      window.open('https://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true', '_blank')
-
-      router.refresh()
-    } catch (error) {
-      console.error('Error completing booking:', error)
-      setSubmitError('Failed to complete booking. Please try again.')
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
   const handleBookForClient = async () => {
     if (!clientName || !clientPhone) {
       setSubmitError('Please enter client name and phone first')
@@ -193,8 +152,9 @@ export function PartnerDashboard({
         console.error('Error updating balance:', balanceError)
       }
 
-      // Open HousecallPro booking page in new tab
-      window.open('https://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true', '_blank')
+      // Open HousecallPro in new tab
+      // TODO: Add actual HousecallPro URL
+      window.open('https://housecallpro.com', '_blank')
 
       setClientName('')
       setClientPhone('')
@@ -245,11 +205,11 @@ export function PartnerDashboard({
   }
 
   return (
-    <div className="space-y-6 sm:space-y-8">
+    <div className="space-y-8">
       {/* Welcome Header */}
       <div className="text-white">
-        <h1 className="text-2xl font-bold sm:text-3xl">Welcome back, {partner.name}!</h1>
-        <p className="mt-1 text-sm text-white/70 sm:text-base">{partner.company_name}</p>
+        <h1 className="text-3xl font-bold">Welcome back, {partner.name}!</h1>
+        <p className="mt-1 text-white/70">{partner.company_name}</p>
       </div>
 
       {/* Stats Cards */}
@@ -412,7 +372,8 @@ export function PartnerDashboard({
               size="lg"
               disabled={stats.creditBalance <= 0}
               onClick={() => {
-                window.open('https://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true', '_blank')
+                // TODO: Add actual HousecallPro booking URL
+                window.open('https://housecallpro.com', '_blank')
               }}
             >
               <Gift className="mr-2 h-5 w-5" />
@@ -442,216 +403,57 @@ export function PartnerDashboard({
               <p className="text-sm">Submit your first referral above!</p>
             </div>
           ) : (
-            <>
-              {/* Mobile: Card layout */}
-              <div className="space-y-3 sm:hidden">
-                {referrals.map((referral) => (
-                  <div
-                    key={referral.id}
-                    className="rounded-lg border bg-card p-4 space-y-2"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium">{referral.client_name}</span>
-                      {getStatusBadge(referral.status)}
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      {referral.client_phone}
-                    </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-green-600 font-medium">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b text-left text-sm text-muted-foreground">
+                    <th className="pb-3 font-medium">Client</th>
+                    <th className="pb-3 font-medium">Phone</th>
+                    <th className="pb-3 font-medium">Status</th>
+                    <th className="pb-3 font-medium">Credit</th>
+                    <th className="pb-3 font-medium">Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {referrals.map((referral) => (
+                    <tr key={referral.id} className="border-b">
+                      <td className="py-3 font-medium">{referral.client_name}</td>
+                      <td className="py-3 text-muted-foreground">
+                        {referral.client_phone}
+                      </td>
+                      <td className="py-3">{getStatusBadge(referral.status)}</td>
+                      <td className="py-3">
                         ${referral.credit_amount.toFixed(2)}
-                      </span>
-                      <span className="text-muted-foreground">
+                      </td>
+                      <td className="py-3 text-muted-foreground">
                         {formatDate(referral.created_at)}
-                      </span>
-                    </div>
-                    {referral.status === 'pending' && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="w-full mt-2"
-                        onClick={() => handleCompleteBooking(referral.id, referral.credit_amount)}
-                      >
-                        <ExternalLink className="mr-2 h-3 w-3" />
-                        Complete Booking
-                      </Button>
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              {/* Desktop: Table layout */}
-              <div className="hidden sm:block overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b text-left text-sm text-muted-foreground">
-                      <th className="pb-3 font-medium">Client</th>
-                      <th className="pb-3 font-medium">Phone</th>
-                      <th className="pb-3 font-medium">Status</th>
-                      <th className="pb-3 font-medium">Credit</th>
-                      <th className="pb-3 font-medium">Date</th>
-                      <th className="pb-3 font-medium">Action</th>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {referrals.map((referral) => (
-                      <tr key={referral.id} className="border-b">
-                        <td className="py-3 font-medium">{referral.client_name}</td>
-                        <td className="py-3 text-muted-foreground">
-                          {referral.client_phone}
-                        </td>
-                        <td className="py-3">{getStatusBadge(referral.status)}</td>
-                        <td className="py-3">
-                          ${referral.credit_amount.toFixed(2)}
-                        </td>
-                        <td className="py-3 text-muted-foreground">
-                          {formatDate(referral.created_at)}
-                        </td>
-                        <td className="py-3">
-                          {referral.status === 'pending' && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleCompleteBooking(referral.id, referral.credit_amount)}
-                            >
-                              <ExternalLink className="mr-1 h-3 w-3" />
-                              Book
-                            </Button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Promote Us Section */}
+      {/* Promote Us Section (Placeholder) */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            📣 Promote Us & Earn More
-          </CardTitle>
+          <CardTitle>Promote Us</CardTitle>
           <CardDescription>
-            Add our badge to your website and earn $25 per referral instead of $20
+            Add our badge to your website and earn $25 per referral!
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
-          {/* Two-way partnership explanation */}
-          <div className="rounded-lg border border-green-600/30 bg-green-900/20 p-4">
-            <p className="font-medium text-green-400">🤝 It&apos;s a two-way partnership!</p>
-            <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
-              <li>✓ You add our badge to your website</li>
-              <li>✓ We add your company to our <a href="/preferred-partners" target="_blank" className="text-green-400 hover:underline">Preferred Partners page</a></li>
-              <li>✓ You earn $25 per referral (instead of $20)</li>
-            </ul>
-          </div>
-          {/* Status Display */}
-          <div className="rounded-lg bg-muted p-4">
-            {!partner.backlink_opted_in ? (
-              <div className="flex items-center gap-3">
-                <span className="text-xl">❌</span>
-                <div>
-                  <p className="font-medium">Not enrolled</p>
-                  <p className="text-sm text-muted-foreground">
-                    You&apos;re earning: <strong>$20 per referral</strong>
-                  </p>
-                </div>
-              </div>
-            ) : !partner.backlink_verified ? (
-              <div className="flex items-center gap-3">
-                <span className="text-xl">⏳</span>
-                <div>
-                  <p className="font-medium">Pending verification</p>
-                  <p className="text-sm text-muted-foreground">
-                    You&apos;re earning: $20 per referral <span className="text-green-500">(will be $25 once verified!)</span>
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-center gap-3">
-                <span className="text-xl">✅</span>
-                <div>
-                  <p className="font-medium text-green-500">Verified Partner</p>
-                  <p className="text-sm text-muted-foreground">
-                    You&apos;re earning: <strong className="text-green-500">$25 per referral</strong>
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Badge Preview */}
-          <div>
-            <Label className="text-sm font-medium">Badge Preview</Label>
-            <div className="mt-2 flex justify-center rounded-lg border border-dashed p-6">
-              <div className="flex items-center gap-3 rounded-lg bg-gradient-to-r from-green-800 to-green-600 px-6 py-4 text-white shadow-lg">
-                <img 
-                  src="/sasquatch-logo.png" 
-                  alt="Sasquatch" 
-                  className="h-12 w-12 rounded-full bg-white p-1"
-                />
-                <div className="text-left">
-                  <p className="text-xs uppercase tracking-wide opacity-80">Trusted Partner</p>
-                  <p className="font-bold">Sasquatch Carpet Cleaning</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Embed Code */}
-          <div>
-            <Label className="text-sm font-medium">Embed Code</Label>
-            <p className="mb-2 text-xs text-muted-foreground">
-              Copy this code and paste it into your website
+        <CardContent>
+          <div className="rounded-lg bg-muted p-6 text-center">
+            <p className="text-muted-foreground">
+              🚧 Coming soon in Phase 2! 🚧
             </p>
-            <div className="relative">
-              <pre className="overflow-x-auto rounded-lg bg-black p-4 text-xs text-green-400">
-{`<a href="https://sasquatchcarpet.com?ref=${partner.id}">
-  <img 
-    src="https://sightings.sasquatchcarpet.com/partner-badge.png" 
-    alt="Sasquatch Carpet Cleaning Trusted Partner"
-    width="250"
-  />
-</a>`}
-              </pre>
-              <Button
-                size="sm"
-                variant="secondary"
-                className="absolute right-2 top-2"
-                onClick={() => {
-                  navigator.clipboard.writeText(
-                    `<a href="https://sasquatchcarpet.com?ref=${partner.id}"><img src="https://sightings.sasquatchcarpet.com/partner-badge.png" alt="Sasquatch Carpet Cleaning Trusted Partner" width="250" /></a>`
-                  )
-                  alert('Embed code copied to clipboard!')
-                }}
-              >
-                Copy
-              </Button>
-            </div>
+            <p className="mt-2 text-sm text-muted-foreground">
+              We&apos;ll provide an embed code you can add to your website.
+            </p>
           </div>
-
-          {/* Opt-in Button */}
-          {!partner.backlink_opted_in && (
-            <Button 
-              className="w-full"
-              onClick={async () => {
-                const supabase = createClient()
-                await supabase
-                  .from('partners')
-                  .update({ backlink_opted_in: true })
-                  .eq('id', partner.id)
-                router.refresh()
-                alert('You\'re enrolled! Add the badge to your website and we\'ll verify it.')
-              }}
-            >
-              <Gift className="mr-2 h-4 w-4" />
-              Enroll in Partner Badge Program
-            </Button>
-          )}
         </CardContent>
       </Card>
     </div>

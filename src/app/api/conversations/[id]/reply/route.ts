@@ -35,12 +35,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Send SMS via Twilio
+    console.log(`📤 Sending admin reply to: ${conversation.phone_number}`)
     await sendCustomerSMS(
       conversation.phone_number,
       message,
       conversation.lead_id,
       'admin_reply'
     )
+    console.log(`✅ Admin reply sent successfully`)
 
     // Add message to conversation history
     const messages = (conversation.messages as any[]) || []

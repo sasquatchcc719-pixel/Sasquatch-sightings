@@ -39,45 +39,20 @@ export function LoginForm({
       })
       if (error) throw error
 
-      // STEP 3: Query partners table to get role
-      console.log('=== ROLE CHECK START ===')
-      console.log('Authenticated user ID:', data.user.id)
-      console.log('Authenticated user email:', data.user.email)
-
-      const { data: partner, error: partnerError } = await supabase
+      // Check if user has a partner record to determine role
+      const { data: partner } = await supabase
         .from('partners')
-        .select('role, name, email')
+        .select('role')
         .eq('user_id', data.user.id)
         .single()
 
-      console.log('Partners table query result:')
-      console.log('  - Partner data:', JSON.stringify(partner))
-      console.log('  - Partner error:', partnerError ? JSON.stringify(partnerError) : 'none')
-      console.log('=== ROLE CHECK END ===')
-
-      // STEP 4: Redirect based on role
-      if (partnerError || !partner) {
-        // No partner record = EXISTING admin user (before Partner Portal existed)
-        console.log('DECISION: No partner record found = legacy admin, redirecting to /admin')
-        window.location.href = '/admin'
-        return
+      // Route based on role
+      if (partner?.role === 'partner') {
+        router.push('/partners')
+      } else {
+        // Admin or legacy user without partner record
+        router.push('/protected')
       }
-
-      if (partner.role === 'partner') {
-        console.log('DECISION: Role is PARTNER, redirecting to /partners')
-        window.location.href = '/partners'
-        return
-      }
-
-      if (partner.role === 'admin') {
-        console.log('DECISION: Role is ADMIN, redirecting to /admin')
-        window.location.href = '/admin'
-        return
-      }
-
-      // Fallback - unknown role, treat as admin
-      console.log('DECISION: Unknown role:', partner.role, '- defaulting to admin')
-      window.location.href = '/admin'
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : 'An error occurred')
     } finally {
@@ -132,12 +107,12 @@ export function LoginForm({
               </Button>
             </div>
             <div className="mt-4 text-center text-sm">
-              Want to become a partner?{' '}
+              Don&apos;t have an account?{' '}
               <Link
-                href="/partners/register"
+                href="/auth/sign-up"
                 className="underline underline-offset-4"
               >
-                Register here
+                Sign up
               </Link>
             </div>
           </form>

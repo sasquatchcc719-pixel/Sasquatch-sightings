@@ -10,21 +10,21 @@ export function ProtectedNavigation() {
   const tabs = [
     {
       name: 'Jobs',
-      href: '/admin',
+      href: '/protected',
       icon: Briefcase,
-      active: pathname === '/admin',
+      active: pathname === '/protected',
     },
     {
       name: 'Contest Entries',
-      href: '/admin/sightings',
+      href: '/protected/sightings',
       icon: Trophy,
-      active: pathname === '/admin/sightings',
+      active: pathname === '/protected/sightings',
     },
     {
       name: 'Partners',
-      href: '/admin/partners',
+      href: '/protected/partners',
       icon: Users,
-      active: pathname === '/admin/partners',
+      active: pathname === '/protected/partners',
     },
   ]
 

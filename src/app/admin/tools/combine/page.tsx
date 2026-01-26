@@ -121,7 +121,7 @@ export default function BeforeAfterCombinePage() {
 
     // Store combined image in sessionStorage for job upload form
     sessionStorage.setItem('preloadedImage', combinedImage)
-    router.push('/admin')
+    router.push('/protected')
   }
 
   return (
@@ -131,7 +131,7 @@ export default function BeforeAfterCombinePage() {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => router.push('/admin')}
+          onClick={() => router.push('/protected')}
           className="mb-4"
         >
           <ArrowLeft className="mr-2 h-4 w-4" />

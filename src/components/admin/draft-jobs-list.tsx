@@ -132,7 +132,7 @@ export function DraftJobsList({ initialJobs }: DraftJobsListProps) {
 
               {/* Action Buttons */}
               <div className="flex flex-wrap gap-2">
-                <Link href={`/admin/jobs/${job.id}`} className="flex-1 min-w-[140px]">
+                <Link href={`/protected/jobs/${job.id}`} className="flex-1 min-w-[140px]">
                   <Button size="sm" variant="outline" className="w-full">
                     <Edit className="mr-2 h-4 w-4" />
                     Edit Job
