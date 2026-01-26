@@ -67,12 +67,17 @@ export function ConversationsView({ conversations }: ConversationsViewProps) {
   }
 
   const formatTime = (timestamp: string) => {
-    return new Date(timestamp).toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    })
+    try {
+      return new Date(timestamp).toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        timeZone: 'America/Denver', // Colorado timezone
+      })
+    } catch (e) {
+      return timestamp
+    }
   }
 
   return (
@@ -136,10 +141,10 @@ export function ConversationsView({ conversations }: ConversationsViewProps) {
                 const lastMessage = convo.messages[messageCount - 1]
 
                 return (
-                  <button
+                  <div
                     key={convo.id}
                     onClick={() => setSelectedConvo(convo)}
-                    className="w-full text-left rounded-lg border p-4 hover:bg-muted transition-colors"
+                    className="w-full text-left rounded-lg border p-4 hover:bg-muted transition-colors cursor-pointer"
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1 min-w-0">
@@ -174,7 +179,7 @@ export function ConversationsView({ conversations }: ConversationsViewProps) {
                         </div>
                       </div>
                     </div>
-                  </button>
+                  </div>
                 )
               })}
             </div>
