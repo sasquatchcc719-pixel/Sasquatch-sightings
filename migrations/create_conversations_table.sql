@@ -4,14 +4,28 @@
 CREATE TABLE IF NOT EXISTS conversations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   phone_number TEXT NOT NULL,
-  source TEXT, -- 'contest_entry', 'partner_referral', 'missed_call', 'inbound', etc.
-  lead_id UUID REFERENCES leads(id) ON DELETE SET NULL,
+  source TEXT,
+  lead_id UUID,
   messages JSONB DEFAULT '[]'::jsonb,
   ai_enabled BOOLEAN DEFAULT true,
-  status TEXT DEFAULT 'active' CHECK (status IN ('active', 'completed', 'escalated')),
+  status TEXT DEFAULT 'active',
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- Add constraint separately (in case it fails, table still gets created)
+DO $$ 
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'leads') THEN
+    ALTER TABLE conversations 
+    ADD CONSTRAINT fk_conversations_lead 
+    FOREIGN KEY (lead_id) REFERENCES leads(id) ON DELETE SET NULL;
+  END IF;
+END $$;
+
+-- Add check constraint separately
+ALTER TABLE conversations ADD CONSTRAINT check_status 
+CHECK (status IN ('active', 'completed', 'escalated'));
 
 -- Indexes for fast lookups
 CREATE INDEX IF NOT EXISTS idx_conversations_phone ON conversations(phone_number);
@@ -29,6 +43,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Trigger to auto-update updated_at
+DROP TRIGGER IF EXISTS conversations_updated_at ON conversations;
 CREATE TRIGGER conversations_updated_at
   BEFORE UPDATE ON conversations
   FOR EACH ROW
@@ -36,6 +51,10 @@ CREATE TRIGGER conversations_updated_at
 
 -- RLS Policies
 ALTER TABLE conversations ENABLE ROW LEVEL SECURITY;
+
+-- Drop policies if they exist
+DROP POLICY IF EXISTS "Admin can view all conversations" ON conversations;
+DROP POLICY IF EXISTS "Admin can manage conversations" ON conversations;
 
 -- Admin can see all conversations
 CREATE POLICY "Admin can view all conversations"
