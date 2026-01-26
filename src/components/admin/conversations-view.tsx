@@ -4,7 +4,9 @@ import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { MessageSquare, Phone, AlertCircle, CheckCircle, Clock } from 'lucide-react'
+import { Textarea } from '@/components/ui/textarea'
+import { MessageSquare, Phone, AlertCircle, CheckCircle, Clock, Send, X } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 
 type Message = {
   role: 'user' | 'assistant' | 'system'
@@ -36,7 +38,66 @@ type ConversationsViewProps = {
 }
 
 export function ConversationsView({ conversations }: ConversationsViewProps) {
+  const router = useRouter()
   const [selectedConvo, setSelectedConvo] = useState<Conversation | null>(null)
+  const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'completed' | 'escalated'>('all')
+  const [replyText, setReplyText] = useState('')
+  const [sending, setSending] = useState(false)
+  
+  // Filter conversations based on selected status
+  const filteredConversations = filterStatus === 'all' 
+    ? conversations 
+    : conversations.filter(c => c.status === filterStatus)
+
+  const handleSendReply = async () => {
+    if (!selectedConvo || !replyText.trim()) return
+
+    setSending(true)
+    try {
+      const response = await fetch(`/api/conversations/${selectedConvo.id}/reply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          conversationId: selectedConvo.id,
+          message: replyText.trim(),
+        }),
+      })
+
+      if (response.ok) {
+        setReplyText('')
+        router.refresh() // Refresh to show new message
+      } else {
+        alert('Failed to send message')
+      }
+    } catch (error) {
+      console.error('Send error:', error)
+      alert('Failed to send message')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const handleUpdateStatus = async (conversationId: string, newStatus: string) => {
+    try {
+      const response = await fetch(`/api/conversations/${conversationId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      })
+
+      if (response.ok) {
+        router.refresh()
+        if (selectedConvo?.id === conversationId) {
+          setSelectedConvo({ ...selectedConvo, status: newStatus as any })
+        }
+      } else {
+        alert('Failed to update status')
+      }
+    } catch (error) {
+      console.error('Update error:', error)
+      alert('Failed to update status')
+    }
+  }
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -84,39 +145,69 @@ export function ConversationsView({ conversations }: ConversationsViewProps) {
     <div className="space-y-4">
       {/* Stats */}
       <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Conversations</CardTitle>
-            <MessageSquare className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">{conversations.length}</div>
-          </CardContent>
-        </Card>
+        <button
+          onClick={() => setFilterStatus('all')}
+          className={`text-left transition-all ${
+            filterStatus === 'all' ? 'ring-2 ring-primary' : ''
+          }`}
+        >
+          <Card className="cursor-pointer hover:bg-muted/50">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Conversations</CardTitle>
+              <MessageSquare className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold">{conversations.length}</div>
+              {filterStatus === 'all' && (
+                <p className="text-xs text-muted-foreground mt-1">Showing all</p>
+              )}
+            </CardContent>
+          </Card>
+        </button>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active</CardTitle>
-            <Clock className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">
-              {conversations.filter((c) => c.status === 'active').length}
-            </div>
-          </CardContent>
-        </Card>
+        <button
+          onClick={() => setFilterStatus('active')}
+          className={`text-left transition-all ${
+            filterStatus === 'active' ? 'ring-2 ring-primary' : ''
+          }`}
+        >
+          <Card className="cursor-pointer hover:bg-muted/50">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Active</CardTitle>
+              <Clock className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold">
+                {conversations.filter((c) => c.status === 'active').length}
+              </div>
+              {filterStatus === 'active' && (
+                <p className="text-xs text-muted-foreground mt-1">Filtered</p>
+              )}
+            </CardContent>
+          </Card>
+        </button>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Need Attention</CardTitle>
-            <AlertCircle className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">
-              {conversations.filter((c) => c.status === 'escalated').length}
-            </div>
-          </CardContent>
-        </Card>
+        <button
+          onClick={() => setFilterStatus('escalated')}
+          className={`text-left transition-all ${
+            filterStatus === 'escalated' ? 'ring-2 ring-primary' : ''
+          }`}
+        >
+          <Card className="cursor-pointer hover:bg-muted/50">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Need Attention</CardTitle>
+              <AlertCircle className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold">
+                {conversations.filter((c) => c.status === 'escalated').length}
+              </div>
+              {filterStatus === 'escalated' && (
+                <p className="text-xs text-muted-foreground mt-1">Filtered</p>
+              )}
+            </CardContent>
+          </Card>
+        </button>
       </div>
 
       {/* Conversations List */}
@@ -124,19 +215,23 @@ export function ConversationsView({ conversations }: ConversationsViewProps) {
         <CardHeader>
           <CardTitle>Conversations</CardTitle>
           <CardDescription>
-            {conversations.length === 0
-              ? 'No conversations yet'
+            {filteredConversations.length === 0
+              ? filterStatus === 'all' 
+                ? 'No conversations yet'
+                : `No ${filterStatus} conversations`
               : 'Click a conversation to view full message history'}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {conversations.length === 0 ? (
+          {filteredConversations.length === 0 ? (
             <div className="py-8 text-center text-muted-foreground">
-              No conversations yet. When customers text your Twilio number, they&apos;ll appear here.
+              {filterStatus === 'all' 
+                ? "No conversations yet. When customers text your Twilio number, they'll appear here."
+                : `No ${filterStatus} conversations. Click "Total Conversations" to see all.`}
             </div>
           ) : (
             <div className="space-y-2">
-              {conversations.map((convo) => {
+              {filteredConversations.map((convo) => {
                 const messageCount = convo.messages.length
                 const lastMessage = convo.messages[messageCount - 1]
 
@@ -210,16 +305,49 @@ export function ConversationsView({ conversations }: ConversationsViewProps) {
                   {getStatusBadge(selectedConvo.status)}
                 </div>
                 <Button variant="ghost" size="sm" onClick={() => setSelectedConvo(null)}>
-                  Close
+                  <X className="h-4 w-4" />
                 </Button>
               </div>
               {selectedConvo.lead && (
-                <div className="text-sm text-muted-foreground">
+                <div className="text-sm text-muted-foreground mb-2">
                   Lead: {selectedConvo.lead.name} ({selectedConvo.lead.source})
                 </div>
               )}
-              <div className="text-xs text-muted-foreground">
+              <div className="text-xs text-muted-foreground mb-3">
                 Started: {formatTime(selectedConvo.created_at)} • {selectedConvo.messages.length} messages
+              </div>
+              
+              {/* Action Buttons */}
+              <div className="flex gap-2">
+                {selectedConvo.status !== 'completed' && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleUpdateStatus(selectedConvo.id, 'completed')}
+                  >
+                    <CheckCircle className="h-3 w-3 mr-1" />
+                    Mark Complete
+                  </Button>
+                )}
+                {selectedConvo.status === 'completed' && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleUpdateStatus(selectedConvo.id, 'active')}
+                  >
+                    Reopen
+                  </Button>
+                )}
+                {selectedConvo.status !== 'escalated' && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleUpdateStatus(selectedConvo.id, 'escalated')}
+                  >
+                    <AlertCircle className="h-3 w-3 mr-1" />
+                    Flag for Attention
+                  </Button>
+                )}
               </div>
             </div>
 
@@ -250,6 +378,40 @@ export function ConversationsView({ conversations }: ConversationsViewProps) {
                   </div>
                 </div>
               ))}
+            </div>
+
+            {/* Reply Box */}
+            <div className="border-t p-4">
+              <div className="flex gap-2">
+                <Textarea
+                  value={replyText}
+                  onChange={(e) => setReplyText(e.target.value)}
+                  placeholder="Type your reply..."
+                  className="flex-1 min-h-[80px]"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                      handleSendReply()
+                    }
+                  }}
+                />
+                <Button
+                  onClick={handleSendReply}
+                  disabled={!replyText.trim() || sending}
+                  className="self-end"
+                >
+                  {sending ? (
+                    'Sending...'
+                  ) : (
+                    <>
+                      <Send className="h-4 w-4 mr-1" />
+                      Send
+                    </>
+                  )}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                Press Cmd/Ctrl + Enter to send
+              </p>
             </div>
           </div>
         </div>
