@@ -29,11 +29,20 @@ const uploadFormSchema = z.object({
   image: z
     .any()
     .refine(
-      (files) => files instanceof FileList && files.length > 0,
+      (files) => {
+        // Allow empty FileList if we have a preloaded/compressed file
+        return (files instanceof FileList && files.length > 0) || files === undefined
+      },
       'Image is required'
     )
     .refine(
-      (files) => files instanceof FileList && files[0]?.type.startsWith('image/'),
+      (files) => {
+        // Skip type check if no files (preloaded image scenario)
+        if (!files || (files instanceof FileList && files.length === 0)) {
+          return true
+        }
+        return files instanceof FileList && files[0]?.type.startsWith('image/')
+      },
       'File must be an image'
     ),
   serviceId: z.string().min(1, 'Service type is required'),
@@ -310,8 +319,17 @@ export function UploadForm() {
       return
     }
 
-    // Validate compressed file is available
-    if (!compressedFile) {
+    // Validate that we have EITHER a file input OR a preloaded compressed file
+    const hasFileInput = data.image instanceof FileList && data.image.length > 0
+    const hasPreloadedFile = compressedFile !== null
+
+    if (!hasFileInput && !hasPreloadedFile) {
+      setUploadError('Image is required. Please select an image or use the Before/After tool.')
+      return
+    }
+
+    // If we have file input but no compressed file yet, something went wrong
+    if (hasFileInput && !compressedFile) {
       setUploadError('Image processing failed. Please try again.')
       return
     }
