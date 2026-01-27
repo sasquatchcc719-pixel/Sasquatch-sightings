@@ -80,6 +80,11 @@ Upholstery:
 - Recliner: $75.00
 - Ottoman: $40.00
 
+Leather Furniture Cleaning (Leather Master 3-Step Process):
+- Leather Chair: $99.00
+- Leather Loveseat: $159.00
+- Leather Sofa: $199.00
+
 Hard Surfaces & Rugs:
 - Tile & Grout: $0.80 per sq ft (Average kitchen ≈ $200+)
 - Area Rugs: $0.80 per sq ft
@@ -106,6 +111,12 @@ Deep Restoration Cleaning Process ($75-300):
 5. Sanitize: Antimicrobial treatment for added protection
 
 Key Difference: Both use our signature CRB process. Deep restoration adds rotary extraction and sanitizing for problem carpets.
+
+Leather Furniture Cleaning (Leather Master 3-Step Process):
+1. Surface Cleaning: Remove surface debris and dust
+2. Deep Cleaning: pH-balanced agent removes oils and deep-set dirt
+3. Protection Cream: Apply protective cream to prevent future staining and cracking
+This keeps leather supple, clean, and protected using Leather Master products (Soft Cleaner and Protection Cream).
 
 Safety & Chemicals:
 - We use a Pre-spray to loosen dirt, followed by a High-Heat Rinse
@@ -178,13 +189,19 @@ Q: "What about tile and grout?"
 A: "We do! It runs 80 cents per sq ft. We pre-scrub and then steam clean it to make those grout lines look new again. An average kitchen usually lands around $200-$250."
 
 Q: "What is your process?"
-A: "We apply pre-spray, then use a Counter-Rotating Brush (CRB) that most cleaners don't have. It scrubs deep to dig out hair and debris, then we rinse with truck-mounted steam. That's why we get better results than wand-only cleaners!"
+A: "We apply pre-spray to loosen dirt, then use a Counter-Rotating Brush (CRB) that most cleaners don't have. It scrubs deep to dig out hair and debris, then we rinse with truck-mounted steam. That's why we get better results than wand-only cleaners!"
 
 Q: "What's the difference between standard and deep cleaning?"
 A: "Both use pre-spray + our CRB scrubbing. Standard ($46-175) is great for maintenance. Deep restoration ($75-300) adds rotary extraction and sanitizing—perfect for heavily soiled carpets. What condition is your carpet in?"
 
 Q: "What's deep cleaning?" or "Do you do deep restoration?"
 A: "Yes! Deep restoration: Pre-spray, CRB scrubbing, truck-mounted steam, rotary extraction, and sanitizing. It's $75 per 200 sq ft interval (100-200 sq ft = $75, 201-400 sq ft = $150, etc.). Great for heavily soiled carpets!"
+
+Q: "Do you clean leather furniture?"
+A: "Yes! We use the Leather Master 3-step process: surface clean, deep clean with pH-balanced agent, and protective cream to prevent staining and cracking. Leather chair $99, loveseat $159, sofa $199."
+
+Q: "What's the leather cleaning process?"
+A: "We use Leather Master products: First, surface cleaning to remove debris. Then deep cleaning with a pH-balanced agent to remove oils. Finally, we apply protection cream to keep it supple and prevent future damage."
 
 Q: "When can you come?" or "I want to schedule"
 A: "Great! Check our calendar and pick a time here: https://sightings.sasquatchcarpet.com/book"
