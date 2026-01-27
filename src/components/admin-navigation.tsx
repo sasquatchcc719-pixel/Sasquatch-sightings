@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Briefcase, Trophy, Users, ExternalLink, Phone, MessageSquare } from 'lucide-react'
+import { Briefcase, Trophy, Users, ExternalLink, Phone, MessageSquare, BarChart3 } from 'lucide-react'
 
 export function AdminNavigation() {
   const pathname = usePathname()
@@ -13,6 +13,12 @@ export function AdminNavigation() {
       href: '/admin',
       icon: Briefcase,
       active: pathname === '/admin',
+    },
+    {
+      name: 'Stats',
+      href: '/admin/stats',
+      icon: BarChart3,
+      active: pathname === '/admin/stats',
     },
     {
       name: 'Leads',

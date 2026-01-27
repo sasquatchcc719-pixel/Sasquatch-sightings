@@ -27,13 +27,15 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     // Parse request body
     const body = await request.json()
-    const { ai_description, status, published_at } = body
+    const { ai_description, status, published_at, invoice_amount, hours_worked } = body
 
     // Build update object with only provided fields
     const updates: {
       ai_description?: string
       status?: string
       published_at?: string
+      invoice_amount?: number
+      hours_worked?: number
     } = {}
 
     if (ai_description !== undefined) {
@@ -46,6 +48,14 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     if (published_at !== undefined) {
       updates.published_at = published_at
+    }
+
+    if (invoice_amount !== undefined) {
+      updates.invoice_amount = invoice_amount
+    }
+
+    if (hours_worked !== undefined) {
+      updates.hours_worked = hours_worked
     }
 
     // Update job in database

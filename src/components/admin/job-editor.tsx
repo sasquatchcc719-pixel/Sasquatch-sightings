@@ -5,9 +5,10 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, Save, Send, MapPin, Sparkles } from 'lucide-react'
+import { Loader2, Save, Send, MapPin, Sparkles, DollarSign, Clock } from 'lucide-react'
 
 type Job = {
   id: string
@@ -18,6 +19,8 @@ type Job = {
   gps_lng: number | null
   raw_voice_input: string | null
   ai_description: string | null
+  invoice_amount: number | null
+  hours_worked: number | null
   status: string
   created_at: string
   services: {
@@ -32,6 +35,8 @@ type JobEditorProps = {
 export function JobEditor({ job }: JobEditorProps) {
   const router = useRouter()
   const [description, setDescription] = useState(job.ai_description || '')
+  const [invoiceAmount, setInvoiceAmount] = useState(job.invoice_amount?.toString() || '')
+  const [hoursWorked, setHoursWorked] = useState(job.hours_worked?.toString() || '')
   const [isSaving, setIsSaving] = useState(false)
   const [isPublishing, setIsPublishing] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
@@ -83,10 +88,28 @@ export function JobEditor({ job }: JobEditorProps) {
     setSuccessMessage(null)
 
     try {
+      const updateData: any = { ai_description: description }
+      
+      // Add invoice amount if provided
+      if (invoiceAmount) {
+        const amount = parseFloat(invoiceAmount)
+        if (!isNaN(amount) && amount > 0) {
+          updateData.invoice_amount = amount
+        }
+      }
+      
+      // Add hours worked if provided
+      if (hoursWorked) {
+        const hours = parseFloat(hoursWorked)
+        if (!isNaN(hours) && hours > 0) {
+          updateData.hours_worked = hours
+        }
+      }
+
       const response = await fetch(`/api/jobs/${job.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ai_description: description }),
+        body: JSON.stringify(updateData),
       })
 
       const result = await response.json()
@@ -95,7 +118,7 @@ export function JobEditor({ job }: JobEditorProps) {
         throw new Error(result.error || 'Failed to save description')
       }
 
-      setSuccessMessage('Description saved successfully!')
+      setSuccessMessage('Job details saved successfully!')
       setTimeout(() => setSuccessMessage(null), 3000)
     } catch (err) {
       console.error('Save error:', err)
@@ -120,14 +143,32 @@ export function JobEditor({ job }: JobEditorProps) {
     setSuccessMessage(null)
 
     try {
+      const updateData: any = {
+        ai_description: description,
+        status: 'published',
+        published_at: new Date().toISOString(),
+      }
+      
+      // Add invoice amount if provided
+      if (invoiceAmount) {
+        const amount = parseFloat(invoiceAmount)
+        if (!isNaN(amount) && amount > 0) {
+          updateData.invoice_amount = amount
+        }
+      }
+      
+      // Add hours worked if provided
+      if (hoursWorked) {
+        const hours = parseFloat(hoursWorked)
+        if (!isNaN(hours) && hours > 0) {
+          updateData.hours_worked = hours
+        }
+      }
+
       const response = await fetch(`/api/jobs/${job.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ai_description: description,
-          status: 'published',
-          published_at: new Date().toISOString(),
-        }),
+        body: JSON.stringify(updateData),
       })
 
       const result = await response.json()
@@ -137,7 +178,7 @@ export function JobEditor({ job }: JobEditorProps) {
       }
 
       // Redirect back to dashboard with success message
-      router.push('/protected?published=true')
+      router.push('/admin?published=true')
     } catch (err) {
       console.error('Publish error:', err)
       setError(err instanceof Error ? err.message : 'Failed to publish')
@@ -292,6 +333,49 @@ export function JobEditor({ job }: JobEditorProps) {
               <p className="text-xs text-muted-foreground">
                 {description.length} characters
               </p>
+
+              {/* Revenue Tracking Fields */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t">
+                <div className="space-y-2">
+                  <Label htmlFor="invoiceAmount">
+                    <DollarSign className="mr-1 inline-block h-4 w-4" />
+                    Invoice Amount
+                  </Label>
+                  <Input
+                    id="invoiceAmount"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={invoiceAmount}
+                    onChange={(e) => setInvoiceAmount(e.target.value)}
+                    placeholder="0.00"
+                    className="font-mono"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Total revenue for this job
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="hoursWorked">
+                    <Clock className="mr-1 inline-block h-4 w-4" />
+                    Hours Worked
+                  </Label>
+                  <Input
+                    id="hoursWorked"
+                    type="number"
+                    step="0.25"
+                    min="0"
+                    value={hoursWorked}
+                    onChange={(e) => setHoursWorked(e.target.value)}
+                    placeholder="0.0"
+                    className="font-mono"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Time spent (e.g., 2.5 hours)
+                  </p>
+                </div>
+              </div>
 
               {/* Action Buttons */}
               <div className="flex flex-col gap-3">
