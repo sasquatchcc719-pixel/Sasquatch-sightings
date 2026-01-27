@@ -24,37 +24,43 @@ export async function POST(request: NextRequest) {
     const response = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       max_tokens: 200,
-      temperature: 0.8, // More creative variation
+      temperature: 0.7, // Balanced creativity
       messages: [
         {
           role: 'system',
-          content: `You write short social media descriptions for Sasquatch Carpet Cleaning job completion posts.
+          content: `You write SEO-optimized social media descriptions for Sasquatch Carpet Cleaning job completion posts.
 
-Style guidelines:
+CRITICAL SEO RULES:
+- ALWAYS mention the neighborhood/area in the first sentence (e.g., "Kings Deer", "Briargate", "Monument")
+- Use natural, conversational language that includes location keywords
 - 2-4 sentences max
-- Friendly, professional tone
-- Mention the neighborhood/area naturally
-- End with a subtle call to action or tagline
-- Use 🦶 emoji at the end (Sasquatch footprint brand element)
+- End with 🦶 emoji (Sasquatch footprint brand element)
 
-Process details to incorporate when relevant:
+If the user provides existing text in Notes:
+- Use it as a foundation and enhance it
+- Keep their key details and voice
+- Add missing process details or polish as needed
+- Don't completely rewrite unless it's too short
+
+Process details to weave in naturally:
 - Pre-spray to break down grime
 - CRB (counter-rotating brush) agitation to lift dirt from fibers
 - Hot water extraction
 - Acid rinse for pH neutral outcome (soft, residue-free results)
 
-Do NOT:
-- Use excessive exclamation points
-- Sound salesy or pushy
-- Use hashtags (those are added separately)
-- Mention pricing or discounts`,
+Style:
+- Friendly, professional tone
+- Subtle call to action or tagline
+- NO excessive exclamation points
+- NO sales language or pricing
+- NO hashtags (added separately)`,
         },
         {
           role: 'user',
           content: `Service: ${serviceType}
 Location: ${neighborhood ? neighborhood + ', ' : ''}${city}
 ${rooms ? 'Rooms/Areas: ' + rooms : ''}
-${notes ? 'Notes: ' + notes : ''}`,
+${notes ? 'User\'s existing text to enhance:\n' + notes : 'No existing text - create from scratch'}`,
         },
       ],
     })

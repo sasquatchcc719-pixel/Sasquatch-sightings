@@ -281,6 +281,30 @@ export function UploadForm() {
         throw new Error('Service not found')
       }
 
+      // Reverse geocode GPS to get actual neighborhood and city
+      const geocodeResponse = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${gpsCoordinates.lat}&lon=${gpsCoordinates.lng}`,
+        {
+          headers: {
+            'User-Agent': 'SasquatchJobPinner/1.0',
+          },
+        }
+      )
+
+      let city = 'Colorado Springs'
+      let neighborhood = null
+
+      if (geocodeResponse.ok) {
+        const geocodeData = await geocodeResponse.json()
+        city =
+          geocodeData.address?.city ||
+          geocodeData.address?.town ||
+          geocodeData.address?.village ||
+          'Colorado Springs'
+        neighborhood =
+          geocodeData.address?.neighbourhood || geocodeData.address?.suburb
+      }
+
       // Call API to generate description
       const response = await fetch('/api/generate-description', {
         method: 'POST',
@@ -289,7 +313,8 @@ export function UploadForm() {
         },
         body: JSON.stringify({
           serviceType: selectedService.name,
-          city: 'Colorado Springs', // Will be updated with actual geocoded city
+          city,
+          neighborhood,
           notes: currentDescription || '', // Include any existing text as notes
         }),
       })
