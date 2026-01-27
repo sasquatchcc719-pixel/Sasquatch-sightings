@@ -34,6 +34,8 @@ export default async function JobDetailPage({ params }: PageProps) {
       gps_lng,
       raw_voice_input,
       ai_description,
+      invoice_amount,
+      hours_worked,
       status,
       created_at,
       services (
