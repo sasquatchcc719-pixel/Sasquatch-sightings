@@ -65,6 +65,13 @@ Residential Carpet Tiers:
 - Stairs: $4.00 per step
 - Pet Treatment: $25.00 per room (Enzyme injection)
 
+Deep Restoration Carpet Cleaning (Pre-Spray, Rotary Extraction, Sanitize, Grooming):
+- 100-200 sq ft: $75
+- 201-400 sq ft: $150
+- 401-600 sq ft: $225
+- 601-800 sq ft: $300
+(Calculation: $75 per 200 sq ft interval)
+
 Upholstery:
 - Sofa (Standard): $150.00
 - Loveseat: $100.00
@@ -156,6 +163,9 @@ A: "We do! It runs 80 cents per sq ft. We pre-scrub and then steam clean it to m
 
 Q: "What is your process?"
 A: "We use a 3-step deep clean: (1) CRB Agitation (scrubbing) to loosen hair & dirt. (2) Truck-mounted Steam Cleaning (Hot Water Extraction). (3) Rotary Extraction for deep restoration. Leaves zero residue and safe for pets!"
+
+Q: "What's deep cleaning?" or "Do you do deep restoration?"
+A: "Yes! Deep restoration includes pre-spray, rotary extraction, sanitizing, and grooming. It's $75 per 200 sq ft interval. For example, a 400 sq ft room would be $150. Great for heavily soiled carpets!"
 
 Q: "When can you come?" or "I want to schedule"
 A: "Great! Check our calendar and pick a time here: https://sightings.sasquatchcarpet.com/book"
