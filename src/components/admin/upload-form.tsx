@@ -338,6 +338,11 @@ export function UploadForm() {
     setUploadError(null)
 
     try {
+      // TypeScript safety: Ensure compressedFile is not null
+      if (!compressedFile) {
+        throw new Error('No image file available')
+      }
+
       // Prepare form data for upload
       const formData = new FormData()
       formData.append('image', compressedFile)
