@@ -144,7 +144,7 @@ export function ConversationsView({ conversations }: ConversationsViewProps) {
   return (
     <div className="space-y-4">
       {/* Stats */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-3 sm:gap-4 grid-cols-3 md:grid-cols-3">
         <button
           onClick={() => setFilterStatus('all')}
           className={`text-left transition-all ${
@@ -152,12 +152,12 @@ export function ConversationsView({ conversations }: ConversationsViewProps) {
           }`}
         >
           <Card className="cursor-pointer hover:bg-muted/50">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Conversations</CardTitle>
-              <MessageSquare className="h-4 w-4 text-muted-foreground" />
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 p-3 sm:p-4">
+              <CardTitle className="text-xs sm:text-sm font-medium leading-tight">Total Conversations</CardTitle>
+              <MessageSquare className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground flex-shrink-0" />
             </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">{conversations.length}</div>
+            <CardContent className="p-3 sm:p-4 pt-0">
+              <div className="text-2xl sm:text-3xl font-bold">{conversations.length}</div>
               {filterStatus === 'all' && (
                 <p className="text-xs text-muted-foreground mt-1">Showing all</p>
               )}
@@ -172,12 +172,12 @@ export function ConversationsView({ conversations }: ConversationsViewProps) {
           }`}
         >
           <Card className="cursor-pointer hover:bg-muted/50">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Active</CardTitle>
-              <Clock className="h-4 w-4 text-muted-foreground" />
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 p-3 sm:p-4">
+              <CardTitle className="text-xs sm:text-sm font-medium">Active</CardTitle>
+              <Clock className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground flex-shrink-0" />
             </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">
+            <CardContent className="p-3 sm:p-4 pt-0">
+              <div className="text-2xl sm:text-3xl font-bold">
                 {conversations.filter((c) => c.status === 'active').length}
               </div>
               {filterStatus === 'active' && (
@@ -194,12 +194,12 @@ export function ConversationsView({ conversations }: ConversationsViewProps) {
           }`}
         >
           <Card className="cursor-pointer hover:bg-muted/50">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Need Attention</CardTitle>
-              <AlertCircle className="h-4 w-4 text-muted-foreground" />
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 p-3 sm:p-4">
+              <CardTitle className="text-xs sm:text-sm font-medium leading-tight">Need Attention</CardTitle>
+              <AlertCircle className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground flex-shrink-0" />
             </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">
+            <CardContent className="p-3 sm:p-4 pt-0">
+              <div className="text-2xl sm:text-3xl font-bold">
                 {conversations.filter((c) => c.status === 'escalated').length}
               </div>
               {filterStatus === 'escalated' && (
@@ -239,14 +239,14 @@ export function ConversationsView({ conversations }: ConversationsViewProps) {
                   <div
                     key={convo.id}
                     onClick={() => setSelectedConvo(convo)}
-                    className="w-full text-left rounded-lg border p-4 hover:bg-muted transition-colors cursor-pointer"
+                    className="w-full text-left rounded-lg border p-3 sm:p-4 hover:bg-muted transition-colors cursor-pointer"
                   >
-                    <div className="flex items-start justify-between gap-4">
+                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-4">
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
+                        <div className="flex items-center flex-wrap gap-2 mb-1">
                           <a
                             href={`tel:${convo.phone_number}`}
-                            className="font-medium text-blue-400 hover:underline"
+                            className="font-medium text-blue-400 hover:underline text-sm sm:text-base"
                             onClick={(e) => e.stopPropagation()}
                           >
                             {convo.phone_number}
@@ -254,23 +254,23 @@ export function ConversationsView({ conversations }: ConversationsViewProps) {
                           {getStatusBadge(convo.status)}
                         </div>
                         {convo.lead?.name && (
-                          <div className="text-sm text-muted-foreground mb-1">
+                          <div className="text-xs sm:text-sm text-muted-foreground mb-1">
                             {convo.lead.name}
                           </div>
                         )}
                         {lastMessage && (
-                          <div className="text-sm text-muted-foreground truncate">
+                          <div className="text-xs sm:text-sm text-muted-foreground line-clamp-2">
                             {lastMessage.role === 'user' ? '💬 ' : '🤖 '}
                             {lastMessage.content}
                           </div>
                         )}
                       </div>
-                      <div className="text-right">
-                        <div className="text-xs text-muted-foreground">
+                      <div className="flex sm:flex-col items-center sm:items-end gap-2 sm:gap-0 text-right">
+                        <div className="text-xs text-muted-foreground whitespace-nowrap">
                           {formatTime(convo.updated_at)}
                         </div>
-                        <div className="text-xs text-muted-foreground mt-1">
-                          {messageCount} messages
+                        <div className="text-xs text-muted-foreground sm:mt-1">
+                          {messageCount} msg{messageCount !== 1 ? 's' : ''}
                         </div>
                       </div>
                     </div>
