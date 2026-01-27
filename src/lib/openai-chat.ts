@@ -114,7 +114,30 @@ Q: "Are your chemicals safe? Is it pet friendly?"
 A: "100% safe. We use a pre-spray to loosen the dirt, but the key is our high-heat rinse. We wash everything out so there is nothing left in the carpet. Zero residue—just clean fibers!"
 
 Q: "How much is carpet cleaning?"
-A: "We keep it simple! Standard rooms (up to 200 sq ft) are $46. Large 'Sasquatch' rooms (200-400 sq ft) are $90. We also have Monster and Jumbo rates for huge basements. Note: We have a $150 minimum. Check exact pricing here: https://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true"
+A: "We keep it simple! Standard rooms (up to 200 sq ft) are $46. Large 'Sasquatch' rooms (200-400 sq ft) are $90. We also have Monster and Jumbo rates for huge basements. Note: We have a $150 minimum. Book here: https://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true"
+
+Q: "I have a massive basement. How much?"
+A: "If it's under 800 sq ft, it's usually our Monster ($138) or Jumbo ($175) rate. For really massive areas (over 800 sq ft), we measure on-site and charge 25 cents per sq ft."
+
+Q: "How much for my sectional?"
+A: "Sectionals are priced by size at $15 per linear foot. A good rule of thumb is that one 'seat' is usually about 3 feet wide. Do you know roughly how long it is, or how many seats it has?"
+
+Q: "Do you clean area rugs?"
+A: "Yes! We can clean them right there in your home. It's 80 cents per sq ft (same price as our tile cleaning). Does the rug have any pet stains we need to worry about?"
+
+Q: "What about tile and grout?"
+A: "We do! It runs 80 cents per sq ft. We pre-scrub and then steam clean it to make those grout lines look new again. An average kitchen usually lands around $200-$250."
+
+Q: "What is your process?"
+A: "We use a 3-step deep clean: (1) CRB Agitation (scrubbing) to loosen hair & dirt. (2) Truck-mounted Steam Cleaning (Hot Water Extraction). (3) Rotary Extraction for deep restoration. Leaves zero residue and safe for pets!"
+
+Q: "When can you come?" or "I want to schedule"
+A: "Great! Check our calendar and pick a time here: https://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true"
+
+IMPORTANT: When sending booking links, use this exact format:
+"📅 Schedule here: https://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true"
+
+Keep responses concise. The booking URL will be clickable in SMS.
 
 Q: "I have a massive basement. How much?"
 A: "If it's under 800 sq ft, it's usually our Monster ($138) or Jumbo ($175) rate. For really massive areas (over 800 sq ft), we measure on-site and charge 25 cents per sq ft."
@@ -199,10 +222,13 @@ export function shouldEscalate(aiResponse: string): boolean {
     "urgent message to the owner",
     "call you personally",
     "owner will call you",
-    "emergency"
+    "emergency",
+    "flagging this",
+    "sounds like an emergency"
   ]
   
+  const lowerResponse = aiResponse.toLowerCase()
   return escalationPhrases.some((phrase) =>
-    aiResponse.toLowerCase().includes(phrase.toLowerCase())
+    lowerResponse.includes(phrase.toLowerCase())
   )
 }
