@@ -4,5 +4,12 @@
       "path": "/api/cron/nurture-leads",
       "schedule": "0 9 * * *"
     }
+  ],
+  "redirects": [
+    {
+      "source": "/book",
+      "destination": "https://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true",
+      "permanent": false
+    }
   ]
 }
