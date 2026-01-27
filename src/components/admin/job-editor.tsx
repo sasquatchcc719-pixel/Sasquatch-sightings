@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, Save, Send, MapPin } from 'lucide-react'
+import { Loader2, Save, Send, MapPin, Sparkles } from 'lucide-react'
 
 type Job = {
   id: string
@@ -34,8 +34,43 @@ export function JobEditor({ job }: JobEditorProps) {
   const [description, setDescription] = useState(job.ai_description || '')
   const [isSaving, setIsSaving] = useState(false)
   const [isPublishing, setIsPublishing] = useState(false)
+  const [isGenerating, setIsGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+
+  const handleGenerateDescription = async () => {
+    setIsGenerating(true)
+    setError(null)
+    setSuccessMessage(null)
+
+    try {
+      const response = await fetch('/api/generate-description', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          serviceType: job.services[0]?.name,
+          neighborhood: job.neighborhood,
+          city: job.city,
+          notes: job.raw_voice_input,
+        }),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to generate description')
+      }
+
+      setDescription(result.description)
+      setSuccessMessage('Description generated! Edit if needed, then save.')
+      setTimeout(() => setSuccessMessage(null), 5000)
+    } catch (err) {
+      console.error('Generate error:', err)
+      setError(err instanceof Error ? err.message : 'Failed to generate description')
+    } finally {
+      setIsGenerating(false)
+    }
+  }
 
   const handleSaveDescription = async () => {
     if (!description.trim()) {
@@ -219,16 +254,38 @@ export function JobEditor({ job }: JobEditorProps) {
               <div>
                 <Label htmlFor="description">Job Description</Label>
                 <p className="text-xs text-muted-foreground mb-2">
-                  Write or edit the professional description for this job
+                  Generate with AI or write your own
                 </p>
               </div>
+
+              {/* AI Generate Button */}
+              <Button
+                type="button"
+                onClick={handleGenerateDescription}
+                disabled={isGenerating}
+                variant="secondary"
+                size="sm"
+                className="w-full"
+              >
+                {isGenerating ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Generating with AI...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="mr-2 h-4 w-4" />
+                    Generate Description with AI
+                  </>
+                )}
+              </Button>
 
               <Textarea
                 id="description"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={12}
-                placeholder="Enter a professional description of the job..."
+                placeholder="Click 'Generate with AI' or write your own..."
                 className="resize-none"
               />
 
