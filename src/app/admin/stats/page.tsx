@@ -202,7 +202,9 @@ export default function StatsPage() {
         setIsLoading(false)
       }
     }
+  }
 
+  useEffect(() => {
     fetchData()
   }, [])
 
