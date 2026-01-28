@@ -38,6 +38,7 @@ type Stats = {
     hours: number
     revenuePerHour: number
     utilization: number
+    availableHours: number
   }
   pace: {
     weeklyTarget: number
@@ -45,6 +46,13 @@ type Stats = {
     projectedAnnual: number
     onPace: boolean
     percentOfGoal: number
+  }
+  potential: {
+    revenueAtFullUtilizationYTD: number
+    revenueLeftOnTableYTD: number
+    annualRevenueAtFullUtilization: number
+    annualRevenueLeftOnTable: number
+    totalAvailableHoursAnnual: number
   }
 }
 
@@ -209,6 +217,17 @@ export default function StatsPage() {
       const percentOfGoal =
         (ytdRevenue / userSettings.annual_revenue_goal) * 100
 
+      // Potential revenue calculations
+      const revenuePerHour = ytdHours > 0 ? ytdRevenue / ytdHours : 0
+      const totalAvailableHoursAnnual =
+        userSettings.available_hours_per_week * userSettings.work_weeks_per_year
+      const revenueAtFullUtilizationYTD = revenuePerHour * availableHoursYTD
+      const revenueLeftOnTableYTD = revenueAtFullUtilizationYTD - ytdRevenue
+      const annualRevenueAtFullUtilization =
+        revenuePerHour * totalAvailableHoursAnnual
+      const annualRevenueLeftOnTable =
+        annualRevenueAtFullUtilization - projectedAnnual
+
       setStats({
         thisWeek: {
           jobs: thisWeekData.length,
@@ -225,6 +244,7 @@ export default function StatsPage() {
           hours: ytdHours,
           revenuePerHour: ytdHours > 0 ? ytdRevenue / ytdHours : 0,
           utilization,
+          availableHours: availableHoursYTD,
         },
         pace: {
           weeklyTarget,
@@ -232,6 +252,13 @@ export default function StatsPage() {
           projectedAnnual,
           onPace,
           percentOfGoal,
+        },
+        potential: {
+          revenueAtFullUtilizationYTD,
+          revenueLeftOnTableYTD,
+          annualRevenueAtFullUtilization,
+          annualRevenueLeftOnTable,
+          totalAvailableHoursAnnual,
         },
       })
     } catch (err) {
@@ -480,6 +507,67 @@ export default function StatsPage() {
             </div>
             <p className="text-2xl font-bold">
               {stats.yearToDate.utilization.toFixed(1)}%
+            </p>
+          </Card>
+        </div>
+      </div>
+
+      {/* Potential Revenue - Money Left on Table */}
+      <div className="mb-8">
+        <h2 className="mb-4 text-xl font-semibold">
+          Potential at 100% Utilization
+        </h2>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <Card className="border-green-200 bg-green-50 p-4 dark:border-green-900 dark:bg-green-950">
+            <div className="mb-1 flex items-center gap-2 text-green-700 dark:text-green-400">
+              <TrendingUp className="h-4 w-4" />
+              <p className="text-sm font-medium">YTD Potential Revenue</p>
+            </div>
+            <p className="text-2xl font-bold text-green-700 dark:text-green-400">
+              {formatCurrency(stats.potential.revenueAtFullUtilizationYTD)}
+            </p>
+            <p className="mt-1 text-xs text-green-600 dark:text-green-500">
+              At {stats.yearToDate.availableHours.toFixed(0)} available hours
+            </p>
+          </Card>
+
+          <Card className="border-red-200 bg-red-50 p-4 dark:border-red-900 dark:bg-red-950">
+            <div className="mb-1 flex items-center gap-2 text-red-700 dark:text-red-400">
+              <TrendingDown className="h-4 w-4" />
+              <p className="text-sm font-medium">YTD Left on Table</p>
+            </div>
+            <p className="text-2xl font-bold text-red-700 dark:text-red-400">
+              {formatCurrency(stats.potential.revenueLeftOnTableYTD)}
+            </p>
+            <p className="mt-1 text-xs text-red-600 dark:text-red-500">
+              {(100 - stats.yearToDate.utilization).toFixed(1)}% unused capacity
+            </p>
+          </Card>
+
+          <Card className="border-green-200 bg-green-50 p-4 dark:border-green-900 dark:bg-green-950">
+            <div className="mb-1 flex items-center gap-2 text-green-700 dark:text-green-400">
+              <DollarSign className="h-4 w-4" />
+              <p className="text-sm font-medium">Annual Potential</p>
+            </div>
+            <p className="text-2xl font-bold text-green-700 dark:text-green-400">
+              {formatCurrency(stats.potential.annualRevenueAtFullUtilization)}
+            </p>
+            <p className="mt-1 text-xs text-green-600 dark:text-green-500">
+              At ${stats.yearToDate.revenuePerHour.toFixed(0)}/hr ×{' '}
+              {stats.potential.totalAvailableHoursAnnual} hrs
+            </p>
+          </Card>
+
+          <Card className="border-red-200 bg-red-50 p-4 dark:border-red-900 dark:bg-red-950">
+            <div className="mb-1 flex items-center gap-2 text-red-700 dark:text-red-400">
+              <TrendingDown className="h-4 w-4" />
+              <p className="text-sm font-medium">Annual Left on Table</p>
+            </div>
+            <p className="text-2xl font-bold text-red-700 dark:text-red-400">
+              {formatCurrency(stats.potential.annualRevenueLeftOnTable)}
+            </p>
+            <p className="mt-1 text-xs text-red-600 dark:text-red-500">
+              Projected gap vs 100% utilization
             </p>
           </Card>
         </div>
