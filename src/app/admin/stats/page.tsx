@@ -378,23 +378,27 @@ export default function StatsPage() {
   return (
     <div className="container mx-auto max-w-6xl px-4 py-8">
       <div className="mb-8">
-        <div className="mb-4 flex items-start justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">Utilization Tracker</h1>
-            <p className="text-muted-foreground mt-2">
+        {/* Mobile: buttons first, title below. Desktop: side by side */}
+        <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div className="order-2 md:order-1">
+            <h1 className="text-2xl font-bold md:text-3xl">
+              Utilization Tracker
+            </h1>
+            <p className="text-muted-foreground mt-1 text-sm md:mt-2 md:text-base">
               Track revenue, efficiency, and progress toward your annual goal
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="order-1 flex shrink-0 gap-2 md:order-2">
             <Button
               onClick={() => setShowQuickEntry(!showQuickEntry)}
               variant="default"
+              size="sm"
             >
-              <Plus className="mr-2 h-4 w-4" />
+              <Plus className="mr-1 h-4 w-4" />
               Quick Entry
             </Button>
-            <Button onClick={openSettingsEditor} variant="outline">
-              <SettingsIcon className="mr-2 h-4 w-4" />
+            <Button onClick={openSettingsEditor} variant="outline" size="sm">
+              <SettingsIcon className="mr-1 h-4 w-4" />
               Goals
             </Button>
           </div>
