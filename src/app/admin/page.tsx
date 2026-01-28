@@ -2,7 +2,7 @@ import { createClient } from '@/supabase/server'
 import { UploadForm } from '@/components/admin/upload-form'
 import { DraftJobsList } from '@/components/admin/draft-jobs-list'
 import { Button } from '@/components/ui/button'
-import { Briefcase, FileText, Map, Camera, Image } from 'lucide-react'
+import { Briefcase, FileText, Map, Image } from 'lucide-react'
 import Link from 'next/link'
 
 export default async function AdminPage() {
@@ -23,7 +23,7 @@ export default async function AdminPage() {
       services (
         name
       )
-    `
+    `,
     )
     .eq('status', 'published')
     .order('published_at', { ascending: false })
@@ -38,9 +38,10 @@ export default async function AdminPage() {
             Publish New Job
           </h1>
           <p className="text-muted-foreground">
-            Upload a photo and add a description to publish a job directly to the map
+            Upload a photo and add a description to publish a job directly to
+            the map
           </p>
-          
+
           {/* Quick Actions */}
           <div className="flex flex-wrap gap-2 pt-2">
             <Button asChild variant="default" size="sm">
@@ -53,12 +54,6 @@ export default async function AdminPage() {
               <Link href="/admin/tools/combine">
                 <Image className="mr-2 h-4 w-4" />
                 Before/After Tool
-              </Link>
-            </Button>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/sightings" target="_blank">
-                <Camera className="mr-2 h-4 w-4" />
-                Test Contest
               </Link>
             </Button>
           </div>
@@ -77,7 +72,7 @@ export default async function AdminPage() {
               <FileText className="h-7 w-7" />
               Published Jobs
             </h2>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-muted-foreground text-sm">
               View and edit your published jobs
             </p>
           </div>
