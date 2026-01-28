@@ -39,11 +39,9 @@ export async function POST(request: NextRequest) {
     if (!fullName || !phoneNumber || !email) {
       return NextResponse.json(
         { error: 'Full name, phone number, and email are required' },
-        { status: 400 }
+        { status: 400 },
       )
     }
-
-
 
     // Parse GPS coordinates (optional - may be null)
     let lat: number | null = null
@@ -57,7 +55,7 @@ export async function POST(request: NextRequest) {
       if (isNaN(lat) || isNaN(lng)) {
         return NextResponse.json(
           { error: 'Invalid GPS coordinates' },
-          { status: 400 }
+          { status: 400 },
         )
       }
     }
@@ -68,7 +66,7 @@ export async function POST(request: NextRequest) {
     // Reverse geocode GPS coordinates to get city and state (for SEO filename)
     let city: string | null = null
     let state: string | null = null
-    
+
     if (lat !== null && lng !== null) {
       try {
         const geocodeResult = await reverseGeocode(lat, lng)
@@ -99,11 +97,7 @@ export async function POST(request: NextRequest) {
         .toBuffer()
 
       // Generate SEO-friendly filename
-      filename = generateSightingSEOFilename(
-        city,
-        state,
-        imageFile.name
-      )
+      filename = generateSightingSEOFilename(city, state, imageFile.name)
 
       // Upload optimized image to Supabase Storage
       const { data: uploadData, error: uploadError } = await supabase.storage
@@ -117,12 +111,14 @@ export async function POST(request: NextRequest) {
         console.error('Storage upload error:', uploadError)
         return NextResponse.json(
           { error: 'Failed to upload image' },
-          { status: 500 }
+          { status: 500 },
         )
       }
 
       // Get public URL for the uploaded image
-      const { data } = supabase.storage.from('sighting-images').getPublicUrl(filename)
+      const { data } = supabase.storage
+        .from('sighting-images')
+        .getPublicUrl(filename)
       publicUrl = data.publicUrl
     }
 
@@ -151,7 +147,7 @@ export async function POST(request: NextRequest) {
     if (!isUnique) {
       return NextResponse.json(
         { error: 'Failed to generate unique coupon code. Please try again.' },
-        { status: 500 }
+        { status: 500 },
       )
     }
 
@@ -186,7 +182,7 @@ export async function POST(request: NextRequest) {
       console.error('Database insert error:', insertError)
       return NextResponse.json(
         { error: 'Failed to create sighting record' },
-        { status: 500 }
+        { status: 500 },
       )
     }
 
@@ -195,17 +191,21 @@ export async function POST(request: NextRequest) {
     try {
       const adminClient = createAdminClient()
       const leadLocation = locationText || city || null
-      const { data: leadData, error: leadError } = await adminClient.from('leads').insert({
-        source: 'contest',
-        sighting_id: sighting.id, // Link to sighting for cascade delete
-        name: fullName,
-        phone: phoneNumber,
-        email: email,
-        location: leadLocation,
-        status: 'new',
-        notes: hasPhoto ? 'Submitted with photo' : 'No photo submitted',
-      }).select('id').single()
-      
+      const { data: leadData, error: leadError } = await adminClient
+        .from('leads')
+        .insert({
+          source: 'contest',
+          sighting_id: sighting.id, // Link to sighting for cascade delete
+          name: fullName,
+          phone: phoneNumber,
+          email: email,
+          location: leadLocation,
+          status: 'new',
+          notes: hasPhoto ? 'Submitted with photo' : 'No photo submitted',
+        })
+        .select('id')
+        .single()
+
       if (leadError) {
         console.error('Failed to create lead:', leadError)
       } else if (leadData) {
@@ -232,34 +232,36 @@ export async function POST(request: NextRequest) {
 
     // Twilio SMS (primary notification method)
     const locationStr = locationText || city || 'Unknown location'
-    
+
     // Send admin notification
     await sendAdminSMS(
       `🏆 New Contest Entry\n${fullName} - ${phoneNumber}\n${locationStr}${hasPhoto ? ' (with photo)' : ''}`,
-      'contest_entry_admin'
+      'contest_entry_admin',
     )
 
     // Send customer auto-response with booking link and coupon
     await sendCustomerSMS(
       phoneNumber,
-      `Thanks for entering the Sasquatch contest! 🦶\nBook your carpet cleaning now and get $20 off:\nhttps://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true\nUse coupon: Contest20 (add to notes when booking)\nQuestions? Call (719) 249-8791`,
+      `Thanks for entering the Sasquatch contest! 🦶\nBook your carpet cleaning now and get $20 off:\nhttps://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true\nUse coupon: SCC20 (add to notes when booking)\nQuestions? Call (719) 249-8791`,
       leadId,
-      'contest_entry'
+      'contest_entry',
     )
 
     // Return success with coupon
-    return NextResponse.json({
-      success: true,
-      message: 'Sighting logged successfully',
-      data: sighting,
-      couponCode: 'SASQUATCH2026',
-    }, { status: 201 })
-
+    return NextResponse.json(
+      {
+        success: true,
+        message: 'Sighting logged successfully',
+        data: sighting,
+        couponCode: 'SCC20',
+      },
+      { status: 201 },
+    )
   } catch (error) {
     console.error('Error logging sighting:', error)
     return NextResponse.json(
       { error: 'Failed to log sighting' },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }
