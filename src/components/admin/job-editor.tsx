@@ -119,7 +119,11 @@ export function JobEditor({ job }: JobEditorProps) {
       }
 
       setSuccessMessage('Job details saved successfully!')
-      setTimeout(() => setSuccessMessage(null), 3000)
+      
+      // Redirect back to jobs list after a short delay
+      setTimeout(() => {
+        router.push('/admin')
+      }, 1000)
     } catch (err) {
       console.error('Save error:', err)
       setError(err instanceof Error ? err.message : 'Failed to save')
