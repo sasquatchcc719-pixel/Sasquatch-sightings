@@ -16,6 +16,7 @@ import {
   Target,
   Briefcase,
   Plus,
+  Settings as SettingsIcon,
 } from 'lucide-react'
 
 type Settings = {
@@ -73,6 +74,14 @@ export default function StatsPage() {
   const [hoursWorked, setHoursWorked] = useState('')
   const [submitError, setSubmitError] = useState<string | null>(null)
 
+  // Settings editor state
+  const [showSettingsEditor, setShowSettingsEditor] = useState(false)
+  const [isSavingSettings, setIsSavingSettings] = useState(false)
+  const [settingsError, setSettingsError] = useState<string | null>(null)
+  const [editAnnualGoal, setEditAnnualGoal] = useState('')
+  const [editHoursPerWeek, setEditHoursPerWeek] = useState('')
+  const [editWeeksPerYear, setEditWeeksPerYear] = useState('')
+
   const handleQuickEntry = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsSubmitting(true)
@@ -110,6 +119,70 @@ export default function StatsPage() {
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  const handleSaveSettings = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsSavingSettings(true)
+    setSettingsError(null)
+
+    try {
+      const supabase = createClient()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+
+      if (!user) throw new Error('Not authenticated')
+
+      const newSettings = {
+        annual_revenue_goal: parseFloat(editAnnualGoal),
+        available_hours_per_week: parseFloat(editHoursPerWeek),
+        work_weeks_per_year: parseInt(editWeeksPerYear),
+        updated_at: new Date().toISOString(),
+      }
+
+      // Check if settings exist for this user
+      const { data: existingSettings } = await supabase
+        .from('settings')
+        .select('id')
+        .eq('user_id', user.id)
+        .single()
+
+      if (existingSettings) {
+        // Update existing settings
+        const { error: updateError } = await supabase
+          .from('settings')
+          .update(newSettings)
+          .eq('user_id', user.id)
+
+        if (updateError) throw updateError
+      } else {
+        // Insert new settings
+        const { error: insertError } = await supabase
+          .from('settings')
+          .insert({ ...newSettings, user_id: user.id })
+
+        if (insertError) throw insertError
+      }
+
+      setShowSettingsEditor(false)
+      fetchData() // Refresh all stats with new settings
+    } catch (err) {
+      setSettingsError(
+        err instanceof Error ? err.message : 'Failed to save settings',
+      )
+    } finally {
+      setIsSavingSettings(false)
+    }
+  }
+
+  const openSettingsEditor = () => {
+    if (settings) {
+      setEditAnnualGoal(settings.annual_revenue_goal.toString())
+      setEditHoursPerWeek(settings.available_hours_per_week.toString())
+      setEditWeeksPerYear(settings.work_weeks_per_year.toString())
+    }
+    setShowSettingsEditor(true)
   }
 
   async function fetchData() {
@@ -312,14 +385,94 @@ export default function StatsPage() {
               Track revenue, efficiency, and progress toward your annual goal
             </p>
           </div>
-          <Button
-            onClick={() => setShowQuickEntry(!showQuickEntry)}
-            variant="default"
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            Quick Entry
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              onClick={() => setShowQuickEntry(!showQuickEntry)}
+              variant="default"
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Quick Entry
+            </Button>
+            <Button onClick={openSettingsEditor} variant="outline">
+              <SettingsIcon className="mr-2 h-4 w-4" />
+              Goals
+            </Button>
+          </div>
         </div>
+
+        {/* Settings Editor Form */}
+        {showSettingsEditor && (
+          <Card className="mb-6 p-6">
+            <h3 className="mb-4 text-lg font-semibold">Edit Goals</h3>
+            <p className="text-muted-foreground mb-4 text-sm">
+              Update your annual revenue goal and availability settings
+            </p>
+            <form onSubmit={handleSaveSettings} className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <div>
+                  <Label htmlFor="editAnnualGoal">
+                    Annual Revenue Goal ($)
+                  </Label>
+                  <Input
+                    id="editAnnualGoal"
+                    type="number"
+                    step="1000"
+                    value={editAnnualGoal}
+                    onChange={(e) => setEditAnnualGoal(e.target.value)}
+                    placeholder="150000"
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="editHoursPerWeek">Available Hours/Week</Label>
+                  <Input
+                    id="editHoursPerWeek"
+                    type="number"
+                    step="1"
+                    value={editHoursPerWeek}
+                    onChange={(e) => setEditHoursPerWeek(e.target.value)}
+                    placeholder="40"
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="editWeeksPerYear">Work Weeks/Year</Label>
+                  <Input
+                    id="editWeeksPerYear"
+                    type="number"
+                    step="1"
+                    value={editWeeksPerYear}
+                    onChange={(e) => setEditWeeksPerYear(e.target.value)}
+                    placeholder="48"
+                    required
+                  />
+                </div>
+              </div>
+              {settingsError && (
+                <div className="text-destructive text-sm">{settingsError}</div>
+              )}
+              <div className="flex gap-2">
+                <Button type="submit" disabled={isSavingSettings}>
+                  {isSavingSettings ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    'Save Goals'
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowSettingsEditor(false)}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </Card>
+        )}
 
         {/* Quick Entry Form */}
         {showQuickEntry && (
