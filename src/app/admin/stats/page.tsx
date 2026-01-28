@@ -2,8 +2,12 @@
 
 import { useEffect, useState } from 'react'
 import { Card } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import { createClient } from '@/supabase/client'
-import { Loader2, DollarSign, Clock, TrendingUp, TrendingDown, Target, Briefcase } from 'lucide-react'
+import { Loader2, DollarSign, Clock, TrendingUp, TrendingDown, Target, Briefcase, Plus } from 'lucide-react'
 
 type Settings = {
   annual_revenue_goal: number
@@ -40,9 +44,54 @@ export default function StatsPage() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  
+  // Quick entry form state
+  const [showQuickEntry, setShowQuickEntry] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [entryDate, setEntryDate] = useState(new Date().toISOString().split('T')[0])
+  const [description, setDescription] = useState('')
+  const [invoiceAmount, setInvoiceAmount] = useState('')
+  const [hoursWorked, setHoursWorked] = useState('')
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
-  useEffect(() => {
-    async function fetchData() {
+  const handleQuickEntry = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsSubmitting(true)
+    setSubmitError(null)
+
+    try {
+      const response = await fetch('/api/revenue-entries', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          entry_date: entryDate,
+          description,
+          invoice_amount: parseFloat(invoiceAmount),
+          hours_worked: parseFloat(hoursWorked),
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to create entry')
+      }
+
+      // Reset form
+      setDescription('')
+      setInvoiceAmount('')
+      setHoursWorked('')
+      setEntryDate(new Date().toISOString().split('T')[0])
+      setShowQuickEntry(false)
+      
+      // Refresh data
+      fetchData()
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'Failed to save entry')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  async function fetchData() {
       try {
         const supabase = createClient()
         
@@ -77,6 +126,21 @@ export default function StatsPage() {
 
         if (jobsError) throw jobsError
 
+        // Fetch revenue entries
+        const { data: entries, error: entriesError } = await supabase
+          .from('revenue_entries')
+          .select('invoice_amount, hours_worked, entry_date')
+          .eq('user_id', user.id)
+          .order('entry_date', { ascending: false })
+
+        if (entriesError) throw entriesError
+
+        // Combine jobs and entries for calculations
+        const allRevenue = [
+          ...(jobs || []).map(j => ({ ...j, date: j.created_at })),
+          ...(entries || []).map(e => ({ ...e, date: e.entry_date }))
+        ]
+
         // Calculate stats
         const now = new Date()
         const startOfWeek = new Date(now)
@@ -85,17 +149,17 @@ export default function StatsPage() {
 
         const startOfYear = new Date(now.getFullYear(), 0, 1)
         
-        // Filter jobs
-        const jobsThisWeek = jobs?.filter(j => new Date(j.created_at) >= startOfWeek) || []
-        const jobsYTD = jobs?.filter(j => new Date(j.created_at) >= startOfYear) || []
+        // Filter by date
+        const thisWeekData = allRevenue.filter(item => new Date(item.date) >= startOfWeek)
+        const ytdData = allRevenue.filter(item => new Date(item.date) >= startOfYear)
 
         // This Week
-        const thisWeekRevenue = jobsThisWeek.reduce((sum, j) => sum + (j.invoice_amount || 0), 0)
-        const thisWeekHours = jobsThisWeek.reduce((sum, j) => sum + (j.hours_worked || 0), 0)
+        const thisWeekRevenue = thisWeekData.reduce((sum, item) => sum + (item.invoice_amount || 0), 0)
+        const thisWeekHours = thisWeekData.reduce((sum, item) => sum + (item.hours_worked || 0), 0)
         
         // Year to Date
-        const ytdRevenue = jobsYTD.reduce((sum, j) => sum + (j.invoice_amount || 0), 0)
-        const ytdHours = jobsYTD.reduce((sum, j) => sum + (j.hours_worked || 0), 0)
+        const ytdRevenue = ytdData.reduce((sum, item) => sum + (item.invoice_amount || 0), 0)
+        const ytdHours = ytdData.reduce((sum, item) => sum + (item.hours_worked || 0), 0)
         
         // Calculations
         const weeksElapsed = Math.ceil((now.getTime() - startOfYear.getTime()) / (7 * 24 * 60 * 60 * 1000))
@@ -110,14 +174,14 @@ export default function StatsPage() {
 
         setStats({
           thisWeek: {
-            jobs: jobsThisWeek.length,
+            jobs: thisWeekData.length,
             revenue: thisWeekRevenue,
             hours: thisWeekHours,
             revenuePerHour: thisWeekHours > 0 ? thisWeekRevenue / thisWeekHours : 0,
-            averageTicket: jobsThisWeek.length > 0 ? thisWeekRevenue / jobsThisWeek.length : 0,
+            averageTicket: thisWeekData.length > 0 ? thisWeekRevenue / thisWeekData.length : 0,
           },
           yearToDate: {
-            jobs: jobsYTD.length,
+            jobs: ytdData.length,
             revenue: ytdRevenue,
             hours: ytdHours,
             revenuePerHour: ytdHours > 0 ? ytdRevenue / ytdHours : 0,
@@ -174,10 +238,95 @@ export default function StatsPage() {
   return (
     <div className="container mx-auto px-4 py-8 max-w-6xl">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold">Utilization Tracker</h1>
-        <p className="text-muted-foreground mt-2">
-          Track revenue, efficiency, and progress toward your annual goal
-        </p>
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <h1 className="text-3xl font-bold">Utilization Tracker</h1>
+            <p className="text-muted-foreground mt-2">
+              Track revenue, efficiency, and progress toward your annual goal
+            </p>
+          </div>
+          <Button onClick={() => setShowQuickEntry(!showQuickEntry)} variant="default">
+            <Plus className="mr-2 h-4 w-4" />
+            Quick Entry
+          </Button>
+        </div>
+
+        {/* Quick Entry Form */}
+        {showQuickEntry && (
+          <Card className="p-6 mb-6">
+            <h3 className="text-lg font-semibold mb-4">Add Revenue Entry</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              Track commercial work or recurring jobs without creating a public post
+            </p>
+            <form onSubmit={handleQuickEntry} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <Label htmlFor="entryDate">Date</Label>
+                  <Input
+                    id="entryDate"
+                    type="date"
+                    value={entryDate}
+                    onChange={(e) => setEntryDate(e.target.value)}
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="invoiceAmount">Invoice Amount</Label>
+                  <Input
+                    id="invoiceAmount"
+                    type="number"
+                    step="0.01"
+                    value={invoiceAmount}
+                    onChange={(e) => setInvoiceAmount(e.target.value)}
+                    placeholder="0.00"
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="hoursWorked">Hours Worked</Label>
+                  <Input
+                    id="hoursWorked"
+                    type="number"
+                    step="0.25"
+                    value={hoursWorked}
+                    onChange={(e) => setHoursWorked(e.target.value)}
+                    placeholder="0.0"
+                    required
+                  />
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="description">Description</Label>
+                <Textarea
+                  id="description"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Recovery Village - Hallways"
+                  rows={2}
+                  required
+                />
+              </div>
+              {submitError && (
+                <div className="text-sm text-destructive">{submitError}</div>
+              )}
+              <div className="flex gap-2">
+                <Button type="submit" disabled={isSubmitting}>
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    'Save Entry'
+                  )}
+                </Button>
+                <Button type="button" variant="outline" onClick={() => setShowQuickEntry(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </Card>
+        )}
       </div>
 
       {/* This Week */}
