@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '@/supabase/server'
+import { createAdminClient } from '@/supabase/server'
 import { getUserWithRole } from '@/lib/auth'
 import { AdminPartnersView } from '@/components/admin/admin-partners-view'
 
@@ -16,12 +16,14 @@ export default async function AdminPartnersPage() {
     redirect('/partners')
   }
 
-  const supabase = await createClient()
+  // Use admin client to bypass RLS
+  const supabase = createAdminClient()
 
-  // Fetch all partners
+  // Fetch all partners (excluding admin records)
   const { data: partners } = await supabase
     .from('partners')
     .select('*')
+    .neq('role', 'admin')
     .order('created_at', { ascending: false })
 
   // Fetch all referrals with partner info
@@ -35,7 +37,7 @@ export default async function AdminPartnersPage() {
         name,
         company_name
       )
-    `
+    `,
     )
     .order('created_at', { ascending: false })
 
