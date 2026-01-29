@@ -27,6 +27,13 @@ export default async function PartnersPage() {
     .eq('partner_id', partner.id)
     .order('created_at', { ascending: false })
 
+  // Fetch incoming work (outbound referrals sent TO this partner)
+  const { data: incomingWork } = await supabase
+    .from('outbound_referrals')
+    .select('*')
+    .eq('partner_id', partner.id)
+    .order('created_at', { ascending: false })
+
   // Calculate stats
   const totalReferrals = referrals?.length || 0
   const convertedReferrals =
@@ -63,6 +70,7 @@ export default async function PartnersPage() {
         <PartnerDashboard
           partner={partner}
           referrals={referrals || []}
+          incomingWork={incomingWork || []}
           stats={{
             creditBalance: partner.credit_balance,
             totalReferrals,

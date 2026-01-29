@@ -29,6 +29,8 @@ import {
   Clock,
   CalendarCheck,
   X,
+  Send,
+  ArrowRight,
 } from 'lucide-react'
 
 type Partner = {
@@ -60,14 +62,36 @@ type Referral = {
   }
 }
 
+type OutboundReferral = {
+  id: string
+  partner_id: string
+  client_name: string
+  client_phone: string
+  client_email: string | null
+  description: string
+  notes: string | null
+  referral_fee: number
+  status: 'pending' | 'accepted' | 'completed' | 'declined'
+  created_at: string
+  accepted_at: string | null
+  partner: {
+    id: string
+    name: string
+    phone: string
+    company_name: string
+  }
+}
+
 type AdminPartnersViewProps = {
   partners: Partner[]
   referrals: Referral[]
+  outboundReferrals: OutboundReferral[]
 }
 
 export function AdminPartnersView({
   partners,
   referrals,
+  outboundReferrals,
 }: AdminPartnersViewProps) {
   const router = useRouter()
 
@@ -91,6 +115,17 @@ export function AdminPartnersView({
   const [adjustReason, setAdjustReason] = useState('')
   const [isAdjusting, setIsAdjusting] = useState(false)
   const [adjustMode, setAdjustMode] = useState<'add' | 'subtract'>('add')
+
+  // Send Work Modal
+  const [showSendWork, setShowSendWork] = useState(false)
+  const [sendWorkPartnerId, setSendWorkPartnerId] = useState('')
+  const [sendWorkClientName, setSendWorkClientName] = useState('')
+  const [sendWorkClientPhone, setSendWorkClientPhone] = useState('')
+  const [sendWorkClientEmail, setSendWorkClientEmail] = useState('')
+  const [sendWorkDescription, setSendWorkDescription] = useState('')
+  const [sendWorkNotes, setSendWorkNotes] = useState('')
+  const [sendWorkFee, setSendWorkFee] = useState('0')
+  const [isSendingWork, setIsSendingWork] = useState(false)
 
   // Filter referrals
   const filteredReferrals = referrals.filter((r) => {
@@ -148,12 +183,16 @@ export function AdminPartnersView({
       if (!partner) throw new Error('Partner not found')
 
       const amount = parseFloat(adjustAmount)
-      const newBalance = adjustMode === 'add' 
-        ? partner.credit_balance + amount 
-        : Math.max(0, partner.credit_balance - amount)
+      const newBalance =
+        adjustMode === 'add'
+          ? partner.credit_balance + amount
+          : Math.max(0, partner.credit_balance - amount)
 
-      console.log('Adjusting balance:', { partner_id: adjustPartnerId, new_balance: newBalance })
-      
+      console.log('Adjusting balance:', {
+        partner_id: adjustPartnerId,
+        new_balance: newBalance,
+      })
+
       const response = await fetch('/api/admin/partners', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -184,6 +223,48 @@ export function AdminPartnersView({
     }
   }
 
+  const handleSendWork = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsSendingWork(true)
+
+    try {
+      const response = await fetch('/api/admin/outbound-referrals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          partner_id: sendWorkPartnerId,
+          client_name: sendWorkClientName,
+          client_phone: sendWorkClientPhone,
+          client_email: sendWorkClientEmail || null,
+          description: sendWorkDescription,
+          notes: sendWorkNotes || null,
+          referral_fee: parseFloat(sendWorkFee) || 0,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to send work')
+      }
+
+      alert('Work referral sent! Partner will receive an SMS notification.')
+      setShowSendWork(false)
+      setSendWorkPartnerId('')
+      setSendWorkClientName('')
+      setSendWorkClientPhone('')
+      setSendWorkClientEmail('')
+      setSendWorkDescription('')
+      setSendWorkNotes('')
+      setSendWorkFee('0')
+      router.refresh()
+    } catch (error) {
+      console.error('Error sending work:', error)
+      alert('Failed to send work referral')
+    } finally {
+      setIsSendingWork(false)
+    }
+  }
+
   const handleVerifyBacklink = async (partnerId: string) => {
     try {
       const response = await fetch('/api/admin/partners', {
@@ -206,7 +287,12 @@ export function AdminPartnersView({
   }
 
   const handleRejectBacklink = async (partnerId: string) => {
-    if (!confirm('Reject this backlink? The partner will stay at $20/referral rate.')) return
+    if (
+      !confirm(
+        'Reject this backlink? The partner will stay at $20/referral rate.',
+      )
+    )
+      return
 
     try {
       const response = await fetch('/api/admin/partners', {
@@ -251,7 +337,7 @@ export function AdminPartnersView({
   const handleUpdateStatus = async (referralId: string, newStatus: string) => {
     try {
       const referral = referrals.find((r) => r.id === referralId)
-      
+
       const response = await fetch('/api/admin/referrals', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -316,8 +402,10 @@ export function AdminPartnersView({
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Partners</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">
+              Total Partners
+            </CardTitle>
+            <Users className="text-muted-foreground h-4 w-4" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">{partners.length}</div>
@@ -326,8 +414,10 @@ export function AdminPartnersView({
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Referrals</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">
+              Total Referrals
+            </CardTitle>
+            <Users className="text-muted-foreground h-4 w-4" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">{referrals.length}</div>
@@ -339,15 +429,88 @@ export function AdminPartnersView({
             <CardTitle className="text-sm font-medium">
               Outstanding Credits
             </CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <DollarSign className="text-muted-foreground h-4 w-4" />
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">
-              ${partners.reduce((sum, p) => sum + p.credit_balance, 0).toFixed(2)}
+              $
+              {partners
+                .reduce((sum, p) => sum + p.credit_balance, 0)
+                .toFixed(2)}
             </div>
           </CardContent>
         </Card>
       </div>
+
+      {/* Send Work to Partner */}
+      <Card className="border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20">
+        <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-blue-800 dark:text-blue-200">
+              <Send className="h-5 w-5" />
+              Send Work to Partner
+            </CardTitle>
+            <CardDescription className="text-blue-700 dark:text-blue-300">
+              Refer a job to one of your partners
+            </CardDescription>
+          </div>
+          <Button
+            onClick={() => setShowSendWork(true)}
+            className="bg-blue-600 hover:bg-blue-700"
+          >
+            <ArrowRight className="mr-2 h-4 w-4" />
+            Send Work
+          </Button>
+        </CardHeader>
+        {outboundReferrals.length > 0 && (
+          <CardContent>
+            <div className="space-y-3">
+              {outboundReferrals.slice(0, 5).map((ref) => (
+                <div
+                  key={ref.id}
+                  className="flex items-center justify-between rounded-lg border border-blue-200 bg-white p-3 dark:border-blue-700 dark:bg-blue-900/30"
+                >
+                  <div>
+                    <p className="font-medium">{ref.description}</p>
+                    <p className="text-muted-foreground text-sm">
+                      To: {ref.partner?.name} • {ref.client_name}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <Badge
+                      variant={
+                        ref.status === 'accepted'
+                          ? 'default'
+                          : ref.status === 'completed'
+                            ? 'default'
+                            : ref.status === 'declined'
+                              ? 'destructive'
+                              : 'secondary'
+                      }
+                      className={
+                        ref.status === 'accepted'
+                          ? 'bg-green-100 text-green-800'
+                          : ref.status === 'completed'
+                            ? 'bg-blue-100 text-blue-800'
+                            : ref.status === 'declined'
+                              ? 'bg-red-100 text-red-800'
+                              : 'bg-yellow-100 text-yellow-800'
+                      }
+                    >
+                      {ref.status}
+                    </Badge>
+                    {ref.referral_fee > 0 && (
+                      <p className="text-muted-foreground mt-1 text-xs">
+                        Fee: ${ref.referral_fee.toFixed(2)}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        )}
+      </Card>
 
       {/* All Referrals */}
       <Card>
@@ -397,7 +560,7 @@ export function AdminPartnersView({
 
           {/* Referrals - Cards on mobile, Table on desktop */}
           {filteredReferrals.length === 0 ? (
-            <div className="py-8 text-center text-muted-foreground">
+            <div className="text-muted-foreground py-8 text-center">
               No referrals found
             </div>
           ) : (
@@ -405,12 +568,17 @@ export function AdminPartnersView({
               {/* Mobile: Card Layout */}
               <div className="space-y-3 md:hidden">
                 {filteredReferrals.map((referral) => (
-                  <div key={referral.id} className="rounded-lg border bg-card p-4">
+                  <div
+                    key={referral.id}
+                    className="bg-card rounded-lg border p-4"
+                  >
                     <div className="mb-3 flex items-start justify-between">
                       <div>
-                        <div className="font-semibold">{referral.client_name}</div>
-                        <a 
-                          href={`tel:${referral.client_phone}`} 
+                        <div className="font-semibold">
+                          {referral.client_name}
+                        </div>
+                        <a
+                          href={`tel:${referral.client_phone}`}
                           className="text-sm text-blue-400"
                         >
                           {referral.client_phone}
@@ -418,19 +586,29 @@ export function AdminPartnersView({
                       </div>
                       {getStatusBadge(referral.status)}
                     </div>
-                    <div className="mb-3 text-sm text-muted-foreground">
-                      <span className="font-medium text-foreground">{referral.partners?.name}</span>
-                      {' · '}{referral.partners?.company_name}
+                    <div className="text-muted-foreground mb-3 text-sm">
+                      <span className="text-foreground font-medium">
+                        {referral.partners?.name}
+                      </span>
+                      {' · '}
+                      {referral.partners?.company_name}
                     </div>
                     <div className="flex items-center justify-between">
                       <div className="text-sm">
-                        <span className="font-medium">${referral.credit_amount.toFixed(2)}</span>
-                        <span className="text-muted-foreground"> · {formatDate(referral.created_at)}</span>
+                        <span className="font-medium">
+                          ${referral.credit_amount.toFixed(2)}
+                        </span>
+                        <span className="text-muted-foreground">
+                          {' '}
+                          · {formatDate(referral.created_at)}
+                        </span>
                       </div>
                       <div className="flex items-center gap-2">
                         <Select
                           value={referral.status}
-                          onValueChange={(value) => handleUpdateStatus(referral.id, value)}
+                          onValueChange={(value) =>
+                            handleUpdateStatus(referral.id, value)
+                          }
                         >
                           <SelectTrigger className="h-8 w-24 text-xs">
                             <SelectValue />
@@ -459,13 +637,15 @@ export function AdminPartnersView({
               <div className="hidden overflow-x-auto md:block">
                 <table className="w-full">
                   <thead>
-                    <tr className="border-b text-left text-sm text-muted-foreground">
-                      <th className="pb-3 pr-4 font-medium">Partner</th>
-                      <th className="pb-3 pr-4 font-medium">Client</th>
-                      <th className="pb-3 pr-4 font-medium">Phone</th>
-                      <th className="pb-3 pr-4 font-medium">Status</th>
-                      <th className="pb-3 pr-4 font-medium">Credit</th>
-                      <th className="hidden pb-3 pr-4 font-medium lg:table-cell">Date</th>
+                    <tr className="text-muted-foreground border-b text-left text-sm">
+                      <th className="pr-4 pb-3 font-medium">Partner</th>
+                      <th className="pr-4 pb-3 font-medium">Client</th>
+                      <th className="pr-4 pb-3 font-medium">Phone</th>
+                      <th className="pr-4 pb-3 font-medium">Status</th>
+                      <th className="pr-4 pb-3 font-medium">Credit</th>
+                      <th className="hidden pr-4 pb-3 font-medium lg:table-cell">
+                        Date
+                      </th>
                       <th className="pb-3 font-medium">Actions</th>
                     </tr>
                   </thead>
@@ -477,7 +657,7 @@ export function AdminPartnersView({
                             <div className="font-medium">
                               {referral.partners?.name}
                             </div>
-                            <div className="text-sm text-muted-foreground">
+                            <div className="text-muted-foreground text-sm">
                               {referral.partners?.company_name}
                             </div>
                           </div>
@@ -486,18 +666,20 @@ export function AdminPartnersView({
                           {referral.client_name}
                         </td>
                         <td className="py-3 pr-4">
-                          <a 
-                            href={`tel:${referral.client_phone}`} 
+                          <a
+                            href={`tel:${referral.client_phone}`}
                             className="text-blue-400 hover:text-blue-300 hover:underline"
                           >
                             {referral.client_phone}
                           </a>
                         </td>
-                        <td className="py-3 pr-4">{getStatusBadge(referral.status)}</td>
+                        <td className="py-3 pr-4">
+                          {getStatusBadge(referral.status)}
+                        </td>
                         <td className="py-3 pr-4">
                           ${referral.credit_amount.toFixed(2)}
                         </td>
-                        <td className="hidden py-3 pr-4 text-muted-foreground lg:table-cell">
+                        <td className="text-muted-foreground hidden py-3 pr-4 lg:table-cell">
                           {formatDate(referral.created_at)}
                         </td>
                         <td className="py-3">
@@ -514,14 +696,16 @@ export function AdminPartnersView({
                               <SelectContent>
                                 <SelectItem value="pending">Pending</SelectItem>
                                 <SelectItem value="booked">Booked</SelectItem>
-                                <SelectItem value="converted">Converted</SelectItem>
+                                <SelectItem value="converted">
+                                  Converted
+                                </SelectItem>
                               </SelectContent>
                             </Select>
                             <Button
                               variant="ghost"
                               size="sm"
                               onClick={() => handleDeleteReferral(referral.id)}
-                              className="text-red-500 hover:text-red-400 hover:bg-red-500/10"
+                              className="text-red-500 hover:bg-red-500/10 hover:text-red-400"
                             >
                               <X className="h-4 w-4" />
                             </Button>
@@ -541,11 +725,13 @@ export function AdminPartnersView({
       <Card>
         <CardHeader>
           <CardTitle>Partner Balances</CardTitle>
-          <CardDescription>View and adjust partner credit balances</CardDescription>
+          <CardDescription>
+            View and adjust partner credit balances
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {partners.length === 0 ? (
-            <div className="py-8 text-center text-muted-foreground">
+            <div className="text-muted-foreground py-8 text-center">
               No partners yet
             </div>
           ) : (
@@ -553,27 +739,35 @@ export function AdminPartnersView({
               {/* Mobile: Card Layout */}
               <div className="space-y-3 md:hidden">
                 {partners.map((partner) => (
-                  <div key={partner.id} className="rounded-lg border bg-card p-4">
+                  <div
+                    key={partner.id}
+                    className="bg-card rounded-lg border p-4"
+                  >
                     <div className="mb-2 flex items-start justify-between">
                       <div>
                         <div className="font-semibold">{partner.name}</div>
-                        <div className="text-sm text-muted-foreground">{partner.company_name}</div>
+                        <div className="text-muted-foreground text-sm">
+                          {partner.company_name}
+                        </div>
                       </div>
                       <div className="text-right">
                         <div className="text-lg font-bold text-green-500">
                           ${partner.credit_balance.toFixed(2)}
                         </div>
-                        {partner.backlink_opted_in && (
-                          partner.backlink_verified ? (
-                            <Badge className="bg-green-100 text-green-800 text-xs">Verified</Badge>
+                        {partner.backlink_opted_in &&
+                          (partner.backlink_verified ? (
+                            <Badge className="bg-green-100 text-xs text-green-800">
+                              Verified
+                            </Badge>
                           ) : (
-                            <Badge className="bg-yellow-100 text-yellow-800 text-xs">Pending</Badge>
-                          )
-                        )}
+                            <Badge className="bg-yellow-100 text-xs text-yellow-800">
+                              Pending
+                            </Badge>
+                          ))}
                       </div>
                     </div>
                     <div className="mb-2 flex items-center justify-between">
-                      <a 
+                      <a
                         href={`mailto:${partner.email}`}
                         className="text-sm text-blue-400"
                       >
@@ -581,7 +775,7 @@ export function AdminPartnersView({
                       </a>
                     </div>
                     <div className="mb-3 flex items-center justify-between">
-                      <a 
+                      <a
                         href={`tel:${partner.phone}`}
                         className="text-sm text-blue-400"
                       >
@@ -606,12 +800,12 @@ export function AdminPartnersView({
               <div className="hidden overflow-x-auto md:block">
                 <table className="w-full">
                   <thead>
-                    <tr className="border-b text-left text-sm text-muted-foreground">
-                      <th className="pb-3 pr-4 font-medium">Partner</th>
-                      <th className="pb-3 pr-4 font-medium">Company</th>
-                      <th className="pb-3 pr-4 font-medium">Phone</th>
-                      <th className="pb-3 pr-4 font-medium">Balance</th>
-                      <th className="pb-3 pr-4 font-medium">Backlink</th>
+                    <tr className="text-muted-foreground border-b text-left text-sm">
+                      <th className="pr-4 pb-3 font-medium">Partner</th>
+                      <th className="pr-4 pb-3 font-medium">Company</th>
+                      <th className="pr-4 pb-3 font-medium">Phone</th>
+                      <th className="pr-4 pb-3 font-medium">Balance</th>
+                      <th className="pr-4 pb-3 font-medium">Backlink</th>
                       <th className="pb-3 font-medium">Actions</th>
                     </tr>
                   </thead>
@@ -621,7 +815,7 @@ export function AdminPartnersView({
                         <td className="py-3 pr-4">
                           <div>
                             <div className="font-medium">{partner.name}</div>
-                            <a 
+                            <a
                               href={`mailto:${partner.email}`}
                               className="text-sm text-blue-400 hover:text-blue-300 hover:underline"
                             >
@@ -631,7 +825,7 @@ export function AdminPartnersView({
                         </td>
                         <td className="py-3 pr-4">{partner.company_name}</td>
                         <td className="py-3 pr-4">
-                          <a 
+                          <a
                             href={`tel:${partner.phone}`}
                             className="text-blue-400 hover:text-blue-300 hover:underline"
                           >
@@ -682,7 +876,9 @@ export function AdminPartnersView({
       <Card>
         <CardHeader>
           <CardTitle>Backlink Verifications</CardTitle>
-          <CardDescription>Verify partner backlinks to enable $25/referral rate</CardDescription>
+          <CardDescription>
+            Verify partner backlinks to enable $25/referral rate
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {/* Filter */}
@@ -700,12 +896,15 @@ export function AdminPartnersView({
           </div>
 
           {partners.filter((p) => {
-            if (backlinkFilter === 'pending') return p.backlink_opted_in && !p.backlink_verified
+            if (backlinkFilter === 'pending')
+              return p.backlink_opted_in && !p.backlink_verified
             if (backlinkFilter === 'verified') return p.backlink_verified
             return true
           }).length === 0 ? (
-            <div className="py-8 text-center text-muted-foreground">
-              {backlinkFilter === 'pending' ? 'No pending verifications' : 'No partners found'}
+            <div className="text-muted-foreground py-8 text-center">
+              {backlinkFilter === 'pending'
+                ? 'No pending verifications'
+                : 'No partners found'}
             </div>
           ) : (
             <>
@@ -713,56 +912,76 @@ export function AdminPartnersView({
               <div className="space-y-3 md:hidden">
                 {partners
                   .filter((p) => {
-                    if (backlinkFilter === 'pending') return p.backlink_opted_in && !p.backlink_verified
-                    if (backlinkFilter === 'verified') return p.backlink_verified
+                    if (backlinkFilter === 'pending')
+                      return p.backlink_opted_in && !p.backlink_verified
+                    if (backlinkFilter === 'verified')
+                      return p.backlink_verified
                     return true
                   })
                   .map((partner) => (
-                    <div key={partner.id} className="rounded-lg border bg-card p-4">
+                    <div
+                      key={partner.id}
+                      className="bg-card rounded-lg border p-4"
+                    >
                       <div className="mb-2 flex items-start justify-between">
                         <div>
                           <div className="font-semibold">{partner.name}</div>
-                          <div className="text-sm text-muted-foreground">{partner.company_name}</div>
+                          <div className="text-muted-foreground text-sm">
+                            {partner.company_name}
+                          </div>
                         </div>
                         <div>
                           {!partner.backlink_opted_in ? (
-                            <span className="text-sm text-muted-foreground">❌ Not enrolled</span>
+                            <span className="text-muted-foreground text-sm">
+                              ❌ Not enrolled
+                            </span>
                           ) : !partner.backlink_verified ? (
-                            <span className="text-sm text-yellow-500">⏳ Pending</span>
+                            <span className="text-sm text-yellow-500">
+                              ⏳ Pending
+                            </span>
                           ) : (
-                            <span className="text-sm text-green-500">✅ Verified</span>
+                            <span className="text-sm text-green-500">
+                              ✅ Verified
+                            </span>
                           )}
                         </div>
                       </div>
                       {partner.company_website && (
                         <a
-                          href={partner.company_website.startsWith('http') ? partner.company_website : `https://${partner.company_website}`}
+                          href={
+                            partner.company_website.startsWith('http')
+                              ? partner.company_website
+                              : `https://${partner.company_website}`
+                          }
                           target="_blank"
                           rel="noopener noreferrer"
                           className="mb-3 block text-sm text-blue-400"
                         >
-                          {partner.company_website.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+                          {partner.company_website
+                            .replace(/^https?:\/\//, '')
+                            .replace(/\/$/, '')}
                         </a>
                       )}
-                      {partner.backlink_opted_in && !partner.backlink_verified && (
-                        <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            onClick={() => handleVerifyBacklink(partner.id)}
-                            className="flex-1 bg-green-600 hover:bg-green-500"
-                          >
-                            ✓ Verify
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleRejectBacklink(partner.id)}
-                            className="flex-1 text-red-500 hover:text-red-400"
-                          >
-                            ✗ Reject
-                          </Button>
-                        </div>
-                      )}
+                      {partner.backlink_opted_in &&
+                        !partner.backlink_verified && (
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              onClick={() => handleVerifyBacklink(partner.id)}
+                              className="flex-1 bg-green-600 hover:bg-green-500"
+                            >
+                              ✓ Verify
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleRejectBacklink(partner.id)}
+                              className="flex-1 text-red-500 hover:text-red-400"
+                            >
+                              ✗ Reject
+                            </Button>
+                          </div>
+                        )}
                     </div>
                   ))}
               </div>
@@ -771,34 +990,44 @@ export function AdminPartnersView({
               <div className="hidden overflow-x-auto md:block">
                 <table className="w-full">
                   <thead>
-                    <tr className="border-b text-left text-sm text-muted-foreground">
-                      <th className="pb-3 pr-4 font-medium">Partner</th>
-                      <th className="pb-3 pr-4 font-medium">Company</th>
-                      <th className="pb-3 pr-4 font-medium">Website</th>
-                      <th className="pb-3 pr-4 font-medium">Status</th>
+                    <tr className="text-muted-foreground border-b text-left text-sm">
+                      <th className="pr-4 pb-3 font-medium">Partner</th>
+                      <th className="pr-4 pb-3 font-medium">Company</th>
+                      <th className="pr-4 pb-3 font-medium">Website</th>
+                      <th className="pr-4 pb-3 font-medium">Status</th>
                       <th className="pb-3 font-medium">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {partners
                       .filter((p) => {
-                        if (backlinkFilter === 'pending') return p.backlink_opted_in && !p.backlink_verified
-                        if (backlinkFilter === 'verified') return p.backlink_verified
+                        if (backlinkFilter === 'pending')
+                          return p.backlink_opted_in && !p.backlink_verified
+                        if (backlinkFilter === 'verified')
+                          return p.backlink_verified
                         return true
                       })
                       .map((partner) => (
                         <tr key={partner.id} className="border-b">
-                          <td className="py-3 pr-4 font-medium">{partner.name}</td>
+                          <td className="py-3 pr-4 font-medium">
+                            {partner.name}
+                          </td>
                           <td className="py-3 pr-4">{partner.company_name}</td>
                           <td className="py-3 pr-4">
                             {partner.company_website ? (
                               <a
-                                href={partner.company_website.startsWith('http') ? partner.company_website : `https://${partner.company_website}`}
+                                href={
+                                  partner.company_website.startsWith('http')
+                                    ? partner.company_website
+                                    : `https://${partner.company_website}`
+                                }
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-blue-400 hover:text-blue-300 hover:underline"
                               >
-                                {partner.company_website.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+                                {partner.company_website
+                                  .replace(/^https?:\/\//, '')
+                                  .replace(/\/$/, '')}
                               </a>
                             ) : (
                               <span className="text-muted-foreground">—</span>
@@ -806,7 +1035,7 @@ export function AdminPartnersView({
                           </td>
                           <td className="py-3 pr-4">
                             {!partner.backlink_opted_in ? (
-                              <span className="flex items-center gap-1 text-muted-foreground">
+                              <span className="text-muted-foreground flex items-center gap-1">
                                 ❌ Not enrolled
                               </span>
                             ) : !partner.backlink_verified ? (
@@ -820,25 +1049,30 @@ export function AdminPartnersView({
                             )}
                           </td>
                           <td className="py-3">
-                            {partner.backlink_opted_in && !partner.backlink_verified && (
-                              <div className="flex gap-2">
-                                <Button
-                                  size="sm"
-                                  onClick={() => handleVerifyBacklink(partner.id)}
-                                  className="bg-green-600 hover:bg-green-500"
-                                >
-                                  ✓ Verify
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => handleRejectBacklink(partner.id)}
-                                  className="text-red-500 hover:text-red-400"
-                                >
-                                  ✗ Reject
-                                </Button>
-                              </div>
-                            )}
+                            {partner.backlink_opted_in &&
+                              !partner.backlink_verified && (
+                                <div className="flex gap-2">
+                                  <Button
+                                    size="sm"
+                                    onClick={() =>
+                                      handleVerifyBacklink(partner.id)
+                                    }
+                                    className="bg-green-600 hover:bg-green-500"
+                                  >
+                                    ✓ Verify
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() =>
+                                      handleRejectBacklink(partner.id)
+                                    }
+                                    className="text-red-500 hover:text-red-400"
+                                  >
+                                    ✗ Reject
+                                  </Button>
+                                </div>
+                              )}
                           </td>
                         </tr>
                       ))}
@@ -883,7 +1117,7 @@ export function AdminPartnersView({
                       ))}
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-muted-foreground text-xs">
                     Partner not listed? Have them register at /partners/register
                   </p>
                 </div>
@@ -957,7 +1191,7 @@ export function AdminPartnersView({
             </CardHeader>
             <CardContent>
               <form onSubmit={handleAdjustBalance} className="space-y-4">
-                <div className="rounded-lg bg-muted p-3">
+                <div className="bg-muted rounded-lg p-3">
                   <p className="text-sm">
                     <strong>Partner:</strong>{' '}
                     {partners.find((p) => p.id === adjustPartnerId)?.name}
@@ -983,7 +1217,9 @@ export function AdminPartnersView({
                     </Button>
                     <Button
                       type="button"
-                      variant={adjustMode === 'subtract' ? 'default' : 'outline'}
+                      variant={
+                        adjustMode === 'subtract' ? 'default' : 'outline'
+                      }
                       onClick={() => setAdjustMode('subtract')}
                       className="flex-1"
                     >
@@ -1031,6 +1267,139 @@ export function AdminPartnersView({
                     className="flex-1"
                   >
                     {isAdjusting ? 'Saving...' : 'Save'}
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Send Work Modal */}
+      {showSendWork && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <Card className="max-h-[90vh] w-full max-w-md overflow-y-auto">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>Send Work to Partner</CardTitle>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowSendWork(false)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSendWork} className="space-y-4">
+                <div className="grid gap-2">
+                  <Label>Partner *</Label>
+                  <Select
+                    value={sendWorkPartnerId}
+                    onValueChange={setSendWorkPartnerId}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select partner" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {partners.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.name} ({p.company_name})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label>Work Description *</Label>
+                  <Input
+                    value={sendWorkDescription}
+                    onChange={(e) => setSendWorkDescription(e.target.value)}
+                    placeholder="e.g., Carpet Stretching in Monument"
+                    required
+                  />
+                  <p className="text-muted-foreground text-xs">
+                    This will appear in the SMS to the partner
+                  </p>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label>Client Name *</Label>
+                  <Input
+                    value={sendWorkClientName}
+                    onChange={(e) => setSendWorkClientName(e.target.value)}
+                    placeholder="Jane Doe"
+                    required
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <Label>Client Phone *</Label>
+                  <Input
+                    value={sendWorkClientPhone}
+                    onChange={(e) => setSendWorkClientPhone(e.target.value)}
+                    placeholder="(555) 123-4567"
+                    required
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <Label>Client Email (Optional)</Label>
+                  <Input
+                    type="email"
+                    value={sendWorkClientEmail}
+                    onChange={(e) => setSendWorkClientEmail(e.target.value)}
+                    placeholder="jane@example.com"
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <Label>Referral Fee ($)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={sendWorkFee}
+                    onChange={(e) => setSendWorkFee(e.target.value)}
+                    placeholder="0.00"
+                  />
+                  <p className="text-muted-foreground text-xs">
+                    Amount the partner owes you for this referral (leave 0 for
+                    free)
+                  </p>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label>Notes (Optional)</Label>
+                  <Textarea
+                    value={sendWorkNotes}
+                    onChange={(e) => setSendWorkNotes(e.target.value)}
+                    placeholder="Any additional details for the partner..."
+                    rows={3}
+                  />
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setShowSendWork(false)}
+                    className="flex-1"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={
+                      isSendingWork ||
+                      !sendWorkPartnerId ||
+                      !sendWorkDescription ||
+                      !sendWorkClientName ||
+                      !sendWorkClientPhone
+                    }
+                    className="flex-1"
+                  >
+                    {isSendingWork ? 'Sending...' : 'Send Work'}
                   </Button>
                 </div>
               </form>

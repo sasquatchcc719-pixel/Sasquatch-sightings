@@ -41,6 +41,22 @@ export default async function AdminPartnersPage() {
     )
     .order('created_at', { ascending: false })
 
+  // Fetch outbound referrals (work sent TO partners)
+  const { data: outboundReferrals } = await supabase
+    .from('outbound_referrals')
+    .select(
+      `
+      *,
+      partner:partners (
+        id,
+        name,
+        phone,
+        company_name
+      )
+    `,
+    )
+    .order('created_at', { ascending: false })
+
   return (
     <div className="space-y-6">
       <div>
@@ -53,6 +69,7 @@ export default async function AdminPartnersPage() {
       <AdminPartnersView
         partners={partners || []}
         referrals={referrals || []}
+        outboundReferrals={outboundReferrals || []}
       />
     </div>
   )
