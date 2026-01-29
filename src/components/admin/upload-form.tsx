@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import * as z from 'zod'
@@ -16,7 +17,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Camera, Upload, MapPin, Loader2, ChevronDown, ChevronUp, Sparkles } from 'lucide-react'
+import {
+  Camera,
+  Upload,
+  MapPin,
+  Loader2,
+  ChevronDown,
+  ChevronUp,
+  Sparkles,
+  DollarSign,
+  Clock,
+} from 'lucide-react'
 import {
   extractExifGps,
   compressImage,
@@ -28,25 +39,23 @@ import {
 const uploadFormSchema = z.object({
   image: z
     .any()
-    .refine(
-      (files) => {
-        // Allow empty FileList if we have a preloaded/compressed file
-        return (files instanceof FileList && files.length > 0) || files === undefined
-      },
-      'Image is required'
-    )
-    .refine(
-      (files) => {
-        // Skip type check if no files (preloaded image scenario)
-        if (!files || (files instanceof FileList && files.length === 0)) {
-          return true
-        }
-        return files instanceof FileList && files[0]?.type.startsWith('image/')
-      },
-      'File must be an image'
-    ),
+    .refine((files) => {
+      // Allow empty FileList if we have a preloaded/compressed file
+      return (
+        (files instanceof FileList && files.length > 0) || files === undefined
+      )
+    }, 'Image is required')
+    .refine((files) => {
+      // Skip type check if no files (preloaded image scenario)
+      if (!files || (files instanceof FileList && files.length === 0)) {
+        return true
+      }
+      return files instanceof FileList && files[0]?.type.startsWith('image/')
+    }, 'File must be an image'),
   serviceId: z.string().min(1, 'Service type is required'),
-  description: z.string().min(10, 'Description is required (minimum 10 characters)'),
+  description: z
+    .string()
+    .min(10, 'Description is required (minimum 10 characters)'),
 })
 
 type UploadFormData = z.infer<typeof uploadFormSchema>
@@ -62,11 +71,11 @@ export function UploadForm() {
   const [isLoadingServices, setIsLoadingServices] = useState(true)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [gpsCoordinates, setGpsCoordinates] = useState<GpsCoordinates | null>(
-    null
+    null,
   )
-  const [gpsSource, setGpsSource] = useState<
-    'exif' | 'device' | 'none' | null
-  >(null)
+  const [gpsSource, setGpsSource] = useState<'exif' | 'device' | 'none' | null>(
+    null,
+  )
   const [compressedFile, setCompressedFile] = useState<File | null>(null)
   const [isProcessingImage, setIsProcessingImage] = useState(false)
   const [isGettingLocation, setIsGettingLocation] = useState(false)
@@ -78,6 +87,12 @@ export function UploadForm() {
   const [manualGpsError, setManualGpsError] = useState<string | null>(null)
   const [isGeneratingDescription, setIsGeneratingDescription] = useState(false)
   const [generationError, setGenerationError] = useState<string | null>(null)
+  const [invoiceAmount, setInvoiceAmount] = useState('')
+  const [hoursWorked, setHoursWorked] = useState('')
+
+  // Check for fromCombine query parameter
+  const searchParams = useSearchParams()
+  const fromCombine = searchParams.get('fromCombine')
 
   const {
     register,
@@ -114,33 +129,42 @@ export function UploadForm() {
   // Check for preloaded image from Before/After tool
   useEffect(() => {
     const preloadedImageData = sessionStorage.getItem('preloadedImage')
+    console.log(
+      'Checking for preloaded image...',
+      preloadedImageData ? 'Found!' : 'Not found',
+    )
+
     if (preloadedImageData) {
       // Convert data URL to File
       fetch(preloadedImageData)
-        .then(res => res.blob())
-        .then(async blob => {
-          const file = new File([blob], `combined-${Date.now()}.jpg`, { type: 'image/jpeg' })
-          
+        .then((res) => res.blob())
+        .then(async (blob) => {
+          const file = new File([blob], `combined-${Date.now()}.jpg`, {
+            type: 'image/jpeg',
+          })
+
           // Set the image preview
           setImagePreview(preloadedImageData)
-          
+
           // Set compressed file (already compressed by Before/After tool)
           setCompressedFile(file)
-          
+
           // Combined images don't have GPS, so user will need to add manually
           setGpsCoordinates(null)
           setGpsSource('none')
-          
+
           // Clear sessionStorage
           sessionStorage.removeItem('preloadedImage')
-          
-          console.log('✅ Loaded combined image from Before/After tool (ready to upload)')
+
+          console.log(
+            '✅ Loaded combined image from Before/After tool (ready to upload)',
+          )
         })
-        .catch(err => {
+        .catch((err) => {
           console.error('Failed to load preloaded image:', err)
         })
     }
-  }, [])
+  }, [fromCombine]) // Re-run when coming from combine tool
 
   // Process image: Extract EXIF (BEFORE compression), then compress
   useEffect(() => {
@@ -221,10 +245,12 @@ export function UploadForm() {
     }
 
     // Parse comma-separated coordinates (handles both "lat, lng" and "lat,lng")
-    const parts = manualCoords.split(',').map(part => part.trim())
+    const parts = manualCoords.split(',').map((part) => part.trim())
 
     if (parts.length !== 2) {
-      setManualGpsError('Invalid format. Use: latitude, longitude (e.g., 38.9072, -104.8586)')
+      setManualGpsError(
+        'Invalid format. Use: latitude, longitude (e.g., 38.9072, -104.8586)',
+      )
       return
     }
 
@@ -288,7 +314,7 @@ export function UploadForm() {
           headers: {
             'User-Agent': 'SasquatchJobPinner/1.0',
           },
-        }
+        },
       )
 
       let city = 'Colorado Springs'
@@ -330,7 +356,9 @@ export function UploadForm() {
     } catch (error) {
       console.error('Generate description error:', error)
       setGenerationError(
-        error instanceof Error ? error.message : 'Failed to generate description'
+        error instanceof Error
+          ? error.message
+          : 'Failed to generate description',
       )
     } finally {
       setIsGeneratingDescription(false)
@@ -340,7 +368,9 @@ export function UploadForm() {
   const onSubmit = async (data: UploadFormData) => {
     // Validate GPS coordinates are available
     if (!gpsCoordinates) {
-      setUploadError('GPS coordinates are required. Please use current location.')
+      setUploadError(
+        'GPS coordinates are required. Please use current location.',
+      )
       return
     }
 
@@ -349,7 +379,9 @@ export function UploadForm() {
     const hasPreloadedFile = compressedFile !== null
 
     if (!hasFileInput && !hasPreloadedFile) {
-      setUploadError('Image is required. Please select an image or use the Before/After tool.')
+      setUploadError(
+        'Image is required. Please select an image or use the Before/After tool.',
+      )
       return
     }
 
@@ -376,6 +408,14 @@ export function UploadForm() {
       formData.append('gpsLng', gpsCoordinates.lng.toString())
       formData.append('description', data.description)
 
+      // Add optional revenue tracking fields
+      if (invoiceAmount) {
+        formData.append('invoiceAmount', invoiceAmount)
+      }
+      if (hoursWorked) {
+        formData.append('hoursWorked', hoursWorked)
+      }
+
       // Send to API
       const response = await fetch('/api/upload', {
         method: 'POST',
@@ -399,7 +439,7 @@ export function UploadForm() {
     } catch (error) {
       console.error('Upload error:', error)
       setUploadError(
-        error instanceof Error ? error.message : 'Failed to upload job'
+        error instanceof Error ? error.message : 'Failed to upload job',
       )
     } finally {
       setIsUploading(false)
@@ -423,12 +463,14 @@ export function UploadForm() {
           disabled={isProcessingImage}
         />
         {errors.image && (
-          <p className="text-sm text-destructive">{String(errors.image.message)}</p>
+          <p className="text-destructive text-sm">
+            {String(errors.image.message)}
+          </p>
         )}
 
         {/* Processing Indicator */}
         {isProcessingImage && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <div className="text-muted-foreground flex items-center gap-2 text-sm">
             <Loader2 className="h-4 w-4 animate-spin" />
             Processing image (extracting GPS, compressing)...
           </div>
@@ -444,7 +486,7 @@ export function UploadForm() {
             />
 
             {/* GPS Status Indicator */}
-            <div className="flex items-center justify-between rounded-md border bg-muted/50 p-3">
+            <div className="bg-muted/50 flex items-center justify-between rounded-md border p-3">
               <div className="flex items-center gap-2">
                 <MapPin className="h-4 w-4" />
                 <span className="text-sm font-medium">
@@ -480,7 +522,7 @@ export function UploadForm() {
 
             {/* Show GPS coordinates for debugging */}
             {gpsCoordinates && (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-muted-foreground text-xs">
                 Coordinates: {gpsCoordinates.lat.toFixed(6)},{' '}
                 {gpsCoordinates.lng.toFixed(6)}
               </p>
@@ -504,7 +546,7 @@ export function UploadForm() {
               </Button>
 
               {showManualGps && (
-                <div className="space-y-3 rounded-md border bg-muted/30 p-3">
+                <div className="bg-muted/30 space-y-3 rounded-md border p-3">
                   <div className="space-y-2">
                     <Label htmlFor="manualCoords" className="text-sm">
                       Manual Coordinates
@@ -516,13 +558,13 @@ export function UploadForm() {
                       value={manualCoords}
                       onChange={(e) => setManualCoords(e.target.value)}
                     />
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-muted-foreground text-xs">
                       Format: latitude, longitude
                     </p>
                   </div>
 
                   {manualGpsError && (
-                    <p className="text-xs text-destructive">{manualGpsError}</p>
+                    <p className="text-destructive text-xs">{manualGpsError}</p>
                   )}
 
                   <Button
@@ -534,7 +576,7 @@ export function UploadForm() {
                     Apply Manual Coordinates
                   </Button>
 
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-muted-foreground text-xs">
                     Need help?{' '}
                     <a
                       href="https://www.google.com/maps"
@@ -575,7 +617,7 @@ export function UploadForm() {
           </SelectContent>
         </Select>
         {errors.serviceId && (
-          <p className="text-sm text-destructive">{errors.serviceId.message}</p>
+          <p className="text-destructive text-sm">{errors.serviceId.message}</p>
         )}
       </div>
 
@@ -610,19 +652,72 @@ export function UploadForm() {
           {...register('description')}
         />
         {errors.description && (
-          <p className="text-sm text-destructive">{errors.description.message}</p>
+          <p className="text-destructive text-sm">
+            {errors.description.message}
+          </p>
         )}
         {generationError && (
-          <p className="text-sm text-destructive">{generationError}</p>
+          <p className="text-destructive text-sm">{generationError}</p>
         )}
-        <p className="text-xs text-muted-foreground">
-          This description will appear on the public job page. Use AI to generate a professional description, then edit as needed.
+        <p className="text-muted-foreground text-xs">
+          This description will appear on the public job page. Use AI to
+          generate a professional description, then edit as needed.
+        </p>
+      </div>
+
+      {/* Revenue Tracking Fields (Optional) */}
+      <div className="space-y-2">
+        <Label className="text-sm font-medium">
+          Revenue Tracking (Optional)
+        </Label>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <Label
+              htmlFor="invoiceAmount"
+              className="text-muted-foreground text-xs"
+            >
+              <DollarSign className="mr-1 inline-block h-3 w-3" />
+              Invoice Amount
+            </Label>
+            <Input
+              id="invoiceAmount"
+              type="number"
+              step="0.01"
+              min="0"
+              value={invoiceAmount}
+              onChange={(e) => setInvoiceAmount(e.target.value)}
+              placeholder="0.00"
+              className="font-mono"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label
+              htmlFor="hoursWorked"
+              className="text-muted-foreground text-xs"
+            >
+              <Clock className="mr-1 inline-block h-3 w-3" />
+              Hours Worked
+            </Label>
+            <Input
+              id="hoursWorked"
+              type="number"
+              step="0.25"
+              min="0"
+              value={hoursWorked}
+              onChange={(e) => setHoursWorked(e.target.value)}
+              placeholder="0.0"
+              className="font-mono"
+            />
+          </div>
+        </div>
+        <p className="text-muted-foreground text-xs">
+          Track revenue and time for your statistics dashboard
         </p>
       </div>
 
       {/* Error Message */}
       {uploadError && (
-        <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+        <div className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
           {uploadError}
         </div>
       )}

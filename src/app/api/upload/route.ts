@@ -32,19 +32,21 @@ export async function POST(request: NextRequest) {
     const description = formData.get('description') as string | null
     const gpsLat = formData.get('gpsLat') as string | null
     const gpsLng = formData.get('gpsLng') as string | null
+    const invoiceAmountStr = formData.get('invoiceAmount') as string | null
+    const hoursWorkedStr = formData.get('hoursWorked') as string | null
 
     // Validate required fields
     if (!imageFile || !serviceId || !description) {
       return NextResponse.json(
         { error: 'Image, service type, and description are required' },
-        { status: 400 }
+        { status: 400 },
       )
     }
 
     if (!gpsLat || !gpsLng) {
       return NextResponse.json(
         { error: 'GPS coordinates are required' },
-        { status: 400 }
+        { status: 400 },
       )
     }
 
@@ -61,7 +63,7 @@ export async function POST(request: NextRequest) {
     if (!service) {
       return NextResponse.json(
         { error: 'Invalid service type' },
-        { status: 400 }
+        { status: 400 },
       )
     }
 
@@ -88,7 +90,7 @@ export async function POST(request: NextRequest) {
       service.slug,
       city,
       state,
-      imageFile.name
+      imageFile.name,
     )
 
     // Upload optimized image to Supabase Storage
@@ -103,7 +105,7 @@ export async function POST(request: NextRequest) {
       console.error('Storage upload error:', uploadError)
       return NextResponse.json(
         { error: 'Failed to upload image' },
-        { status: 500 }
+        { status: 500 },
       )
     }
 
@@ -119,6 +121,10 @@ export async function POST(request: NextRequest) {
 
     // Generate job slug
     const slug = generateJobSlug(service.name, city)
+
+    // Parse optional revenue tracking fields
+    const invoiceAmount = invoiceAmountStr ? parseFloat(invoiceAmountStr) : null
+    const hoursWorked = hoursWorkedStr ? parseFloat(hoursWorkedStr) : null
 
     // Insert job record into database (published immediately)
     const { data: job, error: insertError } = await supabase
@@ -138,6 +144,12 @@ export async function POST(request: NextRequest) {
         slug,
         status: 'published',
         published_at: new Date().toISOString(),
+        ...(invoiceAmount && !isNaN(invoiceAmount)
+          ? { invoice_amount: invoiceAmount }
+          : {}),
+        ...(hoursWorked && !isNaN(hoursWorked)
+          ? { hours_worked: hoursWorked }
+          : {}),
       })
       .select()
       .single()
@@ -146,7 +158,7 @@ export async function POST(request: NextRequest) {
       console.error('Database insert error:', insertError)
       return NextResponse.json(
         { error: 'Failed to create job record' },
-        { status: 500 }
+        { status: 500 },
       )
     }
 
@@ -156,7 +168,7 @@ export async function POST(request: NextRequest) {
         await fetch(process.env.ZAPIER_WEBHOOK_URL, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
           },
           body: JSON.stringify({
             // Job data for Google Business Profile
@@ -168,13 +180,13 @@ export async function POST(request: NextRequest) {
             description: description,
             job_id: job.id,
             slug: job.slug,
-          })
-        });
-        console.log('Zapier webhook triggered for job:', job.id);
+          }),
+        })
+        console.log('Zapier webhook triggered for job:', job.id)
       }
     } catch (error) {
       // Log error but don't fail the job submission
-      console.error('Zapier webhook failed:', error);
+      console.error('Zapier webhook failed:', error)
     }
 
     // Return success with job details
@@ -189,13 +201,13 @@ export async function POST(request: NextRequest) {
           imageUrl: job.image_url,
         },
       },
-      { status: 201 }
+      { status: 201 },
     )
   } catch (error) {
     console.error('Upload API error:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }

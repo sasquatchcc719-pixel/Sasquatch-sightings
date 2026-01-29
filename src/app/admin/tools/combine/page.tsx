@@ -6,7 +6,13 @@ import { Card } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
-import { ArrowLeft, Download, Loader2, Upload, Image as ImageIcon } from 'lucide-react'
+import {
+  ArrowLeft,
+  Download,
+  Loader2,
+  Upload,
+  Image as ImageIcon,
+} from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import imageCompression from 'browser-image-compression'
 
@@ -71,12 +77,28 @@ export default function BeforeAfterCombinePage() {
       }
 
       console.log('Compressing before image...')
-      const compressedBefore = await imageCompression(beforeImage, compressionOptions)
-      console.log('Before image compressed:', beforeImage.size, '->', compressedBefore.size)
+      const compressedBefore = await imageCompression(
+        beforeImage,
+        compressionOptions,
+      )
+      console.log(
+        'Before image compressed:',
+        beforeImage.size,
+        '->',
+        compressedBefore.size,
+      )
 
       console.log('Compressing after image...')
-      const compressedAfter = await imageCompression(afterImage, compressionOptions)
-      console.log('After image compressed:', afterImage.size, '->', compressedAfter.size)
+      const compressedAfter = await imageCompression(
+        afterImage,
+        compressionOptions,
+      )
+      console.log(
+        'After image compressed:',
+        afterImage.size,
+        '->',
+        compressedAfter.size,
+      )
 
       const formData = new FormData()
       formData.append('before', compressedBefore)
@@ -121,11 +143,12 @@ export default function BeforeAfterCombinePage() {
 
     // Store combined image in sessionStorage for job upload form
     sessionStorage.setItem('preloadedImage', combinedImage)
-    router.push('/admin')
+    // Add timestamp to force page refresh and useEffect to re-run
+    router.push('/admin?fromCombine=' + Date.now())
   }
 
   return (
-    <div className="container mx-auto px-4 py-8 max-w-6xl">
+    <div className="container mx-auto max-w-6xl px-4 py-8">
       {/* Header */}
       <div className="mb-8">
         <Button
@@ -138,19 +161,19 @@ export default function BeforeAfterCombinePage() {
           Back to Jobs
         </Button>
         <h1 className="text-3xl font-bold">Before/After Image Combiner</h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-2">
+        <p className="mt-2 text-gray-600 dark:text-gray-400">
           Upload two images and combine them side-by-side with labels
         </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
         {/* Upload Section */}
         <div className="space-y-6">
           <Card className="p-6">
-            <h2 className="text-xl font-semibold mb-4">Upload Images</h2>
+            <h2 className="mb-4 text-xl font-semibold">Upload Images</h2>
 
             {/* Before Image */}
-            <div className="space-y-2 mb-6">
+            <div className="mb-6 space-y-2">
               <Label htmlFor="before">Before Image</Label>
               <div className="flex items-center gap-4">
                 <Input
@@ -165,18 +188,18 @@ export default function BeforeAfterCombinePage() {
                 )}
               </div>
               {beforePreview && (
-                <div className="mt-2 rounded-lg overflow-hidden border">
+                <div className="mt-2 overflow-hidden rounded-lg border">
                   <img
                     src={beforePreview}
                     alt="Before preview"
-                    className="w-full h-48 object-cover"
+                    className="h-48 w-full object-cover"
                   />
                 </div>
               )}
             </div>
 
             {/* After Image */}
-            <div className="space-y-2 mb-6">
+            <div className="mb-6 space-y-2">
               <Label htmlFor="after">After Image</Label>
               <div className="flex items-center gap-4">
                 <Input
@@ -191,26 +214,28 @@ export default function BeforeAfterCombinePage() {
                 )}
               </div>
               {afterPreview && (
-                <div className="mt-2 rounded-lg overflow-hidden border">
+                <div className="mt-2 overflow-hidden rounded-lg border">
                   <img
                     src={afterPreview}
                     alt="After preview"
-                    className="w-full h-48 object-cover"
+                    className="h-48 w-full object-cover"
                   />
                 </div>
               )}
             </div>
 
             {/* Options */}
-            <div className="flex items-center space-x-2 mb-6">
+            <div className="mb-6 flex items-center space-x-2">
               <Checkbox
                 id="watermark"
                 checked={addWatermark}
-                onCheckedChange={(checked) => setAddWatermark(checked as boolean)}
+                onCheckedChange={(checked) =>
+                  setAddWatermark(checked as boolean)
+                }
               />
               <label
                 htmlFor="watermark"
-                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                className="text-sm leading-none font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
               >
                 Add Sasquatch watermark
               </label>
@@ -238,8 +263,10 @@ export default function BeforeAfterCombinePage() {
 
             {/* Error Message */}
             {error && (
-              <div className="mt-4 p-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-lg">
-                <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-950/30">
+                <p className="text-sm text-red-600 dark:text-red-400">
+                  {error}
+                </p>
               </div>
             )}
           </Card>
@@ -248,15 +275,15 @@ export default function BeforeAfterCombinePage() {
         {/* Preview Section */}
         <div className="space-y-6">
           <Card className="p-6">
-            <h2 className="text-xl font-semibold mb-4">Combined Preview</h2>
+            <h2 className="mb-4 text-xl font-semibold">Combined Preview</h2>
 
             {combinedImage ? (
               <>
-                <div className="rounded-lg overflow-hidden border mb-4">
+                <div className="mb-4 overflow-hidden rounded-lg border">
                   <img
                     src={combinedImage}
                     alt="Combined before/after"
-                    className="w-full h-auto"
+                    className="h-auto w-full"
                   />
                 </div>
 
@@ -281,20 +308,22 @@ export default function BeforeAfterCombinePage() {
                 </div>
               </>
             ) : (
-              <div className="flex flex-col items-center justify-center h-64 text-center text-gray-500 dark:text-gray-400 border-2 border-dashed rounded-lg">
-                <ImageIcon className="h-12 w-12 mb-4 opacity-50" />
+              <div className="flex h-64 flex-col items-center justify-center rounded-lg border-2 border-dashed text-center text-gray-500 dark:text-gray-400">
+                <ImageIcon className="mb-4 h-12 w-12 opacity-50" />
                 <p>Combined image will appear here</p>
-                <p className="text-sm mt-2">Upload both images and click "Combine"</p>
+                <p className="mt-2 text-sm">
+                  Upload both images and click &quot;Combine&quot;
+                </p>
               </div>
             )}
           </Card>
 
           {/* Tips */}
-          <Card className="p-6 bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800">
-            <h3 className="font-semibold mb-2 text-blue-900 dark:text-blue-100">
+          <Card className="border-blue-200 bg-blue-50 p-6 dark:border-blue-800 dark:bg-blue-950/30">
+            <h3 className="mb-2 font-semibold text-blue-900 dark:text-blue-100">
               💡 Tips
             </h3>
-            <ul className="text-sm space-y-1 text-blue-800 dark:text-blue-200">
+            <ul className="space-y-1 text-sm text-blue-800 dark:text-blue-200">
               <li>• Use high-quality images for best results</li>
               <li>• Images will be automatically resized to match</li>
               <li>• Labels are added automatically (BEFORE/AFTER)</li>
