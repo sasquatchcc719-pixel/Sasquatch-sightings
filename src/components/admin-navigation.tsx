@@ -11,6 +11,7 @@ import {
   MessageSquare,
   BarChart3,
   CreditCard,
+  MapPin,
 } from 'lucide-react'
 
 export function AdminNavigation() {
@@ -40,6 +41,12 @@ export function AdminNavigation() {
       href: '/admin/tap-analytics',
       icon: CreditCard,
       active: pathname === '/admin/tap-analytics',
+    },
+    {
+      name: 'Locations',
+      href: '/admin/location-partners',
+      icon: MapPin,
+      active: pathname === '/admin/location-partners',
     },
     {
       name: 'Contest',

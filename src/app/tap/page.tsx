@@ -20,7 +20,9 @@ import { RecentJobsCarousel } from '@/components/nfc/recent-jobs-carousel'
 export default function TapLandingPage() {
   const searchParams = useSearchParams()
   const cardId = searchParams.get('card')
+  const partnerId = searchParams.get('partner') // For location partners
   const [tapId, setTapId] = useState<string | null>(null)
+  const [partnerName, setPartnerName] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showShareToast, setShowShareToast] = useState(false)
@@ -39,6 +41,7 @@ export default function TapLandingPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             cardId: cardId || null,
+            partnerId: partnerId || null,
             action: 'page_view',
           }),
         })
@@ -46,13 +49,16 @@ export default function TapLandingPage() {
         if (data.tapId) {
           setTapId(data.tapId)
         }
+        if (data.partnerName) {
+          setPartnerName(data.partnerName)
+        }
       } catch (error) {
         console.error('Failed to track tap:', error)
       }
     }
 
     trackTap()
-  }, [cardId])
+  }, [cardId, partnerId])
 
   // Track button clicks
   const trackButtonClick = async (buttonType: string) => {
@@ -279,6 +285,19 @@ END:VCARD`
             Share This Deal
           </Button>
         </div>
+
+        {/* Location Partner Badge (if applicable) */}
+        {partnerName && (
+          <Card className="mb-6 border-2 border-amber-300 bg-gradient-to-r from-yellow-50 to-amber-50 p-4 dark:border-amber-700 dark:from-yellow-900/20 dark:to-amber-900/20">
+            <div className="flex items-center gap-2 text-sm font-semibold text-amber-900 dark:text-amber-200">
+              <span className="text-xl">🎁</span>
+              <span>Found at: {partnerName}</span>
+            </div>
+            <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+              This location earns rewards for sharing our service!
+            </p>
+          </Card>
+        )}
 
         {/* Service Areas */}
         <Card className="mb-6 p-4">
