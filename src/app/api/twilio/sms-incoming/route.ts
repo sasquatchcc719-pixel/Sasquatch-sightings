@@ -247,13 +247,48 @@ export async function POST(request: NextRequest) {
           `🎯 Partner NFC referral detected in message: "${messageBody}"`,
         )
 
-        // Tag conversation as NFC source - lead will be created once we collect enough info
+        // Try to identify which partner by looking for their name in the message
+        const { data: partners } = await supabase
+          .from('partners')
+          .select('id, location_name, company_name, coupon_code')
+          .eq('partner_type', 'location')
+
+        let matchedPartner = null
+        const lowerMessage = messageBody.toLowerCase()
+        for (const partner of partners || []) {
+          const partnerName = (
+            partner.location_name ||
+            partner.company_name ||
+            ''
+          ).toLowerCase()
+          if (partnerName && lowerMessage.includes(partnerName)) {
+            matchedPartner = partner
+            break
+          }
+        }
+
+        // Tag conversation as NFC source with partner info
         await supabase
           .from('conversations')
-          .update({ source: 'NFC Card' })
+          .update({
+            source: 'NFC Card',
+            metadata: matchedPartner
+              ? {
+                  partner_id: matchedPartner.id,
+                  partner_name:
+                    matchedPartner.location_name || matchedPartner.company_name,
+                  coupon_code: matchedPartner.coupon_code,
+                }
+              : null,
+          })
           .eq('id', conversation.id)
 
         conversation.source = 'NFC Card'
+        if (matchedPartner) {
+          console.log(
+            `✅ Matched to partner: ${matchedPartner.location_name || matchedPartner.company_name} (code: ${matchedPartner.coupon_code})`,
+          )
+        }
       }
     } else {
       // Reactivate conversation if it was completed or escalated
@@ -307,7 +342,24 @@ export async function POST(request: NextRequest) {
     // Generate AI response
     let aiResponse: string
     try {
-      aiResponse = await generateAIResponse(messageBody, messages)
+      // Extract partner context if available
+      const metadata = (
+        conversation as {
+          metadata?: { partner_name?: string; coupon_code?: string }
+        }
+      ).metadata
+      const partnerContext = metadata?.coupon_code
+        ? {
+            partnerName: metadata.partner_name,
+            couponCode: metadata.coupon_code,
+          }
+        : undefined
+
+      aiResponse = await generateAIResponse(
+        messageBody,
+        messages,
+        partnerContext,
+      )
 
       if (!aiResponse) {
         // AI returned empty (shouldn't happen, but handle gracefully)

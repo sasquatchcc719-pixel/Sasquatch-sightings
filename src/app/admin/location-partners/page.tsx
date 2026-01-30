@@ -29,6 +29,7 @@ interface LocationPartner {
   total_taps: number
   total_conversions: number
   google_review_url: string | null
+  coupon_code: string | null
   created_at: string
 }
 
@@ -572,7 +573,14 @@ export default function LocationPartnersPage() {
                     <div className="text-xs text-purple-600/80">Rate</div>
                   </div>
 
-                  <div className="col-span-2 rounded-lg bg-gray-50 p-3 sm:col-span-1 sm:p-4 dark:bg-gray-800">
+                  <div className="rounded-lg bg-amber-50 p-3 sm:p-4 dark:bg-amber-900/20">
+                    <div className="text-lg font-bold text-amber-600 sm:text-2xl">
+                      {partner.coupon_code || 'N/A'}
+                    </div>
+                    <div className="text-xs text-amber-600/80">Coupon</div>
+                  </div>
+
+                  <div className="col-span-2 rounded-lg bg-gray-50 p-3 sm:col-span-1 sm:p-4 md:col-span-2 dark:bg-gray-800">
                     <div className="text-xs font-semibold text-gray-600 dark:text-gray-400">
                       {partner.phone || 'No phone'}
                     </div>

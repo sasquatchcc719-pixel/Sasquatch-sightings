@@ -85,6 +85,26 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Generate coupon code: first 4 letters of business name (uppercase) + "20"
+    const cleanName = company_name.replace(/[^a-zA-Z]/g, '').toUpperCase()
+    let baseCouponCode = cleanName.substring(0, 4) + '20'
+
+    // Check if code already exists, if so add a number
+    let couponCode = baseCouponCode
+    let attempts = 0
+    while (attempts < 10) {
+      const { data: existing } = await supabase
+        .from('partners')
+        .select('coupon_code')
+        .eq('coupon_code', couponCode)
+        .single()
+
+      if (!existing) break
+
+      attempts++
+      couponCode = cleanName.substring(0, 3) + attempts + '20'
+    }
+
     // Generate a placeholder email from company name
     const slugifiedName = company_name
       .toLowerCase()
@@ -109,6 +129,7 @@ export async function POST(request: NextRequest) {
         location_type: location_type || null,
         card_id: card_id || null,
         google_review_url: google_review_url || null,
+        coupon_code: couponCode,
         partner_type: 'location',
         role: 'partner',
         credit_balance: 0,

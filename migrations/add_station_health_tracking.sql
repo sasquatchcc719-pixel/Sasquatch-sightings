@@ -7,6 +7,12 @@
 -- Add google_review_url to partners table for their review station
 ALTER TABLE partners ADD COLUMN IF NOT EXISTS google_review_url TEXT;
 
+-- Add coupon_code for partner-specific discount tracking
+ALTER TABLE partners ADD COLUMN IF NOT EXISTS coupon_code TEXT UNIQUE;
+
+-- Add metadata column to conversations for storing partner context
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS metadata JSONB;
+
 -- Add last activity tracking for health monitoring
 ALTER TABLE partners ADD COLUMN IF NOT EXISTS last_sasquatch_tap_at TIMESTAMP WITH TIME ZONE;
 ALTER TABLE partners ADD COLUMN IF NOT EXISTS last_review_tap_at TIMESTAMP WITH TIME ZONE;

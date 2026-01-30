@@ -23,6 +23,7 @@ export default function TapLandingPage() {
   const partnerId = searchParams.get('partner') // For location partners
   const [tapId, setTapId] = useState<string | null>(null)
   const [partnerName, setPartnerName] = useState<string | null>(null)
+  const [couponCode, setCouponCode] = useState<string>('SCC20')
   const [showForm, setShowForm] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [showShareToast, setShowShareToast] = useState(false)
@@ -51,6 +52,9 @@ export default function TapLandingPage() {
         }
         if (data.partnerName) {
           setPartnerName(data.partnerName)
+        }
+        if (data.couponCode) {
+          setCouponCode(data.couponCode)
         }
       } catch (error) {
         console.error('Failed to track tap:', error)
@@ -86,7 +90,11 @@ export default function TapLandingPage() {
 
   const handleText = () => {
     trackButtonClick('text')
-    window.location.href = 'sms:719-249-8791'
+    // Pre-populate text with partner info so bot knows the source
+    const prefilledMessage = partnerName
+      ? `Hi! I scanned the card at ${partnerName} and I'm interested in carpet cleaning.`
+      : 'Hi! I scanned your card and I am interested in carpet cleaning.'
+    window.location.href = `sms:719-249-8791?body=${encodeURIComponent(prefilledMessage)}`
   }
 
   const handleSaveContact = async () => {
@@ -99,7 +107,7 @@ FN:Sasquatch Carpet Cleaning
 ORG:Sasquatch Carpet Cleaning
 TEL;TYPE=WORK,VOICE:719-249-8791
 URL:https://sasquatchcarpet.com
-NOTE:$20 OFF every cleaning! Mention this card.
+NOTE:$20 OFF! Use code ${couponCode} in booking notes.
 END:VCARD`
 
     const blob = new Blob([vcard], { type: 'text/vcard' })
@@ -115,8 +123,7 @@ END:VCARD`
     trackButtonClick('share')
 
     const shareUrl = window.location.href
-    const shareText =
-      '🦶 Get $20 OFF carpet cleaning from Sasquatch! Professional service in Colorado Springs area. Book now:'
+    const shareText = `🦶 Get $20 OFF carpet cleaning from Sasquatch! Use code ${couponCode} when booking. Colorado Springs area.`
 
     // Check if native share is available (mobile)
     if (navigator.share) {
@@ -165,7 +172,7 @@ END:VCARD`
           phone: formData.phone,
           zip_code: formData.zip,
           source: cardId ? `NFC Card - ${cardId}` : 'NFC Card Tap',
-          notes: `$20 OFF coupon from NFC card tap - valid every cleaning`,
+          notes: `$20 OFF - Coupon code: ${couponCode} (from NFC card tap)`,
         }),
       })
 
@@ -230,7 +237,7 @@ END:VCARD`
                   📅 BOOK NOW
                 </p>
                 <p className="mt-1 text-lg font-bold text-white/90">
-                  Get $20 OFF Every Cleaning
+                  Use code: {couponCode} in notes
                 </p>
               </div>
 
@@ -390,7 +397,9 @@ END:VCARD`
         <div className="text-center text-xs text-gray-500">
           <p>Sasquatch Carpet Cleaning</p>
           <p>Monument • Colorado Springs • Castle Rock • Black Forest</p>
-          <p className="mt-2">$20 off valid on all residential cleanings.</p>
+          <p className="mt-2">
+            $20 off with code {couponCode} - add to booking notes!
+          </p>
         </div>
       </div>
 

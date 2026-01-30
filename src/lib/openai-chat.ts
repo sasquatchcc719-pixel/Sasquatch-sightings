@@ -285,6 +285,7 @@ CUSTOMER INFO CHECKLIST (collect before booking):
 export async function generateAIResponse(
   customerMessage: string,
   conversationHistory: Message[] = [],
+  context?: { partnerName?: string; couponCode?: string },
 ): Promise<string> {
   if (!openai) {
     throw new Error('OpenAI not configured')
@@ -296,9 +297,23 @@ export async function generateAIResponse(
   }
 
   try {
+    // Build system prompt with partner context if available
+    let systemPrompt = SYSTEM_PROMPT
+    if (context?.couponCode) {
+      const partnerContext = `
+
+CURRENT CUSTOMER CONTEXT:
+- This customer came from ${context.partnerName || 'a partner location'}'s NFC card
+- Their specific discount code is: ${context.couponCode}
+- ALWAYS mention their code "${context.couponCode}" when discussing the discount
+- Tell them to add "${context.couponCode}" in the notes when booking to get their $20 off
+`
+      systemPrompt = SYSTEM_PROMPT + partnerContext
+    }
+
     // Build messages array with system prompt + conversation history + new message
     const messages: OpenAI.ChatCompletionMessageParam[] = [
-      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'system', content: systemPrompt },
       ...conversationHistory.map((msg) => ({
         role: msg.role as 'user' | 'assistant',
         content: msg.content,
