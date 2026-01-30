@@ -375,28 +375,10 @@ END:VCARD`
 
       {/* Share Toast Notification */}
       {showShareToast && (
-        <div className="animate-fade-in fixed right-6 bottom-28 z-50 rounded-lg bg-green-600 px-4 py-3 text-sm font-semibold text-white shadow-xl">
+        <div className="fixed right-6 bottom-28 z-50 animate-[fade-in_0.3s_ease-out] rounded-lg bg-green-600 px-4 py-3 text-sm font-semibold text-white shadow-xl">
           ✓ Link copied to clipboard!
         </div>
       )}
-
-      {/* Add fade-in animation */}
-      <style jsx>{`
-        @keyframes fade-in {
-          from {
-            opacity: 0;
-            transform: translateY(10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-
-        .animate-fade-in {
-          animation: fade-in 0.3s ease-out;
-        }
-      `}</style>
     </div>
   )
 }
