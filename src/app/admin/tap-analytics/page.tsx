@@ -44,10 +44,12 @@ type TapStats = {
   uniqueTaps: number
   conversions: number
   conversionRate: number
+  bookingClicks: number
   callClicks: number
   textClicks: number
   formSubmits: number
   saveContactClicks: number
+  shareClicks: number
   todayTaps: number
   weekTaps: number
   monthTaps: number
@@ -109,6 +111,9 @@ export default function TapAnalyticsPage() {
       const conversions = tapData.filter((t) => t.converted).length
       const conversionRate = totalTaps > 0 ? (conversions / totalTaps) * 100 : 0
 
+      const bookingClicks = clickData.filter(
+        (c) => c.button_type === 'booking_page',
+      ).length
       const callClicks = clickData.filter(
         (c) => c.button_type === 'call',
       ).length
@@ -120,6 +125,9 @@ export default function TapAnalyticsPage() {
       ).length
       const saveContactClicks = clickData.filter(
         (c) => c.button_type === 'save_contact',
+      ).length
+      const shareClicks = clickData.filter(
+        (c) => c.button_type === 'share',
       ).length
 
       // Time-based stats
@@ -165,10 +173,12 @@ export default function TapAnalyticsPage() {
         uniqueTaps,
         conversions,
         conversionRate,
+        bookingClicks,
         callClicks,
         textClicks,
         formSubmits,
         saveContactClicks,
+        shareClicks,
         todayTaps,
         weekTaps,
         monthTaps,
@@ -313,7 +323,14 @@ export default function TapAnalyticsPage() {
       {/* Button Engagement */}
       <Card className="p-6">
         <h2 className="mb-4 text-xl font-bold">Button Engagement</h2>
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+          <div className="text-center">
+            <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-900">
+              <span className="text-2xl">📅</span>
+            </div>
+            <p className="text-2xl font-bold">{stats.bookingClicks}</p>
+            <p className="text-sm text-gray-600 dark:text-gray-400">Book Now</p>
+          </div>
           <div className="text-center">
             <Phone className="mx-auto mb-2 h-8 w-8 text-green-500" />
             <p className="text-2xl font-bold">{stats.callClicks}</p>
@@ -325,17 +342,24 @@ export default function TapAnalyticsPage() {
             <p className="text-sm text-gray-600 dark:text-gray-400">Texts</p>
           </div>
           <div className="text-center">
-            <FileText className="mx-auto mb-2 h-8 w-8 text-purple-500" />
-            <p className="text-2xl font-bold">{stats.formSubmits}</p>
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              Form Submits
-            </p>
-          </div>
-          <div className="text-center">
             <Download className="mx-auto mb-2 h-8 w-8 text-orange-500" />
             <p className="text-2xl font-bold">{stats.saveContactClicks}</p>
             <p className="text-sm text-gray-600 dark:text-gray-400">
               Save Contact
+            </p>
+          </div>
+          <div className="text-center">
+            <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900">
+              <span className="text-2xl">🔗</span>
+            </div>
+            <p className="text-2xl font-bold">{stats.shareClicks}</p>
+            <p className="text-sm text-gray-600 dark:text-gray-400">Shares</p>
+          </div>
+          <div className="text-center">
+            <FileText className="mx-auto mb-2 h-8 w-8 text-purple-500" />
+            <p className="text-2xl font-bold">{stats.formSubmits}</p>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              Form Submits
             </p>
           </div>
         </div>
