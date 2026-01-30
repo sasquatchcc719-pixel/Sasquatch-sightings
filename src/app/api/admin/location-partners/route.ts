@@ -57,6 +57,7 @@ export async function POST(request: NextRequest) {
     const { data, error } = await supabase
       .from('partners')
       .insert({
+        name: company_name, // Required field
         company_name,
         location_name: location_name || null,
         location_address: location_address || null,
