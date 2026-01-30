@@ -169,56 +169,33 @@ export default function LocationPartnersPage() {
   const handleCreatePartner = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    const supabase = createClient()
-
-    const { data, error } = await supabase
-      .from('partners')
-      .insert({
-        company_name: newPartner.company_name,
-        location_name: newPartner.location_name || null,
-        location_address: newPartner.location_address || null,
-        location_type: newPartner.location_type || null,
-        phone: newPartner.phone || null,
-        card_id: newPartner.card_id || null,
-        partner_type: 'location',
-        role: 'partner',
-        credit_balance: 0,
-        total_taps: 0,
-        total_conversions: 0,
+    try {
+      const response = await fetch('/api/admin/location-partners', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newPartner),
       })
-      .select()
-      .single()
 
-    if (error) {
-      alert('Failed to create location partner: ' + error.message)
-      return
-    }
-
-    if (newPartner.phone && data) {
-      try {
-        await fetch('/api/sms/send', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            to: newPartner.phone,
-            message: `Welcome to Sasquatch Location Partners! Your NFC card is active. URL: ${window.location.origin}/location/${data.id}. You earn 1% of every job that books from your card!`,
-          }),
-        })
-      } catch (error) {
-        console.error('Failed to send welcome SMS:', error)
+      if (!response.ok) {
+        const errorData = await response.json()
+        alert('Failed to create location partner: ' + errorData.error)
+        return
       }
-    }
 
-    setNewPartner({
-      company_name: '',
-      location_name: '',
-      location_address: '',
-      location_type: '',
-      phone: '',
-      card_id: '',
-    })
-    setIsDialogOpen(false)
-    void loadData()
+      setNewPartner({
+        company_name: '',
+        location_name: '',
+        location_address: '',
+        location_type: '',
+        phone: '',
+        card_id: '',
+      })
+      setIsDialogOpen(false)
+      void loadData()
+    } catch (error) {
+      console.error('Failed to create location partner:', error)
+      alert('Failed to create location partner')
+    }
   }
 
   const copyUrl = (partnerId: string) => {
