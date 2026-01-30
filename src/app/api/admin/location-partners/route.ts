@@ -70,16 +70,19 @@ export async function POST(request: NextRequest) {
     const placeholderEmail = `${slugifiedName}@location-partner.sasquatchcarpet.com`
 
     // Create the location partner
+    // Note: We provide placeholder values for legacy required fields (user_id, home_address, phone)
+    // that were designed for referral partners. The migration should drop these constraints.
     const { data, error } = await supabase
       .from('partners')
       .insert({
         name: company_name, // Required field
         email: placeholderEmail, // Required field - placeholder for location partners
+        phone: phone || 'N/A', // Provide default for legacy NOT NULL constraint
+        home_address: location_address || 'N/A - Location Partner', // Provide default for legacy NOT NULL constraint
         company_name,
         location_name: location_name || null,
         location_address: location_address || null,
         location_type: location_type || null,
-        phone: phone || null,
         card_id: card_id || null,
         pin: pin,
         partner_type: 'location',
