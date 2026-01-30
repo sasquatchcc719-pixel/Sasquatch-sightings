@@ -3,7 +3,14 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Image from 'next/image'
-import { Phone, MessageSquare, Download, MapPin, Clock } from 'lucide-react'
+import {
+  Phone,
+  MessageSquare,
+  Download,
+  MapPin,
+  Clock,
+  Share2,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -16,6 +23,7 @@ export default function TapLandingPage() {
   const [tapId, setTapId] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [showShareToast, setShowShareToast] = useState(false)
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
@@ -95,6 +103,46 @@ END:VCARD`
     link.download = 'Sasquatch-Carpet-Cleaning.vcf'
     link.click()
     window.URL.revokeObjectURL(url)
+  }
+
+  const handleShare = async () => {
+    trackButtonClick('share')
+
+    const shareUrl = window.location.href
+    const shareText =
+      '🦶 Get $20 OFF carpet cleaning from Sasquatch! Professional service in Colorado Springs area. Book now:'
+
+    // Check if native share is available (mobile)
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Sasquatch Carpet Cleaning - $20 OFF',
+          text: shareText,
+          url: shareUrl,
+        })
+      } catch (error) {
+        // User cancelled share, that's okay
+        if (error instanceof Error && error.name !== 'AbortError') {
+          console.error('Share failed:', error)
+          // Fallback to copy
+          copyToClipboard(shareUrl)
+        }
+      }
+    } else {
+      // Desktop: Copy to clipboard
+      copyToClipboard(shareUrl)
+    }
+  }
+
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setShowShareToast(true)
+      setTimeout(() => setShowShareToast(false), 3000)
+    } catch (error) {
+      console.error('Failed to copy:', error)
+      alert('Link: ' + text)
+    }
   }
 
   const handleFormSubmit = async (e: React.FormEvent) => {
@@ -335,6 +383,40 @@ END:VCARD`
           <p className="mt-2">$20 off valid on all residential cleanings.</p>
         </div>
       </div>
+
+      {/* Floating Share Button */}
+      <button
+        onClick={handleShare}
+        className="fixed right-6 bottom-6 z-50 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-2xl transition-all hover:scale-110 hover:from-blue-600 hover:to-blue-700 active:scale-95"
+        aria-label="Share this deal"
+      >
+        <Share2 className="h-7 w-7" />
+      </button>
+
+      {/* Share Toast Notification */}
+      {showShareToast && (
+        <div className="animate-fade-in fixed right-6 bottom-28 z-50 rounded-lg bg-green-600 px-4 py-3 text-sm font-semibold text-white shadow-xl">
+          ✓ Link copied to clipboard!
+        </div>
+      )}
+
+      {/* Add fade-in animation */}
+      <style jsx>{`
+        @keyframes fade-in {
+          from {
+            opacity: 0;
+            transform: translateY(10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        .animate-fade-in {
+          animation: fade-in 0.3s ease-out;
+        }
+      `}</style>
     </div>
   )
 }
