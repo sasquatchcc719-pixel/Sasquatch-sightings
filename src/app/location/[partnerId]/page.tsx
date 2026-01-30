@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
-import Image from 'next/image'
-import { Phone, MessageSquare, Download, MapPin, Share2 } from 'lucide-react'
+import { MessageSquare, Download, MapPin, Share2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { RecentJobsCarousel } from '@/components/nfc/recent-jobs-carousel'
@@ -73,11 +72,6 @@ export default function LocationPartnerPage() {
     } catch (error) {
       console.error('Failed to track button click:', error)
     }
-  }
-
-  const handleCall = () => {
-    void trackButtonClick('call')
-    window.location.href = 'tel:719-249-8791'
   }
 
   // Main CTA - Text to start AI chat with partner context
@@ -160,16 +154,14 @@ END:VCARD`
     <div className="min-h-screen bg-gradient-to-b from-blue-50 to-green-50 dark:from-gray-900 dark:to-gray-800">
       {/* Hero Section */}
       <div className="mx-auto max-w-2xl px-4 py-8">
-        {/* Card Image */}
-        <div className="mb-6 overflow-hidden rounded-xl shadow-2xl">
-          <Image
-            src="/nfc-card.png"
-            alt="Sasquatch Carpet Cleaning Card"
-            width={800}
-            height={450}
-            className="w-full"
-            priority
-          />
+        {/* Logo/Header */}
+        <div className="mb-6 text-center">
+          <h1 className="text-4xl font-black text-gray-900 dark:text-white">
+            🦶 Sasquatch
+          </h1>
+          <p className="text-lg font-semibold text-gray-600 dark:text-gray-300">
+            Carpet Cleaning
+          </p>
         </div>
 
         {/* Location Partner Badge */}
@@ -224,16 +216,6 @@ END:VCARD`
             {/* Shine effect on hover */}
             <div className="absolute inset-0 translate-x-[-100%] bg-gradient-to-r from-transparent via-white/10 to-transparent transition-transform duration-700 group-hover:translate-x-[100%]" />
           </button>
-
-          {/* Call Button */}
-          <Button
-            onClick={handleCall}
-            size="lg"
-            className="w-full bg-green-600 py-6 text-lg font-bold hover:bg-green-700"
-          >
-            <Phone className="mr-2 h-5 w-5" />
-            Call: 719-249-8791
-          </Button>
 
           {/* Save Contact */}
           <Button
