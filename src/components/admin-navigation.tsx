@@ -141,6 +141,13 @@ export function AdminNavigation() {
       description: 'Lead pipeline & follow-ups',
     },
     {
+      name: 'Business Cards',
+      href: '/admin/tap-analytics',
+      icon: CreditCard,
+      active: pathname === '/admin/tap-analytics',
+      description: 'Your personal NFC card taps',
+    },
+    {
       name: 'Contest',
       href: '/admin/sightings',
       icon: Trophy,
@@ -163,14 +170,7 @@ export function AdminNavigation() {
       href: '/admin/location-partners',
       icon: Store,
       active: pathname === '/admin/location-partners',
-      description: 'Manage vendor locations',
-    },
-    {
-      name: 'NFC Analytics',
-      href: '/admin/tap-analytics',
-      icon: CreditCard,
-      active: pathname === '/admin/tap-analytics',
-      description: 'Card tap statistics',
+      description: 'Manage vendor locations & station health',
     },
     {
       name: 'Vendor Chats',
