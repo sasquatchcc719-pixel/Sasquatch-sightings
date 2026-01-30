@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card } from '@/components/ui/card'
+import { RecentJobsCarousel } from '@/components/nfc/recent-jobs-carousel'
 
 export default function TapLandingPage() {
   const searchParams = useSearchParams()
@@ -320,6 +321,12 @@ END:VCARD`
             <li>✅ Eco-friendly cleaning solutions</li>
           </ul>
         </Card>
+
+        {/* Recent Jobs Carousel */}
+        <div className="mb-6">
+          <h3 className="mb-4 text-xl font-bold">Recent Work in Your Area</h3>
+          <RecentJobsCarousel />
+        </div>
 
         {/* Footer */}
         <div className="text-center text-xs text-gray-500">
