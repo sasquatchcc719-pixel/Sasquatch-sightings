@@ -58,22 +58,19 @@ export default function LocationPartnersPage() {
 
   useEffect(() => {
     const fetchData = async () => {
-      const supabase = createClient()
-
-      // Fetch partners
-      const { data: partnersData, error: partnersError } = await supabase
-        .from('partners')
-        .select('*')
-        .eq('partner_type', 'location')
-        .order('created_at', { ascending: false })
-
-      if (partnersError) {
-        console.error('Failed to load location partners:', partnersError)
-      } else {
-        setPartners(partnersData || [])
+      // Fetch partners via API (bypasses RLS)
+      try {
+        const partnersResponse = await fetch('/api/admin/location-partners')
+        const partnersJson = await partnersResponse.json()
+        if (partnersJson.partners) {
+          setPartners(partnersJson.partners)
+        }
+      } catch (error) {
+        console.error('Failed to load vendors:', error)
       }
 
-      // Fetch NFC leads (leads with source = 'NFC Card')
+      // Fetch NFC leads
+      const supabase = createClient()
       const { data: leadsData, error: leadsError } = await supabase
         .from('leads')
         .select('id, phone, name, source, notes, status, created_at')
