@@ -253,6 +253,36 @@ export default function LocationPartnersPage() {
           </Button>
         </div>
 
+        {/* Quick Preview Links */}
+        <Card className="mb-8 border-2 border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
+          <h3 className="mb-3 font-bold text-blue-900 dark:text-blue-200">
+            Preview Landing Pages
+          </h3>
+          <div className="flex flex-wrap gap-3">
+            <a
+              href="/location/demo"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+            >
+              <ExternalLink className="mr-2 h-4 w-4" />
+              Location Partner Page (AI Chat)
+            </a>
+            <a
+              href="/tap"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700"
+            >
+              <ExternalLink className="mr-2 h-4 w-4" />
+              Business Card Page (Direct Book)
+            </a>
+          </div>
+          <p className="mt-2 text-xs text-blue-700 dark:text-blue-300">
+            These are the pages customers see when they scan NFC cards
+          </p>
+        </Card>
+
         {/* Pending Conversions Alert */}
         {pendingConversions.length > 0 && (
           <Card className="mb-8 border-2 border-yellow-400 bg-yellow-50 p-6 dark:border-yellow-600 dark:bg-yellow-900/20">
