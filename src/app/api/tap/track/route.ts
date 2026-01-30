@@ -60,10 +60,13 @@ export async function POST(request: NextRequest) {
         if (partner) {
           partnerData = partner
 
-          // Increment partner tap count
+          // Increment partner tap count and update last tap timestamp
           await supabase
             .from('partners')
-            .update({ total_taps: (partner.total_taps || 0) + 1 })
+            .update({
+              total_taps: (partner.total_taps || 0) + 1,
+              last_sasquatch_tap_at: new Date().toISOString(),
+            })
             .eq('id', partner.id)
         }
       }

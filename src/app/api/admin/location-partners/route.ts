@@ -75,6 +75,7 @@ export async function POST(request: NextRequest) {
       location_type,
       phone,
       card_id,
+      google_review_url,
     } = body
 
     if (!company_name) {
@@ -107,6 +108,7 @@ export async function POST(request: NextRequest) {
         location_address: location_address || null,
         location_type: location_type || null,
         card_id: card_id || null,
+        google_review_url: google_review_url || null,
         partner_type: 'location',
         role: 'partner',
         credit_balance: 0,

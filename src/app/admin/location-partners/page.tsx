@@ -28,6 +28,7 @@ interface LocationPartner {
   credit_balance: number
   total_taps: number
   total_conversions: number
+  google_review_url: string | null
   created_at: string
 }
 
@@ -54,7 +55,9 @@ export default function LocationPartnersPage() {
     location_type: '',
     phone: '',
     card_id: '',
+    google_review_url: '',
   })
+  const [copiedReviewId, setCopiedReviewId] = useState<string | null>(null)
 
   useEffect(() => {
     const fetchData = async () => {
@@ -125,6 +128,7 @@ export default function LocationPartnersPage() {
         location_type: '',
         phone: '',
         card_id: '',
+        google_review_url: '',
       })
       setIsDialogOpen(false)
       void loadData()
@@ -135,10 +139,17 @@ export default function LocationPartnersPage() {
   }
 
   const copyUrl = (partnerId: string) => {
-    const url = `${window.location.origin}/location/${partnerId}`
+    const url = `${window.location.origin}/tap?partner=${partnerId}`
     void navigator.clipboard.writeText(url)
     setCopiedId(partnerId)
     setTimeout(() => setCopiedId(null), 2000)
+  }
+
+  const copyReviewUrl = (partnerId: string) => {
+    const url = `${window.location.origin}/review/${partnerId}`
+    void navigator.clipboard.writeText(url)
+    setCopiedReviewId(partnerId)
+    setTimeout(() => setCopiedReviewId(null), 2000)
   }
 
   const deleteVendor = async (partnerId: string, partnerName: string) => {
@@ -396,6 +407,27 @@ export default function LocationPartnersPage() {
                   </p>
                 </div>
 
+                <div>
+                  <Label htmlFor="google_review_url">
+                    Google Review URL (Optional)
+                  </Label>
+                  <Input
+                    id="google_review_url"
+                    type="url"
+                    value={newPartner.google_review_url}
+                    onChange={(e) =>
+                      setNewPartner({
+                        ...newPartner,
+                        google_review_url: e.target.value,
+                      })
+                    }
+                    placeholder="https://g.page/r/..."
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Their Google review link for the review station we give them
+                  </p>
+                </div>
+
                 <Button type="submit" className="w-full">
                   Create Vendor
                 </Button>
@@ -489,7 +521,7 @@ export default function LocationPartnersPage() {
 
                   <div className="flex flex-wrap gap-2">
                     <a
-                      href={`/location/${partner.id}`}
+                      href={`/tap?partner=${partner.id}`}
                       target="_blank"
                       rel="noopener noreferrer"
                     >
@@ -498,20 +530,6 @@ export default function LocationPartnersPage() {
                         View
                       </Button>
                     </a>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => copyUrl(partner.id)}
-                    >
-                      {copiedId === partner.id ? (
-                        <>✓ Copied</>
-                      ) : (
-                        <>
-                          <Copy className="mr-1 h-4 w-4" />
-                          Copy
-                        </>
-                      )}
-                    </Button>
                     <Button
                       variant="outline"
                       size="sm"
@@ -564,11 +582,67 @@ export default function LocationPartnersPage() {
                   </div>
                 </div>
 
-                {/* Quick Link */}
-                <div className="mt-3 overflow-x-auto rounded-lg bg-gray-50 p-2 sm:mt-4 sm:p-3 dark:bg-gray-800">
-                  <code className="block text-xs whitespace-nowrap text-gray-600 dark:text-gray-400">
-                    /location/{partner.id}
-                  </code>
+                {/* Station URLs */}
+                <div className="mt-3 grid grid-cols-1 gap-2 sm:mt-4 sm:grid-cols-2">
+                  {/* Sasquatch Station URL */}
+                  <div className="rounded-lg bg-blue-50 p-2 sm:p-3 dark:bg-blue-900/20">
+                    <div className="mb-1 flex items-center justify-between">
+                      <span className="text-xs font-semibold text-blue-700 dark:text-blue-300">
+                        Sasquatch Station
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-xs"
+                        onClick={() => copyUrl(partner.id)}
+                      >
+                        {copiedId === partner.id ? (
+                          '✓'
+                        ) : (
+                          <Copy className="h-3 w-3" />
+                        )}
+                      </Button>
+                    </div>
+                    <code className="block overflow-x-auto text-xs whitespace-nowrap text-blue-600 dark:text-blue-400">
+                      /tap?partner={partner.id}
+                    </code>
+                  </div>
+
+                  {/* Google Review Station URL */}
+                  <div
+                    className={`rounded-lg p-2 sm:p-3 ${partner.google_review_url ? 'bg-green-50 dark:bg-green-900/20' : 'bg-gray-100 dark:bg-gray-800'}`}
+                  >
+                    <div className="mb-1 flex items-center justify-between">
+                      <span
+                        className={`text-xs font-semibold ${partner.google_review_url ? 'text-green-700 dark:text-green-300' : 'text-gray-500'}`}
+                      >
+                        Google Review Station
+                      </span>
+                      {partner.google_review_url ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-xs"
+                          onClick={() => copyReviewUrl(partner.id)}
+                        >
+                          {copiedReviewId === partner.id ? (
+                            '✓'
+                          ) : (
+                            <Copy className="h-3 w-3" />
+                          )}
+                        </Button>
+                      ) : null}
+                    </div>
+                    {partner.google_review_url ? (
+                      <code className="block overflow-x-auto text-xs whitespace-nowrap text-green-600 dark:text-green-400">
+                        /review/{partner.id}
+                      </code>
+                    ) : (
+                      <span className="text-xs text-gray-400 italic">
+                        Not configured
+                      </span>
+                    )}
+                  </div>
                 </div>
               </Card>
             ))}

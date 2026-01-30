@@ -57,8 +57,56 @@ type TapStats = {
   deviceBreakdown: { mobile: number; tablet: number; desktop: number }
 }
 
+type StationHealth = {
+  partnerId: string
+  partnerName: string
+  locationType: string | null
+  sasquatchLastTap: string | null
+  sasquatchTotalTaps: number
+  sasquatchStatus: 'active' | 'warning' | 'inactive' | 'never'
+  reviewLastTap: string | null
+  reviewTotalTaps: number
+  reviewStatus: 'active' | 'warning' | 'inactive' | 'never' | 'not_configured'
+  hasGoogleReviewUrl: boolean
+}
+
+// Helper to calculate station status based on last tap
+function getStationStatus(
+  lastTap: string | null,
+  totalTaps: number,
+): 'active' | 'warning' | 'inactive' | 'never' {
+  if (!lastTap || totalTaps === 0) return 'never'
+
+  const daysSinceLastTap = Math.floor(
+    (Date.now() - new Date(lastTap).getTime()) / (1000 * 60 * 60 * 24),
+  )
+
+  if (daysSinceLastTap <= 7) return 'active'
+  if (daysSinceLastTap <= 14) return 'warning'
+  return 'inactive'
+}
+
+// Helper to format relative time
+function formatRelativeTime(dateString: string | null): string {
+  if (!dateString) return 'Never'
+
+  const date = new Date(dateString)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
+
+  if (diffHours < 1) return 'Just now'
+  if (diffHours < 24) return `${diffHours}h ago`
+  if (diffDays === 1) return 'Yesterday'
+  if (diffDays < 7) return `${diffDays} days ago`
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`
+  return `${Math.floor(diffDays / 30)} months ago`
+}
+
 export default function TapAnalyticsPage() {
   const [stats, setStats] = useState<TapStats | null>(null)
+  const [stationHealth, setStationHealth] = useState<StationHealth[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [timeframe, setTimeframe] = useState<
     'today' | 'week' | 'month' | 'all'
@@ -66,7 +114,78 @@ export default function TapAnalyticsPage() {
 
   useEffect(() => {
     fetchStats()
+    fetchStationHealth()
   }, [timeframe])
+
+  const fetchStationHealth = async () => {
+    try {
+      const supabase = createClient()
+
+      // Fetch location partners with their tap stats
+      const { data: partners, error: partnersError } = await supabase
+        .from('partners')
+        .select(
+          'id, location_name, company_name, location_type, total_taps, last_sasquatch_tap_at, last_review_tap_at, google_review_url',
+        )
+        .eq('partner_type', 'location')
+        .order('total_taps', { ascending: false })
+
+      if (partnersError) {
+        console.error('Failed to fetch partners:', partnersError)
+        return
+      }
+
+      // Fetch review station tap counts per partner
+      const { data: reviewTapCounts, error: reviewError } = await supabase
+        .from('review_station_taps')
+        .select('partner_id')
+
+      if (reviewError) {
+        console.error('Failed to fetch review taps:', reviewError)
+      }
+
+      // Count review taps per partner
+      const reviewCountMap: Record<string, number> = {}
+      if (reviewTapCounts) {
+        reviewTapCounts.forEach((tap) => {
+          if (tap.partner_id) {
+            reviewCountMap[tap.partner_id] =
+              (reviewCountMap[tap.partner_id] || 0) + 1
+          }
+        })
+      }
+
+      // Build station health data
+      const healthData: StationHealth[] = (partners || []).map((partner) => {
+        const sasquatchTotalTaps = partner.total_taps || 0
+        const reviewTotalTaps = reviewCountMap[partner.id] || 0
+        const hasGoogleReviewUrl = !!partner.google_review_url
+
+        return {
+          partnerId: partner.id,
+          partnerName:
+            partner.location_name || partner.company_name || 'Unknown',
+          locationType: partner.location_type,
+          sasquatchLastTap: partner.last_sasquatch_tap_at,
+          sasquatchTotalTaps,
+          sasquatchStatus: getStationStatus(
+            partner.last_sasquatch_tap_at,
+            sasquatchTotalTaps,
+          ),
+          reviewLastTap: partner.last_review_tap_at,
+          reviewTotalTaps,
+          reviewStatus: hasGoogleReviewUrl
+            ? getStationStatus(partner.last_review_tap_at, reviewTotalTaps)
+            : 'not_configured',
+          hasGoogleReviewUrl,
+        }
+      })
+
+      setStationHealth(healthData)
+    } catch (error) {
+      console.error('Failed to fetch station health:', error)
+    }
+  }
 
   const fetchStats = async () => {
     setIsLoading(true)
@@ -399,37 +518,127 @@ export default function TapAnalyticsPage() {
         )}
       </Card>
 
-      {/* ROI Calculator */}
+      {/* Station Health */}
       <Card className="p-4 sm:p-6">
         <h2 className="mb-3 text-lg font-bold sm:mb-4 sm:text-xl">
-          ROI Estimate
+          Station Health
         </h2>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <div>
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              Total Taps
-            </p>
-            <p className="text-2xl font-bold">{stats.totalTaps}</p>
-          </div>
-          <div>
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              Conversions
-            </p>
-            <p className="text-2xl font-bold">{stats.conversions}</p>
-          </div>
-          <div>
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              Est. Revenue (@ $200/job)
-            </p>
-            <p className="text-2xl font-bold text-green-600">
-              ${stats.conversions * 200}
-            </p>
-          </div>
-        </div>
-        <p className="mt-4 text-xs text-gray-500">
-          * Assuming average job value of $200. Track actual conversions in your
-          leads dashboard.
+        <p className="mb-4 text-sm text-gray-600 dark:text-gray-400">
+          Monitor activity for both Sasquatch lead gen stations and partner
+          Google review stations.
         </p>
+
+        {stationHealth.length === 0 ? (
+          <p className="text-sm text-gray-500">No location partners found.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left">
+                  <th className="pb-2 font-semibold">Partner</th>
+                  <th className="pb-2 text-center font-semibold">
+                    Sasquatch Station
+                  </th>
+                  <th className="pb-2 text-center font-semibold">
+                    Google Review Station
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {stationHealth.map((station) => (
+                  <tr key={station.partnerId}>
+                    <td className="py-3">
+                      <div className="font-medium">{station.partnerName}</div>
+                      {station.locationType && (
+                        <div className="text-xs text-gray-500 capitalize">
+                          {station.locationType}
+                        </div>
+                      )}
+                    </td>
+                    <td className="py-3 text-center">
+                      <div className="flex flex-col items-center gap-1">
+                        <span
+                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
+                            station.sasquatchStatus === 'active'
+                              ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                              : station.sasquatchStatus === 'warning'
+                                ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
+                                : station.sasquatchStatus === 'inactive'
+                                  ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                                  : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+                          }`}
+                        >
+                          {station.sasquatchStatus === 'active' && '🟢'}
+                          {station.sasquatchStatus === 'warning' && '🟡'}
+                          {station.sasquatchStatus === 'inactive' && '🔴'}
+                          {station.sasquatchStatus === 'never' && '⚪'}
+                          {station.sasquatchStatus === 'active' && 'Active'}
+                          {station.sasquatchStatus === 'warning' && 'Check In'}
+                          {station.sasquatchStatus === 'inactive' && 'Inactive'}
+                          {station.sasquatchStatus === 'never' && 'No Taps'}
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          {formatRelativeTime(station.sasquatchLastTap)} ·{' '}
+                          {station.sasquatchTotalTaps} total
+                        </span>
+                      </div>
+                    </td>
+                    <td className="py-3 text-center">
+                      <div className="flex flex-col items-center gap-1">
+                        {station.reviewStatus === 'not_configured' ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                            ➖ Not Set Up
+                          </span>
+                        ) : (
+                          <>
+                            <span
+                              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
+                                station.reviewStatus === 'active'
+                                  ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                                  : station.reviewStatus === 'warning'
+                                    ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
+                                    : station.reviewStatus === 'inactive'
+                                      ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                                      : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+                              }`}
+                            >
+                              {station.reviewStatus === 'active' && '🟢'}
+                              {station.reviewStatus === 'warning' && '🟡'}
+                              {station.reviewStatus === 'inactive' && '🔴'}
+                              {station.reviewStatus === 'never' && '⚪'}
+                              {station.reviewStatus === 'active' && 'Active'}
+                              {station.reviewStatus === 'warning' && 'Check In'}
+                              {station.reviewStatus === 'inactive' &&
+                                'Inactive'}
+                              {station.reviewStatus === 'never' && 'No Taps'}
+                            </span>
+                            <span className="text-xs text-gray-500">
+                              {formatRelativeTime(station.reviewLastTap)} ·{' '}
+                              {station.reviewTotalTaps} total
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <div className="mt-4 flex flex-wrap gap-3 text-xs text-gray-500">
+          <span className="flex items-center gap-1">
+            🟢 Active (taps within 7 days)
+          </span>
+          <span className="flex items-center gap-1">
+            🟡 Check In (7-14 days)
+          </span>
+          <span className="flex items-center gap-1">
+            🔴 Inactive (14+ days)
+          </span>
+          <span className="flex items-center gap-1">⚪ Never tapped</span>
+        </div>
       </Card>
     </div>
   )

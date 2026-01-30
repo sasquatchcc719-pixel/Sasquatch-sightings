@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/nurture-leads",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/station-health",
+      "schedule": "0 10 * * *"
     }
   ],
   "redirects": [
