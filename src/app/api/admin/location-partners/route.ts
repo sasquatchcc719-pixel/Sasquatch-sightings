@@ -53,11 +53,20 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Generate a placeholder email from company name
+    const slugifiedName = company_name
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+    const placeholderEmail = `${slugifiedName}@location-partner.sasquatchcarpet.com`
+
     // Create the location partner
     const { data, error } = await supabase
       .from('partners')
       .insert({
         name: company_name, // Required field
+        email: placeholderEmail, // Required field - placeholder for location partners
         company_name,
         location_name: location_name || null,
         location_address: location_address || null,
