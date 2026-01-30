@@ -194,19 +194,19 @@ export default function LocationPartnersPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8 dark:bg-gray-900">
+    <div className="min-h-screen bg-gray-50 p-4 sm:p-8 dark:bg-gray-900">
       <div className="mx-auto max-w-7xl">
         {/* Header */}
-        <div className="mb-8 flex items-center justify-between">
+        <div className="mb-6 flex flex-col gap-4 sm:mb-8 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-3xl font-bold">Vendors</h1>
-            <p className="mt-2 text-gray-600 dark:text-gray-400">
+            <h1 className="text-2xl font-bold sm:text-3xl">Vendors</h1>
+            <p className="mt-1 text-sm text-gray-600 sm:mt-2 sm:text-base dark:text-gray-400">
               Manage NFC cards at local establishments
             </p>
           </div>
           <Button
             size="lg"
-            className="bg-green-600 hover:bg-green-700"
+            className="w-full bg-green-600 hover:bg-green-700 sm:w-auto"
             onClick={() => setIsDialogOpen(true)}
           >
             <Plus className="mr-2 h-5 w-5" />
@@ -405,31 +405,33 @@ export default function LocationPartnersPage() {
         )}
 
         {/* Stats Overview */}
-        <div className="mb-8 grid gap-4 md:grid-cols-4">
-          <Card className="p-6">
-            <div className="text-2xl font-bold">{partners.length}</div>
-            <div className="text-sm text-gray-600 dark:text-gray-400">
+        <div className="mb-6 grid grid-cols-2 gap-3 sm:mb-8 sm:gap-4 md:grid-cols-4">
+          <Card className="p-4 sm:p-6">
+            <div className="text-xl font-bold sm:text-2xl">
+              {partners.length}
+            </div>
+            <div className="text-xs text-gray-600 sm:text-sm dark:text-gray-400">
               Active Locations
             </div>
           </Card>
-          <Card className="p-6">
-            <div className="text-2xl font-bold">
+          <Card className="p-4 sm:p-6">
+            <div className="text-xl font-bold sm:text-2xl">
               {partners.reduce((sum, p) => sum + (p.total_taps || 0), 0)}
             </div>
-            <div className="text-sm text-gray-600 dark:text-gray-400">
+            <div className="text-xs text-gray-600 sm:text-sm dark:text-gray-400">
               Total Taps
             </div>
           </Card>
-          <Card className="p-6">
-            <div className="text-2xl font-bold">
+          <Card className="p-4 sm:p-6">
+            <div className="text-xl font-bold sm:text-2xl">
               {partners.reduce((sum, p) => sum + (p.total_conversions || 0), 0)}
             </div>
-            <div className="text-sm text-gray-600 dark:text-gray-400">
-              Confirmed Bookings
+            <div className="text-xs text-gray-600 sm:text-sm dark:text-gray-400">
+              Bookings
             </div>
           </Card>
-          <Card className="p-6">
-            <div className="text-2xl font-bold text-green-600">
+          <Card className="p-4 sm:p-6">
+            <div className="text-xl font-bold text-green-600 sm:text-2xl">
               {partners.length > 0
                 ? (
                     (partners.reduce(
@@ -448,8 +450,8 @@ export default function LocationPartnersPage() {
                 : 0}
               %
             </div>
-            <div className="text-sm text-gray-600 dark:text-gray-400">
-              Avg Conversion Rate
+            <div className="text-xs text-gray-600 sm:text-sm dark:text-gray-400">
+              Conv. Rate
             </div>
           </Card>
         </div>
@@ -466,15 +468,15 @@ export default function LocationPartnersPage() {
         ) : (
           <div className="space-y-4">
             {partners.map((partner) => (
-              <Card key={partner.id} className="p-6">
-                <div className="flex items-start justify-between">
+              <Card key={partner.id} className="p-4 sm:p-6">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="flex-1">
-                    <h3 className="text-xl font-bold">
+                    <h3 className="text-lg font-bold sm:text-xl">
                       {partner.location_name || partner.company_name}
                     </h3>
                     {partner.location_address && (
-                      <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                        <MapPin className="mr-1 inline h-4 w-4" />
+                      <p className="mt-1 text-xs text-gray-600 sm:text-sm dark:text-gray-400">
+                        <MapPin className="mr-1 inline h-3 w-3 sm:h-4 sm:w-4" />
                         {partner.location_address}
                       </p>
                     )}
@@ -485,7 +487,7 @@ export default function LocationPartnersPage() {
                     )}
                   </div>
 
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <a
                       href={`/location/${partner.id}`}
                       target="_blank"
@@ -493,7 +495,7 @@ export default function LocationPartnersPage() {
                     >
                       <Button variant="outline" size="sm">
                         <ExternalLink className="mr-1 h-4 w-4" />
-                        View Page
+                        View
                       </Button>
                     </a>
                     <Button
@@ -505,8 +507,8 @@ export default function LocationPartnersPage() {
                         <>✓ Copied</>
                       ) : (
                         <>
-                          <Copy className="mr-2 h-4 w-4" />
-                          Copy URL
+                          <Copy className="mr-1 h-4 w-4" />
+                          Copy
                         </>
                       )}
                     </Button>
@@ -527,34 +529,32 @@ export default function LocationPartnersPage() {
                 </div>
 
                 {/* Stats Grid */}
-                <div className="mt-6 grid gap-4 md:grid-cols-5">
-                  <div className="rounded-lg bg-blue-50 p-4 dark:bg-blue-900/20">
-                    <div className="text-2xl font-bold text-blue-600">
+                <div className="mt-4 grid grid-cols-2 gap-2 sm:mt-6 sm:gap-4 md:grid-cols-5">
+                  <div className="rounded-lg bg-blue-50 p-3 sm:p-4 dark:bg-blue-900/20">
+                    <div className="text-lg font-bold text-blue-600 sm:text-2xl">
                       {partner.total_taps || 0}
                     </div>
-                    <div className="text-xs text-blue-600/80">Total Taps</div>
+                    <div className="text-xs text-blue-600/80">Taps</div>
                   </div>
 
-                  <div className="rounded-lg bg-green-50 p-4 dark:bg-green-900/20">
-                    <div className="text-2xl font-bold text-green-600">
+                  <div className="rounded-lg bg-green-50 p-3 sm:p-4 dark:bg-green-900/20">
+                    <div className="text-lg font-bold text-green-600 sm:text-2xl">
                       {partner.total_conversions || 0}
                     </div>
-                    <div className="text-xs text-green-600/80">
-                      Confirmed Jobs
-                    </div>
+                    <div className="text-xs text-green-600/80">Jobs</div>
                   </div>
 
-                  <div className="rounded-lg bg-purple-50 p-4 dark:bg-purple-900/20">
-                    <div className="text-2xl font-bold text-purple-600">
+                  <div className="rounded-lg bg-purple-50 p-3 sm:p-4 dark:bg-purple-900/20">
+                    <div className="text-lg font-bold text-purple-600 sm:text-2xl">
                       {conversionRate(
                         partner.total_taps,
                         partner.total_conversions,
                       )}
                     </div>
-                    <div className="text-xs text-purple-600/80">Conv. Rate</div>
+                    <div className="text-xs text-purple-600/80">Rate</div>
                   </div>
 
-                  <div className="rounded-lg bg-gray-50 p-4 dark:bg-gray-800">
+                  <div className="col-span-2 rounded-lg bg-gray-50 p-3 sm:col-span-1 sm:p-4 dark:bg-gray-800">
                     <div className="text-xs font-semibold text-gray-600 dark:text-gray-400">
                       {partner.phone || 'No phone'}
                     </div>
@@ -565,9 +565,9 @@ export default function LocationPartnersPage() {
                 </div>
 
                 {/* Quick Link */}
-                <div className="mt-4 rounded-lg bg-gray-50 p-3 dark:bg-gray-800">
-                  <code className="text-xs text-gray-600 dark:text-gray-400">
-                    {window.location.origin}/location/{partner.id}
+                <div className="mt-3 overflow-x-auto rounded-lg bg-gray-50 p-2 sm:mt-4 sm:p-3 dark:bg-gray-800">
+                  <code className="block text-xs whitespace-nowrap text-gray-600 dark:text-gray-400">
+                    /location/{partner.id}
                   </code>
                 </div>
               </Card>
