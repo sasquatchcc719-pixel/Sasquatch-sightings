@@ -83,14 +83,25 @@ export function RecentJobsCarousel() {
       {/* Carousel */}
       <Card className="relative overflow-hidden">
         {/* Image */}
-        <div className="relative aspect-[4/3] w-full bg-gray-100">
-          <Image
-            src={currentJob.image_url}
-            alt={currentJob.title}
-            fill
-            className="object-cover"
-            sizes="(max-width: 768px) 100vw, 600px"
-          />
+        <div className="relative aspect-[4/3] w-full bg-gray-200 dark:bg-gray-700">
+          {currentJob.image_url ? (
+            <Image
+              src={currentJob.image_url}
+              alt={currentJob.title}
+              fill
+              className="object-cover"
+              sizes="(max-width: 768px) 100vw, 600px"
+              unoptimized
+              onError={(e) => {
+                // Fallback if image fails to load
+                e.currentTarget.style.display = 'none'
+              }}
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center text-gray-400">
+              <p>No image available</p>
+            </div>
+          )}
 
           {/* Navigation Arrows */}
           {jobs.length > 1 && (
