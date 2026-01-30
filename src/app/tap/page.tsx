@@ -267,6 +267,17 @@ END:VCARD`
             <Download className="mr-2 h-5 w-5" />
             Save to Contacts
           </Button>
+
+          {/* Share Button */}
+          <Button
+            onClick={handleShare}
+            size="lg"
+            variant="outline"
+            className="w-full border-2 border-blue-500 py-6 text-lg font-semibold text-blue-600 hover:bg-blue-50 dark:border-blue-400 dark:text-blue-400 dark:hover:bg-blue-950"
+          >
+            <Share2 className="mr-2 h-5 w-5" />
+            Share This Deal
+          </Button>
         </div>
 
         {/* Service Areas */}
@@ -364,18 +375,9 @@ END:VCARD`
         </div>
       </div>
 
-      {/* Floating Share Button */}
-      <button
-        onClick={handleShare}
-        className="fixed right-6 bottom-6 z-50 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-2xl transition-all hover:scale-110 hover:from-blue-600 hover:to-blue-700 active:scale-95"
-        aria-label="Share this deal"
-      >
-        <Share2 className="h-7 w-7" />
-      </button>
-
       {/* Share Toast Notification */}
       {showShareToast && (
-        <div className="fixed right-6 bottom-28 z-50 animate-[fade-in_0.3s_ease-out] rounded-lg bg-green-600 px-4 py-3 text-sm font-semibold text-white shadow-xl">
+        <div className="fixed top-20 right-1/2 z-50 translate-x-1/2 animate-[fade-in_0.3s_ease-out] rounded-lg bg-green-600 px-6 py-3 text-sm font-semibold text-white shadow-xl">
           ✓ Link copied to clipboard!
         </div>
       )}
