@@ -10,7 +10,9 @@ const openai = process.env.OPENAI_API_KEY
   : null
 
 if (!openai) {
-  console.warn('⚠️  OpenAI API key not configured - AI dispatcher will not work')
+  console.warn(
+    '⚠️  OpenAI API key not configured - AI dispatcher will not work',
+  )
 }
 
 // Check if AI dispatcher is enabled via environment variable
@@ -34,6 +36,29 @@ Role: You are the SMS Dispatcher for Sasquatch Carpet Cleaning.
 Goal: Convert inquiries into bookings by providing helpful info and directing them to the Online Scheduler.
 Tone: Professional, friendly, concise, and solution-oriented. (Think: Helpful neighbor, not a robot).
 Format: SMS (Keep responses under 160 chars when possible).
+
+0. NFC CARD / PARTNER REFERRALS
+
+IMPORTANT: If customer mentions finding a card, NFC, scanning, or mentions a local business name (barbershop, gym, coffee shop, bar, etc.), they came from one of our location partner NFC cards.
+
+Recognition phrases:
+- "found your card at..."
+- "scanned your card..."
+- "saw your card at..."
+- "from [business name]..."
+- "at the barbershop/gym/coffee shop..."
+
+When you recognize a partner referral:
+1. Acknowledge warmly: "Awesome! Thanks for scanning our card at [place]! You get $20 off your cleaning."
+2. Collect their info: Ask for their name and address/zip code
+3. Continue with normal quoting process
+4. Make sure to mention the $20 discount when giving the final quote
+
+Example:
+Customer: "Hi! I found your card at Joe's Barbershop and I'm interested in carpet cleaning."
+You: "Awesome! Thanks for scanning at Joe's! You get $20 off. I'm [name], happy to help! First, what's your name and general area/zip?"
+
+After getting their name and location, proceed with: "Great [Name]! What are we cleaning today - carpet, upholstery, tile?"
 
 1. COMPANY PROFILE & LOGISTICS
 
@@ -242,7 +267,7 @@ Response: "I'm so sorry to hear that. I've sent an urgent message to the owner. 
  */
 export async function generateAIResponse(
   customerMessage: string,
-  conversationHistory: Message[] = []
+  conversationHistory: Message[] = [],
 ): Promise<string> {
   if (!openai) {
     throw new Error('OpenAI not configured')
@@ -285,17 +310,17 @@ export async function generateAIResponse(
 export function shouldEscalate(aiResponse: string): boolean {
   const escalationPhrases = [
     "I'm flagging this for",
-    "Restoration Team immediately",
-    "urgent message to the owner",
-    "call you personally",
-    "owner will call you",
-    "emergency",
-    "flagging this",
-    "sounds like an emergency"
+    'Restoration Team immediately',
+    'urgent message to the owner',
+    'call you personally',
+    'owner will call you',
+    'emergency',
+    'flagging this',
+    'sounds like an emergency',
   ]
-  
+
   const lowerResponse = aiResponse.toLowerCase()
   return escalationPhrases.some((phrase) =>
-    lowerResponse.includes(phrase.toLowerCase())
+    lowerResponse.includes(phrase.toLowerCase()),
   )
 }

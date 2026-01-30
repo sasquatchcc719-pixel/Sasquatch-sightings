@@ -14,6 +14,7 @@ import {
   CheckCircle,
   Clock,
   ExternalLink,
+  MessageSquare,
 } from 'lucide-react'
 import { createClient } from '@/supabase/client'
 
@@ -40,11 +41,22 @@ interface PendingConversion {
   converted: boolean
 }
 
+interface NFCLead {
+  id: string
+  phone: string | null
+  name: string | null
+  source: string | null
+  notes: string | null
+  status: string
+  created_at: string
+}
+
 export default function LocationPartnersPage() {
   const [partners, setPartners] = useState<LocationPartner[]>([])
   const [pendingConversions, setPendingConversions] = useState<
     PendingConversion[]
   >([])
+  const [nfcLeads, setNfcLeads] = useState<NFCLead[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
@@ -92,6 +104,20 @@ export default function LocationPartnersPage() {
         console.error('Failed to load pending conversions:', conversionsError)
       } else {
         setPendingConversions(conversionsData || [])
+      }
+
+      // Fetch NFC leads (leads with source = 'NFC Card')
+      const { data: leadsData, error: leadsError } = await supabase
+        .from('leads')
+        .select('id, phone, name, source, notes, status, created_at')
+        .eq('source', 'NFC Card')
+        .order('created_at', { ascending: false })
+        .limit(20)
+
+      if (leadsError) {
+        console.error('Failed to load NFC leads:', leadsError)
+      } else {
+        setNfcLeads(leadsData || [])
       }
 
       setIsLoading(false)
@@ -382,6 +408,77 @@ export default function LocationPartnersPage() {
                         Confirm (1%)
                       </Button>
                     )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+
+        {/* NFC Leads from AI Chat */}
+        {nfcLeads.length > 0 && (
+          <Card className="mb-8 border-2 border-blue-400 bg-blue-50 p-6 dark:border-blue-600 dark:bg-blue-900/20">
+            <div className="mb-4 flex items-center gap-2">
+              <MessageSquare className="h-5 w-5 text-blue-600" />
+              <h2 className="text-xl font-bold text-blue-800 dark:text-blue-200">
+                NFC Card Leads ({nfcLeads.length})
+              </h2>
+            </div>
+            <p className="mb-4 text-sm text-blue-700 dark:text-blue-300">
+              These leads came from NFC card scans and started an AI chat. Match
+              them to bookings to confirm partner payouts.
+            </p>
+            <div className="space-y-3">
+              {nfcLeads.map((lead) => (
+                <div
+                  key={lead.id}
+                  className="rounded-lg bg-white p-4 shadow-sm dark:bg-gray-800"
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="font-semibold">
+                        {lead.name || 'Unknown Name'}
+                      </div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                        {lead.phone && (
+                          <a
+                            href={`tel:${lead.phone}`}
+                            className="text-blue-600 hover:underline"
+                          >
+                            {lead.phone}
+                          </a>
+                        )}
+                      </div>
+                      {lead.notes && (
+                        <div className="mt-1 text-xs text-gray-500 italic dark:text-gray-400">
+                          {lead.notes.length > 100
+                            ? lead.notes.substring(0, 100) + '...'
+                            : lead.notes}
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <Badge
+                        variant="outline"
+                        className={
+                          lead.status === 'new'
+                            ? 'border-green-500 text-green-600'
+                            : lead.status === 'contacted'
+                              ? 'border-blue-500 text-blue-600'
+                              : 'border-gray-500 text-gray-600'
+                        }
+                      >
+                        {lead.status}
+                      </Badge>
+                      <div className="mt-1 text-xs text-gray-500">
+                        {new Date(lead.created_at).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          hour: 'numeric',
+                          minute: '2-digit',
+                        })}
+                      </div>
+                    </div>
                   </div>
                 </div>
               ))}

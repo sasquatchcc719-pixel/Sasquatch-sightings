@@ -5,7 +5,11 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
-import { generateAIResponse, shouldEscalate, isAIEnabled } from '@/lib/openai-chat'
+import {
+  generateAIResponse,
+  shouldEscalate,
+  isAIEnabled,
+} from '@/lib/openai-chat'
 import { sendCustomerSMS, sendAdminSMS } from '@/lib/twilio'
 
 // Normalize phone number to E.164 format
@@ -14,6 +18,29 @@ function normalizePhone(phone: string): string {
   if (digits.length === 10) return `+1${digits}`
   if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`
   return digits.startsWith('+') ? phone : `+${digits}`
+}
+
+// Detect if message indicates they came from a partner NFC card
+function detectPartnerMention(message: string): boolean {
+  const lowerMessage = message.toLowerCase()
+  const partnerPhrases = [
+    'found your card',
+    'found the card',
+    'scanned your card',
+    'scanned the card',
+    'saw your card',
+    'card at',
+    'from the barbershop',
+    'from the gym',
+    'from the coffee',
+    'from the bar',
+    'at joe',
+    'at the salon',
+    'at the shop',
+    'nfc',
+    'tapped',
+  ]
+  return partnerPhrases.some((phrase) => lowerMessage.includes(phrase))
 }
 
 export async function POST(request: NextRequest) {
@@ -25,11 +52,16 @@ export async function POST(request: NextRequest) {
     const twilioSid = formData.get('MessageSid') as string
 
     if (!fromPhone || !messageBody) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'Missing required fields' },
+        { status: 400 },
+      )
     }
 
     const normalizedPhone = normalizePhone(fromPhone)
-    console.log(`📱 Inbound SMS from ${fromPhone} → normalized to: ${normalizedPhone}`)
+    console.log(
+      `📱 Inbound SMS from ${fromPhone} → normalized to: ${normalizedPhone}`,
+    )
     console.log(`📱 Message: "${messageBody}"`)
 
     const supabase = createAdminClient()
@@ -42,9 +74,11 @@ export async function POST(request: NextRequest) {
       .order('updated_at', { ascending: false })
       .limit(1)
       .single()
-    
+
     if (conversation) {
-      console.log(`✅ Found existing conversation: ${conversation.id} with ${conversation.messages.length} messages`)
+      console.log(
+        `✅ Found existing conversation: ${conversation.id} with ${conversation.messages.length} messages`,
+      )
     } else {
       console.log(`⚠️ No existing conversation found for ${normalizedPhone}`)
     }
@@ -80,6 +114,39 @@ export async function POST(request: NextRequest) {
 
       conversation = newConvo
       console.log(`✨ Created new conversation: ${conversation.id}`)
+
+      // Check if this looks like a partner NFC referral
+      if (detectPartnerMention(messageBody)) {
+        console.log(
+          `🎯 Partner NFC referral detected in message: "${messageBody}"`,
+        )
+
+        // Create a lead for this partner referral (we'll try to match the partner later)
+        // For now, mark it as NFC source so it shows up in the location partners admin
+        const { data: newLead, error: leadError } = await supabase
+          .from('leads')
+          .insert({
+            phone: normalizedPhone,
+            source: 'NFC Card',
+            notes: `First message: "${messageBody}"`,
+            status: 'new',
+          })
+          .select()
+          .single()
+
+        if (!leadError && newLead) {
+          // Link the lead to this conversation
+          await supabase
+            .from('conversations')
+            .update({
+              lead_id: newLead.id,
+              source: 'NFC Card',
+            })
+            .eq('id', conversation.id)
+
+          console.log(`✅ Created NFC lead: ${newLead.id}`)
+        }
+      }
     } else {
       // Reactivate conversation if it was completed or escalated
       if (conversation.status !== 'active') {
@@ -111,24 +178,29 @@ export async function POST(request: NextRequest) {
         .update({ messages })
         .eq('id', conversation.id)
 
-      console.log('⏸️  AI dispatcher is disabled - message logged but not responded to')
-      
+      console.log(
+        '⏸️  AI dispatcher is disabled - message logged but not responded to',
+      )
+
       // Notify admin about incoming message
       await sendAdminSMS(
         `💬 Inbound SMS from ${normalizedPhone}:\n"${messageBody}"\n\n(AI is disabled - manual response needed)`,
-        'ai_dispatcher_inbound'
+        'ai_dispatcher_inbound',
       )
 
-      return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
-        headers: { 'Content-Type': 'text/xml' },
-      })
+      return new NextResponse(
+        '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+        {
+          headers: { 'Content-Type': 'text/xml' },
+        },
+      )
     }
 
     // Generate AI response
     let aiResponse: string
     try {
       aiResponse = await generateAIResponse(messageBody, messages)
-      
+
       if (!aiResponse) {
         // AI returned empty (shouldn't happen, but handle gracefully)
         console.log('⚠️  AI returned empty response')
@@ -136,9 +208,12 @@ export async function POST(request: NextRequest) {
           .from('conversations')
           .update({ messages })
           .eq('id', conversation.id)
-        return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
-          headers: { 'Content-Type': 'text/xml' },
-        })
+        return new NextResponse(
+          '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+          {
+            headers: { 'Content-Type': 'text/xml' },
+          },
+        )
       }
 
       // Add AI response to conversation
@@ -166,29 +241,28 @@ export async function POST(request: NextRequest) {
         normalizedPhone,
         aiResponse,
         conversation.lead_id || undefined,
-        'ai_dispatcher'
+        'ai_dispatcher',
       )
 
       // Notify admin if escalated
       if (needsEscalation) {
         await sendAdminSMS(
           `🚨 Customer escalation needed!\nPhone: ${normalizedPhone}\nLast message: "${messageBody}"\n\nAI Response: "${aiResponse}"`,
-          'ai_dispatcher_escalation'
+          'ai_dispatcher_escalation',
         )
       }
 
       console.log(`✅ AI responded to ${normalizedPhone}`)
-
     } catch (aiError) {
       console.error('AI generation failed:', aiError)
-      
+
       // Update conversation with error
       messages.push({
         role: 'system',
         content: 'ERROR: AI failed to generate response',
         timestamp: new Date().toISOString(),
       })
-      
+
       await supabase
         .from('conversations')
         .update({ messages, status: 'escalated' })
@@ -197,17 +271,22 @@ export async function POST(request: NextRequest) {
       // Notify admin
       await sendAdminSMS(
         `⚠️ AI Dispatcher Error!\nPhone: ${normalizedPhone}\nMessage: "${messageBody}"\n\nError: ${aiError}\n\nPlease respond manually.`,
-        'ai_dispatcher_error'
+        'ai_dispatcher_error',
       )
     }
 
     // Return empty TwiML (we already sent response via sendCustomerSMS)
-    return new NextResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
-      headers: { 'Content-Type': 'text/xml' },
-    })
-
+    return new NextResponse(
+      '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+      {
+        headers: { 'Content-Type': 'text/xml' },
+      },
+    )
   } catch (error) {
     console.error('Inbound SMS webhook error:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 },
+    )
   }
 }
