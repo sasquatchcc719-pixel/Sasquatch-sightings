@@ -108,10 +108,15 @@ Location partners can:
 
 *All existing partner portal features work for location partners!*
 
-## Credit System
+## Credit System (1% Sliding Scale)
 
 ### How Credits Are Earned:
-- **Confirmed Booking**: Admin confirms job actually booked → **+$5**
+- **1% of job value** when you confirm the booking
+- Examples:
+  - $100 job → Partner earns $1.00
+  - $300 job → Partner earns $3.00
+  - $500 job → Partner earns $5.00
+  - $1,000 job → Partner earns $10.00
 - Credits are NOT auto-awarded on clicks
 - Manual confirmation ensures you only pay for real jobs
 

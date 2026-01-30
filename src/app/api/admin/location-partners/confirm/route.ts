@@ -1,18 +1,23 @@
 /**
  * Confirm a location partner conversion and award credit
  * POST /api/admin/location-partners/confirm
+ *
+ * Credit is 1% of job value (sliding scale)
+ * - $100 job = $1 credit
+ * - $500 job = $5 credit
+ * - $1000 job = $10 credit
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 
-const CREDIT_PER_CONFIRMED_BOOKING = 5 // $5 per confirmed booking
+const CREDIT_PERCENTAGE = 0.01 // 1% of job value
 
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createAdminClient()
     const body = await request.json()
-    const { tapId, partnerId } = body
+    const { tapId, partnerId, jobAmount } = body
 
     if (!tapId || !partnerId) {
       return NextResponse.json(
@@ -20,6 +25,16 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       )
     }
+
+    if (!jobAmount || jobAmount <= 0) {
+      return NextResponse.json(
+        { error: 'jobAmount is required and must be greater than 0' },
+        { status: 400 },
+      )
+    }
+
+    // Calculate credit (1% of job value, rounded to nearest cent)
+    const creditAmount = Math.round(jobAmount * CREDIT_PERCENTAGE * 100) / 100
 
     // Get the tap to verify it exists and belongs to this partner
     const { data: tap, error: tapError } = await supabase
@@ -61,9 +76,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Partner not found' }, { status: 404 })
     }
 
-    // Award credit
+    // Award credit (1% of job value)
     const newBalance =
-      (partner.credit_balance || 0) + CREDIT_PER_CONFIRMED_BOOKING
+      Math.round(((partner.credit_balance || 0) + creditAmount) * 100) / 100
     const newConversions = (partner.total_conversions || 0) + 1
 
     await supabase
@@ -84,7 +99,7 @@ export async function POST(request: NextRequest) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               to: partner.phone,
-              message: `🎉 Great news! A customer from your ${partner.location_name || partner.company_name} NFC card just booked! You earned $${CREDIT_PER_CONFIRMED_BOOKING} credit. New balance: $${newBalance}. Thanks for partnering with Sasquatch!`,
+              message: `🎉 Great news! A $${jobAmount} job just booked from your ${partner.location_name || partner.company_name} NFC card! You earned $${creditAmount.toFixed(2)} credit (1%). New balance: $${newBalance.toFixed(2)}. Thanks for partnering with Sasquatch!`,
             }),
           },
         )
@@ -95,7 +110,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      creditAwarded: CREDIT_PER_CONFIRMED_BOOKING,
+      jobAmount,
+      creditAwarded: creditAmount,
       newBalance,
       newConversions,
     })

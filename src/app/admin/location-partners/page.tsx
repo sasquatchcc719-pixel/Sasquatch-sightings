@@ -49,6 +49,8 @@ export default function LocationPartnersPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
+  const [jobAmounts, setJobAmounts] = useState<Record<string, string>>({})
+  const [showAmountInput, setShowAmountInput] = useState<string | null>(null)
   const [newPartner, setNewPartner] = useState({
     company_name: '',
     location_name: '',
@@ -123,24 +125,38 @@ export default function LocationPartnersPage() {
   }
 
   const handleConfirmConversion = async (tapId: string, partnerId: string) => {
+    const jobAmountStr = jobAmounts[tapId]
+    const jobAmount = parseFloat(jobAmountStr)
+
+    if (!jobAmountStr || isNaN(jobAmount) || jobAmount <= 0) {
+      alert('Please enter a valid job amount')
+      return
+    }
+
     setConfirmingId(tapId)
 
     try {
       const response = await fetch('/api/admin/location-partners/confirm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tapId, partnerId }),
+        body: JSON.stringify({ tapId, partnerId, jobAmount }),
       })
 
       if (response.ok) {
         const data = await response.json()
         alert(
-          `Confirmed! Partner awarded $${data.creditAwarded}. New balance: $${data.newBalance}`,
+          `Confirmed! $${data.jobAmount} job → Partner earned $${data.creditAwarded.toFixed(2)} (1%). New balance: $${data.newBalance.toFixed(2)}`,
         )
+        setShowAmountInput(null)
+        setJobAmounts((prev) => {
+          const updated = { ...prev }
+          delete updated[tapId]
+          return updated
+        })
         void loadData()
       } else {
-        const error = await response.json()
-        alert('Failed to confirm: ' + error.error)
+        const errData = await response.json()
+        alert('Failed to confirm: ' + errData.error)
       }
     } catch (error) {
       console.error('Failed to confirm conversion:', error)
@@ -185,7 +201,7 @@ export default function LocationPartnersPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             to: newPartner.phone,
-            message: `Welcome to Sasquatch Location Partners! Your NFC card is active. URL: ${window.location.origin}/location/${data.id}. You&apos;ll earn $5 credit for every confirmed booking!`,
+            message: `Welcome to Sasquatch Location Partners! Your NFC card is active. URL: ${window.location.origin}/location/${data.id}. You earn 1% of every job that books from your card!`,
           }),
         })
       } catch (error) {
@@ -271,8 +287,8 @@ export default function LocationPartnersPage() {
             </div>
             <p className="mb-4 text-sm text-yellow-700 dark:text-yellow-300">
               These customers engaged with a location partner&apos;s NFC card.
-              Confirm when the job is actually booked to award the partner $5
-              credit.
+              Confirm when the job is booked and enter the job amount. Partner
+              earns <strong>1% of job value</strong> as credit.
             </p>
             <div className="space-y-3">
               {pendingConversions.map((conversion) => (
@@ -298,26 +314,68 @@ export default function LocationPartnersPage() {
                       <span>• {formatDate(conversion.tapped_at)}</span>
                     </div>
                   </div>
-                  <Button
-                    size="sm"
-                    className="bg-green-600 hover:bg-green-700"
-                    onClick={() =>
-                      handleConfirmConversion(
-                        conversion.id,
-                        conversion.partner_id,
-                      )
-                    }
-                    disabled={confirmingId === conversion.id}
-                  >
-                    {confirmingId === conversion.id ? (
-                      'Confirming...'
-                    ) : (
+                  <div className="flex items-center gap-2">
+                    {showAmountInput === conversion.id ? (
                       <>
-                        <CheckCircle className="mr-1 h-4 w-4" />
-                        Confirm Booking (+$5)
+                        <div className="flex items-center">
+                          <span className="mr-1 text-gray-500">$</span>
+                          <Input
+                            type="number"
+                            placeholder="Job amount"
+                            className="w-24"
+                            value={jobAmounts[conversion.id] || ''}
+                            onChange={(e) =>
+                              setJobAmounts((prev) => ({
+                                ...prev,
+                                [conversion.id]: e.target.value,
+                              }))
+                            }
+                            min="1"
+                            step="0.01"
+                          />
+                        </div>
+                        <Button
+                          size="sm"
+                          className="bg-green-600 hover:bg-green-700"
+                          onClick={() =>
+                            handleConfirmConversion(
+                              conversion.id,
+                              conversion.partner_id,
+                            )
+                          }
+                          disabled={
+                            confirmingId === conversion.id ||
+                            !jobAmounts[conversion.id]
+                          }
+                        >
+                          {confirmingId === conversion.id ? (
+                            '...'
+                          ) : (
+                            <>
+                              <CheckCircle className="mr-1 h-4 w-4" />
+                              Confirm
+                            </>
+                          )}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setShowAmountInput(null)}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
                       </>
+                    ) : (
+                      <Button
+                        size="sm"
+                        className="bg-green-600 hover:bg-green-700"
+                        onClick={() => setShowAmountInput(conversion.id)}
+                      >
+                        <CheckCircle className="mr-1 h-4 w-4" />
+                        Confirm (1%)
+                      </Button>
                     )}
-                  </Button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -416,7 +474,7 @@ export default function LocationPartnersPage() {
                     required
                   />
                   <p className="mt-1 text-xs text-gray-500">
-                    They&apos;ll receive SMS when they earn $5 credit
+                    They&apos;ll receive SMS when they earn credit (1% of job)
                   </p>
                 </div>
 
