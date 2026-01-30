@@ -173,15 +173,28 @@ END:VCARD`
 
         {/* Action Buttons */}
         <div className="mb-6 space-y-3">
+          {/* PRIMARY CTA - Book Online */}
+          <a
+            href="https://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => trackButtonClick('booking_page')}
+            className="block w-full rounded-lg bg-gradient-to-r from-green-500 to-green-600 px-8 py-8 text-center text-2xl font-bold text-white shadow-2xl transition-all hover:scale-105 hover:from-green-600 hover:to-green-700"
+          >
+            📅 BOOK NOW - GET $20 OFF
+          </a>
+
+          {/* Call Button */}
           <Button
             onClick={handleCall}
             size="lg"
-            className="w-full bg-green-600 py-6 text-lg font-bold hover:bg-green-700"
+            className="w-full bg-blue-600 py-6 text-lg font-bold hover:bg-blue-700"
           >
             <Phone className="mr-2 h-5 w-5" />
-            Call Now: 719-249-8791
+            Call: 719-249-8791
           </Button>
 
+          {/* Text Button */}
           <Button
             onClick={handleText}
             size="lg"
@@ -192,16 +205,7 @@ END:VCARD`
             Text Us
           </Button>
 
-          <Button
-            onClick={() => setShowForm(!showForm)}
-            size="lg"
-            variant="outline"
-            className="w-full border-2 py-6 text-lg font-semibold"
-          >
-            <Clock className="mr-2 h-5 w-5" />
-            Request a Call Back
-          </Button>
-
+          {/* Save Contact */}
           <Button
             onClick={handleSaveContact}
             size="lg"

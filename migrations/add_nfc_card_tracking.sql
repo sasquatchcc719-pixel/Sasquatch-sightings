@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS nfc_card_taps (
 CREATE TABLE IF NOT EXISTS nfc_button_clicks (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   tap_id UUID REFERENCES nfc_card_taps(id) ON DELETE CASCADE,
-  button_type TEXT NOT NULL CHECK (button_type IN ('call', 'text', 'form_submit', 'save_contact')),
+  button_type TEXT NOT NULL,
   clicked_at TIMESTAMPTZ DEFAULT now()
 );
 
