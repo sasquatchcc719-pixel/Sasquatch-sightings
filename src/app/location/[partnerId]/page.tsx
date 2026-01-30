@@ -251,6 +251,35 @@ END:VCARD`
           </div>
         </Card>
 
+        {/* Trust Badges */}
+        <div className="mb-6 grid grid-cols-3 gap-3 text-center">
+          <div className="rounded-lg bg-white p-3 shadow-md dark:bg-gray-800">
+            <div className="text-2xl">⭐</div>
+            <div className="text-xs font-bold">5 Stars</div>
+            <div className="text-xs text-gray-500">on Google</div>
+          </div>
+          <div className="rounded-lg bg-white p-3 shadow-md dark:bg-gray-800">
+            <div className="text-2xl">🐾</div>
+            <div className="text-xs font-bold">Pet Stain</div>
+            <div className="text-xs text-gray-500">Specialists</div>
+          </div>
+          <div className="rounded-lg bg-white p-3 shadow-md dark:bg-gray-800">
+            <div className="text-2xl">🏢</div>
+            <div className="text-xs font-bold">Commercial</div>
+            <div className="text-xs text-gray-500">& Residential</div>
+          </div>
+        </div>
+
+        {/* Guarantee Banner */}
+        <div className="mb-6 rounded-lg border-2 border-green-500 bg-green-50 p-4 text-center dark:border-green-600 dark:bg-green-900/20">
+          <p className="font-bold text-green-800 dark:text-green-200">
+            ✓ 100% Satisfaction Guaranteed
+          </p>
+          <p className="text-sm text-green-700 dark:text-green-300">
+            Not happy? We&apos;ll make it right.
+          </p>
+        </div>
+
         {/* Why We're Different */}
         <Card className="mb-6 p-6">
           <h3 className="mb-4 text-xl font-bold">
