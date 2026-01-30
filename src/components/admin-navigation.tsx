@@ -13,79 +13,172 @@ import {
   BarChart3,
   CreditCard,
   MapPin,
-  Menu,
   ChevronDown,
   Eye,
-  Globe,
   Award,
+  Truck,
+  Store,
 } from 'lucide-react'
+
+interface NavTab {
+  name: string
+  href: string
+  icon: React.ComponentType<{ className?: string }>
+  active: boolean
+  description: string
+}
+
+function NavDropdown({
+  label,
+  icon: Icon,
+  isOpen,
+  onToggle,
+  onClose,
+  isActive,
+  tabs,
+}: {
+  label: string
+  icon: React.ComponentType<{ className?: string }>
+  isOpen: boolean
+  onToggle: () => void
+  onClose: () => void
+  isActive: boolean
+  tabs: NavTab[]
+}) {
+  return (
+    <div className="relative">
+      <button
+        onClick={onToggle}
+        className={`flex items-center gap-2 border-b-2 px-1 py-3 text-sm font-medium transition-colors ${
+          isActive
+            ? 'border-primary text-primary'
+            : 'text-muted-foreground hover:border-border hover:text-foreground border-transparent'
+        }`}
+      >
+        <Icon className="h-4 w-4" />
+        {label}
+        <ChevronDown
+          className={`h-3 w-3 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+        />
+      </button>
+
+      {isOpen && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={onClose} />
+          <div className="bg-background absolute top-full left-0 z-20 mt-1 w-64 rounded-lg border shadow-lg">
+            <div className="p-2">
+              {tabs.map((tab) => {
+                const TabIcon = tab.icon
+                return (
+                  <Link
+                    key={tab.name}
+                    href={tab.href}
+                    onClick={onClose}
+                    className={`flex items-start gap-3 rounded-md px-3 py-2 transition-colors ${
+                      tab.active
+                        ? 'bg-primary/10 text-primary'
+                        : 'hover:bg-muted'
+                    }`}
+                  >
+                    <TabIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                    <div>
+                      <div className="text-sm font-medium">{tab.name}</div>
+                      <div className="text-muted-foreground text-xs">
+                        {tab.description}
+                      </div>
+                    </div>
+                  </Link>
+                )
+              })}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
 
 export function AdminNavigation() {
   const pathname = usePathname()
-  const [moreOpen, setMoreOpen] = useState(false)
+  const [operationsOpen, setOperationsOpen] = useState(false)
+  const [leadsOpen, setLeadsOpen] = useState(false)
+  const [vendorsOpen, setVendorsOpen] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
 
-  // Primary tabs - always visible
-  const primaryTabs = [
+  // Close all dropdowns
+  const closeAll = () => {
+    setOperationsOpen(false)
+    setLeadsOpen(false)
+    setVendorsOpen(false)
+    setPreviewOpen(false)
+  }
+
+  // Operations group (Jobs + Stats)
+  const operationsTabs: NavTab[] = [
     {
       name: 'Jobs',
       href: '/admin',
       icon: Briefcase,
       active: pathname === '/admin',
+      description: 'Manage completed jobs',
     },
     {
       name: 'Stats',
       href: '/admin/stats',
       icon: BarChart3,
       active: pathname === '/admin/stats',
+      description: 'Revenue & utilization tracking',
     },
+  ]
+
+  // Leads group (from truck/contest)
+  const leadsTabs: NavTab[] = [
     {
-      name: 'Leads',
+      name: 'All Leads',
       href: '/admin/leads',
       icon: Phone,
       active: pathname === '/admin/leads',
+      description: 'Lead pipeline & follow-ups',
     },
     {
       name: 'Contest',
       href: '/admin/sightings',
       icon: Trophy,
       active: pathname === '/admin/sightings',
+      description: 'Sasquatch sightings entries',
     },
-    {
-      name: 'Vendors',
-      href: '/admin/location-partners',
-      icon: MapPin,
-      active: pathname === '/admin/location-partners',
-    },
-  ]
-
-  // Secondary tabs - in dropdown
-  const secondaryTabs = [
     {
       name: 'AI Chat',
       href: '/admin/conversations',
       icon: MessageSquare,
       active: pathname === '/admin/conversations',
-      description: 'AI text message dispatcher',
-    },
-    {
-      name: 'NFC Cards',
-      href: '/admin/tap-analytics',
-      icon: CreditCard,
-      active: pathname === '/admin/tap-analytics',
-      description: 'Business card analytics',
-    },
-    {
-      name: 'Partners',
-      href: '/admin/partners',
-      icon: Users,
-      active: pathname === '/admin/partners',
-      description: 'Referral partners (realtors, PMs)',
+      description: 'Text message dispatcher',
     },
   ]
 
-  // Check if any secondary tab is active
-  const secondaryActive = secondaryTabs.some((tab) => tab.active)
+  // Vendors group (local businesses)
+  const vendorsTabs: NavTab[] = [
+    {
+      name: 'Vendor List',
+      href: '/admin/location-partners',
+      icon: Store,
+      active: pathname === '/admin/location-partners',
+      description: 'Manage vendor locations',
+    },
+    {
+      name: 'NFC Analytics',
+      href: '/admin/tap-analytics',
+      icon: CreditCard,
+      active: pathname === '/admin/tap-analytics',
+      description: 'Card tap statistics',
+    },
+  ]
+
+  // Check active states for dropdown highlights
+  const operationsActive = operationsTabs.some((tab) => tab.active)
+  const leadsActive = leadsTabs.some((tab) => tab.active)
+  const vendorsActive = vendorsTabs.some((tab) => tab.active)
+  const partnersActive = pathname === '/admin/partners'
 
   return (
     <div className="border-b">
@@ -93,87 +186,69 @@ export function AdminNavigation() {
         className="-mb-px flex flex-wrap items-center gap-4 sm:gap-6"
         aria-label="Tabs"
       >
-        {/* Primary tabs */}
-        {primaryTabs.map((tab) => {
-          const Icon = tab.icon
-          return (
-            <Link
-              key={tab.name}
-              href={tab.href}
-              className={`flex items-center gap-2 border-b-2 px-1 py-3 text-sm font-medium transition-colors ${
-                tab.active
-                  ? 'border-primary text-primary'
-                  : 'text-muted-foreground hover:border-border hover:text-foreground border-transparent'
-              }`}
-            >
-              <Icon className="h-4 w-4" />
-              {tab.name}
-            </Link>
-          )
-        })}
+        {/* Operations Dropdown */}
+        <NavDropdown
+          label="Operations"
+          icon={Truck}
+          isOpen={operationsOpen}
+          onToggle={() => {
+            closeAll()
+            setOperationsOpen(!operationsOpen)
+          }}
+          onClose={closeAll}
+          isActive={operationsActive}
+          tabs={operationsTabs}
+        />
 
-        {/* More dropdown */}
-        <div className="relative">
-          <button
-            onClick={() => setMoreOpen(!moreOpen)}
-            className={`flex items-center gap-2 border-b-2 px-1 py-3 text-sm font-medium transition-colors ${
-              secondaryActive
-                ? 'border-primary text-primary'
-                : 'text-muted-foreground hover:border-border hover:text-foreground border-transparent'
-            }`}
-          >
-            <Menu className="h-4 w-4" />
-            More
-            <ChevronDown
-              className={`h-3 w-3 transition-transform ${moreOpen ? 'rotate-180' : ''}`}
-            />
-          </button>
+        {/* Leads Dropdown */}
+        <NavDropdown
+          label="Leads"
+          icon={Phone}
+          isOpen={leadsOpen}
+          onToggle={() => {
+            closeAll()
+            setLeadsOpen(!leadsOpen)
+          }}
+          onClose={closeAll}
+          isActive={leadsActive}
+          tabs={leadsTabs}
+        />
 
-          {moreOpen && (
-            <>
-              {/* Backdrop */}
-              <div
-                className="fixed inset-0 z-10"
-                onClick={() => setMoreOpen(false)}
-              />
+        {/* Vendors Dropdown */}
+        <NavDropdown
+          label="Vendors"
+          icon={Store}
+          isOpen={vendorsOpen}
+          onToggle={() => {
+            closeAll()
+            setVendorsOpen(!vendorsOpen)
+          }}
+          onClose={closeAll}
+          isActive={vendorsActive}
+          tabs={vendorsTabs}
+        />
 
-              {/* Dropdown */}
-              <div className="bg-background absolute top-full left-0 z-20 mt-1 w-64 rounded-lg border shadow-lg">
-                <div className="p-2">
-                  {secondaryTabs.map((tab) => {
-                    const Icon = tab.icon
-                    return (
-                      <Link
-                        key={tab.name}
-                        href={tab.href}
-                        onClick={() => setMoreOpen(false)}
-                        className={`flex items-start gap-3 rounded-md px-3 py-2 transition-colors ${
-                          tab.active
-                            ? 'bg-primary/10 text-primary'
-                            : 'hover:bg-muted'
-                        }`}
-                      >
-                        <Icon className="mt-0.5 h-4 w-4 flex-shrink-0" />
-                        <div>
-                          <div className="text-sm font-medium">{tab.name}</div>
-                          <div className="text-muted-foreground text-xs">
-                            {tab.description}
-                          </div>
-                        </div>
-                      </Link>
-                    )
-                  })}
-                </div>
-              </div>
-            </>
-          )}
-        </div>
+        {/* Partners - standalone link */}
+        <Link
+          href="/admin/partners"
+          className={`flex items-center gap-2 border-b-2 px-1 py-3 text-sm font-medium transition-colors ${
+            partnersActive
+              ? 'border-primary text-primary'
+              : 'text-muted-foreground hover:border-border hover:text-foreground border-transparent'
+          }`}
+        >
+          <Users className="h-4 w-4" />
+          Partners
+        </Link>
 
         {/* Preview Pages dropdown */}
         <div className="relative ml-auto">
           <button
-            onClick={() => setPreviewOpen(!previewOpen)}
-            className="text-muted-foreground hover:text-foreground flex items-center gap-2 rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-green-700"
+            onClick={() => {
+              closeAll()
+              setPreviewOpen(!previewOpen)
+            }}
+            className="flex items-center gap-2 rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-green-700"
           >
             <Eye className="h-4 w-4" />
             Preview
@@ -184,30 +259,22 @@ export function AdminNavigation() {
 
           {previewOpen && (
             <>
-              {/* Backdrop */}
-              <div
-                className="fixed inset-0 z-10"
-                onClick={() => setPreviewOpen(false)}
-              />
-
-              {/* Dropdown */}
+              <div className="fixed inset-0 z-10" onClick={closeAll} />
               <div className="bg-background absolute top-full right-0 z-20 mt-1 w-72 rounded-lg border shadow-lg">
                 <div className="p-2">
                   <div className="text-muted-foreground px-3 py-1 text-xs font-semibold uppercase">
-                    Customer-Facing Pages
+                    Lead Generation
                   </div>
                   <a
                     href="/tap"
                     target="_blank"
                     rel="noopener noreferrer"
-                    onClick={() => setPreviewOpen(false)}
+                    onClick={closeAll}
                     className="hover:bg-muted flex items-center gap-3 rounded-md px-3 py-2"
                   >
                     <CreditCard className="h-4 w-4 text-blue-500" />
                     <div>
-                      <div className="text-sm font-medium">
-                        Business Card Page
-                      </div>
+                      <div className="text-sm font-medium">Business Card</div>
                       <div className="text-muted-foreground text-xs">
                         Your NFC card landing page
                       </div>
@@ -218,7 +285,7 @@ export function AdminNavigation() {
                     href="/contest"
                     target="_blank"
                     rel="noopener noreferrer"
-                    onClick={() => setPreviewOpen(false)}
+                    onClick={closeAll}
                     className="hover:bg-muted flex items-center gap-3 rounded-md px-3 py-2"
                   >
                     <Trophy className="h-4 w-4 text-amber-500" />
@@ -234,13 +301,35 @@ export function AdminNavigation() {
 
                 <div className="border-t p-2">
                   <div className="text-muted-foreground px-3 py-1 text-xs font-semibold uppercase">
+                    Vendor Pages
+                  </div>
+                  <a
+                    href="/location/demo"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={closeAll}
+                    className="hover:bg-muted flex items-center gap-3 rounded-md px-3 py-2"
+                  >
+                    <MapPin className="h-4 w-4 text-red-500" />
+                    <div>
+                      <div className="text-sm font-medium">Vendor Landing</div>
+                      <div className="text-muted-foreground text-xs">
+                        What customers see at vendor locations
+                      </div>
+                    </div>
+                    <ExternalLink className="ml-auto h-3 w-3" />
+                  </a>
+                </div>
+
+                <div className="border-t p-2">
+                  <div className="text-muted-foreground px-3 py-1 text-xs font-semibold uppercase">
                     Partner Pages
                   </div>
                   <a
                     href="/partners/register"
                     target="_blank"
                     rel="noopener noreferrer"
-                    onClick={() => setPreviewOpen(false)}
+                    onClick={closeAll}
                     className="hover:bg-muted flex items-center gap-3 rounded-md px-3 py-2"
                   >
                     <Users className="h-4 w-4 text-purple-500" />
@@ -256,7 +345,7 @@ export function AdminNavigation() {
                     href="/preferred-partners"
                     target="_blank"
                     rel="noopener noreferrer"
-                    onClick={() => setPreviewOpen(false)}
+                    onClick={closeAll}
                     className="hover:bg-muted flex items-center gap-3 rounded-md px-3 py-2"
                   >
                     <Award className="h-4 w-4 text-green-500" />
@@ -270,33 +359,6 @@ export function AdminNavigation() {
                     </div>
                     <ExternalLink className="ml-auto h-3 w-3" />
                   </a>
-                </div>
-
-                <div className="border-t p-2">
-                  <div className="text-muted-foreground px-3 py-1 text-xs font-semibold uppercase">
-                    Vendor Pages
-                  </div>
-                  <a
-                    href="/location/demo"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={() => setPreviewOpen(false)}
-                    className="hover:bg-muted flex items-center gap-3 rounded-md px-3 py-2"
-                  >
-                    <MapPin className="h-4 w-4 text-red-500" />
-                    <div>
-                      <div className="text-sm font-medium">
-                        Vendor Landing Page
-                      </div>
-                      <div className="text-muted-foreground text-xs">
-                        What customers see when scanning vendor NFC card
-                      </div>
-                    </div>
-                    <ExternalLink className="ml-auto h-3 w-3" />
-                  </a>
-                  <p className="text-muted-foreground px-3 py-1 text-xs">
-                    Tip: Get real vendor URLs from Vendors admin page
-                  </p>
                 </div>
               </div>
             </>
