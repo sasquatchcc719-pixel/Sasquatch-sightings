@@ -173,16 +173,59 @@ END:VCARD`
 
         {/* Action Buttons */}
         <div className="mb-6 space-y-3">
-          {/* PRIMARY CTA - Book Online */}
+          {/* PRIMARY CTA - Book Online with Animation */}
           <a
             href="https://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true"
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => trackButtonClick('booking_page')}
-            className="block w-full rounded-lg bg-gradient-to-r from-green-500 to-green-600 px-8 py-8 text-center text-2xl font-bold text-white shadow-2xl transition-all hover:scale-105 hover:from-green-600 hover:to-green-700"
+            className="group relative block w-full overflow-hidden rounded-2xl shadow-2xl transition-all hover:scale-105"
           >
-            📅 BOOK NOW - GET $20 OFF
+            {/* Button with 3D effect */}
+            <div className="relative bg-gradient-to-b from-green-400 to-green-600 px-8 py-8 text-center transition-all group-hover:from-green-500 group-hover:to-green-700">
+              {/* Top highlight for 3D effect */}
+              <div className="absolute inset-x-0 top-0 h-2 bg-gradient-to-b from-white/30 to-transparent" />
+
+              {/* Button text with press animation */}
+              <div className="animate-button-press relative">
+                <p className="mb-1 text-sm font-semibold tracking-wide text-white/90 uppercase">
+                  Click to Schedule
+                </p>
+                <p className="text-3xl font-black text-white drop-shadow-lg">
+                  📅 BOOK NOW
+                </p>
+                <p className="mt-1 text-lg font-bold text-white/90">
+                  Get $20 OFF Every Cleaning
+                </p>
+              </div>
+
+              {/* Bottom shadow for 3D depth */}
+              <div className="absolute inset-x-0 bottom-0 h-3 bg-gradient-to-t from-black/20 to-transparent" />
+            </div>
+
+            {/* Shine effect on hover */}
+            <div className="absolute inset-0 translate-x-[-100%] bg-gradient-to-r from-transparent via-white/10 to-transparent transition-transform duration-700 group-hover:translate-x-[100%]" />
           </a>
+
+          {/* Add animation styles */}
+          <style jsx>{`
+            @keyframes button-press {
+              0%,
+              100% {
+                transform: translateY(0) scale(1);
+              }
+              5% {
+                transform: translateY(4px) scale(0.98);
+              }
+              10% {
+                transform: translateY(0) scale(1);
+              }
+            }
+
+            .animate-button-press {
+              animation: button-press 3s ease-in-out infinite;
+            }
+          `}</style>
 
           {/* Call Button */}
           <Button
