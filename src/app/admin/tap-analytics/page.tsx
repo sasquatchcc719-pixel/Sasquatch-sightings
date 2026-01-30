@@ -373,89 +373,31 @@ export default function TapAnalyticsPage() {
         </div>
       </Card>
 
-      {/* Device Breakdown */}
-      <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-2">
-        <Card className="p-4 sm:p-6">
-          <h2 className="mb-3 text-lg font-bold sm:mb-4 sm:text-xl">
-            Device Types
-          </h2>
-          <div className="space-y-3">
-            <div>
-              <div className="mb-1 flex justify-between text-sm">
-                <span>📱 Mobile</span>
-                <span className="font-bold">
-                  {stats.deviceBreakdown.mobile}
+      {/* Top Cities */}
+      <Card className="p-4 sm:p-6">
+        <h2 className="mb-3 text-lg font-bold sm:mb-4 sm:text-xl">
+          Top Cities
+        </h2>
+        {stats.topCities.length > 0 ? (
+          <div className="space-y-2">
+            {stats.topCities.map((city, index) => (
+              <div
+                key={city.city}
+                className="flex items-center justify-between"
+              >
+                <span className="text-xs sm:text-sm">
+                  {index + 1}. {city.city}
                 </span>
+                <span className="text-sm font-bold">{city.count}</span>
               </div>
-              <div className="h-2 w-full rounded-full bg-gray-200 dark:bg-gray-700">
-                <div
-                  className="h-2 rounded-full bg-blue-500"
-                  style={{
-                    width: `${(stats.deviceBreakdown.mobile / stats.totalTaps) * 100}%`,
-                  }}
-                />
-              </div>
-            </div>
-            <div>
-              <div className="mb-1 flex justify-between text-sm">
-                <span>💻 Desktop</span>
-                <span className="font-bold">
-                  {stats.deviceBreakdown.desktop}
-                </span>
-              </div>
-              <div className="h-2 w-full rounded-full bg-gray-200 dark:bg-gray-700">
-                <div
-                  className="h-2 rounded-full bg-green-500"
-                  style={{
-                    width: `${(stats.deviceBreakdown.desktop / stats.totalTaps) * 100}%`,
-                  }}
-                />
-              </div>
-            </div>
-            <div>
-              <div className="mb-1 flex justify-between text-sm">
-                <span>📲 Tablet</span>
-                <span className="font-bold">
-                  {stats.deviceBreakdown.tablet}
-                </span>
-              </div>
-              <div className="h-2 w-full rounded-full bg-gray-200 dark:bg-gray-700">
-                <div
-                  className="h-2 rounded-full bg-purple-500"
-                  style={{
-                    width: `${(stats.deviceBreakdown.tablet / stats.totalTaps) * 100}%`,
-                  }}
-                />
-              </div>
-            </div>
+            ))}
           </div>
-        </Card>
-
-        <Card className="p-4 sm:p-6">
-          <h2 className="mb-3 text-lg font-bold sm:mb-4 sm:text-xl">
-            Top Cities
-          </h2>
-          {stats.topCities.length > 0 ? (
-            <div className="space-y-2">
-              {stats.topCities.map((city, index) => (
-                <div
-                  key={city.city}
-                  className="flex items-center justify-between"
-                >
-                  <span className="text-xs sm:text-sm">
-                    {index + 1}. {city.city}
-                  </span>
-                  <span className="text-sm font-bold">{city.count}</span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-xs text-gray-500 sm:text-sm">
-              No location data yet
-            </p>
-          )}
-        </Card>
-      </div>
+        ) : (
+          <p className="text-xs text-gray-500 sm:text-sm">
+            No location data yet
+          </p>
+        )}
+      </Card>
 
       {/* ROI Calculator */}
       <Card className="p-4 sm:p-6">
