@@ -44,19 +44,11 @@ export async function POST(request: NextRequest) {
       location_type,
       phone,
       card_id,
-      pin,
     } = body
 
     if (!company_name) {
       return NextResponse.json(
         { error: 'company_name is required' },
-        { status: 400 },
-      )
-    }
-
-    if (!pin || pin.length !== 4) {
-      return NextResponse.json(
-        { error: 'A 4-digit PIN is required' },
         { status: 400 },
       )
     }
@@ -84,7 +76,6 @@ export async function POST(request: NextRequest) {
         location_address: location_address || null,
         location_type: location_type || null,
         card_id: card_id || null,
-        pin: pin,
         partner_type: 'location',
         role: 'partner',
         credit_balance: 0,
@@ -97,26 +88,6 @@ export async function POST(request: NextRequest) {
     if (error) {
       console.error('Failed to create location partner:', error)
       return NextResponse.json({ error: error.message }, { status: 500 })
-    }
-
-    // Send welcome SMS if phone provided
-    if (phone && data) {
-      try {
-        const siteUrl =
-          process.env.NEXT_PUBLIC_SITE_URL ||
-          'https://sightings.sasquatchcarpet.com'
-        await fetch(`${siteUrl}/api/sms/send`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            to: phone,
-            message: `Welcome to Sasquatch Location Partners! Your NFC card is active. To check your stats, scan your card and tap the Sasquatch logo 5 times. Your PIN: ${pin}. You earn 1% of every job!`,
-          }),
-        })
-      } catch (smsError) {
-        console.error('Failed to send welcome SMS:', smsError)
-        // Don't fail the request if SMS fails
-      }
     }
 
     return NextResponse.json({ success: true, partner: data })

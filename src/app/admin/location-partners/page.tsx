@@ -11,8 +11,6 @@ import {
   Copy,
   MapPin,
   X,
-  CheckCircle,
-  Clock,
   ExternalLink,
   MessageSquare,
 } from 'lucide-react'
@@ -32,15 +30,6 @@ interface LocationPartner {
   created_at: string
 }
 
-interface PendingConversion {
-  id: string
-  partner_id: string
-  conversion_type: string | null
-  location_city: string | null
-  tapped_at: string
-  converted: boolean
-}
-
 interface NFCLead {
   id: string
   phone: string | null
@@ -53,16 +42,10 @@ interface NFCLead {
 
 export default function LocationPartnersPage() {
   const [partners, setPartners] = useState<LocationPartner[]>([])
-  const [pendingConversions, setPendingConversions] = useState<
-    PendingConversion[]
-  >([])
   const [nfcLeads, setNfcLeads] = useState<NFCLead[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
-  const [confirmingId, setConfirmingId] = useState<string | null>(null)
-  const [jobAmounts, setJobAmounts] = useState<Record<string, string>>({})
-  const [showAmountInput, setShowAmountInput] = useState<string | null>(null)
   const [newPartner, setNewPartner] = useState({
     company_name: '',
     location_name: '',
@@ -70,7 +53,6 @@ export default function LocationPartnersPage() {
     location_type: '',
     phone: '',
     card_id: '',
-    pin: '',
   })
 
   useEffect(() => {
@@ -88,23 +70,6 @@ export default function LocationPartnersPage() {
         console.error('Failed to load location partners:', partnersError)
       } else {
         setPartners(partnersData || [])
-      }
-
-      // Fetch pending conversions (taps with conversion_type but not confirmed)
-      const { data: conversionsData, error: conversionsError } = await supabase
-        .from('nfc_card_taps')
-        .select(
-          'id, partner_id, conversion_type, location_city, tapped_at, converted',
-        )
-        .not('partner_id', 'is', null)
-        .not('conversion_type', 'is', null)
-        .eq('converted', false)
-        .order('tapped_at', { ascending: false })
-
-      if (conversionsError) {
-        console.error('Failed to load pending conversions:', conversionsError)
-      } else {
-        setPendingConversions(conversionsData || [])
       }
 
       // Fetch NFC leads (leads with source = 'NFC Card')
@@ -137,60 +102,6 @@ export default function LocationPartnersPage() {
       .order('created_at', { ascending: false })
 
     setPartners(partnersData || [])
-
-    const { data: conversionsData } = await supabase
-      .from('nfc_card_taps')
-      .select(
-        'id, partner_id, conversion_type, location_city, tapped_at, converted',
-      )
-      .not('partner_id', 'is', null)
-      .not('conversion_type', 'is', null)
-      .eq('converted', false)
-      .order('tapped_at', { ascending: false })
-
-    setPendingConversions(conversionsData || [])
-  }
-
-  const handleConfirmConversion = async (tapId: string, partnerId: string) => {
-    const jobAmountStr = jobAmounts[tapId]
-    const jobAmount = parseFloat(jobAmountStr)
-
-    if (!jobAmountStr || isNaN(jobAmount) || jobAmount <= 0) {
-      alert('Please enter a valid job amount')
-      return
-    }
-
-    setConfirmingId(tapId)
-
-    try {
-      const response = await fetch('/api/admin/location-partners/confirm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tapId, partnerId, jobAmount }),
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        alert(
-          `Confirmed! $${data.jobAmount} job → Partner earned $${data.creditAwarded.toFixed(2)} (1%). New balance: $${data.newBalance.toFixed(2)}`,
-        )
-        setShowAmountInput(null)
-        setJobAmounts((prev) => {
-          const updated = { ...prev }
-          delete updated[tapId]
-          return updated
-        })
-        void loadData()
-      } else {
-        const errData = await response.json()
-        alert('Failed to confirm: ' + errData.error)
-      }
-    } catch (error) {
-      console.error('Failed to confirm conversion:', error)
-      alert('Failed to confirm conversion')
-    } finally {
-      setConfirmingId(null)
-    }
   }
 
   const handleCreatePartner = async (e: React.FormEvent) => {
@@ -216,7 +127,6 @@ export default function LocationPartnersPage() {
         location_type: '',
         phone: '',
         card_id: '',
-        pin: '',
       })
       setIsDialogOpen(false)
       void loadData()
@@ -247,15 +157,10 @@ export default function LocationPartnersPage() {
     })
   }
 
-  const getPartnerName = (partnerId: string) => {
-    const partner = partners.find((p) => p.id === partnerId)
-    return partner?.location_name || partner?.company_name || 'Unknown'
-  }
-
   if (isLoading) {
     return (
       <div className="p-8">
-        <p className="text-gray-500">Loading location partners...</p>
+        <p className="text-gray-500">Loading vendors...</p>
       </div>
     )
   }
@@ -281,112 +186,6 @@ export default function LocationPartnersPage() {
           </Button>
         </div>
 
-        {/* Pending Conversions Alert */}
-        {pendingConversions.length > 0 && (
-          <Card className="mb-8 border-2 border-yellow-400 bg-yellow-50 p-6 dark:border-yellow-600 dark:bg-yellow-900/20">
-            <div className="mb-4 flex items-center gap-2">
-              <Clock className="h-5 w-5 text-yellow-600" />
-              <h2 className="text-xl font-bold text-yellow-800 dark:text-yellow-200">
-                Pending Confirmations ({pendingConversions.length})
-              </h2>
-            </div>
-            <p className="mb-4 text-sm text-yellow-700 dark:text-yellow-300">
-              These customers engaged with a vendor&apos;s NFC card. Confirm
-              when the job is booked and enter the job amount. Partner earns{' '}
-              <strong>1% of job value</strong> as credit.
-            </p>
-            <div className="space-y-3">
-              {pendingConversions.map((conversion) => (
-                <div
-                  key={conversion.id}
-                  className="flex items-center justify-between rounded-lg bg-white p-4 shadow-sm dark:bg-gray-800"
-                >
-                  <div>
-                    <div className="font-semibold">
-                      {getPartnerName(conversion.partner_id)}
-                    </div>
-                    <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                      <Badge variant="outline">
-                        {conversion.conversion_type === 'text_chat'
-                          ? '💬 Started Chat'
-                          : conversion.conversion_type === 'booking'
-                            ? '📅 Clicked Book'
-                            : '📝 Submitted Form'}
-                      </Badge>
-                      {conversion.location_city && (
-                        <span>• {conversion.location_city}</span>
-                      )}
-                      <span>• {formatDate(conversion.tapped_at)}</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {showAmountInput === conversion.id ? (
-                      <>
-                        <div className="flex items-center">
-                          <span className="mr-1 text-gray-500">$</span>
-                          <Input
-                            type="number"
-                            placeholder="Job amount"
-                            className="w-24"
-                            value={jobAmounts[conversion.id] || ''}
-                            onChange={(e) =>
-                              setJobAmounts((prev) => ({
-                                ...prev,
-                                [conversion.id]: e.target.value,
-                              }))
-                            }
-                            min="1"
-                            step="0.01"
-                          />
-                        </div>
-                        <Button
-                          size="sm"
-                          className="bg-green-600 hover:bg-green-700"
-                          onClick={() =>
-                            handleConfirmConversion(
-                              conversion.id,
-                              conversion.partner_id,
-                            )
-                          }
-                          disabled={
-                            confirmingId === conversion.id ||
-                            !jobAmounts[conversion.id]
-                          }
-                        >
-                          {confirmingId === conversion.id ? (
-                            '...'
-                          ) : (
-                            <>
-                              <CheckCircle className="mr-1 h-4 w-4" />
-                              Confirm
-                            </>
-                          )}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setShowAmountInput(null)}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </>
-                    ) : (
-                      <Button
-                        size="sm"
-                        className="bg-green-600 hover:bg-green-700"
-                        onClick={() => setShowAmountInput(conversion.id)}
-                      >
-                        <CheckCircle className="mr-1 h-4 w-4" />
-                        Confirm (1%)
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
-        )}
-
         {/* NFC Leads from AI Chat */}
         {nfcLeads.length > 0 && (
           <Card className="mb-8 border-2 border-blue-400 bg-blue-50 p-6 dark:border-blue-600 dark:bg-blue-900/20">
@@ -397,8 +196,8 @@ export default function LocationPartnersPage() {
               </h2>
             </div>
             <p className="mb-4 text-sm text-blue-700 dark:text-blue-300">
-              These leads came from NFC card scans and started an AI chat. Match
-              them to bookings to confirm partner payouts.
+              These leads came from vendor NFC card scans and started an AI
+              chat. Match them to HouseCall Pro bookings to track conversions.
             </p>
             <div className="space-y-3">
               {nfcLeads.map((lead) => (
@@ -550,7 +349,7 @@ export default function LocationPartnersPage() {
                     required
                   />
                   <p className="mt-1 text-xs text-gray-500">
-                    They&apos;ll receive SMS when they earn credit (1% of job)
+                    Contact number for this location
                   </p>
                 </div>
 
@@ -566,30 +365,6 @@ export default function LocationPartnersPage() {
                   />
                   <p className="mt-1 text-xs text-gray-500">
                     Physical card identifier for tracking
-                  </p>
-                </div>
-
-                <div>
-                  <Label htmlFor="pin">Portal PIN (4 digits) *</Label>
-                  <Input
-                    id="pin"
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]{4}"
-                    maxLength={4}
-                    value={newPartner.pin}
-                    onChange={(e) =>
-                      setNewPartner({
-                        ...newPartner,
-                        pin: e.target.value.replace(/\D/g, '').slice(0, 4),
-                      })
-                    }
-                    placeholder="1234"
-                    required
-                  />
-                  <p className="mt-1 text-xs text-gray-500">
-                    They&apos;ll use this PIN to access their portal (tap logo
-                    5x to reveal login)
                   </p>
                 </div>
 
@@ -627,10 +402,26 @@ export default function LocationPartnersPage() {
           </Card>
           <Card className="p-6">
             <div className="text-2xl font-bold text-green-600">
-              ${partners.reduce((sum, p) => sum + (p.credit_balance || 0), 0)}
+              {partners.length > 0
+                ? (
+                    (partners.reduce(
+                      (sum, p) => sum + (p.total_conversions || 0),
+                      0,
+                    ) /
+                      Math.max(
+                        partners.reduce(
+                          (sum, p) => sum + (p.total_taps || 0),
+                          0,
+                        ),
+                        1,
+                      )) *
+                    100
+                  ).toFixed(1)
+                : 0}
+              %
             </div>
             <div className="text-sm text-gray-600 dark:text-gray-400">
-              Total Credits Awarded
+              Avg Conversion Rate
             </div>
           </Card>
         </div>
@@ -720,15 +511,6 @@ export default function LocationPartnersPage() {
                       )}
                     </div>
                     <div className="text-xs text-purple-600/80">Conv. Rate</div>
-                  </div>
-
-                  <div className="rounded-lg bg-yellow-50 p-4 dark:bg-yellow-900/20">
-                    <div className="text-2xl font-bold text-yellow-600">
-                      ${partner.credit_balance || 0}
-                    </div>
-                    <div className="text-xs text-yellow-600/80">
-                      Credits Earned
-                    </div>
                   </div>
 
                   <div className="rounded-lg bg-gray-50 p-4 dark:bg-gray-800">
