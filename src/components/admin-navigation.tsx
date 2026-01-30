@@ -46,6 +46,12 @@ export function AdminNavigation() {
       active: pathname === '/admin/leads',
     },
     {
+      name: 'Contest',
+      href: '/admin/sightings',
+      icon: Trophy,
+      active: pathname === '/admin/sightings',
+    },
+    {
       name: 'Vendors',
       href: '/admin/location-partners',
       icon: MapPin,
@@ -75,13 +81,6 @@ export function AdminNavigation() {
       icon: Users,
       active: pathname === '/admin/partners',
       description: 'Referral partners (realtors, PMs)',
-    },
-    {
-      name: 'Contest',
-      href: '/admin/sightings',
-      icon: Trophy,
-      active: pathname === '/admin/sightings',
-      description: 'Sasquatch sightings contest',
     },
   ]
 
