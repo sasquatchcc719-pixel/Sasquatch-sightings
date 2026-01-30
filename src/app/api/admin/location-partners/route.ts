@@ -44,11 +44,19 @@ export async function POST(request: NextRequest) {
       location_type,
       phone,
       card_id,
+      pin,
     } = body
 
     if (!company_name) {
       return NextResponse.json(
         { error: 'company_name is required' },
+        { status: 400 },
+      )
+    }
+
+    if (!pin || pin.length !== 4) {
+      return NextResponse.json(
+        { error: 'A 4-digit PIN is required' },
         { status: 400 },
       )
     }
@@ -73,6 +81,7 @@ export async function POST(request: NextRequest) {
         location_type: location_type || null,
         phone: phone || null,
         card_id: card_id || null,
+        pin: pin,
         partner_type: 'location',
         role: 'partner',
         credit_balance: 0,
@@ -98,7 +107,7 @@ export async function POST(request: NextRequest) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             to: phone,
-            message: `Welcome to Sasquatch Location Partners! Your NFC card is active. URL: ${siteUrl}/location/${data.id}. You earn 1% of every job that books from your card!`,
+            message: `Welcome to Sasquatch Location Partners! Your NFC card is active. To check your stats, scan your card and tap the Sasquatch logo 5 times. Your PIN: ${pin}. You earn 1% of every job!`,
           }),
         })
       } catch (smsError) {

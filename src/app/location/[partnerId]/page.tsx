@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useParams } from 'next/navigation'
-import { MessageSquare, Download, MapPin, Share2 } from 'lucide-react'
+import { MessageSquare, Download, MapPin, Share2, Lock, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import { RecentJobsCarousel } from '@/components/nfc/recent-jobs-carousel'
 
 interface PartnerInfo {
@@ -14,12 +15,85 @@ interface PartnerInfo {
   location_type: string | null
 }
 
+interface PartnerStats {
+  id: string
+  name: string
+  phone: string | null
+  creditBalance: number
+  totalTaps: number
+  totalConversions: number
+}
+
 export default function LocationPartnerPage() {
   const params = useParams()
   const partnerId = params.partnerId as string
   const [tapId, setTapId] = useState<string | null>(null)
   const [partner, setPartner] = useState<PartnerInfo | null>(null)
   const [showShareToast, setShowShareToast] = useState(false)
+
+  // Partner portal state
+  const [logoTapCount, setLogoTapCount] = useState(0)
+  const [showLoginForm, setShowLoginForm] = useState(false)
+  const [pin, setPin] = useState('')
+  const [loginError, setLoginError] = useState('')
+  const [isLoggingIn, setIsLoggingIn] = useState(false)
+  const [partnerStats, setPartnerStats] = useState<PartnerStats | null>(null)
+  const tapTimerRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Handle logo tap for Easter egg
+  const handleLogoTap = () => {
+    setLogoTapCount((prev) => {
+      const newCount = prev + 1
+
+      // Reset timer on each tap
+      if (tapTimerRef.current) {
+        clearTimeout(tapTimerRef.current)
+      }
+
+      // Reset count after 3 seconds of no taps
+      tapTimerRef.current = setTimeout(() => {
+        setLogoTapCount(0)
+      }, 3000)
+
+      // Unlock at 5 taps
+      if (newCount >= 5) {
+        setShowLoginForm(true)
+        return 0
+      }
+
+      return newCount
+    })
+  }
+
+  // Handle partner login
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoginError('')
+    setIsLoggingIn(true)
+
+    try {
+      const response = await fetch('/api/location-partner/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ partnerId, pin }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        setPartnerStats(data.partner)
+        setShowLoginForm(false)
+        setPin('')
+      } else {
+        setLoginError(data.error || 'Invalid PIN')
+      }
+    } catch (error) {
+      console.error('Login error:', error)
+      setLoginError('Failed to login')
+    } finally {
+      setIsLoggingIn(false)
+    }
+  }
 
   // Track the tap and get partner info on page load
   useEffect(() => {
@@ -150,18 +224,167 @@ END:VCARD`
   const partnerDisplayName =
     partner?.location_name || partner?.company_name || 'our partner'
 
+  // If partner is logged in, show their dashboard
+  if (partnerStats) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-green-50 to-blue-50 dark:from-gray-900 dark:to-gray-800">
+        <div className="mx-auto max-w-2xl px-4 py-8">
+          {/* Partner Dashboard Header */}
+          <div className="mb-6 text-center">
+            <h1 className="text-2xl font-black text-gray-900 dark:text-white">
+              🦶 Partner Portal
+            </h1>
+            <p className="text-lg font-semibold text-green-600">
+              {partnerStats.name}
+            </p>
+          </div>
+
+          {/* Stats Cards */}
+          <div className="mb-6 grid grid-cols-3 gap-4">
+            <Card className="p-4 text-center">
+              <div className="text-3xl font-black text-blue-600">
+                {partnerStats.totalTaps}
+              </div>
+              <div className="text-xs text-gray-600 dark:text-gray-400">
+                Total Scans
+              </div>
+            </Card>
+            <Card className="p-4 text-center">
+              <div className="text-3xl font-black text-green-600">
+                {partnerStats.totalConversions}
+              </div>
+              <div className="text-xs text-gray-600 dark:text-gray-400">
+                Bookings
+              </div>
+            </Card>
+            <Card className="p-4 text-center">
+              <div className="text-3xl font-black text-amber-600">
+                ${partnerStats.creditBalance.toFixed(2)}
+              </div>
+              <div className="text-xs text-gray-600 dark:text-gray-400">
+                Credits
+              </div>
+            </Card>
+          </div>
+
+          {/* Credit Explanation */}
+          <Card className="mb-6 p-4">
+            <h3 className="mb-2 font-bold">How Credits Work</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              You earn 1% of every job that books from your NFC card. Credits
+              can be used toward your own carpet cleaning service.
+            </p>
+          </Card>
+
+          {/* Cash Out Section */}
+          <Card className="mb-6 border-2 border-amber-300 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-900/20">
+            <h3 className="mb-2 font-bold text-amber-800 dark:text-amber-200">
+              Ready to Cash Out?
+            </h3>
+            <p className="mb-3 text-sm text-amber-700 dark:text-amber-300">
+              When you have enough credits, contact us to apply them to your
+              next cleaning!
+            </p>
+            <Button
+              className="w-full bg-amber-600 hover:bg-amber-700"
+              onClick={() =>
+                (window.location.href =
+                  'sms:719-249-8791?body=Hi! I want to use my partner credits toward a cleaning.')
+              }
+            >
+              Text to Schedule & Use Credits
+            </Button>
+          </Card>
+
+          {/* Logout */}
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => setPartnerStats(null)}
+          >
+            Exit Partner Portal
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-50 to-green-50 dark:from-gray-900 dark:to-gray-800">
+      {/* Login Modal */}
+      {showLoginForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <Card className="w-full max-w-sm p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Lock className="h-5 w-5 text-green-600" />
+                <h2 className="text-lg font-bold">Partner Login</h2>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setShowLoginForm(false)
+                  setPin('')
+                  setLoginError('')
+                }}
+              >
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+            <form onSubmit={handleLogin}>
+              <div className="mb-4">
+                <label className="mb-1 block text-sm font-medium">
+                  Enter your 4-digit PIN
+                </label>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={4}
+                  value={pin}
+                  onChange={(e) =>
+                    setPin(e.target.value.replace(/\D/g, '').slice(0, 4))
+                  }
+                  placeholder="••••"
+                  className="text-center text-2xl tracking-widest"
+                  autoFocus
+                />
+                {loginError && (
+                  <p className="mt-2 text-sm text-red-600">{loginError}</p>
+                )}
+              </div>
+              <Button
+                type="submit"
+                className="w-full bg-green-600 hover:bg-green-700"
+                disabled={pin.length !== 4 || isLoggingIn}
+              >
+                {isLoggingIn ? 'Logging in...' : 'Login'}
+              </Button>
+            </form>
+          </Card>
+        </div>
+      )}
+
       {/* Hero Section */}
       <div className="mx-auto max-w-2xl px-4 py-8">
-        {/* Logo/Header */}
-        <div className="mb-6 text-center">
+        {/* Logo/Header - Tappable for Easter Egg */}
+        <div
+          className="mb-6 cursor-pointer text-center select-none"
+          onClick={handleLogoTap}
+        >
           <h1 className="text-4xl font-black text-gray-900 dark:text-white">
             🦶 Sasquatch
           </h1>
           <p className="text-lg font-semibold text-gray-600 dark:text-gray-300">
             Carpet Cleaning
           </p>
+          {/* Subtle hint after 2 taps */}
+          {logoTapCount >= 2 && logoTapCount < 5 && (
+            <p className="mt-1 animate-pulse text-xs text-gray-400">
+              {5 - logoTapCount} more...
+            </p>
+          )}
         </div>
 
         {/* Location Partner Badge */}

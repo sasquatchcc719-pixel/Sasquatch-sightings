@@ -70,6 +70,7 @@ export default function LocationPartnersPage() {
     location_type: '',
     phone: '',
     card_id: '',
+    pin: '',
   })
 
   useEffect(() => {
@@ -215,6 +216,7 @@ export default function LocationPartnersPage() {
         location_type: '',
         phone: '',
         card_id: '',
+        pin: '',
       })
       setIsDialogOpen(false)
       void loadData()
@@ -564,6 +566,30 @@ export default function LocationPartnersPage() {
                   />
                   <p className="mt-1 text-xs text-gray-500">
                     Physical card identifier for tracking
+                  </p>
+                </div>
+
+                <div>
+                  <Label htmlFor="pin">Portal PIN (4 digits) *</Label>
+                  <Input
+                    id="pin"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]{4}"
+                    maxLength={4}
+                    value={newPartner.pin}
+                    onChange={(e) =>
+                      setNewPartner({
+                        ...newPartner,
+                        pin: e.target.value.replace(/\D/g, '').slice(0, 4),
+                      })
+                    }
+                    placeholder="1234"
+                    required
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    They&apos;ll use this PIN to access their portal (tap logo
+                    5x to reveal login)
                   </p>
                 </div>
 
