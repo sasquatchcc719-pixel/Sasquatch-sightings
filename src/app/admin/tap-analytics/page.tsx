@@ -198,6 +198,12 @@ export default function TapAnalyticsPage() {
     )
   }
 
+  const handleCopyURL = () => {
+    const url = `${window.location.origin}/tap`
+    navigator.clipboard.writeText(url)
+    alert('URL copied to clipboard!')
+  }
+
   return (
     <div className="mx-auto max-w-6xl space-y-6 p-6">
       <div className="flex items-center justify-between">
@@ -224,6 +230,36 @@ export default function TapAnalyticsPage() {
           ))}
         </div>
       </div>
+
+      {/* Landing Page Quick Links */}
+      <Card className="border-blue-500 bg-blue-50 p-4 dark:bg-blue-950">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold text-blue-900 dark:text-blue-100">
+              NFC Card Landing Page
+            </p>
+            <p className="text-xs text-blue-700 dark:text-blue-300">
+              {typeof window !== 'undefined' && `${window.location.origin}/tap`}
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <a
+              href="/tap"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+            >
+              View Landing Page
+            </a>
+            <button
+              onClick={handleCopyURL}
+              className="rounded bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700"
+            >
+              Copy URL
+            </button>
+          </div>
+        </div>
+      </Card>
 
       {/* Overview Stats */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
