@@ -19,11 +19,12 @@ export default async function AdminPartnersPage() {
   // Use admin client to bypass RLS
   const supabase = createAdminClient()
 
-  // Fetch all partners (excluding admin records)
+  // Fetch all referral partners (excluding admin records and vendors)
   const { data: partners } = await supabase
     .from('partners')
     .select('*')
     .neq('role', 'admin')
+    .or('partner_type.is.null,partner_type.eq.referral')
     .order('created_at', { ascending: false })
 
   // Fetch all referrals with partner info
