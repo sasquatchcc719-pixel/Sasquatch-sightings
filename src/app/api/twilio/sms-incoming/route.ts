@@ -23,7 +23,9 @@ function normalizePhone(phone: string): string {
 // Extract customer info from conversation messages
 type ExtractedInfo = {
   name: string | null
-  location: string | null
+  address: string | null
+  email: string | null
+  zipCode: string | null
   serviceNeeded: string | null
 }
 
@@ -32,7 +34,9 @@ function extractCustomerInfo(
 ): ExtractedInfo {
   const info: ExtractedInfo = {
     name: null,
-    location: null,
+    address: null,
+    email: null,
+    zipCode: null,
     serviceNeeded: null,
   }
 
@@ -71,39 +75,32 @@ function extractCustomerInfo(
     }
   }
 
-  // Extract location - look for zip codes, city names, addresses
-  const zipMatch = userMessages.match(/\b(80\d{3})\b/) // Colorado zip codes start with 80
+  // Extract email
+  const emailMatch = userMessages.match(
+    /\b([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})\b/,
+  )
+  if (emailMatch) {
+    info.email = emailMatch[1].toLowerCase()
+  }
+
+  // Extract zip code (Colorado zip codes start with 80)
+  const zipMatch = userMessages.match(/\b(80\d{3})\b/)
   if (zipMatch) {
-    info.location = zipMatch[1]
-  } else {
-    // Look for city/area names
-    const cities = [
-      'monument',
-      'castle rock',
-      'larkspur',
-      'palmer lake',
-      'woodmoor',
-      'colorado springs',
-      'northgate',
-      'briargate',
-      'flying horse',
-      'gleneagle',
-      'black forest',
-      'falcon',
-      'peyton',
-      'elbert',
-      "king's deer",
-      'tri-lakes',
-    ]
-    const lowerMessages = userMessages.toLowerCase()
-    for (const city of cities) {
-      if (lowerMessages.includes(city)) {
-        info.location = city
-          .split(' ')
-          .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-          .join(' ')
-        break
-      }
+    info.zipCode = zipMatch[1]
+  }
+
+  // Extract full address - look for street number + street name patterns
+  const addressPatterns = [
+    // "123 Main Street" or "123 Main St"
+    /\b(\d{1,5}\s+[A-Za-z0-9\s]+(?:street|st|avenue|ave|road|rd|drive|dr|lane|ln|way|court|ct|circle|cir|boulevard|blvd|place|pl)\.?(?:\s*,?\s*(?:apt|apartment|unit|suite|ste|#)\.?\s*\d+[A-Za-z]?)?)/i,
+    // "I live at 123 Main St" or "my address is 123 Main"
+    /(?:live at|address is|i'm at|located at|we're at)\s+(\d{1,5}\s+[A-Za-z0-9\s,]+)/i,
+  ]
+  for (const pattern of addressPatterns) {
+    const match = userMessages.match(pattern)
+    if (match && match[1]) {
+      info.address = match[1].trim()
+      break
     }
   }
 
@@ -348,23 +345,21 @@ export async function POST(request: NextRequest) {
         .eq('id', conversation.id)
 
       // Check if we should create a lead (has enough info and no lead exists yet)
+      // Required: name + address + email (phone is already known from SMS)
       if (!conversation.lead_id) {
         const extractedInfo = extractCustomerInfo(messages)
 
-        // Create lead if we have name AND (location OR at least 3 message exchanges)
-        const hasEnoughExchanges =
-          messages.filter((m) => m.role === 'user').length >= 2
-        const shouldCreateLead =
-          extractedInfo.name && (extractedInfo.location || hasEnoughExchanges)
+        // Create lead only when we have all required info
+        const hasRequiredInfo =
+          extractedInfo.name && extractedInfo.address && extractedInfo.email
 
-        if (shouldCreateLead) {
+        if (hasRequiredInfo) {
           const leadNotes = [
             extractedInfo.serviceNeeded
               ? `Service: ${extractedInfo.serviceNeeded}`
               : null,
-            extractedInfo.location
-              ? `Location: ${extractedInfo.location}`
-              : null,
+            extractedInfo.address ? `Address: ${extractedInfo.address}` : null,
+            extractedInfo.zipCode ? `Zip: ${extractedInfo.zipCode}` : null,
             'Source: SMS conversation',
           ]
             .filter(Boolean)
@@ -375,12 +370,11 @@ export async function POST(request: NextRequest) {
             .insert({
               phone: normalizedPhone,
               name: extractedInfo.name,
+              email: extractedInfo.email,
               source: conversation.source === 'NFC Card' ? 'NFC Card' : 'SMS',
               notes: leadNotes,
               status: 'new',
-              zip_code: extractedInfo.location?.match(/\d{5}/)
-                ? extractedInfo.location
-                : null,
+              zip_code: extractedInfo.zipCode || null,
             })
             .select()
             .single()
@@ -393,7 +387,7 @@ export async function POST(request: NextRequest) {
               .eq('id', conversation.id)
 
             console.log(
-              `✅ Created lead from conversation: ${newLead.id} (Name: ${extractedInfo.name})`,
+              `✅ Created lead from conversation: ${newLead.id} (Name: ${extractedInfo.name}, Email: ${extractedInfo.email}, Address: ${extractedInfo.address})`,
             )
           }
         }
