@@ -172,6 +172,13 @@ export function AdminNavigation() {
       active: pathname === '/admin/tap-analytics',
       description: 'Card tap statistics',
     },
+    {
+      name: 'Vendor Chats',
+      href: '/admin/conversations?source=vendor',
+      icon: MessageSquare,
+      active: false, // TODO: Check URL params when filtering is implemented
+      description: 'AI chats from vendor cards',
+    },
   ]
 
   // Check active states for dropdown highlights
