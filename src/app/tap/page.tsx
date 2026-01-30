@@ -151,27 +151,7 @@ END:VCARD`
           />
         </div>
 
-        {/* Special Offer Badge */}
-        <div className="mb-6 rounded-lg bg-red-500 p-4 text-center text-white shadow-lg">
-          <p className="text-sm font-semibold tracking-wide uppercase">
-            Exclusive NFC Card Offer
-          </p>
-          <p className="text-4xl font-bold">$20 OFF</p>
-          <p className="text-sm">Every Cleaning</p>
-        </div>
-
-        {/* Service Areas */}
-        <Card className="mb-6 p-4">
-          <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
-            <MapPin className="h-4 w-4" />
-            <span className="font-medium">We Serve:</span>
-            <span>
-              Monument • Colorado Springs • Castle Rock • Black Forest
-            </span>
-          </div>
-        </Card>
-
-        {/* Action Buttons */}
+        {/* Action Buttons - Moved right under card */}
         <div className="mb-6 space-y-3">
           {/* PRIMARY CTA - Book Online with Animation */}
           <a
@@ -259,6 +239,17 @@ END:VCARD`
             Save to Contacts
           </Button>
         </div>
+
+        {/* Service Areas */}
+        <Card className="mb-6 p-4">
+          <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+            <MapPin className="h-4 w-4" />
+            <span className="font-medium">We Serve:</span>
+            <span>
+              Monument • Colorado Springs • Castle Rock • Black Forest
+            </span>
+          </div>
+        </Card>
 
         {/* Contact Form */}
         {showForm && (
