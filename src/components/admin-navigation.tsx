@@ -63,18 +63,18 @@ export function AdminNavigation() {
       description: 'Business card analytics',
     },
     {
-      name: 'Location Partners',
+      name: 'Vendors',
       href: '/admin/location-partners',
       icon: MapPin,
       active: pathname === '/admin/location-partners',
-      description: 'NFC cards at local businesses',
+      description: 'Local businesses with NFC cards',
     },
     {
-      name: 'Referral Partners',
+      name: 'Partners',
       href: '/admin/partners',
       icon: Users,
       active: pathname === '/admin/partners',
-      description: 'Partner referral program',
+      description: 'Referral partners (realtors, PMs)',
     },
     {
       name: 'Contest',
@@ -275,7 +275,7 @@ export function AdminNavigation() {
 
                 <div className="border-t p-2">
                   <div className="text-muted-foreground px-3 py-1 text-xs font-semibold uppercase">
-                    Location Partner Demo
+                    Vendor Pages
                   </div>
                   <a
                     href="/location/demo"
@@ -287,16 +287,16 @@ export function AdminNavigation() {
                     <MapPin className="h-4 w-4 text-red-500" />
                     <div>
                       <div className="text-sm font-medium">
-                        Location Partner Page
+                        Vendor Landing Page
                       </div>
                       <div className="text-muted-foreground text-xs">
-                        What vendors see when card is scanned
+                        What customers see when scanning vendor NFC card
                       </div>
                     </div>
                     <ExternalLink className="ml-auto h-3 w-3" />
                   </a>
                   <p className="text-muted-foreground px-3 py-1 text-xs">
-                    Tip: Get real partner URLs from Location Partners admin
+                    Tip: Get real vendor URLs from Vendors admin page
                   </p>
                 </div>
               </div>

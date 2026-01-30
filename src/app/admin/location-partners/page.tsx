@@ -266,7 +266,7 @@ export default function LocationPartnersPage() {
         {/* Header */}
         <div className="mb-8 flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold">Location Partners</h1>
+            <h1 className="text-3xl font-bold">Vendors</h1>
             <p className="mt-2 text-gray-600 dark:text-gray-400">
               Manage NFC cards at local establishments
             </p>
@@ -277,7 +277,7 @@ export default function LocationPartnersPage() {
             onClick={() => setIsDialogOpen(true)}
           >
             <Plus className="mr-2 h-5 w-5" />
-            Add Location Partner
+            Add Vendor
           </Button>
         </div>
 
@@ -291,9 +291,9 @@ export default function LocationPartnersPage() {
               </h2>
             </div>
             <p className="mb-4 text-sm text-yellow-700 dark:text-yellow-300">
-              These customers engaged with a location partner&apos;s NFC card.
-              Confirm when the job is booked and enter the job amount. Partner
-              earns <strong>1% of job value</strong> as credit.
+              These customers engaged with a vendor&apos;s NFC card. Confirm
+              when the job is booked and enter the job amount. Partner earns{' '}
+              <strong>1% of job value</strong> as credit.
             </p>
             <div className="space-y-3">
               {pendingConversions.map((conversion) => (
@@ -463,7 +463,7 @@ export default function LocationPartnersPage() {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
             <Card className="max-h-[90vh] w-full max-w-2xl overflow-y-auto p-6">
               <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-2xl font-bold">Create Location Partner</h2>
+                <h2 className="text-2xl font-bold">Create Vendor</h2>
                 <Button
                   variant="ghost"
                   size="sm"
@@ -594,7 +594,7 @@ export default function LocationPartnersPage() {
                 </div>
 
                 <Button type="submit" className="w-full">
-                  Create Location Partner
+                  Create Vendor
                 </Button>
               </form>
             </Card>
@@ -639,11 +639,9 @@ export default function LocationPartnersPage() {
         {partners.length === 0 ? (
           <Card className="p-12 text-center">
             <MapPin className="mx-auto mb-4 h-12 w-12 text-gray-400" />
-            <h3 className="mb-2 text-lg font-semibold">
-              No location partners yet
-            </h3>
+            <h3 className="mb-2 text-lg font-semibold">No vendors yet</h3>
             <p className="mb-4 text-sm text-gray-600 dark:text-gray-400">
-              Add your first location partner to start tracking NFC card taps
+              Add your first vendor to start tracking NFC card taps
             </p>
           </Card>
         ) : (
