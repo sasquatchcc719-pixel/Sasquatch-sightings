@@ -20,6 +20,135 @@ function normalizePhone(phone: string): string {
   return digits.startsWith('+') ? phone : `+${digits}`
 }
 
+// Extract customer info from conversation messages
+type ExtractedInfo = {
+  name: string | null
+  location: string | null
+  serviceNeeded: string | null
+}
+
+function extractCustomerInfo(
+  messages: { role: string; content: string }[],
+): ExtractedInfo {
+  const info: ExtractedInfo = {
+    name: null,
+    location: null,
+    serviceNeeded: null,
+  }
+
+  // Get all user messages
+  const userMessages = messages
+    .filter((m) => m.role === 'user')
+    .map((m) => m.content)
+    .join(' ')
+
+  // Extract name - look for patterns like "I'm John", "My name is John", "This is John", "It's Sarah"
+  const namePatterns = [
+    /(?:my name is|i'm|this is|it's|i am|name's|call me)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i,
+    /^([A-Z][a-z]+)(?:\s+here|\s+speaking)?[.!]?\s*$/im,
+  ]
+  for (const pattern of namePatterns) {
+    const match = userMessages.match(pattern)
+    if (match && match[1]) {
+      // Filter out common false positives
+      const name = match[1].trim()
+      const falsePositives = [
+        'Hi',
+        'Hello',
+        'Hey',
+        'Yes',
+        'No',
+        'Sure',
+        'Thanks',
+        'Great',
+        'Ok',
+        'Okay',
+      ]
+      if (!falsePositives.includes(name)) {
+        info.name = name
+        break
+      }
+    }
+  }
+
+  // Extract location - look for zip codes, city names, addresses
+  const zipMatch = userMessages.match(/\b(80\d{3})\b/) // Colorado zip codes start with 80
+  if (zipMatch) {
+    info.location = zipMatch[1]
+  } else {
+    // Look for city/area names
+    const cities = [
+      'monument',
+      'castle rock',
+      'larkspur',
+      'palmer lake',
+      'woodmoor',
+      'colorado springs',
+      'northgate',
+      'briargate',
+      'flying horse',
+      'gleneagle',
+      'black forest',
+      'falcon',
+      'peyton',
+      'elbert',
+      "king's deer",
+      'tri-lakes',
+    ]
+    const lowerMessages = userMessages.toLowerCase()
+    for (const city of cities) {
+      if (lowerMessages.includes(city)) {
+        info.location = city
+          .split(' ')
+          .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+          .join(' ')
+        break
+      }
+    }
+  }
+
+  // Extract service needed
+  const serviceKeywords = {
+    carpet: [
+      'carpet',
+      'carpets',
+      'room',
+      'rooms',
+      'bedroom',
+      'living room',
+      'basement',
+    ],
+    upholstery: [
+      'couch',
+      'sofa',
+      'sectional',
+      'loveseat',
+      'chair',
+      'furniture',
+      'upholstery',
+      'recliner',
+    ],
+    tile: ['tile', 'grout', 'floor', 'floors', 'kitchen floor'],
+    rug: ['rug', 'rugs', 'area rug'],
+    stairs: ['stairs', 'stairway', 'steps'],
+    leather: ['leather'],
+    pet: ['pet', 'dog', 'cat', 'urine', 'stain', 'odor'],
+  }
+
+  const lowerMessages = userMessages.toLowerCase()
+  const detectedServices: string[] = []
+  for (const [service, keywords] of Object.entries(serviceKeywords)) {
+    if (keywords.some((kw) => lowerMessages.includes(kw))) {
+      detectedServices.push(service)
+    }
+  }
+  if (detectedServices.length > 0) {
+    info.serviceNeeded = detectedServices.join(', ')
+  }
+
+  return info
+}
+
 // Detect if message indicates they came from a partner NFC card
 function detectPartnerMention(message: string): boolean {
   const lowerMessage = message.toLowerCase()
@@ -115,37 +244,19 @@ export async function POST(request: NextRequest) {
       conversation = newConvo
       console.log(`✨ Created new conversation: ${conversation.id}`)
 
-      // Check if this looks like a partner NFC referral
+      // Check if this looks like a partner NFC referral and tag the conversation
       if (detectPartnerMention(messageBody)) {
         console.log(
           `🎯 Partner NFC referral detected in message: "${messageBody}"`,
         )
 
-        // Create a lead for this partner referral (we'll try to match the partner later)
-        // For now, mark it as NFC source so it shows up in the location partners admin
-        const { data: newLead, error: leadError } = await supabase
-          .from('leads')
-          .insert({
-            phone: normalizedPhone,
-            source: 'NFC Card',
-            notes: `First message: "${messageBody}"`,
-            status: 'new',
-          })
-          .select()
-          .single()
+        // Tag conversation as NFC source - lead will be created once we collect enough info
+        await supabase
+          .from('conversations')
+          .update({ source: 'NFC Card' })
+          .eq('id', conversation.id)
 
-        if (!leadError && newLead) {
-          // Link the lead to this conversation
-          await supabase
-            .from('conversations')
-            .update({
-              lead_id: newLead.id,
-              source: 'NFC Card',
-            })
-            .eq('id', conversation.id)
-
-          console.log(`✅ Created NFC lead: ${newLead.id}`)
-        }
+        conversation.source = 'NFC Card'
       }
     } else {
       // Reactivate conversation if it was completed or escalated
@@ -235,6 +346,58 @@ export async function POST(request: NextRequest) {
           status: newStatus,
         })
         .eq('id', conversation.id)
+
+      // Check if we should create a lead (has enough info and no lead exists yet)
+      if (!conversation.lead_id) {
+        const extractedInfo = extractCustomerInfo(messages)
+
+        // Create lead if we have name AND (location OR at least 3 message exchanges)
+        const hasEnoughExchanges =
+          messages.filter((m) => m.role === 'user').length >= 2
+        const shouldCreateLead =
+          extractedInfo.name && (extractedInfo.location || hasEnoughExchanges)
+
+        if (shouldCreateLead) {
+          const leadNotes = [
+            extractedInfo.serviceNeeded
+              ? `Service: ${extractedInfo.serviceNeeded}`
+              : null,
+            extractedInfo.location
+              ? `Location: ${extractedInfo.location}`
+              : null,
+            'Source: SMS conversation',
+          ]
+            .filter(Boolean)
+            .join('\n')
+
+          const { data: newLead, error: leadError } = await supabase
+            .from('leads')
+            .insert({
+              phone: normalizedPhone,
+              name: extractedInfo.name,
+              source: conversation.source === 'NFC Card' ? 'NFC Card' : 'SMS',
+              notes: leadNotes,
+              status: 'new',
+              zip_code: extractedInfo.location?.match(/\d{5}/)
+                ? extractedInfo.location
+                : null,
+            })
+            .select()
+            .single()
+
+          if (!leadError && newLead) {
+            // Link the lead to this conversation
+            await supabase
+              .from('conversations')
+              .update({ lead_id: newLead.id })
+              .eq('id', conversation.id)
+
+            console.log(
+              `✅ Created lead from conversation: ${newLead.id} (Name: ${extractedInfo.name})`,
+            )
+          }
+        }
+      }
 
       // Send AI response via Twilio
       await sendCustomerSMS(
