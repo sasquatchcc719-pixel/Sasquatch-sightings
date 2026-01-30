@@ -13,6 +13,7 @@ import {
   X,
   ExternalLink,
   MessageSquare,
+  Trash2,
 } from 'lucide-react'
 import { createClient } from '@/supabase/client'
 
@@ -141,6 +142,35 @@ export default function LocationPartnersPage() {
     void navigator.clipboard.writeText(url)
     setCopiedId(partnerId)
     setTimeout(() => setCopiedId(null), 2000)
+  }
+
+  const deleteVendor = async (partnerId: string, partnerName: string) => {
+    if (
+      !confirm(
+        `Are you sure you want to delete "${partnerName}"? This cannot be undone.`,
+      )
+    ) {
+      return
+    }
+
+    try {
+      const supabase = createClient()
+      const { error } = await supabase
+        .from('partners')
+        .delete()
+        .eq('id', partnerId)
+
+      if (error) {
+        console.error('Failed to delete vendor:', error)
+        alert('Failed to delete vendor: ' + error.message)
+        return
+      }
+
+      void loadData()
+    } catch (error) {
+      console.error('Failed to delete vendor:', error)
+      alert('Failed to delete vendor')
+    }
   }
 
   const conversionRate = (taps: number, conversions: number) => {
@@ -481,6 +511,19 @@ export default function LocationPartnersPage() {
                           Copy URL
                         </>
                       )}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                      onClick={() =>
+                        deleteVendor(
+                          partner.id,
+                          partner.location_name || partner.company_name,
+                        )
+                      }
+                    >
+                      <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
                 </div>
