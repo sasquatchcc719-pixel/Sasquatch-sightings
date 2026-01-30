@@ -84,7 +84,7 @@ FN:Sasquatch Carpet Cleaning
 ORG:Sasquatch Carpet Cleaning
 TEL;TYPE=WORK,VOICE:719-249-8791
 URL:https://sasquatchcarpet.com
-NOTE:$20 OFF your first cleaning! Mention this card.
+NOTE:$20 OFF every cleaning! Mention this card.
 END:VCARD`
 
     const blob = new Blob([vcard], { type: 'text/vcard' })
@@ -110,7 +110,7 @@ END:VCARD`
           phone: formData.phone,
           zip_code: formData.zip,
           source: cardId ? `NFC Card - ${cardId}` : 'NFC Card Tap',
-          notes: `$20 OFF coupon from NFC card tap`,
+          notes: `$20 OFF coupon from NFC card tap - valid every cleaning`,
         }),
       })
 
@@ -157,7 +157,7 @@ END:VCARD`
             Exclusive NFC Card Offer
           </p>
           <p className="text-4xl font-bold">$20 OFF</p>
-          <p className="text-sm">Your First Cleaning</p>
+          <p className="text-sm">Every Cleaning</p>
         </div>
 
         {/* Service Areas */}
@@ -287,9 +287,7 @@ END:VCARD`
         <div className="text-center text-xs text-gray-500">
           <p>Sasquatch Carpet Cleaning</p>
           <p>Monument • Colorado Springs • Castle Rock • Black Forest</p>
-          <p className="mt-2">
-            $20 off valid on first-time residential cleanings only.
-          </p>
+          <p className="mt-2">$20 off valid on all residential cleanings.</p>
         </div>
       </div>
     </div>
