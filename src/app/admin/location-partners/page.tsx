@@ -30,7 +30,65 @@ interface LocationPartner {
   total_conversions: number
   google_review_url: string | null
   coupon_code: string | null
+  last_sasquatch_tap_at: string | null
+  last_review_tap_at: string | null
   created_at: string
+}
+
+// Helper to calculate station status
+function getStationStatus(
+  lastTap: string | null,
+  totalTaps: number,
+): 'active' | 'warning' | 'inactive' | 'never' {
+  if (!lastTap || totalTaps === 0) return 'never'
+
+  const daysSinceLastTap = Math.floor(
+    (Date.now() - new Date(lastTap).getTime()) / (1000 * 60 * 60 * 24),
+  )
+
+  if (daysSinceLastTap <= 7) return 'active'
+  if (daysSinceLastTap <= 14) return 'warning'
+  return 'inactive'
+}
+
+// Status badge component
+function StatusBadge({ status, label }: { status: string; label: string }) {
+  const statusConfig: Record<string, { icon: string; className: string }> = {
+    active: {
+      icon: '🟢',
+      className:
+        'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+    },
+    warning: {
+      icon: '🟡',
+      className:
+        'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
+    },
+    inactive: {
+      icon: '🔴',
+      className: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
+    },
+    never: {
+      icon: '⚪',
+      className:
+        'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
+    },
+    not_configured: {
+      icon: '➖',
+      className:
+        'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
+    },
+  }
+
+  const config = statusConfig[status] || statusConfig.never
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${config.className}`}
+    >
+      {config.icon} {label}
+    </span>
+  )
 }
 
 interface NFCLead {
@@ -547,8 +605,65 @@ export default function LocationPartnersPage() {
                   </div>
                 </div>
 
+                {/* Station Health Status */}
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-gray-500">Sasquatch:</span>
+                    <StatusBadge
+                      status={getStationStatus(
+                        partner.last_sasquatch_tap_at,
+                        partner.total_taps,
+                      )}
+                      label={
+                        getStationStatus(
+                          partner.last_sasquatch_tap_at,
+                          partner.total_taps,
+                        ) === 'active'
+                          ? 'Active'
+                          : getStationStatus(
+                                partner.last_sasquatch_tap_at,
+                                partner.total_taps,
+                              ) === 'warning'
+                            ? 'Check In'
+                            : getStationStatus(
+                                  partner.last_sasquatch_tap_at,
+                                  partner.total_taps,
+                                ) === 'inactive'
+                              ? 'Inactive'
+                              : 'No Taps'
+                      }
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-gray-500">Review:</span>
+                    {partner.google_review_url ? (
+                      <StatusBadge
+                        status={getStationStatus(partner.last_review_tap_at, 1)}
+                        label={
+                          getStationStatus(partner.last_review_tap_at, 1) ===
+                          'active'
+                            ? 'Active'
+                            : getStationStatus(
+                                  partner.last_review_tap_at,
+                                  1,
+                                ) === 'warning'
+                              ? 'Check In'
+                              : getStationStatus(
+                                    partner.last_review_tap_at,
+                                    1,
+                                  ) === 'inactive'
+                                ? 'Inactive'
+                                : 'No Taps'
+                        }
+                      />
+                    ) : (
+                      <StatusBadge status="not_configured" label="Not Set Up" />
+                    )}
+                  </div>
+                </div>
+
                 {/* Stats Grid */}
-                <div className="mt-4 grid grid-cols-2 gap-2 sm:mt-6 sm:gap-4 md:grid-cols-5">
+                <div className="mt-4 grid grid-cols-2 gap-2 sm:mt-6 sm:gap-4 md:grid-cols-6">
                   <div className="rounded-lg bg-blue-50 p-3 sm:p-4 dark:bg-blue-900/20">
                     <div className="text-lg font-bold text-blue-600 sm:text-2xl">
                       {partner.total_taps || 0}
