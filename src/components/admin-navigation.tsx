@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useSearchParams } from 'next/navigation'
 import {
   Briefcase,
   Trophy,
@@ -100,6 +100,8 @@ function NavDropdown({
 
 export function AdminNavigation() {
   const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const isVendorSource = searchParams.get('source') === 'vendor'
   const [operationsOpen, setOperationsOpen] = useState(false)
   const [leadsOpen, setLeadsOpen] = useState(false)
   const [vendorsOpen, setVendorsOpen] = useState(false)
@@ -158,7 +160,7 @@ export function AdminNavigation() {
       name: 'AI Chat',
       href: '/admin/conversations',
       icon: MessageSquare,
-      active: pathname === '/admin/conversations',
+      active: pathname === '/admin/conversations' && !isVendorSource,
       description: 'Text message dispatcher',
     },
   ]
@@ -176,7 +178,7 @@ export function AdminNavigation() {
       name: 'Vendor Chats',
       href: '/admin/conversations?source=vendor',
       icon: MessageSquare,
-      active: false, // TODO: Check URL params when filtering is implemented
+      active: pathname === '/admin/conversations' && isVendorSource,
       description: 'AI chats from vendor cards',
     },
   ]
