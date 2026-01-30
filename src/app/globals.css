@@ -131,3 +131,19 @@
     transform: translateY(0);
   }
 }
+
+@keyframes button-press {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+  }
+  5% {
+    transform: translateY(4px) scale(0.98);
+  }
+  10% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-button-press {
+  animation: button-press 3s ease-in-out infinite;
+}

@@ -236,25 +236,7 @@ END:VCARD`
             <div className="absolute inset-0 translate-x-[-100%] bg-gradient-to-r from-transparent via-white/10 to-transparent transition-transform duration-700 group-hover:translate-x-[100%]" />
           </a>
 
-          {/* Add animation styles */}
-          <style jsx>{`
-            @keyframes button-press {
-              0%,
-              100% {
-                transform: translateY(0) scale(1);
-              }
-              5% {
-                transform: translateY(4px) scale(0.98);
-              }
-              10% {
-                transform: translateY(0) scale(1);
-              }
-            }
-
-            .animate-button-press {
-              animation: button-press 3s ease-in-out infinite;
-            }
-          `}</style>
+          {/* Call Button */}
           <Button
             onClick={handleCall}
             size="lg"
