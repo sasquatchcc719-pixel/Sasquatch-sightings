@@ -251,18 +251,6 @@ END:VCARD`
           </div>
         </Card>
 
-        {/* Why Choose Us */}
-        <Card className="mb-6 p-6">
-          <h3 className="mb-4 text-xl font-bold">Why Choose Sasquatch?</h3>
-          <ul className="space-y-2 text-sm">
-            <li>✅ Professional carpet, tile & upholstery cleaning</li>
-            <li>✅ Serving Colorado Springs area since 2012</li>
-            <li>✅ Same-day service available</li>
-            <li>✅ 100% satisfaction guaranteed</li>
-            <li>✅ Eco-friendly cleaning solutions</li>
-          </ul>
-        </Card>
-
         {/* Recent Jobs Carousel */}
         <div className="mb-6">
           <h3 className="mb-4 text-xl font-bold">Recent Work in Your Area</h3>
