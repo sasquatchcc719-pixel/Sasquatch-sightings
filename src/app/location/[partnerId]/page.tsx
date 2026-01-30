@@ -251,6 +251,51 @@ END:VCARD`
           </div>
         </Card>
 
+        {/* Why We're Different */}
+        <Card className="mb-6 p-6">
+          <h3 className="mb-4 text-xl font-bold">
+            The Deepest Clean in Colorado
+          </h3>
+          <p className="mb-4 text-sm text-gray-700 dark:text-gray-300">
+            Our standard cleaning is what other companies call their &quot;deep
+            clean.&quot; Every job includes our full 3-step process:
+          </p>
+          <ul className="space-y-3 text-sm">
+            <li className="flex items-start gap-2">
+              <span className="font-bold text-green-600">1.</span>
+              <div>
+                <span className="font-semibold">Pre-Spray Treatment</span>
+                <p className="text-gray-600 dark:text-gray-400">
+                  Breaks down dirt, oils, and stains before we even start
+                </p>
+              </div>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="font-bold text-green-600">2.</span>
+              <div>
+                <span className="font-semibold">CRB Agitation</span>
+                <p className="text-gray-600 dark:text-gray-400">
+                  Counter-rotating brush works the solution deep into carpet
+                  fibers
+                </p>
+              </div>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="font-bold text-green-600">3.</span>
+              <div>
+                <span className="font-semibold">Hot Water Extraction</span>
+                <p className="text-gray-600 dark:text-gray-400">
+                  Powerful suction pulls out everything - dirt, allergens,
+                  bacteria
+                </p>
+              </div>
+            </li>
+          </ul>
+          <p className="mt-4 text-sm font-semibold text-green-700 dark:text-green-400">
+            The deepest clean you can get for the money. Period.
+          </p>
+        </Card>
+
         {/* Recent Jobs Carousel */}
         <div className="mb-6">
           <h3 className="mb-4 text-xl font-bold">Recent Work in Your Area</h3>
