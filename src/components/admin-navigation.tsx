@@ -15,11 +15,15 @@ import {
   MapPin,
   Menu,
   ChevronDown,
+  Eye,
+  Globe,
+  Award,
 } from 'lucide-react'
 
 export function AdminNavigation() {
   const pathname = usePathname()
   const [moreOpen, setMoreOpen] = useState(false)
+  const [previewOpen, setPreviewOpen] = useState(false)
 
   // Primary tabs - always visible
   const primaryTabs = [
@@ -161,42 +165,139 @@ export function AdminNavigation() {
                     )
                   })}
                 </div>
+              </div>
+            </>
+          )}
+        </div>
 
-                {/* External links */}
-                <div className="border-t p-2">
+        {/* Preview Pages dropdown */}
+        <div className="relative ml-auto">
+          <button
+            onClick={() => setPreviewOpen(!previewOpen)}
+            className="text-muted-foreground hover:text-foreground flex items-center gap-2 rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-green-700"
+          >
+            <Eye className="h-4 w-4" />
+            Preview
+            <ChevronDown
+              className={`h-3 w-3 transition-transform ${previewOpen ? 'rotate-180' : ''}`}
+            />
+          </button>
+
+          {previewOpen && (
+            <>
+              {/* Backdrop */}
+              <div
+                className="fixed inset-0 z-10"
+                onClick={() => setPreviewOpen(false)}
+              />
+
+              {/* Dropdown */}
+              <div className="bg-background absolute top-full right-0 z-20 mt-1 w-72 rounded-lg border shadow-lg">
+                <div className="p-2">
                   <div className="text-muted-foreground px-3 py-1 text-xs font-semibold uppercase">
-                    Preview Pages
+                    Customer-Facing Pages
                   </div>
                   <a
                     href="/tap"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="hover:bg-muted flex items-center gap-2 rounded-md px-3 py-2 text-sm"
+                    onClick={() => setPreviewOpen(false)}
+                    className="hover:bg-muted flex items-center gap-3 rounded-md px-3 py-2"
                   >
-                    <CreditCard className="h-4 w-4" />
-                    Business Card Page
+                    <CreditCard className="h-4 w-4 text-blue-500" />
+                    <div>
+                      <div className="text-sm font-medium">
+                        Business Card Page
+                      </div>
+                      <div className="text-muted-foreground text-xs">
+                        Your NFC card landing page
+                      </div>
+                    </div>
                     <ExternalLink className="ml-auto h-3 w-3" />
                   </a>
                   <a
-                    href="/location/demo"
+                    href="/contest"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="hover:bg-muted flex items-center gap-2 rounded-md px-3 py-2 text-sm"
+                    onClick={() => setPreviewOpen(false)}
+                    className="hover:bg-muted flex items-center gap-3 rounded-md px-3 py-2"
                   >
-                    <MapPin className="h-4 w-4" />
-                    Location Partner Page
+                    <Trophy className="h-4 w-4 text-amber-500" />
+                    <div>
+                      <div className="text-sm font-medium">Contest Page</div>
+                      <div className="text-muted-foreground text-xs">
+                        Sasquatch sightings contest
+                      </div>
+                    </div>
+                    <ExternalLink className="ml-auto h-3 w-3" />
+                  </a>
+                </div>
+
+                <div className="border-t p-2">
+                  <div className="text-muted-foreground px-3 py-1 text-xs font-semibold uppercase">
+                    Partner Pages
+                  </div>
+                  <a
+                    href="/partners"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => setPreviewOpen(false)}
+                    className="hover:bg-muted flex items-center gap-3 rounded-md px-3 py-2"
+                  >
+                    <Users className="h-4 w-4 text-purple-500" />
+                    <div>
+                      <div className="text-sm font-medium">Partner Signup</div>
+                      <div className="text-muted-foreground text-xs">
+                        Referral partner registration
+                      </div>
+                    </div>
                     <ExternalLink className="ml-auto h-3 w-3" />
                   </a>
                   <a
                     href="/preferred-partners"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="hover:bg-muted flex items-center gap-2 rounded-md px-3 py-2 text-sm"
+                    onClick={() => setPreviewOpen(false)}
+                    className="hover:bg-muted flex items-center gap-3 rounded-md px-3 py-2"
                   >
-                    <Users className="h-4 w-4" />
-                    Public Partners Page
+                    <Award className="h-4 w-4 text-green-500" />
+                    <div>
+                      <div className="text-sm font-medium">
+                        Preferred Partners
+                      </div>
+                      <div className="text-muted-foreground text-xs">
+                        Public partner directory
+                      </div>
+                    </div>
                     <ExternalLink className="ml-auto h-3 w-3" />
                   </a>
+                </div>
+
+                <div className="border-t p-2">
+                  <div className="text-muted-foreground px-3 py-1 text-xs font-semibold uppercase">
+                    Location Partner Demo
+                  </div>
+                  <a
+                    href="/location/demo"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => setPreviewOpen(false)}
+                    className="hover:bg-muted flex items-center gap-3 rounded-md px-3 py-2"
+                  >
+                    <MapPin className="h-4 w-4 text-red-500" />
+                    <div>
+                      <div className="text-sm font-medium">
+                        Location Partner Page
+                      </div>
+                      <div className="text-muted-foreground text-xs">
+                        What vendors see when card is scanned
+                      </div>
+                    </div>
+                    <ExternalLink className="ml-auto h-3 w-3" />
+                  </a>
+                  <p className="text-muted-foreground px-3 py-1 text-xs">
+                    Tip: Get real partner URLs from Location Partners admin
+                  </p>
                 </div>
               </div>
             </>
