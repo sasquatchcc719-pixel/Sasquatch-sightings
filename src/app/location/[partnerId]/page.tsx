@@ -181,7 +181,6 @@ END:VCARD`
             Exclusive Deal
           </p>
           <p className="text-4xl font-black">$20 OFF</p>
-          <p className="mt-1 text-lg font-semibold">Every Carpet Cleaning</p>
         </div>
 
         {/* Action Buttons */}
