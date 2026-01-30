@@ -17,12 +17,35 @@ import {
   Briefcase,
   Plus,
   Settings as SettingsIcon,
+  Rocket,
+  Users,
 } from 'lucide-react'
 
 type Settings = {
   annual_revenue_goal: number
   available_hours_per_week: number
   work_weeks_per_year: number
+  hiring_threshold: number
+  hiring_consecutive_weeks: number
+}
+
+type WeeklyRevenueData = {
+  weekStart: Date
+  weekEnd: Date
+  revenue: number
+  jobs: number
+  hours: number
+  meetsThreshold: boolean
+  isCurrentWeek: boolean
+}
+
+type HiringReadiness = {
+  currentWeekRevenue: number
+  consecutiveWeeks: number
+  requiredWeeks: number
+  threshold: number
+  status: 'NOT_YET' | 'GETTING_CLOSE' | 'START_RECRUITING'
+  recentWeeks: WeeklyRevenueData[]
 }
 
 type Stats = {
@@ -60,6 +83,8 @@ type Stats = {
 export default function StatsPage() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [stats, setStats] = useState<Stats | null>(null)
+  const [hiringReadiness, setHiringReadiness] =
+    useState<HiringReadiness | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -81,6 +106,9 @@ export default function StatsPage() {
   const [editAnnualGoal, setEditAnnualGoal] = useState('')
   const [editHoursPerWeek, setEditHoursPerWeek] = useState('')
   const [editWeeksPerYear, setEditWeeksPerYear] = useState('')
+  const [editHiringThreshold, setEditHiringThreshold] = useState('')
+  const [editHiringConsecutiveWeeks, setEditHiringConsecutiveWeeks] =
+    useState('')
 
   const handleQuickEntry = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -138,6 +166,8 @@ export default function StatsPage() {
         annual_revenue_goal: parseFloat(editAnnualGoal),
         available_hours_per_week: parseFloat(editHoursPerWeek),
         work_weeks_per_year: parseInt(editWeeksPerYear),
+        hiring_threshold: parseFloat(editHiringThreshold),
+        hiring_consecutive_weeks: parseInt(editHiringConsecutiveWeeks),
         updated_at: new Date().toISOString(),
       }
 
@@ -181,6 +211,10 @@ export default function StatsPage() {
       setEditAnnualGoal(settings.annual_revenue_goal.toString())
       setEditHoursPerWeek(settings.available_hours_per_week.toString())
       setEditWeeksPerYear(settings.work_weeks_per_year.toString())
+      setEditHiringThreshold((settings.hiring_threshold || 4000).toString())
+      setEditHiringConsecutiveWeeks(
+        (settings.hiring_consecutive_weeks || 4).toString(),
+      )
     }
     setShowSettingsEditor(true)
   }
@@ -207,7 +241,14 @@ export default function StatsPage() {
           annual_revenue_goal: 150000,
           available_hours_per_week: 40,
           work_weeks_per_year: 48,
+          hiring_threshold: 4000,
+          hiring_consecutive_weeks: 4,
         }
+      } else {
+        // Ensure hiring settings have defaults
+        userSettings.hiring_threshold = userSettings.hiring_threshold || 4000
+        userSettings.hiring_consecutive_weeks =
+          userSettings.hiring_consecutive_weeks || 4
       }
 
       setSettings(userSettings)
@@ -334,6 +375,90 @@ export default function StatsPage() {
           totalAvailableHoursAnnual,
         },
       })
+
+      // Calculate Hiring Readiness
+      const hiringThreshold = userSettings.hiring_threshold
+      const requiredWeeks = userSettings.hiring_consecutive_weeks
+
+      // Get Monday of current week (ISO week standard)
+      const getMonday = (d: Date) => {
+        const date = new Date(d)
+        const day = date.getDay()
+        const diff = date.getDate() - day + (day === 0 ? -6 : 1) // Adjust when day is Sunday
+        date.setDate(diff)
+        date.setHours(0, 0, 0, 0)
+        return date
+      }
+
+      // Generate last 8 weeks of data
+      const recentWeeks: WeeklyRevenueData[] = []
+      const currentMonday = getMonday(now)
+
+      for (let i = 0; i < 8; i++) {
+        const weekStart = new Date(currentMonday)
+        weekStart.setDate(weekStart.getDate() - i * 7)
+
+        const weekEnd = new Date(weekStart)
+        weekEnd.setDate(weekEnd.getDate() + 6)
+        weekEnd.setHours(23, 59, 59, 999)
+
+        // Filter revenue data for this week
+        const weekData = allRevenue.filter((item) => {
+          const itemDate = new Date(item.date)
+          return itemDate >= weekStart && itemDate <= weekEnd
+        })
+
+        const weekRevenue = weekData.reduce(
+          (sum, item) => sum + (item.invoice_amount || 0),
+          0,
+        )
+        const weekHours = weekData.reduce(
+          (sum, item) => sum + (item.hours_worked || 0),
+          0,
+        )
+
+        recentWeeks.push({
+          weekStart,
+          weekEnd,
+          revenue: weekRevenue,
+          jobs: weekData.length,
+          hours: weekHours,
+          meetsThreshold: weekRevenue >= hiringThreshold,
+          isCurrentWeek: i === 0,
+        })
+      }
+
+      // Count consecutive weeks meeting threshold (starting from most recent COMPLETE week)
+      let consecutiveWeeks = 0
+      // Start from week 1 (last complete week) unless current week meets threshold
+      const startIndex = recentWeeks[0].meetsThreshold ? 0 : 1
+
+      for (let i = startIndex; i < recentWeeks.length; i++) {
+        if (recentWeeks[i].meetsThreshold) {
+          consecutiveWeeks++
+        } else {
+          break
+        }
+      }
+
+      // Determine status
+      let hiringStatus: 'NOT_YET' | 'GETTING_CLOSE' | 'START_RECRUITING'
+      if (consecutiveWeeks >= requiredWeeks) {
+        hiringStatus = 'START_RECRUITING'
+      } else if (consecutiveWeeks >= 2) {
+        hiringStatus = 'GETTING_CLOSE'
+      } else {
+        hiringStatus = 'NOT_YET'
+      }
+
+      setHiringReadiness({
+        currentWeekRevenue: recentWeeks[0].revenue,
+        consecutiveWeeks,
+        requiredWeeks,
+        threshold: hiringThreshold,
+        status: hiringStatus,
+        recentWeeks: recentWeeks.slice(0, 4), // Show last 4 weeks
+      })
     } catch (err) {
       console.error('Error fetching stats:', err)
       setError(err instanceof Error ? err.message : 'Failed to load stats')
@@ -450,6 +575,54 @@ export default function StatsPage() {
                     placeholder="48"
                     required
                   />
+                </div>
+              </div>
+
+              {/* Hiring Readiness Settings */}
+              <div className="border-t pt-4">
+                <h4 className="mb-3 flex items-center gap-2 text-sm font-medium">
+                  <Rocket className="h-4 w-4" />
+                  Hiring Readiness Settings
+                </h4>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div>
+                    <Label htmlFor="editHiringThreshold">
+                      Weekly Threshold ($)
+                    </Label>
+                    <Input
+                      id="editHiringThreshold"
+                      type="number"
+                      step="100"
+                      value={editHiringThreshold}
+                      onChange={(e) => setEditHiringThreshold(e.target.value)}
+                      placeholder="4000"
+                      required
+                    />
+                    <p className="text-muted-foreground mt-1 text-xs">
+                      Weekly revenue target to trigger hiring signal
+                    </p>
+                  </div>
+                  <div>
+                    <Label htmlFor="editHiringConsecutiveWeeks">
+                      Consecutive Weeks
+                    </Label>
+                    <Input
+                      id="editHiringConsecutiveWeeks"
+                      type="number"
+                      step="1"
+                      min="1"
+                      max="12"
+                      value={editHiringConsecutiveWeeks}
+                      onChange={(e) =>
+                        setEditHiringConsecutiveWeeks(e.target.value)
+                      }
+                      placeholder="4"
+                      required
+                    />
+                    <p className="text-muted-foreground mt-1 text-xs">
+                      Weeks at threshold before hiring signal
+                    </p>
+                  </div>
                 </div>
               </div>
               {settingsError && (
@@ -815,6 +988,211 @@ export default function StatsPage() {
           </div>
         </Card>
       </div>
+
+      {/* Hiring Readiness */}
+      {hiringReadiness && (
+        <div className="mt-8">
+          <h2 className="mb-4 flex items-center gap-2 text-xl font-semibold">
+            <Rocket className="h-5 w-5" />
+            Hiring Readiness
+          </h2>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            {/* Trigger Info */}
+            <Card className="p-4">
+              <div className="text-muted-foreground mb-1 flex items-center gap-2">
+                <Target className="h-4 w-4" />
+                <p className="text-sm font-medium">Trigger</p>
+              </div>
+              <p className="text-lg font-semibold">
+                {formatCurrency(hiringReadiness.threshold)}/week
+              </p>
+              <p className="text-muted-foreground text-sm">
+                for {hiringReadiness.requiredWeeks} consecutive weeks
+              </p>
+            </Card>
+
+            {/* Current Week */}
+            <Card
+              className={`p-4 ${
+                hiringReadiness.recentWeeks[0]?.meetsThreshold
+                  ? 'border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30'
+                  : 'border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/30'
+              }`}
+            >
+              <div className="text-muted-foreground mb-1 flex items-center gap-2">
+                <DollarSign className="h-4 w-4" />
+                <p className="text-sm font-medium">
+                  Current Week (in progress)
+                </p>
+              </div>
+              <p className="text-2xl font-bold">
+                {formatCurrency(hiringReadiness.currentWeekRevenue)}
+              </p>
+              <div className="mt-1 flex items-center gap-2">
+                <span
+                  className={`inline-block h-3 w-3 rounded-full ${
+                    hiringReadiness.recentWeeks[0]?.meetsThreshold
+                      ? 'bg-green-500'
+                      : 'bg-gray-400'
+                  }`}
+                />
+                <span
+                  className={`text-sm ${
+                    hiringReadiness.recentWeeks[0]?.meetsThreshold
+                      ? 'text-green-600 dark:text-green-400'
+                      : 'text-muted-foreground'
+                  }`}
+                >
+                  {hiringReadiness.recentWeeks[0]?.meetsThreshold
+                    ? 'Above threshold'
+                    : 'Below threshold'}
+                </span>
+              </div>
+            </Card>
+
+            {/* Consecutive Weeks */}
+            <Card className="p-4">
+              <div className="text-muted-foreground mb-1 flex items-center gap-2">
+                <Users className="h-4 w-4" />
+                <p className="text-sm font-medium">Consecutive Weeks</p>
+              </div>
+              <p className="text-2xl font-bold">
+                {hiringReadiness.consecutiveWeeks} of{' '}
+                {hiringReadiness.requiredWeeks}
+              </p>
+              {/* Progress bar */}
+              <div className="mt-2">
+                <div className="bg-muted h-3 w-full overflow-hidden rounded-full">
+                  <div
+                    className={`h-3 transition-all ${
+                      hiringReadiness.consecutiveWeeks >=
+                      hiringReadiness.requiredWeeks
+                        ? 'bg-green-500'
+                        : hiringReadiness.consecutiveWeeks >= 2
+                          ? 'bg-yellow-500'
+                          : 'bg-gray-400'
+                    }`}
+                    style={{
+                      width: `${Math.min(
+                        (hiringReadiness.consecutiveWeeks /
+                          hiringReadiness.requiredWeeks) *
+                          100,
+                        100,
+                      )}%`,
+                    }}
+                  />
+                </div>
+                <p className="text-muted-foreground mt-1 text-right text-xs">
+                  {Math.round(
+                    (hiringReadiness.consecutiveWeeks /
+                      hiringReadiness.requiredWeeks) *
+                      100,
+                  )}
+                  %
+                </p>
+              </div>
+            </Card>
+          </div>
+
+          {/* Status Card */}
+          <Card
+            className={`mt-4 p-6 ${
+              hiringReadiness.status === 'START_RECRUITING'
+                ? 'bg-green-600 dark:bg-green-700'
+                : hiringReadiness.status === 'GETTING_CLOSE'
+                  ? 'bg-amber-500 dark:bg-amber-600'
+                  : 'bg-gray-600 dark:bg-gray-700'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="mb-1 text-sm font-medium text-white/80">Status</p>
+                <p
+                  className={`text-2xl font-bold ${
+                    hiringReadiness.status === 'GETTING_CLOSE'
+                      ? 'text-black'
+                      : 'text-white'
+                  }`}
+                >
+                  {hiringReadiness.status === 'START_RECRUITING' &&
+                    'TIME TO HIRE!'}
+                  {hiringReadiness.status === 'GETTING_CLOSE' &&
+                    'GETTING CLOSE'}
+                  {hiringReadiness.status === 'NOT_YET' && 'NOT YET'}
+                </p>
+              </div>
+              <div
+                className={`text-right ${
+                  hiringReadiness.status === 'GETTING_CLOSE'
+                    ? 'text-black/70'
+                    : 'text-white/80'
+                }`}
+              >
+                <p className="text-sm">
+                  {hiringReadiness.status === 'START_RECRUITING' &&
+                    'Start recruiting now'}
+                  {hiringReadiness.status === 'GETTING_CLOSE' &&
+                    `${hiringReadiness.requiredWeeks - hiringReadiness.consecutiveWeeks} more weeks to go`}
+                  {hiringReadiness.status === 'NOT_YET' &&
+                    'Keep building momentum'}
+                </p>
+              </div>
+            </div>
+          </Card>
+
+          {/* Recent Weeks */}
+          <Card className="mt-4 p-4">
+            <h3 className="mb-3 font-medium">Recent Weeks</h3>
+            <div className="space-y-2">
+              {hiringReadiness.recentWeeks.map((week, index) => (
+                <div
+                  key={week.weekStart.toISOString()}
+                  className={`flex items-center justify-between rounded-lg p-3 ${
+                    week.meetsThreshold
+                      ? 'bg-green-50 dark:bg-green-950/30'
+                      : 'bg-gray-50 dark:bg-gray-800/30'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span
+                      className={`inline-block h-3 w-3 rounded-full ${
+                        week.meetsThreshold ? 'bg-green-500' : 'bg-gray-400'
+                      }`}
+                    />
+                    <span className="font-medium">
+                      {index === 0
+                        ? 'This Week'
+                        : index === 1
+                          ? 'Last Week'
+                          : `${index} Weeks Ago`}
+                    </span>
+                    {week.isCurrentWeek && (
+                      <span className="rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700 dark:bg-blue-900 dark:text-blue-300">
+                        in progress
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-right">
+                    <span
+                      className={`font-bold ${
+                        week.meetsThreshold
+                          ? 'text-green-600 dark:text-green-400'
+                          : 'text-muted-foreground'
+                      }`}
+                    >
+                      {formatCurrency(week.revenue)}
+                    </span>
+                    <span className="text-muted-foreground ml-2 text-sm">
+                      ({week.jobs} jobs)
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   )
 }
