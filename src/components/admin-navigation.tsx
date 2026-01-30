@@ -238,7 +238,7 @@ export function AdminNavigation() {
                     Partner Pages
                   </div>
                   <a
-                    href="/partners"
+                    href="/partners/register"
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={() => setPreviewOpen(false)}
