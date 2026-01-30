@@ -91,15 +91,15 @@ export default function LocationPartnersPage() {
   }, [])
 
   const loadData = async () => {
-    const supabase = createClient()
-
-    const { data: partnersData } = await supabase
-      .from('partners')
-      .select('*')
-      .eq('partner_type', 'location')
-      .order('created_at', { ascending: false })
-
-    setPartners(partnersData || [])
+    try {
+      const response = await fetch('/api/admin/location-partners')
+      const data = await response.json()
+      if (data.partners) {
+        setPartners(data.partners)
+      }
+    } catch (error) {
+      console.error('Failed to reload vendors:', error)
+    }
   }
 
   const handleCreatePartner = async (e: React.FormEvent) => {
