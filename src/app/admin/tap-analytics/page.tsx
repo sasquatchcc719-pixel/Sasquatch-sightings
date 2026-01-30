@@ -215,15 +215,15 @@ export default function TapAnalyticsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 p-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">NFC Card Analytics</h1>
-        <div className="flex gap-2">
+    <div className="mx-auto max-w-6xl space-y-4 p-4 sm:space-y-6 sm:p-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-2xl font-bold sm:text-3xl">NFC Card Analytics</h1>
+        <div className="flex flex-wrap gap-2">
           {(['today', 'week', 'month', 'all'] as const).map((tf) => (
             <button
               key={tf}
               onClick={() => setTimeframe(tf)}
-              className={`rounded px-3 py-1 text-sm ${
+              className={`rounded px-3 py-1.5 text-xs sm:text-sm ${
                 timeframe === tf
                   ? 'bg-blue-600 text-white'
                   : 'bg-gray-200 dark:bg-gray-700'
@@ -235,35 +235,33 @@ export default function TapAnalyticsPage() {
                   ? 'Week'
                   : tf === 'month'
                     ? 'Month'
-                    : 'All Time'}
+                    : 'All'}
             </button>
           ))}
         </div>
       </div>
 
       {/* Landing Page Quick Links */}
-      <Card className="border-blue-500 bg-blue-50 p-4 dark:bg-blue-950">
-        <div className="flex items-center justify-between">
+      <Card className="border-blue-500 bg-blue-50 p-3 sm:p-4 dark:bg-blue-950">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-sm font-semibold text-blue-900 dark:text-blue-100">
               NFC Card Landing Page
             </p>
-            <p className="text-xs text-blue-700 dark:text-blue-300">
-              {typeof window !== 'undefined' && `${window.location.origin}/tap`}
-            </p>
+            <p className="text-xs text-blue-700 dark:text-blue-300">/tap</p>
           </div>
           <div className="flex gap-2">
             <a
               href="/tap"
               target="_blank"
               rel="noopener noreferrer"
-              className="rounded bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+              className="rounded bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 sm:px-4 sm:text-sm"
             >
-              View Landing Page
+              View Page
             </a>
             <button
               onClick={handleCopyURL}
-              className="rounded bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700"
+              className="rounded bg-green-600 px-3 py-2 text-xs font-semibold text-white hover:bg-green-700 sm:px-4 sm:text-sm"
             >
               Copy URL
             </button>
@@ -272,103 +270,115 @@ export default function TapAnalyticsPage() {
       </Card>
 
       {/* Overview Stats */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="p-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <Card className="p-3 sm:p-4">
           <div className="flex items-center gap-2">
-            <Users className="h-5 w-5 text-blue-500" />
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              Total Taps
+            <Users className="h-4 w-4 text-blue-500 sm:h-5 sm:w-5" />
+            <p className="text-xs text-gray-600 sm:text-sm dark:text-gray-400">
+              Taps
             </p>
           </div>
-          <p className="mt-2 text-3xl font-bold">{stats.totalTaps}</p>
+          <p className="mt-1 text-2xl font-bold sm:mt-2 sm:text-3xl">
+            {stats.totalTaps}
+          </p>
+          <p className="text-xs text-gray-500">{stats.uniqueTaps} unique</p>
+        </Card>
+
+        <Card className="p-3 sm:p-4">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="h-4 w-4 text-green-500 sm:h-5 sm:w-5" />
+            <p className="text-xs text-gray-600 sm:text-sm dark:text-gray-400">
+              Conv.
+            </p>
+          </div>
+          <p className="mt-1 text-2xl font-bold sm:mt-2 sm:text-3xl">
+            {stats.conversions}
+          </p>
           <p className="text-xs text-gray-500">
-            {stats.uniqueTaps} unique visitors
+            {stats.conversionRate.toFixed(1)}%
           </p>
         </Card>
 
-        <Card className="p-4">
+        <Card className="p-3 sm:p-4">
           <div className="flex items-center gap-2">
-            <TrendingUp className="h-5 w-5 text-green-500" />
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              Conversions
+            <Calendar className="h-4 w-4 text-purple-500 sm:h-5 sm:w-5" />
+            <p className="text-xs text-gray-600 sm:text-sm dark:text-gray-400">
+              Week
             </p>
           </div>
-          <p className="mt-2 text-3xl font-bold">{stats.conversions}</p>
-          <p className="text-xs text-gray-500">
-            {stats.conversionRate.toFixed(1)}% conversion rate
+          <p className="mt-1 text-2xl font-bold sm:mt-2 sm:text-3xl">
+            {stats.weekTaps}
           </p>
-        </Card>
-
-        <Card className="p-4">
-          <div className="flex items-center gap-2">
-            <Calendar className="h-5 w-5 text-purple-500" />
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              This Week
-            </p>
-          </div>
-          <p className="mt-2 text-3xl font-bold">{stats.weekTaps}</p>
           <p className="text-xs text-gray-500">{stats.todayTaps} today</p>
         </Card>
 
-        <Card className="p-4">
+        <Card className="p-3 sm:p-4">
           <div className="flex items-center gap-2">
-            <Phone className="h-5 w-5 text-orange-500" />
-            <p className="text-sm text-gray-600 dark:text-gray-400">Calls</p>
+            <Phone className="h-4 w-4 text-orange-500 sm:h-5 sm:w-5" />
+            <p className="text-xs text-gray-600 sm:text-sm dark:text-gray-400">
+              Calls
+            </p>
           </div>
-          <p className="mt-2 text-3xl font-bold">{stats.callClicks}</p>
-          <p className="text-xs text-gray-500">Call button clicks</p>
+          <p className="mt-1 text-2xl font-bold sm:mt-2 sm:text-3xl">
+            {stats.callClicks}
+          </p>
+          <p className="text-xs text-gray-500">button clicks</p>
         </Card>
       </div>
 
       {/* Button Engagement */}
-      <Card className="p-6">
-        <h2 className="mb-4 text-xl font-bold">Button Engagement</h2>
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+      <Card className="p-4 sm:p-6">
+        <h2 className="mb-3 text-lg font-bold sm:mb-4 sm:text-xl">
+          Button Engagement
+        </h2>
+        <div className="grid grid-cols-3 gap-3 sm:gap-4 md:grid-cols-6">
           <div className="text-center">
-            <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-green-100 dark:bg-green-900">
-              <span className="text-2xl">📅</span>
+            <div className="mx-auto mb-1 flex h-8 w-8 items-center justify-center rounded-full bg-green-100 sm:mb-2 sm:h-12 sm:w-12 dark:bg-green-900">
+              <span className="text-lg sm:text-2xl">📅</span>
             </div>
-            <p className="text-2xl font-bold">{stats.bookingClicks}</p>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Book Now</p>
-          </div>
-          <div className="text-center">
-            <Phone className="mx-auto mb-2 h-8 w-8 text-green-500" />
-            <p className="text-2xl font-bold">{stats.callClicks}</p>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Calls</p>
-          </div>
-          <div className="text-center">
-            <MessageSquare className="mx-auto mb-2 h-8 w-8 text-blue-500" />
-            <p className="text-2xl font-bold">{stats.textClicks}</p>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Texts</p>
-          </div>
-          <div className="text-center">
-            <Download className="mx-auto mb-2 h-8 w-8 text-orange-500" />
-            <p className="text-2xl font-bold">{stats.saveContactClicks}</p>
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              Save Contact
+            <p className="text-lg font-bold sm:text-2xl">
+              {stats.bookingClicks}
             </p>
+            <p className="text-xs text-gray-600 dark:text-gray-400">Book</p>
           </div>
           <div className="text-center">
-            <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900">
-              <span className="text-2xl">🔗</span>
+            <Phone className="mx-auto mb-1 h-6 w-6 text-green-500 sm:mb-2 sm:h-8 sm:w-8" />
+            <p className="text-lg font-bold sm:text-2xl">{stats.callClicks}</p>
+            <p className="text-xs text-gray-600 dark:text-gray-400">Calls</p>
+          </div>
+          <div className="text-center">
+            <MessageSquare className="mx-auto mb-1 h-6 w-6 text-blue-500 sm:mb-2 sm:h-8 sm:w-8" />
+            <p className="text-lg font-bold sm:text-2xl">{stats.textClicks}</p>
+            <p className="text-xs text-gray-600 dark:text-gray-400">Texts</p>
+          </div>
+          <div className="text-center">
+            <Download className="mx-auto mb-1 h-6 w-6 text-orange-500 sm:mb-2 sm:h-8 sm:w-8" />
+            <p className="text-lg font-bold sm:text-2xl">
+              {stats.saveContactClicks}
+            </p>
+            <p className="text-xs text-gray-600 dark:text-gray-400">Save</p>
+          </div>
+          <div className="text-center">
+            <div className="mx-auto mb-1 flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 sm:mb-2 sm:h-12 sm:w-12 dark:bg-blue-900">
+              <span className="text-lg sm:text-2xl">🔗</span>
             </div>
-            <p className="text-2xl font-bold">{stats.shareClicks}</p>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Shares</p>
+            <p className="text-lg font-bold sm:text-2xl">{stats.shareClicks}</p>
+            <p className="text-xs text-gray-600 dark:text-gray-400">Share</p>
           </div>
           <div className="text-center">
-            <FileText className="mx-auto mb-2 h-8 w-8 text-purple-500" />
-            <p className="text-2xl font-bold">{stats.formSubmits}</p>
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              Form Submits
-            </p>
+            <FileText className="mx-auto mb-1 h-6 w-6 text-purple-500 sm:mb-2 sm:h-8 sm:w-8" />
+            <p className="text-lg font-bold sm:text-2xl">{stats.formSubmits}</p>
+            <p className="text-xs text-gray-600 dark:text-gray-400">Forms</p>
           </div>
         </div>
       </Card>
 
       {/* Device Breakdown */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <Card className="p-6">
-          <h2 className="mb-4 text-xl font-bold">Device Types</h2>
+      <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-2">
+        <Card className="p-4 sm:p-6">
+          <h2 className="mb-3 text-lg font-bold sm:mb-4 sm:text-xl">
+            Device Types
+          </h2>
           <div className="space-y-3">
             <div>
               <div className="mb-1 flex justify-between text-sm">
@@ -421,8 +431,10 @@ export default function TapAnalyticsPage() {
           </div>
         </Card>
 
-        <Card className="p-6">
-          <h2 className="mb-4 text-xl font-bold">Top Cities</h2>
+        <Card className="p-4 sm:p-6">
+          <h2 className="mb-3 text-lg font-bold sm:mb-4 sm:text-xl">
+            Top Cities
+          </h2>
           {stats.topCities.length > 0 ? (
             <div className="space-y-2">
               {stats.topCities.map((city, index) => (
@@ -430,22 +442,26 @@ export default function TapAnalyticsPage() {
                   key={city.city}
                   className="flex items-center justify-between"
                 >
-                  <span className="text-sm">
+                  <span className="text-xs sm:text-sm">
                     {index + 1}. {city.city}
                   </span>
-                  <span className="font-bold">{city.count}</span>
+                  <span className="text-sm font-bold">{city.count}</span>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-sm text-gray-500">No location data yet</p>
+            <p className="text-xs text-gray-500 sm:text-sm">
+              No location data yet
+            </p>
           )}
         </Card>
       </div>
 
       {/* ROI Calculator */}
-      <Card className="p-6">
-        <h2 className="mb-4 text-xl font-bold">ROI Estimate</h2>
+      <Card className="p-4 sm:p-6">
+        <h2 className="mb-3 text-lg font-bold sm:mb-4 sm:text-xl">
+          ROI Estimate
+        </h2>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div>
             <p className="text-sm text-gray-600 dark:text-gray-400">
