@@ -46,28 +46,28 @@ export function AdminNavigation() {
       active: pathname === '/admin/leads',
     },
     {
-      name: 'AI Chat',
-      href: '/admin/conversations',
-      icon: MessageSquare,
-      active: pathname === '/admin/conversations',
+      name: 'Vendors',
+      href: '/admin/location-partners',
+      icon: MapPin,
+      active: pathname === '/admin/location-partners',
     },
   ]
 
   // Secondary tabs - in dropdown
   const secondaryTabs = [
     {
+      name: 'AI Chat',
+      href: '/admin/conversations',
+      icon: MessageSquare,
+      active: pathname === '/admin/conversations',
+      description: 'AI text message dispatcher',
+    },
+    {
       name: 'NFC Cards',
       href: '/admin/tap-analytics',
       icon: CreditCard,
       active: pathname === '/admin/tap-analytics',
       description: 'Business card analytics',
-    },
-    {
-      name: 'Vendors',
-      href: '/admin/location-partners',
-      icon: MapPin,
-      active: pathname === '/admin/location-partners',
-      description: 'Local businesses with NFC cards',
     },
     {
       name: 'Partners',
