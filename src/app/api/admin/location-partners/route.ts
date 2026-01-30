@@ -2,10 +2,41 @@
  * Location Partners API
  * GET - List all location partners
  * POST - Create a new location partner
+ * DELETE - Delete a location partner
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const supabase = await createAdminClient()
+    const { searchParams } = new URL(request.url)
+    const partnerId = searchParams.get('id')
+
+    if (!partnerId) {
+      return NextResponse.json({ error: 'id is required' }, { status: 400 })
+    }
+
+    const { error } = await supabase
+      .from('partners')
+      .delete()
+      .eq('id', partnerId)
+
+    if (error) {
+      console.error('Failed to delete location partner:', error)
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Error deleting location partner:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 },
+    )
+  }
+}
 
 export async function GET() {
   try {

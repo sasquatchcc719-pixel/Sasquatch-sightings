@@ -151,15 +151,16 @@ export default function LocationPartnersPage() {
     }
 
     try {
-      const supabase = createClient()
-      const { error } = await supabase
-        .from('partners')
-        .delete()
-        .eq('id', partnerId)
+      const response = await fetch(
+        `/api/admin/location-partners?id=${partnerId}`,
+        {
+          method: 'DELETE',
+        },
+      )
 
-      if (error) {
-        console.error('Failed to delete vendor:', error)
-        alert('Failed to delete vendor: ' + error.message)
+      if (!response.ok) {
+        const data = await response.json()
+        alert('Failed to delete vendor: ' + data.error)
         return
       }
 
