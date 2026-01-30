@@ -255,8 +255,6 @@ END:VCARD`
               animation: button-press 3s ease-in-out infinite;
             }
           `}</style>
-
-          {/* Call Button */}
           <Button
             onClick={handleCall}
             size="lg"
