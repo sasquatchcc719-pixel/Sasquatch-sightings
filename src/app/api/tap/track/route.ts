@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
         const { data: partner } = await supabase
           .from('partners')
           .select(
-            'id, location_name, company_name, partner_type, phone, total_taps, total_conversions',
+            'id, location_name, company_name, partner_type, location_type, phone, total_taps, total_conversions',
           )
           .eq('id', partnerId)
           .eq('partner_type', 'location')
@@ -98,6 +98,7 @@ export async function POST(request: NextRequest) {
         tapId: tap.id,
         partnerName:
           partnerData?.location_name || partnerData?.company_name || null,
+        locationType: partnerData?.location_type || null,
       })
     }
 
@@ -116,70 +117,41 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      // If it's a booking/form submission, mark as conversion and notify partner
-      if (buttonType === 'form_submit' || buttonType === 'booking_page') {
+      // Track potential conversions (text_chat, form_submit, booking_page)
+      // These are marked as "pending" for manual confirmation
+      // Credits are NOT auto-awarded - admin must confirm the job booked
+      if (
+        buttonType === 'text_chat' ||
+        buttonType === 'form_submit' ||
+        buttonType === 'booking_page'
+      ) {
         // Get the tap with partner info
-        const { data: tap } = await supabase
+        const { data: tapData } = await supabase
           .from('nfc_card_taps')
           .select('partner_id')
           .eq('id', tapId)
           .single()
 
-        // Mark as converted
+        // Mark as pending conversion (not confirmed yet)
+        // conversion_type indicates how they engaged
+        // converted = false means pending, true = confirmed by admin
         await supabase
           .from('nfc_card_taps')
           .update({
-            converted: true,
-            converted_at: new Date().toISOString(),
-            conversion_type: buttonType === 'booking_page' ? 'booking' : 'form',
+            conversion_type:
+              buttonType === 'text_chat'
+                ? 'text_chat'
+                : buttonType === 'booking_page'
+                  ? 'booking'
+                  : 'form',
           })
           .eq('id', tapId)
 
-        // If there's a partner, reward them
-        if (tap?.partner_id) {
-          const { data: partner } = await supabase
-            .from('partners')
-            .select('*')
-            .eq('id', tap.partner_id)
-            .single()
-
-          if (partner) {
-            // Increment conversion count
-            await supabase
-              .from('partners')
-              .update({
-                total_conversions: (partner.total_conversions || 0) + 1,
-              })
-              .eq('id', partner.id)
-
-            // Award credit ($20 for each conversion)
-            const creditAmount = 20
-            const newBalance = (partner.credit_balance || 0) + creditAmount
-
-            await supabase
-              .from('partners')
-              .update({ credit_balance: newBalance })
-              .eq('id', partner.id)
-
-            // Send SMS notification to partner
-            if (partner.phone) {
-              try {
-                await fetch(
-                  `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/sms/send`,
-                  {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      to: partner.phone,
-                      message: `🎉 Your NFC card at ${partner.location_name || partner.company_name} just earned you $${creditAmount} credit! New balance: $${newBalance}. View: ${process.env.NEXT_PUBLIC_SITE_URL}/partner`,
-                    }),
-                  },
-                )
-              } catch (error) {
-                console.error('Failed to send SMS notification:', error)
-              }
-            }
-          }
+        // If there's a partner, increment their potential lead count (not confirmed yet)
+        if (tapData?.partner_id) {
+          console.log(
+            `📱 Potential lead from location partner: ${tapData.partner_id}`,
+          )
         }
       }
 

@@ -5,7 +5,16 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Plus, Copy, MapPin, X } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import {
+  Plus,
+  Copy,
+  MapPin,
+  X,
+  CheckCircle,
+  Clock,
+  ExternalLink,
+} from 'lucide-react'
 import { createClient } from '@/supabase/client'
 
 interface LocationPartner {
@@ -22,11 +31,24 @@ interface LocationPartner {
   created_at: string
 }
 
+interface PendingConversion {
+  id: string
+  partner_id: string
+  conversion_type: string | null
+  location_city: string | null
+  tapped_at: string
+  converted: boolean
+}
+
 export default function LocationPartnersPage() {
   const [partners, setPartners] = useState<LocationPartner[]>([])
+  const [pendingConversions, setPendingConversions] = useState<
+    PendingConversion[]
+  >([])
   const [isLoading, setIsLoading] = useState(true)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [confirmingId, setConfirmingId] = useState<string | null>(null)
   const [newPartner, setNewPartner] = useState({
     company_name: '',
     location_name: '',
@@ -37,37 +59,94 @@ export default function LocationPartnersPage() {
   })
 
   useEffect(() => {
-    const fetchPartners = async () => {
+    const fetchData = async () => {
       const supabase = createClient()
-      const { data, error } = await supabase
+
+      // Fetch partners
+      const { data: partnersData, error: partnersError } = await supabase
         .from('partners')
         .select('*')
         .eq('partner_type', 'location')
         .order('created_at', { ascending: false })
 
-      if (error) {
-        console.error('Failed to load location partners:', error)
+      if (partnersError) {
+        console.error('Failed to load location partners:', partnersError)
       } else {
-        setPartners(data || [])
+        setPartners(partnersData || [])
       }
+
+      // Fetch pending conversions (taps with conversion_type but not confirmed)
+      const { data: conversionsData, error: conversionsError } = await supabase
+        .from('nfc_card_taps')
+        .select(
+          'id, partner_id, conversion_type, location_city, tapped_at, converted',
+        )
+        .not('partner_id', 'is', null)
+        .not('conversion_type', 'is', null)
+        .eq('converted', false)
+        .order('tapped_at', { ascending: false })
+
+      if (conversionsError) {
+        console.error('Failed to load pending conversions:', conversionsError)
+      } else {
+        setPendingConversions(conversionsData || [])
+      }
+
       setIsLoading(false)
     }
 
-    void fetchPartners()
+    void fetchData()
   }, [])
 
-  const loadPartners = async () => {
+  const loadData = async () => {
     const supabase = createClient()
-    const { data, error } = await supabase
+
+    const { data: partnersData } = await supabase
       .from('partners')
       .select('*')
       .eq('partner_type', 'location')
       .order('created_at', { ascending: false })
 
-    if (error) {
-      console.error('Failed to load location partners:', error)
-    } else {
-      setPartners(data || [])
+    setPartners(partnersData || [])
+
+    const { data: conversionsData } = await supabase
+      .from('nfc_card_taps')
+      .select(
+        'id, partner_id, conversion_type, location_city, tapped_at, converted',
+      )
+      .not('partner_id', 'is', null)
+      .not('conversion_type', 'is', null)
+      .eq('converted', false)
+      .order('tapped_at', { ascending: false })
+
+    setPendingConversions(conversionsData || [])
+  }
+
+  const handleConfirmConversion = async (tapId: string, partnerId: string) => {
+    setConfirmingId(tapId)
+
+    try {
+      const response = await fetch('/api/admin/location-partners/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tapId, partnerId }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        alert(
+          `Confirmed! Partner awarded $${data.creditAwarded}. New balance: $${data.newBalance}`,
+        )
+        void loadData()
+      } else {
+        const error = await response.json()
+        alert('Failed to confirm: ' + error.error)
+      }
+    } catch (error) {
+      console.error('Failed to confirm conversion:', error)
+      alert('Failed to confirm conversion')
+    } finally {
+      setConfirmingId(null)
     }
   }
 
@@ -76,7 +155,6 @@ export default function LocationPartnersPage() {
 
     const supabase = createClient()
 
-    // Create partner account
     const { data, error } = await supabase
       .from('partners')
       .insert({
@@ -100,7 +178,6 @@ export default function LocationPartnersPage() {
       return
     }
 
-    // Send welcome SMS
     if (newPartner.phone && data) {
       try {
         await fetch('/api/sms/send', {
@@ -108,7 +185,7 @@ export default function LocationPartnersPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             to: newPartner.phone,
-            message: `Welcome to Sasquatch Location Partners! Your NFC card is active. Share link: ${window.location.origin}/tap?partner=${data.id}. You&apos;ll earn $20 credit for every booking!`,
+            message: `Welcome to Sasquatch Location Partners! Your NFC card is active. URL: ${window.location.origin}/location/${data.id}. You&apos;ll earn $5 credit for every confirmed booking!`,
           }),
         })
       } catch (error) {
@@ -116,7 +193,6 @@ export default function LocationPartnersPage() {
       }
     }
 
-    // Reset form and reload
     setNewPartner({
       company_name: '',
       location_name: '',
@@ -126,11 +202,11 @@ export default function LocationPartnersPage() {
       card_id: '',
     })
     setIsDialogOpen(false)
-    void loadPartners()
+    void loadData()
   }
 
   const copyUrl = (partnerId: string) => {
-    const url = `${window.location.origin}/tap?partner=${partnerId}`
+    const url = `${window.location.origin}/location/${partnerId}`
     void navigator.clipboard.writeText(url)
     setCopiedId(partnerId)
     setTimeout(() => setCopiedId(null), 2000)
@@ -139,6 +215,20 @@ export default function LocationPartnersPage() {
   const conversionRate = (taps: number, conversions: number) => {
     if (taps === 0) return '0%'
     return `${((conversions / taps) * 100).toFixed(1)}%`
+  }
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    })
+  }
+
+  const getPartnerName = (partnerId: string) => {
+    const partner = partners.find((p) => p.id === partnerId)
+    return partner?.location_name || partner?.company_name || 'Unknown'
   }
 
   if (isLoading) {
@@ -169,6 +259,70 @@ export default function LocationPartnersPage() {
             Add Location Partner
           </Button>
         </div>
+
+        {/* Pending Conversions Alert */}
+        {pendingConversions.length > 0 && (
+          <Card className="mb-8 border-2 border-yellow-400 bg-yellow-50 p-6 dark:border-yellow-600 dark:bg-yellow-900/20">
+            <div className="mb-4 flex items-center gap-2">
+              <Clock className="h-5 w-5 text-yellow-600" />
+              <h2 className="text-xl font-bold text-yellow-800 dark:text-yellow-200">
+                Pending Confirmations ({pendingConversions.length})
+              </h2>
+            </div>
+            <p className="mb-4 text-sm text-yellow-700 dark:text-yellow-300">
+              These customers engaged with a location partner&apos;s NFC card.
+              Confirm when the job is actually booked to award the partner $5
+              credit.
+            </p>
+            <div className="space-y-3">
+              {pendingConversions.map((conversion) => (
+                <div
+                  key={conversion.id}
+                  className="flex items-center justify-between rounded-lg bg-white p-4 shadow-sm dark:bg-gray-800"
+                >
+                  <div>
+                    <div className="font-semibold">
+                      {getPartnerName(conversion.partner_id)}
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                      <Badge variant="outline">
+                        {conversion.conversion_type === 'text_chat'
+                          ? '💬 Started Chat'
+                          : conversion.conversion_type === 'booking'
+                            ? '📅 Clicked Book'
+                            : '📝 Submitted Form'}
+                      </Badge>
+                      {conversion.location_city && (
+                        <span>• {conversion.location_city}</span>
+                      )}
+                      <span>• {formatDate(conversion.tapped_at)}</span>
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    className="bg-green-600 hover:bg-green-700"
+                    onClick={() =>
+                      handleConfirmConversion(
+                        conversion.id,
+                        conversion.partner_id,
+                      )
+                    }
+                    disabled={confirmingId === conversion.id}
+                  >
+                    {confirmingId === conversion.id ? (
+                      'Confirming...'
+                    ) : (
+                      <>
+                        <CheckCircle className="mr-1 h-4 w-4" />
+                        Confirm Booking (+$5)
+                      </>
+                    )}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
 
         {/* Create Partner Modal */}
         {isDialogOpen && (
@@ -262,8 +416,7 @@ export default function LocationPartnersPage() {
                     required
                   />
                   <p className="mt-1 text-xs text-gray-500">
-                    They&apos;ll receive SMS notifications when they earn
-                    rewards
+                    They&apos;ll receive SMS when they earn $5 credit
                   </p>
                 </div>
 
@@ -311,7 +464,7 @@ export default function LocationPartnersPage() {
               {partners.reduce((sum, p) => sum + (p.total_conversions || 0), 0)}
             </div>
             <div className="text-sm text-gray-600 dark:text-gray-400">
-              Total Conversions
+              Confirmed Bookings
             </div>
           </Card>
           <Card className="p-6">
@@ -319,7 +472,7 @@ export default function LocationPartnersPage() {
               ${partners.reduce((sum, p) => sum + (p.credit_balance || 0), 0)}
             </div>
             <div className="text-sm text-gray-600 dark:text-gray-400">
-              Total Credits Earned
+              Total Credits Awarded
             </div>
           </Card>
         </div>
@@ -357,21 +510,32 @@ export default function LocationPartnersPage() {
                     )}
                   </div>
 
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => copyUrl(partner.id)}
-                    className="ml-4"
-                  >
-                    {copiedId === partner.id ? (
-                      <>✓ Copied</>
-                    ) : (
-                      <>
-                        <Copy className="mr-2 h-4 w-4" />
-                        Copy URL
-                      </>
-                    )}
-                  </Button>
+                  <div className="flex gap-2">
+                    <a
+                      href={`/location/${partner.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <Button variant="outline" size="sm">
+                        <ExternalLink className="mr-1 h-4 w-4" />
+                        View Page
+                      </Button>
+                    </a>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => copyUrl(partner.id)}
+                    >
+                      {copiedId === partner.id ? (
+                        <>✓ Copied</>
+                      ) : (
+                        <>
+                          <Copy className="mr-2 h-4 w-4" />
+                          Copy URL
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </div>
 
                 {/* Stats Grid */}
@@ -387,7 +551,9 @@ export default function LocationPartnersPage() {
                     <div className="text-2xl font-bold text-green-600">
                       {partner.total_conversions || 0}
                     </div>
-                    <div className="text-xs text-green-600/80">Conversions</div>
+                    <div className="text-xs text-green-600/80">
+                      Confirmed Jobs
+                    </div>
                   </div>
 
                   <div className="rounded-lg bg-purple-50 p-4 dark:bg-purple-900/20">
@@ -422,7 +588,7 @@ export default function LocationPartnersPage() {
                 {/* Quick Link */}
                 <div className="mt-4 rounded-lg bg-gray-50 p-3 dark:bg-gray-800">
                   <code className="text-xs text-gray-600 dark:text-gray-400">
-                    {window.location.origin}/tap?partner={partner.id}
+                    {window.location.origin}/location/{partner.id}
                   </code>
                 </div>
               </Card>

@@ -1,7 +1,7 @@
 # Location Partners - NFC Card System
 
 ## Overview
-The Location Partners system allows you to place NFC business cards at local establishments (barbershops, coffee shops, gyms, bars, etc.). When customers scan the card, the establishment earns rewards, creating a win-win referral network.
+The Location Partners system allows you to place NFC business cards at local establishments (barbershops, coffee shops, gyms, bars, etc.). When customers scan the card and you confirm their booking, the establishment earns $5 credit toward their own carpet cleaning.
 
 ## How It Works
 
@@ -9,32 +9,31 @@ The Location Partners system allows you to place NFC business cards at local est
 Each location partner:
 - Creates an account in your system (via admin)
 - Gets assigned a unique partner ID
-- Receives their custom NFC card URL: `/tap?partner=[their-id]`
+- Receives their custom NFC card URL: `/location/[partner-id]`
 - Provides phone number for SMS notifications
 
-### 2. Customer Journey
+### 2. Customer Journey (AI Chat Flow)
 When someone taps the NFC card:
-1. They're taken to the landing page (`/tap?partner=[id]`)
+1. They're taken to the location landing page (`/location/[partner-id]`)
 2. Page shows: "$20 OFF" offer + partner location badge
-3. Customer can:
-   - Book online (Housecall Pro)
-   - Call
-   - Text
-   - Save contact
-   - Share deal
-4. Every action is tracked
+3. **Primary CTA: "TEXT US NOW"** - Opens SMS with pre-filled message mentioning the partner
+4. AI chat engages, qualifies, and sends booking link
+5. Secondary options: Call, Save Contact, Share
+6. Every action is tracked
 
-### 3. Partner Rewards
-When a customer books or submits a form:
-- Partner earns $20 credit automatically
-- Partner receives SMS notification instantly
-- Credit can be used toward their own carpet cleaning
+### 3. Partner Rewards (Manual Confirmation)
+**Credits are NOT auto-awarded.** When a customer engages:
+1. Their action appears in "Pending Confirmations" on the admin dashboard
+2. When the job actually books, you click "Confirm Booking"
+3. Partner earns **$5 credit** per confirmed booking
+4. Partner receives SMS notification instantly
+5. Credit can be used toward their own carpet cleaning
 
 ### 4. SMS Notifications
 Partners receive texts like:
 ```
-🎉 Your NFC card at Joe's Barbershop just earned you $20 credit! 
-New balance: $60. View: https://sasquatchcarpet.com/partner
+🎉 Great news! A customer from your Joe's Barbershop NFC card just booked! 
+You earned $5 credit. New balance: $15. Thanks for partnering with Sasquatch!
 ```
 
 ## Database Schema
@@ -112,8 +111,15 @@ Location partners can:
 ## Credit System
 
 ### How Credits Are Earned:
-- **Booking Click**: Customer clicks "Book Now" → +$20
-- **Form Submit**: Customer submits callback form → +$20
+- **Confirmed Booking**: Admin confirms job actually booked → **+$5**
+- Credits are NOT auto-awarded on clicks
+- Manual confirmation ensures you only pay for real jobs
+
+### Pending Conversions:
+These actions appear as "pending" for confirmation:
+- `text_chat` - Customer clicked "TEXT US NOW"
+- `booking` - Customer clicked "Book Now"
+- `form` - Customer submitted callback form
 
 ### How Credits Are Used:
 - Partner books their own cleaning
@@ -140,57 +146,63 @@ Location partners can:
 
 ## Technical Implementation
 
-### Files Modified:
+### Files:
 - `migrations/add_location_partners.sql` - Database schema
-- `src/app/tap/page.tsx` - Landing page with partner detection
-- `src/app/api/tap/track/route.ts` - Partner reward logic + SMS
-- `src/app/admin/location-partners/page.tsx` - Admin dashboard
+- `src/app/location/[partnerId]/page.tsx` - Location partner landing page (AI chat focus)
+- `src/app/tap/page.tsx` - Regular business card landing page (direct booking)
+- `src/app/api/tap/track/route.ts` - Track taps and potential conversions
+- `src/app/api/admin/location-partners/confirm/route.ts` - Manual confirmation API
+- `src/app/admin/location-partners/page.tsx` - Admin dashboard with pending confirmations
 - `src/components/admin-navigation.tsx` - Navigation link
 
-### API Endpoints Used:
-- `POST /api/tap/track` - Track taps, clicks, and reward partners
+### API Endpoints:
+- `POST /api/tap/track` - Track taps and clicks (marks as pending, NOT auto-reward)
+- `POST /api/admin/location-partners/confirm` - Confirm booking and award $5 credit
 - `POST /api/sms/send` - Send SMS notifications
-- `POST /api/leads` - Create leads from form submissions
 
 ### Tracking Flow:
 ```
-1. Customer taps NFC card
+1. Customer taps NFC card at location
    ↓
-2. Redirect to /tap?partner=[id]
+2. Redirect to /location/[partner-id]
    ↓
 3. Track page view + lookup partner
    ↓
-4. Show partner badge on page
+4. Show partner badge + "TEXT US NOW" button
    ↓
-5. Customer clicks "Book Now"
+5. Customer taps "TEXT US NOW"
    ↓
-6. Track button click
+6. SMS opens with pre-filled message (mentions partner)
    ↓
-7. Mark as conversion
+7. AI chat engages, qualifies, sends booking link
    ↓
-8. Award partner $20 credit
+8. Tap marked as "pending" conversion
    ↓
-9. Send SMS to partner
+9. Admin sees in "Pending Confirmations"
    ↓
-10. Update partner stats
+10. When job books, admin clicks "Confirm"
+   ↓
+11. Partner awarded $5 credit + SMS notification
 ```
 
-## Example URLs
+## Two Landing Page Types
 
-### Regular NFC card (no partner):
+### Regular Business Card (direct booking):
 ```
 https://sasquatchcarpet.com/tap
 ```
+- Used for: Cards you hand out personally
+- CTA: "Book Now" button (direct to Housecall Pro)
+- No partner attribution
 
-### Location partner card:
+### Location Partner Card (AI chat):
 ```
-https://sasquatchcarpet.com/tap?partner=123e4567-e89b-12d3-a456-426614174000
+https://sasquatchcarpet.com/location/[partner-id]
 ```
-
-### With custom card ID too:
-```
-https://sasquatchcarpet.com/tap?partner=123...&card=barbershop-001
-```
+- Used for: Cards placed at partner establishments
+- CTA: "TEXT US NOW" button (starts AI chat)
+- Partner badge shown
+- Manual confirmation required for rewards
 
 ## Future Enhancements
 
