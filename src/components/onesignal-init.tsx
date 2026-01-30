@@ -7,6 +7,21 @@ export function OneSignalInit() {
     // Only initialize on client side
     if (typeof window === 'undefined') return
 
+    // Only initialize OneSignal on the production domain
+    // This prevents "Can only be used on: https://sightings.sasquatchcarpet.com" errors
+    const allowedDomains = [
+      'sightings.sasquatchcarpet.com',
+      'sasquatchcarpet.com',
+    ]
+    const currentDomain = window.location.hostname
+
+    if (!allowedDomains.includes(currentDomain)) {
+      console.log(
+        `OneSignal skipped: ${currentDomain} is not a production domain`,
+      )
+      return
+    }
+
     // Check if OneSignal is already loaded
     if (document.querySelector('script[src*="OneSignalSDK"]')) {
       console.log('OneSignal script already loaded')
