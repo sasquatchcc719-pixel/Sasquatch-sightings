@@ -119,23 +119,19 @@ export default function TapAnalyticsPage() {
 
   const fetchStationHealth = async () => {
     try {
-      const supabase = createClient()
+      // Use API route to bypass RLS (same as vendor page)
+      const response = await fetch('/api/admin/location-partners')
+      const data = await response.json()
 
-      // Fetch location partners with their tap stats
-      const { data: partners, error: partnersError } = await supabase
-        .from('partners')
-        .select(
-          'id, location_name, company_name, location_type, total_taps, last_sasquatch_tap_at, last_review_tap_at, google_review_url',
-        )
-        .eq('partner_type', 'location')
-        .order('total_taps', { ascending: false })
-
-      if (partnersError) {
-        console.error('Failed to fetch partners:', partnersError)
+      if (!data.partners) {
+        console.error('Failed to fetch partners for station health')
         return
       }
 
+      const partners = data.partners
+
       // Fetch review station tap counts per partner
+      const supabase = createClient()
       const { data: reviewTapCounts, error: reviewError } = await supabase
         .from('review_station_taps')
         .select('partner_id')
@@ -156,7 +152,19 @@ export default function TapAnalyticsPage() {
       }
 
       // Build station health data
-      const healthData: StationHealth[] = (partners || []).map((partner) => {
+      type PartnerData = {
+        id: string
+        location_name: string | null
+        company_name: string | null
+        location_type: string | null
+        total_taps: number
+        last_sasquatch_tap_at: string | null
+        last_review_tap_at: string | null
+        google_review_url: string | null
+      }
+      const healthData: StationHealth[] = (
+        (partners as PartnerData[]) || []
+      ).map((partner) => {
         const sasquatchTotalTaps = partner.total_taps || 0
         const reviewTotalTaps = reviewCountMap[partner.id] || 0
         const hasGoogleReviewUrl = !!partner.google_review_url
