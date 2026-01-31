@@ -17,8 +17,6 @@ import {
   Mail,
   Calendar,
   Loader2,
-  Map,
-  Camera,
   Trash2,
   MessageSquare,
   Send,
@@ -386,39 +384,15 @@ export default function SightingsAdminPage() {
             Sasquatch sighting submissions & conversations
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button
-            asChild
-            variant="default"
-            size="sm"
-            className="sm:size-default"
-          >
-            <Link href="/">
-              <Map className="mr-1 h-4 w-4 sm:mr-2" />
-              <span className="hidden sm:inline">View </span>Map
-            </Link>
-          </Button>
-          <Button
-            onClick={handleExportCSV}
-            variant="outline"
-            size="sm"
-            className="sm:size-default"
-          >
-            <Download className="mr-1 h-4 w-4 sm:mr-2" />
-            <span className="hidden sm:inline">Export </span>CSV
-          </Button>
-          <Button
-            asChild
-            variant="outline"
-            size="sm"
-            className="sm:size-default"
-          >
-            <Link href="/sightings" target="_blank">
-              <Camera className="mr-1 h-4 w-4 sm:mr-2" />
-              <span className="hidden sm:inline">Test </span>Contest
-            </Link>
-          </Button>
-        </div>
+        <Button
+          onClick={handleExportCSV}
+          variant="outline"
+          size="sm"
+          className="sm:size-default"
+        >
+          <Download className="mr-1 h-4 w-4 sm:mr-2" />
+          <span className="hidden sm:inline">Export </span>CSV
+        </Button>
       </div>
 
       {/* View Toggle */}
