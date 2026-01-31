@@ -146,10 +146,10 @@ function extractCustomerInfo(
   return info
 }
 
-// Detect if message indicates they came from a partner NFC card
-function detectPartnerMention(message: string): boolean {
+// Detect if message indicates they came from an NFC card
+function detectNFCMention(message: string): boolean {
   const lowerMessage = message.toLowerCase()
-  const partnerPhrases = [
+  const nfcPhrases = [
     'found your card',
     'found the card',
     'scanned your card',
@@ -165,8 +165,72 @@ function detectPartnerMention(message: string): boolean {
     'at the shop',
     'nfc',
     'tapped',
+    'business card',
   ]
-  return partnerPhrases.some((phrase) => lowerMessage.includes(phrase))
+  return nfcPhrases.some((phrase) => lowerMessage.includes(phrase))
+}
+
+// Detect contest-related messages
+function detectContestMention(message: string): boolean {
+  const lowerMessage = message.toLowerCase()
+  const contestPhrases = [
+    'sasquatch',
+    'bigfoot',
+    'sighting',
+    'spotted',
+    'contest',
+    'saw one',
+    'seen one',
+  ]
+  return contestPhrases.some((phrase) => lowerMessage.includes(phrase))
+}
+
+// Determine conversation source type from message content
+type ConversationSource = 'vendor' | 'business_card' | 'contest' | 'inbound'
+
+async function determineSourceType(
+  message: string,
+  supabase: ReturnType<typeof createAdminClient>,
+): Promise<{
+  sourceType: ConversationSource
+  matchedPartner: {
+    id: string
+    location_name: string | null
+    company_name: string | null
+    coupon_code: string | null
+  } | null
+}> {
+  const isNFC = detectNFCMention(message)
+  const isContest = detectContestMention(message)
+
+  // If NFC detected, check if it's a vendor card or personal business card
+  if (isNFC) {
+    const { data: partners } = await supabase
+      .from('partners')
+      .select('id, location_name, company_name, coupon_code')
+      .eq('partner_type', 'location')
+
+    const lowerMessage = message.toLowerCase()
+    for (const partner of partners || []) {
+      const partnerName = (
+        partner.location_name ||
+        partner.company_name ||
+        ''
+      ).toLowerCase()
+      if (partnerName && lowerMessage.includes(partnerName)) {
+        return { sourceType: 'vendor', matchedPartner: partner }
+      }
+    }
+
+    // NFC detected but no partner match = personal business card
+    return { sourceType: 'business_card', matchedPartner: null }
+  }
+
+  if (isContest) {
+    return { sourceType: 'contest', matchedPartner: null }
+  }
+
+  return { sourceType: 'inbound', matchedPartner: null }
 }
 
 export async function POST(request: NextRequest) {
@@ -192,43 +256,74 @@ export async function POST(request: NextRequest) {
 
     const supabase = createAdminClient()
 
-    // Find or create conversation - look for ANY recent conversation from this phone number
+    // First, determine the source type from this message
+    const { sourceType, matchedPartner } = await determineSourceType(
+      messageBody,
+      supabase,
+    )
+    console.log(`📋 Detected source type: ${sourceType}`)
+    if (matchedPartner) {
+      console.log(
+        `🏪 Matched vendor: ${matchedPartner.location_name || matchedPartner.company_name}`,
+      )
+    }
+
+    // Map source type to database source value
+    const sourceMap: Record<ConversationSource, string> = {
+      vendor: 'NFC Card',
+      business_card: 'Business Card',
+      contest: 'Contest',
+      inbound: 'inbound',
+    }
+    const dbSource = sourceMap[sourceType]
+
+    // Find existing conversation with SAME phone AND SAME source type
     let { data: conversation, error: fetchError } = await supabase
       .from('conversations')
       .select('*')
       .eq('phone_number', normalizedPhone)
+      .eq('source', dbSource)
       .order('updated_at', { ascending: false })
       .limit(1)
       .single()
 
     if (conversation) {
       console.log(
-        `✅ Found existing conversation: ${conversation.id} with ${conversation.messages.length} messages`,
+        `✅ Found existing ${dbSource} conversation: ${conversation.id} with ${conversation.messages.length} messages`,
       )
+      // Reactivate if needed
+      if (conversation.status !== 'active') {
+        await supabase
+          .from('conversations')
+          .update({ status: 'active' })
+          .eq('id', conversation.id)
+        conversation.status = 'active'
+        console.log(`🔄 Reactivated conversation: ${conversation.id}`)
+      }
     } else {
-      console.log(`⚠️ No existing conversation found for ${normalizedPhone}`)
-    }
+      console.log(
+        `⚠️ No existing ${dbSource} conversation found for ${normalizedPhone}`,
+      )
 
-    // If no conversation exists at all, create one
-    if (fetchError || !conversation) {
-      // Try to link to existing lead
-      const { data: lead } = await supabase
-        .from('leads')
-        .select('id, source')
-        .eq('phone', normalizedPhone)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single()
-
+      // Create new conversation for this source type
       const { data: newConvo, error: createError } = await supabase
         .from('conversations')
         .insert({
           phone_number: normalizedPhone,
-          source: lead?.source || 'inbound',
-          lead_id: lead?.id || null,
+          source: dbSource,
+          lead_id: null,
           messages: [],
           ai_enabled: true,
           status: 'active',
+          metadata:
+            sourceType === 'vendor' && matchedPartner
+              ? {
+                  partner_id: matchedPartner.id,
+                  partner_name:
+                    matchedPartner.location_name || matchedPartner.company_name,
+                  coupon_code: matchedPartner.coupon_code,
+                }
+              : null,
         })
         .select()
         .single()
@@ -239,66 +334,12 @@ export async function POST(request: NextRequest) {
       }
 
       conversation = newConvo
-      console.log(`✨ Created new conversation: ${conversation.id}`)
+      console.log(`✨ Created new ${dbSource} conversation: ${conversation.id}`)
 
-      // Check if this looks like a partner NFC referral and tag the conversation
-      if (detectPartnerMention(messageBody)) {
+      if (matchedPartner) {
         console.log(
-          `🎯 Partner NFC referral detected in message: "${messageBody}"`,
+          `✅ Tagged with vendor: ${matchedPartner.location_name || matchedPartner.company_name} (code: ${matchedPartner.coupon_code})`,
         )
-
-        // Try to identify which partner by looking for their name in the message
-        const { data: partners } = await supabase
-          .from('partners')
-          .select('id, location_name, company_name, coupon_code')
-          .eq('partner_type', 'location')
-
-        let matchedPartner = null
-        const lowerMessage = messageBody.toLowerCase()
-        for (const partner of partners || []) {
-          const partnerName = (
-            partner.location_name ||
-            partner.company_name ||
-            ''
-          ).toLowerCase()
-          if (partnerName && lowerMessage.includes(partnerName)) {
-            matchedPartner = partner
-            break
-          }
-        }
-
-        // Tag conversation as NFC source with partner info
-        await supabase
-          .from('conversations')
-          .update({
-            source: 'NFC Card',
-            metadata: matchedPartner
-              ? {
-                  partner_id: matchedPartner.id,
-                  partner_name:
-                    matchedPartner.location_name || matchedPartner.company_name,
-                  coupon_code: matchedPartner.coupon_code,
-                }
-              : null,
-          })
-          .eq('id', conversation.id)
-
-        conversation.source = 'NFC Card'
-        if (matchedPartner) {
-          console.log(
-            `✅ Matched to partner: ${matchedPartner.location_name || matchedPartner.company_name} (code: ${matchedPartner.coupon_code})`,
-          )
-        }
-      }
-    } else {
-      // Reactivate conversation if it was completed or escalated
-      if (conversation.status !== 'active') {
-        await supabase
-          .from('conversations')
-          .update({ status: 'active' })
-          .eq('id', conversation.id)
-        conversation.status = 'active'
-        console.log(`🔄 Reactivated conversation: ${conversation.id}`)
       }
     }
 
@@ -423,7 +464,7 @@ export async function POST(request: NextRequest) {
               phone: normalizedPhone,
               name: extractedInfo.name,
               email: extractedInfo.email,
-              source: conversation.source === 'NFC Card' ? 'NFC Card' : 'SMS',
+              source: conversation.source, // Use the conversation's source directly
               notes: leadNotes,
               status: 'new',
               zip_code: extractedInfo.zipCode || null,
