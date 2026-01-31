@@ -18,6 +18,7 @@ import {
   Award,
   Truck,
   Store,
+  Map,
 } from 'lucide-react'
 
 interface NavTab {
@@ -284,7 +285,7 @@ export function AdminNavigation() {
                     <ExternalLink className="ml-auto h-3 w-3" />
                   </a>
                   <a
-                    href="/contest"
+                    href="/sightings"
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={closeAll}
@@ -295,6 +296,22 @@ export function AdminNavigation() {
                       <div className="text-sm font-medium">Contest Page</div>
                       <div className="text-muted-foreground text-xs">
                         Sasquatch sightings contest
+                      </div>
+                    </div>
+                    <ExternalLink className="ml-auto h-3 w-3" />
+                  </a>
+                  <a
+                    href="/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={closeAll}
+                    className="hover:bg-muted flex items-center gap-3 rounded-md px-3 py-2"
+                  >
+                    <Map className="h-4 w-4 text-green-500" />
+                    <div>
+                      <div className="text-sm font-medium">Sightings Map</div>
+                      <div className="text-muted-foreground text-xs">
+                        Public map of sightings
                       </div>
                     </div>
                     <ExternalLink className="ml-auto h-3 w-3" />
