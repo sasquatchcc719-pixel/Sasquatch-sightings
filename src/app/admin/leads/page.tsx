@@ -146,6 +146,7 @@ export default function LeadsDashboardPage() {
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [editingNotes, setEditingNotes] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   // Add Lead Modal state
   const [showAddModal, setShowAddModal] = useState(false)
@@ -252,11 +253,16 @@ export default function LeadsDashboardPage() {
     }
   }
 
-  // Handle delete
-  const handleDelete = async () => {
-    if (!selectedLead) return
-    if (!confirm(`Delete ${selectedLead.name || 'this lead'}?`)) return
+  // Handle delete - show confirmation first
+  const handleDeleteClick = () => {
+    setConfirmDelete(true)
+  }
 
+  // Actually perform delete after confirmation
+  const handleDeleteConfirm = async () => {
+    if (!selectedLead) return
+
+    setConfirmDelete(false)
     setDeletingId(selectedLead.id)
     try {
       const response = await fetch(`/api/leads?id=${selectedLead.id}`, {
@@ -446,7 +452,10 @@ export default function LeadsDashboardPage() {
         <div className="bg-background fixed inset-0 z-50 overflow-y-auto md:hidden">
           <div className="bg-background sticky top-0 z-10 flex items-center justify-between border-b p-4">
             <button
-              onClick={() => setSelectedLead(null)}
+              onClick={() => {
+                setSelectedLead(null)
+                setConfirmDelete(false)
+              }}
               className="text-muted-foreground flex items-center gap-1"
             >
               <X className="h-5 w-5" />
@@ -640,19 +649,44 @@ export default function LeadsDashboardPage() {
             )}
 
             {/* Delete */}
-            <Button
-              variant="destructive"
-              onClick={handleDelete}
-              disabled={deletingId === selectedLead.id}
-              className="h-12 w-full"
-            >
-              {deletingId === selectedLead.id ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
+            {confirmDelete ? (
+              <div className="space-y-2">
+                <p className="text-muted-foreground text-center text-sm">
+                  Delete {selectedLead.name || 'this lead'}?
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setConfirmDelete(false)}
+                    className="h-12 flex-1"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={handleDeleteConfirm}
+                    disabled={deletingId === selectedLead.id}
+                    className="h-12 flex-1"
+                  >
+                    {deletingId === selectedLead.id ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="mr-2 h-4 w-4" />
+                    )}
+                    Delete
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button
+                variant="destructive"
+                onClick={handleDeleteClick}
+                className="h-12 w-full"
+              >
                 <Trash2 className="mr-2 h-4 w-4" />
-              )}
-              Delete Lead
-            </Button>
+                Delete Lead
+              </Button>
+            )}
           </div>
         </div>
       )}
@@ -661,7 +695,10 @@ export default function LeadsDashboardPage() {
       {selectedLead && (
         <div
           className="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 md:flex"
-          onClick={() => setSelectedLead(null)}
+          onClick={() => {
+            setSelectedLead(null)
+            setConfirmDelete(false)
+          }}
         >
           <div
             className="bg-background m-4 max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl shadow-xl"
@@ -688,7 +725,10 @@ export default function LeadsDashboardPage() {
                 </div>
               </div>
               <button
-                onClick={() => setSelectedLead(null)}
+                onClick={() => {
+                  setSelectedLead(null)
+                  setConfirmDelete(false)
+                }}
                 className="hover:bg-muted rounded-lg p-2"
               >
                 <X className="h-5 w-5" />
@@ -825,16 +865,40 @@ export default function LeadsDashboardPage() {
               )}
 
               {/* Delete */}
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-destructive hover:text-destructive"
-                onClick={handleDelete}
-                disabled={deletingId === selectedLead.id}
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                Delete Lead
-              </Button>
+              {confirmDelete ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground text-sm">Delete?</span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setConfirmDelete(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={handleDeleteConfirm}
+                    disabled={deletingId === selectedLead.id}
+                  >
+                    {deletingId === selectedLead.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      'Confirm'
+                    )}
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:text-destructive"
+                  onClick={handleDeleteClick}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete Lead
+                </Button>
+              )}
             </div>
           </div>
         </div>
