@@ -154,14 +154,7 @@ export function AdminNavigation() {
       href: '/admin/sightings',
       icon: Trophy,
       active: pathname === '/admin/sightings',
-      description: 'Sasquatch sightings entries',
-    },
-    {
-      name: 'AI Chat',
-      href: '/admin/conversations',
-      icon: MessageSquare,
-      active: pathname === '/admin/conversations' && !isVendorSource,
-      description: 'Text message dispatcher',
+      description: 'Sightings & conversations',
     },
   ]
 
