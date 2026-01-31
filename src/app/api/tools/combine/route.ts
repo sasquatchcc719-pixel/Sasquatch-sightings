@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
     if (!beforeImage || !afterImage) {
       return NextResponse.json(
         { error: 'Both before and after images are required' },
-        { status: 400 },
+        { status: 400 }
       )
     }
 
@@ -63,7 +63,9 @@ export async function POST(request: NextRequest) {
         right: targetWidth,
         background: { r: 255, g: 255, b: 255 },
       })
-      .composite([{ input: afterResized, left: targetWidth, top: 0 }])
+      .composite([
+        { input: afterResized, left: targetWidth, top: 0 },
+      ])
       .toBuffer()
 
     // Now work with the combined image for watermark
@@ -73,16 +75,12 @@ export async function POST(request: NextRequest) {
     if (addWatermark) {
       try {
         // Use the actual Sasquatch logo from public folder (SVG for perfect scaling)
-        const logoPath = path.join(
-          process.cwd(),
-          'public',
-          'vector6-no-background.svg',
-        )
+        const logoPath = path.join(process.cwd(), 'public', 'sasquatch-logo.svg')
         const logoBuffer = fs.readFileSync(logoPath)
 
         // Resize logo for bottom watermark (wider logo works better centered at bottom)
         // Set width to 30% of combined image width
-        const logoWidth = Math.round(targetWidth * 2 * 0.3)
+        const logoWidth = Math.round((targetWidth * 2) * 0.30)
         const resizedLogo = await sharp(logoBuffer)
           .resize({ width: logoWidth, fit: 'contain' })
           .toBuffer()
@@ -117,7 +115,7 @@ export async function POST(request: NextRequest) {
     console.error('Image combine error:', error)
     return NextResponse.json(
       { error: 'Failed to combine images' },
-      { status: 500 },
+      { status: 500 }
     )
   }
 }

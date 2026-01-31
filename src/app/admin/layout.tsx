@@ -30,11 +30,7 @@ export default async function AdminLayout({ children }: AdminLayoutProps) {
   // CRITICAL: Partners must NOT access admin routes
   // Only allow if role is explicitly 'admin' OR if there's no partner record (legacy admin)
   if (role !== 'admin') {
-    console.log(
-      '[AdminLayout] User is NOT admin (role:',
-      role,
-      '), redirecting to /partners',
-    )
+    console.log('[AdminLayout] User is NOT admin (role:', role, '), redirecting to /partners')
     redirect('/partners')
   }
 
@@ -46,15 +42,8 @@ export default async function AdminLayout({ children }: AdminLayoutProps) {
       <div className="flex w-full flex-1 flex-col items-center gap-20">
         <nav className="border-b-foreground/10 flex h-14 w-full justify-center border-b">
           <div className="flex w-full max-w-5xl items-center justify-between px-4 text-sm">
-            <Link
-              href={'/admin'}
-              className="flex items-center gap-2 font-semibold"
-            >
-              <img
-                src="/vector6-no-background.svg"
-                alt="Sasquatch"
-                className="h-7 w-auto"
-              />
+            <Link href={'/admin'} className="flex items-center gap-2 font-semibold">
+              <img src="/logo.svg" alt="Sasquatch" className="h-7 w-auto" />
               <span className="hidden sm:inline">Admin</span>
             </Link>
             {!hasEnvVars ? (
