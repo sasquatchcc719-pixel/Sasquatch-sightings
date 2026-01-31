@@ -11,7 +11,15 @@ import {
   TrendingUp,
   Users,
   Calendar,
+  Send,
+  X,
+  AlertCircle,
+  CheckCircle,
+  Clock,
 } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
 
 type NfcCardTap = {
   id: string
@@ -57,6 +65,30 @@ type TapStats = {
   deviceBreakdown: { mobile: number; tablet: number; desktop: number }
 }
 
+type Message = {
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  timestamp: string
+}
+
+type Conversation = {
+  id: string
+  phone_number: string
+  source: string | null
+  lead_id: string | null
+  messages: Message[]
+  ai_enabled: boolean
+  status: 'active' | 'completed' | 'escalated'
+  created_at: string
+  updated_at: string
+  lead?: {
+    id: string
+    name: string
+    source: string
+    status: string
+  } | null
+}
+
 export default function TapAnalyticsPage() {
   const [stats, setStats] = useState<TapStats | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -64,9 +96,141 @@ export default function TapAnalyticsPage() {
     'today' | 'week' | 'month' | 'all'
   >('all')
 
+  // Conversations state
+  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [selectedConvo, setSelectedConvo] = useState<Conversation | null>(null)
+  const [filterStatus, setFilterStatus] = useState<
+    'all' | 'active' | 'escalated'
+  >('all')
+  const [replyText, setReplyText] = useState('')
+  const [sending, setSending] = useState(false)
+
   useEffect(() => {
     fetchStats()
+    fetchConversations()
   }, [timeframe])
+
+  const fetchConversations = async () => {
+    try {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('conversations')
+        .select('*, lead:leads(id, name, source, status)')
+        .eq('source', 'Business Card')
+        .order('updated_at', { ascending: false })
+
+      if (error) throw error
+      setConversations((data as Conversation[]) || [])
+    } catch (error) {
+      console.error('Failed to fetch conversations:', error)
+    }
+  }
+
+  const handleSendReply = async () => {
+    if (!selectedConvo || !replyText.trim()) return
+
+    setSending(true)
+    try {
+      const response = await fetch(
+        `/api/conversations/${selectedConvo.id}/reply`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            conversationId: selectedConvo.id,
+            message: replyText.trim(),
+          }),
+        },
+      )
+
+      if (response.ok) {
+        setReplyText('')
+        fetchConversations()
+      } else {
+        alert('Failed to send message')
+      }
+    } catch (error) {
+      console.error('Send error:', error)
+      alert('Failed to send message')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const handleUpdateStatus = async (
+    conversationId: string,
+    newStatus: string,
+  ) => {
+    try {
+      const response = await fetch(`/api/conversations/${conversationId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      })
+
+      if (response.ok) {
+        fetchConversations()
+        if (selectedConvo?.id === conversationId) {
+          setSelectedConvo({
+            ...selectedConvo,
+            status: newStatus as Conversation['status'],
+          })
+        }
+      } else {
+        alert('Failed to update status')
+      }
+    } catch (error) {
+      console.error('Update error:', error)
+      alert('Failed to update status')
+    }
+  }
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'active':
+        return (
+          <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+            <MessageSquare className="mr-1 h-3 w-3" />
+            Active
+          </Badge>
+        )
+      case 'completed':
+        return (
+          <Badge variant="secondary" className="bg-green-100 text-green-800">
+            <CheckCircle className="mr-1 h-3 w-3" />
+            Completed
+          </Badge>
+        )
+      case 'escalated':
+        return (
+          <Badge variant="secondary" className="bg-red-100 text-red-800">
+            <AlertCircle className="mr-1 h-3 w-3" />
+            Escalated
+          </Badge>
+        )
+      default:
+        return <Badge>{status}</Badge>
+    }
+  }
+
+  const formatTime = (timestamp: string) => {
+    try {
+      return new Date(timestamp).toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        timeZone: 'America/Denver',
+      })
+    } catch {
+      return timestamp
+    }
+  }
+
+  const filteredConversations =
+    filterStatus === 'all'
+      ? conversations
+      : conversations.filter((c) => c.status === filterStatus)
 
   const fetchStats = async () => {
     setIsLoading(true)
@@ -399,6 +563,257 @@ export default function TapAnalyticsPage() {
           </p>
         )}
       </Card>
+
+      {/* Business Card Conversations */}
+      <Card className="p-4 sm:p-6">
+        <h2 className="mb-3 text-lg font-bold sm:mb-4 sm:text-xl">
+          Business Card Conversations
+        </h2>
+        <p className="mb-4 text-sm text-gray-600 dark:text-gray-400">
+          SMS conversations from people who tapped your personal business cards.
+        </p>
+
+        {/* Filter buttons */}
+        <div className="mb-4 grid grid-cols-3 gap-2">
+          <button
+            onClick={() => setFilterStatus('all')}
+            className={`rounded-lg border p-2 text-center transition-all ${
+              filterStatus === 'all'
+                ? 'bg-blue-50 ring-2 ring-blue-500 dark:bg-blue-950'
+                : 'hover:bg-gray-50 dark:hover:bg-gray-800'
+            }`}
+          >
+            <div className="text-lg font-bold">{conversations.length}</div>
+            <div className="text-xs text-gray-500">Total</div>
+          </button>
+          <button
+            onClick={() => setFilterStatus('active')}
+            className={`rounded-lg border p-2 text-center transition-all ${
+              filterStatus === 'active'
+                ? 'bg-blue-50 ring-2 ring-blue-500 dark:bg-blue-950'
+                : 'hover:bg-gray-50 dark:hover:bg-gray-800'
+            }`}
+          >
+            <div className="text-lg font-bold">
+              {conversations.filter((c) => c.status === 'active').length}
+            </div>
+            <div className="text-xs text-gray-500">Active</div>
+          </button>
+          <button
+            onClick={() => setFilterStatus('escalated')}
+            className={`rounded-lg border p-2 text-center transition-all ${
+              filterStatus === 'escalated'
+                ? 'bg-blue-50 ring-2 ring-blue-500 dark:bg-blue-950'
+                : 'hover:bg-gray-50 dark:hover:bg-gray-800'
+            }`}
+          >
+            <div className="text-lg font-bold">
+              {conversations.filter((c) => c.status === 'escalated').length}
+            </div>
+            <div className="text-xs text-gray-500">Escalated</div>
+          </button>
+        </div>
+
+        {/* Conversations list */}
+        {filteredConversations.length === 0 ? (
+          <div className="py-8 text-center text-gray-500">
+            {filterStatus === 'all'
+              ? "No business card conversations yet. When someone texts from your card, they'll appear here."
+              : `No ${filterStatus} conversations.`}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {filteredConversations.map((convo) => {
+              const lastMessage = convo.messages[convo.messages.length - 1]
+              return (
+                <div
+                  key={convo.id}
+                  onClick={() => setSelectedConvo(convo)}
+                  className="cursor-pointer rounded-lg border p-3 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-1 flex flex-wrap items-center gap-2">
+                        <a
+                          href={`tel:${convo.phone_number}`}
+                          className="text-sm font-medium text-blue-500 hover:underline"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {convo.phone_number}
+                        </a>
+                        {getStatusBadge(convo.status)}
+                      </div>
+                      {convo.lead?.name && (
+                        <div className="mb-1 text-xs text-gray-500">
+                          {convo.lead.name}
+                        </div>
+                      )}
+                      {lastMessage && (
+                        <div className="line-clamp-2 text-xs text-gray-500">
+                          {lastMessage.role === 'user' ? '💬 ' : '🤖 '}
+                          {lastMessage.content}
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-right text-xs text-gray-400">
+                      <div>{formatTime(convo.updated_at)}</div>
+                      <div>{convo.messages.length} msgs</div>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </Card>
+
+      {/* Conversation Detail Modal */}
+      {selectedConvo && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setSelectedConvo(null)}
+        >
+          <div
+            className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-xl dark:bg-gray-900"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="border-b p-4">
+              <div className="mb-2 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <a
+                    href={`tel:${selectedConvo.phone_number}`}
+                    className="text-lg font-semibold text-blue-500 hover:underline"
+                  >
+                    {selectedConvo.phone_number}
+                  </a>
+                  {getStatusBadge(selectedConvo.status)}
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelectedConvo(null)}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              {selectedConvo.lead && (
+                <div className="mb-2 text-sm text-gray-500">
+                  Lead: {selectedConvo.lead.name}
+                </div>
+              )}
+              <div className="mb-3 text-xs text-gray-400">
+                Started: {formatTime(selectedConvo.created_at)} •{' '}
+                {selectedConvo.messages.length} messages
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-2">
+                {selectedConvo.status !== 'completed' && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      handleUpdateStatus(selectedConvo.id, 'completed')
+                    }
+                  >
+                    <CheckCircle className="mr-1 h-3 w-3" />
+                    Complete
+                  </Button>
+                )}
+                {selectedConvo.status === 'completed' && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      handleUpdateStatus(selectedConvo.id, 'active')
+                    }
+                  >
+                    Reopen
+                  </Button>
+                )}
+                {selectedConvo.status !== 'escalated' && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      handleUpdateStatus(selectedConvo.id, 'escalated')
+                    }
+                  >
+                    <AlertCircle className="mr-1 h-3 w-3" />
+                    Flag
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {/* Messages */}
+            <div className="flex-1 space-y-3 overflow-y-auto p-4">
+              {selectedConvo.messages.map((msg, idx) => (
+                <div
+                  key={idx}
+                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                >
+                  <div
+                    className={`max-w-[80%] rounded-lg p-3 ${
+                      msg.role === 'user'
+                        ? 'bg-blue-600 text-white'
+                        : msg.role === 'system'
+                          ? 'bg-red-100 text-xs text-red-800'
+                          : 'bg-gray-100 dark:bg-gray-800'
+                    }`}
+                  >
+                    <div className="text-sm whitespace-pre-wrap">
+                      {msg.content}
+                    </div>
+                    <div
+                      className={`mt-1 text-xs ${
+                        msg.role === 'user' ? 'text-blue-100' : 'text-gray-400'
+                      }`}
+                    >
+                      {formatTime(msg.timestamp)}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Reply Box */}
+            <div className="border-t p-4">
+              <div className="flex gap-2">
+                <Textarea
+                  value={replyText}
+                  onChange={(e) => setReplyText(e.target.value)}
+                  placeholder="Type your reply..."
+                  className="min-h-[80px] flex-1"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                      handleSendReply()
+                    }
+                  }}
+                />
+                <Button
+                  onClick={handleSendReply}
+                  disabled={!replyText.trim() || sending}
+                  className="self-end"
+                >
+                  {sending ? (
+                    'Sending...'
+                  ) : (
+                    <>
+                      <Send className="mr-1 h-4 w-4" />
+                      Send
+                    </>
+                  )}
+                </Button>
+              </div>
+              <p className="mt-2 text-xs text-gray-400">
+                Cmd/Ctrl + Enter to send
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
