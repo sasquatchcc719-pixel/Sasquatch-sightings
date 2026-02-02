@@ -280,8 +280,8 @@ export function AdminNavigation() {
             tabs={analystTabs}
           />
 
-          {/* Preview Pages dropdown - spans full width on mobile */}
-          <div className="relative col-span-2 sm:col-span-1 sm:ml-auto">
+          {/* Preview Pages dropdown */}
+          <div className="relative col-span-2 sm:col-span-1">
             <button
               onClick={() => {
                 closeAll()

@@ -1,10 +1,40 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
+import { searchGoogle, readWebpage } from '@/lib/web-search'
 import Anthropic from '@anthropic-ai/sdk'
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 })
+
+// Get competitor profiles
+async function getCompetitorProfiles(
+  supabase: ReturnType<typeof createAdminClient>,
+) {
+  const { data, error } = await supabase
+    .from('competitors')
+    .select('*')
+    .order('name')
+
+  if (error || !data || data.length === 0) {
+    return 'No competitor profiles yet. Run a scan to gather intel.'
+  }
+
+  return data
+    .map(
+      (c) => `
+**${c.name}**
+- Website: ${c.website || 'Unknown'}
+- Google: ${c.google_rating || '?'}/5 (${c.google_review_count || '?'} reviews)
+- Pricing: ${c.pricing_notes || 'Unknown'}
+- Strengths: ${c.strengths || 'Unknown'}
+- Weaknesses: ${c.weaknesses || 'Unknown'}
+- Recent Promos: ${c.recent_promos || 'None known'}
+- Last Researched: ${c.last_researched ? new Date(c.last_researched).toLocaleDateString() : 'Never'}
+`,
+    )
+    .join('\n')
+}
 
 // Get database schema dynamically
 async function getSchema(supabase: ReturnType<typeof createAdminClient>) {
@@ -58,6 +88,9 @@ async function getBusinessStats(
   supabase: ReturnType<typeof createAdminClient>,
 ) {
   const now = new Date()
+  const dayOfMonth = now.getDate()
+  const currentMonthName = now.toLocaleString('en-US', { month: 'long' })
+
   const startOfMonth = new Date(
     now.getFullYear(),
     now.getMonth(),
@@ -68,10 +101,16 @@ async function getBusinessStats(
     now.getMonth() - 1,
     1,
   ).toISOString()
-  const endOfLastMonth = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    0,
+
+  // Last 7 days and last 30 days for fairer comparisons
+  const last7Days = new Date(
+    now.getTime() - 7 * 24 * 60 * 60 * 1000,
+  ).toISOString()
+  const last30Days = new Date(
+    now.getTime() - 30 * 24 * 60 * 60 * 1000,
+  ).toISOString()
+  const prev30Days = new Date(
+    now.getTime() - 60 * 24 * 60 * 60 * 1000,
   ).toISOString()
 
   // Jobs this month
@@ -87,6 +126,25 @@ async function getBusinessStats(
     .gte('published_at', startOfLastMonth)
     .lt('published_at', startOfMonth)
 
+  // Jobs last 7 days
+  const { count: jobsLast7Days } = await supabase
+    .from('jobs')
+    .select('*', { count: 'exact', head: true })
+    .gte('published_at', last7Days)
+
+  // Jobs last 30 days
+  const { count: jobsLast30Days } = await supabase
+    .from('jobs')
+    .select('*', { count: 'exact', head: true })
+    .gte('published_at', last30Days)
+
+  // Jobs previous 30 days (30-60 days ago)
+  const { count: jobsPrev30Days } = await supabase
+    .from('jobs')
+    .select('*', { count: 'exact', head: true })
+    .gte('published_at', prev30Days)
+    .lt('published_at', last30Days)
+
   // Sightings this month
   const { count: sightingsThisMonth } = await supabase
     .from('sightings')
@@ -95,12 +153,19 @@ async function getBusinessStats(
 
   // NFC taps this month (if table exists)
   let tapsThisMonth = 0
+  let tapsLast30Days = 0
   try {
     const { count } = await supabase
       .from('nfc_taps')
       .select('*', { count: 'exact', head: true })
       .gte('tapped_at', startOfMonth)
     tapsThisMonth = count || 0
+
+    const { count: count30 } = await supabase
+      .from('nfc_taps')
+      .select('*', { count: 'exact', head: true })
+      .gte('tapped_at', last30Days)
+    tapsLast30Days = count30 || 0
   } catch {
     // Table might not exist
   }
@@ -111,12 +176,24 @@ async function getBusinessStats(
     .select('*', { count: 'exact', head: true })
     .in('status', ['new', 'contacted', 'quoted'])
 
+  // Context about where we are in the month
+  const monthContext =
+    dayOfMonth <= 5
+      ? `NOTE: Today is ${currentMonthName} ${dayOfMonth}. We're only ${dayOfMonth} day(s) into the month, so "this month" stats are incomplete. Use last 7 days or last 30 days for fairer comparisons.`
+      : `Today is ${currentMonthName} ${dayOfMonth}.`
+
   return `
+${monthContext}
+
 CURRENT BUSINESS STATS:
-- Jobs this month: ${jobsThisMonth || 0}
-- Jobs last month: ${jobsLastMonth || 0}
+- Jobs this month (${currentMonthName}, ${dayOfMonth} days in): ${jobsThisMonth || 0}
+- Jobs last 7 days: ${jobsLast7Days || 0}
+- Jobs last 30 days: ${jobsLast30Days || 0}
+- Jobs previous 30 days (for comparison): ${jobsPrev30Days || 0}
+- Jobs last full month: ${jobsLastMonth || 0}
 - Sightings this month: ${sightingsThisMonth || 0}
 - NFC taps this month: ${tapsThisMonth || 0}
+- NFC taps last 30 days: ${tapsLast30Days || 0}
 - Active leads: ${activeLeads || 0}
 `
 }
@@ -140,23 +217,61 @@ export async function POST(request: NextRequest) {
     const supabase = createAdminClient()
 
     // Gather context
-    const [schema, recentIntel, businessStats] = await Promise.all([
-      getSchema(supabase),
-      getRecentIntel(supabase),
-      getBusinessStats(supabase),
-    ])
+    const [schema, recentIntel, businessStats, competitorProfiles] =
+      await Promise.all([
+        getSchema(supabase),
+        getRecentIntel(supabase),
+        getBusinessStats(supabase),
+        getCompetitorProfiles(supabase),
+      ])
+
+    // Check if user is asking about something that needs a web search
+    const needsSearch =
+      /search|look up|find out|check|what('s| is).*charging|current|right now|latest/i.test(
+        message,
+      )
+
+    let searchResults = ''
+    if (needsSearch) {
+      try {
+        // Extract what to search for
+        const searchQuery = message.replace(/^(can you |please |harry,? )/i, '')
+        const results = await searchGoogle(
+          searchQuery + ' Colorado carpet cleaning',
+          5,
+        )
+        searchResults = `
+LIVE SEARCH RESULTS (just searched):
+${results.map((r) => `- ${r.title}: ${r.snippet} (${r.url})`).join('\n')}
+`
+      } catch (err) {
+        console.error('Search failed:', err)
+        searchResults =
+          '\n[Web search attempted but failed - using cached data only]\n'
+      }
+    }
 
     const systemPrompt = `You are Harry, the Sasquatch Analyst. You work for Sasquatch Carpet Cleaning in Monument, Colorado. You're named after Harry from Harry and the Hendersons.
 
-You have access to the entire business database and market intelligence. You speak plainly, give hard numbers, and tell Charles what's actually happening - no fluff, no corporate speak.
+You have access to the entire business database, market intelligence, AND you can search the internet. You speak plainly, give hard numbers, and tell Charles what's actually happening - no fluff, no corporate speak.
 
 ${businessStats}
+
+COMPETITOR INTELLIGENCE:
+${competitorProfiles}
+
+RECENT MARKET INTEL:
+${recentIntel}
+${searchResults}
 
 DATABASE SCHEMA:
 ${schema}
 
-RECENT MARKET INTEL:
-${recentIntel}
+CAPABILITIES:
+- You have access to business data (jobs, leads, taps, partners)
+- You know competitor profiles (pricing, ratings, strengths, weaknesses)
+- You can see recent market intel gathered by scans
+- When Charles asks about something current, you can search the web
 
 RULES:
 - Always use real numbers from the database when available
@@ -164,13 +279,14 @@ RULES:
 - Flag problems without being asked
 - Be direct - Charles is busy
 - When you don't have data, say so clearly
-- Suggest what data would help if it's missing
+- If you have competitor intel, USE IT - tell Charles what his competitors are doing
 - Lead with the number/answer, then explain
 - Don't say "Based on my analysis" or "According to the data" - just state facts
 - Call out problems: "Your tag at Mario's has 40 taps and zero conversions. Something's wrong there."
 - Be encouraging when things are good: "That's your best week since October."
+- If competitor data is stale (last researched > 7 days ago), mention it and suggest running a scan
 
-You're not just answering questions - you're watching the business. If you see something concerning in the data, mention it.`
+You're not just answering questions - you're watching the business AND the competition. If you see an opportunity or threat, say it.`
 
     // Build messages array
     const messages: Anthropic.MessageParam[] = [

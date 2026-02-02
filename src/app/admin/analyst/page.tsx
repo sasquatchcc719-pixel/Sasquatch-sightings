@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
-import { Target, Send, Loader2 } from 'lucide-react'
+import { Target, Send, Loader2, Radar, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 
@@ -15,13 +15,78 @@ export default function AnalystChatPage() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
-      content: "Hey, it's Harry. What do you want to know?",
+      content:
+        "Hey, it's Harry. I can search the internet and tell you about your competitors. Ask me anything, or hit 'Scan' to research all competitors.",
     },
   ])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [scanning, setScanning] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  // Run competitor scan
+  async function runScan() {
+    if (scanning) return
+
+    setScanning(true)
+    setMessages((prev) => [
+      ...prev,
+      { role: 'user', content: '🔍 Run competitor scan' },
+      {
+        role: 'assistant',
+        content:
+          "Scanning competitors... This takes a minute. I'm searching Google, reading their sites, and analyzing what I find.",
+      },
+    ])
+
+    try {
+      const res = await fetch('/api/analyst/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+
+      const data = await res.json()
+
+      if (data.error) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'assistant',
+            content: `Scan failed: ${data.error}${data.hint ? `\n\nHint: ${data.hint}` : ''}`,
+          },
+        ])
+      } else {
+        const summary = data.results
+          .filter((r: { success: boolean }) => r.success)
+          .map(
+            (r: { competitor: string; analysis?: { keyFindings?: string } }) =>
+              `**${r.competitor}**: ${r.analysis?.keyFindings || 'No new findings'}`,
+          )
+          .join('\n\n')
+
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'assistant',
+            content: `Done. ${data.message}\n\n${summary}\n\nAsk me anything about what I found.`,
+          },
+        ])
+      }
+    } catch (error) {
+      console.error('Scan error:', error)
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: 'Scan failed. Check console for details.',
+        },
+      ])
+    } finally {
+      setScanning(false)
+    }
+  }
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -96,20 +161,40 @@ export default function AnalystChatPage() {
               Harry - Sasquatch Analyst
             </h1>
             <p className="text-sm text-white/60">
-              Ask about your business, competitors, anything
+              Business intel + competitor research
             </p>
           </div>
         </div>
-        <Button
-          asChild
-          variant="outline"
-          className="border-white/20 bg-white/10 text-white hover:bg-white/20"
-        >
-          <Link href="/admin/analyst/targets">
-            <Target className="mr-2 h-4 w-4" />
-            Targets
-          </Link>
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            onClick={runScan}
+            disabled={scanning}
+            variant="outline"
+            className="border-amber-500/50 bg-amber-500/20 text-amber-300 hover:bg-amber-500/30"
+          >
+            {scanning ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Scanning...
+              </>
+            ) : (
+              <>
+                <Radar className="mr-2 h-4 w-4" />
+                Scan
+              </>
+            )}
+          </Button>
+          <Button
+            asChild
+            variant="outline"
+            className="border-white/20 bg-white/10 text-white hover:bg-white/20"
+          >
+            <Link href="/admin/analyst/targets">
+              <Target className="mr-2 h-4 w-4" />
+              Targets
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {/* Chat Messages */}
