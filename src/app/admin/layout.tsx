@@ -44,7 +44,7 @@ export default async function AdminLayout({ children }: AdminLayoutProps) {
   return (
     <main className="relative flex min-h-screen flex-col items-center overflow-hidden">
       {/* Video Background */}
-      <VideoBackground />
+      <VideoBackground video="psychedelic" />
 
       <OneSignalInit />
       <div className="relative z-10 flex w-full flex-1 flex-col items-center gap-20">

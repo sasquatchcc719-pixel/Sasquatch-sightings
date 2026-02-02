@@ -1,12 +1,16 @@
 'use client'
 
 interface VideoBackgroundProps {
-  video?: 'forest' | 'clouds'
+  video?: 'forest' | 'clouds' | 'psychedelic'
 }
 
 export function VideoBackground({ video = 'forest' }: VideoBackgroundProps) {
   const videoSrc =
-    video === 'clouds' ? '/forest-loop-2.mp4' : '/forest-loop-1.mp4'
+    video === 'clouds'
+      ? '/forest-loop-2.mp4'
+      : video === 'psychedelic'
+        ? '/forest-loop-3.mp4'
+        : '/forest-loop-1.mp4'
 
   return (
     <div className="fixed inset-0 -z-10 bg-black">
