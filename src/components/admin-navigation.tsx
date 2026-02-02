@@ -50,7 +50,7 @@ function NavDropdown({
     <div className="relative">
       <button
         onClick={onToggle}
-        className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all ${
+        className={`flex w-full items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all sm:w-auto sm:justify-start ${
           isActive
             ? 'bg-green-600 text-white shadow-lg shadow-green-600/30'
             : 'bg-white/20 text-white/70 backdrop-blur-sm hover:bg-white/30 hover:text-white'
@@ -185,203 +185,207 @@ export function AdminNavigation() {
 
   return (
     <div>
-      <nav
-        className="flex flex-wrap items-center gap-3 sm:gap-4"
-        aria-label="Tabs"
-      >
-        {/* Operations Dropdown */}
-        <NavDropdown
-          label="Operations"
-          icon={Truck}
-          isOpen={operationsOpen}
-          onToggle={() => {
-            closeAll()
-            setOperationsOpen(!operationsOpen)
-          }}
-          onClose={closeAll}
-          isActive={operationsActive}
-          tabs={operationsTabs}
-        />
-
-        {/* Leads Dropdown */}
-        <NavDropdown
-          label="Leads"
-          icon={Phone}
-          isOpen={leadsOpen}
-          onToggle={() => {
-            closeAll()
-            setLeadsOpen(!leadsOpen)
-          }}
-          onClose={closeAll}
-          isActive={leadsActive}
-          tabs={leadsTabs}
-        />
-
-        {/* Vendors Dropdown */}
-        <NavDropdown
-          label="Vendors"
-          icon={Store}
-          isOpen={vendorsOpen}
-          onToggle={() => {
-            closeAll()
-            setVendorsOpen(!vendorsOpen)
-          }}
-          onClose={closeAll}
-          isActive={vendorsActive}
-          tabs={vendorsTabs}
-        />
-
-        {/* Partners - standalone link */}
-        <Link
-          href="/admin/partners"
-          className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all ${
-            partnersActive
-              ? 'bg-green-600 text-white shadow-lg shadow-green-600/30'
-              : 'bg-white/20 text-white/70 backdrop-blur-sm hover:bg-white/30 hover:text-white'
-          }`}
-        >
-          <Users className="h-4 w-4" />
-          Partners
-        </Link>
-
-        {/* Preview Pages dropdown */}
-        <div className="relative ml-auto">
-          <button
-            onClick={() => {
+      <nav aria-label="Tabs">
+        {/* Mobile: 2-column grid, Desktop: flex row */}
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-4">
+          {/* Operations Dropdown */}
+          <NavDropdown
+            label="Operations"
+            icon={Truck}
+            isOpen={operationsOpen}
+            onToggle={() => {
               closeAll()
-              setPreviewOpen(!previewOpen)
+              setOperationsOpen(!operationsOpen)
             }}
-            className="flex items-center gap-2 rounded-full bg-white/20 px-4 py-2 text-sm font-medium text-white/70 backdrop-blur-sm transition-all hover:bg-white/30 hover:text-white"
+            onClose={closeAll}
+            isActive={operationsActive}
+            tabs={operationsTabs}
+          />
+
+          {/* Leads Dropdown */}
+          <NavDropdown
+            label="Leads"
+            icon={Phone}
+            isOpen={leadsOpen}
+            onToggle={() => {
+              closeAll()
+              setLeadsOpen(!leadsOpen)
+            }}
+            onClose={closeAll}
+            isActive={leadsActive}
+            tabs={leadsTabs}
+          />
+
+          {/* Vendors Dropdown */}
+          <NavDropdown
+            label="Vendors"
+            icon={Store}
+            isOpen={vendorsOpen}
+            onToggle={() => {
+              closeAll()
+              setVendorsOpen(!vendorsOpen)
+            }}
+            onClose={closeAll}
+            isActive={vendorsActive}
+            tabs={vendorsTabs}
+          />
+
+          {/* Partners - standalone link */}
+          <Link
+            href="/admin/partners"
+            className={`flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all sm:justify-start ${
+              partnersActive
+                ? 'bg-green-600 text-white shadow-lg shadow-green-600/30'
+                : 'bg-white/20 text-white/70 backdrop-blur-sm hover:bg-white/30 hover:text-white'
+            }`}
           >
-            <Eye className="h-4 w-4" />
-            Preview
-            <ChevronDown
-              className={`h-3 w-3 transition-transform ${previewOpen ? 'rotate-180' : ''}`}
-            />
-          </button>
+            <Users className="h-4 w-4" />
+            Partners
+          </Link>
 
-          {previewOpen && (
-            <>
-              <div className="fixed inset-0 z-[100]" onClick={closeAll} />
-              <div className="absolute top-full right-0 z-[110] mt-2 max-h-[70vh] w-72 overflow-y-auto rounded-xl border border-white/20 bg-black shadow-2xl">
-                <div className="p-2">
-                  <div className="px-3 py-1 text-xs font-semibold text-white/50 uppercase">
-                    Lead Generation
-                  </div>
-                  <a
-                    href="/tap"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={closeAll}
-                    className="flex items-center gap-3 rounded-lg px-3 py-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white"
-                  >
-                    <CreditCard className="h-4 w-4 text-blue-400" />
-                    <div>
-                      <div className="text-sm font-medium">Business Card</div>
-                      <div className="text-xs text-white/50">
-                        Your NFC card landing page
-                      </div>
-                    </div>
-                    <ExternalLink className="ml-auto h-3 w-3" />
-                  </a>
-                  <a
-                    href="/sightings"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={closeAll}
-                    className="flex items-center gap-3 rounded-lg px-3 py-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white"
-                  >
-                    <Trophy className="h-4 w-4 text-amber-400" />
-                    <div>
-                      <div className="text-sm font-medium">Contest Page</div>
-                      <div className="text-xs text-white/50">
-                        Sasquatch sightings contest
-                      </div>
-                    </div>
-                    <ExternalLink className="ml-auto h-3 w-3" />
-                  </a>
-                  <a
-                    href="/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={closeAll}
-                    className="flex items-center gap-3 rounded-lg px-3 py-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white"
-                  >
-                    <Map className="h-4 w-4 text-green-400" />
-                    <div>
-                      <div className="text-sm font-medium">Sightings Map</div>
-                      <div className="text-xs text-white/50">
-                        Public map of sightings
-                      </div>
-                    </div>
-                    <ExternalLink className="ml-auto h-3 w-3" />
-                  </a>
-                </div>
+          {/* Preview Pages dropdown - spans full width on mobile */}
+          <div className="relative col-span-2 sm:col-span-1 sm:ml-auto">
+            <button
+              onClick={() => {
+                closeAll()
+                setPreviewOpen(!previewOpen)
+              }}
+              className="flex w-full items-center justify-center gap-2 rounded-full bg-white/20 px-4 py-2 text-sm font-medium text-white/70 backdrop-blur-sm transition-all hover:bg-white/30 hover:text-white sm:w-auto sm:justify-start"
+            >
+              <Eye className="h-4 w-4" />
+              Preview
+              <ChevronDown
+                className={`h-3 w-3 transition-transform ${previewOpen ? 'rotate-180' : ''}`}
+              />
+            </button>
 
-                <div className="border-t border-white/10 p-2">
-                  <div className="px-3 py-1 text-xs font-semibold text-white/50 uppercase">
-                    Vendor Pages
-                  </div>
-                  <a
-                    href="/location/demo"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={closeAll}
-                    className="flex items-center gap-3 rounded-lg px-3 py-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white"
-                  >
-                    <MapPin className="h-4 w-4 text-red-400" />
-                    <div>
-                      <div className="text-sm font-medium">Vendor Landing</div>
-                      <div className="text-xs text-white/50">
-                        What customers see at vendor locations
-                      </div>
+            {previewOpen && (
+              <>
+                <div className="fixed inset-0 z-[100]" onClick={closeAll} />
+                <div className="absolute top-full right-0 z-[110] mt-2 max-h-[70vh] w-72 overflow-y-auto rounded-xl border border-white/20 bg-black shadow-2xl">
+                  <div className="p-2">
+                    <div className="px-3 py-1 text-xs font-semibold text-white/50 uppercase">
+                      Lead Generation
                     </div>
-                    <ExternalLink className="ml-auto h-3 w-3" />
-                  </a>
-                </div>
+                    <a
+                      href="/tap"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={closeAll}
+                      className="flex items-center gap-3 rounded-lg px-3 py-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+                    >
+                      <CreditCard className="h-4 w-4 text-blue-400" />
+                      <div>
+                        <div className="text-sm font-medium">Business Card</div>
+                        <div className="text-xs text-white/50">
+                          Your NFC card landing page
+                        </div>
+                      </div>
+                      <ExternalLink className="ml-auto h-3 w-3" />
+                    </a>
+                    <a
+                      href="/sightings"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={closeAll}
+                      className="flex items-center gap-3 rounded-lg px-3 py-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+                    >
+                      <Trophy className="h-4 w-4 text-amber-400" />
+                      <div>
+                        <div className="text-sm font-medium">Contest Page</div>
+                        <div className="text-xs text-white/50">
+                          Sasquatch sightings contest
+                        </div>
+                      </div>
+                      <ExternalLink className="ml-auto h-3 w-3" />
+                    </a>
+                    <a
+                      href="/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={closeAll}
+                      className="flex items-center gap-3 rounded-lg px-3 py-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+                    >
+                      <Map className="h-4 w-4 text-green-400" />
+                      <div>
+                        <div className="text-sm font-medium">Sightings Map</div>
+                        <div className="text-xs text-white/50">
+                          Public map of sightings
+                        </div>
+                      </div>
+                      <ExternalLink className="ml-auto h-3 w-3" />
+                    </a>
+                  </div>
 
-                <div className="border-t border-white/10 p-2">
-                  <div className="px-3 py-1 text-xs font-semibold text-white/50 uppercase">
-                    Partner Pages
+                  <div className="border-t border-white/10 p-2">
+                    <div className="px-3 py-1 text-xs font-semibold text-white/50 uppercase">
+                      Vendor Pages
+                    </div>
+                    <a
+                      href="/location/demo"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={closeAll}
+                      className="flex items-center gap-3 rounded-lg px-3 py-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+                    >
+                      <MapPin className="h-4 w-4 text-red-400" />
+                      <div>
+                        <div className="text-sm font-medium">
+                          Vendor Landing
+                        </div>
+                        <div className="text-xs text-white/50">
+                          What customers see at vendor locations
+                        </div>
+                      </div>
+                      <ExternalLink className="ml-auto h-3 w-3" />
+                    </a>
                   </div>
-                  <a
-                    href="/partners/register"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={closeAll}
-                    className="flex items-center gap-3 rounded-lg px-3 py-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white"
-                  >
-                    <Users className="h-4 w-4 text-purple-400" />
-                    <div>
-                      <div className="text-sm font-medium">Partner Signup</div>
-                      <div className="text-xs text-white/50">
-                        Referral partner registration
-                      </div>
+
+                  <div className="border-t border-white/10 p-2">
+                    <div className="px-3 py-1 text-xs font-semibold text-white/50 uppercase">
+                      Partner Pages
                     </div>
-                    <ExternalLink className="ml-auto h-3 w-3" />
-                  </a>
-                  <a
-                    href="/preferred-partners"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={closeAll}
-                    className="flex items-center gap-3 rounded-lg px-3 py-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white"
-                  >
-                    <Award className="h-4 w-4 text-green-400" />
-                    <div>
-                      <div className="text-sm font-medium">
-                        Preferred Partners
+                    <a
+                      href="/partners/register"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={closeAll}
+                      className="flex items-center gap-3 rounded-lg px-3 py-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+                    >
+                      <Users className="h-4 w-4 text-purple-400" />
+                      <div>
+                        <div className="text-sm font-medium">
+                          Partner Signup
+                        </div>
+                        <div className="text-xs text-white/50">
+                          Referral partner registration
+                        </div>
                       </div>
-                      <div className="text-xs text-white/50">
-                        Public partner directory
+                      <ExternalLink className="ml-auto h-3 w-3" />
+                    </a>
+                    <a
+                      href="/preferred-partners"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={closeAll}
+                      className="flex items-center gap-3 rounded-lg px-3 py-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+                    >
+                      <Award className="h-4 w-4 text-green-400" />
+                      <div>
+                        <div className="text-sm font-medium">
+                          Preferred Partners
+                        </div>
+                        <div className="text-xs text-white/50">
+                          Public partner directory
+                        </div>
                       </div>
-                    </div>
-                    <ExternalLink className="ml-auto h-3 w-3" />
-                  </a>
+                      <ExternalLink className="ml-auto h-3 w-3" />
+                    </a>
+                  </div>
                 </div>
-              </div>
-            </>
-          )}
+              </>
+            )}
+          </div>
         </div>
       </nav>
     </div>
