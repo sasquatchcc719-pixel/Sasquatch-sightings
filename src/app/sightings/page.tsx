@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card } from '@/components/ui/card'
+import { VideoBackground } from '@/components/public/VideoBackground'
 import {
   Select,
   SelectContent,
@@ -16,7 +17,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Camera, Upload, MapPin, Loader2, Copy, Check, CalendarCheck, Share2, ExternalLink, CheckCircle } from 'lucide-react'
+import {
+  Camera,
+  Upload,
+  MapPin,
+  Loader2,
+  Copy,
+  Check,
+  CalendarCheck,
+  Share2,
+  ExternalLink,
+  CheckCircle,
+} from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   extractExifGps,
@@ -31,14 +43,25 @@ const sightingFormSchema = z.object({
     .any()
     .optional()
     .refine(
-      (files) => !files || files.length === 0 || (files instanceof FileList && files[0]?.type.startsWith('image/')),
-      'File must be an image'
+      (files) =>
+        !files ||
+        files.length === 0 ||
+        (files instanceof FileList && files[0]?.type.startsWith('image/')),
+      'File must be an image',
     ),
   fullName: z.string().min(2, 'Name required'),
   phoneNumber: z.string().min(10, 'Valid phone required'),
   email: z.string().email('Valid email is required'),
-  locationText: z.string().min(2, 'Please tell us where you saw us').optional().or(z.literal('')),
-  zipCode: z.string().regex(/^\d{5}$/, 'Valid 5-digit zip').optional().or(z.literal('')),
+  locationText: z
+    .string()
+    .min(2, 'Please tell us where you saw us')
+    .optional()
+    .or(z.literal('')),
+  zipCode: z
+    .string()
+    .regex(/^\d{5}$/, 'Valid 5-digit zip')
+    .optional()
+    .or(z.literal('')),
 })
 
 type SightingFormData = z.infer<typeof sightingFormSchema>
@@ -46,11 +69,11 @@ type SightingFormData = z.infer<typeof sightingFormSchema>
 export default function SightingsPage() {
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [gpsCoordinates, setGpsCoordinates] = useState<GpsCoordinates | null>(
-    null
+    null,
   )
-  const [gpsSource, setGpsSource] = useState<
-    'exif' | 'device' | 'none' | null
-  >(null)
+  const [gpsSource, setGpsSource] = useState<'exif' | 'device' | 'none' | null>(
+    null,
+  )
   const [compressedFile, setCompressedFile] = useState<File | null>(null)
   const [isProcessingImage, setIsProcessingImage] = useState(false)
   const [isGettingLocation, setIsGettingLocation] = useState(false)
@@ -193,15 +216,15 @@ export default function SightingsPage() {
     }
   }
 
-
-
   const onSubmit = async (data: SightingFormData) => {
     // With optional photo, we always allow submission
     // But if they have a photo without GPS and haven't tried location, prompt them
     const hasPhoto = imageFiles && imageFiles.length > 0 && compressedFile
-    
+
     if (hasPhoto && gpsSource === 'none' && !locationAttempted) {
-      setSubmitError('Please click "Use Current Location" to help verify your photo.')
+      setSubmitError(
+        'Please click "Use Current Location" to help verify your photo.',
+      )
       return
     }
 
@@ -211,21 +234,21 @@ export default function SightingsPage() {
     try {
       // Prepare form data for upload
       const formData = new FormData()
-      
+
       // Image is now optional
       if (hasPhoto && compressedFile) {
         formData.append('image', compressedFile)
       }
-      
+
       formData.append('fullName', data.fullName)
       formData.append('phoneNumber', data.phoneNumber)
       formData.append('email', data.email)
-      
+
       // Location text (where did you see us)
       if (data.locationText) {
         formData.append('locationText', data.locationText)
       }
-      
+
       if (data.zipCode) {
         formData.append('zipCode', data.zipCode)
       }
@@ -255,7 +278,7 @@ export default function SightingsPage() {
     } catch (error) {
       console.error('Submit error:', error)
       setSubmitError(
-        error instanceof Error ? error.message : 'Failed to submit sighting'
+        error instanceof Error ? error.message : 'Failed to submit sighting',
       )
     } finally {
       setIsSubmitting(false)
@@ -284,10 +307,10 @@ export default function SightingsPage() {
     // Try app first, fall back to web
     const fbAppUrl = 'fb://feed'
     const fbWebUrl = 'https://www.facebook.com/'
-    
+
     // Copy text first
     handleCopyShareText()
-    
+
     // Try to open app, fall back to web
     window.location.href = fbAppUrl
     setTimeout(() => {
@@ -299,10 +322,10 @@ export default function SightingsPage() {
     // Try app first, fall back to web
     const igAppUrl = 'instagram://user?username=sasquatchcarpet'
     const igWebUrl = 'https://www.instagram.com/sasquatchcarpet/'
-    
+
     // Copy text first
     handleCopyShareText()
-    
+
     // Try to open app, fall back to web
     window.location.href = igAppUrl
     setTimeout(() => {
@@ -312,18 +335,21 @@ export default function SightingsPage() {
 
   if (submitSuccess) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center p-4">
-        <Card className="w-full max-w-2xl p-6 sm:p-8">
+      <div className="relative flex min-h-screen flex-col items-center justify-center p-4">
+        <VideoBackground video="clouds" />
+        <Card className="relative z-10 w-full max-w-2xl border-white/20 bg-black/90 p-6 text-white sm:p-8">
           {/* Step 1 Complete Header */}
           <div className="mb-6 text-center">
             <div className="mb-2 inline-block rounded-full bg-green-100 px-4 py-1 text-sm font-semibold text-green-800 dark:bg-green-900 dark:text-green-200">
               ✅ Step 1 Complete
             </div>
             <h1 className="mb-2 text-3xl font-bold sm:text-4xl">
-              You're Almost There!
+              You&apos;re Almost There!
             </h1>
             <p className="text-muted-foreground">
-              Your <span className="font-semibold text-green-600">$20 Coupon</span> is secured below.
+              Your{' '}
+              <span className="font-semibold text-green-600">$20 Coupon</span>{' '}
+              is secured below.
             </p>
           </div>
 
@@ -331,12 +357,14 @@ export default function SightingsPage() {
           <div className="mb-6 rounded-lg border-2 border-yellow-500 bg-yellow-50 p-5 dark:border-yellow-600 dark:bg-yellow-950/30">
             <div className="mb-3 flex items-center justify-center gap-2">
               <Share2 className="h-6 w-6 text-yellow-600 dark:text-yellow-400" />
-              <h2 className="text-lg font-bold text-yellow-900 dark:text-yellow-100 sm:text-xl">
+              <h2 className="text-lg font-bold text-yellow-900 sm:text-xl dark:text-yellow-100">
                 Final Step: Post & Tag Us! 🏆
               </h2>
             </div>
             <p className="mb-4 text-center text-sm text-yellow-800 dark:text-yellow-200">
-              To complete your entry for the <strong>FREE Whole House Cleaning</strong>, share your sighting on social media!
+              To complete your entry for the{' '}
+              <strong>FREE Whole House Cleaning</strong>, share your sighting on
+              social media!
             </p>
 
             {/* Copy Share Text Button */}
@@ -384,10 +412,10 @@ export default function SightingsPage() {
           </div>
 
           {/* Verification Checkbox */}
-          <div 
+          <div
             className={`mb-6 rounded-lg border-2 p-4 transition-all ${
-              entryVerified 
-                ? 'border-green-500 bg-green-50 dark:border-green-600 dark:bg-green-950/30' 
+              entryVerified
+                ? 'border-green-500 bg-green-50 dark:border-green-600 dark:bg-green-950/30'
                 : 'border-gray-300 bg-gray-50 dark:border-gray-600 dark:bg-gray-900/30'
             }`}
           >
@@ -410,11 +438,11 @@ export default function SightingsPage() {
                 }}
                 className="h-6 w-6"
               />
-              <label 
-                htmlFor="verify-entry" 
+              <label
+                htmlFor="verify-entry"
                 className={`cursor-pointer text-sm font-semibold ${
-                  entryVerified 
-                    ? 'text-green-700 dark:text-green-300' 
+                  entryVerified
+                    ? 'text-green-700 dark:text-green-300'
                     : 'text-gray-600 dark:text-gray-400'
                 }`}
               >
@@ -441,7 +469,7 @@ export default function SightingsPage() {
               Your Instant $20 Off Code:
             </p>
             <div className="flex items-center justify-center gap-2">
-              <p className="text-2xl font-bold tracking-wider text-green-900 dark:text-green-100 sm:text-3xl">
+              <p className="text-2xl font-bold tracking-wider text-green-900 sm:text-3xl dark:text-green-100">
                 {couponCode}
               </p>
               <Button
@@ -450,13 +478,17 @@ export default function SightingsPage() {
                 variant="outline"
                 className="border-green-700 bg-white/50 hover:bg-white dark:border-green-300 dark:bg-green-950/50"
               >
-                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                {copied ? (
+                  <Check className="h-4 w-4" />
+                ) : (
+                  <Copy className="h-4 w-4" />
+                )}
               </Button>
             </div>
           </div>
 
           {/* Book Now Section */}
-          <div className="mb-6 space-y-3 rounded-lg border bg-muted/30 p-4">
+          <div className="bg-muted/30 mb-6 space-y-3 rounded-lg border p-4">
             <p className="text-center text-sm font-semibold">
               Ready to use your $20 off?
             </p>
@@ -474,12 +506,18 @@ export default function SightingsPage() {
                 Book Online Now
               </a>
             </Button>
-            <p className="text-center text-xs text-muted-foreground">
-              Mention code <span className="font-bold">{couponCode}</span> when booking
+            <p className="text-muted-foreground text-center text-xs">
+              Mention code <span className="font-bold">{couponCode}</span> when
+              booking
             </p>
           </div>
 
-          <Button onClick={() => window.location.reload()} variant="outline" size="lg" className="w-full">
+          <Button
+            onClick={() => window.location.reload()}
+            variant="outline"
+            size="lg"
+            className="w-full"
+          >
             Submit Another Sighting
           </Button>
         </Card>
@@ -488,30 +526,42 @@ export default function SightingsPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center p-4 py-12">
-      <div className="w-full max-w-2xl space-y-8">
+    <div className="relative flex min-h-screen flex-col items-center overflow-hidden p-4 py-12">
+      <VideoBackground video="clouds" />
+
+      {/* Sasquatch character - multiply blend mode to remove white bg */}
+      <img
+        src="/proudsquatch-white.png"
+        alt=""
+        className="pointer-events-none fixed left-1/2 z-[5] h-[75vh] w-auto -translate-x-1/2"
+        style={{
+          mixBlendMode: 'multiply',
+          bottom: '-5%',
+        }}
+      />
+      <div className="relative z-10 w-full max-w-2xl space-y-8">
         {/* Header */}
         <div className="text-center">
           {/* Logo */}
           <div className="mb-6 flex justify-center">
             <img
-              src="/sasquatch-logo.png"
+              src="/vector6-no-background.svg"
               alt="Sasquatch Carpet Cleaning"
-              className="h-28 w-auto"
+              className="h-28 w-auto drop-shadow-lg"
             />
           </div>
 
-          <h1 className="mb-2 text-5xl font-extrabold tracking-tight">
+          <h1 className="mb-2 text-5xl font-extrabold tracking-tight text-white drop-shadow-lg">
             YOU FOUND SASQUATCH!
           </h1>
-          <h2 className="mb-4 text-2xl font-bold text-green-500">
+          <h2 className="mb-4 text-2xl font-bold text-green-400 drop-shadow">
             Enter to WIN a Free Whole House Cleaning! 🏆
           </h2>
-          <p className="mb-6 text-sm text-muted-foreground">
+          <p className="mb-6 text-sm text-white/70">
             (Plus get an instant $20 coupon just for entering!)
           </p>
-          
-          <Card className="bg-gradient-to-r from-green-50 to-emerald-50 p-6 dark:from-green-950 dark:to-emerald-950">
+
+          <Card className="border-white/20 bg-black/70 p-6">
             <div className="space-y-3">
               <div className="rounded-md bg-green-100 p-4 dark:bg-green-900/40">
                 <p className="text-lg font-bold text-green-800 dark:text-green-200">
@@ -528,7 +578,7 @@ export default function SightingsPage() {
         </div>
 
         {/* Form */}
-        <Card className="p-6">
+        <Card className="border-white/20 bg-black/90 p-6">
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             {/* Where did you see us? */}
             <div className="space-y-2">
@@ -543,9 +593,11 @@ export default function SightingsPage() {
                 {...register('locationText')}
               />
               {errors.locationText && (
-                <p className="text-sm text-destructive">{errors.locationText.message}</p>
+                <p className="text-destructive text-sm">
+                  {errors.locationText.message}
+                </p>
               )}
-              <p className="text-xs text-muted-foreground">
+              <p className="text-muted-foreground text-xs">
                 Intersection, neighborhood, or landmark
               </p>
             </div>
@@ -565,17 +617,17 @@ export default function SightingsPage() {
                 disabled={isProcessingImage}
               />
               {errors.image && (
-                <p className="text-sm text-destructive">
+                <p className="text-destructive text-sm">
                   {String(errors.image.message)}
                 </p>
               )}
-              <p className="text-xs text-muted-foreground">
+              <p className="text-muted-foreground text-xs">
                 📸 Photo uploads get an extra entry in the monthly drawing!
               </p>
 
               {/* Processing Indicator */}
               {isProcessingImage && (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <div className="text-muted-foreground flex items-center gap-2 text-sm">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Processing image...
                 </div>
@@ -592,14 +644,18 @@ export default function SightingsPage() {
 
                   {/* GPS Status Indicator */}
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between rounded-md border bg-muted/50 p-3">
+                    <div className="bg-muted/50 flex items-center justify-between rounded-md border p-3">
                       <div className="flex items-center gap-2">
                         <MapPin className="h-4 w-4" />
                         <span className="text-sm font-medium">
                           {gpsSource === 'exif' && '✓ Location detected'}
                           {gpsSource === 'device' && '✓ Location detected'}
-                          {gpsSource === 'none' && !locationAttempted && 'Location needed'}
-                          {gpsSource === 'none' && locationAttempted && 'Location attempt made'}
+                          {gpsSource === 'none' &&
+                            !locationAttempted &&
+                            'Location needed'}
+                          {gpsSource === 'none' &&
+                            locationAttempted &&
+                            'Location attempt made'}
                         </span>
                       </div>
 
@@ -629,13 +685,16 @@ export default function SightingsPage() {
                     </div>
 
                     {/* Show message after location attempt if denied/failed */}
-                    {gpsSource === 'none' && locationAttempted && !gpsCoordinates && (
-                      <div className="rounded-md bg-yellow-50 p-3 text-sm dark:bg-yellow-950/30">
-                        <p className="text-yellow-800 dark:text-yellow-200">
-                          Location helps us verify your sighting! You can still submit without it.
-                        </p>
-                      </div>
-                    )}
+                    {gpsSource === 'none' &&
+                      locationAttempted &&
+                      !gpsCoordinates && (
+                        <div className="rounded-md bg-yellow-50 p-3 text-sm dark:bg-yellow-950/30">
+                          <p className="text-yellow-800 dark:text-yellow-200">
+                            Location helps us verify your sighting! You can
+                            still submit without it.
+                          </p>
+                        </div>
+                      )}
                   </div>
                 </div>
               )}
@@ -651,7 +710,9 @@ export default function SightingsPage() {
                 {...register('fullName')}
               />
               {errors.fullName && (
-                <p className="text-sm text-destructive">{errors.fullName.message}</p>
+                <p className="text-destructive text-sm">
+                  {errors.fullName.message}
+                </p>
               )}
             </div>
 
@@ -681,10 +742,12 @@ export default function SightingsPage() {
                 maxLength={14}
               />
               {errors.phoneNumber && (
-                <p className="text-sm text-destructive">{errors.phoneNumber.message}</p>
+                <p className="text-destructive text-sm">
+                  {errors.phoneNumber.message}
+                </p>
               )}
-              <p className="text-xs text-muted-foreground">
-                Enter 10 digits - we'll format it for you
+              <p className="text-muted-foreground text-xs">
+                Enter 10 digits - we&apos;ll format it for you
               </p>
             </div>
 
@@ -698,10 +761,12 @@ export default function SightingsPage() {
                 {...register('email')}
               />
               {errors.email && (
-                <p className="text-sm text-destructive">{errors.email.message}</p>
+                <p className="text-destructive text-sm">
+                  {errors.email.message}
+                </p>
               )}
-              <p className="text-xs text-muted-foreground">
-                We'll contact you here if you win!
+              <p className="text-muted-foreground text-xs">
+                We&apos;ll contact you here if you win!
               </p>
             </div>
 
@@ -716,16 +781,18 @@ export default function SightingsPage() {
                 {...register('zipCode')}
               />
               {errors.zipCode && (
-                <p className="text-sm text-destructive">{errors.zipCode.message}</p>
+                <p className="text-destructive text-sm">
+                  {errors.zipCode.message}
+                </p>
               )}
-              <p className="text-xs text-muted-foreground">
+              <p className="text-muted-foreground text-xs">
                 Helps us serve your area better
               </p>
             </div>
 
             {/* Error Message */}
             {submitError && (
-              <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+              <div className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
                 {submitError}
               </div>
             )}
@@ -753,17 +820,17 @@ export default function SightingsPage() {
             {/* Show helper text if photo uploaded but no GPS */}
             {imagePreview && gpsSource === 'none' && !locationAttempted && (
               <p className="text-center text-sm text-amber-600 dark:text-amber-400">
-                👆 Click "Use Current Location" above to verify your photo
+                👆 Click &quot;Use Current Location&quot; above to verify your
+                photo
               </p>
             )}
-
           </form>
         </Card>
 
         {/* Contest Rules */}
-        <Card className="bg-muted/50 p-6">
+        <Card className="border-white/20 bg-black/90 p-6">
           <h3 className="mb-3 text-lg font-semibold">Contest Rules:</h3>
-          <ul className="space-y-2 text-sm text-muted-foreground">
+          <ul className="text-muted-foreground space-y-2 text-sm">
             <li className="flex items-start gap-2">
               <span className="text-foreground">•</span>
               <span>Monthly drawing for one winner</span>
@@ -788,9 +855,9 @@ export default function SightingsPage() {
         </Card>
 
         {/* Privacy Link */}
-        <p className="text-center text-xs text-muted-foreground">
+        <p className="text-center text-xs text-white/60">
           By entering, you agree to our{' '}
-          <Link href="/privacy" className="underline hover:text-foreground">
+          <Link href="/privacy" className="underline hover:text-white">
             Privacy Policy
           </Link>
         </p>

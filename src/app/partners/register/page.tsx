@@ -15,6 +15,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import Link from 'next/link'
+import { VideoBackground } from '@/components/public/VideoBackground'
 
 export default function PartnerRegisterPage() {
   const router = useRouter()
@@ -114,11 +115,16 @@ export default function PartnerRegisterPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-green-900 via-green-800 to-emerald-900 p-4">
-      <Card className="w-full max-w-lg">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden p-4">
+      <VideoBackground />
+      <Card className="relative z-10 w-full max-w-lg border-white/20 bg-black/85">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
-            <span className="text-3xl">🦶</span>
+          <div className="mx-auto mb-4">
+            <img
+              src="/vector6-no-background.svg"
+              alt="Sasquatch"
+              className="mx-auto h-20 w-auto"
+            />
           </div>
           <CardTitle className="text-2xl">Partner Registration</CardTitle>
           <CardDescription>
@@ -175,7 +181,9 @@ export default function PartnerRegisterPage() {
               </div>
 
               <div className="grid gap-2">
-                <Label htmlFor="companyWebsite">Company Website (Optional)</Label>
+                <Label htmlFor="companyWebsite">
+                  Company Website (Optional)
+                </Label>
                 <Input
                   id="companyWebsite"
                   type="url"
@@ -206,12 +214,15 @@ export default function PartnerRegisterPage() {
                   className="mt-1"
                 />
                 <div className="space-y-1">
-                  <Label htmlFor="backlink" className="cursor-pointer font-medium">
+                  <Label
+                    htmlFor="backlink"
+                    className="cursor-pointer font-medium"
+                  >
                     Earn $25 per referral (instead of $20)
                   </Label>
-                  <p className="text-sm text-muted-foreground">
-                    Add a Sasquatch backlink to your website and earn an extra $5 per
-                    converted referral
+                  <p className="text-muted-foreground text-sm">
+                    Add a Sasquatch backlink to your website and earn an extra
+                    $5 per converted referral
                   </p>
                 </div>
               </div>
@@ -220,16 +231,19 @@ export default function PartnerRegisterPage() {
                 Continue to Create Account
               </Button>
 
-              <p className="text-center text-sm text-muted-foreground">
+              <p className="text-muted-foreground text-center text-sm">
                 Already have an account?{' '}
-                <Link href="/auth/login" className="text-green-600 hover:underline">
+                <Link
+                  href="/auth/login"
+                  className="text-green-600 hover:underline"
+                >
                   Sign in
                 </Link>
               </p>
             </form>
           ) : (
             <form onSubmit={handleRegister} className="space-y-4">
-              <div className="rounded-lg bg-muted p-3">
+              <div className="bg-muted rounded-lg p-3">
                 <p className="text-sm">
                   <strong>Email:</strong> {email}
                 </p>

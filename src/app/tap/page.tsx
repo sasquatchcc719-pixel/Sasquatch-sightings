@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card } from '@/components/ui/card'
 import { RecentJobsCarousel } from '@/components/nfc/recent-jobs-carousel'
+import { VideoBackground } from '@/components/public/VideoBackground'
 
 export default function TapLandingPage() {
   const searchParams = useSearchParams()
@@ -198,9 +199,11 @@ END:VCARD`
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-green-50 dark:from-gray-900 dark:to-gray-800">
+    <div className="relative min-h-screen overflow-hidden">
+      <VideoBackground video="clouds" />
+
       {/* Hero Section */}
-      <div className="mx-auto max-w-2xl px-4 py-8">
+      <div className="relative z-10 mx-auto max-w-2xl px-4 py-8">
         {/* Card Image */}
         <div className="mb-6 overflow-hidden rounded-xl shadow-2xl">
           <Image
@@ -295,20 +298,20 @@ END:VCARD`
 
         {/* Location Partner Badge (if applicable) */}
         {partnerName && (
-          <Card className="mb-6 border-2 border-amber-300 bg-gradient-to-r from-yellow-50 to-amber-50 p-4 dark:border-amber-700 dark:from-yellow-900/20 dark:to-amber-900/20">
-            <div className="flex items-center gap-2 text-sm font-semibold text-amber-900 dark:text-amber-200">
+          <Card className="mb-6 border-2 border-amber-500 bg-black/80 p-4">
+            <div className="flex items-center gap-2 text-sm font-semibold text-amber-300">
               <span className="text-xl">🎁</span>
               <span>Found at: {partnerName}</span>
             </div>
-            <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+            <p className="mt-1 text-xs text-amber-200">
               This location earns rewards for sharing our service!
             </p>
           </Card>
         )}
 
         {/* Service Areas */}
-        <Card className="mb-6 p-4">
-          <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+        <Card className="mb-6 border-white/20 bg-black/80 p-4">
+          <div className="flex items-center gap-2 text-sm text-white/80">
             <MapPin className="h-4 w-4" />
             <span className="font-medium">We Serve:</span>
             <span>
@@ -319,8 +322,10 @@ END:VCARD`
 
         {/* Contact Form */}
         {showForm && (
-          <Card className="mb-6 p-6">
-            <h3 className="mb-4 text-xl font-bold">Request a Call Back</h3>
+          <Card className="mb-6 border-white/20 bg-black/90 p-6">
+            <h3 className="mb-4 text-xl font-bold text-white">
+              Request a Call Back
+            </h3>
             <form onSubmit={handleFormSubmit} className="space-y-4">
               <div>
                 <Label htmlFor="name">Your Name</Label>
@@ -376,9 +381,11 @@ END:VCARD`
         )}
 
         {/* Why Choose Us */}
-        <Card className="mb-6 p-6">
-          <h3 className="mb-4 text-xl font-bold">Why Choose Sasquatch?</h3>
-          <ul className="space-y-2 text-sm">
+        <Card className="mb-6 border-white/20 bg-black/80 p-6">
+          <h3 className="mb-4 text-xl font-bold text-white">
+            Why Choose Sasquatch?
+          </h3>
+          <ul className="space-y-2 text-sm text-white/90">
             <li>✅ Professional carpet, tile & upholstery cleaning</li>
             <li>✅ Serving Colorado Springs area since 2012</li>
             <li>✅ Same-day service available</li>
@@ -389,12 +396,14 @@ END:VCARD`
 
         {/* Recent Jobs Carousel */}
         <div className="mb-6">
-          <h3 className="mb-4 text-xl font-bold">Recent Work in Your Area</h3>
+          <h3 className="mb-4 text-xl font-bold text-white drop-shadow">
+            Recent Work in Your Area
+          </h3>
           <RecentJobsCarousel />
         </div>
 
         {/* Footer */}
-        <div className="text-center text-xs text-gray-500">
+        <div className="text-center text-xs text-white/60">
           <p>Sasquatch Carpet Cleaning</p>
           <p>Monument • Colorado Springs • Castle Rock • Black Forest</p>
           <p className="mt-2">
