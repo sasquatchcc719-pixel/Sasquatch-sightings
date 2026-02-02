@@ -188,19 +188,6 @@ export default function AnalystChatPage() {
 
   return (
     <div className="relative flex h-[calc(100vh-280px)] min-h-[500px] flex-col">
-      {/* Sasquatch in background */}
-      <div
-        className="pointer-events-none fixed bottom-0 left-1/2 z-[1] h-[60vh] w-auto -translate-x-1/2 opacity-20"
-        style={{ mixBlendMode: 'screen' }}
-      >
-        <img
-          src="/proudsquatch-white.png"
-          alt=""
-          className="h-full w-auto object-contain"
-          style={{ mixBlendMode: 'multiply' }}
-        />
-      </div>
-
       {/* Header */}
       <div className="relative z-10 mb-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
