@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
-import { Target, Send, Loader2, Radar, Square } from 'lucide-react'
+import { Target, Send, Loader2, Radar, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 
@@ -11,19 +11,57 @@ interface Message {
   content: string
 }
 
+const INITIAL_MESSAGE: Message = {
+  role: 'assistant',
+  content:
+    "Hey, it's Harry. I remember our past conversations. Ask me anything about the business or competitors.",
+}
+
 export default function AnalystChatPage() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: 'assistant',
-      content:
-        "Hey, it's Harry. I can search the internet and tell you about your competitors. Ask me anything, or hit 'Scan' to research all competitors.",
-    },
-  ])
+  const [messages, setMessages] = useState<Message[]>([INITIAL_MESSAGE])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [scanning, setScanning] = useState(false)
+  const [historyLoaded, setHistoryLoaded] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  // Load conversation history on mount
+  useEffect(() => {
+    async function loadHistory() {
+      try {
+        const res = await fetch('/api/analyst/history')
+        const data = await res.json()
+
+        if (data.messages && data.messages.length > 0) {
+          setMessages(
+            data.messages.map((m: { role: string; content: string }) => ({
+              role: m.role as 'user' | 'assistant',
+              content: m.content,
+            })),
+          )
+        }
+      } catch (error) {
+        console.error('Failed to load history:', error)
+      } finally {
+        setHistoryLoaded(true)
+      }
+    }
+
+    loadHistory()
+  }, [])
+
+  // Clear conversation history
+  async function clearHistory() {
+    if (!confirm('Clear all conversation history with Harry?')) return
+
+    try {
+      await fetch('/api/analyst/history', { method: 'DELETE' })
+      setMessages([INITIAL_MESSAGE])
+    } catch (error) {
+      console.error('Failed to clear history:', error)
+    }
+  }
 
   // Run competitor scan
   async function runScan() {
@@ -183,6 +221,14 @@ export default function AnalystChatPage() {
                 Scan
               </>
             )}
+          </Button>
+          <Button
+            onClick={clearHistory}
+            variant="outline"
+            className="border-red-500/30 bg-red-500/10 text-red-300 hover:bg-red-500/20"
+            title="Clear conversation history"
+          >
+            <Trash2 className="h-4 w-4" />
           </Button>
           <Button
             asChild

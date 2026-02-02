@@ -1,11 +1,81 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
-import { searchGoogle, readWebpage } from '@/lib/web-search'
+import { searchGoogle } from '@/lib/web-search'
 import Anthropic from '@anthropic-ai/sdk'
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 })
+
+// Get recent conversation history from database
+async function getConversationHistory(
+  supabase: ReturnType<typeof createAdminClient>,
+  limit = 20,
+) {
+  const { data, error } = await supabase
+    .from('harry_conversations')
+    .select('role, content, created_at')
+    .order('created_at', { ascending: false })
+    .limit(limit)
+
+  if (error || !data) {
+    return []
+  }
+
+  // Reverse to get chronological order
+  return data.reverse()
+}
+
+// Save a message to conversation history
+async function saveMessage(
+  supabase: ReturnType<typeof createAdminClient>,
+  role: 'user' | 'assistant',
+  content: string,
+) {
+  await supabase.from('harry_conversations').insert({ role, content })
+}
+
+// Get important memories
+async function getMemories(supabase: ReturnType<typeof createAdminClient>) {
+  const { data, error } = await supabase
+    .from('harry_memory')
+    .select('memory_type, content, created_at')
+    .order('importance', { ascending: false })
+    .limit(10)
+
+  if (error || !data || data.length === 0) {
+    return ''
+  }
+
+  return `
+IMPORTANT THINGS TO REMEMBER:
+${data.map((m) => `- [${m.memory_type}] ${m.content}`).join('\n')}
+`
+}
+
+// Extract and save important memories from conversation
+async function extractMemories(
+  supabase: ReturnType<typeof createAdminClient>,
+  userMessage: string,
+  assistantResponse: string,
+) {
+  // Look for decision patterns
+  const decisionPatterns = [
+    /(?:i(?:'ve)? decided|we(?:'re)? going to|let(?:'s)?|i(?:'m)? going to) (.+)/i,
+    /(?:the plan is|our goal is|we need to) (.+)/i,
+  ]
+
+  for (const pattern of decisionPatterns) {
+    const match = userMessage.match(pattern)
+    if (match) {
+      await supabase.from('harry_memory').insert({
+        memory_type: 'decision',
+        content: match[1].substring(0, 500),
+        importance: 7,
+      })
+    }
+  }
+}
 
 // Get competitor profiles
 async function getCompetitorProfiles(
@@ -201,7 +271,7 @@ CURRENT BUSINESS STATS:
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { message, conversationHistory = [] } = body
+    const { message } = body
 
     if (!message) {
       return NextResponse.json({ error: 'Missing message' }, { status: 400 })
@@ -216,14 +286,25 @@ export async function POST(request: NextRequest) {
 
     const supabase = createAdminClient()
 
-    // Gather context
-    const [schema, recentIntel, businessStats, competitorProfiles] =
-      await Promise.all([
-        getSchema(supabase),
-        getRecentIntel(supabase),
-        getBusinessStats(supabase),
-        getCompetitorProfiles(supabase),
-      ])
+    // Save user message to conversation history
+    await saveMessage(supabase, 'user', message)
+
+    // Gather context including conversation history and memories
+    const [
+      schema,
+      recentIntel,
+      businessStats,
+      competitorProfiles,
+      conversationHistory,
+      memories,
+    ] = await Promise.all([
+      getSchema(supabase),
+      getRecentIntel(supabase),
+      getBusinessStats(supabase),
+      getCompetitorProfiles(supabase),
+      getConversationHistory(supabase, 30), // Last 30 messages
+      getMemories(supabase),
+    ])
 
     // Check if user is asking about something that needs a web search
     const needsSearch =
@@ -255,6 +336,10 @@ ${results.map((r) => `- ${r.title}: ${r.snippet} (${r.url})`).join('\n')}
 
 You have access to the entire business database, market intelligence, AND you can search the internet. You speak plainly, give hard numbers, and tell Charles what's actually happening - no fluff, no corporate speak.
 
+You have MEMORY of past conversations with Charles. You remember what you've discussed before and can reference previous conversations.
+
+${memories}
+
 ${businessStats}
 
 COMPETITOR INTELLIGENCE:
@@ -272,6 +357,7 @@ CAPABILITIES:
 - You know competitor profiles (pricing, ratings, strengths, weaknesses)
 - You can see recent market intel gathered by scans
 - When Charles asks about something current, you can search the web
+- You remember past conversations and can reference them
 
 RULES:
 - Always use real numbers from the database when available
@@ -285,15 +371,20 @@ RULES:
 - Call out problems: "Your tag at Mario's has 40 taps and zero conversions. Something's wrong there."
 - Be encouraging when things are good: "That's your best week since October."
 - If competitor data is stale (last researched > 7 days ago), mention it and suggest running a scan
+- Reference past conversations when relevant: "Last time we talked about X..." or "You mentioned before that..."
 
 You're not just answering questions - you're watching the business AND the competition. If you see an opportunity or threat, say it.`
 
-    // Build messages array
+    // Build messages array from database history (excludes current message which was just saved)
+    // Filter out the message we just saved to avoid duplication
+    const historyWithoutCurrent = conversationHistory.slice(0, -1)
     const messages: Anthropic.MessageParam[] = [
-      ...conversationHistory.map((msg: { role: string; content: string }) => ({
-        role: msg.role as 'user' | 'assistant',
-        content: msg.content,
-      })),
+      ...historyWithoutCurrent.map(
+        (msg: { role: string; content: string }) => ({
+          role: msg.role as 'user' | 'assistant',
+          content: msg.content,
+        }),
+      ),
       { role: 'user', content: message },
     ]
 
@@ -308,6 +399,12 @@ You're not just answering questions - you're watching the business AND the compe
       response.content[0].type === 'text'
         ? response.content[0].text
         : 'I had trouble processing that. Try asking again.'
+
+    // Save assistant response to conversation history
+    await saveMessage(supabase, 'assistant', assistantMessage)
+
+    // Extract and save any important memories from this exchange
+    await extractMemories(supabase, message, assistantMessage)
 
     return NextResponse.json({
       message: assistantMessage,
