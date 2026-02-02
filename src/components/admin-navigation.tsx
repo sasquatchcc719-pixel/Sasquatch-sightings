@@ -21,6 +21,7 @@ import {
   Map,
   Bot,
   Target,
+  Link2,
 } from 'lucide-react'
 
 interface NavTab {
@@ -332,6 +333,24 @@ export function AdminNavigation() {
                         <div className="text-sm font-medium">Contest Page</div>
                         <div className="text-xs text-white/50">
                           Sasquatch sightings contest
+                        </div>
+                      </div>
+                      <ExternalLink className="ml-auto h-3 w-3" />
+                    </a>
+                    <a
+                      href="/links"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={closeAll}
+                      className="flex items-center gap-3 rounded-lg px-3 py-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+                    >
+                      <Link2 className="h-4 w-4 text-green-400" />
+                      <div>
+                        <div className="text-sm font-medium">
+                          Review & Share
+                        </div>
+                        <div className="text-xs text-white/50">
+                          Post-service follow-up page
                         </div>
                       </div>
                       <ExternalLink className="ml-auto h-3 w-3" />
