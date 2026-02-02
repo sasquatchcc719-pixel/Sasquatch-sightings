@@ -187,9 +187,22 @@ export default function AnalystChatPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-280px)] min-h-[500px] flex-col">
+    <div className="relative flex h-[calc(100vh-280px)] min-h-[500px] flex-col">
+      {/* Sasquatch in background */}
+      <div
+        className="pointer-events-none fixed bottom-0 left-1/2 z-[1] h-[60vh] w-auto -translate-x-1/2 opacity-20"
+        style={{ mixBlendMode: 'screen' }}
+      >
+        <img
+          src="/proudsquatch-white.png"
+          alt=""
+          className="h-full w-auto object-contain"
+          style={{ mixBlendMode: 'multiply' }}
+        />
+      </div>
+
       {/* Header */}
-      <div className="mb-4 flex items-center justify-between">
+      <div className="relative z-10 mb-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-600 text-xl">
             🦶
@@ -244,7 +257,7 @@ export default function AnalystChatPage() {
       </div>
 
       {/* Chat Messages */}
-      <Card className="flex-1 overflow-hidden border-white/20 bg-black/40">
+      <Card className="relative z-10 flex-1 overflow-hidden border-white/20 bg-black/40">
         <div className="h-full overflow-y-auto p-4">
           <div className="space-y-4">
             {messages.map((msg, i) => (
@@ -289,7 +302,7 @@ export default function AnalystChatPage() {
       </Card>
 
       {/* Input */}
-      <div className="mt-4">
+      <div className="relative z-10 mt-4">
         <div className="flex gap-2">
           <textarea
             ref={inputRef}
