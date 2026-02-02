@@ -19,6 +19,8 @@ import {
   Truck,
   Store,
   Map,
+  Bot,
+  Target,
 } from 'lucide-react'
 
 interface NavTab {
@@ -106,6 +108,7 @@ export function AdminNavigation() {
   const [operationsOpen, setOperationsOpen] = useState(false)
   const [leadsOpen, setLeadsOpen] = useState(false)
   const [vendorsOpen, setVendorsOpen] = useState(false)
+  const [analystOpen, setAnalystOpen] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
 
   // Close all dropdowns
@@ -113,6 +116,7 @@ export function AdminNavigation() {
     setOperationsOpen(false)
     setLeadsOpen(false)
     setVendorsOpen(false)
+    setAnalystOpen(false)
     setPreviewOpen(false)
   }
 
@@ -177,10 +181,29 @@ export function AdminNavigation() {
     },
   ]
 
+  // Analyst group (Harry)
+  const analystTabs: NavTab[] = [
+    {
+      name: 'Chat',
+      href: '/admin/analyst',
+      icon: MessageSquare,
+      active: pathname === '/admin/analyst',
+      description: 'Talk to Harry',
+    },
+    {
+      name: 'Targets',
+      href: '/admin/analyst/targets',
+      icon: Target,
+      active: pathname === '/admin/analyst/targets',
+      description: 'Market intel config',
+    },
+  ]
+
   // Check active states for dropdown highlights
   const operationsActive = operationsTabs.some((tab) => tab.active)
   const leadsActive = leadsTabs.some((tab) => tab.active)
   const vendorsActive = vendorsTabs.some((tab) => tab.active)
+  const analystActive = analystTabs.some((tab) => tab.active)
   const partnersActive = pathname === '/admin/partners'
 
   return (
@@ -242,6 +265,20 @@ export function AdminNavigation() {
             <Users className="h-4 w-4" />
             Partners
           </Link>
+
+          {/* Analyst Dropdown (Harry) */}
+          <NavDropdown
+            label="Analyst"
+            icon={Bot}
+            isOpen={analystOpen}
+            onToggle={() => {
+              closeAll()
+              setAnalystOpen(!analystOpen)
+            }}
+            onClose={closeAll}
+            isActive={analystActive}
+            tabs={analystTabs}
+          />
 
           {/* Preview Pages dropdown - spans full width on mobile */}
           <div className="relative col-span-2 sm:col-span-1 sm:ml-auto">
