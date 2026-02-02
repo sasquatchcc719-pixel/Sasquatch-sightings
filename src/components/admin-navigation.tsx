@@ -50,10 +50,10 @@ function NavDropdown({
     <div className="relative">
       <button
         onClick={onToggle}
-        className={`flex items-center gap-2 border-b-2 px-1 py-3 text-sm font-medium transition-colors ${
+        className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all ${
           isActive
-            ? 'border-primary text-primary'
-            : 'text-muted-foreground hover:border-border hover:text-foreground border-transparent'
+            ? 'bg-green-600 text-white shadow-lg shadow-green-600/30'
+            : 'bg-white/20 text-white/70 backdrop-blur-sm hover:bg-white/30 hover:text-white'
         }`}
       >
         <Icon className="h-4 w-4" />
@@ -65,8 +65,8 @@ function NavDropdown({
 
       {isOpen && (
         <>
-          <div className="fixed inset-0 z-10" onClick={onClose} />
-          <div className="bg-background absolute top-full left-0 z-20 mt-1 w-64 rounded-lg border shadow-lg">
+          <div className="fixed inset-0 z-[100]" onClick={onClose} />
+          <div className="absolute top-full left-0 z-[110] mt-2 w-64 rounded-xl border border-white/20 bg-black shadow-2xl">
             <div className="p-2">
               {tabs.map((tab) => {
                 const TabIcon = tab.icon
@@ -75,16 +75,16 @@ function NavDropdown({
                     key={tab.name}
                     href={tab.href}
                     onClick={onClose}
-                    className={`flex items-start gap-3 rounded-md px-3 py-2 transition-colors ${
+                    className={`flex items-start gap-3 rounded-lg px-3 py-2 transition-colors ${
                       tab.active
-                        ? 'bg-primary/10 text-primary'
-                        : 'hover:bg-muted'
+                        ? 'bg-green-600/30 text-green-400'
+                        : 'text-white/80 hover:bg-white/10 hover:text-white'
                     }`}
                   >
                     <TabIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
                     <div>
                       <div className="text-sm font-medium">{tab.name}</div>
-                      <div className="text-muted-foreground text-xs">
+                      <div className="text-xs text-white/50">
                         {tab.description}
                       </div>
                     </div>
@@ -184,9 +184,9 @@ export function AdminNavigation() {
   const partnersActive = pathname === '/admin/partners'
 
   return (
-    <div className="border-b">
+    <div>
       <nav
-        className="-mb-px flex flex-wrap items-center gap-4 sm:gap-6"
+        className="flex flex-wrap items-center gap-3 sm:gap-4"
         aria-label="Tabs"
       >
         {/* Operations Dropdown */}
@@ -234,10 +234,10 @@ export function AdminNavigation() {
         {/* Partners - standalone link */}
         <Link
           href="/admin/partners"
-          className={`flex items-center gap-2 border-b-2 px-1 py-3 text-sm font-medium transition-colors ${
+          className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all ${
             partnersActive
-              ? 'border-primary text-primary'
-              : 'text-muted-foreground hover:border-border hover:text-foreground border-transparent'
+              ? 'bg-green-600 text-white shadow-lg shadow-green-600/30'
+              : 'bg-white/20 text-white/70 backdrop-blur-sm hover:bg-white/30 hover:text-white'
           }`}
         >
           <Users className="h-4 w-4" />
@@ -251,7 +251,7 @@ export function AdminNavigation() {
               closeAll()
               setPreviewOpen(!previewOpen)
             }}
-            className="flex items-center gap-2 rounded-md bg-green-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-green-700"
+            className="flex items-center gap-2 rounded-full bg-white/20 px-4 py-2 text-sm font-medium text-white/70 backdrop-blur-sm transition-all hover:bg-white/30 hover:text-white"
           >
             <Eye className="h-4 w-4" />
             Preview
@@ -262,10 +262,10 @@ export function AdminNavigation() {
 
           {previewOpen && (
             <>
-              <div className="fixed inset-0 z-10" onClick={closeAll} />
-              <div className="bg-background absolute top-full right-0 z-20 mt-1 w-72 rounded-lg border shadow-lg">
+              <div className="fixed inset-0 z-[100]" onClick={closeAll} />
+              <div className="absolute top-full right-0 z-[110] mt-2 max-h-[70vh] w-72 overflow-y-auto rounded-xl border border-white/20 bg-black shadow-2xl">
                 <div className="p-2">
-                  <div className="text-muted-foreground px-3 py-1 text-xs font-semibold uppercase">
+                  <div className="px-3 py-1 text-xs font-semibold text-white/50 uppercase">
                     Lead Generation
                   </div>
                   <a
@@ -273,12 +273,12 @@ export function AdminNavigation() {
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={closeAll}
-                    className="hover:bg-muted flex items-center gap-3 rounded-md px-3 py-2"
+                    className="flex items-center gap-3 rounded-lg px-3 py-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white"
                   >
-                    <CreditCard className="h-4 w-4 text-blue-500" />
+                    <CreditCard className="h-4 w-4 text-blue-400" />
                     <div>
                       <div className="text-sm font-medium">Business Card</div>
-                      <div className="text-muted-foreground text-xs">
+                      <div className="text-xs text-white/50">
                         Your NFC card landing page
                       </div>
                     </div>
@@ -289,12 +289,12 @@ export function AdminNavigation() {
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={closeAll}
-                    className="hover:bg-muted flex items-center gap-3 rounded-md px-3 py-2"
+                    className="flex items-center gap-3 rounded-lg px-3 py-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white"
                   >
-                    <Trophy className="h-4 w-4 text-amber-500" />
+                    <Trophy className="h-4 w-4 text-amber-400" />
                     <div>
                       <div className="text-sm font-medium">Contest Page</div>
-                      <div className="text-muted-foreground text-xs">
+                      <div className="text-xs text-white/50">
                         Sasquatch sightings contest
                       </div>
                     </div>
@@ -305,12 +305,12 @@ export function AdminNavigation() {
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={closeAll}
-                    className="hover:bg-muted flex items-center gap-3 rounded-md px-3 py-2"
+                    className="flex items-center gap-3 rounded-lg px-3 py-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white"
                   >
-                    <Map className="h-4 w-4 text-green-500" />
+                    <Map className="h-4 w-4 text-green-400" />
                     <div>
                       <div className="text-sm font-medium">Sightings Map</div>
-                      <div className="text-muted-foreground text-xs">
+                      <div className="text-xs text-white/50">
                         Public map of sightings
                       </div>
                     </div>
@@ -318,8 +318,8 @@ export function AdminNavigation() {
                   </a>
                 </div>
 
-                <div className="border-t p-2">
-                  <div className="text-muted-foreground px-3 py-1 text-xs font-semibold uppercase">
+                <div className="border-t border-white/10 p-2">
+                  <div className="px-3 py-1 text-xs font-semibold text-white/50 uppercase">
                     Vendor Pages
                   </div>
                   <a
@@ -327,12 +327,12 @@ export function AdminNavigation() {
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={closeAll}
-                    className="hover:bg-muted flex items-center gap-3 rounded-md px-3 py-2"
+                    className="flex items-center gap-3 rounded-lg px-3 py-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white"
                   >
-                    <MapPin className="h-4 w-4 text-red-500" />
+                    <MapPin className="h-4 w-4 text-red-400" />
                     <div>
                       <div className="text-sm font-medium">Vendor Landing</div>
-                      <div className="text-muted-foreground text-xs">
+                      <div className="text-xs text-white/50">
                         What customers see at vendor locations
                       </div>
                     </div>
@@ -340,8 +340,8 @@ export function AdminNavigation() {
                   </a>
                 </div>
 
-                <div className="border-t p-2">
-                  <div className="text-muted-foreground px-3 py-1 text-xs font-semibold uppercase">
+                <div className="border-t border-white/10 p-2">
+                  <div className="px-3 py-1 text-xs font-semibold text-white/50 uppercase">
                     Partner Pages
                   </div>
                   <a
@@ -349,12 +349,12 @@ export function AdminNavigation() {
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={closeAll}
-                    className="hover:bg-muted flex items-center gap-3 rounded-md px-3 py-2"
+                    className="flex items-center gap-3 rounded-lg px-3 py-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white"
                   >
-                    <Users className="h-4 w-4 text-purple-500" />
+                    <Users className="h-4 w-4 text-purple-400" />
                     <div>
                       <div className="text-sm font-medium">Partner Signup</div>
-                      <div className="text-muted-foreground text-xs">
+                      <div className="text-xs text-white/50">
                         Referral partner registration
                       </div>
                     </div>
@@ -365,14 +365,14 @@ export function AdminNavigation() {
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={closeAll}
-                    className="hover:bg-muted flex items-center gap-3 rounded-md px-3 py-2"
+                    className="flex items-center gap-3 rounded-lg px-3 py-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white"
                   >
-                    <Award className="h-4 w-4 text-green-500" />
+                    <Award className="h-4 w-4 text-green-400" />
                     <div>
                       <div className="text-sm font-medium">
                         Preferred Partners
                       </div>
-                      <div className="text-muted-foreground text-xs">
+                      <div className="text-xs text-white/50">
                         Public partner directory
                       </div>
                     </div>

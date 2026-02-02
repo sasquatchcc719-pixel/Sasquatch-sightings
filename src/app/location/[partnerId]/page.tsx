@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { RecentJobsCarousel } from '@/components/nfc/recent-jobs-carousel'
+import { VideoBackground } from '@/components/public/VideoBackground'
 
 interface PartnerInfo {
   id: string
@@ -227,8 +228,9 @@ END:VCARD`
   // If partner is logged in, show their dashboard
   if (partnerStats) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-green-50 to-blue-50 dark:from-gray-900 dark:to-gray-800">
-        <div className="mx-auto max-w-2xl px-4 py-8">
+      <div className="relative min-h-screen overflow-hidden">
+        <VideoBackground />
+        <div className="relative z-10 mx-auto max-w-2xl px-4 py-8">
           {/* Partner Dashboard Header */}
           <div className="mb-6 text-center">
             <h1 className="text-2xl font-black text-gray-900 dark:text-white">
@@ -310,7 +312,9 @@ END:VCARD`
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-green-50 dark:from-gray-900 dark:to-gray-800">
+    <div className="relative min-h-screen overflow-hidden">
+      <VideoBackground />
+
       {/* Login Modal */}
       {showLoginForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -367,18 +371,16 @@ END:VCARD`
       )}
 
       {/* Hero Section */}
-      <div className="mx-auto max-w-2xl px-4 py-8">
+      <div className="relative z-10 mx-auto max-w-2xl px-4 py-8">
         {/* Logo/Header - Tappable for Easter Egg */}
         <div
           className="mb-6 cursor-pointer text-center select-none"
           onClick={handleLogoTap}
         >
-          <h1 className="text-4xl font-black text-gray-900 dark:text-white">
+          <h1 className="text-4xl font-black text-white drop-shadow-lg">
             🦶 Sasquatch
           </h1>
-          <p className="text-lg font-semibold text-gray-600 dark:text-gray-300">
-            Carpet Cleaning
-          </p>
+          <p className="text-lg font-semibold text-white/80">Carpet Cleaning</p>
           {/* Subtle hint after 2 taps */}
           {logoTapCount >= 2 && logoTapCount < 5 && (
             <p className="mt-1 animate-pulse text-xs text-gray-400">
@@ -388,12 +390,12 @@ END:VCARD`
         </div>
 
         {/* Location Partner Badge */}
-        <Card className="mb-6 border-2 border-amber-300 bg-gradient-to-r from-yellow-50 to-amber-50 p-4 dark:border-amber-700 dark:from-yellow-900/20 dark:to-amber-900/20">
-          <div className="flex items-center gap-2 text-sm font-semibold text-amber-900 dark:text-amber-200">
+        <Card className="mb-6 border-2 border-amber-500 bg-black/80 p-4">
+          <div className="flex items-center gap-2 text-sm font-semibold text-amber-300">
             <span className="text-xl">🎁</span>
             <span>Found at: {partnerDisplayName}</span>
           </div>
-          <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+          <p className="mt-1 text-xs text-amber-200">
             Mention where you found us for $20 OFF!
           </p>
         </Card>
@@ -463,8 +465,8 @@ END:VCARD`
         </div>
 
         {/* Service Areas */}
-        <Card className="mb-6 p-4">
-          <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+        <Card className="mb-6 border-white/20 bg-black/80 p-4">
+          <div className="flex items-center gap-2 text-sm text-white/80">
             <MapPin className="h-4 w-4" />
             <span className="font-medium">We Serve:</span>
             <span>
@@ -475,91 +477,97 @@ END:VCARD`
 
         {/* Trust Badges */}
         <div className="mb-6 grid grid-cols-3 gap-3 text-center">
-          <div className="rounded-lg bg-white p-3 shadow-md dark:bg-gray-800">
+          <div className="rounded-lg border border-white/20 bg-black/80 p-3 shadow-md">
             <div className="text-2xl">⭐</div>
-            <div className="text-xs font-bold">5 Stars</div>
-            <div className="text-xs text-gray-500">on Google</div>
+            <div className="text-xs font-bold text-white">5 Stars</div>
+            <div className="text-xs text-white/60">on Google</div>
           </div>
-          <div className="rounded-lg bg-white p-3 shadow-md dark:bg-gray-800">
+          <div className="rounded-lg border border-white/20 bg-black/80 p-3 shadow-md">
             <div className="text-2xl">🐾</div>
-            <div className="text-xs font-bold">Pet Stain</div>
-            <div className="text-xs text-gray-500">Specialists</div>
+            <div className="text-xs font-bold text-white">Pet Stain</div>
+            <div className="text-xs text-white/60">Specialists</div>
           </div>
-          <div className="rounded-lg bg-white p-3 shadow-md dark:bg-gray-800">
+          <div className="rounded-lg border border-white/20 bg-black/80 p-3 shadow-md">
             <div className="text-2xl">🏢</div>
-            <div className="text-xs font-bold">Commercial</div>
-            <div className="text-xs text-gray-500">& Residential</div>
+            <div className="text-xs font-bold text-white">Commercial</div>
+            <div className="text-xs text-white/60">& Residential</div>
           </div>
         </div>
 
         {/* Guarantee Banner */}
-        <div className="mb-6 rounded-lg border-2 border-green-500 bg-green-50 p-4 text-center dark:border-green-600 dark:bg-green-900/20">
-          <p className="font-bold text-green-800 dark:text-green-200">
+        <div className="mb-6 rounded-lg border-2 border-green-500 bg-black/80 p-4 text-center">
+          <p className="font-bold text-green-400">
             ✓ 100% Satisfaction Guaranteed
           </p>
-          <p className="text-sm text-green-700 dark:text-green-300">
+          <p className="text-sm text-green-300">
             Not happy? We&apos;ll make it right.
           </p>
         </div>
 
         {/* Why We're Different */}
-        <Card className="mb-6 p-6">
-          <h3 className="mb-4 text-xl font-bold">
+        <Card className="mb-6 border-white/20 bg-black/80 p-6">
+          <h3 className="mb-4 text-xl font-bold text-white">
             The Deepest Clean in Colorado
           </h3>
-          <p className="mb-4 text-sm text-gray-700 dark:text-gray-300">
+          <p className="mb-4 text-sm text-white/80">
             Our standard cleaning is what other companies call their &quot;deep
             clean.&quot; Every job includes our full 3-step process:
           </p>
           <ul className="space-y-3 text-sm">
             <li className="flex items-start gap-2">
-              <span className="font-bold text-green-600">1.</span>
+              <span className="font-bold text-green-400">1.</span>
               <div>
-                <span className="font-semibold">Pre-Spray Treatment</span>
-                <p className="text-gray-600 dark:text-gray-400">
+                <span className="font-semibold text-white">
+                  Pre-Spray Treatment
+                </span>
+                <p className="text-white/60">
                   Breaks down dirt, oils, and stains before we even start
                 </p>
               </div>
             </li>
             <li className="flex items-start gap-2">
-              <span className="font-bold text-green-600">2.</span>
+              <span className="font-bold text-green-400">2.</span>
               <div>
-                <span className="font-semibold">CRB Agitation</span>
-                <p className="text-gray-600 dark:text-gray-400">
+                <span className="font-semibold text-white">CRB Agitation</span>
+                <p className="text-white/60">
                   Counter-rotating brush works the solution deep into carpet
                   fibers
                 </p>
               </div>
             </li>
             <li className="flex items-start gap-2">
-              <span className="font-bold text-green-600">3.</span>
+              <span className="font-bold text-green-400">3.</span>
               <div>
-                <span className="font-semibold">Hot Water Extraction</span>
-                <p className="text-gray-600 dark:text-gray-400">
+                <span className="font-semibold text-white">
+                  Hot Water Extraction
+                </span>
+                <p className="text-white/60">
                   Powerful suction pulls out everything - dirt, allergens,
                   bacteria
                 </p>
               </div>
             </li>
           </ul>
-          <p className="mt-4 text-sm font-semibold text-green-700 dark:text-green-400">
+          <p className="mt-4 text-sm font-semibold text-green-400">
             The deepest clean you can get for the money. Period.
           </p>
         </Card>
 
         {/* Recent Jobs Carousel */}
         <div className="mb-6">
-          <h3 className="mb-4 text-xl font-bold">Recent Work in Your Area</h3>
+          <h3 className="mb-4 text-xl font-bold text-white drop-shadow">
+            Recent Work in Your Area
+          </h3>
           <RecentJobsCarousel />
         </div>
 
         {/* Footer */}
-        <div className="text-center text-xs text-gray-500">
+        <div className="text-center text-xs text-white/60">
           <p>Sasquatch Carpet Cleaning</p>
           <p>Monument • Colorado Springs • Castle Rock • Black Forest</p>
           <p className="mt-2">$20 off valid on all residential cleanings.</p>
           {partner && (
-            <p className="mt-1 text-amber-600">
+            <p className="mt-1 text-amber-400">
               Thank you to {partnerDisplayName} for sharing us!
             </p>
           )}

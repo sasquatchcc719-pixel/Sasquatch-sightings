@@ -3,13 +3,16 @@ import { createAdminClient } from '@/supabase/server'
 import { Card, CardContent } from '@/components/ui/card'
 import { ExternalLink } from 'lucide-react'
 import Link from 'next/link'
+import { VideoBackground } from '@/components/public/VideoBackground'
 
 export const metadata: Metadata = {
   title: 'Our Preferred Partners | Sasquatch Carpet Cleaning',
-  description: 'Trusted local businesses we proudly recommend. These partners refer their clients to us, and we refer ours to them.',
+  description:
+    'Trusted local businesses we proudly recommend. These partners refer their clients to us, and we refer ours to them.',
   openGraph: {
     title: 'Our Preferred Partners | Sasquatch Carpet Cleaning',
-    description: 'Trusted local businesses we proudly recommend. These partners refer their clients to us, and we refer ours to them.',
+    description:
+      'Trusted local businesses we proudly recommend. These partners refer their clients to us, and we refer ours to them.',
     images: ['/partner-og-image.png'],
     url: 'https://sightings.sasquatchcarpet.com/preferred-partners',
     type: 'website',
@@ -42,53 +45,46 @@ export default async function PreferredPartnersPage() {
     .order('company_name', { ascending: true })
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-green-950 to-black">
+    <div className="relative min-h-screen overflow-hidden">
+      <VideoBackground />
+
       {/* Header */}
-      <header className="border-b border-green-800/50 bg-black/50">
+      <header className="relative z-10 border-b border-white/20 bg-black/30 backdrop-blur-sm">
         <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-4">
-          <Link href="/" className="flex items-center gap-2">
+          <Link href="/">
             <img
-              src="/sasquatch-logo.png"
+              src="/vector6-no-background.svg"
               alt="Sasquatch Carpet Cleaning"
-              className="h-10 w-10"
+              className="h-32 w-auto"
             />
-            <span className="font-bold text-white">Sasquatch Carpet Cleaning</span>
           </Link>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="mx-auto max-w-4xl px-4 py-12">
+      <main className="relative z-10 mx-auto max-w-4xl px-4 py-12">
         <div className="mb-12 text-center">
           <h1 className="mb-4 text-4xl font-bold text-white">
             Our Preferred Partners
           </h1>
-          <p className="mx-auto max-w-2xl text-lg text-green-200/80">
-            These trusted local businesses refer their clients to us. 
-            We&apos;re proud to recommend them in return.
+          <p className="mx-auto max-w-2xl text-lg text-white/80">
+            These trusted local businesses refer their clients to us. We&apos;re
+            proud to recommend them in return.
           </p>
         </div>
 
-        {!partners || partners.length === 0 ? (
-          <Card className="bg-green-900/20 border-green-800/50">
-            <CardContent className="py-12 text-center">
-              <p className="text-green-200/60">
-                Our partner program is just getting started. Check back soon!
-              </p>
-            </CardContent>
-          </Card>
-        ) : (
+        {partners && partners.length > 0 && (
           <div className="grid gap-6 md:grid-cols-2">
             {partners.map((partner: Partner) => (
-              <Card 
-                key={partner.id} 
-                className="bg-green-900/20 border-green-800/50 hover:bg-green-900/30 transition-colors"
+              <Card
+                key={partner.id}
+                className="border-white/20 bg-black/70 transition-colors hover:bg-black/80"
               >
                 <CardContent className="p-6">
                   <h2 className="mb-2 text-xl font-bold text-white">
                     {partner.company_name}
                   </h2>
-                  <p className="mb-4 text-sm text-green-200/60">
+                  <p className="mb-4 text-sm text-white/60">
                     Trusted partner of Sasquatch Carpet Cleaning
                   </p>
                   {partner.company_website && (
@@ -100,10 +96,13 @@ export default async function PreferredPartnersPage() {
                       }
                       target="_blank"
                       rel="noopener"
-                      className="inline-flex items-center gap-2 text-green-400 hover:text-green-300 transition-colors"
+                      className="inline-flex items-center gap-2 text-white transition-colors hover:text-white/80"
                     >
                       <ExternalLink className="h-4 w-4" />
-                      Visit {partner.company_website.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+                      Visit{' '}
+                      {partner.company_website
+                        .replace(/^https?:\/\//, '')
+                        .replace(/\/$/, '')}
                     </a>
                   )}
                 </CardContent>
@@ -112,31 +111,110 @@ export default async function PreferredPartnersPage() {
           </div>
         )}
 
-        {/* CTA for becoming a partner */}
-        <div className="mt-16 text-center">
-          <Card className="bg-gradient-to-r from-green-800/30 to-green-700/30 border-green-600/50">
-            <CardContent className="py-8">
-              <h3 className="mb-2 text-xl font-bold text-white">
-                Want to become a partner?
-              </h3>
-              <p className="mb-4 text-green-200/70">
-                Join our referral program and earn credits for every client you send our way.
-              </p>
-              <Link
-                href="/partners/register"
-                className="inline-block rounded-lg bg-green-600 px-6 py-3 font-semibold text-white hover:bg-green-500 transition-colors"
-              >
-                Register as a Partner
-              </Link>
+        {/* Why Become a Partner */}
+        <div className="mt-16">
+          <Card className="border-white/20 bg-black/80">
+            <CardContent className="px-8 py-10">
+              <h2 className="mb-6 text-center text-3xl font-bold text-white">
+                Why Become a Partner?
+              </h2>
+
+              <div className="mb-10 grid gap-8 md:grid-cols-2">
+                {/* Benefit 1 */}
+                <div className="flex gap-4">
+                  <div className="text-4xl">💰</div>
+                  <div>
+                    <h3 className="mb-2 text-xl font-bold text-white">
+                      Earn $25 Per Referral
+                    </h3>
+                    <p className="text-white/70">
+                      Every time someone you refer books a cleaning, you earn
+                      $25 in credits. No limits on how much you can earn.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Benefit 2 */}
+                <div className="flex gap-4">
+                  <div className="text-4xl">🏠</div>
+                  <div>
+                    <h3 className="mb-2 text-xl font-bold text-white">
+                      Free Cleanings
+                    </h3>
+                    <p className="text-white/70">
+                      Use your credits toward your own carpet, tile, or
+                      upholstery cleaning. A few referrals = a free whole house
+                      cleaning.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Benefit 3 */}
+                <div className="flex gap-4">
+                  <div className="text-4xl">📊</div>
+                  <div>
+                    <h3 className="mb-2 text-xl font-bold text-white">
+                      Track Everything
+                    </h3>
+                    <p className="text-white/70">
+                      Your own partner dashboard shows referrals, conversions,
+                      and credit balance in real-time. Full transparency.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Benefit 4 */}
+                <div className="flex gap-4">
+                  <div className="text-4xl">🔗</div>
+                  <div>
+                    <h3 className="mb-2 text-xl font-bold text-white">
+                      Bonus: Add a Backlink
+                    </h3>
+                    <p className="text-white/70">
+                      Add a Sasquatch link to your website and earn $25 per
+                      referral instead of $20. Plus boost your SEO.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Who It's For */}
+              <div className="mb-10 rounded-xl border border-white/10 bg-white/5 p-6">
+                <h3 className="mb-4 text-center text-xl font-bold text-white">
+                  Perfect For:
+                </h3>
+                <div className="grid gap-3 text-center md:grid-cols-3">
+                  <div className="text-white/80">🏡 Real Estate Agents</div>
+                  <div className="text-white/80">🔧 Property Managers</div>
+                  <div className="text-white/80">🏢 HOA Managers</div>
+                  <div className="text-white/80">🛋️ Interior Designers</div>
+                  <div className="text-white/80">🧹 Cleaning Services</div>
+                  <div className="text-white/80">🤝 Anyone Who Refers!</div>
+                </div>
+              </div>
+
+              {/* CTA */}
+              <div className="text-center">
+                <Link
+                  href="/partners/register"
+                  className="inline-block rounded-xl bg-green-600 px-10 py-4 text-xl font-bold text-white shadow-lg shadow-green-600/30 transition-colors hover:bg-green-500"
+                >
+                  Join the Partner Program
+                </Link>
+                <p className="mt-4 text-sm text-white/50">
+                  Free to join. Start earning today.
+                </p>
+              </div>
             </CardContent>
           </Card>
         </div>
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-green-800/50 bg-black/50 py-8">
-        <div className="mx-auto max-w-4xl px-4 text-center text-sm text-green-200/50">
-          © {new Date().getFullYear()} Sasquatch Carpet Cleaning. All rights reserved.
+      <footer className="relative z-10 border-t border-white/20 bg-black/30 py-8 backdrop-blur-sm">
+        <div className="mx-auto max-w-4xl px-4 text-center text-sm text-white/50">
+          © {new Date().getFullYear()} Sasquatch Carpet Cleaning. All rights
+          reserved.
         </div>
       </footer>
     </div>
