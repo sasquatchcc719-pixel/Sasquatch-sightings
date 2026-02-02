@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 import { searchGoogle } from '@/lib/web-search'
+import { getPriceBookSummary } from '@/lib/price-book'
 import Anthropic from '@anthropic-ai/sdk'
 
 const anthropic = new Anthropic({
@@ -332,6 +333,9 @@ ${results.map((r) => `- ${r.title}: ${r.snippet} (${r.url})`).join('\n')}
       }
     }
 
+    // Get price book
+    const priceBook = getPriceBookSummary()
+
     const systemPrompt = `You are Harry, the Sasquatch Analyst. You work for Sasquatch Carpet Cleaning in Monument, Colorado. You're named after Harry from Harry and the Hendersons.
 
 You have access to the entire business database, market intelligence, AND you can search the internet. You speak plainly, give hard numbers, and tell Charles what's actually happening - no fluff, no corporate speak.
@@ -341,6 +345,9 @@ You have MEMORY of past conversations with Charles. You remember what you've dis
 ${memories}
 
 ${businessStats}
+
+YOUR PRICE BOOK (ballpark prices - actual quotes may vary):
+${priceBook}
 
 COMPETITOR INTELLIGENCE:
 ${competitorProfiles}
@@ -354,6 +361,7 @@ ${schema}
 
 CAPABILITIES:
 - You have access to business data (jobs, leads, taps, partners)
+- You KNOW your prices - use the price book above to answer pricing questions
 - You know competitor profiles (pricing, ratings, strengths, weaknesses)
 - You can see recent market intel gathered by scans
 - When Charles asks about something current, you can search the web
@@ -361,6 +369,7 @@ CAPABILITIES:
 
 RULES:
 - Always use real numbers from the database when available
+- When asked about pricing, use YOUR price book - you know what things cost
 - Compare to previous periods when relevant
 - Flag problems without being asked
 - Be direct - Charles is busy
