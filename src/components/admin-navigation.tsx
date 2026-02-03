@@ -140,7 +140,6 @@ export function AdminNavigation() {
   ]
 
   // Leads group (from truck/contest)
-  const isPhoneSource = searchParams.get('source') === 'phone'
   const leadsTabs: NavTab[] = [
     {
       name: 'All Leads',
@@ -148,13 +147,6 @@ export function AdminNavigation() {
       icon: Phone,
       active: pathname === '/admin/leads',
       description: 'Lead pipeline & follow-ups',
-    },
-    {
-      name: 'Phone Calls',
-      href: '/admin/conversations?source=phone',
-      icon: MessageSquare,
-      active: pathname === '/admin/conversations' && isPhoneSource,
-      description: 'Voicemails & missed call chats',
     },
     {
       name: 'Business Cards',
@@ -214,6 +206,9 @@ export function AdminNavigation() {
   const vendorsActive = vendorsTabs.some((tab) => tab.active)
   const analystActive = analystTabs.some((tab) => tab.active)
   const partnersActive = pathname === '/admin/partners'
+  const callsActive =
+    pathname === '/admin/conversations' &&
+    searchParams.get('source') === 'phone'
 
   return (
     <div>
@@ -273,6 +268,19 @@ export function AdminNavigation() {
           >
             <Users className="h-4 w-4" />
             Partners
+          </Link>
+
+          {/* Calls - standalone link for voicemails/phone */}
+          <Link
+            href="/admin/conversations?source=phone"
+            className={`flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all sm:justify-start ${
+              callsActive
+                ? 'bg-green-600 text-white shadow-lg shadow-green-600/30'
+                : 'bg-white/20 text-white/70 backdrop-blur-sm hover:bg-white/30 hover:text-white'
+            }`}
+          >
+            <Phone className="h-4 w-4" />
+            Calls
           </Link>
 
           {/* Analyst Dropdown (Harry) */}
