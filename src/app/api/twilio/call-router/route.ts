@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
       console.log(`[Call Router] After hours - play message and send SMS`)
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say>Thanks for calling Sasquatch Carpet Cleaning. Our office hours are closed, but you should be receiving a text from Harry shortly.</Say>
+  <Say voice="alice">Thanks for calling Sasquatch Carpet Cleaning. We're currently assisting other customers. Please leave a message and we'll get back to you shortly.</Say>
   <Redirect method="POST">https://sasquatch-sightings-git-main-charles-sewells-projects.vercel.app/api/twilio/call-after-hours</Redirect>
 </Response>`
     }
