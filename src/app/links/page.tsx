@@ -27,31 +27,31 @@ const REVIEW_LINKS: {
     name: 'Google',
     url: 'https://www.google.com/maps/place/Sasquatch+Carpet+Cleaning,+LLC/@39.1240236,-104.9167488,17z/data=!4m8!3m7!1s0x2117fffca6651c3:0x8436346fd3fcc24a!8m2!3d39.1240236!4d-104.9141685!9m1!1b1!16s%2Fg%2F11q8wmgsst?entry=ttu',
     icon: 'google',
-    color: 'bg-blue-600 hover:bg-blue-700',
+    color: 'bg-blue-600/70 hover:bg-blue-700/80',
   },
   {
     name: 'Facebook',
     url: 'https://www.facebook.com/sasquatchcarpet/reviews',
     icon: 'facebook',
-    color: 'bg-blue-800 hover:bg-blue-900',
+    color: 'bg-blue-800/70 hover:bg-blue-900/80',
   },
   {
     name: 'Yelp',
     url: 'https://www.yelp.com/biz/sasquatch-carpet-cleaning-palmer-lake',
     icon: 'yelp',
-    color: 'bg-red-600 hover:bg-red-700',
+    color: 'bg-red-600/70 hover:bg-red-700/80',
   },
   {
     name: 'Nextdoor',
     url: 'https://nextdoor.com/page/sasquatch-carpet-cleaning-llc-palmer-lake-co',
     icon: 'nextdoor',
-    color: 'bg-green-600 hover:bg-green-700',
+    color: 'bg-green-600/70 hover:bg-green-700/80',
   },
   {
     name: 'BBB',
     url: 'https://www.bbb.org/us/co/palmer-lake/profile/carpet-and-rug-cleaners/sasquatch-carpet-cleaning-0785-1000034131',
     icon: 'bbb',
-    color: 'bg-blue-500 hover:bg-blue-600',
+    color: 'bg-blue-500/70 hover:bg-blue-600/80',
   },
 ]
 
@@ -152,6 +152,17 @@ END:VCARD`
     <div className="relative min-h-screen overflow-hidden">
       <VideoBackground video="clouds" />
 
+      {/* Sasquatch character - multiply blend mode to remove white bg */}
+      <img
+        src="/proudsquatch-white.png"
+        alt=""
+        className="pointer-events-none fixed left-1/2 z-[5] h-[75vh] w-auto -translate-x-1/2"
+        style={{
+          mixBlendMode: 'multiply',
+          bottom: '-5%',
+        }}
+      />
+
       {/* Content */}
       <div className="relative z-10 mx-auto max-w-2xl px-4 py-8">
         {/* Logo Header */}
@@ -168,7 +179,7 @@ END:VCARD`
 
         {/* Review Links Section */}
         {activeReviewLinks.length > 0 && (
-          <Card className="mb-6 border-white/20 bg-black/80 p-6">
+          <Card className="mb-6 border-white/20 bg-black/50 p-6">
             <h3 className="mb-4 flex items-center gap-2 text-xl font-bold text-white">
               <Star className="h-5 w-5 text-yellow-400" />
               Leave Us a Review
@@ -219,7 +230,7 @@ END:VCARD`
             className="group relative block w-full overflow-hidden rounded-2xl shadow-2xl transition-all hover:scale-105"
           >
             {/* Button with 3D effect */}
-            <div className="relative bg-gradient-to-b from-green-400 to-green-600 px-8 py-8 text-center transition-all group-hover:from-green-500 group-hover:to-green-700">
+            <div className="relative bg-gradient-to-b from-green-400/70 to-green-600/70 px-8 py-8 text-center transition-all group-hover:from-green-500/80 group-hover:to-green-700/80">
               {/* Top highlight for 3D effect */}
               <div className="absolute inset-x-0 top-0 h-2 bg-gradient-to-b from-white/30 to-transparent" />
 
@@ -250,7 +261,7 @@ END:VCARD`
             className="group relative block w-full overflow-hidden rounded-2xl shadow-2xl transition-all hover:scale-105"
           >
             {/* Button with 3D effect */}
-            <div className="relative bg-gradient-to-b from-blue-400 to-blue-600 px-8 py-8 text-center transition-all group-hover:from-blue-500 group-hover:to-blue-700">
+            <div className="relative bg-gradient-to-b from-blue-400/70 to-blue-600/70 px-8 py-8 text-center transition-all group-hover:from-blue-500/80 group-hover:to-blue-700/80">
               {/* Top highlight for 3D effect */}
               <div className="absolute inset-x-0 top-0 h-2 bg-gradient-to-b from-white/30 to-transparent" />
 
