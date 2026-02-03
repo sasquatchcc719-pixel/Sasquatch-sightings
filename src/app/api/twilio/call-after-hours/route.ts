@@ -27,10 +27,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Normalize phone to E.164
-    const normalizedPhone = callerPhone.startsWith('+')
-      ? callerPhone
-      : `+1${callerPhone}`
+    // Normalize phone to E.164 - strip everything except digits, then add +1
+    const digits = callerPhone.replace(/\D/g, '')
+    const normalizedPhone =
+      digits.length === 10
+        ? `+1${digits}`
+        : digits.length === 11 && digits.startsWith('1')
+          ? `+${digits}`
+          : `+${digits}`
 
     console.log(
       `[Call Handler] Caller: ${normalizedPhone}, Status: ${callStatus}, DialStatus: ${dialCallStatus}, SID: ${callSid}`,
