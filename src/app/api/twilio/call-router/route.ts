@@ -11,19 +11,20 @@ export async function POST(request: NextRequest) {
     // Get current time in Mountain Time (Monument, CO)
     const now = new Date()
 
-    // Create a formatter for Mountain Time
-    const options: Intl.DateTimeFormatOptions = {
+    // Use separate formatters for reliable parsing
+    const weekdayFormatter = new Intl.DateTimeFormat('en-US', {
       timeZone: 'America/Denver',
       weekday: 'long',
+    })
+    const hourFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Denver',
       hour: 'numeric',
       hour12: false,
-    }
+    })
 
-    const mtTime = new Intl.DateTimeFormat('en-US', options).format(now)
-
-    // Parse: "Monday, 10" format
-    const [weekdayStr, hourStr] = mtTime.split(', ')
-    const hour = parseInt(hourStr)
+    const weekdayStr = weekdayFormatter.format(now)
+    const hourStr = hourFormatter.format(now).replace(/\D/g, '') // Strip non-digits
+    const hour = parseInt(hourStr) || 0
 
     // Weekdays only (not Saturday/Sunday)
     const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
@@ -35,6 +36,10 @@ export async function POST(request: NextRequest) {
     console.log(
       `[Call Router] MT Time: ${weekdayStr} ${hour}:00, isWeekday: ${isWeekday}, isBusinessHours: ${isBusinessHours}`,
     )
+    console.log(
+      `[Call Router] Raw values - weekdayStr: "${weekdayStr}", hourStr: "${hourStr}"`,
+    )
+    console.log(`[Call Router] Current UTC: ${now.toISOString()}`)
 
     let twimlResponse
 
