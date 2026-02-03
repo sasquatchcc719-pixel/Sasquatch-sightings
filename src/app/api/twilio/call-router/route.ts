@@ -49,7 +49,6 @@ export async function POST(request: NextRequest) {
 <Response>
   <Dial timeout="20" action="https://sasquatch-sightings-git-main-charles-sewells-projects.vercel.app/api/twilio/call-after-hours">
     <Sip>sip:chuck@sasquatch-cc.sip.us1.twilio.com</Sip>
-    <Sip>sip:wife@sasquatch-cc.sip.us1.twilio.com</Sip>
   </Dial>
 </Response>`
     } else {
