@@ -36,10 +36,15 @@ export async function POST(request: NextRequest) {
       `[Call Handler] Caller: ${normalizedPhone}, Status: ${callStatus}, DialStatus: ${dialCallStatus}, SID: ${callSid}`,
     )
 
-    // Only send SMS if call was missed (no-answer, busy, failed, or completed without answer)
-    if (dialCallStatus && !['completed', 'answered'].includes(dialCallStatus)) {
+    // Send SMS if:
+    // 1. No dialCallStatus (after-hours redirect - no dial happened)
+    // 2. Or dialCallStatus indicates call was missed (no-answer, busy, failed)
+    const shouldSendSMS =
+      !dialCallStatus || !['completed', 'answered'].includes(dialCallStatus)
+
+    if (shouldSendSMS) {
       console.log(
-        `[Call Handler] Call was missed (${dialCallStatus}) - sending Harry SMS`,
+        `[Call Handler] Sending Harry SMS (dialCallStatus: ${dialCallStatus || 'none - after hours'})`,
       )
 
       // Find or create conversation for this phone number
@@ -140,7 +145,9 @@ export async function POST(request: NextRequest) {
         sent_at: new Date().toISOString(),
       })
     } else {
-      console.log(`[Call Handler] Call was answered - no SMS needed`)
+      console.log(
+        `[Call Handler] Call was answered (${dialCallStatus}) - no SMS needed`,
+      )
     }
 
     // Return empty TwiML (call already ended)
