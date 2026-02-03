@@ -140,6 +140,7 @@ export function AdminNavigation() {
   ]
 
   // Leads group (from truck/contest)
+  const isPhoneSource = searchParams.get('source') === 'phone'
   const leadsTabs: NavTab[] = [
     {
       name: 'All Leads',
@@ -147,6 +148,13 @@ export function AdminNavigation() {
       icon: Phone,
       active: pathname === '/admin/leads',
       description: 'Lead pipeline & follow-ups',
+    },
+    {
+      name: 'Phone Calls',
+      href: '/admin/conversations?source=phone',
+      icon: MessageSquare,
+      active: pathname === '/admin/conversations' && isPhoneSource,
+      description: 'Voicemails & missed call chats',
     },
     {
       name: 'Business Cards',

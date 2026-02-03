@@ -34,13 +34,23 @@ export default async function ConversationsPage({ searchParams }: PageProps) {
     conversations = conversations.filter(
       (c) => c.lead?.source === 'NFC Card' || c.lead?.source === 'nfc_card',
     )
+  } else if (source === 'phone') {
+    // Phone calls/voicemails are from inbound source (missed calls, voicemails)
+    conversations = conversations.filter((c) => c.source === 'inbound')
   }
 
   const isVendorView = source === 'vendor'
-  const title = isVendorView ? 'Vendor AI Chats' : 'AI Dispatcher Conversations'
+  const isPhoneView = source === 'phone'
+  const title = isVendorView
+    ? 'Vendor AI Chats'
+    : isPhoneView
+      ? 'Phone Calls & Voicemails'
+      : 'AI Dispatcher Conversations'
   const subtitle = isVendorView
     ? 'Conversations from vendor NFC card scans'
-    : 'Monitor and manage SMS conversations handled by AI'
+    : isPhoneView
+      ? 'Missed calls and voicemail messages'
+      : 'Monitor and manage SMS conversations handled by AI'
 
   return (
     <div className="space-y-6">
