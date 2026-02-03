@@ -154,14 +154,26 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Return empty TwiML (call already ended)
-    return new NextResponse(
-      '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
-      {
-        status: 200,
-        headers: { 'Content-Type': 'text/xml' },
-      },
-    )
+    // Get the base URL for voicemail callback
+    const baseUrl = process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : 'https://sasquatch-sightings-git-main-charles-sewells-projects.vercel.app'
+    const voicemailUrl = `${baseUrl}/api/twilio/voicemail`
+
+    // Return voicemail TwiML - let caller leave a message
+    const voicemailTwiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Say voice="alice">Thanks for calling Sasquatch Carpet Cleaning. Our office is currently closed. Please leave a message after the beep and we'll get back to you as soon as possible.</Say>
+    <Record maxLength="120" transcribe="true" transcribeCallback="${voicemailUrl}" recordingStatusCallback="${voicemailUrl}" />
+    <Say voice="alice">We didn't receive your message. Please try calling back during business hours. Goodbye.</Say>
+</Response>`
+
+    console.log('[Call Handler] Returning voicemail TwiML')
+
+    return new NextResponse(voicemailTwiml, {
+      status: 200,
+      headers: { 'Content-Type': 'text/xml' },
+    })
   } catch (error) {
     console.error('[Call Handler] Error:', error)
     return new NextResponse(
