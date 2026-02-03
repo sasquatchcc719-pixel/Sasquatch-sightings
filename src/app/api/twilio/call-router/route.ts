@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
       console.log(`[Call Router] Business hours - ring both phones`)
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial timeout="20" action="https://sasquatchsightings.com/api/twilio/call-after-hours">
+  <Dial timeout="20" action="https://sasquatch-sightings-git-main-charles-sewells-projects.vercel.app/api/twilio/call-after-hours">
     <Sip>sip:chuck@sasquatch-cc.sip.us1.twilio.com</Sip>
     <Sip>sip:wife@sasquatch-cc.sip.us1.twilio.com</Sip>
   </Dial>
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say>Thanks for calling Sasquatch Carpet Cleaning. Our office hours are closed, but you should be receiving a text from Harry shortly.</Say>
-  <Redirect method="POST">https://sasquatchsightings.com/api/twilio/call-after-hours</Redirect>
+  <Redirect method="POST">https://sasquatch-sightings-git-main-charles-sewells-projects.vercel.app/api/twilio/call-after-hours</Redirect>
 </Response>`
     }
 
