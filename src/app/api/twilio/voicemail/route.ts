@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { Resend } from 'resend'
+
+const resend = new Resend(process.env.RESEND_API_KEY)
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -104,8 +107,54 @@ export async function POST(request: NextRequest) {
       sent_at: new Date().toISOString(),
     })
 
-    // Send notification to admin (using existing admin SMS function would require the setup we're waiting on)
-    // For now, log it prominently
+    // Send email notification
+    const timestamp = new Date().toLocaleString('en-US', {
+      timeZone: 'America/Denver',
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    })
+
+    try {
+      await resend.emails.send({
+        from: 'Sasquatch Voicemail <onboarding@resend.dev>',
+        to: 'sasquatchcc719@gmail.com',
+        subject: `🎤 New Voicemail from ${normalizedPhone}`,
+        html: `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #166534;">New Voicemail Received</h2>
+            
+            <div style="background: #f0fdf4; border-radius: 8px; padding: 16px; margin: 16px 0;">
+              <p style="margin: 0 0 8px 0;"><strong>📞 From:</strong> <a href="tel:${normalizedPhone}">${normalizedPhone}</a></p>
+              <p style="margin: 0 0 8px 0;"><strong>⏱️ Duration:</strong> ${recordingDuration} seconds</p>
+              <p style="margin: 0;"><strong>🕐 Time:</strong> ${timestamp}</p>
+            </div>
+            
+            <h3 style="color: #166534;">Transcription</h3>
+            <div style="background: #f3f4f6; border-radius: 8px; padding: 16px; margin: 16px 0;">
+              <p style="margin: 0; white-space: pre-wrap;">${transcriptionText || '(No transcription available)'}</p>
+            </div>
+            
+            <div style="margin: 24px 0;">
+              <a href="${audioUrl}" style="display: inline-block; background: #166534; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold;">
+                🔊 Listen to Voicemail
+              </a>
+            </div>
+            
+            <p style="color: #6b7280; font-size: 14px;">
+              View in admin: <a href="https://sasquatch-sightings-git-main-charles-sewells-projects.vercel.app/admin/conversations?source=phone">Phone Calls</a>
+            </p>
+          </div>
+        `,
+      })
+      console.log('[Voicemail] Email sent to sasquatchcc719@gmail.com')
+    } catch (emailError) {
+      console.error('[Voicemail] Failed to send email:', emailError)
+    }
+
     console.log('========================================')
     console.log('🎤 NEW VOICEMAIL RECEIVED')
     console.log(`📞 From: ${normalizedPhone}`)
