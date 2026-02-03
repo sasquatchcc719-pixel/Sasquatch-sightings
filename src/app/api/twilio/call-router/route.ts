@@ -28,27 +28,23 @@ export async function POST(request: NextRequest) {
     const isWeekday = weekday && !['Sat', 'Sun'].includes(weekday)
     const isBusinessHours = isWeekday && hour >= 9 && hour < 17
 
-    // TwiML Bin URLs (get these from Twilio Console)
-    const businessHoursBinUrl =
-      'https://handler.twilio.com/twiml/EH87817d9c8f7bb5f8ee4b97328c09165f' // Business Hours - Ring Both
-    const afterHoursBinUrl =
-      'https://handler.twilio.com/twiml/EH4adc3314b00c71ef083679491bd5e8da' // After Hours - Harry SMS
-
     let twimlResponse
 
     if (isBusinessHours) {
-      console.log(
-        `[Call Router] Business hours - redirecting to ring both phones`,
-      )
+      console.log(`[Call Router] Business hours - ring both phones`)
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Redirect>${businessHoursBinUrl}</Redirect>
+  <Dial timeout="20" action="https://sasquatchsightings.com/api/twilio/call-after-hours">
+    <Number>+17197498807</Number>
+    <Number>+17193674806</Number>
+  </Dial>
 </Response>`
     } else {
-      console.log(`[Call Router] After hours - redirecting to Harry SMS`)
+      console.log(`[Call Router] After hours - play message and send SMS`)
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Redirect>${afterHoursBinUrl}</Redirect>
+  <Say>Thanks for calling Sasquatch Carpet Cleaning. Our office hours are closed, but you should be receiving a text from Harry shortly.</Say>
+  <Redirect method="POST">https://sasquatchsightings.com/api/twilio/call-after-hours</Redirect>
 </Response>`
     }
 
