@@ -1,0 +1,164 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+import twilio from 'twilio'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+)
+
+export async function POST(request: NextRequest) {
+  try {
+    // Parse form data from Twilio
+    const formData = await request.formData()
+    const callerPhone = formData.get('From') as string
+    const callSid = formData.get('CallSid') as string
+    const callStatus = formData.get('CallStatus') as string
+    const dialCallStatus = formData.get('DialCallStatus') as string
+
+    if (!callerPhone) {
+      console.error('[Call Handler] Missing caller phone number')
+      return new NextResponse(
+        '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+        {
+          status: 200,
+          headers: { 'Content-Type': 'text/xml' },
+        },
+      )
+    }
+
+    // Normalize phone to E.164
+    const normalizedPhone = callerPhone.startsWith('+')
+      ? callerPhone
+      : `+1${callerPhone}`
+
+    console.log(
+      `[Call Handler] Caller: ${normalizedPhone}, Status: ${callStatus}, DialStatus: ${dialCallStatus}, SID: ${callSid}`,
+    )
+
+    // Only send SMS if call was missed (no-answer, busy, failed, or completed without answer)
+    if (dialCallStatus && !['completed', 'answered'].includes(dialCallStatus)) {
+      console.log(
+        `[Call Handler] Call was missed (${dialCallStatus}) - sending Harry SMS`,
+      )
+
+      // Find or create conversation for this phone number
+      const { data: existingConvo } = await supabase
+        .from('conversations')
+        .select('*')
+        .eq('phone_number', normalizedPhone)
+        .eq('source', 'inbound')
+        .eq('status', 'active')
+        .single()
+
+      let conversationId = existingConvo?.id
+
+      if (!existingConvo) {
+        // Create new conversation
+        const { data: newConvo, error: convoError } = await supabase
+          .from('conversations')
+          .insert({
+            phone_number: normalizedPhone,
+            source: 'inbound',
+            status: 'active',
+            ai_enabled: true,
+            messages: [],
+            metadata: { trigger: 'missed_call', call_sid: callSid },
+          })
+          .select()
+          .single()
+
+        if (convoError) {
+          console.error(
+            '[Call Handler] Error creating conversation:',
+            convoError,
+          )
+          return new NextResponse(
+            '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+            {
+              status: 200,
+              headers: { 'Content-Type': 'text/xml' },
+            },
+          )
+        }
+
+        conversationId = newConvo.id
+      } else {
+        // Update existing conversation with call metadata
+        await supabase
+          .from('conversations')
+          .update({
+            metadata: {
+              ...existingConvo.metadata,
+              last_missed_call: new Date().toISOString(),
+              call_sid: callSid,
+            },
+          })
+          .eq('id', conversationId)
+      }
+
+      // Send SMS via Harry
+      const harryMessage =
+        'Hi! This is Harry from Sasquatch Carpet Cleaning. I saw you just called. How can I help you today?'
+
+      const twilioClient = twilio(
+        process.env.TWILIO_ACCOUNT_SID,
+        process.env.TWILIO_AUTH_TOKEN,
+      )
+
+      const sms = await twilioClient.messages.create({
+        body: harryMessage,
+        to: normalizedPhone,
+        from: process.env.TWILIO_PHONE_NUMBER,
+      })
+
+      console.log(
+        `[Call Handler] SMS sent to ${normalizedPhone}, SID: ${sms.sid}`,
+      )
+
+      // Update conversation with Harry's message
+      const messages = existingConvo?.messages || []
+      messages.push({
+        role: 'assistant',
+        content: harryMessage,
+        timestamp: new Date().toISOString(),
+        twilio_sid: sms.sid,
+      })
+
+      await supabase
+        .from('conversations')
+        .update({ messages, updated_at: new Date().toISOString() })
+        .eq('id', conversationId)
+
+      // Log to sms_logs
+      await supabase.from('sms_logs').insert({
+        recipient_phone: normalizedPhone,
+        message_type: 'ai_dispatcher',
+        message_content: harryMessage,
+        status: 'sent',
+        twilio_sid: sms.sid,
+        sent_at: new Date().toISOString(),
+      })
+    } else {
+      console.log(`[Call Handler] Call was answered - no SMS needed`)
+    }
+
+    // Return empty TwiML (call already ended)
+    return new NextResponse(
+      '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+      {
+        status: 200,
+        headers: { 'Content-Type': 'text/xml' },
+      },
+    )
+  } catch (error) {
+    console.error('[Call Handler] Error:', error)
+    return new NextResponse(
+      '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+      {
+        status: 200,
+        headers: { 'Content-Type': 'text/xml' },
+      },
+    )
+  }
+}
