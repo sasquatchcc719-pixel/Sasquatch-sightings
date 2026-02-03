@@ -10,23 +10,31 @@ export async function POST(request: NextRequest) {
 
     // Get current time in Mountain Time (Monument, CO)
     const now = new Date()
-    const formatter = new Intl.DateTimeFormat('en-US', {
+
+    // Create a formatter for Mountain Time
+    const options: Intl.DateTimeFormatOptions = {
       timeZone: 'America/Denver',
-      weekday: 'short',
+      weekday: 'long',
       hour: 'numeric',
-      minute: 'numeric',
       hour12: false,
-    })
+    }
 
-    const parts = formatter.formatToParts(now)
-    const weekday = parts.find((p) => p.type === 'weekday')?.value
-    const hour = parseInt(parts.find((p) => p.type === 'hour')?.value || '0')
+    const mtTime = new Intl.DateTimeFormat('en-US', options).format(now)
 
-    console.log(`[Call Router] Current time: ${weekday} ${hour}:00 MT`)
+    // Parse: "Monday, 10" format
+    const [weekdayStr, hourStr] = mtTime.split(', ')
+    const hour = parseInt(hourStr)
 
-    // Check if it's business hours (Mon-Fri, 9 AM - 5 PM MT)
-    const isWeekday = weekday && !['Sat', 'Sun'].includes(weekday)
+    // Weekdays only (not Saturday/Sunday)
+    const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
+    const isWeekday = weekdays.includes(weekdayStr)
+
+    // Business hours: 9 AM - 5 PM (hour >= 9 and hour < 17)
     const isBusinessHours = isWeekday && hour >= 9 && hour < 17
+
+    console.log(
+      `[Call Router] MT Time: ${weekdayStr} ${hour}:00, isWeekday: ${isWeekday}, isBusinessHours: ${isBusinessHours}`,
+    )
 
     let twimlResponse
 
