@@ -25,7 +25,7 @@ const REVIEW_LINKS: {
 }[] = [
   {
     name: 'Google',
-    url: 'https://www.google.com/maps/place/Sasquatch+Carpet+Cleaning,+LLC/@39.1240236,-104.9167488,17z/data=!4m8!3m7!1s0x2117fffca6651c3:0x8436346fd3fcc24a!8m2!3d39.1240236!4d-104.9141685!9m1!1b1!16s%2Fg%2F11q8wmgsst?entry=ttu',
+    url: 'https://search.google.com/local/writereview?placeid=ChIJw1Fmyv9_EQIRSsL80280NoQ',
     icon: 'google',
     color: 'bg-blue-600/70 hover:bg-blue-700/80',
   },
