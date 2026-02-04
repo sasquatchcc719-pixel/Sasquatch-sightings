@@ -49,7 +49,7 @@ const REVIEW_LINKS: {
   },
   {
     name: 'BBB',
-    url: 'https://www.bbb.org/us/co/palmer-lake/profile/carpet-and-rug-cleaners/sasquatch-carpet-cleaning-0785-1000034131',
+    url: 'https://www.bbb.org/us/co/palmer-lake/profile/carpet-and-rug-cleaners/sasquatch-carpet-cleaning-0785-1000034131/leave-a-review',
     icon: 'bbb',
     color: 'bg-blue-500/70 hover:bg-blue-600/80',
   },
