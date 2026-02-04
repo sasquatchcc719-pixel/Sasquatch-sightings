@@ -30,16 +30,16 @@ const REVIEW_LINKS: {
     color: 'bg-blue-600/70 hover:bg-blue-700/80',
   },
   {
+    name: 'Yelp',
+    url: 'https://www.yelp.com/writeareview/biz/sasquatch-carpet-cleaning-palmer-lake',
+    icon: 'yelp',
+    color: 'bg-red-600/70 hover:bg-red-700/80',
+  },
+  {
     name: 'Facebook',
     url: 'https://www.facebook.com/sasquatchcarpet/reviews',
     icon: 'facebook',
     color: 'bg-blue-800/70 hover:bg-blue-900/80',
-  },
-  {
-    name: 'Yelp',
-    url: 'https://www.yelp.com/biz/sasquatch-carpet-cleaning-palmer-lake',
-    icon: 'yelp',
-    color: 'bg-red-600/70 hover:bg-red-700/80',
   },
   {
     name: 'Nextdoor',
