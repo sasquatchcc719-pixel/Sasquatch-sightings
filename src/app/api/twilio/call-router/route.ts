@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Dial timeout="20" action="https://sasquatch-sightings-git-main-charles-sewells-projects.vercel.app/api/twilio/call-after-hours">
-    <Sip>sip:chuck@sasquatch-cc.sip.us1.twilio.com</Sip>
+    <Sip>sip:chuck@sasquatch-cc.sip.twilio.com</Sip>
   </Dial>
 </Response>`
     } else {
