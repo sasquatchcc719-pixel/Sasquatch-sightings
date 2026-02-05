@@ -1,7 +1,9 @@
-import { createAdminClient } from '@/supabase/server'
+'use client'
+
+import { useEffect, useState } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Phone, Play, Clock, FileText } from 'lucide-react'
+import { Phone, Play, Clock, FileText, Trash2, Loader2 } from 'lucide-react'
 
 interface VoicemailLog {
   id: string
@@ -11,19 +13,45 @@ interface VoicemailLog {
   twilio_sid: string
 }
 
-export default async function VoicemailsPage() {
-  const supabase = createAdminClient()
+export default function VoicemailsPage() {
+  const [voicemails, setVoicemails] = useState<VoicemailLog[]>([])
+  const [loading, setLoading] = useState(true)
+  const [deleting, setDeleting] = useState<string | null>(null)
 
-  // Fetch voicemails from sms_logs
-  const { data: voicemails, error } = await supabase
-    .from('sms_logs')
-    .select('*')
-    .eq('message_type', 'voicemail_received')
-    .order('sent_at', { ascending: false })
-    .limit(50)
+  useEffect(() => {
+    fetchVoicemails()
+  }, [])
 
-  if (error) {
-    console.error('Error fetching voicemails:', error)
+  async function fetchVoicemails() {
+    try {
+      const res = await fetch('/api/admin/voicemails')
+      if (res.ok) {
+        const data = await res.json()
+        setVoicemails(data)
+      }
+    } catch (error) {
+      console.error('Failed to fetch voicemails:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function deleteVoicemail(id: string) {
+    if (!confirm('Delete this voicemail?')) return
+
+    setDeleting(id)
+    try {
+      const res = await fetch(`/api/admin/voicemails/${id}`, {
+        method: 'DELETE',
+      })
+      if (res.ok) {
+        setVoicemails((prev) => prev.filter((vm) => vm.id !== id))
+      }
+    } catch (error) {
+      console.error('Failed to delete voicemail:', error)
+    } finally {
+      setDeleting(null)
+    }
   }
 
   // Parse voicemail content to extract details
@@ -39,6 +67,17 @@ export default async function VoicemailsPage() {
     return { duration, transcription, audioUrl }
   }
 
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold">Voicemails</h1>
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -48,7 +87,7 @@ export default async function VoicemailsPage() {
         </p>
       </div>
 
-      {!voicemails || voicemails.length === 0 ? (
+      {voicemails.length === 0 ? (
         <Card className="p-8 text-center">
           <Phone className="text-muted-foreground mx-auto mb-4 h-12 w-12" />
           <p className="text-muted-foreground">No voicemails yet</p>
@@ -58,7 +97,7 @@ export default async function VoicemailsPage() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {(voicemails as VoicemailLog[]).map((vm) => {
+          {voicemails.map((vm) => {
             const { duration, transcription, audioUrl } = parseVoicemail(
               vm.message_content,
             )
@@ -104,18 +143,33 @@ export default async function VoicemailsPage() {
                     )}
                   </div>
 
-                  {audioUrl && (
-                    <Button asChild variant="outline" size="sm">
-                      <a
-                        href={audioUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <Play className="mr-2 h-4 w-4" />
-                        Play
-                      </a>
+                  <div className="flex gap-2">
+                    {audioUrl && (
+                      <Button asChild variant="outline" size="sm">
+                        <a
+                          href={audioUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <Play className="mr-2 h-4 w-4" />
+                          Play
+                        </a>
+                      </Button>
+                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => deleteVoicemail(vm.id)}
+                      disabled={deleting === vm.id}
+                      className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                    >
+                      {deleting === vm.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
                     </Button>
-                  )}
+                  </div>
                 </div>
               </Card>
             )
