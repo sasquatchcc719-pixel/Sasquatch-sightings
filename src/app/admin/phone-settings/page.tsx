@@ -327,18 +327,6 @@ export default function PhoneSettingsPage() {
             </div>
 
             <div>
-              <Label htmlFor="sip_domain">SIP Domain</Label>
-              <Input
-                id="sip_domain"
-                value={settings.sip_domain}
-                onChange={(e) =>
-                  setSettings({ ...settings, sip_domain: e.target.value })
-                }
-                className="mt-1"
-              />
-            </div>
-
-            <div>
               <Label htmlFor="dial_timeout">Ring Timeout (seconds)</Label>
               <Input
                 id="dial_timeout"
@@ -357,6 +345,72 @@ export default function PhoneSettingsPage() {
               <p className="text-muted-foreground mt-1 text-sm">
                 How long phones ring before going to voicemail
               </p>
+            </div>
+          </div>
+        </Card>
+
+        {/* Zoiper Credentials (Read-Only) */}
+        <Card className="bg-muted/50 p-6">
+          <h2 className="mb-4 text-xl font-semibold">
+            Zoiper Credentials (Read-Only)
+          </h2>
+          <p className="text-muted-foreground mb-4 text-sm">
+            Use these credentials to set up Zoiper on your phones. Copy/paste as
+            needed.
+          </p>
+
+          <div className="space-y-4">
+            <div>
+              <Label>SIP Domain</Label>
+              <div className="bg-background mt-1 rounded-md border p-3 font-mono text-sm select-all">
+                {settings.sip_domain}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="bg-background rounded-lg border p-4">
+                <div className="mb-2 font-semibold">Chuck&apos;s Phone</div>
+                <div className="space-y-2 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Username:</span>
+                    <span className="ml-2 font-mono select-all">chuck</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Domain:</span>
+                    <span className="ml-2 font-mono select-all">
+                      {settings.sip_domain}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Password:</span>
+                    <span className="text-muted-foreground ml-2 italic">
+                      Set in Twilio Console
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-background rounded-lg border p-4">
+                <div className="mb-2 font-semibold">Wife&apos;s Phone</div>
+                <div className="space-y-2 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Username:</span>
+                    <span className="ml-2 font-mono select-all">wife</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Domain:</span>
+                    <span className="ml-2 font-mono select-all">
+                      {settings.sip_domain}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Password:</span>
+                    <span className="text-muted-foreground ml-2 italic">
+                      Set in Twilio Console
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </Card>
