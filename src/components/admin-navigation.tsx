@@ -211,14 +211,21 @@ export function AdminNavigation() {
       active:
         pathname === '/admin/conversations' &&
         searchParams.get('source') === 'phone',
-      description: "Harry's conversations with callers",
+      description: 'SMS conversations with callers',
+    },
+    {
+      name: 'Voicemails',
+      href: '/admin/voicemails',
+      icon: Phone,
+      active: pathname === '/admin/voicemails',
+      description: 'Voicemail recordings',
     },
     {
       name: 'Settings',
       href: '/admin/phone-settings',
       icon: Phone,
       active: pathname === '/admin/phone-settings',
-      description: 'Voicemail, hours & routing',
+      description: 'Voicemail message, hours & routing',
     },
   ]
 
