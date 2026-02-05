@@ -109,6 +109,7 @@ export function AdminNavigation() {
   const [operationsOpen, setOperationsOpen] = useState(false)
   const [leadsOpen, setLeadsOpen] = useState(false)
   const [vendorsOpen, setVendorsOpen] = useState(false)
+  const [callsOpen, setCallsOpen] = useState(false)
   const [analystOpen, setAnalystOpen] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
 
@@ -117,6 +118,7 @@ export function AdminNavigation() {
     setOperationsOpen(false)
     setLeadsOpen(false)
     setVendorsOpen(false)
+    setCallsOpen(false)
     setAnalystOpen(false)
     setPreviewOpen(false)
   }
@@ -200,15 +202,33 @@ export function AdminNavigation() {
     },
   ]
 
+  // Calls group (Phone system)
+  const callsTabs: NavTab[] = [
+    {
+      name: 'Harry AI',
+      href: '/admin/conversations?source=phone',
+      icon: MessageSquare,
+      active:
+        pathname === '/admin/conversations' &&
+        searchParams.get('source') === 'phone',
+      description: "Harry's conversations with callers",
+    },
+    {
+      name: 'Settings',
+      href: '/admin/phone-settings',
+      icon: Phone,
+      active: pathname === '/admin/phone-settings',
+      description: 'Voicemail, hours & routing',
+    },
+  ]
+
   // Check active states for dropdown highlights
   const operationsActive = operationsTabs.some((tab) => tab.active)
   const leadsActive = leadsTabs.some((tab) => tab.active)
   const vendorsActive = vendorsTabs.some((tab) => tab.active)
+  const callsActive = callsTabs.some((tab) => tab.active)
   const analystActive = analystTabs.some((tab) => tab.active)
   const partnersActive = pathname === '/admin/partners'
-  const callsActive =
-    pathname === '/admin/conversations' &&
-    searchParams.get('source') === 'phone'
 
   return (
     <div>
@@ -270,18 +290,19 @@ export function AdminNavigation() {
             Partners
           </Link>
 
-          {/* Calls - standalone link for voicemails/phone */}
-          <Link
-            href="/admin/conversations?source=phone"
-            className={`flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all sm:justify-start ${
-              callsActive
-                ? 'bg-green-600 text-white shadow-lg shadow-green-600/30'
-                : 'bg-white/20 text-white/70 backdrop-blur-sm hover:bg-white/30 hover:text-white'
-            }`}
-          >
-            <Phone className="h-4 w-4" />
-            Calls
-          </Link>
+          {/* Calls Dropdown */}
+          <NavDropdown
+            label="Calls"
+            icon={Phone}
+            isOpen={callsOpen}
+            onToggle={() => {
+              closeAll()
+              setCallsOpen(!callsOpen)
+            }}
+            onClose={closeAll}
+            isActive={callsActive}
+            tabs={callsTabs}
+          />
 
           {/* Analyst Dropdown (Harry) */}
           <NavDropdown
