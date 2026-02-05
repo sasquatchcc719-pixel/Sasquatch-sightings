@@ -163,7 +163,7 @@ export async function POST(request: NextRequest) {
     // Return voicemail TwiML - let caller leave a message
     const voicemailTwiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Say voice="alice">Welcome to Sasquatch Carpet Cleaning. We are currently doing maintenance on our phone system. Please leave a message.</Say>
+    <Say voice="alice">Thanks for calling Sasquatch Carpet Cleaning! We're sorry we missed your call. Please leave a message with your name and number, and we'll get back to you as soon as possible. You should also receive a text from us shortly.</Say>
     <Record maxLength="120" transcribe="true" transcribeCallback="${voicemailUrl}" recordingStatusCallback="${voicemailUrl}" />
     <Say voice="alice">We didn't receive your message. Please try calling back during business hours. Goodbye.</Say>
 </Response>`
