@@ -1,43 +1,9 @@
-# 📚 ARCHIVED DOCUMENTATION
-## Consolidated Archive of Project Documentation Files
+# ARCHIVED DOCUMENTATION
+# Combined on Thu Feb  5 19:50:29 MST 2026
 
-**Created:** January 26, 2026  
-**Purpose:** Backup of all AI-generated documentation and project summaries  
-**Original Files:** 22 individual `.md` files  
-
----
-
-## 📋 TABLE OF CONTENTS
-
-1. AI Description Generator
-2. AI Generation Summary
-3. Backfill Quickstart
-4. Before/After Tool
-5. Deployment Steps
-6. Integration Summary
-7. OneSignal Complete
-8. Phase 2 Code Review
-9. Project Complete Summary
-10. Project Status
-11. Public Pages Summary
-12. SEO Filename Feature
-13. SEO Fix Summary
-14. Sitemap Implementation
-15. SMS Future Features
-16. SMS Implementation
-17. Status
-18. Test Plan Google Pivot
-19. Testing Plan
-20. Twilio Integration Plan
-21. Update Required
-22. Upload Pipeline Summary
-
----
-
-**NOTE:** These files were consolidated for reference only. The actual working code is in `/src/`. This archive can be safely moved out of the project root if needed.
-
----
-
+========================================
+# FILE: AI_DESCRIPTION_GENERATOR.md
+========================================
 # AI Description Generator (Google Gemini)
 
 **Date:** January 20, 2026  
@@ -468,6 +434,11 @@ restoration services.
 **Status:** ✅ Ready for testing on feature branch  
 **Branch:** `feature/p3-ai-description-generator`  
 **Next Step:** Add API key to Vercel, test, then merge to `main`
+
+
+========================================
+# FILE: AI_GENERATION_SUMMARY.md
+========================================
 # AI Description Generation - Implementation Summary
 
 ## 🤖 What Was Built
@@ -794,6 +765,11 @@ WHERE id = 'job-uuid'
 **Branch:** `feature/p2-upload-form`  
 **Files Created:** 3 new, 1 updated  
 **Ready to Test:** http://localhost:3000/protected
+
+
+========================================
+# FILE: BACKFILL_QUICKSTART.md
+========================================
 # 🚀 Backfill Script Quick Start
 
 ## What This Does
@@ -957,6 +933,11 @@ These sightings will be skipped but the script will continue.
 ---
 
 **Ready?** Run: `npm run backfill-locations`
+
+
+========================================
+# FILE: BEFORE_AFTER_TOOL.md
+========================================
 # Before/After Image Combiner Tool
 
 **Date:** January 20, 2026  
@@ -1276,6 +1257,258 @@ Processing:
 **Status:** ✅ Ready for testing on feature branch  
 **Branch:** `feature/p3-before-after-tool`  
 **Next Step:** Test locally, then merge to `main` after approval
+
+
+========================================
+# FILE: DEPLOYMENT_ISSUE_SUMMARY.md
+========================================
+# 🚨 DEPLOYMENT ISSUE SUMMARY
+
+**Date:** January 19, 2026  
+**Project:** Sasquatch Sightings Contest / supa-next-starter  
+**Issue:** Delete button feature not appearing on production site
+
+---
+
+## 📋 PROBLEM STATEMENT
+
+We successfully developed and tested a delete button feature for contest entries locally on branch `feature/p2-delete-sightings`. After merging to `main` and pushing to GitHub, the feature is NOT appearing on the live production site at `https://sightings.sasquatchcarpet.com/protected/sightings`.
+
+---
+
+## 🔍 WHAT WE'VE DONE
+
+### 1. **Local Development & Testing** ✅
+- Created 3 feature branches:
+  - `feature/google-pivot-v1` (Google Business integration)
+  - `feature/zapier-webhook-integration` (Zapier webhook)
+  - `feature/p2-delete-sightings` (Delete button - THE FEATURE WE NEED)
+- Tested all 3 branches locally on `localhost:3000` - ALL WORKED PERFECTLY
+- Delete button appeared and functioned correctly in local testing
+
+### 2. **Git Merging & Push** ✅
+- Merged all 3 branches to `main` in correct order
+- Successfully pushed to GitHub repo: `sasquatchcc719-pixel/Sasquatch-sightings`
+- Latest commit on main: `ccc5ee6` - "Deploy delete button to production"
+
+### 3. **Discovered Vercel Connection Issue** ⚠️
+- **Problem Found:** Vercel project was still connected to OLD boilerplate repo
+- **Evidence:** Last deployment on Vercel was 2 days ago (not reflecting our recent pushes)
+- **Root Cause:** When user renamed GitHub repo from boilerplate to `Sasquatch-sightings`, Vercel connection broke
+
+### 4. **Reconnected Vercel to Correct Repo** ✅
+- Went to Vercel: Settings → Git → Connected Git Repository
+- Successfully connected to: `sasquatchcc719-pixel/Sasquatch-sightings`
+- Status: "Connected 13m ago" (confirmed in Vercel UI)
+
+### 5. **Triggered Manual Deployment** ⏳
+- Auto-deploy didn't work (permission issue - see below)
+- Manually triggered redeploy from Vercel Deployments tab
+- **Build started** with warnings but appears to be proceeding
+
+---
+
+## ⚠️ CURRENT BLOCKERS
+
+### **Permission Issue with Git Push Deployments**
+
+When we push code to GitHub, Vercel sends this email warning:
+
+```
+We're writing to notify you that chuckdeezil@Mac-mini.local 
+is attempting to deploy a commit to Charles Sewell's projects 
+on Vercel through GitHub, but they are not a member of the team.
+
+To resolve this issue, you can:
+- Upgrade to Pro and add them as a collaborator on your Vercel team
+- If the user is already a member of your Vercel team, ensure 
+  their GitHub account is connected to their Vercel account
+- If applicable, make your repository public
+```
+
+**Impact:** Automatic deployments from GitHub pushes are blocked.
+
+**Workaround:** We're using manual "Redeploy" button in Vercel dashboard.
+
+---
+
+## 🏗️ BUILD STATUS
+
+### **Current Build Output:**
+
+```
+Running "vercel build"
+Vercel CLI 50.4.4
+Installing dependencies...
+> supa-next-starter@1.0.0 prepare
+> husky
+.git can't be found
+up to date in 1s
+203 packages are looking for funding
+  run `npm fund` for details
+Detected Next.js version: 16.1.1
+Running "npm run build"
+> supa-next-starter@1.0.0 build
+> next build
+```
+
+**Warnings seen:**
+- `.git can't be found` (Husky warning - typically not critical)
+
+**User Question:** Should we be concerned about these build warnings?
+
+---
+
+## 🎯 EXPECTED vs ACTUAL
+
+### **Expected Result:**
+- Visit: `https://sightings.sasquatchcarpet.com/protected/sightings`
+- See contest entries list
+- **Each entry should have a RED "Delete" button** (with trash icon)
+- Clicking delete shows confirmation dialog
+- Entry is removed from list and database
+
+### **Actual Result (Before Fix Attempt):**
+- Page loads correctly
+- Contest entries visible
+- ❌ **NO delete button present**
+
+### **Actual Result (After Manual Redeploy - TESTING NOW):**
+- Deployment is building/just completed
+- Need to test if delete button now appears
+
+---
+
+## 📁 KEY FILES INVOLVED
+
+### **Delete Button Feature Code:**
+
+**API Endpoint:**
+```
+src/app/api/sightings/[id]/delete/route.ts
+```
+- Handles DELETE requests
+- Removes both database record AND storage image
+- Requires authentication
+
+**Frontend Component:**
+```
+src/app/protected/sightings/page.tsx
+```
+- Added delete button UI (lines ~402-420)
+- Added `handleDelete` function
+- Added `deletingId` state for loading indicator
+
+---
+
+## 🔧 TECHNICAL DETAILS
+
+### **Stack:**
+- **Framework:** Next.js 16.1.1 (App Router)
+- **Hosting:** Vercel
+- **Database:** Supabase
+- **Storage:** Supabase Storage (bucket: `sighting-images`)
+- **Git:** GitHub
+
+### **Vercel Project:**
+- **Project Name:** `supa-next-starter` (legacy name)
+- **Production Domain:** `sightings.sasquatchcarpet.com`
+- **Connected Repo:** `sasquatchcc719-pixel/Sasquatch-sightings` ✅
+- **Branch:** `main`
+
+### **Git Status:**
+```bash
+Current branch: main
+Latest commit: ccc5ee6 "Deploy delete button to production"
+Remote: origin (https://github.com/sasquatchcc719-pixel/Sasquatch-sightings.git)
+```
+
+---
+
+## ❓ QUESTIONS NEEDING ANSWERS
+
+1. **Are the Husky/git warnings in the build log critical?**
+   - `.git can't be found` error during build
+
+2. **Why didn't automatic deployments work after reconnecting the repo?**
+   - Is it purely the permission issue?
+   - Do we need to do something else?
+
+3. **Will the manual redeploy actually deploy the latest code from `Sasquatch-sightings` repo?**
+   - Or is it deploying old cached code?
+
+4. **What's the proper fix for the "not a member of the team" permission error?**
+   - Best practice solution?
+   - Should we make repo public as quick fix?
+
+5. **How can we verify what code/commit is actually deployed on production?**
+   - Is there a way to check the deployed commit hash?
+
+---
+
+## 🧪 TESTING CHECKLIST
+
+Once deployment completes:
+
+- [ ] Visit: `https://sightings.sasquatchcarpet.com/protected/sightings`
+- [ ] Hard refresh: `Cmd + Shift + R`
+- [ ] Login if needed
+- [ ] Verify delete button appears next to each entry
+- [ ] Click delete button
+- [ ] Confirm deletion works
+- [ ] Check entry removed from database (Supabase)
+
+---
+
+## 📊 DEPLOYMENT HISTORY
+
+| Date | Action | Result |
+|------|--------|--------|
+| Jan 17 | Last successful auto-deploy (old repo) | Working (2 days ago) |
+| Jan 19 | Merged 3 feature branches to main | ✅ Git successful |
+| Jan 19 | Pushed to `Sasquatch-sightings` repo | ✅ Git successful |
+| Jan 19 | Discovered Vercel connected to wrong repo | ⚠️ Issue found |
+| Jan 19 | Reconnected Vercel to correct repo | ✅ Connection made |
+| Jan 19 | Attempted auto-deploy (push) | ❌ Permission blocked |
+| Jan 19 | Manual redeploy triggered | ⏳ Building now |
+
+---
+
+## 🆘 NEED HELP WITH
+
+1. **Diagnosing if manual redeploy will work**
+2. **Understanding Vercel deployment permissions**
+3. **Verifying correct source code is being deployed**
+4. **Best practices for fixing team permission issues**
+
+---
+
+## 📝 ADDITIONAL CONTEXT
+
+- User originally used boilerplate called `supa-next-starter`
+- Renamed GitHub repo to `Sasquatch-sightings` during development
+- Vercel project name still shows old name (`supa-next-starter`)
+- Domain (`sightings.sasquatchcarpet.com`) correctly points to Vercel project
+- Local git user: `chuckdeezil@Mac-mini.local`
+- GitHub account: `sasquatchcc719-pixel`
+- This appears to be a Vercel Hobby (free) plan
+
+---
+
+## 🎯 ULTIMATE GOAL
+
+**Get the delete button feature deployed to production** so the user can delete fake contest entries from the live admin panel.
+
+**Simple test:** Does `https://sightings.sasquatchcarpet.com/protected/sightings` show a red delete button next to each entry?
+
+---
+
+**Status as of now:** Manual redeploy triggered, build in progress, waiting to test.
+
+
+========================================
+# FILE: DEPLOYMENT_STEPS.md
+========================================
 # 🚀 Deployment Steps for SEO Fix
 
 ## ✅ Completed
@@ -1491,6 +1724,216 @@ If you have multiple URLs pointing to the same sighting, add canonical tags to a
 ---
 
 **Questions?** Check `SEO_FIX_SUMMARY.md` for technical details or ask Charles.
+
+
+========================================
+# FILE: FINAL_STATUS.md
+========================================
+# ✅ RingCentral Webhook Setup - Final Status
+
+## Current Situation
+
+Your RingCentral app is not configured for automated authentication. The **simplest approach is to use the RingCentral web UI** to set up the webhook manually.
+
+---
+
+## ✨ RECOMMENDED: Manual Setup (5 minutes)
+
+Run this command for step-by-step instructions:
+
+```bash
+node setup-ringcentral-webhook-manual.js
+```
+
+This will show you exactly how to:
+1. Log into RingCentral API Explorer
+2. Create the webhook subscription with a simple copy/paste
+3. Verify it's working
+
+**This is the easiest and most reliable method.**
+
+---
+
+## Alternative: Configure App for OAuth (Advanced)
+
+If you prefer automated setup, you need to configure your RingCentral app:
+
+1. Go to https://developers.ringcentral.com/
+2. Log in with: sasquatchcc719@gmail.com
+3. Go to "My Apps" → Select your app
+4. Go to "Auth" tab
+5. Enable these grant types:
+   - ✅ **Client Credentials**
+   - ✅ **JWT** (optional)
+6. Save changes
+7. Then run: `node setup-ringcentral-webhook-jwt.js`
+
+---
+
+## What's Already Working
+
+✅ **All core features are ready:**
+- Contest entry notifications
+- Partner referral notifications
+- Lead tracking and management
+- OneSignal push notifications
+
+⏳ **Waiting for webhook:**
+- Missed call detection
+- Automatic SMS responses
+
+---
+
+## Quick Decision
+
+**Just want it working now?**
+```bash
+node setup-ringcentral-webhook-manual.js
+```
+Follow the on-screen instructions (takes 5 minutes).
+
+**Want fully automated setup?**
+Configure your app settings first (see "Alternative" above), then run the script.
+
+---
+
+## Files Reference
+
+- `setup-ringcentral-webhook-manual.js` ← **Use this** (web UI guide)
+- `setup-ringcentral-webhook-jwt.js` ← Automated (requires app config)
+- `FINAL_STATUS.md` ← This file
+
+---
+
+**Recommendation:** Use the manual setup. It's quick, reliable, and doesn't require any app configuration changes.
+
+
+========================================
+# FILE: HOW_TO_GET_JWT_KEY.md
+========================================
+# How to Get Your RingCentral JWT Private Key
+
+## Quick Steps (5 minutes)
+
+### Step 1: Go to RingCentral Developer Console
+Visit: **https://developers.ringcentral.com/**
+
+Log in with: `sasquatchcc719@gmail.com`
+
+### Step 2: Select or Create Your App
+
+**Option A - If you have an existing app:**
+1. Click **"My Apps"**
+2. Select your app from the list
+
+**Option B - If you need to create a new app:**
+1. Click **"Create App"**
+2. Choose **"Server/Bot"** app type
+3. Name it: `Sasquatch Webhook App`
+4. Click **"Create"**
+
+### Step 3: Enable JWT Authentication
+
+1. In your app, go to the **"Auth"** tab
+2. Under **"OAuth 2.0 Settings"**, check:
+   - ✅ **JWT Auth Flow**
+3. Under **"Permissions"**, ensure these are enabled:
+   - ✅ **Read Accounts**
+   - ✅ **Webhook Subscriptions**
+   - ✅ **Read Presence**
+4. Click **"Save"**
+
+### Step 4: Download Private Key
+
+1. Go to the **"Credentials"** tab
+2. Under **"JWT Credentials"** section:
+   - Click **"Create/Download Private Key"**
+   - A file named `private_key.pem` will download
+
+### Step 5: Add to `.env.local`
+
+1. Open the downloaded `private_key.pem` in a text editor
+2. Copy the **entire content** (including BEGIN/END lines)
+3. Open your `.env.local` file
+4. Find the `RINGCENTRAL_JWT_PRIVATE_KEY` line
+5. Replace the placeholder with your key:
+
+```bash
+RINGCENTRAL_JWT_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----
+MIIEowIBAAKCAQEA1234567890abcdefghijklmnopqrstuvwxyz...
+(your key will be many lines long)
+...rest of your key...
+-----END RSA PRIVATE KEY-----"
+```
+
+**Important:** 
+- Keep the quotes `"` around the key
+- Include all the line breaks (the key is multiline)
+- Don't add extra spaces or modify the key content
+
+### Step 6: Run the Setup Script
+
+```bash
+node setup-ringcentral-webhook-jwt.js
+```
+
+You should see:
+```
+✓ Authentication successful!
+✓ Webhook created successfully!
+✅ Setup complete!
+```
+
+---
+
+## Example Private Key Format
+
+Your `.env.local` should look like this:
+
+```bash
+RINGCENTRAL_JWT_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----
+MIIEowIBAAKCAQEAxyzK4kGt8WXwnJVasdEw/qrQPdWHvqPn4jvF3z1bkYXc5gF+
+N8pMN1xR7YzQ2LvKj4pXm8nW9Kp+vL8hJ5nM/Wp9L8dF2xG1Hq7Y+3gT5vH8kJ9L
+... (many more lines) ...
+dW5hYXNkZmFkYXN0ZGZhZGZhc2RmYXNkZmFzZGZhc2RmYXNkZmFzZGY=
+-----END RSA PRIVATE KEY-----"
+```
+
+---
+
+## Troubleshooting
+
+### "Invalid JWT" Error
+- Make sure you copied the entire key including BEGIN/END lines
+- Check that there are no extra spaces or line breaks
+- Verify the key hasn't expired (regenerate if needed)
+
+### "Unauthorized" Error
+- Make sure JWT Auth Flow is enabled in your app settings
+- Verify your app has the correct permissions (Webhook Subscriptions, Read Presence)
+- Try regenerating the private key
+
+### Still Not Working?
+Use the manual setup instead:
+```bash
+node setup-ringcentral-webhook-manual.js
+```
+
+This will guide you through setting up the webhook via the RingCentral web UI.
+
+---
+
+## Security Note
+
+⚠️ **Keep your private key secure!**
+- Never commit `.env.local` to git (it's already in `.gitignore`)
+- Don't share your private key with anyone
+- If compromised, regenerate a new key immediately in the Developer Console
+
+
+========================================
+# FILE: INTEGRATION_SUMMARY.md
+========================================
 # RingCentral + OneSignal Integration - Quick Start
 
 ## ✅ What's Been Built
@@ -1741,6 +2184,697 @@ Consider adding:
 - [ ] Voicemail transcription integration
 - [ ] Call recording webhooks
 - [ ] OneSignal user segments for targeted notifications
+
+
+========================================
+# FILE: LOCATION_PARTNERS.md
+========================================
+# Location Partners - NFC Card System
+
+## Overview
+The Location Partners system allows you to place NFC business cards at local establishments (barbershops, coffee shops, gyms, bars, etc.). When customers scan the card and you confirm their booking, the establishment earns $5 credit toward their own carpet cleaning.
+
+## How It Works
+
+### 1. Partner Setup
+Each location partner:
+- Creates an account in your system (via admin)
+- Gets assigned a unique partner ID
+- Receives their custom NFC card URL: `/location/[partner-id]`
+- Provides phone number for SMS notifications
+
+### 2. Customer Journey (AI Chat Flow)
+When someone taps the NFC card:
+1. They're taken to the location landing page (`/location/[partner-id]`)
+2. Page shows: "$20 OFF" offer + partner location badge
+3. **Primary CTA: "TEXT US NOW"** - Opens SMS with pre-filled message mentioning the partner
+4. AI chat engages, qualifies, and sends booking link
+5. Secondary options: Call, Save Contact, Share
+6. Every action is tracked
+
+### 3. Partner Rewards (Manual Confirmation)
+**Credits are NOT auto-awarded.** When a customer engages:
+1. Their action appears in "Pending Confirmations" on the admin dashboard
+2. When the job actually books, you click "Confirm Booking"
+3. Partner earns **$5 credit** per confirmed booking
+4. Partner receives SMS notification instantly
+5. Credit can be used toward their own carpet cleaning
+
+### 4. SMS Notifications
+Partners receive texts like:
+```
+🎉 Great news! A customer from your Joe's Barbershop NFC card just booked! 
+You earned $5 credit. New balance: $15. Thanks for partnering with Sasquatch!
+```
+
+## Database Schema
+
+### Added to `partners` table:
+```sql
+partner_type TEXT         -- 'referral' or 'location'
+card_id TEXT              -- Physical card identifier
+location_name TEXT        -- Display name on landing page
+location_address TEXT     -- Physical address
+location_type TEXT        -- barbershop, bar, gym, etc.
+reward_tier INTEGER       -- Future: tiered rewards
+total_taps INTEGER        -- Total card scans
+total_conversions INTEGER -- Total bookings/forms
+```
+
+### Tracks in `nfc_card_taps`:
+- partner_id (links to partners table)
+- Every page view, location, device type
+- Conversion status and type
+
+## Admin Features
+
+### Location Partners Dashboard (`/admin/location-partners`)
+- Add new location partners
+- View all locations with stats
+- Copy unique URLs for each partner
+- See real-time performance:
+  - Total taps
+  - Conversions
+  - Conversion rate
+  - Credits earned
+  - Partner contact info
+
+### NFC Analytics (`/admin/tap-analytics`)
+- Overall NFC card performance
+- Button click tracking
+- City/region breakdown
+- Device types
+- Time-based trends
+
+## Adding a New Location Partner
+
+### Via Admin UI:
+1. Go to `/admin/location-partners`
+2. Click "Add Location Partner"
+3. Fill out:
+   - Business Name (required)
+   - Display Name (shown to customers)
+   - Address
+   - Location Type (barbershop, bar, etc.)
+   - Phone Number (for SMS notifications)
+   - Card ID (optional physical card tracker)
+4. Click "Create"
+
+Partner receives welcome SMS with their unique URL.
+
+### Physical Card Setup:
+1. Order NFC cards (Vistaprint, Amazon, etc.)
+2. Encode with URL: `https://sasquatchcarpet.com/tap?partner=[their-id]`
+3. Give to partner or install at location
+4. Partner tapes it to counter, mirror, wall, etc.
+
+## Partner Portal Integration
+
+Location partners can:
+- Log in at `/partner`
+- View their stats (taps, conversions, credits)
+- See credit balance
+- Cash in credits for their own cleaning
+- Track performance over time
+
+*All existing partner portal features work for location partners!*
+
+## Credit System (1% Sliding Scale)
+
+### How Credits Are Earned:
+- **1% of job value** when you confirm the booking
+- Examples:
+  - $100 job → Partner earns $1.00
+  - $300 job → Partner earns $3.00
+  - $500 job → Partner earns $5.00
+  - $1,000 job → Partner earns $10.00
+- Credits are NOT auto-awarded on clicks
+- Manual confirmation ensures you only pay for real jobs
+
+### Pending Conversions:
+These actions appear as "pending" for confirmation:
+- `text_chat` - Customer clicked "TEXT US NOW"
+- `booking` - Customer clicked "Book Now"
+- `form` - Customer submitted callback form
+
+### How Credits Are Used:
+- Partner books their own cleaning
+- Credits automatically applied
+- Same as referral partner system
+
+## Marketing Strategy
+
+### Ideal Locations:
+1. **Barbershops/Hair Salons** - Captive audience, 30-60min visits
+2. **Coffee Shops** - High foot traffic, local clientele
+3. **Gyms** - Health-conscious, homeowners
+4. **Bars/Restaurants** - Casual browsing time
+5. **Pet Stores** - Pet owners = carpet owners
+6. **Hardware Stores** - DIY homeowners
+
+### Pitch to Partners:
+> "We'll place this free NFC card at your business. Every time someone scans it and books with us, you earn $20 toward free carpet cleaning. No cost, no work—just passive income for your business!"
+
+### Benefits:
+- **For You**: Hyperlocal marketing, passive lead generation
+- **For Partners**: Free credits, no effort, helps customers
+- **For Customers**: Convenient, instant booking, great deal
+
+## Technical Implementation
+
+### Files:
+- `migrations/add_location_partners.sql` - Database schema
+- `src/app/location/[partnerId]/page.tsx` - Location partner landing page (AI chat focus)
+- `src/app/tap/page.tsx` - Regular business card landing page (direct booking)
+- `src/app/api/tap/track/route.ts` - Track taps and potential conversions
+- `src/app/api/admin/location-partners/confirm/route.ts` - Manual confirmation API
+- `src/app/admin/location-partners/page.tsx` - Admin dashboard with pending confirmations
+- `src/components/admin-navigation.tsx` - Navigation link
+
+### API Endpoints:
+- `POST /api/tap/track` - Track taps and clicks (marks as pending, NOT auto-reward)
+- `POST /api/admin/location-partners/confirm` - Confirm booking and award $5 credit
+- `POST /api/sms/send` - Send SMS notifications
+
+### Tracking Flow:
+```
+1. Customer taps NFC card at location
+   ↓
+2. Redirect to /location/[partner-id]
+   ↓
+3. Track page view + lookup partner
+   ↓
+4. Show partner badge + "TEXT US NOW" button
+   ↓
+5. Customer taps "TEXT US NOW"
+   ↓
+6. SMS opens with pre-filled message (mentions partner)
+   ↓
+7. AI chat engages, qualifies, sends booking link
+   ↓
+8. Tap marked as "pending" conversion
+   ↓
+9. Admin sees in "Pending Confirmations"
+   ↓
+10. When job books, admin clicks "Confirm"
+   ↓
+11. Partner awarded $5 credit + SMS notification
+```
+
+## Two Landing Page Types
+
+### Regular Business Card (direct booking):
+```
+https://sasquatchcarpet.com/tap
+```
+- Used for: Cards you hand out personally
+- CTA: "Book Now" button (direct to Housecall Pro)
+- No partner attribution
+
+### Location Partner Card (AI chat):
+```
+https://sasquatchcarpet.com/location/[partner-id]
+```
+- Used for: Cards placed at partner establishments
+- CTA: "TEXT US NOW" button (starts AI chat)
+- Partner badge shown
+- Manual confirmation required for rewards
+
+## Future Enhancements
+
+### Tiered Rewards:
+- Bronze: 1-5 conversions → $20/conversion
+- Silver: 6-15 conversions → $25/conversion
+- Gold: 16+ conversions → $30/conversion + bonuses
+
+### Partner Leaderboard:
+- Show top-performing locations
+- Monthly prizes
+- Recognition badges
+
+### QR Code Generation:
+- Auto-generate QR codes for each partner
+- Print-ready designs
+- Branded materials
+
+### Advanced Analytics:
+- Hour-of-day patterns
+- Seasonal trends
+- Partner performance comparison
+- Revenue attribution
+
+## Migration Steps
+
+1. Run migration:
+   ```sql
+   -- Run in Supabase SQL editor
+   -- See: migrations/add_location_partners.sql
+   ```
+
+2. Deploy code:
+   ```bash
+   git add .
+   git commit -m "Add location partners system"
+   git push origin feature/location-partners
+   ```
+
+3. Test in production:
+   - Create test partner
+   - Scan test card
+   - Verify SMS notifications
+   - Check credit allocation
+
+4. Roll out:
+   - Print first batch of cards
+   - Visit local businesses
+   - Onboard partners
+   - Track performance
+
+## Success Metrics
+
+Track:
+- Number of active location partners
+- Average taps per location per week
+- Overall conversion rate
+- Credits earned by partners
+- Revenue generated from location cards
+- Partner retention rate
+
+## Support
+
+If partners have questions:
+- They can log in at `/partner`
+- View their unique stats
+- See real-time credit balance
+- Contact you via their portal
+
+---
+
+**This system turns local businesses into your sales force—with zero ongoing cost and automatic rewards!**
+
+
+========================================
+# FILE: NFC_CARD_SYSTEM.md
+========================================
+# 🎴 NFC Card Landing Page & Analytics
+
+## Overview
+
+A complete NFC business card system that tracks engagement and conversions. When someone taps your NFC card with their phone, they land on a custom page with your $20 off offer and can instantly contact you.
+
+---
+
+## ✨ Features
+
+### Customer-Facing Landing Page (`/tap`)
+- **Mobile-optimized** design (99% of taps are from phones)
+- **Instant contact options:**
+  - 📞 Tap to call (719-249-8791)
+  - 💬 Tap to text
+  - 📋 Request callback form
+  - 📇 Save to contacts (vCard download)
+- **$20 off promotion** prominently displayed
+- **Service areas** listed
+- **Why Choose Us** section
+- **Card image** displayed at top
+
+### Admin Analytics Dashboard (`/admin/tap-analytics`)
+- **Total taps** & unique visitors
+- **Conversion tracking** (form submissions)
+- **Button click analytics:**
+  - Call button clicks
+  - Text button clicks
+  - Form submissions
+  - Save contact clicks
+- **Time-based metrics:**
+  - Today, this week, this month, all time
+- **Geographic data:**
+  - Top cities where cards are being tapped
+- **Device breakdown:**
+  - Mobile vs desktop vs tablet
+- **ROI calculator:**
+  - Estimate revenue from conversions
+
+### Tracking System
+- Every tap is logged automatically
+- IP-based location detection
+- Device type detection
+- Button click tracking
+- Conversion attribution
+
+---
+
+## 🚀 How to Use
+
+### 1. Order Your NFC Cards
+
+**Simple Option (Recommended):**
+All cards have the same URL: `https://sightings.sasquatchcarpet.com/tap`
+
+**Advanced Option:**
+Individual card tracking: `https://sightings.sasquatchcarpet.com/tap?card=001`
+
+### 2. Apply the Database Migration
+
+Run this SQL in your Supabase dashboard:
+```bash
+migrations/add_nfc_card_tracking.sql
+```
+
+This creates:
+- `nfc_card_taps` table (tracks every tap)
+- `nfc_button_clicks` table (tracks button engagement)
+
+### 3. Deploy to Production
+
+```bash
+git push origin feature/nfc-card-landing
+```
+
+Vercel will auto-deploy and the landing page will be live!
+
+### 4. Hand Out Cards
+
+Just give them out like regular business cards:
+- At networking events
+- On job sites
+- To satisfied customers
+- Leave at local businesses
+
+### 5. Track Performance
+
+Go to **Admin → NFC Cards** to see:
+- How many taps you're getting
+- Which buttons people click most
+- Conversion rate (taps → leads)
+- Geographic distribution
+- Device types
+
+---
+
+## 📊 What You Can Track
+
+### Basic Metrics
+- ✅ Total taps
+- ✅ Unique visitors
+- ✅ Conversions (form submissions)
+- ✅ Conversion rate %
+
+### Engagement Metrics
+- ✅ Call button clicks
+- ✅ Text button clicks
+- ✅ Form submissions
+- ✅ Save contact clicks
+
+### Demographic Data
+- ✅ Device types (mobile, tablet, desktop)
+- ✅ Top cities (IP-based location)
+- ✅ Time of day patterns
+
+### ROI Tracking
+- ✅ Taps → Leads → Revenue
+- ✅ Cost per lead
+- ✅ Return on card investment
+
+---
+
+## 🎯 Phase 2: Partner Cards (Future)
+
+The system is architected to support partner-specific cards:
+
+**Partner Card URL:** `/tap/partner/[id]`
+
+**Partner Card Features:**
+- Auto-login to partner portal (no password needed!)
+- Partner keeps card in wallet for instant access
+- Track partner engagement
+- Attribute referrals to specific partners
+- Custom landing page per partner
+
+When ready to implement Phase 2, we just:
+1. Add partner ID detection
+2. Create partner-specific landing pages
+3. Add auto-authentication logic
+
+---
+
+## 📁 Files Created
+
+### Landing Page
+- `src/app/tap/page.tsx` - Customer-facing landing page
+
+### API
+- `src/app/api/tap/track/route.ts` - Tracking endpoint
+
+### Admin
+- `src/app/admin/tap-analytics/page.tsx` - Analytics dashboard
+
+### Database
+- `migrations/add_nfc_card_tracking.sql` - Database schema
+
+### Assets
+- `public/nfc-card.png` - Your card design image
+
+### Navigation
+- `src/components/admin-navigation.tsx` - Updated with "NFC Cards" tab
+
+---
+
+## 🔧 Technical Details
+
+### Database Tables
+
+**nfc_card_taps:**
+- Tracks every page visit (tap)
+- Stores: card ID, IP, location, device, timestamp
+- Tracks conversion status
+- Links to leads table
+
+**nfc_button_clicks:**
+- Tracks every button click
+- Stores: button type, timestamp
+- Links back to tap record
+
+### Tracking Flow
+
+1. User taps card → Opens `/tap` page
+2. Page loads → Automatically logs tap in database
+3. User clicks button → Logs button click
+4. User submits form → Creates lead + marks tap as converted
+
+### Privacy & Security
+
+- Only IP address stored (no personal data without consent)
+- RLS policies protect admin data
+- Public can insert taps (anonymous)
+- Only admins can read analytics
+
+---
+
+## 💡 Best Practices
+
+### Card Distribution
+- Give cards to satisfied customers
+- Hand out at networking events
+- Leave with local business partners
+- Include with invoices
+
+### Tracking
+- Check analytics weekly
+- Compare conversion rates over time
+- See which distribution methods work best
+- Adjust strategy based on data
+
+### Follow-up
+- Respond quickly to form submissions
+- Call back within 24 hours
+- Apply the $20 discount
+- Track which leads convert to jobs
+
+---
+
+## 🎨 Customization Ideas
+
+### Landing Page
+- Add before/after photos
+- Include customer testimonials
+- Show current promotions
+- Link to contest entry
+
+### Analytics
+- Set conversion goals
+- Compare card batches
+- Track cost per acquisition
+- A/B test different offers
+
+### Integration
+- Connect to CRM
+- Push notifications on tap
+- Email alerts for conversions
+- SMS follow-up automation
+
+---
+
+## 📈 Success Metrics
+
+Track these KPIs:
+- **Engagement Rate:** (Taps / Cards Distributed)
+- **Conversion Rate:** (Leads / Taps)
+- **Cost Per Lead:** (Card Cost / Leads Generated)
+- **ROI:** (Revenue from Conversions / Card Cost)
+
+Example:
+- 100 cards printed = $150
+- 50 taps = 50% engagement
+- 10 leads = 20% conversion
+- 3 jobs = $600 revenue
+- **ROI = 4x** 🎉
+
+---
+
+## 🚀 Next Steps
+
+1. ✅ Review the landing page design
+2. ✅ Apply database migration
+3. ✅ Push to production
+4. ✅ Order NFC cards with the URL
+5. ✅ Start handing them out
+6. ✅ Track results in admin dashboard
+7. ✅ Optimize based on data
+
+---
+
+**Questions?** Check the analytics dashboard for insights!
+
+**Ready for Phase 2?** Let me know when you want partner-specific cards!
+
+
+========================================
+# FILE: NFC_CAROUSEL_FEATURE.md
+========================================
+# 📸 NFC Jobs Carousel Feature
+
+## ✨ What's New
+
+Added a beautiful carousel showcasing recent completed jobs to the NFC card landing page!
+
+---
+
+## 🎯 Features
+
+### Auto-Playing Carousel
+- **6 most recent published jobs** from your database
+- **Auto-advances every 4 seconds**
+- Smooth transitions between slides
+- Pauses on user interaction
+
+### Navigation
+- **Arrow buttons** on left/right (swipeable on mobile)
+- **Progress dots** at bottom - click to jump to any slide
+- **Counter** showing current position (e.g., "3 / 6")
+
+### Job Display
+- **Full image** of completed work
+- **Service badge** (Carpet Cleaning, Tile, etc.)
+- **Location** (neighborhood or city)
+- **Job title** with service type
+- **AI description** (first 200 characters)
+
+### Call to Action
+- **"View All Our Work"** link below carousel
+- Opens full jobs gallery in new tab
+- Builds trust with social proof
+
+---
+
+## 📱 Mobile Optimized
+
+- Touch-swipe enabled
+- Large tap targets for navigation
+- Responsive images
+- Fast loading
+
+---
+
+## 🎨 Design
+
+### Colors
+- **Green badge** for service type
+- **Dark semi-transparent** navigation buttons
+- **Green progress dots** for active slide
+- **Clean card** with rounded corners
+
+### Animation
+- Smooth slide transitions
+- Hover effects on buttons
+- Auto-play with visual feedback
+
+---
+
+## 🔧 Technical Details
+
+### Component
+`src/components/nfc/recent-jobs-carousel.tsx`
+
+### Data Source
+- Fetches from `/api/public/jobs?limit=6`
+- Shows only published jobs
+- Ordered by most recent first
+
+### Performance
+- Lazy loads images
+- Preloads next/prev images
+- Minimal re-renders
+- Caches API response
+
+---
+
+## 📍 Placement
+
+Added to NFC landing page (`/tap`) between:
+1. "Why Choose Us" section
+2. Footer
+
+Perfect position for social proof before they leave the page!
+
+---
+
+## 🎯 Conversion Benefits
+
+1. **Social Proof**: Shows real work in their area
+2. **Quality Display**: Beautiful before/after photos
+3. **Trust Building**: "They do great work nearby"
+4. **Engagement**: Interactive carousel keeps attention
+5. **Transparency**: Direct link to see more work
+
+---
+
+## 🚀 Next Steps
+
+1. Test on Vercel preview deployment
+2. Verify carousel works smoothly
+3. Check mobile responsiveness
+4. Merge to main when satisfied
+
+---
+
+## 💡 Future Enhancements
+
+- Add before/after split view
+- Filter by service type
+- Show customer ratings/reviews
+- Geolocation-based sorting (closest jobs first)
+- Video support for jobs
+
+---
+
+**Branch**: `feature/nfc-jobs-carousel`
+**Status**: Ready for testing
+
+
+========================================
+# FILE: ONESIGNAL_COMPLETE.md
+========================================
 # ✅ OneSignal Setup Complete!
 
 ## What I Just Added
@@ -1877,6 +3011,11 @@ Then visit your site and allow notifications when prompted!
 ---
 
 **Next:** Deploy to Vercel, visit your site, and click "Allow" when prompted for notifications!
+
+
+========================================
+# FILE: PHASE2_CODE_REVIEW.md
+========================================
 # Phase 2 Code Review - EXIF Extraction & Image Compression
 
 This document contains the complete code for Phase 2 implementation for review.
@@ -2359,6 +3498,11 @@ export function UploadForm() {
 
 ## Ready for Review
 This code is ready for analysis and follows all .cursorrules requirements.
+
+
+========================================
+# FILE: PROJECT_COMPLETE_SUMMARY.md
+========================================
 # Sasquatch Job Pinner - Complete Project Summary
 
 **Project Type:** Neighborhood Authority Engine PWA  
@@ -3007,6 +4151,11 @@ Over time, this creates a **dense coverage map** showing Sasquatch Carpet Cleani
 **All code documented, tested, and ready for production.**
 
 🦍 **Ready to dominate local search!** 🗺️
+
+
+========================================
+# FILE: PROJECT_STATUS.md
+========================================
 # Project Status Report
 **Generated:** January 11, 2026  
 **Project:** Supa-Next-Starter (Sasquatch Tools)
@@ -3396,6 +4545,11 @@ pnpm analyze          # Analyze bundle size
 ---
 
 **END OF STATUS REPORT**
+
+
+========================================
+# FILE: PUBLIC_PAGES_SUMMARY.md
+========================================
 # Phase 3: Public Pages & Map View - Implementation Summary
 
 ## 🗺️ What Was Built
@@ -3760,6 +4914,497 @@ Update these placeholder links:
 **Status:** ✅ Complete - Ready for testing and approval
 
 **Branch:** Need to create `feature/p3-public-pages`
+
+
+========================================
+# FILE: QUICKSTART.md
+========================================
+# Quick Start: Run RingCentral Webhook Setup
+
+## What You Need
+
+1. Your RingCentral login credentials:
+   - Username (phone number or email)
+   - Password
+   - Extension (if you use one, otherwise leave blank)
+
+## Steps
+
+### 1. Add Credentials to `.env.local`
+
+Open `.env.local` and fill in these values:
+
+```bash
+# RingCentral credentials (already in file, just fill in the values)
+RINGCENTRAL_CLIENT_ID=WCfoTe4MMO8fPxAzLo3P6v  # Already filled
+RINGCENTRAL_CLIENT_SECRET=4gaHOBidjlldlmJeZSIS2PbVD8SKDFzo5bNbvKdy6WT9  # Already filled
+RINGCENTRAL_USERNAME=YOUR_RINGCENTRAL_PHONE_OR_EMAIL_HERE
+RINGCENTRAL_PASSWORD=YOUR_RINGCENTRAL_PASSWORD_HERE
+RINGCENTRAL_EXTENSION=  # Leave blank unless you use extensions
+RINGCENTRAL_PHONE_NUMBER=+17197498807  # Your main business number
+```
+
+**Example:**
+```bash
+RINGCENTRAL_USERNAME=john@sasquatchcarpet.com
+RINGCENTRAL_PASSWORD=mySecurePassword123
+RINGCENTRAL_EXTENSION=
+RINGCENTRAL_PHONE_NUMBER=+17197498807
+```
+
+### 2. Run the Setup Script
+
+```bash
+node setup-ringcentral-webhook.js
+```
+
+### Expected Output
+
+If successful, you'll see:
+
+```
+Logging into RingCentral...
+✓ Login successful!
+Creating webhook subscription...
+✓ Webhook created successfully!
+Subscription ID: abc-123-def-456
+Webhook URL: https://sightings.sasquatchcarpet.com/api/leads
+Status: Active
+```
+
+### Troubleshooting
+
+**Error: "Invalid credentials"**
+- Check your username/password in `.env.local`
+- Make sure you're using the same credentials you use to log into RingCentral
+
+**Error: "Extension not found"**
+- If you don't use extensions, leave `RINGCENTRAL_EXTENSION=` blank
+- If you do use extensions, make sure the extension number is correct
+
+**Error: "Webhook URL must be HTTPS"**
+- This script only works with the production URL
+- Make sure you've deployed to Vercel first
+
+## What Happens Next?
+
+Once the webhook is registered:
+
+1. When someone calls and you miss it → RingCentral sends a webhook
+2. Your `/api/leads` endpoint receives it
+3. System creates a lead, sends SMS, and sends push notification
+
+## Testing
+
+After setup, test it:
+1. Call your RingCentral number from another phone
+2. Let it ring without answering
+3. Check `/admin/leads` for a new "missed_call" lead
+
+## Need Help?
+
+- Full documentation: See `RINGCENTRAL_SETUP.md`
+- Quick reference: See `INTEGRATION_SUMMARY.md`
+
+
+========================================
+# FILE: RINGCENTRAL_SETUP.md
+========================================
+# RingCentral + OneSignal Integration Setup Guide
+
+This guide explains how to set up RingCentral webhook integration for missed calls and OneSignal push notifications.
+
+## Overview
+
+When someone calls your business and you miss the call, the system automatically:
+1. Creates a lead in the database with source = "missed_call"
+2. Sends an SMS back to the caller via RingCentral
+3. Sends a push notification to your admin devices via OneSignal
+
+## Prerequisites
+
+- RingCentral account with API access
+- OneSignal account
+- Your app deployed to Vercel (production URL needed for webhooks)
+
+---
+
+## Part 1: RingCentral Setup
+
+### Step 1: Get RingCentral Credentials
+
+1. Go to [RingCentral Developer Portal](https://developers.ringcentral.com/)
+2. Create a new app (or use existing)
+3. Note down:
+   - **Client ID**: e.g., `WCfoTe4MMO8fPxAzLo3P6v`
+   - **Client Secret**: e.g., `4gaHOBidjlldlmJeZSIS2PbVD8SKDFzo5bNbvKdy6WT9`
+4. Get your RingCentral login credentials:
+   - **Username**: Your RingCentral phone number or email
+   - **Password**: Your RingCentral account password
+   - **Extension**: (optional) Leave blank if you don't use extensions
+
+### Step 2: Add Credentials to `.env.local`
+
+```bash
+RINGCENTRAL_CLIENT_ID=WCfoTe4MMO8fPxAzLo3P6v
+RINGCENTRAL_CLIENT_SECRET=4gaHOBidjlldlmJeZSIS2PbVD8SKDFzo5bNbvKdy6WT9
+RINGCENTRAL_USERNAME=your_ringcentral_phone_number_or_email
+RINGCENTRAL_PASSWORD=your_ringcentral_password
+RINGCENTRAL_EXTENSION=
+RINGCENTRAL_PHONE_NUMBER=+17195551234
+```
+
+### Step 3: Run the Webhook Setup Script
+
+**IMPORTANT**: Only run this script AFTER deploying to Vercel, because RingCentral needs a publicly accessible webhook URL.
+
+```bash
+# Make sure your credentials are in .env.local, then run:
+node setup-ringcentral-webhook.js
+```
+
+This creates a webhook subscription that sends events to:
+```
+https://sightings.sasquatchcarpet.com/api/leads
+```
+
+You should see output like:
+```
+Logging into RingCentral...
+✓ Login successful!
+Creating webhook subscription...
+✓ Webhook created successfully!
+Subscription ID: abc-123-def-456
+Webhook URL: https://sightings.sasquatchcarpet.com/api/leads
+Status: Active
+```
+
+### Step 4: Verify Webhook is Active
+
+1. Log into [RingCentral Developer Console](https://developers.ringcentral.com/)
+2. Go to "Webhooks" → "Subscriptions"
+3. You should see an active subscription pointing to your `/api/leads` endpoint
+
+---
+
+## Part 2: OneSignal Setup
+
+### Step 1: Create OneSignal Account
+
+1. Go to [OneSignal.com](https://onesignal.com/)
+2. Sign up for a free account
+3. Create a new app
+
+### Step 2: Get OneSignal Credentials
+
+1. In OneSignal dashboard, go to **Settings** → **Keys & IDs**
+2. Note down:
+   - **App ID**: e.g., `a1b2c3d4-e5f6-7890-abcd-ef1234567890`
+   - **REST API Key**: e.g., `ZGFkZmFzZGY...` (starts with "REST API Key")
+
+### Step 3: Add Credentials to `.env.local`
+
+```bash
+ONESIGNAL_APP_ID=a1b2c3d4-e5f6-7890-abcd-ef1234567890
+ONESIGNAL_API_KEY=your-rest-api-key-here
+```
+
+### Step 4: Deploy to Vercel
+
+```bash
+git add .
+git commit -m "Add RingCentral and OneSignal integration"
+git push origin feature/ringcentral-webhook-setup
+```
+
+Then merge to `main` and deploy.
+
+### Step 5: Install OneSignal on Your Device
+
+1. **For Web Push (Desktop/Mobile Browser)**:
+   - Visit your admin dashboard: `https://sightings.sasquatchcarpet.com/admin`
+   - OneSignal will prompt you to allow notifications
+   - Click "Allow"
+
+2. **For Mobile App** (if you build one later):
+   - Follow [OneSignal iOS/Android SDK docs](https://documentation.onesignal.com/)
+
+---
+
+## Part 3: Testing
+
+### Test Missed Call Webhook
+
+1. Call your RingCentral business number
+2. Let it ring but don't answer (simulate missed call)
+3. Check:
+   - Lead appears in `/admin/leads` with source "missed_call"
+   - You receive SMS: "Thanks for calling Sasquatch..."
+   - Push notification appears on your device
+
+### Test Contest Entry Notification
+
+1. Submit a contest entry at `/sightings`
+2. Check:
+   - Lead appears in `/admin/leads` with source "contest"
+   - Push notification: "🏆 New Contest Entry"
+
+### Test Partner Referral Notification
+
+1. Partner submits a referral
+2. Check:
+   - Lead appears in `/admin/leads` with source "partner"
+   - Push notification: "🤝 New Partner Referral"
+
+---
+
+## Webhook Payload Structure
+
+RingCentral sends webhooks when phone events occur. Here's what the system looks for:
+
+```json
+{
+  "uuid": "abc123",
+  "event": "/restapi/v1.0/account/~/extension/~/presence",
+  "timestamp": "2026-01-24T12:00:00Z",
+  "subscriptionId": "sub123",
+  "body": {
+    "extensionId": "123456",
+    "telephonyStatus": "NoCall",
+    "activeCalls": [
+      {
+        "id": "call123",
+        "direction": "Inbound",
+        "from": "+17195551234",
+        "fromName": "John Doe",
+        "to": "+17197498807",
+        "telephonyStatus": "NoCall"
+      }
+    ]
+  }
+}
+```
+
+**Key Detection Logic**:
+- `telephonyStatus === "NoCall"` → Call ended
+- `direction === "Inbound"` → Incoming call
+- If call ended without being answered → Missed call
+
+---
+
+## Environment Variables Reference
+
+| Variable | Purpose | Where to Get |
+|----------|---------|--------------|
+| `RINGCENTRAL_CLIENT_ID` | RingCentral app authentication | [Developer Portal](https://developers.ringcentral.com/) |
+| `RINGCENTRAL_CLIENT_SECRET` | RingCentral app secret | [Developer Portal](https://developers.ringcentral.com/) |
+| `RINGCENTRAL_USERNAME` | Your RingCentral login (phone or email) | Your RingCentral account |
+| `RINGCENTRAL_PASSWORD` | Your RingCentral password | Your RingCentral account |
+| `RINGCENTRAL_EXTENSION` | Extension number (optional) | Your RingCentral account |
+| `RINGCENTRAL_PHONE_NUMBER` | Your business phone (for SMS sending) | Your RingCentral account |
+| `ONESIGNAL_APP_ID` | OneSignal app identifier | [OneSignal Dashboard](https://onesignal.com/) |
+| `ONESIGNAL_API_KEY` | OneSignal REST API key | [OneSignal Dashboard](https://onesignal.com/) |
+
+---
+
+## Troubleshooting
+
+### Webhooks Not Working
+
+1. **Check RingCentral webhook status**:
+   ```bash
+   # TODO: Add script to list active subscriptions
+   ```
+
+2. **Check Vercel logs**:
+   - Go to Vercel dashboard → Your project → Logs
+   - Look for POST requests to `/api/leads`
+   - Check for errors
+
+3. **Verify webhook URL is publicly accessible**:
+   ```bash
+   curl -X POST https://sightings.sasquatchcarpet.com/api/leads \
+     -H "Content-Type: application/json" \
+     -d '{"source": "missed_call", "phone": "+17195551234", "name": "Test"}'
+   ```
+
+### Push Notifications Not Appearing
+
+1. **Check browser permissions**:
+   - Make sure notifications are enabled in browser settings
+   - Try visiting `/admin` again and re-allowing notifications
+
+2. **Check OneSignal dashboard**:
+   - Go to "Audience" → "All Users"
+   - Verify your device is subscribed
+
+3. **Check Vercel logs for OneSignal API errors**
+
+### SMS Not Sending
+
+1. **Verify RingCentral credentials are correct**
+2. **Check RingCentral phone number format**: Must be E.164 format (e.g., `+17195551234`)
+3. **Check RingCentral account SMS permissions**
+
+---
+
+## Next Steps
+
+- [ ] Test missed call flow end-to-end
+- [ ] Customize SMS message in `/src/lib/ringcentral.ts`
+- [ ] Customize push notification messages in each route
+- [ ] Set up OneSignal segments for targeting specific users
+- [ ] Consider adding sound/vibration to push notifications
+
+---
+
+## File Structure
+
+```
+src/
+├── lib/
+│   ├── onesignal.ts          # OneSignal notification helper
+│   └── ringcentral.ts        # RingCentral SMS + webhook parsing
+├── app/api/
+│   ├── leads/route.ts        # Handles missed call webhooks + lead creation
+│   ├── sightings/route.ts    # Contest entries + notifications
+│   └── admin/referrals/route.ts  # Partner referrals + notifications
+setup-ringcentral-webhook.js  # One-time setup script
+```
+
+
+========================================
+# FILE: SASQUATCH_ANIMATION_PROJECT.md
+========================================
+# Sasquatch Animation Project
+
+**Created:** January 30, 2026  
+**Status:** Ready to start
+
+---
+
+## The Vision
+
+Animated Sasquatch walking through misty woods as a video background on customer-facing pages. This will be the signature visual element across the site.
+
+---
+
+## Your Task: Create the Video
+
+### Tool
+**Leonardo AI** (or any AI video generator)
+
+### What to Generate
+- Sasquatch silhouette walking through a misty forest
+- Atmospheric, mysterious vibe
+- Subtle movement (slow walk, fog drifting)
+- Should loop seamlessly
+
+### Video Specs
+| Spec | Value |
+|------|-------|
+| Resolution | 1920x1080 or 1280x720 |
+| Duration | 5-15 seconds (looping) |
+| File size | Under 5MB ideal, 10MB max |
+| Format | MP4 (H.264 codec) |
+
+### Tips for Best Results
+- **Seamless loop:** End should blend back to start
+- **Slow movement:** Atmospheric > action
+- **Muted colors:** Won't compete with text overlay
+- **Fog/mist:** Hides loop points, looks mysterious
+- **Silhouette:** Sasquatch doesn't need detail, just shape
+
+---
+
+## Where to Put It
+
+Drop the file here:
+```
+/public/videos/sasquatch-walk.mp4
+```
+
+---
+
+## What Claude Will Build
+
+Once you have the video, Claude will:
+
+1. Add it as a background to the **Vendor Landing Page** (`/location/[partnerId]`)
+2. Add dark overlay so text is readable
+3. Make it autoplay, loop, and mute (required for mobile)
+4. Fallback image for slow connections
+
+### Final Look
+```
+┌─────────────────────────────────────────┐
+│  [Video plays behind, slightly dimmed]  │
+│                                         │
+│      🦶 Sasquatch Carpet Cleaning       │
+│         $20 OFF Your Cleaning           │
+│                                         │
+│         [ TEXT US NOW ]                 │
+│                                         │
+└─────────────────────────────────────────┘
+```
+
+---
+
+## Future Animation Ideas
+
+Once the video is working, we can expand:
+
+| Animation | Use Case | Format |
+|-----------|----------|--------|
+| Sasquatch waving | Headers, loading states | Lottie JSON |
+| Thumbs up | Success confirmations | Lottie JSON |
+| Walking across screen | Page transitions | Lottie JSON |
+| Thinking/scratching head | AI processing states | Lottie JSON |
+
+For Lottie animations:
+- Create in After Effects
+- Export with Bodymovin plugin
+- 200-400px, transparent background
+- Under 100KB file size
+
+---
+
+## Current Branch Status
+
+**Branch:** `feature/admin-nav-cleanup`
+
+### Pending Changes (not yet pushed)
+- Partner portal with 5-tap Easter egg login
+- Vendors terminology update
+- Preview button with all external pages
+- OneSignal error fix
+- PIN field for vendor creation
+
+### To Deploy
+```bash
+git push -u origin feature/admin-nav-cleanup
+```
+
+### SQL Already Run
+- Partner type column added
+- You may need to run: `UPDATE partners SET partner_type = 'location' WHERE created_at > NOW() - INTERVAL '1 day';`
+
+---
+
+## Questions for Tomorrow
+
+1. Which page should get the video first? (Vendor landing page recommended)
+2. Do you want the video on the main NFC card page (`/tap`) too?
+3. Any specific Sasquatch style? (Realistic, cartoony, silhouette?)
+
+---
+
+Good night! 🌙
+
+
+========================================
+# FILE: SEO_FILENAME_FEATURE.md
+========================================
 # SEO-Friendly Image Filenames
 
 **Date:** January 19, 2026  
@@ -4062,6 +5707,11 @@ When images are shared on social media:
 **Status:** ✅ Ready for production  
 **Breaking Changes:** None (backward compatible)  
 **Manual Steps Required:** None (automatic for all new uploads)
+
+
+========================================
+# FILE: SEO_FIX_SUMMARY.md
+========================================
 # SEO & Social Sharing Fix for Sightings App
 **Date:** January 19, 2026  
 **Status:** ✅ Code Complete - Ready for Deployment
@@ -4342,6 +5992,11 @@ If issues arise after deployment:
 ---
 
 **Next Action:** Run database migration in Supabase, then commit and push to `main`.
+
+
+========================================
+# FILE: SITEMAP_IMPLEMENTATION.md
+========================================
 # Dynamic Sitemap Implementation
 
 **Date:** January 19, 2026  
@@ -4643,6 +6298,11 @@ console.log('Sightings:', sightings?.length)
 
 **Status:** ✅ Sitemap is live and updating automatically!  
 **Next Step:** Submit to Google Search Console for faster indexing.
+
+
+========================================
+# FILE: SMS_FUTURE_FEATURES.md
+========================================
 # SMS Future Features
 
 ## Overview
@@ -4986,6 +6646,11 @@ When you want to implement any of these:
 
 - `SMS_IMPLEMENTATION.md` - What we're building NOW
 - `TWILIO_INTEGRATION_PLAN.md` - Original Twilio setup
+
+
+========================================
+# FILE: SMS_IMPLEMENTATION.md
+========================================
 # SMS Implementation Plan
 
 ## Overview
@@ -5231,6 +6896,11 @@ After implementation, track:
 - `SMS_FUTURE_FEATURES.md` - Ideas for later implementation
 - `TWILIO_INTEGRATION_PLAN.md` - Original Twilio setup documentation
 - `TESTING_PLAN.md` - General testing guidelines
+
+
+========================================
+# FILE: STATUS.md
+========================================
 # ✅ SETUP COMPLETE - Ready to Use!
 
 ## Status: All Features Implemented ✓
@@ -5427,6 +7097,193 @@ Creating webhook subscription...
 ⏳ **Then:** Deploy to Vercel and run webhook setup
 
 You're 2 steps away from going live! 🚀
+
+
+========================================
+# FILE: TESTING_PLAN.md
+========================================
+# Testing Plan - RingCentral + OneSignal Integration
+
+## ✅ Step 1: Test OneSignal Push Notifications
+
+### 1a. Subscribe to Notifications
+1. Visit: https://sightings.sasquatchcarpet.com/
+2. You should see a browser notification prompt
+3. Click **"Allow"**
+4. ✅ You're now subscribed!
+
+### 1b. Verify Subscription
+1. Go to: https://onesignal.com/
+2. Log in → Select your app
+3. Go to **"Audience"** → **"All Users"**
+4. You should see **1 subscriber** (you)
+
+### 1c. Test Contest Entry Notification
+1. Go to: https://sightings.sasquatchcarpet.com/sightings
+2. Fill out the contest form:
+   - Name: Test User
+   - Phone: (719) 555-1234
+   - Email: test@example.com
+   - Location: "Springs & Academy"
+3. Submit (photo optional)
+4. **Expected:** Push notification: "🏆 New Contest Entry from Test User"
+
+---
+
+## ✅ Step 2: Test Lead Tracking
+
+### 2a. Verify Contest Lead Created
+1. Go to: https://sightings.sasquatchcarpet.com/admin/leads
+2. Look for the lead you just created
+3. **Expected:**
+   - Name: Test User
+   - Phone: (719) 555-1234
+   - Source: "contest"
+   - Status: "new"
+
+### 2b. Test Lead Management
+1. Click on the lead card
+2. Try changing status: new → contacted
+3. Add notes: "Test note"
+4. **Expected:** Changes save successfully
+
+---
+
+## ✅ Step 3: Test Partner Referral Notification
+
+### 3a. Create Test Partner (if you don't have one)
+1. Go to: https://sightings.sasquatchcarpet.com/partners/register
+2. Register a test partner account
+3. Log in
+
+### 3b. Submit Referral
+1. From partner dashboard, submit a referral
+2. Client Name: Test Client
+3. Client Phone: (719) 555-5678
+4. **Expected:** Push notification: "🤝 New Partner Referral"
+
+### 3c. Verify in Leads
+1. Go to: https://sightings.sasquatchcarpet.com/admin/leads
+2. Look for the partner referral
+3. **Expected:**
+   - Name: Test Client
+   - Source: "partner"
+   - Status: "new"
+
+---
+
+## ⏳ Step 4: Set Up RingCentral Webhook (Not Yet Done)
+
+### Option A: Manual Setup via API Explorer (5 minutes)
+
+1. Go to: https://developers.ringcentral.com/api-reference
+2. Log in with: sasquatchcc719@gmail.com
+3. Search for: "Create Subscription"
+4. Click "Try it out"
+5. Paste this JSON:
+
+```json
+{
+  "eventFilters": [
+    "/restapi/v1.0/account/~/extension/~/presence?detailedTelephonyState=true"
+  ],
+  "deliveryMode": {
+    "transportType": "WebHook",
+    "address": "https://sightings.sasquatchcarpet.com/api/leads"
+  }
+}
+```
+
+6. Click "Execute"
+7. Look for: `"status": "Active"`
+
+### Option B: Manual Guide
+```bash
+node setup-ringcentral-webhook-manual.js
+```
+
+### 4b. Test Missed Call (After Webhook Setup)
+1. Call: (719) 749-8807
+2. Let it ring without answering
+3. **Expected:**
+   - SMS received: "Thanks for calling Sasquatch..."
+   - Push notification: "📞 Missed Call from [phone]"
+   - Lead appears in admin with source: "missed_call"
+
+---
+
+## 🎯 Quick Test Checklist
+
+| Feature | Test | Expected Result | ✓ |
+|---------|------|-----------------|---|
+| **OneSignal SDK** | Visit site | Notification prompt appears | ☐ |
+| **Subscribe** | Click "Allow" | Appears in OneSignal dashboard | ☐ |
+| **Contest Entry** | Submit form | Push notification received | ☐ |
+| **Contest Lead** | Check /admin/leads | Lead shows source: "contest" | ☐ |
+| **Partner Referral** | Submit referral | Push notification received | ☐ |
+| **Referral Lead** | Check /admin/leads | Lead shows source: "partner" | ☐ |
+| **RingCentral Webhook** | Manual setup | Status: Active | ☐ |
+| **Missed Call** | Call & don't answer | SMS + Push + Lead created | ☐ |
+
+---
+
+## 📱 Testing on Mobile
+
+### iOS (Safari)
+1. Visit site on iPhone
+2. Allow notifications when prompted
+3. Submit contest entry
+4. Notification appears on lock screen
+
+### Android (Chrome)
+1. Visit site on Android
+2. Allow notifications when prompted
+3. Submit contest entry
+4. Notification appears in notification shade
+
+---
+
+## 🐛 Troubleshooting
+
+### No Notification Prompt
+- Clear cache and reload
+- Check browser notification settings
+- Try incognito/private mode
+
+### Push Not Received
+- Check OneSignal dashboard for send failures
+- Verify ONESIGNAL_API_KEY in Vercel is correct
+- Check browser console for errors
+
+### Lead Not Created
+- Check Vercel deployment logs
+- Verify Supabase connection
+- Check API route errors in Vercel
+
+### RingCentral Webhook Failed
+- Verify webhook is "Active" in RingCentral
+- Check webhook URL is correct
+- Test with: `curl -X POST https://sightings.sasquatchcarpet.com/api/leads -H "Content-Type: application/json" -d '{"source":"missed_call","phone":"+17195551234","name":"Test"}'`
+
+---
+
+## ✅ Success Criteria
+
+All features working when:
+- ✅ Push notifications received for all lead types
+- ✅ Leads appear in admin dashboard
+- ✅ Lead tracking and status updates work
+- ✅ RingCentral webhook creates missed call leads
+- ✅ SMS responses sent automatically
+
+---
+
+**Start with Step 1** - test OneSignal notifications first since that's the easiest to verify!
+
+
+========================================
+# FILE: TEST_PLAN_GOOGLE_PIVOT.md
+========================================
 # TEST PLAN: feature/google-pivot-v1
 
 ## 🎯 OBJECTIVE
@@ -5747,183 +7604,532 @@ git stash
 _______________________________________________
 _______________________________________________
 _______________________________________________
-# Testing Plan - RingCentral + OneSignal Integration
 
-## ✅ Step 1: Test OneSignal Push Notifications
 
-### 1a. Subscribe to Notifications
-1. Visit: https://sightings.sasquatchcarpet.com/
-2. You should see a browser notification prompt
-3. Click **"Allow"**
-4. ✅ You're now subscribed!
+========================================
+# FILE: TWILIO_CURRENT_STATE.md
+========================================
+# Sasquatch Sightings - Twilio/SMS System Documentation
 
-### 1b. Verify Subscription
-1. Go to: https://onesignal.com/
-2. Log in → Select your app
-3. Go to **"Audience"** → **"All Users"**
-4. You should see **1 subscriber** (you)
+## Overview
 
-### 1c. Test Contest Entry Notification
-1. Go to: https://sightings.sasquatchcarpet.com/sightings
-2. Fill out the contest form:
-   - Name: Test User
-   - Phone: (719) 555-1234
-   - Email: test@example.com
-   - Location: "Springs & Academy"
-3. Submit (photo optional)
-4. **Expected:** Push notification: "🏆 New Contest Entry from Test User"
+This document describes the complete SMS/Twilio infrastructure for the Sasquatch Sightings application. Use this to understand what's already built before making configuration decisions.
+
+**Business:** Sasquatch Carpet Cleaning (Monument, Colorado)
+**Phone Number:** 719-249-8791 (just ported from RingCentral to Twilio)
+**App URL:** https://sasquatchsightings.com
+**Framework:** Next.js 14 (App Router) + Supabase + Vercel
 
 ---
 
-## ✅ Step 2: Test Lead Tracking
+## Environment Variables Required
 
-### 2a. Verify Contest Lead Created
-1. Go to: https://sightings.sasquatchcarpet.com/admin/leads
-2. Look for the lead you just created
-3. **Expected:**
-   - Name: Test User
-   - Phone: (719) 555-1234
-   - Source: "contest"
-   - Status: "new"
+```bash
+# Twilio
+TWILIO_ACCOUNT_SID=your_account_sid
+TWILIO_AUTH_TOKEN=your_auth_token
+TWILIO_PHONE_NUMBER=+17192498791  # The ported number
 
-### 2b. Test Lead Management
-1. Click on the lead card
-2. Try changing status: new → contacted
-3. Add notes: "Test note"
-4. **Expected:** Changes save successfully
+# Admin alerts
+ADMIN_PHONE_NUMBER=+1XXXXXXXXXX  # Chuck's cell for alerts
 
----
+# AI Dispatcher
+OPENAI_API_KEY=your_openai_key
+AI_DISPATCHER_ENABLED=true  # Set to 'true' to enable AI responses
 
-## ✅ Step 3: Test Partner Referral Notification
-
-### 3a. Create Test Partner (if you don't have one)
-1. Go to: https://sightings.sasquatchcarpet.com/partners/register
-2. Register a test partner account
-3. Log in
-
-### 3b. Submit Referral
-1. From partner dashboard, submit a referral
-2. Client Name: Test Client
-3. Client Phone: (719) 555-5678
-4. **Expected:** Push notification: "🤝 New Partner Referral"
-
-### 3c. Verify in Leads
-1. Go to: https://sightings.sasquatchcarpet.com/admin/leads
-2. Look for the partner referral
-3. **Expected:**
-   - Name: Test Client
-   - Source: "partner"
-   - Status: "new"
+# Cron job auth
+CRON_SECRET=your_cron_secret
+```
 
 ---
 
-## ⏳ Step 4: Set Up RingCentral Webhook (Not Yet Done)
+## Twilio Webhook Configuration Needed
 
-### Option A: Manual Setup via API Explorer (5 minutes)
+In Twilio Console → Phone Numbers → +17192498791 → Messaging Configuration:
 
-1. Go to: https://developers.ringcentral.com/api-reference
-2. Log in with: sasquatchcc719@gmail.com
-3. Search for: "Create Subscription"
-4. Click "Try it out"
-5. Paste this JSON:
+**When a message comes in:**
+- Webhook URL: `https://sasquatchsightings.com/api/twilio/sms-incoming`
+- HTTP Method: `POST`
+
+---
+
+## Database Schema
+
+### conversations
+Stores SMS conversation history for AI context.
+
+```sql
+CREATE TABLE conversations (
+  id UUID PRIMARY KEY,
+  phone_number TEXT NOT NULL,
+  source TEXT,                    -- 'inbound', 'NFC Card', 'Business Card', 'Contest'
+  lead_id UUID REFERENCES leads(id),
+  messages JSONB DEFAULT '[]',    -- Array of {role, content, timestamp, twilio_sid}
+  ai_enabled BOOLEAN DEFAULT true,
+  status TEXT DEFAULT 'active',   -- 'active', 'completed', 'escalated'
+  metadata JSONB,                 -- Partner info: {partner_id, partner_name, coupon_code}
+  created_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ
+);
+```
+
+### sms_logs
+Tracks all outbound SMS for auditing and debugging.
+
+```sql
+CREATE TABLE sms_logs (
+  id UUID PRIMARY KEY,
+  lead_id UUID REFERENCES leads(id),
+  partner_id UUID REFERENCES partners(id),
+  recipient_phone TEXT NOT NULL,
+  message_type TEXT NOT NULL,     -- See types below
+  message_content TEXT NOT NULL,
+  status TEXT DEFAULT 'sent',     -- 'sent', 'failed', 'delivered'
+  twilio_sid TEXT,
+  sent_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ
+);
+```
+
+**Message Types:**
+- `contest_entry` - New contest submission
+- `day_3_nurture` - 3-day follow-up
+- `day_7_nurture` - 7-day follow-up
+- `day_14_nurture` - 14-day follow-up
+- `partner_referral` - Partner notification
+- `partner_credit` - Partner credit notification
+- `admin_alert` - Alert to Chuck
+- `ai_dispatcher` - AI response to customer
+- `ai_dispatcher_inbound` - Incoming message notification
+- `ai_dispatcher_escalation` - Escalation alert
+- `customer_notification` - General customer message
+
+### leads table (SMS-related columns)
+```sql
+-- Nurture tracking
+day_3_sms_sent_at TIMESTAMPTZ,
+day_7_sms_sent_at TIMESTAMPTZ,
+day_14_sms_sent_at TIMESTAMPTZ
+```
+
+---
+
+## API Routes
+
+### POST /api/twilio/sms-incoming
+**Purpose:** Webhook for incoming SMS from Twilio
+
+**What it does:**
+1. Receives incoming SMS (form-encoded from Twilio)
+2. Normalizes phone number to E.164 format
+3. Detects source type from message content:
+   - NFC Card mention → `vendor` or `business_card`
+   - Contest mention → `contest`
+   - Default → `inbound`
+4. Finds or creates conversation (grouped by phone + source)
+5. If AI enabled:
+   - Generates response via OpenAI GPT-4o-mini
+   - Checks for escalation triggers
+   - Sends response via Twilio
+   - Creates lead when name + email + address collected
+6. If AI disabled:
+   - Logs message
+   - Alerts admin
+7. Returns empty TwiML
+
+**Detection phrases for NFC:**
+- "found your card", "scanned your card", "saw your card"
+- "from the barbershop/gym/coffee shop"
+- "at joe", "tapped", "business card", "nfc"
+
+**Escalation triggers:**
+- "emergency", "flood", "burst pipe"
+- "angry", "refund", "rude"
+- AI response contains escalation phrases
+
+### POST /api/conversations/[id]/reply
+**Purpose:** Manual reply from admin UI
+
+**What it does:**
+1. Admin types reply in Conversations view
+2. Sends SMS to customer
+3. Appends to conversation history
+4. Logs to sms_logs
+
+### GET /api/cron/nurture-leads
+**Purpose:** Daily lead nurturing (runs at 9 AM via Vercel Cron)
+
+**Schedule:** `0 9 * * *` (9 AM daily)
+
+**What it does:**
+1. Finds leads created exactly 3 days ago → sends Day 3 SMS ($20 off)
+2. Finds leads created exactly 7 days ago → sends Day 7 SMS ($25 off)
+3. Finds leads created exactly 14 days ago → sends Day 14 SMS ($30 off)
+4. Only targets leads with status 'new' or 'contacted'
+5. Only targets sources: 'contest', 'partner', 'website'
+6. Tracks sent timestamps to avoid duplicates
+
+**Day 3 message:**
+```
+Hi {name}, still need carpet cleaning?
+You have $20 off! Use coupon: SCC20 (add to notes)
+Book now: {booking_link}
+- Sasquatch Carpet Cleaning
+(719) 249-8791
+```
+
+**Day 7 message:**
+```
+Special offer for {name}!
+Get $25 off when you book this week.
+Use coupon: SCC25 (add to notes)
+{booking_link}
+- Sasquatch Carpet Cleaning
+(719) 249-8791
+```
+
+**Day 14 message:**
+```
+Last chance, {name}!
+Book this week and get $30 off.
+Use coupon: SCC30 (add to notes)
+{booking_link}
+Reply STOP to unsubscribe
+- Sasquatch Carpet Cleaning
+(719) 249-8791
+```
+
+---
+
+## Library: src/lib/twilio.ts
+
+### sendAdminSMS(message, messageType)
+Sends alert to Chuck's phone. Used for:
+- New contest entries
+- Escalations
+- AI errors
+- Incoming messages when AI disabled
+
+### sendPartnerSMS(phone, message, partnerId, messageType)
+Sends SMS to location partners. Used for:
+- New referral notifications
+- Credit notifications
+
+### sendCustomerSMS(phone, message, leadId, messageType)
+Sends SMS to customers. Used for:
+- AI dispatcher responses
+- Nurture sequence messages
+- Manual replies from admin
+
+All functions:
+- Log to sms_logs table
+- Handle missing credentials gracefully
+- Track Twilio SID for delivery
+
+---
+
+## Library: src/lib/openai-chat.ts
+
+### AI Dispatcher System Prompt
+The AI knows:
+- Company name, booking link, minimum charge ($150)
+- Service area (Tri-Lakes, Castle Rock, Northern Springs)
+- Full pricing guide (carpet, upholstery, leather, tile, rugs)
+- Technical process (CRB technology, deep restoration)
+- Payment methods, job duration, scheduling
+
+### Key behaviors:
+- Collects: name, email, address before booking
+- Asks clarifying questions (never assumes sizes)
+- Mentions $150 minimum only when job is under $150
+- Recognizes NFC/partner referrals → applies $20 discount
+- Escalates emergencies and angry customers
+- Keeps responses SMS-friendly (<160 chars when possible)
+
+### isAIEnabled()
+Returns true only if:
+- `AI_DISPATCHER_ENABLED=true` in environment
+- OpenAI API key is configured
+
+### shouldEscalate(response)
+Checks if AI response contains escalation phrases
+
+---
+
+## Admin UI: Conversations View
+
+Located at: `/admin` → Leads dropdown → Conversations
+
+**Features:**
+- Lists all SMS conversations
+- Shows message history per conversation
+- Toggle AI on/off per conversation
+- Manual reply box
+- Source badges (NFC Card, Business Card, Contest, Inbound)
+- Status indicators (active, escalated, completed)
+- Partner info when applicable
+
+---
+
+## Vercel Cron Jobs
+
+Defined in `vercel.json`:
 
 ```json
 {
-  "eventFilters": [
-    "/restapi/v1.0/account/~/extension/~/presence?detailedTelephonyState=true"
-  ],
-  "deliveryMode": {
-    "transportType": "WebHook",
-    "address": "https://sightings.sasquatchcarpet.com/api/leads"
-  }
+  "crons": [
+    {
+      "path": "/api/cron/nurture-leads",
+      "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/station-health",
+      "schedule": "0 10 * * *"
+    }
+  ]
 }
 ```
 
-6. Click "Execute"
-7. Look for: `"status": "Active"`
+---
 
-### Option B: Manual Guide
-```bash
-node setup-ringcentral-webhook-manual.js
+## What's NOT Built Yet
+
+1. **Post-service follow-up SMS** - The "thanks for choosing us, leave a review, share with friends" message after a job is completed
+
+2. **Appointment reminders** - Day before / morning of reminders
+
+3. **Quote follow-up** - If customer got quote but didn't book
+
+4. **Review request automation** - Timed review requests after service
+
+5. **Call forwarding** - The number needs call forwarding configured in Twilio (separate from SMS)
+
+---
+
+## New Review/Share Page
+
+Just built at `/links` (short URL: `/r`)
+
+**Purpose:** Post-service follow-up page to send customers
+
+**Contains:**
+- Review buttons (Google, Facebook, Yelp, Nextdoor, BBB)
+- Book Again button with NEXT20 code
+- Share with Friend button with SHARE20 code
+- Recent work carousel
+- Sasquatch character background
+
+**Draft SMS for post-service:**
+```
+Thanks for choosing Sasquatch! 🦶 As a local family-owned business, your support & reviews mean the world to us. Know anyone who needs a cleaning? Share this link - they'll get $20 off their first service: sasquatchsightings.com/r
+```
+(275 characters)
+
+---
+
+## Phone Number Status
+
+- **Number:** 719-249-8791
+- **Previously:** RingCentral
+- **Now:** Ported to Twilio
+- **SMS:** Needs webhook configured (see above)
+- **Voice/Calls:** Need separate configuration for call handling (forwarding, voicemail, etc.)
+
+---
+
+## Quick Reference: File Locations
+
+```
+src/lib/twilio.ts                       # SMS sending functions
+src/lib/openai-chat.ts                  # AI dispatcher logic
+src/app/api/twilio/sms-incoming/route.ts # Incoming SMS webhook
+src/app/api/conversations/[id]/reply/route.ts # Manual reply
+src/app/api/cron/nurture-leads/route.ts # Lead nurturing cron
+src/components/admin/conversations-view.tsx # Admin UI
+src/app/links/page.tsx                  # Review/share page
+src/app/r/page.tsx                      # Short redirect
+vercel.json                             # Cron schedules
 ```
 
-### 4b. Test Missed Call (After Webhook Setup)
-1. Call: (719) 749-8807
-2. Let it ring without answering
-3. **Expected:**
-   - SMS received: "Thanks for calling Sasquatch..."
-   - Push notification: "📞 Missed Call from [phone]"
-   - Lead appears in admin with source: "missed_call"
+---
+
+## Testing Checklist
+
+After webhook configuration:
+
+- [ ] Text the number → AI responds
+- [ ] Text "I found your card at Joe's" → Recognizes as NFC
+- [ ] Say "emergency flood" → Escalates to admin
+- [ ] Check Conversations view shows the thread
+- [ ] Check sms_logs table has entries
+- [ ] Verify admin gets escalation alerts
+- [ ] Test manual reply from admin UI
+
+
+========================================
+# FILE: TWILIO_HANDOFF.md
+========================================
+# Twilio Voice Setup - Handoff Summary
+
+## Current Status: Voice Endpoints Deployed and Working
+
+The code is deployed to Vercel and working. The call routing endpoint was tested successfully.
 
 ---
 
-## 🎯 Quick Test Checklist
+## Critical Discovery: Domain Issue
 
-| Feature | Test | Expected Result | ✓ |
-|---------|------|-----------------|---|
-| **OneSignal SDK** | Visit site | Notification prompt appears | ☐ |
-| **Subscribe** | Click "Allow" | Appears in OneSignal dashboard | ☐ |
-| **Contest Entry** | Submit form | Push notification received | ☐ |
-| **Contest Lead** | Check /admin/leads | Lead shows source: "contest" | ☐ |
-| **Partner Referral** | Submit referral | Push notification received | ☐ |
-| **Referral Lead** | Check /admin/leads | Lead shows source: "partner" | ☐ |
-| **RingCentral Webhook** | Manual setup | Status: Active | ☐ |
-| **Missed Call** | Call & don't answer | SMS + Push + Lead created | ☐ |
+**`sasquatchsightings.com` is NOT pointing to Vercel.** It's going through GoDaddy and returning 405 errors.
+
+**The correct working URL is:**
+```
+https://sasquatch-sightings-git-main-charles-sewells-projects.vercel.app
+```
+
+All Twilio webhooks must use this Vercel URL, NOT sasquatchsightings.com.
 
 ---
 
-## 📱 Testing on Mobile
+## Deployed Endpoints
 
-### iOS (Safari)
-1. Visit site on iPhone
-2. Allow notifications when prompted
-3. Submit contest entry
-4. Notification appears on lock screen
+### 1. Call Router (Voice Webhook)
+**URL:** `https://sasquatch-sightings-git-main-charles-sewells-projects.vercel.app/api/twilio/call-router`
 
-### Android (Chrome)
-1. Visit site on Android
-2. Allow notifications when prompted
-3. Submit contest entry
-4. Notification appears in notification shade
+**What it does:**
+- Checks current time in Mountain Time (America/Denver)
+- **Business Hours (Mon-Fri 9AM-5PM MT):** Dials both SIP endpoints simultaneously with 20s timeout
+- **After Hours:** Plays message and triggers Harry SMS
+
+**Business Hours TwiML:**
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Dial timeout="20" action="https://sasquatch-sightings-git-main-charles-sewells-projects.vercel.app/api/twilio/call-after-hours">
+    <Sip>sip:chuck@sasquatch-cc.sip.us1.twilio.com</Sip>
+    <Sip>sip:wife@sasquatch-cc.sip.us1.twilio.com</Sip>
+  </Dial>
+</Response>
+```
+
+**After Hours TwiML:**
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say>Thanks for calling Sasquatch Carpet Cleaning. Our office hours are closed, but you should be receiving a text from Harry shortly.</Say>
+  <Redirect method="POST">https://sasquatch-sightings-git-main-charles-sewells-projects.vercel.app/api/twilio/call-after-hours</Redirect>
+</Response>
+```
+
+### 2. Call After Hours (Missed Call Handler)
+**URL:** `https://sasquatch-sightings-git-main-charles-sewells-projects.vercel.app/api/twilio/call-after-hours`
+
+**What it does:**
+- Triggered when call is missed (no-answer, busy, failed) OR after hours
+- Creates/updates conversation in database
+- Sends Harry SMS: "Hi! This is Harry from Sasquatch Carpet Cleaning. I saw you just called. How can I help you today?"
+- Logs to sms_logs table
+- Only sends SMS if call was actually missed (checks DialCallStatus)
+
+### 3. SMS Incoming (Already Existed)
+**URL:** `https://sasquatch-sightings-git-main-charles-sewells-projects.vercel.app/api/twilio/sms-incoming`
+
+**What it does:**
+- Receives inbound SMS from customers
+- AI dispatcher responds using OpenAI
+- Tracks conversations in database
+- Creates leads when enough info collected
 
 ---
 
-## 🐛 Troubleshooting
+## Twilio Console Configuration Needed
 
-### No Notification Prompt
-- Clear cache and reload
-- Check browser notification settings
-- Try incognito/private mode
+### Phone Number: +1 719-249-8791
 
-### Push Not Received
-- Check OneSignal dashboard for send failures
-- Verify ONESIGNAL_API_KEY in Vercel is correct
-- Check browser console for errors
+#### Voice Configuration
+- **A call comes in:** Webhook
+- **URL:** `https://sasquatch-sightings-git-main-charles-sewells-projects.vercel.app/api/twilio/call-router`
+- **HTTP Method:** POST
 
-### Lead Not Created
-- Check Vercel deployment logs
-- Verify Supabase connection
-- Check API route errors in Vercel
-
-### RingCentral Webhook Failed
-- Verify webhook is "Active" in RingCentral
-- Check webhook URL is correct
-- Test with: `curl -X POST https://sightings.sasquatchcarpet.com/api/leads -H "Content-Type: application/json" -d '{"source":"missed_call","phone":"+17195551234","name":"Test"}'`
+#### Messaging Configuration
+- **A message comes in:** Webhook
+- **URL:** `https://sasquatch-sightings-git-main-charles-sewells-projects.vercel.app/api/twilio/sms-incoming`
+- **HTTP Method:** POST
 
 ---
 
-## ✅ Success Criteria
+## SIP Domain Configuration
 
-All features working when:
-- ✅ Push notifications received for all lead types
-- ✅ Leads appear in admin dashboard
-- ✅ Lead tracking and status updates work
-- ✅ RingCentral webhook creates missed call leads
-- ✅ SMS responses sent automatically
+**Domain:** `sasquatch-cc.sip.us1.twilio.com`
+
+**SIP Endpoints:**
+- `chuck` - Chuck's Zoiper
+- `wife` - Wife's Zoiper
+
+Make sure:
+1. SIP domain exists in Twilio Console → Voice → SIP Domains
+2. Credential lists are configured for chuck and wife
+3. Zoiper apps are registered to these credentials
 
 ---
 
-**Start with Step 1** - test OneSignal notifications first since that's the easiest to verify!
+## Environment Variables Required
+
+These should already be in Vercel:
+```
+TWILIO_ACCOUNT_SID=xxx
+TWILIO_AUTH_TOKEN=xxx
+TWILIO_PHONE_NUMBER=+17192498791
+NEXT_PUBLIC_SUPABASE_URL=xxx
+SUPABASE_SERVICE_ROLE_KEY=xxx
+```
+
+---
+
+## Testing Checklist
+
+1. [ ] Configure Twilio phone number voice webhook to call-router URL
+2. [ ] Configure Twilio phone number SMS webhook to sms-incoming URL
+3. [ ] Test call during business hours → Should ring both Zoiper apps
+4. [ ] Test call after hours → Should play message and send SMS
+5. [ ] Test missed call → Should send Harry SMS
+6. [ ] Test inbound SMS → Should get AI response
+7. [ ] Check Vercel logs for any errors
+
+---
+
+## Files Modified Today
+
+```
+src/app/api/twilio/call-router/route.ts     # NEW - Voice routing logic
+src/app/api/twilio/call-after-hours/route.ts # NEW - Missed call SMS handler
+src/app/links/page.tsx                       # NEW - Review/share page
+src/app/r/page.tsx                           # NEW - Short URL redirect
+TWILIO_CURRENT_STATE.md                      # Documentation
+```
+
+---
+
+## Known Issues
+
+1. **sasquatchsightings.com domain** - Not pointing to Vercel. Either:
+   - Fix DNS to point to Vercel
+   - Or continue using the .vercel.app URL for webhooks
+
+2. **SIP may need verification** - The SIP endpoints `chuck@sasquatch-cc.sip.us1.twilio.com` and `wife@sasquatch-cc.sip.us1.twilio.com` need to be properly configured in Twilio SIP Domains with credentials that match what's in Zoiper.
+
+---
+
+## Next Steps for Claude
+
+1. Help configure Twilio Console with the correct webhook URLs
+2. Verify SIP domain and credential setup
+3. Test the full call flow
+4. Troubleshoot any issues that come up during testing
+
+
+========================================
+# FILE: TWILIO_INTEGRATION_PLAN.md
+========================================
 # Twilio SMS Notification Integration Plan
 
 ## Context
@@ -6194,6 +8400,11 @@ Before starting:
 **Created:** 2026-01-24  
 **Status:** Ready to implement  
 **Priority:** High (replaces non-working OneSignal)
+
+
+========================================
+# FILE: UPDATE_REQUIRED.md
+========================================
 # ⚠️ RingCentral JWT Setup Required
 
 ## What You Need
@@ -6288,6 +8499,11 @@ node setup-ringcentral-webhook-manual.js
 - **UPDATE_REQUIRED.md** ← This file (quick reference)
 - **setup-ringcentral-webhook-jwt.js** ← Automated setup script
 - **setup-ringcentral-webhook-manual.js** ← Manual setup guide
+
+
+========================================
+# FILE: UPLOAD_PIPELINE_SUMMARY.md
+========================================
 # Server-Side Upload Pipeline - Implementation Summary
 
 ## 📦 What Was Built
@@ -6522,3 +8738,137 @@ The upload pipeline is complete! Next phase:
 **Status:** ✅ Server-side upload pipeline complete and tested
 **Branch:** `feature/p2-upload-form`
 **Files:** 4 created, 1 updated
+
+
+========================================
+# FILE: UTILIZATION_TRACKER.md
+========================================
+# Utilization Tracker Feature
+
+## Overview
+Manual revenue and efficiency tracking added to job entry flow with dashboard analytics.
+
+## Setup
+
+### 1. Run Database Migration
+```sql
+-- In Supabase SQL Editor, run:
+migrations/add_utilization_tracking.sql
+```
+
+This adds:
+- `invoice_amount` and `hours_worked` columns to `jobs` table
+- `settings` table for user goals (defaults: $150k annual, 40 hrs/week, 48 weeks/year)
+
+### 2. Deploy Feature Branch
+```bash
+# Currently on feature/utilization-tracker
+git push origin feature/utilization-tracker
+```
+
+### 3. Test in Preview
+- Vercel will create preview deployment
+- Test job entry with new fields
+- View stats dashboard at `/admin/stats`
+
+### 4. Merge to Main (when ready)
+```bash
+git checkout main
+git merge feature/utilization-tracker
+git push origin main
+```
+
+## Features
+
+### Job Entry (Enhanced)
+**Location:** Job Editor (`/admin/jobs/[id]`)
+
+Two new optional fields:
+- **Invoice Amount** - Total revenue for the job ($)
+- **Hours Worked** - Time spent (decimal, e.g., 2.5 hours)
+
+Both fields:
+- Optional (existing jobs without data won't break)
+- Saved with description
+- Used for stats calculations
+
+### Stats Dashboard
+**Location:** `/admin/stats` (new tab in admin nav)
+
+**This Week:**
+- Jobs completed
+- Revenue
+- Hours worked
+- Revenue per hour
+- Average ticket
+
+**Year to Date:**
+- Total jobs
+- Total revenue
+- Total hours
+- Average $/hour
+- Utilization % (hours worked ÷ available hours)
+
+**Pace to Goal:**
+- Annual revenue goal ($150k default)
+- Weekly target needed
+- Current weekly average
+- Projected annual revenue
+- On pace / behind pace status
+- Progress bar
+
+### Calculations
+
+```javascript
+// Weekly target
+weeklyTarget = annualGoal / workWeeksPerYear
+
+// Revenue per hour
+revenuePerHour = totalRevenue / totalHours
+
+// Utilization
+availableHoursYTD = weeksElapsed * hoursPerWeek
+utilization = (totalHoursWorked / availableHoursYTD) * 100
+
+// Projected annual
+weeklyAverage = totalRevenueYTD / weeksElapsed
+projectedAnnual = weeklyAverage * workWeeksPerYear
+
+// On pace check
+onPace = projectedAnnual >= annualGoal
+```
+
+## What's NOT Included (Yet)
+
+- Settings page (uses defaults for now)
+- Editing invoice/hours after initial entry
+- Historical charts/graphs
+- Export to CSV
+- Mobile app data entry
+
+## Defaults
+
+Settings table defaults (can be changed later with Settings page):
+- Annual Revenue Goal: $150,000
+- Available Hours per Week: 40
+- Work Weeks per Year: 48
+
+## Testing
+
+1. **Run migration** in Supabase
+2. **Complete a job** with invoice amount and hours
+3. **View Stats** at `/admin/stats`
+4. **Check calculations** match expectations
+5. **Try without fields** - shouldn't break
+6. **Mobile test** - cards should stack nicely
+
+## Future Enhancements
+
+- Settings page for goal customization
+- Edit revenue/hours after job completion
+- Weekly/monthly trend charts
+- CSV export
+- Push notifications when behind pace
+- Integration with accounting software
+
+
