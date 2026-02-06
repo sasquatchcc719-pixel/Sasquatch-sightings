@@ -107,14 +107,22 @@ export function DarkHero() {
       <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0a] via-transparent to-transparent opacity-80" />
       <div className="absolute inset-0 bg-gradient-to-b from-[#0a0a0a]/50 via-transparent to-transparent" />
 
-      {/* Sasquatch layer - moves most */}
+      {/* Sasquatch layer - moves most, fades in and out like a sighting */}
       <div
-        className="absolute inset-0 flex items-end justify-center transition-transform duration-150 ease-out"
+        className="animate-sasquatch-appear absolute inset-0 flex items-end justify-center transition-transform duration-150 ease-out"
         style={{
           transform: `translate(${mousePosition.x * -40}px, ${mousePosition.y * -20}px)`,
         }}
       >
-        <div className="relative h-[80%] w-full">
+        <div
+          className="relative h-[85%] w-full"
+          style={{
+            maskImage:
+              'radial-gradient(ellipse 70% 85% at 50% 60%, black 30%, transparent 70%)',
+            WebkitMaskImage:
+              'radial-gradient(ellipse 70% 85% at 50% 60%, black 30%, transparent 70%)',
+          }}
+        >
           <Image
             src="/hero-sasquatch.png"
             alt=""
@@ -125,23 +133,11 @@ export function DarkHero() {
         </div>
       </div>
 
+      {/* Additional mist layer on top of sasquatch for more blending */}
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#0a0a0a] via-transparent to-transparent opacity-60" />
+
       {/* Content overlay */}
       <div className="absolute inset-0 z-20 flex flex-col items-center justify-center px-4 text-center">
-        {/* Logo */}
-        <div
-          className="animate-fade-in mb-6 opacity-0"
-          style={{ animationDelay: '0.2s', animationFillMode: 'forwards' }}
-        >
-          <Image
-            src="/logo.svg"
-            alt="Sasquatch Carpet Cleaning"
-            width={224}
-            height={112}
-            className="h-20 w-auto drop-shadow-2xl md:h-28"
-            priority
-          />
-        </div>
-
         {/* Main headline */}
         <h1
           className="animate-fade-in mb-4 text-5xl font-extralight tracking-[0.2em] text-white opacity-0 md:text-7xl lg:text-8xl"
