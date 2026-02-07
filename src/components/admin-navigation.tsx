@@ -22,6 +22,7 @@ import {
   Bot,
   Target,
   Link2,
+  Megaphone,
 } from 'lucide-react'
 
 interface NavTab {
@@ -107,8 +108,7 @@ export function AdminNavigation() {
   const searchParams = useSearchParams()
   const isVendorSource = searchParams.get('source') === 'vendor'
   const [operationsOpen, setOperationsOpen] = useState(false)
-  const [leadsOpen, setLeadsOpen] = useState(false)
-  const [vendorsOpen, setVendorsOpen] = useState(false)
+  const [marketingOpen, setMarketingOpen] = useState(false)
   const [callsOpen, setCallsOpen] = useState(false)
   const [analystOpen, setAnalystOpen] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
@@ -116,8 +116,7 @@ export function AdminNavigation() {
   // Close all dropdowns
   const closeAll = () => {
     setOperationsOpen(false)
-    setLeadsOpen(false)
-    setVendorsOpen(false)
+    setMarketingOpen(false)
     setCallsOpen(false)
     setAnalystOpen(false)
     setPreviewOpen(false)
@@ -141,14 +140,35 @@ export function AdminNavigation() {
     },
   ]
 
-  // Leads group (from truck/contest)
-  const leadsTabs: NavTab[] = [
+  // Marketing group (leads, vendors, partners, cards, contest)
+  const marketingTabs: NavTab[] = [
     {
       name: 'All Leads',
       href: '/admin/leads',
       icon: Phone,
       active: pathname === '/admin/leads',
       description: 'Lead pipeline & follow-ups',
+    },
+    {
+      name: 'Vendor List',
+      href: '/admin/location-partners',
+      icon: Store,
+      active: pathname === '/admin/location-partners',
+      description: 'Manage vendor locations & station health',
+    },
+    {
+      name: 'Vendor Chats',
+      href: '/admin/conversations?source=vendor',
+      icon: MessageSquare,
+      active: pathname === '/admin/conversations' && isVendorSource,
+      description: 'AI chats from vendor cards',
+    },
+    {
+      name: 'Partners',
+      href: '/admin/partners',
+      icon: Users,
+      active: pathname === '/admin/partners',
+      description: 'Referral partners',
     },
     {
       name: 'Business Cards',
@@ -163,24 +183,6 @@ export function AdminNavigation() {
       icon: Trophy,
       active: pathname === '/admin/sightings',
       description: 'Sightings & conversations',
-    },
-  ]
-
-  // Vendors group (local businesses)
-  const vendorsTabs: NavTab[] = [
-    {
-      name: 'Vendor List',
-      href: '/admin/location-partners',
-      icon: Store,
-      active: pathname === '/admin/location-partners',
-      description: 'Manage vendor locations & station health',
-    },
-    {
-      name: 'Vendor Chats',
-      href: '/admin/conversations?source=vendor',
-      icon: MessageSquare,
-      active: pathname === '/admin/conversations' && isVendorSource,
-      description: 'AI chats from vendor cards',
     },
   ]
 
@@ -231,11 +233,9 @@ export function AdminNavigation() {
 
   // Check active states for dropdown highlights
   const operationsActive = operationsTabs.some((tab) => tab.active)
-  const leadsActive = leadsTabs.some((tab) => tab.active)
-  const vendorsActive = vendorsTabs.some((tab) => tab.active)
+  const marketingActive = marketingTabs.some((tab) => tab.active)
   const callsActive = callsTabs.some((tab) => tab.active)
   const analystActive = analystTabs.some((tab) => tab.active)
-  const partnersActive = pathname === '/admin/partners'
 
   return (
     <div>
@@ -256,46 +256,19 @@ export function AdminNavigation() {
             tabs={operationsTabs}
           />
 
-          {/* Leads Dropdown */}
+          {/* Marketing Dropdown */}
           <NavDropdown
-            label="Leads"
-            icon={Phone}
-            isOpen={leadsOpen}
+            label="Marketing"
+            icon={Megaphone}
+            isOpen={marketingOpen}
             onToggle={() => {
               closeAll()
-              setLeadsOpen(!leadsOpen)
+              setMarketingOpen(!marketingOpen)
             }}
             onClose={closeAll}
-            isActive={leadsActive}
-            tabs={leadsTabs}
+            isActive={marketingActive}
+            tabs={marketingTabs}
           />
-
-          {/* Vendors Dropdown */}
-          <NavDropdown
-            label="Vendors"
-            icon={Store}
-            isOpen={vendorsOpen}
-            onToggle={() => {
-              closeAll()
-              setVendorsOpen(!vendorsOpen)
-            }}
-            onClose={closeAll}
-            isActive={vendorsActive}
-            tabs={vendorsTabs}
-          />
-
-          {/* Partners - standalone link */}
-          <Link
-            href="/admin/partners"
-            className={`flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all sm:justify-start ${
-              partnersActive
-                ? 'bg-green-600 text-white shadow-lg shadow-green-600/30'
-                : 'bg-white/20 text-white/70 backdrop-blur-sm hover:bg-white/30 hover:text-white'
-            }`}
-          >
-            <Users className="h-4 w-4" />
-            Partners
-          </Link>
 
           {/* Calls Dropdown */}
           <NavDropdown
