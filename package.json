@@ -16,6 +16,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "vercel-build": "next build --no-turbopack",
     "start": "next start",
     "lint": "eslint .",
     "lint-fix": "eslint . --fix",
