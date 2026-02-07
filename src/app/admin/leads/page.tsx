@@ -907,11 +907,11 @@ export default function LeadsDashboardPage() {
       {/* ADD LEAD MODAL */}
       {showAddModal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50 p-4 pt-24"
           onClick={() => setShowAddModal(false)}
         >
           <div
-            className="bg-background max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl shadow-xl"
+            className="bg-background my-auto max-h-[calc(100vh-8rem)] w-full max-w-md overflow-y-auto rounded-xl shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}

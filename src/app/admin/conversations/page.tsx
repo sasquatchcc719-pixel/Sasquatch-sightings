@@ -28,29 +28,43 @@ export default async function ConversationsPage({ searchParams }: PageProps) {
   }
 
   // Filter by source if specified
+  // conversation.source: 'inbound' = direct texts | 'NFC Card' = vendor | 'Business Card' | 'Contest'
   let conversations = allConversations || []
   if (source === 'vendor') {
-    // Vendor chats are from NFC Card source
+    // Vendor AI chats: from NFC cards at vendor locations
     conversations = conversations.filter(
-      (c) => c.lead?.source === 'NFC Card' || c.lead?.source === 'nfc_card',
+      (c) => c.source === 'NFC Card' || c.source === 'nfc_card',
     )
   } else if (source === 'phone') {
-    // Phone calls/voicemails are from inbound source (missed calls, voicemails)
+    // Direct SMS: people who texted your business number directly (no NFC/contest context)
     conversations = conversations.filter((c) => c.source === 'inbound')
+  } else if (source === 'ai_chats') {
+    // All AI-initiated chats: vendor + business card + contest (everything except inbound)
+    conversations = conversations.filter(
+      (c) =>
+        c.source &&
+        c.source !== 'inbound' &&
+        ['NFC Card', 'nfc_card', 'Business Card', 'Contest'].includes(c.source),
+    )
   }
 
   const isVendorView = source === 'vendor'
   const isPhoneView = source === 'phone'
+  const isAIChatsView = source === 'ai_chats'
   const title = isVendorView
     ? 'Vendor AI Chats'
     : isPhoneView
-      ? 'Phone Calls & Voicemails'
-      : 'AI Dispatcher Conversations'
+      ? 'Direct Texts'
+      : isAIChatsView
+        ? 'AI Chats (All)'
+        : 'All Conversations'
   const subtitle = isVendorView
-    ? 'Conversations from vendor NFC card scans'
+    ? 'Texts from people who tapped a vendor NFC card'
     : isPhoneView
-      ? 'Missed calls and voicemail messages'
-      : 'Monitor and manage SMS conversations handled by AI'
+      ? 'Texts from people who contacted your number directly'
+      : isAIChatsView
+        ? 'Texts from NFC card taps & contest (vendor, business card, contest)'
+        : 'All SMS conversations – use Marketing or Calls dropdown to filter by source'
 
   return (
     <div className="space-y-6">

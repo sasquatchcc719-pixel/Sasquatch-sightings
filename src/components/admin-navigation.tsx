@@ -107,6 +107,7 @@ export function AdminNavigation() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const isVendorSource = searchParams.get('source') === 'vendor'
+  const isAIChatsSource = searchParams.get('source') === 'ai_chats'
   const [operationsOpen, setOperationsOpen] = useState(false)
   const [marketingOpen, setMarketingOpen] = useState(false)
   const [callsOpen, setCallsOpen] = useState(false)
@@ -157,11 +158,18 @@ export function AdminNavigation() {
       description: 'Manage vendor locations & station health',
     },
     {
+      name: 'AI Chats',
+      href: '/admin/conversations?source=ai_chats',
+      icon: MessageSquare,
+      active: pathname === '/admin/conversations' && isAIChatsSource,
+      description: 'All AI-initiated chats (vendor, card, contest)',
+    },
+    {
       name: 'Vendor Chats',
       href: '/admin/conversations?source=vendor',
-      icon: MessageSquare,
+      icon: Store,
       active: pathname === '/admin/conversations' && isVendorSource,
-      description: 'AI chats from vendor cards',
+      description: 'AI chats from vendor NFC cards only',
     },
     {
       name: 'Partners',
@@ -207,13 +215,13 @@ export function AdminNavigation() {
   // Calls group (Phone system)
   const callsTabs: NavTab[] = [
     {
-      name: 'Harry AI',
+      name: 'Direct Texts',
       href: '/admin/conversations?source=phone',
       icon: MessageSquare,
       active:
         pathname === '/admin/conversations' &&
         searchParams.get('source') === 'phone',
-      description: 'SMS conversations with callers',
+      description: 'Texts from people who contacted your number directly',
     },
     {
       name: 'Voicemails',

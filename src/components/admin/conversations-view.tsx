@@ -155,6 +155,18 @@ export function ConversationsView({
     }
   }
 
+  const getSourceLabel = (source: string | null) => {
+    if (!source) return null
+    const labels: Record<string, string> = {
+      inbound: 'Direct',
+      'NFC Card': 'Vendor',
+      nfc_card: 'Vendor',
+      'Business Card': 'Your Card',
+      Contest: 'Contest',
+    }
+    return labels[source] || source
+  }
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'active':
@@ -318,6 +330,14 @@ export function ConversationsView({
                             {convo.phone_number}
                           </a>
                           {getStatusBadge(convo.status)}
+                          {getSourceLabel(convo.source) && (
+                            <Badge
+                              variant="outline"
+                              className="text-xs font-normal text-muted-foreground"
+                            >
+                              {getSourceLabel(convo.source)}
+                            </Badge>
+                          )}
                         </div>
                         {convo.lead?.name && (
                           <div className="text-muted-foreground mb-1 text-xs sm:text-sm">
