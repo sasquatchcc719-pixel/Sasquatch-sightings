@@ -8,10 +8,8 @@ const SETTINGS = {
   business_hours_start: 9, // 9 AM
   business_hours_end: 17, // 5 PM
   business_days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
-  // Default SIP endpoints matching what was in the DB
-  // 'chuck', 'wife'
-  sip_endpoints: ['chuck', 'wife'],
-  sip_domain: 'sasquatch-cc.sip.twilio.com',
+  // Forwarding to Chuck's Cell with Whisper
+  forward_to_number: '+17197498807',
   dial_timeout: 20,
   timezone: 'America/Denver',
 }
@@ -62,28 +60,24 @@ export async function POST(request: NextRequest) {
     console.log(
       `[Call Router] MT Time: ${weekdayStr} ${hour}:00, isBusinessDay: ${isBusinessDay}, isBusinessHours: ${isBusinessHours}`,
     )
-    console.log(`[Call Router] Using Hardcoded Settings: 9-5 M-F`)
 
     let twimlResponse
 
     const baseUrl = getBaseUrl()
     const afterHoursUrl = `${baseUrl}/api/twilio/call-after-hours`
+    const whisperUrl = `${baseUrl}/api/twilio/whisper`
 
     if (isBusinessHours) {
       console.log(
-        `[Call Router] Business hours - calling Zoiper SIP endpoints: ${SETTINGS.sip_endpoints.join(', ')}`,
+        `[Call Router] Business hours - forwarding to cell: ${SETTINGS.forward_to_number}`,
       )
 
-      const sipElements = SETTINGS.sip_endpoints
-        .map(
-          (endpoint) => `    <Sip>sip:${endpoint}@${SETTINGS.sip_domain}</Sip>`,
-        )
-        .join('\n')
-
+      // <Number url="..."> tells Twilio to play TwiML to the callee (you) when you answer
+      // BEFORE connecting the caller. This allows for the "Whisper" / Call Screening.
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Dial timeout="${SETTINGS.dial_timeout}" action="${afterHoursUrl}">
-${sipElements}
+    <Number url="${whisperUrl}">${SETTINGS.forward_to_number}</Number>
   </Dial>
 </Response>`
     } else {
