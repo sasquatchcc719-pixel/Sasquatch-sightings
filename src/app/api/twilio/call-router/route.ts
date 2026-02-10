@@ -8,8 +8,9 @@ const SETTINGS = {
   business_hours_start: 9, // 9 AM
   business_hours_end: 17, // 5 PM
   business_days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
-  // Forwarding to Chuck's Cell with Whisper
-  forward_to_number: '+17197498807',
+  // Forwarding to Chuck and Wife with Whisper
+  forward_to_numbers: ['+17197498807', '+17206447577'],
+  forward_to_number_display: '+17192498791', // Shows as Business Number on Caller ID
   dial_timeout: 20,
   timezone: 'America/Denver',
 }
@@ -69,15 +70,20 @@ export async function POST(request: NextRequest) {
 
     if (isBusinessHours) {
       console.log(
-        `[Call Router] Business hours - forwarding to cell: ${SETTINGS.forward_to_number}`,
+        `[Call Router] Business hours - forwarding to: ${SETTINGS.forward_to_numbers.join(', ')}`,
       )
 
-      // <Number url="..."> tells Twilio to play TwiML to the callee (you) when you answer
-      // BEFORE connecting the caller. This allows for the "Whisper" / Call Screening.
+      // Build <Number> nouns for each phone
+      // url="..." adds the "Whisper" / Call Screening to each leg
+      const numberElements = SETTINGS.forward_to_numbers
+        .map((num) => `    <Number url="${whisperUrl}">${num}</Number>`)
+        .join('\n')
+
+      // callerId set to business number for custom ringtone support
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial timeout="${SETTINGS.dial_timeout}" action="${afterHoursUrl}">
-    <Number url="${whisperUrl}">${SETTINGS.forward_to_number}</Number>
+  <Dial timeout="${SETTINGS.dial_timeout}" action="${afterHoursUrl}" callerId="${SETTINGS.forward_to_number_display}">
+${numberElements}
   </Dial>
 </Response>`
     } else {
