@@ -390,11 +390,11 @@ END:VCARD`
                   </span>
                 </div>
                 <p className="text-sm font-medium text-white/80">
-                  Use code{' '}
+                  Put code{' '}
                   <span className="text-white underline">
                     {displayCouponCode}
                   </span>{' '}
-                  at checkout
+                  in booking notes
                 </p>
               </div>
 
