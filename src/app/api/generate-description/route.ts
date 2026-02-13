@@ -40,18 +40,17 @@ CRITICAL SEO RULES:
 - 2-4 sentences max
 - End with 🦶 emoji (Sasquatch footprint brand element)
 
-Process details to weave in naturally (pick 1-2):
-- Emergency water extraction (removing standing water fast)
-- Commercial dehumidifiers & air movers (structural drying)
-- Antimicrobial application (preventing mold growth)
-- Moisture monitoring (ensuring 100% dry standards)
-- "Saving your home" instead of just "cleaning"
+Process details to weave in naturally (Focus on the SCIENCE of drying):
+- **Daily Monitoring:** Emphasize that we return EVERY DAY to take moisture readings and adjust equipment.
+- **Equipment:** Mention LGR Dehumidifiers and Commercial Air Movers (creating the perfect drying environment).
+- **Efficiency:** "Structural Drying" - saving drywall/floors/cabinets so they don't need to be replaced.
+- **Speed:** "Rapid response" to stop secondary damage.
+- **The Goal:** "We dry it faster so you can get your home back sooner."
 
 Style:
-- Reassuring and authoritative
-- Focus on speed and saving the property
-- NO excessive exclamation points
-- NO sales language or pricing
+- Specialized and Technical (show we are experts, not just cleaners)
+- Reassuring but serious about the process
+- NO generic "we cleaned it" language. We RESTORED and SAVED it.
 - NO hashtags (added separately)`
               : `You write SEO-optimized social media descriptions for Sasquatch Carpet Cleaning job completion posts.
 
