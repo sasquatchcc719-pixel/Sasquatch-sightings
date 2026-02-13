@@ -6,6 +6,7 @@
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@/supabase/server'
+import { isUnknownCity } from '@/lib/geocode'
 
 export async function GET() {
   try {
@@ -27,7 +28,7 @@ export async function GET() {
         neighborhood,
         published_at,
         service:services(name)
-      `
+      `,
       )
       .eq('status', 'published')
       .gte('published_at', twentyFourHoursAgo.toISOString())
@@ -37,19 +38,24 @@ export async function GET() {
       console.error('Error fetching jobs feed:', error)
       return NextResponse.json(
         { error: 'Failed to fetch jobs' },
-        { status: 500 }
+        { status: 500 },
       )
     }
 
-    // Format response for Zapier
-    const formattedJobs = (jobs || []).map((job) => ({
-      id: job.id,
-      title: `${(job.service as any)?.name || 'Service'} in ${job.city}${job.neighborhood ? `, ${job.neighborhood}` : ''}`,
-      description: job.ai_description,
-      image_url: job.image_url,
-      city: job.city,
-      published_at: job.published_at,
-    }))
+    // Format response for Zapier (never expose "Unknown")
+    const displayCity = (city: string | null | undefined) =>
+      isUnknownCity(city) ? 'Colorado' : (city ?? 'Colorado')
+    const formattedJobs = (jobs || []).map((job) => {
+      const city = displayCity(job.city)
+      return {
+        id: job.id,
+        title: `${(job.service as any)?.name || 'Service'} in ${city}${job.neighborhood ? `, ${job.neighborhood}` : ''}`,
+        description: job.ai_description,
+        image_url: job.image_url,
+        city,
+        published_at: job.published_at,
+      }
+    })
 
     return NextResponse.json(
       {
@@ -57,13 +63,13 @@ export async function GET() {
         count: formattedJobs.length,
         jobs: formattedJobs,
       },
-      { status: 200 }
+      { status: 200 },
     )
   } catch (error) {
     console.error('Jobs feed API error:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }

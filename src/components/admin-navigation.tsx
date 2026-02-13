@@ -169,7 +169,16 @@ export function AdminNavigation() {
       href: '/admin/conversations?source=vendor',
       icon: Store,
       active: pathname === '/admin/conversations' && isVendorSource,
-      description: 'AI chats from vendor NFC cards only',
+      description: 'AI chats from vendor NFC cards only (higher-intent)',
+    },
+    {
+      name: 'Contest Chats',
+      href: '/admin/conversations?source=contest',
+      icon: Trophy,
+      active:
+        pathname === '/admin/conversations' &&
+        searchParams.get('source') === 'contest',
+      description: 'AI chats from truck/contest (compare funnel to Vendor)',
     },
     {
       name: 'Partners',

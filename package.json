@@ -27,7 +27,8 @@
     "test:ci": "vitest run",
     "test:ui": "vitest --ui",
     "analyze": "ANALYZE=true pnpm build",
-    "backfill-locations": "tsx scripts/backfill-sighting-locations.ts"
+    "backfill-locations": "tsx scripts/backfill-sighting-locations.ts",
+    "backfill-job-cities": "tsx scripts/backfill-job-cities.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.9",

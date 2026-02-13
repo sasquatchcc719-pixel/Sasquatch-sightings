@@ -239,13 +239,67 @@ export async function POST(request: NextRequest) {
       'contest_entry_admin',
     )
 
+    // Define the welcome message for both SMS and Chatbot memory
+    const welcomeMessage = `Thanks for entering the Sasquatch contest! 🦶\nBook your carpet cleaning now and get $20 off:\nhttps://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true\nUse coupon: SCC20 (add to notes when booking)\nQuestions? Call (719) 249-8791`
+
     // Send customer auto-response with booking link and coupon
-    await sendCustomerSMS(
-      phoneNumber,
-      `Thanks for entering the Sasquatch contest! 🦶\nBook your carpet cleaning now and get $20 off:\nhttps://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true\nUse coupon: SCC20 (add to notes when booking)\nQuestions? Call (719) 249-8791`,
-      leadId,
-      'contest_entry',
-    )
+    await sendCustomerSMS(phoneNumber, welcomeMessage, leadId, 'contest_entry')
+
+    // INITIALIZE HARRY AI CONVERSATION
+    // We create a conversation record so Harry "remembers" this interaction if they reply
+    try {
+      const adminClient = createAdminClient()
+
+      // Simplify phone to E.164 if needed (though sendCustomerSMS handles it, we need it for DB)
+      const digits = phoneNumber.replace(/\D/g, '')
+      const normalizedPhone =
+        digits.length === 10
+          ? `+1${digits}`
+          : digits.startsWith('+')
+            ? digits
+            : `+${digits}`
+
+      // Check if conversation exists (prevent duplicate active convos)
+      const { data: existingConvo } = await adminClient
+        .from('conversations')
+        .select('id')
+        .eq('phone_number', normalizedPhone)
+        .eq('status', 'active')
+        .single()
+
+      if (!existingConvo) {
+        await adminClient.from('conversations').insert({
+          phone_number: normalizedPhone,
+          source: 'Contest',
+          status: 'active',
+          ai_enabled: true,
+          lead_id: leadId || null,
+          messages: [
+            {
+              role: 'assistant',
+              content: welcomeMessage,
+              timestamp: new Date().toISOString(),
+              metadata: { type: 'contest_welcome' },
+            },
+          ],
+          metadata: {
+            coupon_code: 'SCC20',
+            contest_entry: true,
+            entered_at: new Date().toISOString(),
+          },
+        })
+        console.log('✅ Initialized Harry conversation for contest entry')
+      } else {
+        // Optional: Append to existing conversation if they are already chatting
+        // For now, we just ensure the record exists so we don't overwrite an active chat
+        console.log(
+          'ℹ️ Active conversation already exists, skipping initialization',
+        )
+      }
+    } catch (convoError) {
+      console.error('Failed to initialize Harry conversation:', convoError)
+      // Don't fail the request, just log it
+    }
 
     // Return success with coupon
     return NextResponse.json(

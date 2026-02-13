@@ -31,10 +31,13 @@ export default async function ConversationsPage({ searchParams }: PageProps) {
   // conversation.source: 'inbound' = direct texts | 'NFC Card' = vendor | 'Business Card' | 'Contest'
   let conversations = allConversations || []
   if (source === 'vendor') {
-    // Vendor AI chats: from NFC cards at vendor locations
+    // Vendor funnel: NFC cards at vendor locations (higher intent, no contest)
     conversations = conversations.filter(
       (c) => c.source === 'NFC Card' || c.source === 'nfc_card',
     )
+  } else if (source === 'contest') {
+    // Contest funnel: truck/contest (sightings, "spotted the truck", etc.)
+    conversations = conversations.filter((c) => c.source === 'Contest')
   } else if (source === 'phone') {
     // Direct SMS: people who texted your business number directly (no NFC/contest context)
     conversations = conversations.filter((c) => c.source === 'inbound')
@@ -49,22 +52,27 @@ export default async function ConversationsPage({ searchParams }: PageProps) {
   }
 
   const isVendorView = source === 'vendor'
+  const isContestView = source === 'contest'
   const isPhoneView = source === 'phone'
   const isAIChatsView = source === 'ai_chats'
   const title = isVendorView
     ? 'Vendor AI Chats'
-    : isPhoneView
-      ? 'Direct Texts'
-      : isAIChatsView
-        ? 'AI Chats (All)'
-        : 'All Conversations'
+    : isContestView
+      ? 'Contest Chats'
+      : isPhoneView
+        ? 'Direct Texts'
+        : isAIChatsView
+          ? 'AI Chats (All)'
+          : 'All Conversations'
   const subtitle = isVendorView
-    ? 'Texts from people who tapped a vendor NFC card'
-    : isPhoneView
-      ? 'Texts from people who contacted your number directly'
-      : isAIChatsView
-        ? 'Texts from NFC card taps & contest (vendor, business card, contest)'
-        : 'All SMS conversations – use Marketing or Calls dropdown to filter by source'
+    ? 'Texts from people who tapped a vendor NFC card (higher-intent funnel)'
+    : isContestView
+      ? 'Texts from truck/contest (sightings, "spotted the truck")'
+      : isPhoneView
+        ? 'Texts from people who contacted your number directly'
+        : isAIChatsView
+          ? 'Texts from NFC card taps & contest (vendor, business card, contest)'
+          : 'All SMS conversations – use Marketing or Calls dropdown to filter by source'
 
   return (
     <div className="space-y-6">

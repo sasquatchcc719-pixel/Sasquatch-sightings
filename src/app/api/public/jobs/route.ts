@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/supabase/server'
+import { isUnknownCity } from '@/lib/geocode'
 
 // Define service area boundaries (approximate center points and radius in degrees)
 const SERVICE_AREAS: Record<
@@ -34,7 +35,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const area = searchParams.get('area')?.toLowerCase()
-    const limit = Math.min(parseInt(searchParams.get('limit') || '6'), 20)
+    const limit = Math.min(parseInt(searchParams.get('limit') || '6'), 100)
 
     const supabase = await createClient()
 
@@ -84,21 +85,26 @@ export async function GET(request: NextRequest) {
     // Limit results
     filteredJobs = filteredJobs.slice(0, limit)
 
-    // Format for public consumption
-    const formattedJobs = filteredJobs.map((job) => ({
-      id: job.id,
-      title: `${(job.service as any)?.name || 'Carpet Cleaning'} in ${job.city || 'Colorado'}`,
-      description:
-        job.ai_description?.slice(0, 200) +
-        (job.ai_description?.length > 200 ? '...' : ''),
-      image_url: job.image_url,
-      city: job.city,
-      neighborhood: job.neighborhood,
-      published_at: job.published_at,
-      slug: job.slug,
-      service_type: (job.service as any)?.name,
-      detail_url: `/work/${job.city?.toLowerCase().replace(/\s+/g, '-')}/${job.slug}`,
-    }))
+    // Format for public consumption (never expose "Unknown" for SEO/trust)
+    const displayCity = (city: string | null | undefined) =>
+      isUnknownCity(city) ? 'Colorado' : (city ?? 'Colorado')
+    const formattedJobs = filteredJobs.map((job) => {
+      const city = displayCity(job.city)
+      return {
+        id: job.id,
+        title: `${(job.service as any)?.name || 'Carpet Cleaning'} in ${city}`,
+        description:
+          job.ai_description?.slice(0, 200) +
+          (job.ai_description?.length > 200 ? '...' : ''),
+        image_url: job.image_url,
+        city,
+        neighborhood: job.neighborhood,
+        published_at: job.published_at,
+        slug: job.slug,
+        service_type: (job.service as any)?.name,
+        detail_url: `/work/${city.toLowerCase().replace(/\s+/g, '-')}/${job.slug}`,
+      }
+    })
 
     return NextResponse.json(
       {

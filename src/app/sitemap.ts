@@ -6,10 +6,11 @@
 
 import { MetadataRoute } from 'next'
 import { createClient } from '@/supabase/server'
+import { isUnknownCity } from '@/lib/geocode'
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = 'https://sightings.sasquatchcarpet.com'
-  
+
   // Create Supabase client
   const supabase = await createClient()
 
@@ -42,10 +43,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     },
   ]
 
-  // Job pages (dynamic)
+  // Job pages (dynamic) — never use "unknown" in sitemap URLs
   const jobPages: MetadataRoute.Sitemap = (jobs || []).map((job) => {
-    // Generate URL path for job
-    const citySlug = job.city
+    const cityForSlug = isUnknownCity(job.city)
+      ? 'Colorado'
+      : (job.city ?? 'Colorado')
+    const citySlug = cityForSlug
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '')
@@ -59,12 +62,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   })
 
   // Sighting share pages (dynamic)
-  const sightingPages: MetadataRoute.Sitemap = (sightings || []).map((sighting) => ({
-    url: `${baseUrl}/sightings/share/${sighting.id}`,
-    lastModified: new Date(sighting.created_at),
-    changeFrequency: 'monthly' as const,
-    priority: 0.6,
-  }))
+  const sightingPages: MetadataRoute.Sitemap = (sightings || []).map(
+    (sighting) => ({
+      url: `${baseUrl}/sightings/share/${sighting.id}`,
+      lastModified: new Date(sighting.created_at),
+      changeFrequency: 'monthly' as const,
+      priority: 0.6,
+    }),
+  )
 
   // Combine all pages
   return [...staticPages, ...jobPages, ...sightingPages]

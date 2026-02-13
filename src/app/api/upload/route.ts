@@ -8,7 +8,11 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/supabase/server'
-import { reverseGeocode } from '@/lib/geocode'
+import {
+  resolveCityForJob,
+  getCityFallbackForCoordinates,
+  isUnknownCity,
+} from '@/lib/geocode'
 import { generateJobSlug } from '@/lib/slug'
 import { generateSEOFilename } from '@/lib/seo-filename'
 import sharp from 'sharp'
@@ -67,8 +71,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Reverse geocode to get city, state, and neighborhood
-    const { city, state, neighborhood } = await reverseGeocode(lat, lng)
+    // Reverse geocode to get city, state, and neighborhood (never "Unknown")
+    let { city, state, neighborhood } = await resolveCityForJob(lat, lng)
+    if (isUnknownCity(city)) {
+      city = getCityFallbackForCoordinates(lat, lng)
+    }
 
     // Convert File to Buffer for Sharp processing
     const arrayBuffer = await imageFile.arrayBuffer()

@@ -177,10 +177,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Get the base URL for voicemail callback
-    const baseUrl = process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : 'https://sasquatch-sightings-git-main-charles-sewells-projects.vercel.app'
+    // Base URL for callbacks (this deployment; avoid hardcoded git branch URL)
+    const url =
+      process.env.VERCEL_URL ||
+      process.env.NEXT_PUBLIC_APP_URL ||
+      'sightings.sasquatchcarpet.com'
+    const baseUrl = url.startsWith('http') ? url : `https://${url}`
     const voicemailUrl = `${baseUrl}/api/twilio/voicemail`
 
     // Return voicemail TwiML - let caller leave a message

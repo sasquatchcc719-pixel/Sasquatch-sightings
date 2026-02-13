@@ -96,13 +96,23 @@ export async function POST(request: NextRequest) {
         )
       }
 
+      // Generate coupon code if not set
+      let couponCode = partnerData?.coupon_code
+      if (!couponCode && partnerData?.company_name) {
+        // Auto-generate: First 4 letters of company name + 20
+        const cleanName = partnerData.company_name.replace(/[^a-zA-Z]/g, '')
+        couponCode = (cleanName.slice(0, 4).toUpperCase() || 'SCC') + '20'
+      } else if (!couponCode) {
+        couponCode = 'SCC20'
+      }
+
       return NextResponse.json({
         success: true,
         tapId: tap.id,
         partnerName:
           partnerData?.location_name || partnerData?.company_name || null,
         locationType: partnerData?.location_type || null,
-        couponCode: partnerData?.coupon_code || 'SCC20',
+        couponCode,
       })
     }
 

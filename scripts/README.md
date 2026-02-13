@@ -92,6 +92,36 @@ npx ts-node scripts/backfill-sighting-locations.ts
 
 ---
 
+## 📍 Job City Backfill Script (Fix "Unknown" for SEO)
+
+### `backfill-job-cities.ts`
+
+**Purpose:** One-time script to replace `city = 'Unknown'` with a resolved or fallback city for jobs that have GPS coordinates.
+
+**When to use:**
+- After deploying the Unknown-city SEO fix
+- When jobs were stored with "Unknown" before `resolveCityForJob` was in use
+
+**How to run:**
+
+```bash
+# From project root; ensure .env.local has Supabase credentials
+npx tsx scripts/backfill-job-cities.ts
+
+# Or via npm script
+pnpm backfill-job-cities
+```
+
+**What it does:**
+1. Queries jobs where `city = 'Unknown'` and `gps_lat` / `gps_lng` exist
+2. Calls `resolveCityForJob()` (Nominatim + region fallback) for each
+3. Updates the job with the resolved city (Tri-Lakes Area, Colorado Springs Area, Northern Colorado, or Colorado)
+4. Respects 1-second rate limit between Nominatim calls
+
+**Requirements:** Same as sighting backfill (`NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` in `.env.local`).
+
+---
+
 ## 🔑 Google OAuth Scripts
 
 ### `get-google-tokens.js`

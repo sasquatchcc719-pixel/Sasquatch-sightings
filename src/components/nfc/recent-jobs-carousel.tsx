@@ -40,7 +40,7 @@ export function RecentJobsCarousel() {
 
   const fetchJobs = async () => {
     try {
-      const response = await fetch('/api/public/jobs?limit=6')
+      const response = await fetch('/api/public/jobs?limit=24')
       const data = await response.json()
       if (data.success && data.jobs) {
         setJobs(data.jobs)

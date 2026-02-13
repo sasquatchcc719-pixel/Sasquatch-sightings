@@ -23,6 +23,8 @@ import {
   ChevronRight,
   Save,
   Plus,
+  Store,
+  BarChart3,
 } from 'lucide-react'
 import { Label } from '@/components/ui/label'
 
@@ -138,8 +140,24 @@ const STATUSES: Lead['status'][] = [
   'lost',
 ]
 
+type FunnelStats = {
+  vendor: {
+    conversations: number
+    leads: number
+    leadsByStatus: Record<string, number>
+    conversionRatePct: number
+  }
+  contest: {
+    conversations: number
+    leads: number
+    leadsByStatus: Record<string, number>
+    conversionRatePct: number
+  }
+}
+
 export default function LeadsDashboardPage() {
   const [leads, setLeads] = useState<Lead[]>([])
+  const [funnelStats, setFunnelStats] = useState<FunnelStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
@@ -160,15 +178,19 @@ export default function LeadsDashboardPage() {
     notes: '',
   })
 
-  // Fetch leads
+  // Fetch leads and funnel stats
   useEffect(() => {
     async function fetchLeads() {
       try {
-        const response = await fetch('/api/leads')
-        const data = await response.json()
-        if (data.leads) {
-          setLeads(data.leads)
-        }
+        const [leadsRes, funnelRes] = await Promise.all([
+          fetch('/api/leads'),
+          fetch('/api/admin/funnel-stats'),
+        ])
+        const leadsData = await leadsRes.json()
+        const funnelData = await funnelRes.json()
+        if (leadsData.leads) setLeads(leadsData.leads)
+        if (funnelRes.ok && funnelData.vendor != null)
+          setFunnelStats(funnelData)
       } catch (error) {
         console.error('Error fetching leads:', error)
       } finally {
@@ -356,6 +378,128 @@ export default function LeadsDashboardPage() {
           </Button>
         </div>
       </div>
+
+      {/* Vendor vs Contest funnel comparison */}
+      {funnelStats && (
+        <Card className="overflow-hidden">
+          <div className="bg-muted/40 flex items-center gap-2 border-b px-4 py-2">
+            <BarChart3 className="h-4 w-4" />
+            <span className="text-sm font-semibold">
+              Vendor vs Contest funnel
+            </span>
+          </div>
+          <div className="grid gap-4 p-4 sm:grid-cols-2">
+            {/* Vendor */}
+            <div className="rounded-lg border bg-blue-50/50 p-4 dark:bg-blue-950/20">
+              <div className="mb-3 flex items-center gap-2">
+                <Store className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                <span className="font-semibold">Vendor (NFC at locations)</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div>
+                  <div className="text-2xl font-bold">
+                    {funnelStats.vendor.conversations}
+                  </div>
+                  <div className="text-muted-foreground text-xs">
+                    Conversations
+                  </div>
+                </div>
+                <div>
+                  <div className="text-2xl font-bold">
+                    {funnelStats.vendor.leads}
+                  </div>
+                  <div className="text-muted-foreground text-xs">Leads</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-bold">
+                    {funnelStats.vendor.conversionRatePct}%
+                  </div>
+                  <div className="text-muted-foreground text-xs">
+                    Conv. rate
+                  </div>
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                {(
+                  [
+                    'won',
+                    'scheduled',
+                    'quoted',
+                    'contacted',
+                    'new',
+                    'lost',
+                  ] as const
+                ).map(
+                  (s) =>
+                    funnelStats.vendor.leadsByStatus[s] > 0 && (
+                      <span key={s}>
+                        <span className={STATUS_CONFIG[s].textColor}>
+                          {STATUS_CONFIG[s].label}:
+                        </span>{' '}
+                        {funnelStats.vendor.leadsByStatus[s]}
+                      </span>
+                    ),
+                )}
+              </div>
+            </div>
+            {/* Contest */}
+            <div className="rounded-lg border bg-amber-50/50 p-4 dark:bg-amber-950/20">
+              <div className="mb-3 flex items-center gap-2">
+                <Trophy className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                <span className="font-semibold">
+                  Contest (truck / sightings)
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div>
+                  <div className="text-2xl font-bold">
+                    {funnelStats.contest.conversations}
+                  </div>
+                  <div className="text-muted-foreground text-xs">
+                    Conversations
+                  </div>
+                </div>
+                <div>
+                  <div className="text-2xl font-bold">
+                    {funnelStats.contest.leads}
+                  </div>
+                  <div className="text-muted-foreground text-xs">Leads</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-bold">
+                    {funnelStats.contest.conversionRatePct}%
+                  </div>
+                  <div className="text-muted-foreground text-xs">
+                    Conv. rate
+                  </div>
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                {(
+                  [
+                    'won',
+                    'scheduled',
+                    'quoted',
+                    'contacted',
+                    'new',
+                    'lost',
+                  ] as const
+                ).map(
+                  (s) =>
+                    funnelStats.contest.leadsByStatus[s] > 0 && (
+                      <span key={s}>
+                        <span className={STATUS_CONFIG[s].textColor}>
+                          {STATUS_CONFIG[s].label}:
+                        </span>{' '}
+                        {funnelStats.contest.leadsByStatus[s]}
+                      </span>
+                    ),
+                )}
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Search */}
       <div className="relative">
@@ -907,15 +1051,15 @@ export default function LeadsDashboardPage() {
       {/* ADD LEAD MODAL */}
       {showAddModal && (
         <div
-          className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50 p-4 pt-24"
+          className="fixed inset-0 z-[300] flex items-start justify-center overflow-y-auto bg-black/50 p-4 pt-24 pb-8"
           onClick={() => setShowAddModal(false)}
         >
           <div
-            className="bg-background my-auto max-h-[calc(100vh-8rem)] w-full max-w-md overflow-y-auto rounded-xl shadow-xl"
+            className="bg-background my-4 flex max-h-[calc(100vh-4rem)] min-h-[min(calc(100vh-6rem),28rem)] w-full max-w-md flex-col rounded-xl shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
-            <div className="bg-background sticky top-0 flex items-center justify-between rounded-t-xl border-b p-4">
+            <div className="flex shrink-0 items-center justify-between border-b p-4">
               <h2 className="text-lg font-semibold">Add New Lead</h2>
               <button
                 onClick={() => setShowAddModal(false)}
@@ -925,109 +1069,114 @@ export default function LeadsDashboardPage() {
               </button>
             </div>
 
-            <div className="space-y-4 p-4">
-              {/* Source */}
-              <div className="space-y-2">
-                <Label>Source</Label>
-                <div className="grid grid-cols-2 gap-2">
-                  {(
-                    ['missed_call', 'website', 'contest', 'partner'] as const
-                  ).map((source) => {
-                    const Icon = SOURCE_ICONS[source]
-                    return (
-                      <button
-                        key={source}
-                        type="button"
-                        onClick={() =>
-                          setNewLead((prev) => ({ ...prev, source }))
-                        }
-                        className={`flex items-center gap-2 rounded-lg border p-3 text-sm font-medium transition-all ${
-                          newLead.source === source
-                            ? 'border-primary bg-primary/10 text-primary'
-                            : 'hover:bg-muted'
-                        } `}
-                      >
-                        <Icon className="h-4 w-4" />
-                        {SOURCE_LABELS[source]}
-                      </button>
-                    )
-                  })}
+            {/* Scrollable body */}
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <div className="space-y-4 p-4">
+                {/* Source */}
+                <div className="space-y-2">
+                  <Label>Source</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(
+                      ['missed_call', 'website', 'contest', 'partner'] as const
+                    ).map((source) => {
+                      const Icon = SOURCE_ICONS[source]
+                      return (
+                        <button
+                          key={source}
+                          type="button"
+                          onClick={() =>
+                            setNewLead((prev) => ({ ...prev, source }))
+                          }
+                          className={`flex items-center gap-2 rounded-lg border p-3 text-sm font-medium transition-all ${
+                            newLead.source === source
+                              ? 'border-primary bg-primary/10 text-primary'
+                              : 'hover:bg-muted'
+                          } `}
+                        >
+                          <Icon className="h-4 w-4" />
+                          {SOURCE_LABELS[source]}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Phone (required) */}
+                <div className="space-y-2">
+                  <Label htmlFor="add-phone">Phone Number *</Label>
+                  <Input
+                    id="add-phone"
+                    type="tel"
+                    placeholder="(719) 555-1234"
+                    value={newLead.phone}
+                    onChange={(e) =>
+                      setNewLead((prev) => ({ ...prev, phone: e.target.value }))
+                    }
+                    className="h-12"
+                  />
+                </div>
+
+                {/* Name */}
+                <div className="space-y-2">
+                  <Label htmlFor="add-name">Name</Label>
+                  <Input
+                    id="add-name"
+                    placeholder="John Smith"
+                    value={newLead.name}
+                    onChange={(e) =>
+                      setNewLead((prev) => ({ ...prev, name: e.target.value }))
+                    }
+                  />
+                </div>
+
+                {/* Email */}
+                <div className="space-y-2">
+                  <Label htmlFor="add-email">Email</Label>
+                  <Input
+                    id="add-email"
+                    type="email"
+                    placeholder="john@example.com"
+                    value={newLead.email}
+                    onChange={(e) =>
+                      setNewLead((prev) => ({ ...prev, email: e.target.value }))
+                    }
+                  />
+                </div>
+
+                {/* Location */}
+                <div className="space-y-2">
+                  <Label htmlFor="add-location">Location</Label>
+                  <Input
+                    id="add-location"
+                    placeholder="Colorado Springs, CO"
+                    value={newLead.location}
+                    onChange={(e) =>
+                      setNewLead((prev) => ({
+                        ...prev,
+                        location: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                {/* Notes */}
+                <div className="space-y-2">
+                  <Label htmlFor="add-notes">Notes</Label>
+                  <Textarea
+                    id="add-notes"
+                    placeholder="Add any notes..."
+                    value={newLead.notes}
+                    onChange={(e) =>
+                      setNewLead((prev) => ({ ...prev, notes: e.target.value }))
+                    }
+                    rows={3}
+                  />
                 </div>
               </div>
+            </div>
 
-              {/* Phone (required) */}
-              <div className="space-y-2">
-                <Label htmlFor="add-phone">Phone Number *</Label>
-                <Input
-                  id="add-phone"
-                  type="tel"
-                  placeholder="(719) 555-1234"
-                  value={newLead.phone}
-                  onChange={(e) =>
-                    setNewLead((prev) => ({ ...prev, phone: e.target.value }))
-                  }
-                  className="h-12"
-                />
-              </div>
-
-              {/* Name */}
-              <div className="space-y-2">
-                <Label htmlFor="add-name">Name</Label>
-                <Input
-                  id="add-name"
-                  placeholder="John Smith"
-                  value={newLead.name}
-                  onChange={(e) =>
-                    setNewLead((prev) => ({ ...prev, name: e.target.value }))
-                  }
-                />
-              </div>
-
-              {/* Email */}
-              <div className="space-y-2">
-                <Label htmlFor="add-email">Email</Label>
-                <Input
-                  id="add-email"
-                  type="email"
-                  placeholder="john@example.com"
-                  value={newLead.email}
-                  onChange={(e) =>
-                    setNewLead((prev) => ({ ...prev, email: e.target.value }))
-                  }
-                />
-              </div>
-
-              {/* Location */}
-              <div className="space-y-2">
-                <Label htmlFor="add-location">Location</Label>
-                <Input
-                  id="add-location"
-                  placeholder="Colorado Springs, CO"
-                  value={newLead.location}
-                  onChange={(e) =>
-                    setNewLead((prev) => ({
-                      ...prev,
-                      location: e.target.value,
-                    }))
-                  }
-                />
-              </div>
-
-              {/* Notes */}
-              <div className="space-y-2">
-                <Label htmlFor="add-notes">Notes</Label>
-                <Textarea
-                  id="add-notes"
-                  placeholder="Add any notes..."
-                  value={newLead.notes}
-                  onChange={(e) =>
-                    setNewLead((prev) => ({ ...prev, notes: e.target.value }))
-                  }
-                  rows={3}
-                />
-              </div>
-
-              {/* Submit Button */}
+            {/* Footer with Save - always visible */}
+            <div className="bg-background shrink-0 border-t p-4">
               <Button
                 onClick={handleAddLead}
                 disabled={addingLead || !newLead.phone.trim()}

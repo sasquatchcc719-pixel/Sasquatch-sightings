@@ -9,9 +9,18 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
 )
 
+function getBaseUrl(): string {
+  const url =
+    process.env.VERCEL_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    'sightings.sasquatchcarpet.com'
+  return url.startsWith('http') ? url : `https://${url}`
+}
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
+    const adminBaseUrl = getBaseUrl()
 
     // Twilio sends these fields
     const recordingUrl = formData.get('RecordingUrl') as string
@@ -145,7 +154,7 @@ export async function POST(request: NextRequest) {
             </div>
             
             <p style="color: #6b7280; font-size: 14px;">
-              View in admin: <a href="https://sasquatch-sightings-git-main-charles-sewells-projects.vercel.app/admin/conversations?source=phone">Phone Calls</a>
+              View in admin: <a href="${adminBaseUrl}/admin/conversations?source=phone">Phone Calls</a>
             </p>
           </div>
         `,
