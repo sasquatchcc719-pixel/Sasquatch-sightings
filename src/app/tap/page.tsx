@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
 import Image from 'next/image'
 import {
   Phone,
@@ -19,6 +19,7 @@ import { RecentJobsCarousel } from '@/components/nfc/recent-jobs-carousel'
 import { VideoBackground } from '@/components/public/VideoBackground'
 
 export default function TapLandingPage() {
+  const router = useRouter()
   const searchParams = useSearchParams()
   const cardId = searchParams.get('card')
   const partnerId = searchParams.get('partner') // For location partners
@@ -33,9 +34,20 @@ export default function TapLandingPage() {
     phone: '',
     zip: '',
   })
+  const [isRedirecting, setIsRedirecting] = useState(!!partnerId)
+
+  // Redirect if partner ID is present (Vendor Scan)
+  useEffect(() => {
+    if (partnerId) {
+      router.replace(`/location/${partnerId}`)
+    }
+  }, [partnerId, router])
 
   // Track the tap on page load
   useEffect(() => {
+    // specific check to avoid tracking twice if redirecting
+    if (isRedirecting) return
+
     const trackTap = async () => {
       try {
         const response = await fetch('/api/tap/track', {
@@ -63,7 +75,18 @@ export default function TapLandingPage() {
     }
 
     trackTap()
-  }, [cardId, partnerId])
+  }, [cardId, partnerId, isRedirecting])
+
+  if (isRedirecting) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-black">
+        <div className="text-center text-white">
+          <div className="mb-4 animate-bounce text-4xl">🦍</div>
+          <p>Loading Vendor Page...</p>
+        </div>
+      </div>
+    )
+  }
 
   // Track button clicks
   const trackButtonClick = async (buttonType: string) => {
