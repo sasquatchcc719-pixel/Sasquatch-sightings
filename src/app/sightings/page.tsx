@@ -526,7 +526,7 @@ export default function SightingsPage() {
   }
 
   return (
-    <div className="relative flex min-h-screen flex-col items-center overflow-hidden p-4 py-12">
+    <div className="relative flex min-h-screen flex-col items-center overflow-hidden p-4 pt-[env(safe-area-inset-top,3rem)] pb-32">
       <VideoBackground video="clouds" />
 
       {/* Sasquatch character - multiply blend mode to remove white bg */}
@@ -816,6 +816,12 @@ export default function SightingsPage() {
                 </>
               )}
             </Button>
+
+            <p className="text-muted-foreground mt-4 text-center text-xs">
+              By participating, you agree to receive mobile messages from
+              Sasquatch Carpet Cleaning. Message and data rates may apply. Reply
+              STOP to opt out.
+            </p>
 
             {/* Show helper text if photo uploaded but no GPS */}
             {imagePreview && gpsSource === 'none' && !locationAttempted && (
