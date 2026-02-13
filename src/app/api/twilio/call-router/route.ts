@@ -47,7 +47,6 @@ export async function POST(request: NextRequest) {
     const hourStr = hourFormatter.format(now).replace(/\D/g, '')
     const hour = parseInt(hourStr, 10) || 0
 
-    // Check business days
     const isBusinessDay = SETTINGS.business_days.some(
       (d) => d.toLowerCase() === weekdayStr.toLowerCase(),
     )
@@ -62,13 +61,29 @@ export async function POST(request: NextRequest) {
       `[Call Router] MT Time: ${weekdayStr} ${hour}:00, isBusinessDay: ${isBusinessDay}, isBusinessHours: ${isBusinessHours}`,
     )
 
+    // Check if the caller is one of the owners (simulring numbers)
+    // If so, provide the ability to dial out as the business
+    const isOwnerCalling = SETTINGS.forward_to_numbers.includes(callerPhone)
+
     let twimlResponse
 
     const baseUrl = getBaseUrl()
     const afterHoursUrl = `${baseUrl}/api/twilio/call-after-hours`
     const whisperUrl = `${baseUrl}/api/twilio/whisper`
+    const outboundDialUrl = `${baseUrl}/api/twilio/outbound-dial`
 
-    if (isBusinessHours) {
+    if (isOwnerCalling) {
+      console.log(
+        `[Call Router] Owner calling (${callerPhone}) - initiating outbound dial flow`,
+      )
+      twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Gather action="${outboundDialUrl}" numDigits="11" timeout="10">
+    <Say>Welcome back. Enter the number you wish to call, starting with 1.</Say>
+  </Gather>
+  <Say>We didn't receive any input. Goodbye.</Say>
+</Response>`
+    } else if (isBusinessHours) {
       console.log(
         `[Call Router] Business hours - forwarding to: ${SETTINGS.forward_to_numbers.join(', ')}`,
       )
