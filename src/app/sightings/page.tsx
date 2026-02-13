@@ -62,6 +62,9 @@ const sightingFormSchema = z.object({
     .regex(/^\d{5}$/, 'Valid 5-digit zip')
     .optional()
     .or(z.literal('')),
+  termsAccepted: z.boolean().refine((val) => val === true, {
+    message: 'You must agree to the terms to enter',
+  }),
 })
 
 type SightingFormData = z.infer<typeof sightingFormSchema>
@@ -797,6 +800,36 @@ export default function SightingsPage() {
               </div>
             )}
 
+            {/* Terms and Conditions Checkbox */}
+            <div className="space-y-2">
+              <div className="flex items-start space-x-2">
+                <Checkbox
+                  id="terms"
+                  checked={watch('termsAccepted') === true}
+                  onCheckedChange={(checked) => {
+                    setValue('termsAccepted', checked === true, {
+                      shouldValidate: true,
+                    })
+                  }}
+                />
+                <div className="grid gap-1.5 leading-none">
+                  <label
+                    htmlFor="terms"
+                    className="text-muted-foreground text-sm leading-none font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                  >
+                    By participating, you agree to receive mobile messages from
+                    Sasquatch Carpet Cleaning. Message and data rates may apply.
+                    Reply STOP to opt out.
+                  </label>
+                </div>
+              </div>
+              {errors.termsAccepted && (
+                <p className="text-destructive text-sm">
+                  {errors.termsAccepted.message}
+                </p>
+              )}
+            </div>
+
             {/* Submit Button */}
             <Button
               type="submit"
@@ -816,12 +849,6 @@ export default function SightingsPage() {
                 </>
               )}
             </Button>
-
-            <p className="text-muted-foreground mt-4 text-center text-xs">
-              By participating, you agree to receive mobile messages from
-              Sasquatch Carpet Cleaning. Message and data rates may apply. Reply
-              STOP to opt out.
-            </p>
 
             {/* Show helper text if photo uploaded but no GPS */}
             {imagePreview && gpsSource === 'none' && !locationAttempted && (
