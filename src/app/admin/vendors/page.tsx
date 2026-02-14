@@ -122,7 +122,7 @@ export default function LocationPartnersPage() {
     const fetchData = async () => {
       // Fetch partners via API (bypasses RLS)
       try {
-        const partnersResponse = await fetch('/api/admin/location-partners')
+        const partnersResponse = await fetch('/api/admin/vendors')
         const partnersJson = await partnersResponse.json()
         if (partnersJson.partners) {
           setPartners(partnersJson.partners)
@@ -154,7 +154,7 @@ export default function LocationPartnersPage() {
 
   const loadData = async () => {
     try {
-      const response = await fetch('/api/admin/location-partners')
+      const response = await fetch('/api/admin/vendors')
       const data = await response.json()
       if (data.partners) {
         setPartners(data.partners)
@@ -168,7 +168,7 @@ export default function LocationPartnersPage() {
     e.preventDefault()
 
     try {
-      const response = await fetch('/api/admin/location-partners', {
+      const response = await fetch('/api/admin/vendors', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newPartner),
@@ -221,12 +221,9 @@ export default function LocationPartnersPage() {
     }
 
     try {
-      const response = await fetch(
-        `/api/admin/location-partners?id=${partnerId}`,
-        {
-          method: 'DELETE',
-        },
-      )
+      const response = await fetch(`/api/admin/vendors?id=${partnerId}`, {
+        method: 'DELETE',
+      })
 
       if (!response.ok) {
         const data = await response.json()

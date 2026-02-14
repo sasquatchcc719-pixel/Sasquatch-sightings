@@ -152,9 +152,9 @@ export function AdminNavigation() {
     },
     {
       name: 'Vendors',
-      href: '/admin/location-partners',
+      href: '/admin/vendors',
       icon: Store,
-      active: pathname === '/admin/location-partners',
+      active: pathname === '/admin/vendors',
       description: 'Manage vendor locations & station health',
     },
     {
