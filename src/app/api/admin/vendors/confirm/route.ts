@@ -1,6 +1,6 @@
 /**
  * Confirm a location partner conversion and award credit
- * POST /api/admin/location-partners/confirm
+ * POST /api/admin/vendors/confirm
  *
  * Credit is 1% of job value (sliding scale)
  * - $100 job = $1 credit
