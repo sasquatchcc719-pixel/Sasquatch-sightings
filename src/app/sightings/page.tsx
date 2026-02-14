@@ -308,11 +308,11 @@ export default function SightingsPage() {
 
   const openFacebook = () => {
     // Try app first, fall back to web
-    const fbAppUrl = 'fb://feed'
-    const fbWebUrl = 'https://www.facebook.com/'
-
-    // Copy text first
-    handleCopyShareText()
+    // fb://profile/ID is reliable if you have ID, otherwise https fallback works on mobile often
+    // Using ID for Sasquatch Carpet Cleaning if known, else web URL
+    const fbAppUrl =
+      'fb://facewebmodal/f?href=https://www.facebook.com/SasquatchCarpetCleaning'
+    const fbWebUrl = 'https://www.facebook.com/SasquatchCarpetCleaning'
 
     // Try to open app, fall back to web
     window.location.href = fbAppUrl
@@ -325,9 +325,6 @@ export default function SightingsPage() {
     // Try app first, fall back to web
     const igAppUrl = 'instagram://user?username=sasquatchcarpet'
     const igWebUrl = 'https://www.instagram.com/sasquatchcarpet/'
-
-    // Copy text first
-    handleCopyShareText()
 
     // Try to open app, fall back to web
     window.location.href = igAppUrl
@@ -356,61 +353,41 @@ export default function SightingsPage() {
             </p>
           </div>
 
-          {/* VIRAL LOOP: Share to Enter Grand Prize */}
-          <div className="mb-6 rounded-lg border-2 border-yellow-500 bg-yellow-50 p-5 dark:border-yellow-600 dark:bg-yellow-950/30">
+          {/* FOLLOW LOOP: Follow to Enter Grand Prize */}
+          <div className="mb-6 rounded-lg border-2 border-blue-500 bg-blue-50 p-5 dark:border-blue-600 dark:bg-blue-950/30">
             <div className="mb-3 flex items-center justify-center gap-2">
-              <Share2 className="h-6 w-6 text-yellow-600 dark:text-yellow-400" />
-              <h2 className="text-lg font-bold text-yellow-900 sm:text-xl dark:text-yellow-100">
-                Final Step: Post & Tag Us! 🏆
+              <ExternalLink className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+              <h2 className="text-lg font-bold text-blue-900 sm:text-xl dark:text-blue-100">
+                Final Step: Follow Us for an Extra Entry! 🏆
               </h2>
             </div>
-            <p className="mb-4 text-center text-sm text-yellow-800 dark:text-yellow-200">
-              To complete your entry for the{' '}
-              <strong>FREE Whole House Cleaning</strong>, share your sighting on
-              social media!
+            <p className="mb-4 text-center text-sm text-blue-800 dark:text-blue-200">
+              Get an extra entry into the drawing by following our Facebook
+              page! We post winners there.
             </p>
 
-            {/* Copy Share Text Button */}
-            <Button
-              onClick={handleCopyShareText}
-              size="lg"
-              className="mb-3 w-full bg-yellow-500 text-yellow-950 hover:bg-yellow-400"
-            >
-              {shareTextCopied ? (
-                <>
-                  <Check className="mr-2 h-5 w-5" />
-                  Copied! Now Paste & Post
-                </>
-              ) : (
-                <>
-                  <Copy className="mr-2 h-5 w-5" />
-                  Copy Tag & Link
-                </>
-              )}
-            </Button>
-
             {/* Social Media Buttons */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Button
                 onClick={openFacebook}
                 size="lg"
-                className="bg-[#1877F2] hover:bg-[#166FE5]"
+                className="w-full bg-[#1877F2] hover:bg-[#166FE5]"
               >
                 <ExternalLink className="mr-2 h-4 w-4" />
-                Facebook
+                Follow on Facebook
               </Button>
               <Button
                 onClick={openInstagram}
                 size="lg"
-                className="bg-gradient-to-r from-[#833AB4] via-[#FD1D1D] to-[#F77737] hover:opacity-90"
+                className="w-full bg-gradient-to-r from-[#833AB4] via-[#FD1D1D] to-[#F77737] hover:opacity-90"
               >
                 <ExternalLink className="mr-2 h-4 w-4" />
-                Instagram
+                Follow on Instagram
               </Button>
             </div>
 
-            <p className="mt-3 text-center text-xs text-yellow-700 dark:text-yellow-300">
-              💡 We copied the tag & link for you. Just Paste & Post!
+            <p className="mt-3 text-center text-xs text-blue-700 dark:text-blue-300">
+              💡 Click either button above to follow & enter!
             </p>
           </div>
 
@@ -455,13 +432,13 @@ export default function SightingsPage() {
                     ENTRY VERIFIED! ✅
                   </span>
                 ) : (
-                  'Verify My Entry'
+                  'I have followed Sasquatch Carpet Cleaning'
                 )}
               </label>
             </div>
             {entryVerified && (
               <p className="mt-2 text-sm text-green-700 dark:text-green-300">
-                We will look for your tag to pick the winner. Good luck! 🍀
+                Thanks for following! Good luck! 🍀
               </p>
             )}
           </div>
@@ -571,9 +548,9 @@ export default function SightingsPage() {
                   🎉 Everyone Gets $20 Off Just for Entering!
                 </p>
               </div>
-              <div className="rounded-md bg-yellow-100 p-3 text-sm dark:bg-yellow-900/30">
-                <p className="font-semibold text-yellow-800 dark:text-yellow-200">
-                  📸 Upload a Photo = Extra Entry in the Drawing!
+              <div className="rounded-md bg-blue-100 p-3 text-sm dark:bg-blue-900/30">
+                <p className="font-semibold text-blue-800 dark:text-blue-200">
+                  👍 Follow us on Facebook = Extra Entry in the Drawing!
                 </p>
               </div>
             </div>
