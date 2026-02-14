@@ -151,7 +151,7 @@ export function AdminNavigation() {
       description: 'Lead pipeline & follow-ups',
     },
     {
-      name: 'Vendor List',
+      name: 'Vendors',
       href: '/admin/location-partners',
       icon: Store,
       active: pathname === '/admin/location-partners',
