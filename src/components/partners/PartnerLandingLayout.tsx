@@ -23,6 +23,7 @@ export interface PartnerStats {
   creditBalance: number
   totalTaps: number
   totalConversions: number
+  tapHistory?: { date: string; count: number }[]
 }
 
 interface PartnerLandingLayoutProps {
@@ -54,6 +55,7 @@ export function PartnerLandingLayout({
 }: PartnerLandingLayoutProps) {
   const [pin, setPin] = useState('')
   const [showShareToast, setShowShareToast] = useState(false)
+  const [isTapsExpanded, setIsTapsExpanded] = useState(false)
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -147,14 +149,70 @@ END:VCARD`
 
           {/* Stats Cards */}
           <div className="mb-6 grid grid-cols-3 gap-4">
-            <Card className="p-4 text-center">
-              <div className="text-3xl font-black text-blue-600">
-                {partnerStats.totalTaps}
+            {/* Expandable Taps Card */}
+            <Card
+              className={`relative overflow-hidden p-4 text-center transition-all duration-300 ${
+                isTapsExpanded
+                  ? 'col-span-3'
+                  : 'col-span-1 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800'
+              }`}
+              onClick={() => setIsTapsExpanded(!isTapsExpanded)}
+            >
+              <div className="relative z-10">
+                <div className="text-3xl font-black text-blue-600">
+                  {partnerStats.totalTaps}
+                </div>
+                <div className="text-xs text-gray-600 dark:text-gray-400">
+                  Total Scans
+                  {!isTapsExpanded && (
+                    <span className="ml-1 opacity-50">▾</span>
+                  )}
+                </div>
               </div>
-              <div className="text-xs text-gray-600 dark:text-gray-400">
-                Total Scans
-              </div>
+
+              {/* Chart (Shown when expanded) */}
+              {isTapsExpanded && partnerStats.tapHistory && (
+                <div className="animate-in fade-in slide-in-from-top-4 mt-4">
+                  <h4 className="mb-2 text-sm font-semibold text-gray-500">
+                    Last 30 Days
+                  </h4>
+                  <div className="flex h-32 items-end justify-between gap-1">
+                    {partnerStats.tapHistory.map((day, i) => {
+                      const maxCount = Math.max(
+                        ...partnerStats.tapHistory!.map((d) => d.count),
+                        1,
+                      )
+                      const height = Math.max((day.count / maxCount) * 100, 5) // Min 5% height
+
+                      return (
+                        <div
+                          key={i}
+                          className="group relative flex w-full flex-col items-center justify-end"
+                        >
+                          <div
+                            className={`w-full rounded-t-sm transition-all ${
+                              day.count > 0
+                                ? 'bg-blue-500'
+                                : 'bg-blue-100 dark:bg-blue-900/30'
+                            }`}
+                            style={{ height: `${height}%` }}
+                          />
+                          {/* Tooltip on hover */}
+                          <div className="absolute -top-8 z-20 hidden rounded bg-black px-2 py-1 text-xs whitespace-nowrap text-white group-hover:block">
+                            {day.date}: {day.count}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <div className="mt-1 flex justify-between text-[10px] text-gray-400">
+                    <span>30 days ago</span>
+                    <span>Today</span>
+                  </div>
+                </div>
+              )}
             </Card>
+
             <Card className="p-4 text-center">
               <div className="text-3xl font-black text-green-600">
                 {partnerStats.totalConversions}
