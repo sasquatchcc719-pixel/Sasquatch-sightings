@@ -164,10 +164,12 @@ END:VCARD`
                 </div>
                 <div className="text-xs text-gray-600 dark:text-gray-400">
                   Total Scans
-                  {!isTapsExpanded && (
-                    <span className="ml-1 opacity-50">▾</span>
-                  )}
                 </div>
+                {!isTapsExpanded && (
+                  <div className="mt-1 flex items-center justify-center gap-1 text-[10px] font-medium text-blue-500">
+                    <span>Tap to view history ▾</span>
+                  </div>
+                )}
               </div>
 
               {/* Chart (Shown when expanded) */}
