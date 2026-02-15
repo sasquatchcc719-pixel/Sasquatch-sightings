@@ -5,12 +5,15 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
+import { Resend } from 'resend'
 import {
   generateAIResponse,
   shouldEscalate,
   isAIEnabled,
 } from '@/lib/openai-chat'
 import { sendCustomerSMS, sendAdminSMS } from '@/lib/twilio'
+
+const resend = new Resend(process.env.RESEND_API_KEY)
 
 // Normalize phone number to E.164 format
 function normalizePhone(phone: string): string {
@@ -253,6 +256,50 @@ export async function POST(request: NextRequest) {
       `📱 Inbound SMS from ${fromPhone} → normalized to: ${normalizedPhone}`,
     )
     console.log(`📱 Message: "${messageBody}"`)
+
+    // Send email notification to SasquatchcC719@gmail.com
+    const timestamp = new Date().toLocaleString('en-US', {
+      timeZone: 'America/Denver',
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    })
+
+    try {
+      await resend.emails.send({
+        from: 'Sasquatch SMS <onboarding@resend.dev>',
+        to: 'SasquatchcC719@gmail.com',
+        subject: `📱 New SMS from ${normalizedPhone}`,
+        html: `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #166534;">New Text Message Received</h2>
+            
+            <div style="background: #f0fdf4; border-radius: 8px; padding: 16px; margin: 16px 0;">
+              <p style="margin: 0 0 8px 0;"><strong>📞 From:</strong> <a href="tel:${normalizedPhone}">${normalizedPhone}</a></p>
+              <p style="margin: 0;"><strong>🕐 Time:</strong> ${timestamp}</p>
+            </div>
+            
+            <h3 style="color: #166534;">Message Content</h3>
+            <div style="background: #f3f4f6; border-radius: 8px; padding: 16px; margin: 16px 0;">
+              <p style="margin: 0; white-space: pre-wrap;">${messageBody}</p>
+            </div>
+            
+            <p style="color: #6b7280; font-size: 14px;">
+              This message has been processed by the AI dispatcher.
+              <br/>
+              View in admin: <a href="https://sightings.sasquatchcarpet.com/admin/conversations?source=inbound">Conversations</a>
+            </p>
+          </div>
+        `,
+      })
+      console.log('📧 Email notification sent to SasquatchcC719@gmail.com')
+    } catch (emailError) {
+      console.error('❌ Failed to send email notification:', emailError)
+      // Don't block the request if email fails
+    }
 
     const supabase = createAdminClient()
 
