@@ -271,7 +271,7 @@ export async function POST(request: NextRequest) {
     try {
       await resend.emails.send({
         from: 'Sasquatch SMS <onboarding@resend.dev>',
-        to: 'SasquatchcC719@gmail.com',
+        to: 'sasquatchcc719@gmail.com',
         subject: `📱 New SMS from ${normalizedPhone}`,
         html: `
           <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
