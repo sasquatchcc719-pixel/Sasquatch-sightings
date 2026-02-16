@@ -13,16 +13,40 @@ export async function PUT(request: NextRequest) {
   try {
     const supabase = await createAdminClient()
     const body = await request.json()
-    const { id, placard_type } = body
+    const {
+      id,
+      company_name,
+      location_name,
+      location_address,
+      location_type,
+      phone,
+      card_id,
+      google_review_url,
+      placard_type,
+    } = body
 
-    if (!id || !placard_type) {
-      return NextResponse.json(
-        { error: 'id and placard_type are required' },
-        { status: 400 },
-      )
+    if (!id) {
+      return NextResponse.json({ error: 'id is required' }, { status: 400 })
     }
 
-    if (!['standard', 'contest'].includes(placard_type)) {
+    // Prepare update object with specific fields
+    const updateData: any = {}
+    if (company_name !== undefined) updateData.company_name = company_name
+    if (location_name !== undefined) updateData.location_name = location_name
+    if (location_address !== undefined)
+      updateData.location_address = location_address
+    if (location_type !== undefined) updateData.location_type = location_type
+    if (phone !== undefined) updateData.phone = phone
+    if (card_id !== undefined) updateData.card_id = card_id
+    if (google_review_url !== undefined)
+      updateData.google_review_url = google_review_url
+    if (placard_type !== undefined) updateData.placard_type = placard_type
+
+    // If placard_type is provided, validate it
+    if (
+      placard_type &&
+      !['standard', 'contest'].includes(placard_type as string)
+    ) {
       return NextResponse.json(
         { error: 'Invalid placard_type' },
         { status: 400 },
@@ -31,7 +55,7 @@ export async function PUT(request: NextRequest) {
 
     const { data, error } = await supabase
       .from('partners')
-      .update({ placard_type })
+      .update(updateData)
       .eq('id', id)
       .select()
       .single()

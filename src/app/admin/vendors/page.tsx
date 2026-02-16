@@ -14,6 +14,7 @@ import {
   ExternalLink,
   MessageSquare,
   Trash2,
+  Pencil,
 } from 'lucide-react'
 import { createClient } from '@/supabase/client'
 import {
@@ -126,6 +127,7 @@ export default function LocationPartnersPage() {
     placard_type: 'standard',
   })
   const [copiedReviewId, setCopiedReviewId] = useState<string | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
 
   // History Chart State
   const [expandedPartnerId, setExpandedPartnerId] = useState<string | null>(
@@ -207,19 +209,26 @@ export default function LocationPartnersPage() {
     }
   }
 
-  const handleCreatePartner = async (e: React.FormEvent) => {
+  const handleSavePartner = async (e: React.FormEvent) => {
     e.preventDefault()
 
     try {
-      const response = await fetch('/api/admin/vendors', {
-        method: 'POST',
+      const url = '/api/admin/vendors'
+      const method = editingId ? 'PUT' : 'POST'
+      const body = editingId ? { ...newPartner, id: editingId } : newPartner
+
+      const response = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newPartner),
+        body: JSON.stringify(body),
       })
 
       if (!response.ok) {
         const errorData = await response.json()
-        alert('Failed to create location partner: ' + errorData.error)
+        alert(
+          `Failed to ${editingId ? 'update' : 'create'} location partner: ` +
+            errorData.error,
+        )
         return
       }
 
@@ -233,12 +242,31 @@ export default function LocationPartnersPage() {
         google_review_url: '',
         placard_type: 'standard',
       })
+      setEditingId(null)
       setIsDialogOpen(false)
       void loadData()
     } catch (error) {
-      console.error('Failed to create location partner:', error)
-      alert('Failed to create location partner')
+      console.error(
+        `Failed to ${editingId ? 'update' : 'create'} location partner:`,
+        error,
+      )
+      alert(`Failed to ${editingId ? 'update' : 'create'} location partner`)
     }
+  }
+
+  const startEditPartner = (partner: LocationPartner) => {
+    setNewPartner({
+      company_name: partner.company_name,
+      location_name: partner.location_name || '',
+      location_address: partner.location_address || '',
+      location_type: partner.location_type || '',
+      phone: partner.phone || '',
+      card_id: partner.card_id || '',
+      google_review_url: partner.google_review_url || '',
+      placard_type: partner.placard_type || 'standard',
+    })
+    setEditingId(partner.id)
+    setIsDialogOpen(true)
   }
 
   const copyUrl = (partnerId: string) => {
@@ -344,7 +372,20 @@ export default function LocationPartnersPage() {
           <Button
             size="lg"
             className="w-full bg-green-600 hover:bg-green-700 sm:w-auto"
-            onClick={() => setIsDialogOpen(true)}
+            onClick={() => {
+              setNewPartner({
+                company_name: '',
+                location_name: '',
+                location_address: '',
+                location_type: '',
+                phone: '',
+                card_id: '',
+                google_review_url: '',
+                placard_type: 'standard',
+              })
+              setEditingId(null)
+              setIsDialogOpen(true)
+            }}
           >
             <Plus className="mr-2 h-5 w-5" />
             Add Vendor
@@ -427,7 +468,9 @@ export default function LocationPartnersPage() {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
             <Card className="max-h-[90vh] w-full max-w-2xl overflow-y-auto p-6">
               <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-2xl font-bold">Create Vendor</h2>
+                <h2 className="text-2xl font-bold">
+                  {editingId ? 'Edit Vendor' : 'Create Vendor'}
+                </h2>
                 <Button
                   variant="ghost"
                   size="sm"
@@ -436,7 +479,7 @@ export default function LocationPartnersPage() {
                   <X className="h-5 w-5" />
                 </Button>
               </div>
-              <form onSubmit={handleCreatePartner} className="space-y-4">
+              <form onSubmit={handleSavePartner} className="space-y-4">
                 <div>
                   <Label htmlFor="company_name">Business Name *</Label>
                   <Input
@@ -580,7 +623,7 @@ export default function LocationPartnersPage() {
                 </div>
 
                 <Button type="submit" className="w-full">
-                  Create Vendor
+                  {editingId ? 'Save Changes' : 'Create Vendor'}
                 </Button>
               </form>
             </Card>
@@ -681,6 +724,15 @@ export default function LocationPartnersPage() {
                         View
                       </Button>
                     </a>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => startEditPartner(partner)}
+                    >
+                      <Pencil className="mr-1 h-4 w-4" />
+                      Edit
+                    </Button>
+
                     <Button
                       variant="outline"
                       size="sm"
