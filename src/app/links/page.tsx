@@ -20,9 +20,22 @@ import { VideoBackground } from '@/components/public/VideoBackground'
 const REVIEW_LINKS: {
   name: string
   url: string
-  icon: 'google' | 'facebook' | 'yelp' | 'nextdoor' | 'bbb'
+  icon:
+    | 'google'
+    | 'facebook'
+    | 'yelp'
+    | 'nextdoor'
+    | 'bbb'
+    | 'sitejabber'
+    | 'trustpilot'
   color: string
 }[] = [
+  {
+    name: 'Trustpilot',
+    url: 'https://www.trustpilot.com/review/sasquatchcarpet.com',
+    icon: 'trustpilot',
+    color: 'bg-green-500/70 hover:bg-green-600/80',
+  },
   {
     name: 'Google',
     url: 'https://search.google.com/local/writereview?placeid=ChIJw1Fmyv9_EQIRSsL80280NoQ',
@@ -53,6 +66,12 @@ const REVIEW_LINKS: {
     icon: 'bbb',
     color: 'bg-blue-500/70 hover:bg-blue-600/80',
   },
+  {
+    name: 'SiteJabber',
+    url: 'https://www.sitejabber.com/reviews/sasquatchcarpet.com',
+    icon: 'sitejabber',
+    color: 'bg-orange-600/70 hover:bg-orange-700/80',
+  },
 ]
 
 // Icon component for review links
@@ -68,6 +87,9 @@ function ReviewIcon({ type }: { type: string }) {
       return <Home className="h-5 w-5" />
     case 'bbb':
       return <Building2 className="h-5 w-5" />
+    case 'sitejabber':
+    case 'trustpilot':
+      return <Star className="h-5 w-5" />
     default:
       return <Star className="h-5 w-5" />
   }

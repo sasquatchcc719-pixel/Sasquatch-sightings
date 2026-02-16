@@ -2,11 +2,54 @@
  * Location Partners API
  * GET - List all location partners
  * POST - Create a new location partner
+ * PUT - Update a location partner
  * DELETE - Delete a location partner
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
+
+export async function PUT(request: NextRequest) {
+  try {
+    const supabase = await createAdminClient()
+    const body = await request.json()
+    const { id, placard_type } = body
+
+    if (!id || !placard_type) {
+      return NextResponse.json(
+        { error: 'id and placard_type are required' },
+        { status: 400 },
+      )
+    }
+
+    if (!['standard', 'contest'].includes(placard_type)) {
+      return NextResponse.json(
+        { error: 'Invalid placard_type' },
+        { status: 400 },
+      )
+    }
+
+    const { data, error } = await supabase
+      .from('partners')
+      .update({ placard_type })
+      .eq('id', id)
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Failed to update partner:', error)
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true, partner: data })
+  } catch (error) {
+    console.error('Error updating partner:', error)
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 },
+    )
+  }
+}
 
 export async function DELETE(request: NextRequest) {
   try {
@@ -76,6 +119,7 @@ export async function POST(request: NextRequest) {
       phone,
       card_id,
       google_review_url,
+      placard_type = 'standard', // Default to standard
     } = body
 
     if (!company_name) {
@@ -130,6 +174,7 @@ export async function POST(request: NextRequest) {
         card_id: card_id || null,
         google_review_url: google_review_url || null,
         coupon_code: couponCode,
+        placard_type,
         partner_type: 'location',
         role: 'partner',
         credit_balance: 0,

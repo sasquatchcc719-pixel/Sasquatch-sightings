@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
         const { data: partner } = await supabase
           .from('partners')
           .select(
-            'id, location_name, company_name, partner_type, location_type, phone, total_taps, total_conversions, coupon_code',
+            'id, location_name, company_name, partner_type, location_type, phone, total_taps, total_conversions, coupon_code, placard_type',
           )
           .eq('id', partnerId)
           .eq('partner_type', 'location')
@@ -112,6 +112,7 @@ export async function POST(request: NextRequest) {
         partnerName:
           partnerData?.location_name || partnerData?.company_name || null,
         locationType: partnerData?.location_type || null,
+        placardType: partnerData?.placard_type || 'standard',
         couponCode,
       })
     }

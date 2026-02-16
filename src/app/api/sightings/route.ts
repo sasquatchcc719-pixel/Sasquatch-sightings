@@ -34,6 +34,7 @@ export async function POST(request: NextRequest) {
     const locationText = formData.get('locationText') as string | null
     const gpsLat = formData.get('gpsLat') as string | null
     const gpsLng = formData.get('gpsLng') as string | null
+    const partnerId = formData.get('partnerId') as string | null
 
     // Validate required fields (image is now optional)
     if (!fullName || !phoneNumber || !email) {
@@ -202,6 +203,7 @@ export async function POST(request: NextRequest) {
           location: leadLocation,
           status: 'new',
           notes: hasPhoto ? 'Submitted with photo' : 'No photo submitted',
+          partner_id: partnerId || null,
         })
         .select('id')
         .single()
@@ -211,6 +213,35 @@ export async function POST(request: NextRequest) {
       } else if (leadData) {
         leadId = leadData.id
         console.log('Lead created from contest entry:', leadId)
+
+        // If partner info is present, increment their conversion count
+        if (partnerId) {
+          try {
+            await adminClient.rpc('increment_partner_conversions', {
+              partner_id: partnerId,
+            })
+          } catch (err) {
+            // Fallback if RPC doesn't exist, try direct update
+            try {
+              const { data: pData } = await adminClient
+                .from('partners')
+                .select('total_conversions')
+                .eq('id', partnerId)
+                .single()
+
+              if (pData) {
+                await adminClient
+                  .from('partners')
+                  .update({
+                    total_conversions: (pData.total_conversions || 0) + 1,
+                  })
+                  .eq('id', partnerId)
+              }
+            } catch (e) {
+              console.error('Failed to update partner stats:', e)
+            }
+          }
+        }
       }
     } catch (leadError) {
       // Log but don't fail - sighting was already saved

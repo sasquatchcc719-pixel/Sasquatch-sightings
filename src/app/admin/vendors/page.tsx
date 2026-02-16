@@ -16,6 +16,13 @@ import {
   Trash2,
 } from 'lucide-react'
 import { createClient } from '@/supabase/client'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 interface LocationPartner {
   id: string
@@ -33,6 +40,7 @@ interface LocationPartner {
   last_sasquatch_tap_at: string | null
   last_review_tap_at: string | null
   created_at: string
+  placard_type: 'standard' | 'contest'
 }
 
 // Helper to calculate station status
@@ -115,8 +123,43 @@ export default function LocationPartnersPage() {
     phone: '',
     card_id: '',
     google_review_url: '',
+    placard_type: 'standard',
   })
   const [copiedReviewId, setCopiedReviewId] = useState<string | null>(null)
+
+  // History Chart State
+  const [expandedPartnerId, setExpandedPartnerId] = useState<string | null>(
+    null,
+  )
+  const [partnerHistory, setPartnerHistory] = useState<
+    { date: string; count: number }[]
+  >([])
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false)
+
+  const handleExpandHistory = async (partnerId: string) => {
+    if (expandedPartnerId === partnerId) {
+      setExpandedPartnerId(null)
+      return
+    }
+
+    setExpandedPartnerId(partnerId)
+    setIsLoadingHistory(true)
+    setPartnerHistory([])
+
+    try {
+      const response = await fetch(
+        `/api/admin/vendors/history?partnerId=${partnerId}`,
+      )
+      const data = await response.json()
+      if (data.history) {
+        setPartnerHistory(data.history)
+      }
+    } catch (error) {
+      console.error('Failed to load history:', error)
+    } finally {
+      setIsLoadingHistory(false)
+    }
+  }
 
   useEffect(() => {
     const fetchData = async () => {
@@ -188,6 +231,7 @@ export default function LocationPartnersPage() {
         phone: '',
         card_id: '',
         google_review_url: '',
+        placard_type: 'standard',
       })
       setIsDialogOpen(false)
       void loadData()
@@ -235,6 +279,32 @@ export default function LocationPartnersPage() {
     } catch (error) {
       console.error('Failed to delete vendor:', error)
       alert('Failed to delete vendor')
+    }
+  }
+
+  const updatePlacardType = async (partnerId: string, type: string) => {
+    try {
+      const response = await fetch('/api/admin/vendors', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: partnerId, placard_type: type }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to update')
+      }
+
+      // Optimistic update
+      setPartners(
+        partners.map((p) =>
+          p.id === partnerId
+            ? { ...p, placard_type: type as 'standard' | 'contest' }
+            : p,
+        ),
+      )
+    } catch (error) {
+      console.error('Failed to update placard type:', error)
+      alert('Failed to update placard type')
     }
   }
 
@@ -484,6 +554,31 @@ export default function LocationPartnersPage() {
                   </p>
                 </div>
 
+                <div>
+                  <Label htmlFor="placard_type">Placard Type</Label>
+                  <Select
+                    value={newPartner.placard_type}
+                    onValueChange={(value) =>
+                      setNewPartner({ ...newPartner, placard_type: value })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select placard type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="standard">
+                        Standard ($20 Off)
+                      </SelectItem>
+                      <SelectItem value="contest">
+                        Contest (Enter to Win)
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Which landing page to show when card is tapped
+                  </p>
+                </div>
+
                 <Button type="submit" className="w-full">
                   Create Vendor
                 </Button>
@@ -661,11 +756,25 @@ export default function LocationPartnersPage() {
 
                 {/* Stats Grid */}
                 <div className="mt-4 grid grid-cols-2 gap-2 sm:mt-6 sm:gap-4 md:grid-cols-6">
-                  <div className="rounded-lg bg-blue-50 p-3 sm:p-4 dark:bg-blue-900/20">
-                    <div className="text-lg font-bold text-blue-600 sm:text-2xl">
+                  <div
+                    className={`cursor-pointer rounded-lg p-3 transition-colors sm:p-4 ${
+                      expandedPartnerId === partner.id
+                        ? 'bg-blue-100 ring-2 ring-blue-500'
+                        : 'bg-blue-50 hover:bg-blue-100'
+                    } dark:bg-blue-900/20`}
+                    onClick={() => handleExpandHistory(partner.id)}
+                  >
+                    <div className="flex items-center justify-between text-lg font-bold text-blue-600 sm:text-2xl">
                       {partner.total_taps || 0}
+                      {expandedPartnerId === partner.id ? (
+                        <span className="text-xs text-blue-400">▼</span>
+                      ) : (
+                        <span className="text-xs text-blue-300">▶</span>
+                      )}
                     </div>
-                    <div className="text-xs text-blue-600/80">Taps</div>
+                    <div className="text-xs text-blue-600/80">
+                      Taps (Click for History)
+                    </div>
                   </div>
 
                   <div className="rounded-lg bg-green-50 p-3 sm:p-4 dark:bg-green-900/20">
@@ -700,6 +809,102 @@ export default function LocationPartnersPage() {
                       {partner.card_id || 'No card ID'}
                     </div>
                   </div>
+                </div>
+
+                {/* History Chart */}
+                {expandedPartnerId === partner.id && (
+                  <div className="mt-4 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+                    <h4 className="mb-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                      Taps Over Last 30 Days
+                    </h4>
+                    {isLoadingHistory ? (
+                      <div className="flex h-40 items-center justify-center text-sm text-gray-400">
+                        Loading history...
+                      </div>
+                    ) : (
+                      <div className="relative h-48 w-full">
+                        {partnerHistory.length > 0 &&
+                        Math.max(...partnerHistory.map((d) => d.count)) > 0 ? (
+                          <div className="absolute inset-0 flex items-end justify-between gap-1">
+                            {partnerHistory.map((day, i) => {
+                              const max = Math.max(
+                                ...partnerHistory.map((d) => d.count),
+                              )
+                              const height =
+                                day.count === 0 ? 4 : (day.count / max) * 100
+                              return (
+                                <div
+                                  key={i}
+                                  className="group relative flex flex-1 flex-col justify-end"
+                                >
+                                  {/* Tooltip */}
+                                  <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 rounded bg-gray-800 px-2 py-1 text-xs whitespace-nowrap text-white opacity-0 group-hover:opacity-100">
+                                    {day.date}: {day.count} taps
+                                  </div>
+                                  {/* Bar */}
+                                  <div
+                                    className={`w-full rounded-t ${
+                                      day.count > 0
+                                        ? 'bg-blue-500 hover:bg-blue-600'
+                                        : 'bg-gray-100 dark:bg-gray-700'
+                                    } transition-all duration-300`}
+                                    style={{
+                                      height: `${height}%`,
+                                      minHeight: '4px',
+                                    }}
+                                  />
+                                </div>
+                              )
+                            })}
+                          </div>
+                        ) : (
+                          <div className="flex h-full items-center justify-center text-sm text-gray-400">
+                            No tap history available
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <div className="mt-2 flex justify-between text-xs text-gray-400">
+                      <span>30 days ago</span>
+                      <span>Today</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Placard Configuration */}
+                <div className="mt-4 flex items-center justify-between rounded-lg border bg-gray-50 p-3 dark:bg-gray-800">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">Active Placard:</span>
+                    <Badge
+                      variant={
+                        partner.placard_type === 'contest'
+                          ? 'default'
+                          : 'secondary'
+                      }
+                    >
+                      {partner.placard_type === 'contest'
+                        ? '🏆 Contest'
+                        : '💲 Standard ($20 Off)'}
+                    </Badge>
+                  </div>
+                  <Select
+                    value={partner.placard_type || 'standard'}
+                    onValueChange={(value) =>
+                      updatePlacardType(partner.id, value)
+                    }
+                  >
+                    <SelectTrigger className="w-[180px]">
+                      <SelectValue placeholder="Change type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="standard">
+                        Standard ($20 Off)
+                      </SelectItem>
+                      <SelectItem value="contest">
+                        Contest (Enter to Win)
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 {/* Station URLs */}

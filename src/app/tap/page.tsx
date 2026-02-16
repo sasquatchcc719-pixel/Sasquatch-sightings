@@ -36,17 +36,11 @@ export default function TapLandingPage() {
   })
   const [isRedirecting, setIsRedirecting] = useState(!!partnerId)
 
-  // Redirect if partner ID is present (Vendor Scan)
-  useEffect(() => {
-    if (partnerId) {
-      router.replace(`/location/${partnerId}`)
-    }
-  }, [partnerId, router])
+  // Redirect logic moved to trackTap to support placard configuration
 
   // Track the tap on page load
   useEffect(() => {
-    // specific check to avoid tracking twice if redirecting
-    if (isRedirecting) return
+    // Track tap and handle redirect
 
     const trackTap = async () => {
       try {
@@ -68,6 +62,15 @@ export default function TapLandingPage() {
         }
         if (data.couponCode) {
           setCouponCode(data.couponCode)
+        }
+
+        // Handle redirection based on placard type
+        if (partnerId) {
+          if (data.placardType === 'contest') {
+            router.replace(`/location/${partnerId}/contest`)
+          } else {
+            router.replace(`/location/${partnerId}`)
+          }
         }
       } catch (error) {
         console.error('Failed to track tap:', error)
