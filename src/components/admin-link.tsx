@@ -8,9 +8,18 @@ export async function AdminLink() {
     data: { user },
   } = await supabase.auth.getUser()
 
-  // Only show admin button if user is logged in
+  // If no user, show Login button
   if (!user) {
-    return null
+    return (
+      <Button
+        size="sm"
+        variant="outline"
+        className="opacity-50 hover:opacity-100"
+        asChild
+      >
+        <Link href="/auth/login">Login</Link>
+      </Button>
+    )
   }
 
   return (
