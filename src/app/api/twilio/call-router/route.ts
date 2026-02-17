@@ -84,22 +84,19 @@ export async function POST(request: NextRequest) {
   <Say>We didn't receive any input. Goodbye.</Say>
 </Response>`
     } else if (isBusinessHours) {
-      console.log(
-        `[Call Router] Business hours - forwarding to: ${SETTINGS.forward_to_numbers.join(', ')}`,
-      )
+      // IVR Menu Implementation
+      // Press 1 -> Schedule (Wife -> Chuck)
+      // Press 2 -> Technical (Chuck)
+      // No Input -> Voicemail (Spam Filter)
 
-      // Build <Number> nouns for each phone
-      // Removed url="..." to remove "Whisper" / Call Screening
-      const numberElements = SETTINGS.forward_to_numbers
-        .map((num) => `    <Number>${num}</Number>`)
-        .join('\n')
+      const ivrMenuUrl = `${baseUrl}/api/twilio/ivr-menu`
 
-      // callerId changed to callerPhone (incoming caller) per user request
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial timeout="${SETTINGS.dial_timeout}" action="${afterHoursUrl}" callerId="${callerPhone}">
-${numberElements}
-  </Dial>
+  <Gather action="${ivrMenuUrl}" numDigits="1" timeout="10">
+    <Say>Thank you for calling Sasquatch Carpet Cleaning. Press 1 to schedule an appointment. Press 2 for technical questions.</Say>
+  </Gather>
+  <Redirect method="POST">${afterHoursUrl}</Redirect>
 </Response>`
     } else {
       console.log(`[Call Router] After hours - redirecting to voicemail flow`)
