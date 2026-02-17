@@ -89,15 +89,15 @@ export async function POST(request: NextRequest) {
       )
 
       // Build <Number> nouns for each phone
-      // url="..." adds the "Whisper" / Call Screening to each leg
+      // Removed url="..." to remove "Whisper" / Call Screening
       const numberElements = SETTINGS.forward_to_numbers
-        .map((num) => `    <Number url="${whisperUrl}">${num}</Number>`)
+        .map((num) => `    <Number>${num}</Number>`)
         .join('\n')
 
-      // callerId set to business number for custom ringtone support
+      // callerId changed to callerPhone (incoming caller) per user request
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial timeout="${SETTINGS.dial_timeout}" action="${afterHoursUrl}" callerId="${SETTINGS.forward_to_number_display}">
+  <Dial timeout="${SETTINGS.dial_timeout}" action="${afterHoursUrl}" callerId="${callerPhone}">
 ${numberElements}
   </Dial>
 </Response>`
