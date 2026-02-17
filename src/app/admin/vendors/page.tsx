@@ -129,6 +129,10 @@ export default function LocationPartnersPage() {
   const [copiedReviewId, setCopiedReviewId] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
 
+  // Place ID Helper State
+  const [placeIdInput, setPlaceIdInput] = useState('')
+  const [showPlaceIdHelper, setShowPlaceIdHelper] = useState(false)
+
   // History Chart State
   const [expandedPartnerId, setExpandedPartnerId] = useState<string | null>(
     null,
@@ -199,7 +203,7 @@ export default function LocationPartnersPage() {
 
   const loadData = async () => {
     try {
-      const response = await fetch('/api/admin/vendors')
+      const response = await fetch('/api/admin/vendors', { cache: 'no-store' })
       const data = await response.json()
       if (data.partners) {
         setPartners(data.partners)
@@ -595,6 +599,79 @@ export default function LocationPartnersPage() {
                   <p className="mt-1 text-xs text-gray-500">
                     Their Google review link for the review station we give them
                   </p>
+
+                  {/* Google Place ID Helper */}
+                  <div className="mt-3 rounded-md border border-blue-100 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-900/20">
+                    <div className="mb-2 flex items-center justify-between">
+                      <Label
+                        htmlFor="place_id_input"
+                        className="text-xs font-semibold text-blue-800 dark:text-blue-300"
+                      >
+                        Need help finding the URL?
+                      </Label>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-auto p-0 text-xs text-blue-600 hover:text-blue-800"
+                        onClick={() => setShowPlaceIdHelper(!showPlaceIdHelper)}
+                      >
+                        {showPlaceIdHelper ? 'Hide Helper' : 'Show Helper'}
+                      </Button>
+                    </div>
+
+                    {showPlaceIdHelper && (
+                      <div className="space-y-3">
+                        <p className="text-xs text-blue-700 dark:text-blue-300">
+                          1. Find the business using Google&apos;s Place ID
+                          Finder tool:
+                        </p>
+                        <a
+                          href="https://developers.google.com/maps/documentation/javascript/examples/places-placeid-finder#maps_places_placeid_finder-typescript"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex w-full items-center justify-center rounded border border-blue-200 bg-white px-3 py-2 text-xs font-medium text-blue-700 shadow-sm hover:bg-blue-50 dark:border-blue-700 dark:bg-gray-800 dark:text-blue-300 dark:hover:bg-gray-700"
+                        >
+                          <MapPin className="mr-2 h-3.5 w-3.5" />
+                          Open Place ID Finder Tool
+                          <ExternalLink className="ml-1.5 h-3 w-3 opacity-50" />
+                        </a>
+
+                        <div className="border-t border-blue-200 pt-3 dark:border-blue-700">
+                          <p className="mb-1.5 text-xs text-blue-700 dark:text-blue-300">
+                            2. Paste the <strong>Place ID</strong> below to
+                            generate the correct URL:
+                          </p>
+                          <div className="flex gap-2">
+                            <Input
+                              id="place_id_input"
+                              value={placeIdInput}
+                              onChange={(e) => setPlaceIdInput(e.target.value)}
+                              placeholder="e.g. ChIJ..."
+                              className="h-8 bg-white text-xs dark:bg-gray-800"
+                            />
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="h-8 bg-blue-600 hover:bg-blue-700"
+                              onClick={() => {
+                                if (placeIdInput) {
+                                  setNewPartner({
+                                    ...newPartner,
+                                    google_review_url: `https://search.google.com/local/writereview?placeid=${placeIdInput}`,
+                                  })
+                                  setPlaceIdInput('')
+                                }
+                              }}
+                              disabled={!placeIdInput}
+                            >
+                              Generate
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div>
