@@ -217,9 +217,21 @@ export default function LocationPartnersPage() {
     e.preventDefault()
 
     try {
+      // Convert empty strings to null for optional fields to avoid unique constraint violations
+      const sanitizedPartner = {
+        ...newPartner,
+        card_id: newPartner.card_id || null,
+        google_review_url: newPartner.google_review_url || null,
+        location_name: newPartner.location_name || null,
+        location_address: newPartner.location_address || null,
+        location_type: newPartner.location_type || null,
+      }
+
       const url = '/api/admin/vendors'
       const method = editingId ? 'PUT' : 'POST'
-      const body = editingId ? { ...newPartner, id: editingId } : newPartner
+      const body = editingId
+        ? { ...sanitizedPartner, id: editingId }
+        : sanitizedPartner
 
       const response = await fetch(url, {
         method,
