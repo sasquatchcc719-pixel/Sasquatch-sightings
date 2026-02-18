@@ -129,10 +129,6 @@ export default function LocationPartnersPage() {
   const [copiedReviewId, setCopiedReviewId] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
 
-  // Place ID Helper State
-  const [placeIdInput, setPlaceIdInput] = useState('')
-  const [showPlaceIdHelper, setShowPlaceIdHelper] = useState(false)
-
   // History Chart State
   const [expandedPartnerId, setExpandedPartnerId] = useState<string | null>(
     null,
@@ -293,8 +289,11 @@ export default function LocationPartnersPage() {
   }
 
   const copyReviewUrl = (partnerId: string) => {
-    const url = `${window.location.origin}/review/${partnerId}`
-    void navigator.clipboard.writeText(url)
+    const partner = partners.find((p) => p.id === partnerId)
+    const urlToCopy =
+      partner?.google_review_url ??
+      `${window.location.origin}/review/${partnerId}`
+    void navigator.clipboard.writeText(urlToCopy)
     setCopiedReviewId(partnerId)
     setTimeout(() => setCopiedReviewId(null), 2000)
   }
@@ -594,7 +593,7 @@ export default function LocationPartnersPage() {
 
                 <div>
                   <Label htmlFor="google_review_url">
-                    Google Review URL (Optional)
+                    Google Review Station URL (Optional)
                   </Label>
                   <Input
                     id="google_review_url"
@@ -606,84 +605,12 @@ export default function LocationPartnersPage() {
                         google_review_url: e.target.value,
                       })
                     }
-                    placeholder="https://g.page/r/..."
+                    placeholder="Paste Google review link (e.g. https://g.page/r/... or writereview?placeid=...)"
                   />
                   <p className="mt-1 text-xs text-gray-500">
-                    Their Google review link for the review station we give them
+                    Paste the link here; save, then copy it later when
+                    programming NFC tags.
                   </p>
-
-                  {/* Google Place ID Helper */}
-                  <div className="mt-3 rounded-md border border-blue-100 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-900/20">
-                    <div className="mb-2 flex items-center justify-between">
-                      <Label
-                        htmlFor="place_id_input"
-                        className="text-xs font-semibold text-blue-800 dark:text-blue-300"
-                      >
-                        Need help finding the URL?
-                      </Label>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-auto p-0 text-xs text-blue-600 hover:text-blue-800"
-                        onClick={() => setShowPlaceIdHelper(!showPlaceIdHelper)}
-                      >
-                        {showPlaceIdHelper ? 'Hide Helper' : 'Show Helper'}
-                      </Button>
-                    </div>
-
-                    {showPlaceIdHelper && (
-                      <div className="space-y-3">
-                        <p className="text-xs text-blue-700 dark:text-blue-300">
-                          1. Find the business using Google&apos;s Place ID
-                          Finder tool:
-                        </p>
-                        <a
-                          href="https://developers.google.com/maps/documentation/javascript/examples/places-placeid-finder#maps_places_placeid_finder-typescript"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex w-full items-center justify-center rounded border border-blue-200 bg-white px-3 py-2 text-xs font-medium text-blue-700 shadow-sm hover:bg-blue-50 dark:border-blue-700 dark:bg-gray-800 dark:text-blue-300 dark:hover:bg-gray-700"
-                        >
-                          <MapPin className="mr-2 h-3.5 w-3.5" />
-                          Open Place ID Finder Tool
-                          <ExternalLink className="ml-1.5 h-3 w-3 opacity-50" />
-                        </a>
-
-                        <div className="border-t border-blue-200 pt-3 dark:border-blue-700">
-                          <p className="mb-1.5 text-xs text-blue-700 dark:text-blue-300">
-                            2. Paste the <strong>Place ID</strong> below to
-                            generate the correct URL:
-                          </p>
-                          <div className="flex gap-2">
-                            <Input
-                              id="place_id_input"
-                              value={placeIdInput}
-                              onChange={(e) => setPlaceIdInput(e.target.value)}
-                              placeholder="e.g. ChIJ..."
-                              className="h-8 bg-white text-xs dark:bg-gray-800"
-                            />
-                            <Button
-                              type="button"
-                              size="sm"
-                              className="h-8 bg-blue-600 hover:bg-blue-700"
-                              onClick={() => {
-                                if (placeIdInput) {
-                                  setNewPartner({
-                                    ...newPartner,
-                                    google_review_url: `https://search.google.com/local/writereview?placeid=${placeIdInput}`,
-                                  })
-                                  setPlaceIdInput('')
-                                }
-                              }}
-                              disabled={!placeIdInput}
-                            >
-                              Generate
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
                 </div>
 
                 <div>
@@ -1074,13 +1001,13 @@ export default function LocationPartnersPage() {
                     </code>
                   </div>
 
-                  {/* Google Review Station URL */}
+                  {/* Google Review Station URL — paste in edit, copy here for NFC */}
                   <div
                     className={`rounded-lg p-2 sm:p-3 ${partner.google_review_url ? 'bg-green-50 dark:bg-green-900/20' : 'bg-gray-100 dark:bg-gray-800'}`}
                   >
-                    <div className="mb-1 flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-2">
                       <span
-                        className={`text-xs font-semibold ${partner.google_review_url ? 'text-green-700 dark:text-green-300' : 'text-gray-500'}`}
+                        className={`shrink-0 text-xs font-semibold ${partner.google_review_url ? 'text-green-700 dark:text-green-300' : 'text-gray-500'}`}
                       >
                         Google Review Station
                       </span>
@@ -1088,53 +1015,20 @@ export default function LocationPartnersPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-6 px-2 text-xs"
+                          className="h-6 shrink-0 px-2 text-xs"
                           onClick={() => copyReviewUrl(partner.id)}
                         >
-                          {copiedReviewId === partner.id ? (
-                            '✓'
-                          ) : (
-                            <Copy className="h-3 w-3" />
-                          )}
+                          {copiedReviewId === partner.id ? 'Copied' : 'Copy'}
                         </Button>
                       ) : null}
                     </div>
                     {partner.google_review_url ? (
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between">
-                          <code className="block overflow-x-auto text-xs whitespace-nowrap text-green-600 dark:text-green-400">
-                            /review/{partner.id}
-                          </code>
-                          <span className="text-[10px] tracking-wider text-gray-500 uppercase">
-                            Tracker
-                          </span>
-                        </div>
-
-                        <div className="my-1 border-t border-green-200 dark:border-green-800"></div>
-
-                        <div className="flex items-center justify-between gap-2">
-                          <code className="block max-w-[120px] truncate overflow-x-auto text-[10px] whitespace-nowrap text-gray-500 dark:text-gray-400">
-                            {partner.google_review_url}
-                          </code>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-5 px-1 text-[10px] text-gray-500 hover:text-gray-700"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              void navigator.clipboard.writeText(
-                                partner.google_review_url!,
-                              )
-                              alert('Copied original Google URL!')
-                            }}
-                          >
-                            <Copy className="mr-1 h-3 w-3" /> Original
-                          </Button>
-                        </div>
-                      </div>
+                      <code className="mt-1 block overflow-x-auto text-xs break-all whitespace-nowrap text-green-600 dark:text-green-400">
+                        {partner.google_review_url}
+                      </code>
                     ) : (
                       <span className="text-xs text-gray-400 italic">
-                        Not configured
+                        Not set — add in Edit
                       </span>
                     )}
                   </div>
