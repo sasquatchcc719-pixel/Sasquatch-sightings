@@ -1088,9 +1088,38 @@ export default function LocationPartnersPage() {
                       ) : null}
                     </div>
                     {partner.google_review_url ? (
-                      <code className="block overflow-x-auto text-xs whitespace-nowrap text-green-600 dark:text-green-400">
-                        /review/{partner.id}
-                      </code>
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <code className="block overflow-x-auto text-xs whitespace-nowrap text-green-600 dark:text-green-400">
+                            /review/{partner.id}
+                          </code>
+                          <span className="text-[10px] tracking-wider text-gray-500 uppercase">
+                            Tracker
+                          </span>
+                        </div>
+
+                        <div className="my-1 border-t border-green-200 dark:border-green-800"></div>
+
+                        <div className="flex items-center justify-between gap-2">
+                          <code className="block max-w-[120px] truncate overflow-x-auto text-[10px] whitespace-nowrap text-gray-500 dark:text-gray-400">
+                            {partner.google_review_url}
+                          </code>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-5 px-1 text-[10px] text-gray-500 hover:text-gray-700"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              void navigator.clipboard.writeText(
+                                partner.google_review_url!,
+                              )
+                              alert('Copied original Google URL!')
+                            }}
+                          >
+                            <Copy className="mr-1 h-3 w-3" /> Original
+                          </Button>
+                        </div>
+                      </div>
                     ) : (
                       <span className="text-xs text-gray-400 italic">
                         Not configured
