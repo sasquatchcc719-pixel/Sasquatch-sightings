@@ -592,9 +592,27 @@ export default function LocationPartnersPage() {
                 </div>
 
                 <div>
-                  <Label htmlFor="google_review_url">
-                    Google Review Station URL (Optional)
-                  </Label>
+                  <div className="mb-1.5 flex items-center justify-between gap-2">
+                    <Label htmlFor="google_review_url">
+                      Google Review Station URL (Optional)
+                    </Label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 shrink-0 text-xs"
+                      onClick={() =>
+                        window.open(
+                          'https://developers.google.com/maps/documentation/javascript/examples/places-placeid-finder#maps_places_placeid_finder-typescript',
+                          '_blank',
+                          'noopener,noreferrer',
+                        )
+                      }
+                    >
+                      <MapPin className="mr-1 h-3.5 w-3.5" />
+                      Get review link
+                    </Button>
+                  </div>
                   <Input
                     id="google_review_url"
                     type="url"
