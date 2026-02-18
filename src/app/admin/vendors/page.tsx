@@ -128,6 +128,7 @@ export default function LocationPartnersPage() {
   })
   const [copiedReviewId, setCopiedReviewId] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [placeIdInput, setPlaceIdInput] = useState('')
 
   // History Chart State
   const [expandedPartnerId, setExpandedPartnerId] = useState<string | null>(
@@ -255,6 +256,7 @@ export default function LocationPartnersPage() {
         placard_type: 'standard',
       })
       setEditingId(null)
+      setPlaceIdInput('')
       setIsDialogOpen(false)
       void loadData()
     } catch (error) {
@@ -278,6 +280,7 @@ export default function LocationPartnersPage() {
       placard_type: partner.placard_type || 'standard',
     })
     setEditingId(partner.id)
+    setPlaceIdInput('')
     setIsDialogOpen(true)
   }
 
@@ -399,6 +402,7 @@ export default function LocationPartnersPage() {
                 placard_type: 'standard',
               })
               setEditingId(null)
+              setPlaceIdInput('')
               setIsDialogOpen(true)
             }}
           >
@@ -591,11 +595,9 @@ export default function LocationPartnersPage() {
                   </p>
                 </div>
 
-                <div>
-                  <div className="mb-1.5 flex items-center justify-between gap-2">
-                    <Label htmlFor="google_review_url">
-                      Google Review Station URL (Optional)
-                    </Label>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <Label>Google Review Station URL (Optional)</Label>
                     <Button
                       type="button"
                       variant="outline"
@@ -613,22 +615,77 @@ export default function LocationPartnersPage() {
                       Get review link
                     </Button>
                   </div>
-                  <Input
-                    id="google_review_url"
-                    type="url"
-                    value={newPartner.google_review_url}
-                    onChange={(e) =>
-                      setNewPartner({
-                        ...newPartner,
-                        google_review_url: e.target.value,
-                      })
-                    }
-                    placeholder="Paste Google review link (e.g. https://g.page/r/... or writereview?placeid=...)"
-                  />
-                  <p className="mt-1 text-xs text-gray-500">
-                    Paste the link here; save, then copy it later when
-                    programming NFC tags.
-                  </p>
+
+                  <div>
+                    <Label
+                      htmlFor="google_review_url"
+                      className="text-xs font-medium text-gray-600 dark:text-gray-400"
+                    >
+                      Box 1 — Paste URL (if you already have the full link)
+                    </Label>
+                    <Input
+                      id="google_review_url"
+                      type="url"
+                      className="mt-1"
+                      value={newPartner.google_review_url}
+                      onChange={(e) =>
+                        setNewPartner({
+                          ...newPartner,
+                          google_review_url: e.target.value,
+                        })
+                      }
+                      placeholder="https://search.google.com/local/writereview?placeid=... or https://g.page/r/..."
+                    />
+                  </div>
+
+                  <div>
+                    <Label
+                      htmlFor="place_id_input"
+                      className="text-xs font-medium text-gray-600 dark:text-gray-400"
+                    >
+                      Box 2 — Paste Place ID to generate a URL (from the finder
+                      tool above)
+                    </Label>
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <Input
+                        id="place_id_input"
+                        type="text"
+                        className="h-9 min-w-[200px] flex-1 font-mono text-sm"
+                        placeholder="Paste Place ID (e.g. ChIJ...)"
+                        value={placeIdInput}
+                        onChange={(e) => setPlaceIdInput(e.target.value)}
+                      />
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        className="h-9 text-xs"
+                        onClick={() => {
+                          const raw = placeIdInput.trim()
+                          if (!raw) return
+                          const placeId = raw.includes('placeid=')
+                            ? new URLSearchParams(raw.split('?')[1] || '').get(
+                                'placeid',
+                              ) || raw
+                            : raw
+                          if (placeId) {
+                            setNewPartner({
+                              ...newPartner,
+                              google_review_url: `https://search.google.com/local/writereview?placeid=${placeId}`,
+                            })
+                            setPlaceIdInput('')
+                          }
+                        }}
+                        disabled={!placeIdInput.trim()}
+                      >
+                        Generate URL
+                      </Button>
+                    </div>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Generated URL will appear in Box 1. Save, then copy from
+                      the vendor card for NFC.
+                    </p>
+                  </div>
                 </div>
 
                 <div>
