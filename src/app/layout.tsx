@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { Suspense } from 'react'
 import { Geist } from 'next/font/google'
 import { ThemeProvider } from 'next-themes'
 import NextTopLoader from 'nextjs-toploader'
@@ -82,7 +83,9 @@ export default function RootLayout({ children }: RootLayoutProps) {
         >
           <ReactQueryProvider>
             {children}
-            <OneSignalPublicInit />
+            <Suspense fallback={null}>
+              <OneSignalPublicInit />
+            </Suspense>
             <Analytics />
             <ReactQueryDevtools initialIsOpen={false} />
           </ReactQueryProvider>
