@@ -201,6 +201,13 @@ export function AdminNavigation() {
       active: pathname === '/admin/sightings',
       description: 'Sightings & conversations',
     },
+    {
+      name: 'Push',
+      href: '/admin/push',
+      icon: Megaphone,
+      active: pathname === '/admin/push',
+      description: 'Send push notifications (ramble + generate)',
+    },
   ]
 
   // Analyst group (Harry)

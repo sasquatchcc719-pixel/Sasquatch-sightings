@@ -124,27 +124,13 @@ export default function TapLandingPage() {
     window.location.href = `sms:719-249-8791?body=${encodeURIComponent(prefilledMessage)}`
   }
 
-  const handleSaveContact = async () => {
+  const handleSaveContact = () => {
     trackButtonClick('save_contact')
-
-    // Create vCard — open without download so OS opens Add to Contacts (mobile) or save dialog (desktop)
-    const vcard = `BEGIN:VCARD
-VERSION:3.0
-FN:Sasquatch Carpet Cleaning
-ORG:Sasquatch Carpet Cleaning
-TEL;TYPE=WORK,VOICE:719-249-8791
-URL:https://sasquatchcarpet.com
-NOTE:$20 OFF! Use code ${couponCode} in booking notes.
-END:VCARD`
-
-    const blob = new Blob([vcard], { type: 'text/vcard' })
-    const url = window.URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.rel = 'noopener'
-    // No download attribute: lets the OS open the contact screen on mobile instead of "download file"
-    link.click()
-    window.URL.revokeObjectURL(url)
+    // Use a real URL so the phone opens "Add to Contact" instead of downloading a .vcf file.
+    // Blob URLs are often treated as downloads; serving the vCard from the server with
+    // Content-Disposition: inline lets the OS open the contact screen on mobile.
+    const url = `/api/sasquatch-contact?code=${encodeURIComponent(couponCode)}`
+    window.location.href = url
   }
 
   const handleShare = async () => {
