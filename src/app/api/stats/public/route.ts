@@ -19,12 +19,13 @@ export async function GET() {
   try {
     const supabase = createAdminClient()
 
-    // Get first user's settings (single-tenant: one business)
+    // Get first user's settings (single-tenant: one business). Use maybeSingle() so
+    // empty table doesn't throw (Gemini/getting 500 instead of JSON).
     const { data: settingsRow } = await supabase
       .from('settings')
       .select('*')
       .limit(1)
-      .single()
+      .maybeSingle()
 
     const userSettings = settingsRow
       ? {
@@ -158,11 +159,31 @@ export async function GET() {
       {
         headers: {
           'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=60',
+          'Access-Control-Allow-Origin': '*',
         },
       },
     )
   } catch (error) {
     console.error('[stats/public] Error:', error)
-    return NextResponse.json({ error: 'Failed to load stats' }, { status: 500 })
+    return NextResponse.json(
+      { error: 'Failed to load stats' },
+      {
+        status: 500,
+        headers: { 'Access-Control-Allow-Origin': '*' },
+      },
+    )
   }
+}
+
+const corsHeaders = { 'Access-Control-Allow-Origin': '*' }
+
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: {
+      ...corsHeaders,
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Max-Age': '86400',
+    },
+  })
 }
