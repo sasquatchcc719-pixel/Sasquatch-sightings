@@ -80,6 +80,8 @@ type PartnerDashboardProps = {
   referrals: Referral[]
   incomingWork: OutboundReferral[]
   stats: Stats
+  /** When true, shows demo banner and disables all form/button actions so admins can preview. */
+  demo?: boolean
 }
 
 export function PartnerDashboard({
@@ -87,6 +89,7 @@ export function PartnerDashboard({
   referrals,
   incomingWork,
   stats,
+  demo = false,
 }: PartnerDashboardProps) {
   const router = useRouter()
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -122,6 +125,7 @@ export function PartnerDashboard({
   )
 
   const handleAcceptWork = async (referralId: string) => {
+    if (demo) return
     setProcessingReferralId(referralId)
     setWorkError(null)
 
@@ -161,6 +165,7 @@ export function PartnerDashboard({
   }
 
   const handleDeclineWork = async (referralId: string) => {
+    if (demo) return
     if (!confirm('Are you sure you want to decline this referral?')) return
 
     setProcessingReferralId(referralId)
@@ -191,6 +196,7 @@ export function PartnerDashboard({
 
   const handleSubmitReferral = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (demo) return
     setIsSubmitting(true)
     setSubmitError(null)
     setSubmitSuccess(false)
@@ -228,6 +234,7 @@ export function PartnerDashboard({
   }
 
   const handleBookForClient = async () => {
+    if (demo) return
     if (!clientName || !clientPhone) {
       setSubmitError('Please enter client name and phone first')
       return
@@ -318,6 +325,13 @@ export function PartnerDashboard({
 
   return (
     <div className="space-y-8">
+      {demo && (
+        <div className="rounded-lg border-2 border-amber-400 bg-amber-500/20 px-4 py-3 text-center text-sm font-medium text-amber-900 dark:text-amber-100">
+          Demo preview — UI changes here apply to all partner accounts. Actions
+          are disabled.
+        </div>
+      )}
+
       {/* Welcome Header */}
       <div className="text-white">
         <h1 className="text-3xl font-bold">Welcome back, {partner.name}!</h1>
@@ -406,7 +420,7 @@ export function PartnerDashboard({
                   <div className="flex gap-2">
                     <Button
                       onClick={() => handleAcceptWork(work.id)}
-                      disabled={processingReferralId === work.id}
+                      disabled={demo || processingReferralId === work.id}
                       className="flex-1 bg-green-600 hover:bg-green-700"
                     >
                       {processingReferralId === work.id ? (
@@ -421,7 +435,7 @@ export function PartnerDashboard({
                     <Button
                       variant="outline"
                       onClick={() => handleDeclineWork(work.id)}
-                      disabled={processingReferralId === work.id}
+                      disabled={demo || processingReferralId === work.id}
                       className="border-red-300 text-red-600 hover:bg-red-50"
                     >
                       <X className="mr-2 h-4 w-4" />
@@ -599,7 +613,7 @@ export function PartnerDashboard({
               <div className="flex flex-col gap-2 sm:flex-row">
                 <Button
                   type="submit"
-                  disabled={isSubmitting}
+                  disabled={demo || isSubmitting}
                   className="flex-1"
                 >
                   {isSubmitting ? 'Submitting...' : 'Submit Referral'}
@@ -607,7 +621,7 @@ export function PartnerDashboard({
                 <Button
                   type="button"
                   variant="outline"
-                  disabled={isSubmitting}
+                  disabled={demo || isSubmitting}
                   onClick={handleBookForClient}
                   className="flex-1"
                 >
@@ -641,8 +655,9 @@ export function PartnerDashboard({
             <Button
               className="w-full"
               size="lg"
-              disabled={stats.creditBalance <= 0}
+              disabled={demo || stats.creditBalance <= 0}
               onClick={() => {
+                if (demo) return
                 // TODO: Add actual HousecallPro booking URL
                 window.open('https://housecallpro.com', '_blank')
               }}
