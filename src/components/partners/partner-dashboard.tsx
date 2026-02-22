@@ -278,9 +278,14 @@ export function PartnerDashboard({
       setClientPhone('')
       setNotes('')
       router.refresh()
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error booking for client:', error)
-      setSubmitError('Failed to create booking. Please try again.')
+      const err = error as { message?: string; details?: string } | null
+      const message =
+        err?.message ||
+        (err?.details ? `Booking failed: ${err.details}` : null) ||
+        'Failed to create booking. Please try again.'
+      setSubmitError(message)
     } finally {
       setIsSubmitting(false)
     }
