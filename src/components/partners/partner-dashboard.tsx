@@ -271,9 +271,8 @@ export function PartnerDashboard({
         console.error('Error updating balance:', balanceError)
       }
 
-      // Open HousecallPro in new tab
-      // TODO: Add actual HousecallPro URL
-      window.open('https://housecallpro.com', '_blank')
+      // Open Sasquatch booking (Housecall Pro) in new tab
+      window.open('/book', '_blank')
 
       setClientName('')
       setClientPhone('')
@@ -658,8 +657,7 @@ export function PartnerDashboard({
               disabled={demo || stats.creditBalance <= 0}
               onClick={() => {
                 if (demo) return
-                // TODO: Add actual HousecallPro booking URL
-                window.open('https://housecallpro.com', '_blank')
+                window.open('/book', '_blank')
               }}
             >
               <Gift className="mr-2 h-5 w-5" />
