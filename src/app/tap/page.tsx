@@ -6,7 +6,7 @@ import Image from 'next/image'
 import {
   Phone,
   MessageSquare,
-  Download,
+  UserPlus,
   MapPin,
   Clock,
   Share2,
@@ -127,7 +127,7 @@ export default function TapLandingPage() {
   const handleSaveContact = async () => {
     trackButtonClick('save_contact')
 
-    // Create vCard
+    // Create vCard — open without download so OS opens Add to Contacts (mobile) or save dialog (desktop)
     const vcard = `BEGIN:VCARD
 VERSION:3.0
 FN:Sasquatch Carpet Cleaning
@@ -141,7 +141,8 @@ END:VCARD`
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = 'Sasquatch-Carpet-Cleaning.vcf'
+    link.rel = 'noopener'
+    // No download attribute: lets the OS open the contact screen on mobile instead of "download file"
     link.click()
     window.URL.revokeObjectURL(url)
   }
@@ -306,7 +307,7 @@ END:VCARD`
             variant="outline"
             className="w-full border-2 py-6 text-lg font-semibold"
           >
-            <Download className="mr-2 h-5 w-5" />
+            <UserPlus className="mr-2 h-5 w-5" />
             Save to Contacts
           </Button>
 
