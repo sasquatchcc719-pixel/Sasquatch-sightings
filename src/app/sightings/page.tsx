@@ -62,12 +62,11 @@ const sightingFormSchema = z.object({
     .regex(/^\d{5}$/, 'Valid 5-digit zip')
     .optional()
     .or(z.literal('')),
-  termsAccepted: z.boolean().refine((val) => val === true, {
-    message: 'You must agree to the terms to enter',
-  }),
+  termsAccepted: z.boolean().default(false),
 })
 
-type SightingFormData = z.infer<typeof sightingFormSchema>
+type SightingFormData = z.output<typeof sightingFormSchema>
+type FormResolver = import('react-hook-form').Resolver<SightingFormData>
 
 export default function SightingsPage() {
   const [imagePreview, setImagePreview] = useState<string | null>(null)
@@ -100,7 +99,8 @@ export default function SightingsPage() {
     setValue,
     formState: { errors },
   } = useForm<SightingFormData>({
-    resolver: zodResolver(sightingFormSchema),
+    resolver: zodResolver(sightingFormSchema) as FormResolver,
+    defaultValues: { termsAccepted: false },
   })
 
   const imageFiles = watch('image')
@@ -261,6 +261,8 @@ export default function SightingsPage() {
         formData.append('gpsLat', gpsCoordinates.lat.toString())
         formData.append('gpsLng', gpsCoordinates.lng.toString())
       }
+
+      formData.append('smsConsent', data.termsAccepted ? 'true' : 'false')
 
       // Send to API
       const response = await fetch('/api/sightings', {
@@ -777,7 +779,7 @@ export default function SightingsPage() {
               </div>
             )}
 
-            {/* Terms and Conditions Checkbox */}
+            {/* SMS consent checkbox (optional; not required to enter contest) */}
             <div className="space-y-2">
               <div className="flex items-start space-x-2">
                 <Checkbox
@@ -794,17 +796,14 @@ export default function SightingsPage() {
                     htmlFor="terms"
                     className="text-muted-foreground text-sm leading-none font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                   >
-                    By participating, you agree to receive mobile messages from
-                    Sasquatch Carpet Cleaning. Message and data rates may apply.
-                    Reply STOP to opt out.
+                    I agree to receive SMS text messages from Sasquatch Carpet
+                    Cleaning about contest updates, promotions, appointment
+                    reminders, and service offers. Message frequency varies. Msg
+                    &amp; data rates may apply. Reply STOP to opt out, HELP for
+                    help.
                   </label>
                 </div>
               </div>
-              {errors.termsAccepted && (
-                <p className="text-destructive text-sm">
-                  {errors.termsAccepted.message}
-                </p>
-              )}
             </div>
 
             {/* Submit Button */}
@@ -860,6 +859,22 @@ export default function SightingsPage() {
             <li className="flex items-start gap-2">
               <span className="text-foreground">•</span>
               <span>No purchase necessary to enter drawing</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-foreground">•</span>
+              <span>
+                By checking the SMS consent box, you agree to receive text
+                messages from Sasquatch Carpet Cleaning. Consent is not a
+                condition of purchase or contest entry.
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-foreground">•</span>
+              <span>
+                To opt out of SMS messages at any time, reply STOP. For
+                assistance, reply HELP or contact us at
+                charles@sasquatchcarpet.com.
+              </span>
             </li>
           </ul>
         </Card>
