@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, createClient } from '@/supabase/server'
+import { getUserWithRole } from '@/lib/auth'
 
 // GET - List all targets
 export async function GET() {
   try {
+    const { user, role } = await getUserWithRole()
+    if (!user || role !== 'admin') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const supabase = await createClient()
 
     const { data: targets, error } = await supabase
@@ -29,6 +35,11 @@ export async function GET() {
 // POST - Create new target
 export async function POST(request: NextRequest) {
   try {
+    const { user, role } = await getUserWithRole()
+    if (!user || role !== 'admin') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const body = await request.json()
     const { type, value, source, url, notes } = body
 
@@ -72,6 +83,11 @@ export async function POST(request: NextRequest) {
 // PATCH - Update target
 export async function PATCH(request: NextRequest) {
   try {
+    const { user, role } = await getUserWithRole()
+    if (!user || role !== 'admin') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const body = await request.json()
     const { id, type, value, source, url, notes, is_active } = body
 
@@ -116,6 +132,11 @@ export async function PATCH(request: NextRequest) {
 // DELETE - Remove target
 export async function DELETE(request: NextRequest) {
   try {
+    const { user, role } = await getUserWithRole()
+    if (!user || role !== 'admin') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
 

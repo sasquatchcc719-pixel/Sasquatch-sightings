@@ -5,16 +5,22 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
+import { getUserWithRole } from '@/lib/auth'
 import { sendCustomerSMS } from '@/lib/twilio'
 
 export async function POST(request: NextRequest) {
   try {
+    const { user, role } = await getUserWithRole()
+    if (!user || role !== 'admin') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { conversationId, message } = await request.json()
 
     if (!conversationId || !message) {
       return NextResponse.json(
         { error: 'Missing conversationId or message' },
-        { status: 400 }
+        { status: 400 },
       )
     }
 
@@ -30,7 +36,7 @@ export async function POST(request: NextRequest) {
     if (fetchError || !conversation) {
       return NextResponse.json(
         { error: 'Conversation not found' },
-        { status: 404 }
+        { status: 404 },
       )
     }
 
@@ -40,7 +46,7 @@ export async function POST(request: NextRequest) {
       conversation.phone_number,
       message,
       conversation.lead_id,
-      'admin_reply'
+      'admin_reply',
     )
     console.log(`✅ Admin reply sent successfully`)
 
@@ -65,9 +71,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Send reply error:', error)
-    return NextResponse.json(
-      { error: 'Failed to send reply' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to send reply' }, { status: 500 })
   }
 }

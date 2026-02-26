@@ -5,12 +5,18 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '../../../../supabase/server'
+import { getUserWithRole } from '@/lib/auth'
 
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const { user, role } = await getUserWithRole()
+    if (!user || role !== 'admin') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { status } = await request.json()
     const { id: conversationId } = await params
 
@@ -48,6 +54,11 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const { user, role } = await getUserWithRole()
+    if (!user || role !== 'admin') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { id: conversationId } = await params
 
     const supabase = createAdminClient()

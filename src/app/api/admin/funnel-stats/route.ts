@@ -6,12 +6,18 @@
 
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
+import { getUserWithRole } from '@/lib/auth'
 
 const VENDOR_SOURCES = ['NFC Card', 'nfc_card']
 const CONTEST_SOURCES = ['Contest']
 
 export async function GET() {
   try {
+    const { user, role } = await getUserWithRole()
+    if (!user || role !== 'admin') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const supabase = await createAdminClient()
 
     // Conversations by source

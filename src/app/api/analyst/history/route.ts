@@ -1,9 +1,15 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/supabase/server'
+import { getUserWithRole } from '@/lib/auth'
 
 // GET - Fetch conversation history
 export async function GET() {
   try {
+    const { user, role } = await getUserWithRole()
+    if (!user || role !== 'admin') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const supabase = await createClient()
 
     const { data, error } = await supabase
@@ -27,6 +33,11 @@ export async function GET() {
 // DELETE - Clear conversation history
 export async function DELETE() {
   try {
+    const { user, role } = await getUserWithRole()
+    if (!user || role !== 'admin') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const supabase = await createClient()
 
     await supabase

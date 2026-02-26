@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { getUserWithRole } from '@/lib/auth'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -9,6 +10,11 @@ const supabase = createClient(
 // GET - Fetch current phone settings
 export async function GET() {
   try {
+    const { user, role } = await getUserWithRole()
+    if (!user || role !== 'admin') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { data, error } = await supabase
       .from('phone_settings')
       .select('*')
@@ -36,6 +42,11 @@ export async function GET() {
 // PUT - Update phone settings
 export async function PUT(request: NextRequest) {
   try {
+    const { user, role } = await getUserWithRole()
+    if (!user || role !== 'admin') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const body = await request.json()
 
     const {

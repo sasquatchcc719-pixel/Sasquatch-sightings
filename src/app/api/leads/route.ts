@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
+import { getUserWithRole } from '@/lib/auth'
 import { sendOneSignalNotification } from '@/lib/onesignal'
 import { sendAdminSMS } from '@/lib/twilio'
 import { sendRingCentralSMS } from '@/lib/ringcentral'
@@ -36,32 +37,40 @@ function formatPhoneDisplay(phone: string): string {
 function isRingCentralWebhook(body: unknown): boolean {
   if (typeof body !== 'object' || body === null) return false
   const obj = body as Record<string, unknown>
-  return 'event' in obj && 'body' in obj && 'telephonyStatus' in (obj.body as Record<string, unknown>)
+  return (
+    'event' in obj &&
+    'body' in obj &&
+    'telephonyStatus' in (obj.body as Record<string, unknown>)
+  )
 }
 
 /**
  * Parse RingCentral webhook to extract missed call info
  */
-function parseRingCentralMissedCall(body: unknown): { phone: string; name?: string } | null {
+function parseRingCentralMissedCall(
+  body: unknown,
+): { phone: string; name?: string } | null {
   if (typeof body !== 'object' || body === null) return null
-  
+
   const payload = body as Record<string, unknown>
   const webhookBody = payload.body as Record<string, unknown>
-  
+
   // Check if telephonyStatus is "NoCall" (indicating call ended)
   if (webhookBody.telephonyStatus !== 'NoCall') {
     return null
   }
-  
+
   // Check for activeCalls array (may contain call that just ended)
-  const activeCalls = webhookBody.activeCalls as Array<Record<string, unknown>> | undefined
-  
+  const activeCalls = webhookBody.activeCalls as
+    | Array<Record<string, unknown>>
+    | undefined
+
   if (!activeCalls || activeCalls.length === 0) {
     // No active calls means the call ended - check if it was missed
     // This is a simplified check - you may need to track state between webhooks
     return null
   }
-  
+
   // Find inbound call that ended without being answered
   const missedCall = activeCalls.find((call) => {
     return (
@@ -69,9 +78,9 @@ function parseRingCentralMissedCall(body: unknown): { phone: string; name?: stri
       (call.telephonyStatus === 'NoCall' || call.telephonyStatus === 'Ringing')
     )
   })
-  
+
   if (!missedCall) return null
-  
+
   return {
     phone: (missedCall.from as string) || '',
     name: (missedCall.fromName as string) || undefined,
@@ -82,32 +91,35 @@ function parseRingCentralMissedCall(body: unknown): { phone: string; name?: stri
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    
+
     // Check if this is a RingCentral webhook
     if (isRingCentralWebhook(body)) {
-      console.log('RingCentral webhook received:', JSON.stringify(body, null, 2))
-      
+      console.log(
+        'RingCentral webhook received:',
+        JSON.stringify(body, null, 2),
+      )
+
       const missedCallInfo = parseRingCentralMissedCall(body)
-      
+
       if (!missedCallInfo) {
         // Not a missed call event, acknowledge and return
         return NextResponse.json({ success: true, message: 'Event processed' })
       }
-      
+
       // Extract missed call details
       const { phone, name } = missedCallInfo
-      
+
       if (!phone) {
         return NextResponse.json(
           { error: 'No phone number in missed call event' },
-          { status: 400 }
+          { status: 400 },
         )
       }
-      
+
       const normalizedPhone = normalizePhone(phone)
       const displayPhone = formatPhoneDisplay(phone)
       const supabase = createAdminClient()
-      
+
       // Check for duplicate within last 24 hours
       const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
       const { data: existingLead } = await supabase
@@ -117,15 +129,15 @@ export async function POST(request: NextRequest) {
         .eq('source', 'missed_call')
         .gte('created_at', oneDayAgo)
         .single()
-      
+
       if (existingLead) {
         console.log('Duplicate missed call within 24 hours, skipping')
         return NextResponse.json(
           { success: true, message: 'Duplicate call ignored' },
-          { status: 200 }
+          { status: 200 },
         )
       }
-      
+
       // Create lead for missed call
       const { data, error } = await supabase
         .from('leads')
@@ -138,20 +150,20 @@ export async function POST(request: NextRequest) {
         })
         .select()
         .single()
-      
+
       if (error) {
         console.error('Error creating missed call lead:', error)
         return NextResponse.json({ error: error.message }, { status: 500 })
       }
-      
+
       console.log('Missed call lead created:', data.id)
-      
+
       // Send SMS response via RingCentral
       await sendRingCentralSMS(
         normalizedPhone,
-        "Thanks for calling Sasquatch Carpet Cleaning! Sorry we missed you. We'll call you back shortly. Text us anytime at this number!"
+        "Thanks for calling Sasquatch Carpet Cleaning! Sorry we missed you. We'll call you back shortly. Text us anytime at this number!",
       )
-      
+
       // Send notifications to admin about missed call
       // OneSignal (backup - for desktop browser notifications)
       await sendOneSignalNotification({
@@ -168,12 +180,12 @@ export async function POST(request: NextRequest) {
       // Twilio SMS (primary notification method)
       await sendAdminSMS(
         `📞 Missed Call\n${name || 'Unknown'} - ${displayPhone}`,
-        'missed_call'
+        'missed_call',
       )
-      
+
       return NextResponse.json({ success: true, lead: data }, { status: 201 })
     }
-    
+
     // Standard lead creation (from Zapier or manual)
     const { source, name, phone, email, location, notes, partner_id } = body
 
@@ -181,14 +193,20 @@ export async function POST(request: NextRequest) {
     if (!phone) {
       return NextResponse.json(
         { error: 'Phone number is required' },
-        { status: 400 }
+        { status: 400 },
       )
     }
 
-    if (!source || !['contest', 'partner', 'missed_call', 'website'].includes(source)) {
+    if (
+      !source ||
+      !['contest', 'partner', 'missed_call', 'website'].includes(source)
+    ) {
       return NextResponse.json(
-        { error: 'Valid source is required (contest, partner, missed_call, website)' },
-        { status: 400 }
+        {
+          error:
+            'Valid source is required (contest, partner, missed_call, website)',
+        },
+        { status: 400 },
       )
     }
 
@@ -209,7 +227,7 @@ export async function POST(request: NextRequest) {
     if (existingLead) {
       return NextResponse.json(
         { message: 'Duplicate lead within 24 hours', lead_id: existingLead.id },
-        { status: 200 }
+        { status: 200 },
       )
     }
 
@@ -258,7 +276,7 @@ export async function POST(request: NextRequest) {
     // Twilio SMS (primary notification method)
     await sendAdminSMS(
       `🎯 New ${sourceLabel}\n${name || 'Unknown'} - ${formatPhoneDisplay(phone)}`,
-      `lead_${source}`
+      `lead_${source}`,
     )
 
     return NextResponse.json({ success: true, lead: data }, { status: 201 })
@@ -266,7 +284,7 @@ export async function POST(request: NextRequest) {
     console.error('API error:', error)
     return NextResponse.json(
       { error: 'Failed to create lead' },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }
@@ -274,13 +292,18 @@ export async function POST(request: NextRequest) {
 // Update lead (status, notes, etc.)
 export async function PATCH(request: NextRequest) {
   try {
+    const { user, role } = await getUserWithRole()
+    if (!user || role !== 'admin') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const body = await request.json()
     const { id, status, notes, name, email, location } = body
 
     if (!id) {
       return NextResponse.json(
         { error: 'Lead ID is required' },
-        { status: 400 }
+        { status: 400 },
       )
     }
 
@@ -288,13 +311,14 @@ export async function PATCH(request: NextRequest) {
 
     // Build update object with only provided fields
     const updateData: Record<string, unknown> = {}
-    
+
     if (status !== undefined) {
-      if (!['new', 'contacted', 'quoted', 'scheduled', 'won', 'lost'].includes(status)) {
-        return NextResponse.json(
-          { error: 'Invalid status' },
-          { status: 400 }
+      if (
+        !['new', 'contacted', 'quoted', 'scheduled', 'won', 'lost'].includes(
+          status,
         )
+      ) {
+        return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
       }
       updateData.status = status
 
@@ -331,7 +355,7 @@ export async function PATCH(request: NextRequest) {
     console.error('API error:', error)
     return NextResponse.json(
       { error: 'Failed to update lead' },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }
@@ -339,13 +363,18 @@ export async function PATCH(request: NextRequest) {
 // Delete lead
 export async function DELETE(request: NextRequest) {
   try {
+    const { user, role } = await getUserWithRole()
+    if (!user || role !== 'admin') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { searchParams } = new URL(request.url)
     const leadId = searchParams.get('id')
 
     if (!leadId) {
       return NextResponse.json(
         { error: 'Lead ID is required' },
-        { status: 400 }
+        { status: 400 },
       )
     }
 
@@ -370,15 +399,15 @@ export async function DELETE(request: NextRequest) {
         // Fall through to try deleting lead directly
       } else {
         // Sighting deleted successfully, lead was cascade deleted
-        return NextResponse.json({ success: true, message: 'Lead and associated contest entry deleted' })
+        return NextResponse.json({
+          success: true,
+          message: 'Lead and associated contest entry deleted',
+        })
       }
     }
 
     // Delete lead directly (if no sighting or sighting delete failed)
-    const { error } = await supabase
-      .from('leads')
-      .delete()
-      .eq('id', leadId)
+    const { error } = await supabase.from('leads').delete().eq('id', leadId)
 
     if (error) {
       console.error('Error deleting lead:', error)
@@ -390,7 +419,7 @@ export async function DELETE(request: NextRequest) {
     console.error('API error:', error)
     return NextResponse.json(
       { error: 'Failed to delete lead' },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }
@@ -398,11 +427,17 @@ export async function DELETE(request: NextRequest) {
 // Get all leads (for admin dashboard)
 export async function GET() {
   try {
+    const { user, role } = await getUserWithRole()
+    if (!user || role !== 'admin') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const supabase = createAdminClient()
 
     const { data, error } = await supabase
       .from('leads')
-      .select(`
+      .select(
+        `
         *,
         partner:partners(name, company_name),
         sms_logs(
@@ -412,7 +447,8 @@ export async function GET() {
           status,
           sent_at
         )
-      `)
+      `,
+      )
       .order('created_at', { ascending: false })
 
     if (error) {
@@ -425,7 +461,7 @@ export async function GET() {
     console.error('API error:', error)
     return NextResponse.json(
       { error: 'Failed to fetch leads' },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }

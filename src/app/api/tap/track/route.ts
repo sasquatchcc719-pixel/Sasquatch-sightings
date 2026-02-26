@@ -29,8 +29,17 @@ function getDeviceType(userAgent: string): string {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createAdminClient()
     const body = await request.json()
+    const secret = process.env.TAP_TRACK_SECRET
+    if (secret) {
+      const headerSecret = request.headers.get('x-tap-secret')
+      const bodySecret = (body as { tapSecret?: string }).tapSecret
+      if (headerSecret !== secret && bodySecret !== secret) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
+    }
+
+    const supabase = createAdminClient()
     const { cardId, partnerId, action, tapId, buttonType } = body
 
     // Get request metadata

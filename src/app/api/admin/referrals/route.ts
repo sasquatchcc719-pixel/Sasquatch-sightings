@@ -1,16 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
+import { getUserWithRole } from '@/lib/auth'
 import { sendOneSignalNotification } from '@/lib/onesignal'
 import { sendAdminSMS, sendPartnerSMS, sendCustomerSMS } from '@/lib/twilio'
 
 // Delete referral
 export async function DELETE(request: NextRequest) {
   try {
+    const { user, role } = await getUserWithRole()
+    if (!user || role !== 'admin') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { searchParams } = new URL(request.url)
     const referralId = searchParams.get('id')
 
     if (!referralId) {
-      return NextResponse.json({ error: 'Missing referral ID' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'Missing referral ID' },
+        { status: 400 },
+      )
     }
 
     const supabase = createAdminClient()
@@ -28,20 +37,29 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('API error:', error)
-    return NextResponse.json({ error: 'Failed to delete referral' }, { status: 500 })
+    return NextResponse.json(
+      { error: 'Failed to delete referral' },
+      { status: 500 },
+    )
   }
 }
 
 // Update referral status
 export async function PATCH(request: NextRequest) {
   try {
+    const { user, role } = await getUserWithRole()
+    if (!user || role !== 'admin') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const body = await request.json()
-    const { referral_id, status, partner_id, credit_amount, previous_status } = body
+    const { referral_id, status, partner_id, credit_amount, previous_status } =
+      body
 
     if (!referral_id || !status) {
       return NextResponse.json(
         { error: 'Missing required fields' },
-        { status: 400 }
+        { status: 400 },
       )
     }
 
@@ -62,7 +80,10 @@ export async function PATCH(request: NextRequest) {
 
     if (referralError) {
       console.error('Error updating referral:', referralError)
-      return NextResponse.json({ error: referralError.message }, { status: 500 })
+      return NextResponse.json(
+        { error: referralError.message },
+        { status: 500 },
+      )
     }
 
     // Handle credit adjustments
@@ -79,7 +100,7 @@ export async function PATCH(request: NextRequest) {
         // If changing TO converted, ADD credit
         if (status === 'converted' && previous_status !== 'converted') {
           newBalance = partner.credit_balance + credit_amount
-          
+
           // Get referral details for notification
           const { data: referral } = await supabase
             .from('referrals')
@@ -100,7 +121,7 @@ export async function PATCH(request: NextRequest) {
               partner.phone,
               `🎉 Referral Converted!\n${referral.client_name} just booked a job!\nYou earned: $${credit_amount} credit\nYour balance: $${newBalance.toFixed(2)}\nTotal referrals: ${count || 1}\n- Sasquatch Carpet Cleaning`,
               partner_id,
-              'partner_credit'
+              'partner_credit',
             )
           }
         }
@@ -121,58 +142,70 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('API error:', error)
-    return NextResponse.json({ error: 'Failed to update referral' }, { status: 500 })
+    return NextResponse.json(
+      { error: 'Failed to update referral' },
+      { status: 500 },
+    )
   }
 }
 
 // Add new referral
 export async function POST(request: NextRequest) {
   try {
+    const { user, role } = await getUserWithRole()
+    if (!user || role !== 'admin') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const body = await request.json()
     const { partner_id, client_name, client_phone, notes, credit_amount } = body
 
     if (!partner_id || !client_name || !client_phone) {
       return NextResponse.json(
         { error: 'Missing required fields' },
-        { status: 400 }
+        { status: 400 },
       )
     }
 
     // Use admin client to bypass RLS
     const supabase = createAdminClient()
 
-    const { data, error } = await supabase.from('referrals').insert({
-      partner_id,
-      client_name,
-      client_phone,
-      notes: notes || null,
-      status: 'pending',
-      credit_amount: credit_amount || 20,
-      booked_via_link: false,
-    }).select()
+    const { data, error } = await supabase
+      .from('referrals')
+      .insert({
+        partner_id,
+        client_name,
+        client_phone,
+        notes: notes || null,
+        status: 'pending',
+        credit_amount: credit_amount || 20,
+        booked_via_link: false,
+      })
+      .select()
 
     if (error) {
       console.error('Error adding referral:', error)
-      return NextResponse.json(
-        { error: error.message },
-        { status: 500 }
-      )
+      return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
     // Also add to leads table for unified lead tracking
     let leadId: string | undefined
     try {
       const now = new Date().toISOString()
-      const { data: leadData, error: leadInsertError } = await supabase.from('leads').insert({
-        source: 'partner',
-        name: client_name,
-        phone: client_phone,
-        notes: notes || null,
-        partner_id: partner_id,
-        status: 'contacted', // Auto-set to contacted since they receive SMS
-        contacted_at: now, // Set timestamp for contacted status
-      }).select('id').single()
-      
+      const { data: leadData, error: leadInsertError } = await supabase
+        .from('leads')
+        .insert({
+          source: 'partner',
+          name: client_name,
+          phone: client_phone,
+          notes: notes || null,
+          partner_id: partner_id,
+          status: 'contacted', // Auto-set to contacted since they receive SMS
+          contacted_at: now, // Set timestamp for contacted status
+        })
+        .select('id')
+        .single()
+
       if (leadInsertError) {
         console.error('Lead insert error:', leadInsertError)
       } else if (leadData) {
@@ -207,7 +240,7 @@ export async function POST(request: NextRequest) {
     // Twilio SMS to admin (primary notification)
     await sendAdminSMS(
       `🤝 New Partner Referral\n${client_name} - ${client_phone}\nReferred by: ${partner?.name || 'Unknown partner'}`,
-      'partner_referral_admin'
+      'partner_referral_admin',
     )
 
     // Twilio SMS to partner (notify them they got a referral!)
@@ -216,7 +249,7 @@ export async function POST(request: NextRequest) {
         partner.phone,
         `🎉 New Referral!\n${client_name} mentioned you as their preferred partner.\nWe'll be in touch soon!\n- Sasquatch Carpet Cleaning`,
         partner_id,
-        'partner_new_referral'
+        'partner_new_referral',
       )
     }
 
@@ -225,7 +258,7 @@ export async function POST(request: NextRequest) {
       client_phone,
       `Thanks for reaching out! ${partner?.name || 'Your partner'} recommended us.\nBook now or we'll call you within 24 hours:\nhttps://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true\n- Sasquatch Carpet Cleaning\n(719) 249-8791`,
       leadId,
-      'partner_referral'
+      'partner_referral',
     )
 
     return NextResponse.json({ success: true, data })
@@ -233,7 +266,7 @@ export async function POST(request: NextRequest) {
     console.error('API error:', error)
     return NextResponse.json(
       { error: 'Failed to add referral' },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }

@@ -8,9 +8,15 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
+import { getUserWithRole } from '@/lib/auth'
 
 export async function PUT(request: NextRequest) {
   try {
+    const { user, role } = await getUserWithRole()
+    if (!user || role !== 'admin') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const supabase = await createAdminClient()
     const body = await request.json()
     const {
@@ -77,6 +83,11 @@ export async function PUT(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    const { user, role } = await getUserWithRole()
+    if (!user || role !== 'admin') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const supabase = await createAdminClient()
     const { searchParams } = new URL(request.url)
     const partnerId = searchParams.get('id')
@@ -107,6 +118,11 @@ export async function DELETE(request: NextRequest) {
 
 export async function GET() {
   try {
+    const { user, role } = await getUserWithRole()
+    if (!user || role !== 'admin') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const supabase = await createAdminClient()
 
     const { data, error } = await supabase
@@ -132,6 +148,11 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const { user, role } = await getUserWithRole()
+    if (!user || role !== 'admin') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const supabase = await createAdminClient()
     const body = await request.json()
 

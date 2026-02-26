@@ -10,11 +10,17 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
+import { getUserWithRole } from '@/lib/auth'
 
 const CREDIT_PERCENTAGE = 0.01 // 1% of job value
 
 export async function POST(request: NextRequest) {
   try {
+    const { user, role } = await getUserWithRole()
+    if (!user || role !== 'admin') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const supabase = await createAdminClient()
     const body = await request.json()
     const { tapId, partnerId, jobAmount } = body

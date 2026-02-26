@@ -15,8 +15,16 @@ const DEFAULT_SETTINGS = {
   hiring_consecutive_weeks: 4,
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const secret = process.env.STATS_PUBLIC_SECRET
+    if (secret) {
+      const headerSecret = request.headers.get('x-stats-secret')
+      if (headerSecret !== secret) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
+    }
+
     const supabase = createAdminClient()
 
     // Get first user's settings (single-tenant: one business). Use maybeSingle() so

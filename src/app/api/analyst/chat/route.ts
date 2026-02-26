@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
+import { getUserWithRole } from '@/lib/auth'
 import { searchGoogle } from '@/lib/web-search'
 import { getPriceBookSummary } from '@/lib/price-book'
 import Anthropic from '@anthropic-ai/sdk'
@@ -271,6 +272,11 @@ CURRENT BUSINESS STATS:
 
 export async function POST(request: NextRequest) {
   try {
+    const { user, role } = await getUserWithRole()
+    if (!user || role !== 'admin') {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const body = await request.json()
     const { message } = body
 
