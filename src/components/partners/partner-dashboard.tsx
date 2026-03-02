@@ -201,33 +201,33 @@ export function PartnerDashboard({
     setSubmitError(null)
     setSubmitSuccess(false)
 
-    const supabase = createClient()
-
     try {
-      const creditAmount = partner.backlink_verified ? 25 : 20
-
-      const { error } = await supabase.from('referrals').insert({
-        partner_id: partner.id,
-        client_name: clientName,
-        client_phone: clientPhone,
-        notes: notes || null,
-        status: 'pending',
-        credit_amount: creditAmount,
-        booked_via_link: false,
+      const res = await fetch('/api/partners/referrals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_name: clientName,
+          client_phone: clientPhone,
+          notes: notes || null,
+          booked_via_link: false,
+        }),
       })
+      const data = await res.json()
 
-      if (error) throw error
+      if (!res.ok) throw new Error(data.error || 'Failed to submit referral')
 
       setSubmitSuccess(true)
       setClientName('')
       setClientPhone('')
       setNotes('')
-
-      // Refresh the page to show new referral
       router.refresh()
     } catch (error) {
       console.error('Error submitting referral:', error)
-      setSubmitError('Failed to submit referral. Please try again.')
+      setSubmitError(
+        error instanceof Error
+          ? error.message
+          : 'Failed to submit referral. Please try again.',
+      )
     } finally {
       setIsSubmitting(false)
     }
@@ -243,49 +243,33 @@ export function PartnerDashboard({
     setIsSubmitting(true)
     setSubmitError(null)
 
-    const supabase = createClient()
-
     try {
-      const creditAmount = partner.backlink_verified ? 25 : 20
-
-      // Create referral with booked status
-      const { error } = await supabase.from('referrals').insert({
-        partner_id: partner.id,
-        client_name: clientName,
-        client_phone: clientPhone,
-        notes: notes || null,
-        status: 'booked',
-        credit_amount: creditAmount,
-        booked_via_link: true,
+      const res = await fetch('/api/partners/referrals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_name: clientName,
+          client_phone: clientPhone,
+          notes: notes || null,
+          booked_via_link: true,
+        }),
       })
+      const data = await res.json()
 
-      if (error) throw error
+      if (!res.ok) throw new Error(data.error || 'Failed to create booking')
 
-      // Add credit to partner balance
-      const { error: balanceError } = await supabase
-        .from('partners')
-        .update({ credit_balance: partner.credit_balance + creditAmount })
-        .eq('id', partner.id)
-
-      if (balanceError) {
-        console.error('Error updating balance:', balanceError)
-      }
-
-      // Open Sasquatch booking (Housecall Pro) in new tab
       window.open('/book', '_blank')
-
       setClientName('')
       setClientPhone('')
       setNotes('')
       router.refresh()
     } catch (error: unknown) {
       console.error('Error booking for client:', error)
-      const err = error as { message?: string; details?: string } | null
-      const message =
-        err?.message ||
-        (err?.details ? `Booking failed: ${err.details}` : null) ||
-        'Failed to create booking. Please try again.'
-      setSubmitError(message)
+      setSubmitError(
+        error instanceof Error
+          ? error.message
+          : 'Failed to create booking. Please try again.',
+      )
     } finally {
       setIsSubmitting(false)
     }

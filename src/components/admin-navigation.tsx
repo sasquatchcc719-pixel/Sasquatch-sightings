@@ -461,21 +461,6 @@ export function AdminNavigation() {
                       Partner Pages
                     </div>
                     <a
-                      href="/admin/partners/demo"
-                      onClick={closeAll}
-                      className="flex items-center gap-3 rounded-lg px-3 py-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white"
-                    >
-                      <Users className="h-4 w-4 text-purple-400" />
-                      <div>
-                        <div className="text-sm font-medium">
-                          Partner Dashboard (Demo)
-                        </div>
-                        <div className="text-xs text-white/50">
-                          Preview partner portal with sample data
-                        </div>
-                      </div>
-                    </a>
-                    <a
                       href="/partners/register"
                       target="_blank"
                       rel="noopener noreferrer"

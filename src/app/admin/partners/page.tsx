@@ -60,11 +60,21 @@ export default async function AdminPartnersPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Partner Management</h1>
-        <p className="text-muted-foreground">
-          Manage partners and their referrals
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold">Partner Management</h1>
+          <p className="text-muted-foreground">
+            Manage partners and their referrals
+          </p>
+        </div>
+        <a
+          href="/admin/partners/demo"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-muted-foreground hover:text-foreground text-sm underline"
+        >
+          Preview partner dashboard (demo)
+        </a>
       </div>
 
       <AdminPartnersView

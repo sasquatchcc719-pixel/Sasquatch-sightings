@@ -35,7 +35,14 @@ export async function POST(request: NextRequest) {
     const gpsLat = formData.get('gpsLat') as string | null
     const gpsLng = formData.get('gpsLng') as string | null
     const partnerId = formData.get('partnerId') as string | null
-    const smsConsent = formData.get('smsConsent') === 'true'
+    const smsConsentRaw = formData.get('smsConsent')
+    const smsConsent = smsConsentRaw === 'true'
+    console.log(
+      '[Contest] smsConsent form value:',
+      smsConsentRaw,
+      '→',
+      smsConsent,
+    )
 
     // Validate required fields (image is now optional)
     if (!fullName || !phoneNumber || !email) {
@@ -275,11 +282,19 @@ export async function POST(request: NextRequest) {
     const welcomeMessage = `Thanks for entering the Sasquatch contest! 🦶\nBook your carpet cleaning now and get $20 off:\nhttps://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true\nUse coupon: SCC20 (add to notes when booking)\nQuestions? Call (719) 249-8791`
 
     if (smsConsent) {
+      console.log(
+        '[Contest] SMS consent true, sending welcome SMS to',
+        phoneNumber,
+      )
       await sendCustomerSMS(
         phoneNumber,
         welcomeMessage,
         leadId,
         'contest_entry',
+      )
+    } else {
+      console.log(
+        '[Contest] SMS consent false or missing, skipping welcome SMS',
       )
     }
 

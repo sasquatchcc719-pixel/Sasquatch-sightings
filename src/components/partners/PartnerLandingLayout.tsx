@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { RecentJobsCarousel } from '@/components/nfc/recent-jobs-carousel'
 import { VideoBackground } from '@/components/public/VideoBackground'
+import { CONTEST_SMS_NUMBER } from '@/lib/phone'
 
 export interface PartnerInfo {
   id: string
@@ -254,8 +255,7 @@ END:VCARD`
             <Button
               className="w-full bg-amber-600 hover:bg-amber-700"
               onClick={() =>
-                (window.location.href =
-                  'sms:719-249-8791?body=Hi! I want to use my partner credits toward a cleaning.')
+                (window.location.href = `sms:${CONTEST_SMS_NUMBER.replace(/-/g, '')}?body=Hi! I want to use my partner credits toward a cleaning.`)
               }
             >
               Text to Schedule & Use Credits

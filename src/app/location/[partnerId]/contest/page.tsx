@@ -29,6 +29,7 @@ import {
   Share2,
   ExternalLink,
   CheckCircle,
+  MessageSquare,
 } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -37,6 +38,7 @@ import {
   getCurrentLocation,
   type GpsCoordinates,
 } from '@/lib/image-utils'
+import { CONTEST_SMS_NUMBER } from '@/lib/phone'
 
 // Form validation schema
 const sightingFormSchema = z.object({
@@ -471,10 +473,36 @@ export default function VendorContestPage() {
             </div>
           </div>
 
+          {/* Text us – start SMS conversation with Harry (contest flow) */}
+          <div className="mb-6 space-y-3 rounded-lg border-2 border-green-500 bg-green-50 p-4 dark:border-green-600 dark:bg-green-950/30">
+            <p className="text-center text-sm font-semibold text-green-900 dark:text-green-100">
+              Text us to book or ask questions
+            </p>
+            <p className="text-center text-xs text-green-800 dark:text-green-200">
+              If we just texted you, reply to that message. Or tap below to
+              start a conversation—we&apos;ll help you schedule and answer
+              questions.
+            </p>
+            <Button
+              size="lg"
+              className="w-full border-2 border-green-600 bg-green-600 hover:bg-green-700 dark:border-green-500 dark:bg-green-600 dark:hover:bg-green-700"
+              asChild
+            >
+              <a
+                href={`sms:${CONTEST_SMS_NUMBER.replace(/-/g, '')}?body=${encodeURIComponent(
+                  `I just entered the Sasquatch contest and have my $20 off code (${couponCode}). I'd like to book a cleaning!`,
+                )}`}
+              >
+                <MessageSquare className="mr-2 h-5 w-5" />
+                Text Us
+              </a>
+            </Button>
+          </div>
+
           {/* Book Now Section */}
           <div className="bg-muted/30 mb-6 space-y-3 rounded-lg border p-4">
             <p className="text-center text-sm font-semibold">
-              Ready to use your $20 off?
+              Or book online now
             </p>
             <Button
               size="lg"

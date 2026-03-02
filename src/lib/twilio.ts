@@ -50,7 +50,10 @@ async function logSMS(params: {
 /**
  * Send SMS to admin (Chuck) for new leads/events
  */
-export async function sendAdminSMS(message: string, messageType: string = 'admin_alert'): Promise<void> {
+export async function sendAdminSMS(
+  message: string,
+  messageType: string = 'admin_alert',
+): Promise<void> {
   if (!client || !twilioPhone || !adminPhone) {
     console.warn('Twilio credentials not configured, skipping SMS')
     return
@@ -63,7 +66,7 @@ export async function sendAdminSMS(message: string, messageType: string = 'admin
       to: adminPhone,
     })
     console.log('Admin SMS sent successfully:', result.sid)
-    
+
     // Log the SMS
     await logSMS({
       recipientPhone: adminPhone,
@@ -73,7 +76,7 @@ export async function sendAdminSMS(message: string, messageType: string = 'admin
     })
   } catch (error) {
     console.error('Failed to send admin SMS:', error)
-    
+
     // Log the failure
     await logSMS({
       recipientPhone: adminPhone,
@@ -91,7 +94,7 @@ export async function sendPartnerSMS(
   partnerPhone: string,
   message: string,
   partnerId?: string,
-  messageType: string = 'partner_notification'
+  messageType: string = 'partner_notification',
 ): Promise<void> {
   if (!client || !twilioPhone) {
     console.warn('Twilio credentials not configured, skipping SMS')
@@ -105,7 +108,7 @@ export async function sendPartnerSMS(
       to: partnerPhone,
     })
     console.log(`Partner SMS sent successfully to ${partnerPhone}:`, result.sid)
-    
+
     // Log the SMS
     await logSMS({
       partnerId,
@@ -116,7 +119,7 @@ export async function sendPartnerSMS(
     })
   } catch (error) {
     console.error(`Failed to send partner SMS to ${partnerPhone}:`, error)
-    
+
     // Log the failure
     await logSMS({
       partnerId,
@@ -128,6 +131,14 @@ export async function sendPartnerSMS(
   }
 }
 
+/** Normalize US phone to E.164 for Twilio */
+function toE164(phone: string): string {
+  const digits = phone.replace(/\D/g, '')
+  if (digits.length === 10) return `+1${digits}`
+  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`
+  return phone.startsWith('+') ? phone : `+${digits}`
+}
+
 /**
  * Send SMS to customer (contest entries, referrals, nurture sequences)
  */
@@ -135,43 +146,49 @@ export async function sendCustomerSMS(
   customerPhone: string,
   message: string,
   leadId?: string,
-  messageType: string = 'customer_notification'
+  messageType: string = 'customer_notification',
 ): Promise<void> {
   if (!client || !twilioPhone) {
-    console.warn('Twilio credentials not configured, skipping SMS')
+    console.warn(
+      'Twilio credentials not configured, skipping SMS. SID:',
+      !!accountSid,
+      'Token:',
+      !!authToken,
+      'From:',
+      !!twilioPhone,
+    )
     return
   }
 
+  const toPhone = toE164(customerPhone)
   try {
-    console.log(`📤 SENDING SMS:`)
-    console.log(`   From: ${twilioPhone}`)
-    console.log(`   To: ${customerPhone}`)
+    console.log(`📤 SENDING SMS: From=${twilioPhone} To=${toPhone}`)
     console.log(`   Message: ${message.substring(0, 50)}...`)
-    
+
     const result = await client.messages.create({
       body: message,
       from: twilioPhone,
-      to: customerPhone,
+      to: toPhone,
     })
-    console.log(`✅ Customer SMS sent successfully to ${customerPhone}`)
-    console.log(`   Twilio SID: ${result.sid}`)
-    console.log(`   Status: ${result.status}`)
-    
+    console.log(
+      `✅ Customer SMS sent successfully to ${toPhone} SID=${result.sid}`,
+    )
+
     // Log the SMS
     await logSMS({
       leadId,
-      recipientPhone: customerPhone,
+      recipientPhone: toPhone,
       messageType,
       messageContent: message,
       twilioSid: result.sid,
     })
   } catch (error) {
-    console.error(`Failed to send customer SMS to ${customerPhone}:`, error)
-    
+    console.error(`Failed to send customer SMS to ${toPhone}:`, error)
+
     // Log the failure
     await logSMS({
       leadId,
-      recipientPhone: customerPhone,
+      recipientPhone: toPhone,
       messageType,
       messageContent: message,
       status: 'failed',
