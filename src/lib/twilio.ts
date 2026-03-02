@@ -140,13 +140,15 @@ function toE164(phone: string): string {
 }
 
 /**
- * Send SMS to customer (contest entries, referrals, nurture sequences)
+ * Send SMS to customer (contest entries, referrals, nurture sequences).
+ * Optional fromNumber: use when replying to inbound so the reply comes from the number they texted (keeps thread on 866 vs 719).
  */
 export async function sendCustomerSMS(
   customerPhone: string,
   message: string,
   leadId?: string,
   messageType: string = 'customer_notification',
+  fromNumber?: string,
 ): Promise<void> {
   if (!client || !twilioPhone) {
     console.warn(
@@ -161,13 +163,14 @@ export async function sendCustomerSMS(
   }
 
   const toPhone = toE164(customerPhone)
+  const from = fromNumber ? toE164(fromNumber) : twilioPhone
   try {
-    console.log(`📤 SENDING SMS: From=${twilioPhone} To=${toPhone}`)
+    console.log(`📤 SENDING SMS: From=${from} To=${toPhone}`)
     console.log(`   Message: ${message.substring(0, 50)}...`)
 
     const result = await client.messages.create({
       body: message,
-      from: twilioPhone,
+      from: from,
       to: toPhone,
     })
     console.log(

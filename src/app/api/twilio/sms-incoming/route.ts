@@ -241,6 +241,7 @@ export async function POST(request: NextRequest) {
     // Parse Twilio webhook data (form-encoded)
     const formData = await request.formData()
     const fromPhone = formData.get('From') as string
+    const toNumber = formData.get('To') as string // number they texted (866 vs 719) – reply from this so thread stays correct
     const messageBody = formData.get('Body') as string
     const twilioSid = formData.get('MessageSid') as string
 
@@ -533,12 +534,13 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Send AI response via Twilio
+      // Send AI response from the same number they texted (866 vs 719) so reply appears in the right thread
       await sendCustomerSMS(
         normalizedPhone,
         aiResponse,
         conversation.lead_id || undefined,
         'ai_dispatcher',
+        toNumber || undefined,
       )
 
       // Notify admin if escalated
