@@ -37,7 +37,7 @@ import {
   getCurrentLocation,
   type GpsCoordinates,
 } from '@/lib/image-utils'
-import { CONTEST_SMS_NUMBER } from '@/lib/phone'
+import { CONTEST_SMS_NUMBER, CONTEST_SMS_NUMBER_E164 } from '@/lib/phone'
 
 // Form validation schema
 const sightingFormSchema = z.object({
@@ -487,7 +487,7 @@ export default function SightingsPage() {
               asChild
             >
               <a
-                href={`sms:${CONTEST_SMS_NUMBER.replace(/-/g, '')}?body=${encodeURIComponent(
+                href={`sms:${CONTEST_SMS_NUMBER_E164}?body=${encodeURIComponent(
                   `I just entered the Sasquatch contest and have my $20 off code (${couponCode}). I'd like to book a cleaning!`,
                 )}`}
               >
