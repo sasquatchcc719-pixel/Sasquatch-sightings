@@ -43,7 +43,7 @@ function extractCustomerInfo(
     serviceNeeded: null,
   }
 
-  // Get all user messages
+  // Only use USER messages (not assistant/bot) so we never treat the bot's text as customer info
   const userMessages = messages
     .filter((m) => m.role === 'user')
     .map((m) => m.content)
@@ -486,7 +486,7 @@ export async function POST(request: NextRequest) {
       }
 
       // HARD GATE: Never send the booking link without name, email, and address.
-      // The model sometimes sends the link anyway; enforce in code so we always collect first.
+      // Extraction uses only USER messages (not the bot's), so "name given early" is from their own texts.
       const BOOKING_LINK_MARKER = 'sightings.sasquatchcarpet.com/book'
       const extractedInfo = extractCustomerInfo(messages)
       const hasRequiredInfo =
@@ -499,7 +499,7 @@ export async function POST(request: NextRequest) {
         aiResponse =
           "To get you on the calendar I need your name, email, and address. What's your name?"
         console.log(
-          `[SMS] Booking link blocked: missing ${missing.join(', ')}. Sent info request instead.`,
+          `[SMS] Booking link blocked: missing ${missing.join(', ')}. Extracted: name=${extractedInfo.name ?? 'null'}, email=${extractedInfo.email ? '***' : 'null'}, address=${extractedInfo.address ?? 'null'}. Sent info request instead.`,
         )
       }
 
