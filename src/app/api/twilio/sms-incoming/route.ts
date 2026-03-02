@@ -485,21 +485,30 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      // HARD GATE: Never send the booking link without name, email, and address.
+      // HARD GATE: Never send the booking link without first+last name, email, and full address (street + zip).
       // Extraction uses only USER messages (not the bot's), so "name given early" is from their own texts.
       const BOOKING_LINK_MARKER = 'sightings.sasquatchcarpet.com/book'
       const extractedInfo = extractCustomerInfo(messages)
+      const hasFullName =
+        extractedInfo.name && extractedInfo.name.trim().split(/\s+/).length >= 2
+      const hasFullAddress = extractedInfo.address && extractedInfo.zipCode
       const hasRequiredInfo =
-        extractedInfo.name && extractedInfo.address && extractedInfo.email
+        hasFullName && hasFullAddress && extractedInfo.email
       if (aiResponse.includes(BOOKING_LINK_MARKER) && !hasRequiredInfo) {
         const missing: string[] = []
-        if (!extractedInfo.name) missing.push('name')
+        if (!hasFullName)
+          missing.push(extractedInfo.name ? 'last name' : 'first and last name')
         if (!extractedInfo.email) missing.push('email')
-        if (!extractedInfo.address) missing.push('address')
+        if (!hasFullAddress)
+          missing.push(
+            extractedInfo.address
+              ? 'city and zip'
+              : 'full address including city and zip',
+          )
         aiResponse =
-          "To get you on the calendar I need your name, email, and address. What's your name?"
+          "To get you on the calendar I need your first and last name, email, and full address (street, city, and zip). What's your full name?"
         console.log(
-          `[SMS] Booking link blocked: missing ${missing.join(', ')}. Extracted: name=${extractedInfo.name ?? 'null'}, email=${extractedInfo.email ? '***' : 'null'}, address=${extractedInfo.address ?? 'null'}. Sent info request instead.`,
+          `[SMS] Booking link blocked: missing ${missing.join(', ')}. Extracted: name=${extractedInfo.name ?? 'null'}, email=${extractedInfo.email ? '***' : 'null'}, address=${extractedInfo.address ?? 'null'}, zip=${extractedInfo.zipCode ?? 'null'}. Sent info request instead.`,
         )
       }
 
@@ -524,13 +533,17 @@ export async function POST(request: NextRequest) {
         .eq('id', conversation.id)
 
       // Check if we should create a lead (has enough info and no lead exists yet)
-      // Required: name + address + email (phone is already known from SMS)
+      // Required: first+last name, full address (street + zip), email (same as booking-link gate)
       if (!conversation.lead_id) {
-        // Create lead only when we have all required info
-        const hasRequiredInfo =
-          extractedInfo.name && extractedInfo.address && extractedInfo.email
+        const hasFullNameForLead =
+          extractedInfo.name &&
+          extractedInfo.name.trim().split(/\s+/).length >= 2
+        const hasFullAddressForLead =
+          extractedInfo.address && extractedInfo.zipCode
+        const hasRequiredInfoForLead =
+          hasFullNameForLead && hasFullAddressForLead && extractedInfo.email
 
-        if (hasRequiredInfo) {
+        if (hasRequiredInfoForLead) {
           const leadNotes = [
             extractedInfo.serviceNeeded
               ? `Service: ${extractedInfo.serviceNeeded}`
