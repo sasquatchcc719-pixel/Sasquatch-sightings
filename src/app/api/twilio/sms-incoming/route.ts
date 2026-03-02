@@ -258,7 +258,6 @@ export async function POST(request: NextRequest) {
     )
     console.log(`📱 Message: "${messageBody}"`)
 
-    // Send email notification to SasquatchcC719@gmail.com
     const timestamp = new Date().toLocaleString('en-US', {
       timeZone: 'America/Denver',
       weekday: 'short',
@@ -269,37 +268,55 @@ export async function POST(request: NextRequest) {
       hour12: true,
     })
 
-    try {
-      await resend.emails.send({
-        from: 'Sasquatch SMS <onboarding@resend.dev>',
-        to: 'sasquatchcc719@gmail.com',
-        subject: `📱 New SMS from ${normalizedPhone}`,
-        html: `
+    function escapeHtml(s: string): string {
+      return s
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+    }
+
+    async function sendInboundEmail(aiReply: string | null) {
+      const safeBody = escapeHtml(messageBody)
+      const safeReply = aiReply ? escapeHtml(aiReply) : ''
+      try {
+        await resend.emails.send({
+          from: 'Sasquatch SMS <onboarding@resend.dev>',
+          to: 'sasquatchcc719@gmail.com',
+          subject: `📱 New SMS from ${normalizedPhone}`,
+          html: `
           <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #166534;">New Text Message Received</h2>
-            
             <div style="background: #f0fdf4; border-radius: 8px; padding: 16px; margin: 16px 0;">
               <p style="margin: 0 0 8px 0;"><strong>📞 From:</strong> <a href="tel:${normalizedPhone}">${normalizedPhone}</a></p>
               <p style="margin: 0;"><strong>🕐 Time:</strong> ${timestamp}</p>
             </div>
-            
-            <h3 style="color: #166534;">Message Content</h3>
+            <h3 style="color: #166534;">Customer said</h3>
             <div style="background: #f3f4f6; border-radius: 8px; padding: 16px; margin: 16px 0;">
-              <p style="margin: 0; white-space: pre-wrap;">${messageBody}</p>
+              <p style="margin: 0; white-space: pre-wrap;">${safeBody}</p>
             </div>
-            
+            ${
+              safeReply
+                ? `
+            <h3 style="color: #166534;">Harry replied</h3>
+            <div style="background: #ecfdf5; border-radius: 8px; padding: 16px; margin: 16px 0;">
+              <p style="margin: 0; white-space: pre-wrap;">${safeReply}</p>
+            </div>
+            `
+                : `
+            <p style="color: #6b7280; font-size: 14px;">AI did not respond (disabled or error). Manual response may be needed.</p>
+            `
+            }
             <p style="color: #6b7280; font-size: 14px;">
-              This message has been processed by the AI dispatcher.
-              <br/>
               View in admin: <a href="https://sightings.sasquatchcarpet.com/admin/conversations?source=inbound">Conversations</a>
             </p>
           </div>
         `,
-      })
-      console.log('📧 Email notification sent to SasquatchcC719@gmail.com')
-    } catch (emailError) {
-      console.error('❌ Failed to send email notification:', emailError)
-      // Don't block the request if email fails
+        })
+        console.log('📧 Email notification sent to sasquatchcc719@gmail.com')
+      } catch (emailError) {
+        console.error('❌ Failed to send email notification:', emailError)
+      }
     }
 
     const supabase = createAdminClient()
@@ -420,6 +437,8 @@ export async function POST(request: NextRequest) {
         'ai_dispatcher_inbound',
       )
 
+      await sendInboundEmail(null)
+
       return new NextResponse(
         '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
         {
@@ -457,6 +476,7 @@ export async function POST(request: NextRequest) {
           .from('conversations')
           .update({ messages })
           .eq('id', conversation.id)
+        await sendInboundEmail(null)
         return new NextResponse(
           '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
           {
@@ -543,6 +563,8 @@ export async function POST(request: NextRequest) {
         toNumber || undefined,
       )
 
+      await sendInboundEmail(aiResponse)
+
       // Notify admin if escalated
       if (needsEscalation) {
         await sendAdminSMS(
@@ -572,6 +594,8 @@ export async function POST(request: NextRequest) {
         `⚠️ AI Dispatcher Error!\nPhone: ${normalizedPhone}\nMessage: "${messageBody}"\n\nError: ${aiError}\n\nPlease respond manually.`,
         'ai_dispatcher_error',
       )
+
+      await sendInboundEmail(null)
     }
 
     // Return empty TwiML (we already sent response via sendCustomerSMS)
