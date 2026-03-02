@@ -485,6 +485,24 @@ export async function POST(request: NextRequest) {
         )
       }
 
+      // HARD GATE: Never send the booking link without name, email, and address.
+      // The model sometimes sends the link anyway; enforce in code so we always collect first.
+      const BOOKING_LINK_MARKER = 'sightings.sasquatchcarpet.com/book'
+      const extractedInfo = extractCustomerInfo(messages)
+      const hasRequiredInfo =
+        extractedInfo.name && extractedInfo.address && extractedInfo.email
+      if (aiResponse.includes(BOOKING_LINK_MARKER) && !hasRequiredInfo) {
+        const missing: string[] = []
+        if (!extractedInfo.name) missing.push('name')
+        if (!extractedInfo.email) missing.push('email')
+        if (!extractedInfo.address) missing.push('address')
+        aiResponse =
+          "To get you on the calendar I need your name, email, and address. What's your name?"
+        console.log(
+          `[SMS] Booking link blocked: missing ${missing.join(', ')}. Sent info request instead.`,
+        )
+      }
+
       // Add AI response to conversation
       messages.push({
         role: 'assistant',
@@ -508,8 +526,6 @@ export async function POST(request: NextRequest) {
       // Check if we should create a lead (has enough info and no lead exists yet)
       // Required: name + address + email (phone is already known from SMS)
       if (!conversation.lead_id) {
-        const extractedInfo = extractCustomerInfo(messages)
-
         // Create lead only when we have all required info
         const hasRequiredInfo =
           extractedInfo.name && extractedInfo.address && extractedInfo.email
