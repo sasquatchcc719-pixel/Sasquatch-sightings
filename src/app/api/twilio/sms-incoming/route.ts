@@ -505,8 +505,22 @@ export async function POST(request: NextRequest) {
               ? 'city and zip'
               : 'full address including city and zip',
           )
-        aiResponse =
-          "To get you on the calendar I need your first and last name, email, and full address (street, city, and zip). What's your full name?"
+        // Ask only for what's missing so we don't repeat "give me everything" when we already have most of it
+        if (!hasFullName && !extractedInfo.name) {
+          aiResponse =
+            "To get you on the calendar I need your first and last name, email, and full address (street, city, and zip). What's your full name?"
+        } else if (!hasFullName && extractedInfo.name) {
+          aiResponse = "What's your last name?"
+        } else if (!extractedInfo.email) {
+          aiResponse = "What's your email so we can send confirmation?"
+        } else if (!extractedInfo.address) {
+          aiResponse = "What's your full address (street, city, and zip)?"
+        } else if (!extractedInfo.zipCode) {
+          aiResponse = "What's your zip code?"
+        } else {
+          aiResponse =
+            "To get you on the calendar I need your first and last name, email, and full address (street, city, and zip). What's your full name?"
+        }
         console.log(
           `[SMS] Booking link blocked: missing ${missing.join(', ')}. Extracted: name=${extractedInfo.name ?? 'null'}, email=${extractedInfo.email ? '***' : 'null'}, address=${extractedInfo.address ?? 'null'}, zip=${extractedInfo.zipCode ?? 'null'}. Sent info request instead.`,
         )
