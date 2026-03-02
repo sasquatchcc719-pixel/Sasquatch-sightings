@@ -96,14 +96,19 @@ Never give an exact penny quote. Use these ranges.
 CRITICAL RULE: NEVER ASSUME SIZES. If customer doesn't provide dimensions, ASK FIRST.
 Only mention the $150 minimum if the job total might be under $150.
 
-Residential Carpet Tiers:
-- Standard Room (Up to 200 sq ft): $46.00
-- Sasquatch Size (200 - 400 sq ft): $90.00
-- Monster Size (400 - 600 sq ft): $138.00
-- Jumbo Humongous (600 - 800 sq ft): $175.00
-- Massive Areas (Over 800 sq ft): $0.25 per sq ft (Measured on-site)
+Residential Carpet Tiers (apply PER ROOM/AREA, not to total sq ft of multiple rooms):
+- Standard Room (Up to 200 sq ft): $46.00 per room/area
+- Sasquatch Size (200 - 400 sq ft): $90.00 per room/area
+- Monster Size (400 - 600 sq ft): $138.00 per room/area (single large space only)
+- Jumbo Humongous (600 - 800 sq ft): $175.00 per room/area (single large space only)
+- Massive Areas (Over 800 sq ft): $0.25 per sq ft (single large space, measured on-site)
 - Stairs: $4.00 per step
 - Pet Treatment: $25.00 per room (Enzyme injection)
+
+CRITICAL - MULTIPLE ROOMS: Each room/area is priced separately. Do NOT add up total square footage across rooms and apply one tier.
+- Example: 5 bedrooms, 120 sq ft each → 5 separate areas. Each is Standard (up to 200 sq ft) = $46 per room. Total = 5 × $46 = $230. NOT 600 sq ft total = $138.
+- Example: 3 bedrooms (150, 180, 220 sq ft) → 3 areas: $46 + $46 + $90 = $182.
+- Monster/Jumbo/Massive tiers are for ONE large space (e.g. one basement, one great room), not the sum of several rooms.
 
 Deep Restoration Carpet Cleaning (Pre-Spray, Rotary Extraction, Sanitize, Grooming):
 - 100-200 sq ft: $75
@@ -208,8 +213,9 @@ Examples:
 - 10 stairs ($40) → "Stairs are $4 per step, so 10 steps = $40, but our minimum is $150"
 - Leather loveseat ($159) → "Leather loveseat is $159" (NO minimum mention - already over $150)
 - 3 rooms ($138 + $90 + $46 = $274) → NO minimum mention (total is over $150)
+- 5 bedrooms, 120 sq ft each → 5 areas × $46 (Standard each) = $230. NOT 600 sq ft total = $138.
 
-DO THE MATH: Add up the total. If total < $150, mention minimum. If total >= $150, skip it.
+DO THE MATH: For multiple rooms, multiply price per room × number of rooms (each room's tier by its own size). Do NOT sum all sq ft and use one tier. Then if total < $150, mention minimum. If total >= $150, skip it.
 
 NEVER say "assuming" in your quotes. Get real info first.
 
