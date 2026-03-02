@@ -423,60 +423,40 @@ END:VCARD`
 
         {/* 3. THE ACTION: Buttons */}
         <div className="mb-8 space-y-4">
-          {/* PRIMARY CTA - Giant Combined Button (Housecall Pro) */}
+          {/* PRIMARY CTA - Text us now for $20 off (opens SMS to toll-free, Harry responds) */}
           <a
-            href="https://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true"
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={() => void onTrackClick('book_now')}
+            href={`sms:${CONTEST_SMS_NUMBER_E164}?body=${encodeURIComponent(
+              `Hi! I found you at ${partnerDisplayName} and want my $20 off (code ${displayCouponCode}). I'm interested in carpet cleaning.`,
+            )}`}
+            onClick={() => void onTrackClick('text_us')}
             className="group relative block w-full overflow-hidden rounded-2xl shadow-2xl transition-all hover:scale-[1.02] hover:shadow-green-900/50"
           >
-            {/* Button Container */}
             <div className="relative bg-gradient-to-b from-green-500 to-green-700 px-6 py-6 text-center transition-all group-hover:from-green-500 group-hover:to-green-700">
-              {/* Top highlight */}
               <div className="absolute inset-x-0 top-0 h-2 bg-gradient-to-b from-white/30 to-transparent" />
-
-              {/* Content */}
               <div className="relative flex flex-col items-center justify-center gap-1">
                 <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-bold tracking-wider text-white uppercase backdrop-blur-sm">
                   Exclusive Offer
                 </span>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-4xl font-black text-white drop-shadow-md">
-                    $20 OFF
+                <div className="flex flex-col items-center gap-1 sm:flex-row sm:items-baseline sm:gap-2">
+                  <span className="text-3xl font-black text-white drop-shadow-md sm:text-4xl">
+                    Text us now
                   </span>
                   <span className="text-xl font-bold text-white/90">
-                    & BOOK NOW
+                    for $20 OFF
                   </span>
                 </div>
                 <p className="text-sm font-medium text-white/80">
-                  Put code{' '}
+                  Code{' '}
                   <span className="text-white underline">
                     {displayCouponCode}
                   </span>{' '}
-                  in booking notes
+                  – we&apos;ll reply and help you book
                 </p>
               </div>
-
-              {/* Bottom shadow */}
               <div className="absolute inset-x-0 bottom-0 h-3 bg-gradient-to-t from-black/20 to-transparent" />
             </div>
-
-            {/* Shine effect */}
             <div className="absolute inset-0 translate-x-[-100%] bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-1000 group-hover:translate-x-[100%]" />
           </a>
-
-          {/* Secondary: Call Now */}
-          <Button
-            onClick={() => {
-              void onTrackClick('call_now')
-              window.location.href = 'tel:719-249-8791'
-            }}
-            size="lg"
-            className="w-full border-2 border-white/20 bg-blue-600/90 py-6 text-lg font-bold text-white shadow-lg backdrop-blur-md hover:bg-blue-700"
-          >
-            📞 Call Us Now: 719-249-8791
-          </Button>
 
           <div className="grid grid-cols-2 gap-3">
             {/* Save Contact */}
