@@ -69,6 +69,7 @@ export async function runRadarScan(): Promise<RadarScanResult> {
         keyword_id: kw.id,
         domain_id: r.domain_id,
         rank_position: r.rank_position,
+        map_rank: r.map_rank ?? null,
       }))
       const { error: insertError } = await supabase
         .from('radar_rankings')

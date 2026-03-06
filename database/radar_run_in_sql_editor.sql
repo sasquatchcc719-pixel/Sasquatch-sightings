@@ -26,12 +26,13 @@ CREATE TABLE radar_domains (
 
 CREATE UNIQUE INDEX idx_radar_domains_domain ON radar_domains(domain);
 
--- RADAR RANKINGS (time-series: keyword_id, domain_id, position, created_at)
+-- RADAR RANKINGS (time-series: keyword_id, domain_id, organic + map pack, created_at)
 CREATE TABLE radar_rankings (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   keyword_id UUID NOT NULL REFERENCES radar_keywords(id) ON DELETE CASCADE,
   domain_id UUID NOT NULL REFERENCES radar_domains(id) ON DELETE CASCADE,
   rank_position INTEGER NOT NULL,
+  map_rank INTEGER,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 

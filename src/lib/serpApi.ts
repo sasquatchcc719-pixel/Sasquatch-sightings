@@ -14,6 +14,8 @@ export type SerpApiOrganicResult = {
 export type SerpApiRankResult = {
   domain_id: string
   rank_position: number
+  /** Local Map Pack position when present; null if not in pack */
+  map_rank: number | null
 }
 
 export type RadarDomain = {
@@ -34,6 +36,41 @@ function normalizeDomain(url: string): string | null {
   } catch {
     return null
   }
+}
+
+/** Normalize for business-name matching: lower, trim, collapse spaces. */
+function normalizeName(s: string): string {
+  return s.toLowerCase().trim().replace(/\s+/g, ' ')
+}
+
+/**
+ * Match a local pack place to a tracked domain: by website domain or by business name.
+ */
+function matchPlaceToDomainId(
+  place: { title?: string; links?: { website?: string } },
+  domains: RadarDomain[],
+): string | null {
+  const website = place.links?.website
+  if (website) {
+    const hostNorm = normalizeDomain(website)
+    if (hostNorm) {
+      const d = domains.find(
+        (x) => x.domain.toLowerCase().replace(/^www\./, '') === hostNorm,
+      )
+      if (d) return d.id
+    }
+  }
+  const placeTitle = (place.title ?? '').trim()
+  if (!placeTitle) return null
+  const placeNorm = normalizeName(placeTitle)
+  for (const d of domains) {
+    const displayNorm = normalizeName(d.display_name ?? d.domain)
+    if (!displayNorm) continue
+    if (placeNorm === displayNorm) return d.id
+    if (placeNorm.includes(displayNorm) || displayNorm.includes(placeNorm))
+      return d.id
+  }
+  return null
 }
 
 const SERP_NUM_RESULTS = 50
@@ -97,22 +134,29 @@ export async function fetchSerpRanks(
     throw new Error(`SerpApi error: ${data.error}`)
   }
 
+  const places = data.local_results?.places ?? []
+
   const localDataByDomain = new Map<
     string,
     { rating: number; reviews: number; address?: string }
   >()
-  const places = data.local_results?.places ?? []
+  const mapPackByDomainId = new Map<string, number>()
   for (const place of places) {
+    const pos = place.position ?? 0
+    if (!pos) continue
+    const domainId = matchPlaceToDomainId(place, domains)
+    if (domainId) mapPackByDomainId.set(domainId, pos)
     const website = place.links?.website
-    if (!website || place.rating == null) continue
-    const hostNorm = normalizeDomain(website)
-    if (!hostNorm) continue
-    localDataByDomain.set(hostNorm, {
-      rating: place.rating,
-      reviews: place.reviews ?? 0,
-      ...(place.address &&
-        place.address.trim() && { address: place.address.trim() }),
-    })
+    if (website && place.rating != null) {
+      const hostNorm = normalizeDomain(website)
+      if (hostNorm)
+        localDataByDomain.set(hostNorm, {
+          rating: place.rating,
+          reviews: place.reviews ?? 0,
+          ...(place.address &&
+            place.address.trim() && { address: place.address.trim() }),
+        })
+    }
   }
 
   const organic = data.organic_results ?? []
@@ -148,13 +192,21 @@ export async function fetchSerpRanks(
     const domainId = domainMap.get(hostNorm)
     if (domainId && !found.has(domainId)) {
       found.add(domainId)
-      ranks.push({ domain_id: domainId, rank_position: pos })
+      ranks.push({
+        domain_id: domainId,
+        rank_position: pos,
+        map_rank: mapPackByDomainId.get(domainId) ?? null,
+      })
     }
   }
 
   for (const d of domains) {
     if (!found.has(d.id)) {
-      ranks.push({ domain_id: d.id, rank_position: NOT_FOUND_RANK })
+      ranks.push({
+        domain_id: d.id,
+        rank_position: NOT_FOUND_RANK,
+        map_rank: mapPackByDomainId.get(d.id) ?? null,
+      })
     }
   }
 

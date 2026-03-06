@@ -11,6 +11,7 @@ import {
   ArrowUp,
   ArrowDown,
   Minus,
+  MapPin,
   Target,
   Loader2,
   Plus,
@@ -41,6 +42,7 @@ type Ranking = {
   keyword_id: string
   domain_id: string
   rank_position: number
+  map_rank?: number | null
   created_at: string
 }
 type SerpSnapshotRow = {
@@ -105,7 +107,9 @@ export default function RadarPage() {
         .select('id, domain, display_name, is_my_domain'),
       supabase
         .from('radar_rankings')
-        .select('id, keyword_id, domain_id, rank_position, created_at')
+        .select(
+          'id, keyword_id, domain_id, rank_position, map_rank, created_at',
+        )
         .gte('created_at', sixtyDaysAgo.toISOString())
         .order('created_at', { ascending: false }),
       supabase
@@ -309,11 +313,16 @@ export default function RadarPage() {
   }
 
   const latestMap = new Map<string, number>()
+  const latestMapPack = new Map<string, number>()
   const previousMap = new Map<string, number>()
   for (const r of rankings) {
     const key = `${r.keyword_id}:${r.domain_id}`
-    if (!latestMap.has(key)) latestMap.set(key, r.rank_position)
-    else if (!previousMap.has(key)) previousMap.set(key, r.rank_position)
+    if (!latestMap.has(key)) {
+      latestMap.set(key, r.rank_position)
+      if (r.map_rank != null) latestMapPack.set(key, r.map_rank)
+    } else if (!previousMap.has(key)) {
+      previousMap.set(key, r.rank_position)
+    }
   }
 
   const myDomain = domains.find((d) => d.is_my_domain)
@@ -387,15 +396,31 @@ export default function RadarPage() {
     }
     if (rankSortBy === 'best') {
       const bestA = Math.min(
-        ...keywords.map((k) => latestMap.get(`${k.id}:${a.id}`) ?? 100),
+        ...keywords.map((k) => {
+          const key = `${k.id}:${a.id}`
+          const organic = latestMap.get(key) ?? 100
+          const map = latestMapPack.get(key)
+          return map != null ? Math.min(organic, map) : organic
+        }),
       )
       const bestB = Math.min(
-        ...keywords.map((k) => latestMap.get(`${k.id}:${b.id}`) ?? 100),
+        ...keywords.map((k) => {
+          const key = `${k.id}:${b.id}`
+          const organic = latestMap.get(key) ?? 100
+          const map = latestMapPack.get(key)
+          return map != null ? Math.min(organic, map) : organic
+        }),
       )
       return bestA - bestB
     }
-    const rankA = latestMap.get(`${rankSortBy}:${a.id}`) ?? 100
-    const rankB = latestMap.get(`${rankSortBy}:${b.id}`) ?? 100
+    const keyA = `${rankSortBy}:${a.id}`
+    const keyB = `${rankSortBy}:${b.id}`
+    const organicA = latestMap.get(keyA) ?? 100
+    const organicB = latestMap.get(keyB) ?? 100
+    const mapA = latestMapPack.get(keyA)
+    const mapB = latestMapPack.get(keyB)
+    const rankA = mapA != null ? Math.min(organicA, mapA) : organicA
+    const rankB = mapB != null ? Math.min(organicB, mapB) : organicB
     return rankA - rankB
   })
 
@@ -973,13 +998,28 @@ export default function RadarPage() {
                   {filteredKeywords.map((kw) => (
                     <th
                       key={kw.id}
-                      className="max-w-[140px] p-2 font-semibold sm:max-w-none sm:p-3"
+                      colSpan={2}
+                      className="max-w-[180px] border-l border-white/10 p-0 sm:max-w-none"
                       title={`${kw.keyword} — ${kw.location}`}
                     >
-                      <span className="block truncate">{kw.keyword}</span>
-                      <span className="block truncate text-xs font-normal text-white/60">
-                        {kw.location}
-                      </span>
+                      <div className="border-b border-white/10 p-2 sm:p-3">
+                        <span className="block truncate font-semibold">
+                          {kw.keyword}
+                        </span>
+                        <span className="block truncate text-xs font-normal text-white/60">
+                          {kw.location}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 text-center text-xs font-medium text-white/70">
+                        <span className="flex items-center justify-center gap-1 border-r border-white/10 py-1.5">
+                          <MapPin
+                            className="h-3.5 w-3.5 shrink-0"
+                            aria-hidden
+                          />
+                          Map
+                        </span>
+                        <span className="py-1.5">Organic</span>
+                      </div>
                     </th>
                   ))}
                 </tr>
@@ -996,19 +1036,36 @@ export default function RadarPage() {
                         <span className="ml-1 text-green-400">(you)</span>
                       )}
                     </td>
-                    {filteredKeywords.map((kw) => {
+                    {filteredKeywords.flatMap((kw) => {
                       const key = `${kw.id}:${d.id}`
-                      const latest = latestMap.get(key)
+                      const organic = latestMap.get(key)
+                      const mapRank = latestMapPack.get(key)
                       const previous = previousMap.get(key)
                       const movement =
-                        latest != null && previous != null
-                          ? previous - latest
+                        organic != null && previous != null
+                          ? previous - organic
                           : null
-                      return (
-                        <td key={kw.id} className="p-2 sm:p-3">
-                          {latest != null ? (
+                      return [
+                        <td
+                          key={`${kw.id}-map`}
+                          className="border-r border-l border-white/10 p-2 text-center sm:p-3"
+                        >
+                          {mapRank != null ? (
+                            <span className="inline-flex items-center gap-1 text-white/90">
+                              <MapPin
+                                className="h-3.5 w-3.5 shrink-0 text-white/60"
+                                aria-hidden
+                              />
+                              #{mapRank}
+                            </span>
+                          ) : (
+                            <span className="text-white/50">–</span>
+                          )}
+                        </td>,
+                        <td key={`${kw.id}-organic`} className="p-2 sm:p-3">
+                          {organic != null ? (
                             <span className="flex items-center gap-1">
-                              #{latest}
+                              #{organic}
                               {movement !== null &&
                                 movement !== 0 &&
                                 (movement > 0 ? (
@@ -1032,8 +1089,8 @@ export default function RadarPage() {
                           ) : (
                             <span className="text-white/50">–</span>
                           )}
-                        </td>
-                      )
+                        </td>,
+                      ]
                     })}
                   </tr>
                 ))}
