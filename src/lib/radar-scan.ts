@@ -96,6 +96,7 @@ export async function runRadarScan(): Promise<RadarScanResult> {
             domain: s.domain,
             ...(s.rating != null && { rating: s.rating }),
             ...(s.reviews != null && { reviews: s.reviews }),
+            ...(s.address && { address: s.address }),
           })),
         )
       }

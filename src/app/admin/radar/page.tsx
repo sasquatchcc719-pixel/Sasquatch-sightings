@@ -49,6 +49,7 @@ type SerpSnapshotRow = {
   domain: string
   rating?: number | null
   reviews?: number | null
+  address?: string | null
 }
 
 const SIXTY_DAYS_MS = 60 * 24 * 60 * 60 * 1000
@@ -109,7 +110,7 @@ export default function RadarPage() {
         .order('created_at', { ascending: false }),
       supabase
         .from('radar_serp_snapshots')
-        .select('keyword_id, position, domain, rating, reviews')
+        .select('keyword_id, position, domain, rating, reviews, address')
         .order('keyword_id')
         .order('position', { ascending: true }),
     ])
@@ -362,6 +363,7 @@ export default function RadarPage() {
       domain: string
       rating?: number | null
       reviews?: number | null
+      address?: string | null
     }[]
   >()
   for (const row of snapshots) {
@@ -371,6 +373,7 @@ export default function RadarPage() {
       domain: row.domain,
       rating: row.rating,
       reviews: row.reviews,
+      address: row.address,
     })
     snapshotByKeyword.set(row.keyword_id, list)
   }
@@ -834,8 +837,9 @@ export default function RadarPage() {
           </h2>
           <p className="mb-4 text-sm text-white/60">
             Actual Google order from the last refresh. When Google shows a local
-            pack for this search, we pull star rating and review count too. Add
-            any domain to &quot;Your domains&quot; to track in the table below.
+            pack we also pull star rating, review count, and address
+            (town/area). Add any domain to &quot;Your domains&quot; to track in
+            the table below.
           </p>
           <div className="space-y-4">
             {keywords.map((kw) => {
@@ -863,6 +867,11 @@ export default function RadarPage() {
                                 ({s.reviews} reviews)
                               </span>
                             )}
+                          </span>
+                        )}
+                        {s.address && (
+                          <span className="block pl-6 text-xs text-white/50">
+                            {s.address}
                           </span>
                         )}
                       </li>

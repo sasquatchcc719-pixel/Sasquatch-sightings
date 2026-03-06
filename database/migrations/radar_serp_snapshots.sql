@@ -7,6 +7,7 @@ CREATE TABLE radar_serp_snapshots (
   domain TEXT NOT NULL,
   rating NUMERIC(2,1),
   reviews INTEGER,
+  address TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 

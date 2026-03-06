@@ -86,6 +86,7 @@ export async function fetchSerpRanks(
         title?: string
         rating?: number
         reviews?: number
+        address?: string
         links?: { website?: string }
       }>
     }
@@ -96,9 +97,9 @@ export async function fetchSerpRanks(
     throw new Error(`SerpApi error: ${data.error}`)
   }
 
-  const localRatingByDomain = new Map<
+  const localDataByDomain = new Map<
     string,
-    { rating: number; reviews: number }
+    { rating: number; reviews: number; address?: string }
   >()
   const places = data.local_results?.places ?? []
   for (const place of places) {
@@ -106,9 +107,11 @@ export async function fetchSerpRanks(
     if (!website || place.rating == null) continue
     const hostNorm = normalizeDomain(website)
     if (!hostNorm) continue
-    localRatingByDomain.set(hostNorm, {
+    localDataByDomain.set(hostNorm, {
       rating: place.rating,
       reviews: place.reviews ?? 0,
+      ...(place.address &&
+        place.address.trim() && { address: place.address.trim() }),
     })
   }
 
@@ -131,11 +134,15 @@ export async function fetchSerpRanks(
     const hostNorm = normalizeDomain(link)
     if (!hostNorm) continue
 
-    const local = localRatingByDomain.get(hostNorm)
+    const local = localDataByDomain.get(hostNorm)
     snapshot.push({
       domain: hostNorm,
       position: pos,
-      ...(local && { rating: local.rating, reviews: local.reviews }),
+      ...(local && {
+        rating: local.rating,
+        reviews: local.reviews,
+        ...(local.address && { address: local.address }),
+      }),
     })
 
     const domainId = domainMap.get(hostNorm)
@@ -159,6 +166,7 @@ export type SerpDomainWithPosition = {
   position: number
   rating?: number
   reviews?: number
+  address?: string
 }
 
 /**
