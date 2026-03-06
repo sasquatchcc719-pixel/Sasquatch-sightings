@@ -109,3 +109,58 @@ export async function fetchSerpRanks(
 
   return results
 }
+
+/**
+ * Fetch organic results for a keyword and return unique domains (for "Discover competitors").
+ * Does not require radar_domains; returns raw domain strings from SERP.
+ */
+export async function fetchSerpDomains(
+  keyword: string,
+  location: string,
+): Promise<string[]> {
+  const apiKey = process.env.SERPAPI_API_KEY
+  if (!apiKey) {
+    throw new Error('SERPAPI_API_KEY is not set')
+  }
+
+  const params = new URLSearchParams({
+    engine: 'google',
+    q: keyword,
+    location,
+    num: '100',
+    api_key: apiKey,
+  })
+
+  const res = await fetch(`https://serpapi.com/search?${params.toString()}`, {
+    next: { revalidate: 0 },
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`SerpApi request failed: ${res.status} ${text}`)
+  }
+
+  const data = (await res.json()) as {
+    organic_results?: Array<{ link?: string }>
+    error?: string
+  }
+
+  if (data.error) {
+    throw new Error(`SerpApi error: ${data.error}`)
+  }
+
+  const organic = data.organic_results ?? []
+  const seen = new Set<string>()
+  const domains: string[] = []
+
+  for (const item of organic) {
+    const link = item.link
+    if (!link) continue
+    const hostNorm = normalizeDomain(link)
+    if (!hostNorm || seen.has(hostNorm)) continue
+    seen.add(hostNorm)
+    domains.push(hostNorm)
+  }
+
+  return domains
+}

@@ -1,9 +1,22 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/supabase/client'
 import { Card } from '@/components/ui/card'
-import { ArrowUp, ArrowDown, Minus, Target, Loader2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  ArrowUp,
+  ArrowDown,
+  Minus,
+  Target,
+  Loader2,
+  Plus,
+  Trash2,
+  Search,
+} from 'lucide-react'
 import {
   LineChart,
   Line,
@@ -41,34 +54,207 @@ export default function RadarPage() {
   const [error, setError] = useState<string | null>(null)
   const [cutoffForChart] = useState(() => new Date(Date.now() - THIRTY_DAYS_MS))
 
-  useEffect(() => {
-    async function load() {
-      const supabase = createClient()
-      const sixtyDaysAgo = new Date(Date.now() - SIXTY_DAYS_MS)
-      const [kwRes, domRes, rankRes] = await Promise.all([
-        supabase
-          .from('radar_keywords')
-          .select('id, keyword, location')
-          .eq('active', true),
-        supabase
-          .from('radar_domains')
-          .select('id, domain, display_name, is_my_domain'),
-        supabase
-          .from('radar_rankings')
-          .select('id, keyword_id, domain_id, rank_position, created_at')
-          .gte('created_at', sixtyDaysAgo.toISOString())
-          .order('created_at', { ascending: false }),
-      ])
-      if (kwRes.error) setError(kwRes.error.message)
-      else setKeywords(kwRes.data ?? [])
-      if (domRes.error) setError(domRes.error.message)
-      else setDomains(domRes.data ?? [])
-      if (rankRes.error) setError(rankRes.error.message)
-      else setRankings(rankRes.data ?? [])
-      setLoading(false)
-    }
-    load()
+  // Form state
+  const [newKeyword, setNewKeyword] = useState('')
+  const [newKeywordLocation, setNewKeywordLocation] = useState(
+    'Colorado Springs, Colorado, United States',
+  )
+  const [newDomain, setNewDomain] = useState('')
+  const [newDomainDisplayName, setNewDomainDisplayName] = useState('')
+  const [newDomainIsMine, setNewDomainIsMine] = useState(false)
+  const [discoverKeyword, setDiscoverKeyword] = useState('')
+  const [discoverLocation, setDiscoverLocation] = useState(
+    'Colorado Springs, Colorado, United States',
+  )
+  const [discoverDomains, setDiscoverDomains] = useState<string[]>([])
+  const [discoverSelected, setDiscoverSelected] = useState<Set<string>>(
+    new Set(),
+  )
+  const [discoverLoading, setDiscoverLoading] = useState(false)
+  const [addKeywordLoading, setAddKeywordLoading] = useState(false)
+  const [addDomainLoading, setAddDomainLoading] = useState(false)
+
+  const loadData = useCallback(async () => {
+    const supabase = createClient()
+    const sixtyDaysAgo = new Date(Date.now() - SIXTY_DAYS_MS)
+    const [kwRes, domRes, rankRes] = await Promise.all([
+      supabase
+        .from('radar_keywords')
+        .select('id, keyword, location')
+        .eq('active', true),
+      supabase
+        .from('radar_domains')
+        .select('id, domain, display_name, is_my_domain'),
+      supabase
+        .from('radar_rankings')
+        .select('id, keyword_id, domain_id, rank_position, created_at')
+        .gte('created_at', sixtyDaysAgo.toISOString())
+        .order('created_at', { ascending: false }),
+    ])
+    if (kwRes.error) setError(kwRes.error.message)
+    else setKeywords(kwRes.data ?? [])
+    if (domRes.error) setError(domRes.error.message)
+    else setDomains(domRes.data ?? [])
+    if (rankRes.error) setError(rankRes.error.message)
+    else setRankings(rankRes.data ?? [])
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setError(null)
+    loadData().finally(() => {
+      if (!cancelled) setLoading(false)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [loadData])
+
+  const handleAddKeyword = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newKeyword.trim() || !newKeywordLocation.trim()) return
+    setAddKeywordLoading(true)
+    try {
+      const res = await fetch('/api/admin/radar/keywords', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          keyword: newKeyword.trim(),
+          location: newKeywordLocation.trim(),
+        }),
+      })
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}))
+        throw new Error(j.error || res.statusText)
+      }
+      setNewKeyword('')
+      await loadData()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add keyword')
+    } finally {
+      setAddKeywordLoading(false)
+    }
+  }
+
+  const handleDeleteKeyword = async (id: string) => {
+    try {
+      const res = await fetch(`/api/admin/radar/keywords/${id}`, {
+        method: 'DELETE',
+      })
+      if (!res.ok) throw new Error('Delete failed')
+      await loadData()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete')
+    }
+  }
+
+  const handleAddDomain = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newDomain.trim()) return
+    setAddDomainLoading(true)
+    try {
+      const res = await fetch('/api/admin/radar/domains', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          domain: newDomain.trim(),
+          display_name: newDomainDisplayName.trim() || null,
+          is_my_domain: newDomainIsMine,
+        }),
+      })
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}))
+        throw new Error(j.error || res.statusText)
+      }
+      setNewDomain('')
+      setNewDomainDisplayName('')
+      setNewDomainIsMine(false)
+      await loadData()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add domain')
+    } finally {
+      setAddDomainLoading(false)
+    }
+  }
+
+  const handleDeleteDomain = async (id: string) => {
+    try {
+      const res = await fetch(`/api/admin/radar/domains/${id}`, {
+        method: 'DELETE',
+      })
+      if (!res.ok) throw new Error('Delete failed')
+      await loadData()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete')
+    }
+  }
+
+  const handleDiscover = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!discoverKeyword.trim() || !discoverLocation.trim()) return
+    setDiscoverLoading(true)
+    setDiscoverDomains([])
+    setDiscoverSelected(new Set())
+    try {
+      const res = await fetch('/api/admin/radar/discover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          keyword: discoverKeyword.trim(),
+          location: discoverLocation.trim(),
+        }),
+      })
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}))
+        throw new Error(j.error || res.statusText)
+      }
+      const { domains: list } = (await res.json()) as { domains: string[] }
+      setDiscoverDomains(list)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Discover failed')
+    } finally {
+      setDiscoverLoading(false)
+    }
+  }
+
+  const toggleDiscoverSelected = (domain: string) => {
+    setDiscoverSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(domain)) next.delete(domain)
+      else next.add(domain)
+      return next
+    })
+  }
+
+  const handleAddSelectedDomains = async () => {
+    if (discoverSelected.size === 0) return
+    setAddDomainLoading(true)
+    try {
+      for (const domain of discoverSelected) {
+        const res = await fetch('/api/admin/radar/domains', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            domain,
+            display_name: null,
+            is_my_domain: false,
+          }),
+        })
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}))
+          throw new Error(j.error || `Failed to add ${domain}`)
+        }
+      }
+      setDiscoverSelected(new Set())
+      setDiscoverDomains([])
+      await loadData()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Add selected failed')
+    } finally {
+      setAddDomainLoading(false)
+    }
+  }
 
   const latestMap = new Map<string, number>()
   const previousMap = new Map<string, number>()
@@ -109,19 +295,13 @@ export default function RadarPage() {
     .map(([, v]) => v)
     .sort((a, b) => (a.date < b.date ? -1 : 1))
 
+  const hasData = keywords.length > 0 && domains.length > 0
+
   if (loading) {
     return (
       <div className="flex min-h-[200px] items-center justify-center gap-2 text-white">
         <Loader2 className="h-6 w-6 animate-spin" />
         <span>Loading Radar...</span>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="rounded-lg border border-red-500/50 bg-red-500/10 p-4 text-red-200">
-        Error: {error}. Run the radar migration SQL and add keywords/domains.
       </div>
     )
   }
@@ -135,11 +315,358 @@ export default function RadarPage() {
         </h1>
       </div>
 
-      {chartData.length > 0 && top3KeywordIds.length > 0 && (
+      {/* How to use */}
+      <Card className="border-green-500/30 bg-black/40 p-4 backdrop-blur-sm">
+        <h2 className="mb-2 text-lg font-semibold text-white">
+          How to use Radar
+        </h2>
+        <ol className="list-inside list-decimal space-y-1.5 text-sm text-white/80">
+          <li>
+            <strong className="text-white">Add keywords</strong> – Type the
+            search phrases you care about (e.g. “carpet cleaning colorado
+            springs”) and the location. Click Add keyword.
+          </li>
+          <li>
+            <strong className="text-white">Add domains to track</strong> –
+            Either use “Discover competitors” (search Google and pick which
+            domains to add) or “Add domain manually” if you already know a
+            competitor’s domain. Mark your own site with “This is my domain.”
+          </li>
+          <li>
+            <strong className="text-white">Wait for rankings</strong> – A daily
+            cron job (or a manual run) checks Google for each keyword and saves
+            where each domain ranks. After it runs, the table and chart below
+            will show positions and movement.
+          </li>
+        </ol>
+      </Card>
+
+      {error && (
+        <div className="rounded-lg border border-red-500/50 bg-red-500/10 p-3 text-sm text-red-200">
+          {error}
+        </div>
+      )}
+
+      {/* Add keyword */}
+      <Card className="border-white/20 bg-black/40 p-4 backdrop-blur-sm">
+        <h2 className="mb-1 text-lg font-semibold text-white">
+          Step 1 – Add keyword to track
+        </h2>
+        <p className="mb-3 text-sm text-white/70">
+          Type the exact phrase you want to track (as someone would search on
+          Google) and the location for local results. Click “Add keyword.” The
+          cron job will periodically check where your domains rank for these
+          phrases.
+        </p>
+        <form
+          onSubmit={handleAddKeyword}
+          className="flex flex-wrap items-end gap-3"
+        >
+          <div className="min-w-[200px] flex-1 space-y-1">
+            <Label htmlFor="radar-keyword" className="text-white/80">
+              Keyword
+            </Label>
+            <Input
+              id="radar-keyword"
+              value={newKeyword}
+              onChange={(e) => setNewKeyword(e.target.value)}
+              placeholder="e.g. commercial carpet cleaning colorado springs"
+              className="border-white/20 bg-white/5 text-white placeholder:text-white/40"
+            />
+          </div>
+          <div className="min-w-[200px] flex-1 space-y-1">
+            <Label htmlFor="radar-location" className="text-white/80">
+              Location
+            </Label>
+            <Input
+              id="radar-location"
+              value={newKeywordLocation}
+              onChange={(e) => setNewKeywordLocation(e.target.value)}
+              placeholder="Colorado Springs, Colorado, United States"
+              className="border-white/20 bg-white/5 text-white placeholder:text-white/40"
+            />
+          </div>
+          <Button
+            type="submit"
+            disabled={addKeywordLoading || !newKeyword.trim()}
+            className="bg-green-600 hover:bg-green-700"
+          >
+            {addKeywordLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <>
+                <Plus className="mr-1 h-4 w-4" />
+                Add keyword
+              </>
+            )}
+          </Button>
+        </form>
+      </Card>
+
+      {/* Keywords list */}
+      <Card className="border-white/20 bg-black/40 p-4 backdrop-blur-sm">
+        <h2 className="mb-1 text-lg font-semibold text-white">
+          Your keywords ({keywords.length})
+        </h2>
+        <p className="mb-3 text-sm text-white/60">
+          All keywords you’ve added. Use the trash icon to remove one.
+        </p>
+        {keywords.length === 0 ? (
+          <p className="text-sm text-white/60">
+            No keywords yet. Use the form above (Step 1) to add one.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {keywords.map((k) => (
+              <li
+                key={k.id}
+                className="flex items-center justify-between rounded bg-white/5 px-3 py-2 text-white/90"
+              >
+                <span>
+                  <strong>{k.keyword}</strong>
+                  <span className="ml-2 text-white/60">({k.location})</span>
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-red-400 hover:bg-red-500/20 hover:text-red-300"
+                  onClick={() => handleDeleteKeyword(k.id)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      {/* Discover competitors */}
+      <Card className="border-white/20 bg-black/40 p-4 backdrop-blur-sm">
+        <h2 className="mb-1 text-lg font-semibold text-white">
+          Step 2a – Discover competitors from Google
+        </h2>
+        <p className="mb-3 text-sm text-white/70">
+          <strong>Directions:</strong> Enter a keyword and location, then click
+          “Discover domains.” We run a Google search and list the domains that
+          appear in the results. Check the boxes next to the domains you want to
+          track (e.g. competitors), then click “Add selected.” You can run this
+          for different keywords to find more competitors. Domains already in
+          your list are disabled.
+        </p>
+        <form
+          onSubmit={handleDiscover}
+          className="mb-4 flex flex-wrap items-end gap-3"
+        >
+          <div className="min-w-[200px] flex-1 space-y-1">
+            <Label htmlFor="discover-keyword" className="text-white/80">
+              Keyword
+            </Label>
+            <Input
+              id="discover-keyword"
+              value={discoverKeyword}
+              onChange={(e) => setDiscoverKeyword(e.target.value)}
+              placeholder="e.g. carpet cleaning monument"
+              className="border-white/20 bg-white/5 text-white placeholder:text-white/40"
+            />
+          </div>
+          <div className="min-w-[200px] flex-1 space-y-1">
+            <Label htmlFor="discover-location" className="text-white/80">
+              Location
+            </Label>
+            <Input
+              id="discover-location"
+              value={discoverLocation}
+              onChange={(e) => setDiscoverLocation(e.target.value)}
+              placeholder="Colorado Springs, Colorado, United States"
+              className="border-white/20 bg-white/5 text-white placeholder:text-white/40"
+            />
+          </div>
+          <Button
+            type="submit"
+            disabled={discoverLoading || !discoverKeyword.trim()}
+            className="bg-blue-600 hover:bg-blue-700"
+          >
+            {discoverLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <>
+                <Search className="mr-1 h-4 w-4" />
+                Discover domains
+              </>
+            )}
+          </Button>
+        </form>
+        {discoverDomains.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-sm text-white/70">
+              Check the domains you want to track, then click “Add selected” at
+              the bottom.
+            </p>
+            <div className="max-h-48 space-y-1 overflow-y-auto rounded bg-white/5 p-2">
+              {discoverDomains.map((d) => {
+                const alreadyAdded = domains.some(
+                  (x) =>
+                    x.domain.toLowerCase().replace(/^www\./, '') ===
+                    d.toLowerCase().replace(/^www\./, ''),
+                )
+                return (
+                  <label
+                    key={d}
+                    className={`flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm ${
+                      alreadyAdded ? 'text-white/50' : 'text-white/90'
+                    }`}
+                  >
+                    <Checkbox
+                      checked={discoverSelected.has(d)}
+                      onCheckedChange={() => toggleDiscoverSelected(d)}
+                      disabled={alreadyAdded}
+                    />
+                    <span>{d}</span>
+                    {alreadyAdded && (
+                      <span className="text-xs text-white/50">
+                        (already added)
+                      </span>
+                    )}
+                  </label>
+                )
+              })}
+            </div>
+            <Button
+              type="button"
+              disabled={discoverSelected.size === 0 || addDomainLoading}
+              onClick={handleAddSelectedDomains}
+              className="mt-2 bg-green-600 hover:bg-green-700"
+            >
+              {addDomainLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                `Add selected (${discoverSelected.size})`
+              )}
+            </Button>
+          </div>
+        )}
+      </Card>
+
+      {/* Add domain (manual) */}
+      <Card className="border-white/20 bg-black/40 p-4 backdrop-blur-sm">
+        <h2 className="mb-1 text-lg font-semibold text-white">
+          Step 2b – Add domain manually
+        </h2>
+        <p className="mb-3 text-sm text-white/70">
+          <strong>Directions:</strong> If you already know a competitor’s domain
+          (e.g. premiercarpetcleaning.com), enter it here. Optionally add a
+          display name for the table. Check “This is my domain” for
+          sasquatchcarpet.com so we can highlight your row in the rankings.
+        </p>
+        <form
+          onSubmit={handleAddDomain}
+          className="flex flex-wrap items-end gap-3"
+        >
+          <div className="min-w-[180px] flex-1 space-y-1">
+            <Label htmlFor="radar-domain" className="text-white/80">
+              Domain
+            </Label>
+            <Input
+              id="radar-domain"
+              value={newDomain}
+              onChange={(e) => setNewDomain(e.target.value)}
+              placeholder="example.com"
+              className="border-white/20 bg-white/5 text-white placeholder:text-white/40"
+            />
+          </div>
+          <div className="min-w-[140px] flex-1 space-y-1">
+            <Label htmlFor="radar-display-name" className="text-white/80">
+              Display name (optional)
+            </Label>
+            <Input
+              id="radar-display-name"
+              value={newDomainDisplayName}
+              onChange={(e) => setNewDomainDisplayName(e.target.value)}
+              placeholder="Competitor A"
+              className="border-white/20 bg-white/5 text-white placeholder:text-white/40"
+            />
+          </div>
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-white/80">
+            <Checkbox
+              checked={newDomainIsMine}
+              onCheckedChange={(v) => setNewDomainIsMine(Boolean(v))}
+            />
+            This is my domain
+          </label>
+          <Button
+            type="submit"
+            disabled={addDomainLoading || !newDomain.trim()}
+            className="bg-green-600 hover:bg-green-700"
+          >
+            {addDomainLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <>
+                <Plus className="mr-1 h-4 w-4" />
+                Add domain
+              </>
+            )}
+          </Button>
+        </form>
+      </Card>
+
+      {/* Domains list */}
+      <Card className="border-white/20 bg-black/40 p-4 backdrop-blur-sm">
+        <h2 className="mb-1 text-lg font-semibold text-white">
+          Your domains ({domains.length})
+        </h2>
+        <p className="mb-3 text-sm text-white/60">
+          All domains you’re tracking (yours and competitors). Use the trash
+          icon to remove one.
+        </p>
+        {domains.length === 0 ? (
+          <p className="text-sm text-white/60">
+            No domains yet. Use “Discover competitors” (Step 2a) or “Add domain
+            manually” (Step 2b) above.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {domains.map((d) => (
+              <li
+                key={d.id}
+                className="flex items-center justify-between rounded bg-white/5 px-3 py-2 text-white/90"
+              >
+                <span>
+                  {d.display_name || d.domain}
+                  {d.is_my_domain && (
+                    <span className="ml-2 text-green-400">(you)</span>
+                  )}
+                  {d.display_name && (
+                    <span className="ml-2 text-white/50">{d.domain}</span>
+                  )}
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-red-400 hover:bg-red-500/20 hover:text-red-300"
+                  onClick={() => handleDeleteDomain(d.id)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+
+      {/* Rankings chart */}
+      {hasData && chartData.length > 0 && top3KeywordIds.length > 0 && (
         <Card className="border-white/20 bg-black/40 p-4 backdrop-blur-sm">
-          <h2 className="mb-4 text-lg font-semibold text-white">
-            sasquatchcarpet.com – Rank history (last 30 days, top 3 keywords)
+          <h2 className="mb-1 text-lg font-semibold text-white">
+            Rank history – Your domain (last 30 days)
           </h2>
+          <p className="mb-4 text-sm text-white/60">
+            Line chart for your site’s position over time for your top 3
+            keywords. Lower position number = higher on Google. Data appears
+            after the cron runs at least once.
+          </p>
           <div className="h-[300px] w-full">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart
@@ -190,84 +717,105 @@ export default function RadarPage() {
         </Card>
       )}
 
-      <Card className="overflow-hidden border-white/20 bg-black/40 backdrop-blur-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[600px] text-left text-sm">
-            <thead>
-              <tr className="border-b border-white/20 text-white/80">
-                <th className="p-3 font-semibold">Keyword</th>
-                {domains.map((d) => (
-                  <th key={d.id} className="p-3 font-semibold">
-                    {d.display_name || d.domain}
-                    {d.is_my_domain && (
-                      <span className="ml-1 text-green-400">(you)</span>
-                    )}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {keywords.map((kw) => (
-                <tr
-                  key={kw.id}
-                  className="border-b border-white/10 text-white/90"
-                >
-                  <td className="p-3">{kw.keyword}</td>
-                  {domains.map((d) => {
-                    const key = `${kw.id}:${d.id}`
-                    const latest = latestMap.get(key)
-                    const previous = previousMap.get(key)
-                    const movement =
-                      latest != null && previous != null
-                        ? previous - latest
-                        : null
-                    return (
-                      <td key={d.id} className="p-3">
-                        {latest != null ? (
-                          <span className="flex items-center gap-1">
-                            #{latest}
-                            {movement !== null &&
-                              movement !== 0 &&
-                              (movement > 0 ? (
-                                <ArrowUp
-                                  className="h-4 w-4 text-green-500"
-                                  aria-label="Improved"
-                                />
-                              ) : (
-                                <ArrowDown
-                                  className="h-4 w-4 text-red-500"
-                                  aria-label="Dropped"
-                                />
-                              ))}
-                            {movement === 0 && (
-                              <Minus
-                                className="h-4 w-4 text-white/50"
-                                aria-label="No change"
-                              />
-                            )}
-                          </span>
-                        ) : (
-                          <span className="text-white/50">–</span>
-                        )}
-                      </td>
-                    )
-                  })}
+      {/* Rankings table - only when we have data */}
+      {hasData ? (
+        <Card className="overflow-hidden border-white/20 bg-black/40 backdrop-blur-sm">
+          <div className="border-b border-white/20 p-3">
+            <h2 className="text-lg font-semibold text-white">
+              Step 3 – Rankings table (keyword × domain)
+            </h2>
+            <p className="mt-1 text-sm text-white/60">
+              Each row is a keyword; each column is a domain. The number is that
+              domain’s Google position (1 = first result). Green up arrow =
+              improved since last scan; red down = dropped. Rankings update when
+              the daily cron runs, or when you call /api/cron/track-serps with
+              CRON_SECRET.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[600px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-white/20 text-white/80">
+                  <th className="p-3 font-semibold">Keyword</th>
+                  {domains.map((d) => (
+                    <th key={d.id} className="p-3 font-semibold">
+                      {d.display_name || d.domain}
+                      {d.is_my_domain && (
+                        <span className="ml-1 text-green-400">(you)</span>
+                      )}
+                    </th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-
-      {(keywords.length === 0 || domains.length === 0) && (
-        <p className="text-white/70">
-          Add keywords and domains in Supabase (radar_keywords, radar_domains),
-          then run the track-serps cron or call{' '}
-          <code className="rounded bg-white/10 px-1">
-            /api/cron/track-serps
-          </code>{' '}
-          with CRON_SECRET.
-        </p>
+              </thead>
+              <tbody>
+                {keywords.map((kw) => (
+                  <tr
+                    key={kw.id}
+                    className="border-b border-white/10 text-white/90"
+                  >
+                    <td className="p-3">{kw.keyword}</td>
+                    {domains.map((d) => {
+                      const key = `${kw.id}:${d.id}`
+                      const latest = latestMap.get(key)
+                      const previous = previousMap.get(key)
+                      const movement =
+                        latest != null && previous != null
+                          ? previous - latest
+                          : null
+                      return (
+                        <td key={d.id} className="p-3">
+                          {latest != null ? (
+                            <span className="flex items-center gap-1">
+                              #{latest}
+                              {movement !== null &&
+                                movement !== 0 &&
+                                (movement > 0 ? (
+                                  <ArrowUp
+                                    className="h-4 w-4 text-green-500"
+                                    aria-label="Improved"
+                                  />
+                                ) : (
+                                  <ArrowDown
+                                    className="h-4 w-4 text-red-500"
+                                    aria-label="Dropped"
+                                  />
+                                ))}
+                              {movement === 0 && (
+                                <Minus
+                                  className="h-4 w-4 text-white/50"
+                                  aria-label="No change"
+                                />
+                              )}
+                            </span>
+                          ) : (
+                            <span className="text-white/50">–</span>
+                          )}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="border-t border-white/10 p-3 text-xs text-white/50">
+            To refresh rankings: wait for the daily cron, or call GET
+            /api/cron/track-serps with header Authorization: Bearer
+            [CRON_SECRET]. Movement arrows compare to the previous scan.
+          </p>
+        </Card>
+      ) : (
+        <Card className="border-white/20 bg-black/40 p-4 backdrop-blur-sm">
+          <h2 className="mb-2 text-lg font-semibold text-white">
+            Step 3 – Rankings will appear here
+          </h2>
+          <p className="text-white/70">
+            Add at least one keyword (Step 1) and one domain (Step 2a or 2b)
+            above. After the next SERP scan runs (daily cron or manual API
+            call), this section will show a table of positions and a chart for
+            your domain.
+          </p>
+        </Card>
       )}
     </div>
   )
