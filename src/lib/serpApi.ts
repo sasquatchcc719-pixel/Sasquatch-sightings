@@ -1,6 +1,7 @@
 /**
  * SerpApi Google Search integration for Radar (competitor SERP tracking).
- * Fetches top 100 organic results and maps them to tracked domains.
+ * Fetches top N organic results (num=20 to save credits); domains not in top N get rank N.
+ * Uses gl/hl for US English. We do not pass no_cache so SerpApi can serve cached results.
  */
 
 export type SerpApiOrganicResult = {
@@ -35,9 +36,12 @@ function normalizeDomain(url: string): string | null {
   }
 }
 
+const SERP_NUM_RESULTS = 20
+const NOT_FOUND_RANK = SERP_NUM_RESULTS
+
 /**
  * Fetch Google search results from SerpApi and return ranks for tracked domains.
- * Uses engine=google, num=100. Domains not found in top 100 get rank_position 100.
+ * Uses num=20 for faster responses and fewer credits; gl/hl for US English.
  */
 export async function fetchSerpRanks(
   keyword: string,
@@ -53,7 +57,9 @@ export async function fetchSerpRanks(
     engine: 'google',
     q: keyword,
     location,
-    num: '100',
+    num: String(SERP_NUM_RESULTS),
+    gl: 'us',
+    hl: 'en',
     api_key: apiKey,
   })
 
@@ -100,10 +106,10 @@ export async function fetchSerpRanks(
     }
   }
 
-  // Domains not found in top 100 get rank 100
+  // Domains not found in top N get rank N
   for (const d of domains) {
     if (!found.has(d.id)) {
-      results.push({ domain_id: d.id, rank_position: 100 })
+      results.push({ domain_id: d.id, rank_position: NOT_FOUND_RANK })
     }
   }
 
@@ -112,7 +118,7 @@ export async function fetchSerpRanks(
 
 /**
  * Fetch organic results for a keyword and return unique domains (for "Discover competitors").
- * Does not require radar_domains; returns raw domain strings from SERP.
+ * Uses num=20, gl/hl for US English. Does not pass no_cache so SerpApi can use cache.
  */
 export async function fetchSerpDomains(
   keyword: string,
@@ -127,7 +133,9 @@ export async function fetchSerpDomains(
     engine: 'google',
     q: keyword,
     location,
-    num: '100',
+    num: String(SERP_NUM_RESULTS),
+    gl: 'us',
+    hl: 'en',
     api_key: apiKey,
   })
 
