@@ -43,7 +43,9 @@ export async function generateDossierFromContext(
 ): Promise<DossierProfile> {
   const apiKey = process.env.GEMINI_API_KEY ?? process.env.Gemini_API_Key
   if (!apiKey) {
-    throw new Error('GEMINI_API_KEY (or Gemini_API_Key) not configured')
+    throw new Error(
+      'GEMINI_API_KEY not set. In Vercel use the exact name GEMINI_API_KEY (all caps).',
+    )
   }
 
   const name = displayName || domain
@@ -70,10 +72,22 @@ Respond with ONLY a valid JSON object, no other text.`
     generationConfig: { temperature: 0.3, maxOutputTokens: 1024 },
   })
 
-  const result = await model.generateContent(prompt)
+  let result: Awaited<ReturnType<typeof model.generateContent>>
+  try {
+    result = await model.generateContent(prompt)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (/api key|invalid.*key|401|403|429|quota|permission/i.test(msg)) {
+      throw new Error(
+        `Gemini API key issue: ${msg}. Check Vercel env var is named GEMINI_API_KEY and the key is valid from Google AI Studio.`,
+      )
+    }
+    throw new Error(`Gemini API error: ${msg}`)
+  }
+
   const response = result.response
   if (!response?.text) {
-    throw new Error('Gemini returned empty response')
+    throw new Error('Gemini returned empty response (possible block or filter)')
   }
 
   const raw = response.text().trim()

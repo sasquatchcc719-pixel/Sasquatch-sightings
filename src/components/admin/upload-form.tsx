@@ -281,7 +281,7 @@ export function UploadForm() {
     setManualGpsError(null)
   }
 
-  // Generate AI description using Gemini
+  // Generate AI description (via /api/generate-description, uses OpenAI)
   const handleGenerateDescription = async () => {
     const serviceId = watch('serviceId')
     const currentDescription = watch('description')

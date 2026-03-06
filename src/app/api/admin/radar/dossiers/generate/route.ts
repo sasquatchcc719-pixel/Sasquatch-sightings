@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error:
-          'GEMINI_API_KEY (or Gemini_API_Key) is not set. Add it in Vercel → Project → Settings → Environment Variables, then redeploy. Dossier generation uses Google Gemini.',
+          'GEMINI_API_KEY is not set. In Vercel add an env var named exactly GEMINI_API_KEY (all caps) with your key from aistudio.google.com/app/apikey, then redeploy.',
       },
       { status: 503 },
     )
