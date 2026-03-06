@@ -21,8 +21,8 @@ export async function POST(request: NextRequest) {
     )
   }
   try {
-    const domains = await fetchSerpDomains(keyword.trim(), location.trim())
-    return NextResponse.json({ domains })
+    const results = await fetchSerpDomains(keyword.trim(), location.trim())
+    return NextResponse.json({ results })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Discover failed'
     return NextResponse.json({ error: message }, { status: 500 })

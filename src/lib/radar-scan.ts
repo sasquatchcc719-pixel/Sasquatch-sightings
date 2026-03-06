@@ -60,7 +60,11 @@ export async function runRadarScan(): Promise<RadarScanResult> {
   for (let i = 0; i < keywords.length; i++) {
     const kw = keywords[i]
     try {
-      const ranks = await fetchSerpRanks(kw.keyword, kw.location, domains)
+      const { ranks, snapshot } = await fetchSerpRanks(
+        kw.keyword,
+        kw.location,
+        domains,
+      )
       const rows = ranks.map((r) => ({
         keyword_id: kw.id,
         domain_id: r.domain_id,
@@ -78,6 +82,20 @@ export async function runRadarScan(): Promise<RadarScanResult> {
         )
       } else {
         rankingsInserted += rows.length
+      }
+
+      if (snapshot.length > 0) {
+        await supabase
+          .from('radar_serp_snapshots')
+          .delete()
+          .eq('keyword_id', kw.id)
+        await supabase.from('radar_serp_snapshots').insert(
+          snapshot.map((s) => ({
+            keyword_id: kw.id,
+            position: s.position,
+            domain: s.domain,
+          })),
+        )
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)

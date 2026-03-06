@@ -39,15 +39,21 @@ function normalizeDomain(url: string): string | null {
 const SERP_NUM_RESULTS = 50
 const NOT_FOUND_RANK = SERP_NUM_RESULTS
 
+export type SerpRanksWithSnapshot = {
+  ranks: SerpApiRankResult[]
+  /** Full SERP order (who’s #1, #2, …) so we can show it even if not on our list */
+  snapshot: SerpDomainWithPosition[]
+}
+
 /**
- * Fetch Google search results from SerpApi and return ranks for tracked domains.
- * num=50 so positions 21–50 are real (not all lumped as #20); gl/hl for US English.
+ * Fetch Google search results from SerpApi. Returns ranks for tracked domains
+ * and the full organic snapshot (domain + position) from the same call.
  */
 export async function fetchSerpRanks(
   keyword: string,
   location: string,
   domains: RadarDomain[],
-): Promise<SerpApiRankResult[]> {
+): Promise<SerpRanksWithSnapshot> {
   const apiKey = process.env.SERPAPI_API_KEY
   if (!apiKey) {
     throw new Error('SERPAPI_API_KEY is not set')
@@ -88,8 +94,9 @@ export async function fetchSerpRanks(
     domainMap.set(norm, d.id)
   }
 
-  const results: SerpApiRankResult[] = []
+  const ranks: SerpApiRankResult[] = []
   const found = new Set<string>()
+  const snapshot: SerpDomainWithPosition[] = []
 
   for (const item of organic) {
     const link = item.link
@@ -99,31 +106,34 @@ export async function fetchSerpRanks(
     const hostNorm = normalizeDomain(link)
     if (!hostNorm) continue
 
+    snapshot.push({ domain: hostNorm, position: pos })
+
     const domainId = domainMap.get(hostNorm)
     if (domainId && !found.has(domainId)) {
       found.add(domainId)
-      results.push({ domain_id: domainId, rank_position: pos })
+      ranks.push({ domain_id: domainId, rank_position: pos })
     }
   }
 
-  // Domains not found in top N get rank N
   for (const d of domains) {
     if (!found.has(d.id)) {
-      results.push({ domain_id: d.id, rank_position: NOT_FOUND_RANK })
+      ranks.push({ domain_id: d.id, rank_position: NOT_FOUND_RANK })
     }
   }
 
-  return results
+  return { ranks, snapshot }
 }
 
+export type SerpDomainWithPosition = { domain: string; position: number }
+
 /**
- * Fetch organic results for a keyword and return unique domains (for "Discover competitors").
- * Uses num=20, gl/hl for US English. Does not pass no_cache so SerpApi can use cache.
+ * Fetch organic results for a keyword and return domains with their Google position.
+ * Use this to see who's actually ranking #1–10 (or add them to track). Uses gl/hl for US English.
  */
 export async function fetchSerpDomains(
   keyword: string,
   location: string,
-): Promise<string[]> {
+): Promise<SerpDomainWithPosition[]> {
   const apiKey = process.env.SERPAPI_API_KEY
   if (!apiKey) {
     throw new Error('SERPAPI_API_KEY is not set')
@@ -149,7 +159,7 @@ export async function fetchSerpDomains(
   }
 
   const data = (await res.json()) as {
-    organic_results?: Array<{ link?: string }>
+    organic_results?: Array<{ position?: number; link?: string }>
     error?: string
   }
 
@@ -159,16 +169,17 @@ export async function fetchSerpDomains(
 
   const organic = data.organic_results ?? []
   const seen = new Set<string>()
-  const domains: string[] = []
+  const results: SerpDomainWithPosition[] = []
 
   for (const item of organic) {
     const link = item.link
-    if (!link) continue
+    const position = item.position ?? 0
+    if (!link || !position) continue
     const hostNorm = normalizeDomain(link)
     if (!hostNorm || seen.has(hostNorm)) continue
     seen.add(hostNorm)
-    domains.push(hostNorm)
+    results.push({ domain: hostNorm, position })
   }
 
-  return domains
+  return results
 }

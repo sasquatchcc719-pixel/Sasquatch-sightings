@@ -43,6 +43,11 @@ type Ranking = {
   rank_position: number
   created_at: string
 }
+type SerpSnapshotRow = {
+  keyword_id: string
+  position: number
+  domain: string
+}
 
 const SIXTY_DAYS_MS = 60 * 24 * 60 * 60 * 1000
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
@@ -51,6 +56,7 @@ export default function RadarPage() {
   const [keywords, setKeywords] = useState<Keyword[]>([])
   const [domains, setDomains] = useState<Domain[]>([])
   const [rankings, setRankings] = useState<Ranking[]>([])
+  const [snapshots, setSnapshots] = useState<SerpSnapshotRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [cutoffForChart] = useState(() => new Date(Date.now() - THIRTY_DAYS_MS))
@@ -67,7 +73,9 @@ export default function RadarPage() {
   const [discoverLocation, setDiscoverLocation] = useState(
     'Colorado Springs, Colorado, United States',
   )
-  const [discoverDomains, setDiscoverDomains] = useState<string[]>([])
+  const [discoverResults, setDiscoverResults] = useState<
+    { domain: string; position: number }[]
+  >([])
   const [discoverSelected, setDiscoverSelected] = useState<Set<string>>(
     new Set(),
   )
@@ -84,7 +92,7 @@ export default function RadarPage() {
   const loadData = useCallback(async () => {
     const supabase = createClient()
     const sixtyDaysAgo = new Date(Date.now() - SIXTY_DAYS_MS)
-    const [kwRes, domRes, rankRes] = await Promise.all([
+    const [kwRes, domRes, rankRes, snapRes] = await Promise.all([
       supabase
         .from('radar_keywords')
         .select('id, keyword, location')
@@ -97,6 +105,11 @@ export default function RadarPage() {
         .select('id, keyword_id, domain_id, rank_position, created_at')
         .gte('created_at', sixtyDaysAgo.toISOString())
         .order('created_at', { ascending: false }),
+      supabase
+        .from('radar_serp_snapshots')
+        .select('keyword_id, position, domain')
+        .order('keyword_id')
+        .order('position', { ascending: true }),
     ])
     if (kwRes.error) setError(kwRes.error.message)
     else setKeywords(kwRes.data ?? [])
@@ -104,6 +117,9 @@ export default function RadarPage() {
     else setDomains(domRes.data ?? [])
     if (rankRes.error) setError(rankRes.error.message)
     else setRankings(rankRes.data ?? [])
+    if (snapRes.error) {
+      if (snapRes.error.code !== '42P01') setError(snapRes.error.message)
+    } else setSnapshots((snapRes.data as SerpSnapshotRow[]) ?? [])
   }, [])
 
   useEffect(() => {
@@ -201,7 +217,7 @@ export default function RadarPage() {
     e.preventDefault()
     if (!discoverKeyword.trim() || !discoverLocation.trim()) return
     setDiscoverLoading(true)
-    setDiscoverDomains([])
+    setDiscoverResults([])
     setDiscoverSelected(new Set())
     try {
       const res = await fetch('/api/admin/radar/discover', {
@@ -216,8 +232,10 @@ export default function RadarPage() {
         const j = await res.json().catch(() => ({}))
         throw new Error(j.error || res.statusText)
       }
-      const { domains: list } = (await res.json()) as { domains: string[] }
-      setDiscoverDomains(list)
+      const { results: list } = (await res.json()) as {
+        results: { domain: string; position: number }[]
+      }
+      setDiscoverResults(list ?? [])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Discover failed')
     } finally {
@@ -278,7 +296,7 @@ export default function RadarPage() {
         }
       }
       setDiscoverSelected(new Set())
-      setDiscoverDomains([])
+      setDiscoverResults([])
       await loadData()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Add selected failed')
@@ -334,6 +352,16 @@ export default function RadarPage() {
   const filteredKeywords = locationFilter
     ? keywords.filter((k) => k.location === locationFilter)
     : keywords
+
+  const snapshotByKeyword = new Map<
+    string,
+    { position: number; domain: string }[]
+  >()
+  for (const row of snapshots) {
+    const list = snapshotByKeyword.get(row.keyword_id) ?? []
+    list.push({ position: row.position, domain: row.domain })
+    snapshotByKeyword.set(row.keyword_id, list)
+  }
 
   // Sorted domains for table: best rank first, or by keyword, or A–Z
   const sortedDomains = [...domains].sort((a, b) => {
@@ -563,32 +591,35 @@ export default function RadarPage() {
             )}
           </Button>
         </form>
-        {discoverDomains.length > 0 && (
+        {discoverResults.length > 0 && (
           <div className="space-y-2">
             <p className="text-sm text-white/70">
-              Check the domains you want to track, then click “Add selected” at
-              the bottom.
+              Who’s ranking #1–10 for this search. Check domains to add to your
+              list, then click “Add selected.”
             </p>
             <div className="max-h-48 space-y-1 overflow-y-auto rounded bg-white/5 p-2">
-              {discoverDomains.map((d) => {
+              {discoverResults.map((r) => {
                 const alreadyAdded = domains.some(
                   (x) =>
                     x.domain.toLowerCase().replace(/^www\./, '') ===
-                    d.toLowerCase().replace(/^www\./, ''),
+                    r.domain.toLowerCase().replace(/^www\./, ''),
                 )
                 return (
                   <label
-                    key={d}
+                    key={`${r.position}-${r.domain}`}
                     className={`flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm ${
                       alreadyAdded ? 'text-white/50' : 'text-white/90'
                     }`}
                   >
                     <Checkbox
-                      checked={discoverSelected.has(d)}
-                      onCheckedChange={() => toggleDiscoverSelected(d)}
+                      checked={discoverSelected.has(r.domain)}
+                      onCheckedChange={() => toggleDiscoverSelected(r.domain)}
                       disabled={alreadyAdded}
                     />
-                    <span>{d}</span>
+                    <span className="w-6 shrink-0 font-medium">
+                      #{r.position}
+                    </span>
+                    <span>{r.domain}</span>
                     {alreadyAdded && (
                       <span className="text-xs text-white/50">
                         (already added)
@@ -779,6 +810,42 @@ export default function RadarPage() {
                 })}
               </LineChart>
             </ResponsiveContainer>
+          </div>
+        </Card>
+      )}
+
+      {/* Who's actually ranking #1–10 (from SerpApi, not just our list) */}
+      {keywords.length > 0 && snapshotByKeyword.size > 0 && (
+        <Card className="border-white/20 bg-black/40 p-4 backdrop-blur-sm">
+          <h2 className="mb-1 text-lg font-semibold text-white">
+            Who’s ranking #1–10 (from latest scan)
+          </h2>
+          <p className="mb-4 text-sm text-white/60">
+            Actual Google order from the last refresh. These domains are pulled
+            automatically from SerpApi; add any to “Your domains” to track them
+            in the table below.
+          </p>
+          <div className="space-y-4">
+            {keywords.map((kw) => {
+              const list = snapshotByKeyword.get(kw.id) ?? []
+              const top10 = list.slice(0, 10)
+              if (top10.length === 0) return null
+              return (
+                <div key={kw.id}>
+                  <h3 className="mb-1.5 text-sm font-medium text-white/90">
+                    {kw.keyword}
+                    <span className="ml-1.5 font-normal text-white/50">
+                      ({kw.location})
+                    </span>
+                  </h3>
+                  <ol className="list-inside list-decimal space-y-0.5 text-sm text-white/80">
+                    {top10.map((s, i) => (
+                      <li key={`${kw.id}-${i}-${s.domain}`}>{s.domain}</li>
+                    ))}
+                  </ol>
+                </div>
+              )
+            })}
           </div>
         </Card>
       )}
