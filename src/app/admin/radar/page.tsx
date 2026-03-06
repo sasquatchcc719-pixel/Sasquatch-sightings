@@ -134,12 +134,18 @@ export default function RadarPage() {
   >('data')
   const [menuOpen, setMenuOpen] = useState(false)
   const [profiles, setProfiles] = useState<
-    { domain_id: string; threat_level: string | null }[]
+    {
+      domain_id: string
+      threat_level: string | null
+      business_model: string | null
+    }[]
   >([])
 
   const threatLevelByDomainId = new Map<string, string | null>()
+  const businessModelByDomainId = new Map<string, string | null>()
   for (const p of profiles) {
     threatLevelByDomainId.set(p.domain_id, p.threat_level)
+    businessModelByDomainId.set(p.domain_id, p.business_model)
   }
 
   const loadData = useCallback(async () => {
@@ -165,7 +171,9 @@ export default function RadarPage() {
         .select('keyword_id, position, domain, rating, reviews, address')
         .order('keyword_id')
         .order('position', { ascending: true }),
-      supabase.from('radar_domain_profiles').select('domain_id, threat_level'),
+      supabase
+        .from('radar_domain_profiles')
+        .select('domain_id, threat_level, business_model'),
     ])
     if (kwRes.error) setError(kwRes.error.message)
     else setKeywords(kwRes.data ?? [])
@@ -184,6 +192,7 @@ export default function RadarPage() {
         (profilesRes.data ?? []) as {
           domain_id: string
           threat_level: string | null
+          business_model: string | null
         }[],
       )
   }, [])
@@ -614,29 +623,13 @@ export default function RadarPage() {
     table: 'Rankings table',
   }
 
-  function threatBadgeClass(level: string | null): string {
-    if (!level) return 'bg-white/10 text-white/50'
-    switch (level) {
-      case 'High':
-        return 'bg-red-500/25 text-red-300 border border-red-500/40'
-      case 'Medium':
-        return 'bg-blue-500/25 text-blue-300 border border-blue-500/40'
-      case 'Low':
-        return 'bg-green-500/25 text-green-300 border border-green-500/40'
-      case 'Paper Tiger':
-        return 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-      default:
-        return 'bg-white/10 text-white/60'
-    }
-  }
-
-  function ThreatBadge({ domainId }: { domainId: string }) {
-    const level = threatLevelByDomainId.get(domainId) ?? null
-    const label = level || '—'
+  function BusinessModelBadge({ domainId }: { domainId: string }) {
+    const model = businessModelByDomainId.get(domainId) ?? null
+    const label = model?.trim() || '—'
     return (
       <span
-        className={`inline-flex shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${threatBadgeClass(level)}`}
-        title={level ? `Threat: ${level}` : 'No dossier yet'}
+        className="inline-flex max-w-[140px] shrink-0 truncate rounded bg-white/10 px-1.5 py-0.5 text-xs font-medium text-white/80"
+        title={model ? `Business model: ${model}` : 'No dossier yet'}
       >
         {label}
       </span>
@@ -1188,7 +1181,7 @@ export default function RadarPage() {
                             </span>
                           )}
                         </span>
-                        <ThreatBadge domainId={d.id} />
+                        <BusinessModelBadge domainId={d.id} />
                       </button>
                       <Button
                         type="button"
@@ -1522,7 +1515,7 @@ export default function RadarPage() {
                                   </span>
                                 )}
                               </button>
-                              <ThreatBadge domainId={d.id} />
+                              <BusinessModelBadge domainId={d.id} />
                             </div>
                           </td>
                           {filteredKeywords.flatMap((kw) => {
