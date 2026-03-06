@@ -139,6 +139,13 @@ export function AdminNavigation() {
       active: pathname === '/admin/stats',
       description: 'Revenue & utilization tracking',
     },
+    {
+      name: 'Radar',
+      href: '/admin/radar',
+      icon: Target,
+      active: pathname === '/admin/radar',
+      description: 'Competitor SERP rank tracking',
+    },
   ]
 
   // Marketing group (leads, vendors, partners, cards, contest)
