@@ -23,11 +23,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  if (!process.env.OPENAI_API_KEY) {
+  const geminiKey = process.env.GEMINI_API_KEY ?? process.env.Gemini_API_Key
+  if (!geminiKey) {
     return NextResponse.json(
       {
         error:
-          'OPENAI_API_KEY is not set. Add it in Vercel → Project → Settings → Environment Variables, then redeploy. Dossier generation uses OpenAI (gpt-4o).',
+          'GEMINI_API_KEY (or Gemini_API_Key) is not set. Add it in Vercel → Project → Settings → Environment Variables, then redeploy. Dossier generation uses Google Gemini.',
       },
       { status: 503 },
     )

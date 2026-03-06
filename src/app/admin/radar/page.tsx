@@ -22,6 +22,11 @@ import {
   X,
   Pencil,
   ExternalLink,
+  Menu,
+  ListOrdered,
+  Building2,
+  TrendingUp,
+  Table2,
 } from 'lucide-react'
 import {
   LineChart,
@@ -123,6 +128,11 @@ export default function RadarPage() {
     failed: number
     errors?: string[]
   } | null>(null)
+  /** Hamburger nav: which section is visible */
+  const [activeSection, setActiveSection] = useState<
+    'data' | 'domains' | 'history' | 'table'
+  >('data')
+  const [menuOpen, setMenuOpen] = useState(false)
 
   const loadData = useCallback(async () => {
     const supabase = createClient()
@@ -578,815 +588,975 @@ export default function RadarPage() {
     )
   }
 
+  const sectionLabels = {
+    data: 'Data entry',
+    domains: 'Domains',
+    history: 'Ranking history',
+    table: 'Rankings table',
+  }
+
   return (
-    <div className="space-y-8">
-      <div className="flex items-center gap-2">
-        <Target className="h-8 w-8 text-green-400" />
-        <h1 className="text-2xl font-bold text-white">
-          Radar – Competitor SERP Tracking
-        </h1>
+    <div className="space-y-6">
+      {/* Top bar: hamburger + title */}
+      <div className="flex items-center gap-3 border-b border-white/20 pb-3">
+        <button
+          type="button"
+          onClick={() => setMenuOpen((o) => !o)}
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/10 text-white hover:bg-white/20"
+          aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+          aria-expanded={menuOpen}
+        >
+          <Menu className="h-6 w-6" />
+        </button>
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate text-xl font-bold text-white sm:text-2xl">
+            Radar
+          </h1>
+          <p className="truncate text-sm text-white/60">
+            {sectionLabels[activeSection]}
+          </p>
+        </div>
+        <Target className="h-7 w-7 shrink-0 text-green-400" />
       </div>
 
-      {/* How to use */}
-      <Card className="border-green-500/30 bg-black/40 p-4 backdrop-blur-sm">
-        <h2 className="mb-2 text-lg font-semibold text-white">
-          How to use Radar
-        </h2>
-        <p className="mb-3 rounded bg-amber-500/20 px-2 py-1.5 text-sm text-amber-200">
-          <strong>Required setup:</strong> In Vercel (Project → Settings →
-          Environment Variables), add{' '}
-          <code className="rounded bg-black/30 px-1">SERPAPI_API_KEY</code> with
-          your SerpApi key from serpapi.com. Without it, rankings will stay
-          empty and refresh will report an error.
-        </p>
-        <ol className="list-inside list-decimal space-y-1.5 text-sm text-white/80">
-          <li>
-            <strong className="text-white">Add keywords</strong> – Type the
-            search phrases you care about (e.g. “carpet cleaning colorado
-            springs”) and the location. Click Add keyword.
-          </li>
-          <li>
-            <strong className="text-white">Add domains to track</strong> –
-            Either use “Discover competitors” (search Google and pick which
-            domains to add) or “Add domain manually” if you already know a
-            competitor’s domain. Mark your own site with “This is my domain.”
-          </li>
-          <li>
-            <strong className="text-white">Get rankings</strong> – Click
-            “Refresh rankings” in Step 3 to run a scan now (checks Google for
-            each keyword and saves positions). Or wait for the daily cron. The
-            table and chart will then show positions and movement.
-          </li>
-        </ol>
-      </Card>
-
-      {error && (
-        <div className="rounded-lg border border-red-500/50 bg-red-500/10 p-3 text-sm text-red-200">
-          {error}
-        </div>
-      )}
-
-      {/* Add keyword */}
-      <Card className="border-white/20 bg-black/40 p-4 backdrop-blur-sm">
-        <h2 className="mb-1 text-lg font-semibold text-white">
-          Step 1 – Add keyword to track
-        </h2>
-        <p className="mb-3 text-sm text-white/70">
-          Type the exact phrase you want to track (as someone would search on
-          Google) and the location for local results. Click “Add keyword.” The
-          cron job will periodically check where your domains rank for these
-          phrases.
-        </p>
-        <form
-          onSubmit={handleAddKeyword}
-          className="flex flex-wrap items-end gap-3"
-        >
-          <div className="min-w-[200px] flex-1 space-y-1">
-            <Label htmlFor="radar-keyword" className="text-white/80">
-              Keyword
-            </Label>
-            <Input
-              id="radar-keyword"
-              value={newKeyword}
-              onChange={(e) => setNewKeyword(e.target.value)}
-              placeholder="e.g. commercial carpet cleaning colorado springs"
-              className="border-white/20 bg-white/5 text-white placeholder:text-white/40"
-            />
-          </div>
-          <div className="min-w-[200px] flex-1 space-y-1">
-            <Label htmlFor="radar-location" className="text-white/80">
-              Location
-            </Label>
-            <Input
-              id="radar-location"
-              value={newKeywordLocation}
-              onChange={(e) => setNewKeywordLocation(e.target.value)}
-              placeholder="Colorado Springs, Colorado, United States"
-              className="border-white/20 bg-white/5 text-white placeholder:text-white/40"
-            />
-          </div>
-          <Button
-            type="submit"
-            disabled={addKeywordLoading || !newKeyword.trim()}
-            className="bg-green-600 hover:bg-green-700"
-          >
-            {addKeywordLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <>
-                <Plus className="mr-1 h-4 w-4" />
-                Add keyword
-              </>
-            )}
-          </Button>
-        </form>
-      </Card>
-
-      {/* Keywords list */}
-      <Card className="border-white/20 bg-black/40 p-4 backdrop-blur-sm">
-        <h2 className="mb-1 text-lg font-semibold text-white">
-          Your keywords ({keywords.length})
-        </h2>
-        <p className="mb-3 text-sm text-white/60">
-          All keywords you’ve added. Use the trash icon to remove one.
-        </p>
-        {keywords.length === 0 ? (
-          <p className="text-sm text-white/60">
-            No keywords yet. Use the form above (Step 1) to add one.
-          </p>
-        ) : (
-          <ul className="space-y-2">
-            {keywords.map((k) => (
-              <li
-                key={k.id}
-                className="flex items-center justify-between rounded bg-white/5 px-3 py-2 text-white/90"
-              >
-                <span>
-                  <strong>{k.keyword}</strong>
-                  <span className="ml-2 text-white/60">({k.location})</span>
-                </span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="text-red-400 hover:bg-red-500/20 hover:text-red-300"
-                  onClick={() => handleDeleteKeyword(k.id)}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
-
-      {/* Discover competitors */}
-      <Card className="border-white/20 bg-black/40 p-4 backdrop-blur-sm">
-        <h2 className="mb-1 text-lg font-semibold text-white">
-          Step 2a – Discover competitors from Google
-        </h2>
-        <p className="mb-3 text-sm text-white/70">
-          <strong>Directions:</strong> Enter a keyword and location, then click
-          “Discover domains.” We run a Google search and list the domains that
-          appear in the results. Check the boxes next to the domains you want to
-          track (e.g. competitors), then click “Add selected.” You can run this
-          for different keywords to find more competitors. Domains already in
-          your list are disabled.
-        </p>
-        <form
-          onSubmit={handleDiscover}
-          className="mb-4 flex flex-wrap items-end gap-3"
-        >
-          <div className="min-w-[200px] flex-1 space-y-1">
-            <Label htmlFor="discover-keyword" className="text-white/80">
-              Keyword
-            </Label>
-            <Input
-              id="discover-keyword"
-              value={discoverKeyword}
-              onChange={(e) => setDiscoverKeyword(e.target.value)}
-              placeholder="e.g. carpet cleaning monument"
-              className="border-white/20 bg-white/5 text-white placeholder:text-white/40"
-            />
-          </div>
-          <div className="min-w-[200px] flex-1 space-y-1">
-            <Label htmlFor="discover-location" className="text-white/80">
-              Location
-            </Label>
-            <Input
-              id="discover-location"
-              value={discoverLocation}
-              onChange={(e) => setDiscoverLocation(e.target.value)}
-              placeholder="Colorado Springs, Colorado, United States"
-              className="border-white/20 bg-white/5 text-white placeholder:text-white/40"
-            />
-          </div>
-          <Button
-            type="submit"
-            disabled={discoverLoading || !discoverKeyword.trim()}
-            className="bg-blue-600 hover:bg-blue-700"
-          >
-            {discoverLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <>
-                <Search className="mr-1 h-4 w-4" />
-                Discover domains
-              </>
-            )}
-          </Button>
-        </form>
-        {discoverResults.length > 0 && (
-          <div className="space-y-2">
-            <p className="text-sm text-white/70">
-              Who’s ranking #1–10 for this search. Check domains to add to your
-              list, then click “Add selected.”
-            </p>
-            <div className="max-h-48 space-y-1 overflow-y-auto rounded bg-white/5 p-2">
-              {discoverResults.map((r) => {
-                const alreadyAdded = domains.some(
-                  (x) =>
-                    x.domain.toLowerCase().replace(/^www\./, '') ===
-                    r.domain.toLowerCase().replace(/^www\./, ''),
-                )
-                return (
-                  <label
-                    key={`${r.position}-${r.domain}`}
-                    className={`flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm ${
-                      alreadyAdded ? 'text-white/50' : 'text-white/90'
-                    }`}
-                  >
-                    <Checkbox
-                      checked={discoverSelected.has(r.domain)}
-                      onCheckedChange={() => toggleDiscoverSelected(r.domain)}
-                      disabled={alreadyAdded}
-                    />
-                    <span className="w-6 shrink-0 font-medium">
-                      #{r.position}
-                    </span>
-                    <span>{r.domain}</span>
-                    {alreadyAdded && (
-                      <span className="text-xs text-white/50">
-                        (already added)
-                      </span>
-                    )}
-                  </label>
-                )
-              })}
-            </div>
-            <Button
-              type="button"
-              disabled={discoverSelected.size === 0 || addDomainLoading}
-              onClick={handleAddSelectedDomains}
-              className="mt-2 bg-green-600 hover:bg-green-700"
-            >
-              {addDomainLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                `Add selected (${discoverSelected.size})`
-              )}
-            </Button>
-          </div>
-        )}
-      </Card>
-
-      {/* Add domain (manual) */}
-      <Card className="border-white/20 bg-black/40 p-4 backdrop-blur-sm">
-        <h2 className="mb-1 text-lg font-semibold text-white">
-          Step 2b – Add domain manually
-        </h2>
-        <p className="mb-3 text-sm text-white/70">
-          <strong>Directions:</strong> If you already know a competitor’s domain
-          (e.g. premiercarpetcleaning.com), enter it here. Optionally add a
-          display name for the table. Check “This is my domain” for
-          sasquatchcarpet.com so we can highlight your row in the rankings.
-        </p>
-        <form
-          onSubmit={handleAddDomain}
-          className="flex flex-wrap items-end gap-3"
-        >
-          <div className="min-w-[180px] flex-1 space-y-1">
-            <Label htmlFor="radar-domain" className="text-white/80">
-              Domain
-            </Label>
-            <Input
-              id="radar-domain"
-              value={newDomain}
-              onChange={(e) => setNewDomain(e.target.value)}
-              placeholder="example.com"
-              className="border-white/20 bg-white/5 text-white placeholder:text-white/40"
-            />
-          </div>
-          <div className="min-w-[140px] flex-1 space-y-1">
-            <Label htmlFor="radar-display-name" className="text-white/80">
-              Display name (optional)
-            </Label>
-            <Input
-              id="radar-display-name"
-              value={newDomainDisplayName}
-              onChange={(e) => setNewDomainDisplayName(e.target.value)}
-              placeholder="Competitor A"
-              className="border-white/20 bg-white/5 text-white placeholder:text-white/40"
-            />
-          </div>
-          <label className="flex cursor-pointer items-center gap-2 text-sm text-white/80">
-            <Checkbox
-              checked={newDomainIsMine}
-              onCheckedChange={(v) => setNewDomainIsMine(Boolean(v))}
-            />
-            This is my domain
-          </label>
-          <Button
-            type="submit"
-            disabled={addDomainLoading || !newDomain.trim()}
-            className="bg-green-600 hover:bg-green-700"
-          >
-            {addDomainLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <>
-                <Plus className="mr-1 h-4 w-4" />
-                Add domain
-              </>
-            )}
-          </Button>
-        </form>
-      </Card>
-
-      {/* Domains list */}
-      <Card className="border-white/20 bg-black/40 p-4 backdrop-blur-sm">
-        <h2 className="mb-1 text-lg font-semibold text-white">
-          Your domains ({domains.length})
-        </h2>
-        <p className="mb-3 text-sm text-white/60">
-          All domains you’re tracking (yours and competitors). Use the trash
-          icon to remove one.
-        </p>
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <Button
+      {/* Slide-out nav */}
+      {menuOpen && (
+        <>
+          <button
             type="button"
-            variant="outline"
-            size="sm"
-            disabled={generateDossiersLoading || domains.length === 0}
-            onClick={handleGenerateAllDossiers}
-            className="border-white/30 text-white/90 hover:bg-white/10"
+            aria-label="Close menu"
+            className="fixed inset-0 z-30 bg-black/50"
+            onClick={() => setMenuOpen(false)}
+          />
+          <nav
+            className="fixed top-0 left-0 z-40 flex h-full w-72 flex-col border-r border-white/20 bg-black/95 shadow-xl backdrop-blur"
+            aria-label="Radar sections"
           >
-            {generateDossiersLoading ? (
-              <>
-                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-                Generating dossiers…
-              </>
-            ) : (
-              <>
-                <FileText className="mr-1.5 h-4 w-4" />
-                Generate all dossiers
-              </>
-            )}
-          </Button>
-          {generateDossiersResult && (
-            <span className="flex flex-col gap-1 text-sm text-white/70">
-              <span>
-                Generated {generateDossiersResult.generated}, failed{' '}
-                {generateDossiersResult.failed}
-                {generateDossiersResult.errors?.length ? (
-                  <span className="ml-1 text-amber-400">
-                    ({generateDossiersResult.errors.length} errors)
-                  </span>
-                ) : null}
-              </span>
-              {generateDossiersResult.errors?.length ? (
-                <details className="text-xs text-white/60">
-                  <summary className="cursor-pointer text-amber-400/90 hover:underline">
-                    Show error details
-                  </summary>
-                  <ul className="mt-1 max-h-32 list-inside list-disc overflow-y-auto">
-                    {generateDossiersResult.errors
-                      .slice(0, 10)
-                      .map((err, i) => (
-                        <li key={i}>{err}</li>
-                      ))}
-                    {generateDossiersResult.errors.length > 10 && (
-                      <li>
-                        … and {generateDossiersResult.errors.length - 10} more
-                      </li>
-                    )}
-                  </ul>
-                </details>
-              ) : null}
-            </span>
-          )}
-        </div>
-        {domains.length === 0 ? (
-          <p className="text-sm text-white/60">
-            No domains yet. Use “Discover competitors” (Step 2a) or “Add domain
-            manually” (Step 2b) above.
-          </p>
-        ) : (
-          <ul className="space-y-2">
-            {domains.map((d) => (
-              <li
-                key={d.id}
-                className="flex items-center justify-between rounded bg-white/5 px-3 py-2 text-white/90"
+            <div className="flex items-center justify-between border-b border-white/20 p-4">
+              <span className="font-semibold text-white">Sections</span>
+              <button
+                type="button"
+                onClick={() => setMenuOpen(false)}
+                className="rounded p-1 text-white/80 hover:bg-white/10 hover:text-white"
+                aria-label="Close"
               >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <ul className="flex flex-col p-2">
+              <li>
                 <button
                   type="button"
-                  onClick={() => openDossier(d.id)}
-                  className="flex min-w-0 flex-1 items-center gap-1.5 text-left hover:underline"
-                  title="Open competitor dossier"
-                >
-                  <FileText className="h-4 w-4 shrink-0 text-white/50" />
-                  <span>
-                    {d.display_name || d.domain}
-                    {d.is_my_domain && (
-                      <span className="ml-2 text-green-400">(you)</span>
-                    )}
-                    {d.display_name && (
-                      <span className="ml-2 text-white/50">{d.domain}</span>
-                    )}
-                  </span>
-                </button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="text-red-400 hover:bg-red-500/20 hover:text-red-300"
-                  onClick={() => handleDeleteDomain(d.id)}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
-
-      {/* Rankings chart */}
-      {hasData && chartData.length > 0 && top3KeywordIds.length > 0 && (
-        <Card className="border-white/20 bg-black/40 p-4 backdrop-blur-sm">
-          <h2 className="mb-1 text-lg font-semibold text-white">
-            Rank history – Your domain (last 30 days)
-          </h2>
-          <p className="mb-4 text-sm text-white/60">
-            Line chart for your site’s position over time for your top 3
-            keywords. Lower position number = higher on Google. Data appears
-            after the cron runs at least once.
-          </p>
-          <div className="h-[300px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart
-                data={chartData}
-                margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
-              >
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="rgba(255,255,255,0.1)"
-                />
-                <XAxis
-                  dataKey="date"
-                  stroke="rgba(255,255,255,0.6)"
-                  fontSize={12}
-                />
-                <YAxis
-                  reversed
-                  domain={[1, 100]}
-                  stroke="rgba(255,255,255,0.6)"
-                  fontSize={12}
-                />
-                <Tooltip
-                  contentStyle={{
-                    background: '#1a1a1a',
-                    border: '1px solid rgba(255,255,255,0.2)',
+                  onClick={() => {
+                    setActiveSection('data')
+                    setMenuOpen(false)
                   }}
-                  labelStyle={{ color: '#e5e5e5' }}
+                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition ${
+                    activeSection === 'data'
+                      ? 'bg-green-600/30 text-green-300'
+                      : 'text-white/90 hover:bg-white/10'
+                  }`}
+                >
+                  <ListOrdered className="h-5 w-5 shrink-0" />
+                  Data entry
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveSection('domains')
+                    setMenuOpen(false)
+                  }}
+                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition ${
+                    activeSection === 'domains'
+                      ? 'bg-green-600/30 text-green-300'
+                      : 'text-white/90 hover:bg-white/10'
+                  }`}
+                >
+                  <Building2 className="h-5 w-5 shrink-0" />
+                  Domains
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveSection('history')
+                    setMenuOpen(false)
+                  }}
+                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition ${
+                    activeSection === 'history'
+                      ? 'bg-green-600/30 text-green-300'
+                      : 'text-white/90 hover:bg-white/10'
+                  }`}
+                >
+                  <TrendingUp className="h-5 w-5 shrink-0" />
+                  Ranking history
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveSection('table')
+                    setMenuOpen(false)
+                  }}
+                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition ${
+                    activeSection === 'table'
+                      ? 'bg-green-600/30 text-green-300'
+                      : 'text-white/90 hover:bg-white/10'
+                  }`}
+                >
+                  <Table2 className="h-5 w-5 shrink-0" />
+                  Rankings table
+                </button>
+              </li>
+            </ul>
+          </nav>
+        </>
+      )}
+
+      {/* Section: Data entry */}
+      {activeSection === 'data' && (
+        <div className="space-y-8">
+          {/* How to use */}
+          <Card className="border-green-500/30 bg-black/40 p-4 backdrop-blur-sm">
+            <h2 className="mb-2 text-lg font-semibold text-white">
+              How to use Radar
+            </h2>
+            <p className="mb-3 rounded bg-amber-500/20 px-2 py-1.5 text-sm text-amber-200">
+              <strong>Required setup:</strong> In Vercel (Project → Settings →
+              Environment Variables), add{' '}
+              <code className="rounded bg-black/30 px-1">SERPAPI_API_KEY</code>{' '}
+              with your SerpApi key from serpapi.com. Without it, rankings will
+              stay empty and refresh will report an error.
+            </p>
+            <ol className="list-inside list-decimal space-y-1.5 text-sm text-white/80">
+              <li>
+                <strong className="text-white">Add keywords</strong> – Type the
+                search phrases you care about (e.g. “carpet cleaning colorado
+                springs”) and the location. Click Add keyword.
+              </li>
+              <li>
+                <strong className="text-white">Add domains to track</strong> –
+                Either use “Discover competitors” (search Google and pick which
+                domains to add) or “Add domain manually” if you already know a
+                competitor’s domain. Mark your own site with “This is my
+                domain.”
+              </li>
+              <li>
+                <strong className="text-white">Get rankings</strong> – Click
+                “Refresh rankings” in Step 3 to run a scan now (checks Google
+                for each keyword and saves positions). Or wait for the daily
+                cron. The table and chart will then show positions and movement.
+              </li>
+            </ol>
+          </Card>
+
+          {error && (
+            <div className="rounded-lg border border-red-500/50 bg-red-500/10 p-3 text-sm text-red-200">
+              {error}
+            </div>
+          )}
+
+          {/* Add keyword */}
+          <Card className="border-white/20 bg-black/40 p-4 backdrop-blur-sm">
+            <h2 className="mb-1 text-lg font-semibold text-white">
+              Step 1 – Add keyword to track
+            </h2>
+            <p className="mb-3 text-sm text-white/70">
+              Type the exact phrase you want to track (as someone would search
+              on Google) and the location for local results. Click “Add
+              keyword.” The cron job will periodically check where your domains
+              rank for these phrases.
+            </p>
+            <form
+              onSubmit={handleAddKeyword}
+              className="flex flex-wrap items-end gap-3"
+            >
+              <div className="min-w-[200px] flex-1 space-y-1">
+                <Label htmlFor="radar-keyword" className="text-white/80">
+                  Keyword
+                </Label>
+                <Input
+                  id="radar-keyword"
+                  value={newKeyword}
+                  onChange={(e) => setNewKeyword(e.target.value)}
+                  placeholder="e.g. commercial carpet cleaning colorado springs"
+                  className="border-white/20 bg-white/5 text-white placeholder:text-white/40"
                 />
-                <Legend />
-                {top3KeywordIds.map((kid, i) => {
-                  const kw = keywords.find((k) => k.id === kid)?.keyword ?? kid
-                  const colors = ['#22c55e', '#3b82f6', '#a855f7']
-                  return (
-                    <Line
-                      key={kid}
-                      type="monotone"
-                      dataKey={kw}
-                      stroke={colors[i % 3]}
-                      strokeWidth={2}
-                      dot={false}
-                      connectNulls
-                    />
-                  )
-                })}
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
-      )}
-
-      {/* Who's actually ranking #1–10 (from SerpApi, not just our list) */}
-      {keywords.length > 0 && snapshotByKeyword.size > 0 && (
-        <Card className="border-white/20 bg-black/40 p-4 backdrop-blur-sm">
-          <h2 className="mb-1 text-lg font-semibold text-white">
-            Who’s ranking #1–10 (from latest scan)
-          </h2>
-          <p className="mb-4 text-sm text-white/60">
-            Actual Google order from the last refresh. When Google shows a local
-            pack we also pull star rating, review count, and address
-            (town/area). Add any domain to &quot;Your domains&quot; to track in
-            the table below.
-          </p>
-          <div className="space-y-4">
-            {keywords.map((kw) => {
-              const list = snapshotByKeyword.get(kw.id) ?? []
-              const top10 = list.slice(0, 10)
-              if (top10.length === 0) return null
-              return (
-                <div key={kw.id}>
-                  <h3 className="mb-1.5 text-sm font-medium text-white/90">
-                    {kw.keyword}
-                    <span className="ml-1.5 font-normal text-white/50">
-                      ({kw.location})
-                    </span>
-                  </h3>
-                  <ol className="list-inside list-decimal space-y-0.5 text-sm text-white/80">
-                    {top10.map((s, i) => (
-                      <li key={`${kw.id}-${i}-${s.domain}`}>
-                        {s.domain}
-                        {s.rating != null && (
-                          <span className="ml-2 text-amber-400">
-                            ★ {s.rating}
-                            {s.reviews != null && s.reviews > 0 && (
-                              <span className="text-white/60">
-                                {' '}
-                                ({s.reviews} reviews)
-                              </span>
-                            )}
-                          </span>
-                        )}
-                        {s.address && (
-                          <span className="block pl-6 text-xs text-white/50">
-                            {s.address}
-                          </span>
-                        )}
-                      </li>
-                    ))}
-                  </ol>
-                </div>
-              )
-            })}
-          </div>
-        </Card>
-      )}
-
-      {/* Rankings table - only when we have data */}
-      {hasData ? (
-        <Card className="overflow-hidden border-white/20 bg-black/40 backdrop-blur-sm">
-          <div className="border-b border-white/20 p-3">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold text-white">
-                  Step 3 – Rankings table (companies × keywords)
-                </h2>
-                <p className="mt-1 text-sm text-white/60">
-                  Each row is a company; each column is a keyword (location
-                  shown under keyword). Use Location to show only one area; use
-                  Sort by to order rows. Green up = improved; red down =
-                  dropped.
-                </p>
-                {refreshMessage && (
-                  <p className="mt-2 text-sm text-green-400">
-                    {refreshMessage}
-                  </p>
-                )}
+              </div>
+              <div className="min-w-[200px] flex-1 space-y-1">
+                <Label htmlFor="radar-location" className="text-white/80">
+                  Location
+                </Label>
+                <Input
+                  id="radar-location"
+                  value={newKeywordLocation}
+                  onChange={(e) => setNewKeywordLocation(e.target.value)}
+                  placeholder="Colorado Springs, Colorado, United States"
+                  className="border-white/20 bg-white/5 text-white placeholder:text-white/40"
+                />
               </div>
               <Button
-                type="button"
-                onClick={handleRefreshRankings}
-                disabled={
-                  refreshLoading ||
-                  keywords.length === 0 ||
-                  domains.length === 0
-                }
-                className="shrink-0 bg-green-600 hover:bg-green-700"
+                type="submit"
+                disabled={addKeywordLoading || !newKeyword.trim()}
+                className="bg-green-600 hover:bg-green-700"
               >
-                {refreshLoading ? (
+                {addKeywordLoading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <>
-                    <RefreshCw className="mr-1.5 h-4 w-4" />
-                    Refresh rankings
+                    <Plus className="mr-1 h-4 w-4" />
+                    Add keyword
                   </>
                 )}
               </Button>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-4 border-b border-white/10 px-3 py-2">
-            <div className="flex items-center gap-2">
-              <label htmlFor="radar-location" className="text-sm text-white/70">
-                Location:
-              </label>
-              <select
-                id="radar-location"
-                value={locationFilter}
-                onChange={(e) => setLocationFilter(e.target.value)}
-                className="rounded border border-white/20 bg-white/10 px-2 py-1.5 text-sm text-white focus:border-green-500 focus:outline-none"
-              >
-                <option value="">All locations</option>
-                {locations.map((loc) => (
-                  <option key={loc} value={loc}>
-                    {loc}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex items-center gap-1.5 text-sm text-white/70">
-              <span className="mr-1">Sort:</span>
-              <button
-                type="button"
-                onClick={() => setRankSortBy('domain')}
-                className={`rounded px-2.5 py-1 transition ${
-                  rankSortBy === 'domain'
-                    ? 'bg-white/20 text-white'
-                    : 'bg-white/10 text-white/80 hover:bg-white/15'
-                }`}
-              >
-                Company A–Z
-              </button>
-              <button
-                type="button"
-                onClick={() => setRankSortBy('best-organic')}
-                className={`rounded px-2.5 py-1 transition ${
-                  rankSortBy === 'best-organic'
-                    ? 'bg-white/20 text-white'
-                    : 'bg-white/10 text-white/80 hover:bg-white/15'
-                }`}
-              >
-                Best organic
-              </button>
-              <button
-                type="button"
-                onClick={() => setRankSortBy('best-map')}
-                className={`rounded px-2.5 py-1 transition ${
-                  rankSortBy === 'best-map'
-                    ? 'bg-white/20 text-white'
-                    : 'bg-white/10 text-white/80 hover:bg-white/15'
-                }`}
-              >
-                Best map
-              </button>
-            </div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-white/20 text-white/80">
-                  <th className="p-2 font-semibold sm:p-3">Company</th>
-                  {filteredKeywords.map((kw) => (
-                    <th
-                      key={kw.id}
-                      colSpan={2}
-                      className="max-w-[180px] border-l border-white/10 p-0 sm:max-w-none"
-                      title={`${kw.keyword} — ${kw.location}`}
-                    >
-                      <div className="border-b border-white/10 p-2 sm:p-3">
-                        <span className="block truncate font-semibold">
-                          {kw.keyword}
-                        </span>
-                        <span className="block truncate text-xs font-normal text-white/60">
-                          {kw.location}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-2 text-center text-xs font-medium">
-                        <button
-                          type="button"
-                          onClick={() => setRankSortBy(`${kw.id}__map`)}
-                          className={`flex items-center justify-center gap-1 border-r border-white/10 py-1.5 transition ${
-                            rankSortBy === `${kw.id}__map`
-                              ? 'bg-white/20 text-white'
-                              : 'text-white/70 hover:bg-white/10 hover:text-white/80'
-                          }`}
-                          title={`Sort by ${kw.keyword} map rank`}
-                        >
-                          <MapPin
-                            className="h-3.5 w-3.5 shrink-0"
-                            aria-hidden
-                          />
-                          Map
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setRankSortBy(`${kw.id}__organic`)}
-                          className={`py-1.5 transition ${
-                            rankSortBy === `${kw.id}__organic`
-                              ? 'bg-white/20 text-white'
-                              : 'text-white/70 hover:bg-white/10 hover:text-white/80'
-                          }`}
-                          title={`Sort by ${kw.keyword} organic rank`}
-                        >
-                          Organic
-                        </button>
-                      </div>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {sortedDomains.map((d) => (
-                  <tr
-                    key={d.id}
-                    className="border-b border-white/10 text-white/90"
+            </form>
+          </Card>
+
+          {/* Keywords list */}
+          <Card className="border-white/20 bg-black/40 p-4 backdrop-blur-sm">
+            <h2 className="mb-1 text-lg font-semibold text-white">
+              Your keywords ({keywords.length})
+            </h2>
+            <p className="mb-3 text-sm text-white/60">
+              All keywords you’ve added. Use the trash icon to remove one.
+            </p>
+            {keywords.length === 0 ? (
+              <p className="text-sm text-white/60">
+                No keywords yet. Use the form above (Step 1) to add one.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {keywords.map((k) => (
+                  <li
+                    key={k.id}
+                    className="flex items-center justify-between rounded bg-white/5 px-3 py-2 text-white/90"
                   >
-                    <td className="sticky left-0 z-10 min-w-[140px] bg-black/40 p-2 font-medium sm:min-w-[180px] sm:p-3">
-                      <button
-                        type="button"
-                        onClick={() => openDossier(d.id)}
-                        className="flex items-center gap-1.5 text-left hover:underline"
-                        title="Open competitor dossier"
+                    <span>
+                      <strong>{k.keyword}</strong>
+                      <span className="ml-2 text-white/60">({k.location})</span>
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-red-400 hover:bg-red-500/20 hover:text-red-300"
+                      onClick={() => handleDeleteKeyword(k.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+
+          {/* Discover competitors */}
+          <Card className="border-white/20 bg-black/40 p-4 backdrop-blur-sm">
+            <h2 className="mb-1 text-lg font-semibold text-white">
+              Step 2a – Discover competitors from Google
+            </h2>
+            <p className="mb-3 text-sm text-white/70">
+              <strong>Directions:</strong> Enter a keyword and location, then
+              click “Discover domains.” We run a Google search and list the
+              domains that appear in the results. Check the boxes next to the
+              domains you want to track (e.g. competitors), then click “Add
+              selected.” You can run this for different keywords to find more
+              competitors. Domains already in your list are disabled.
+            </p>
+            <form
+              onSubmit={handleDiscover}
+              className="mb-4 flex flex-wrap items-end gap-3"
+            >
+              <div className="min-w-[200px] flex-1 space-y-1">
+                <Label htmlFor="discover-keyword" className="text-white/80">
+                  Keyword
+                </Label>
+                <Input
+                  id="discover-keyword"
+                  value={discoverKeyword}
+                  onChange={(e) => setDiscoverKeyword(e.target.value)}
+                  placeholder="e.g. carpet cleaning monument"
+                  className="border-white/20 bg-white/5 text-white placeholder:text-white/40"
+                />
+              </div>
+              <div className="min-w-[200px] flex-1 space-y-1">
+                <Label htmlFor="discover-location" className="text-white/80">
+                  Location
+                </Label>
+                <Input
+                  id="discover-location"
+                  value={discoverLocation}
+                  onChange={(e) => setDiscoverLocation(e.target.value)}
+                  placeholder="Colorado Springs, Colorado, United States"
+                  className="border-white/20 bg-white/5 text-white placeholder:text-white/40"
+                />
+              </div>
+              <Button
+                type="submit"
+                disabled={discoverLoading || !discoverKeyword.trim()}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                {discoverLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <>
+                    <Search className="mr-1 h-4 w-4" />
+                    Discover domains
+                  </>
+                )}
+              </Button>
+            </form>
+            {discoverResults.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm text-white/70">
+                  Who’s ranking #1–10 for this search. Check domains to add to
+                  your list, then click “Add selected.”
+                </p>
+                <div className="max-h-48 space-y-1 overflow-y-auto rounded bg-white/5 p-2">
+                  {discoverResults.map((r) => {
+                    const alreadyAdded = domains.some(
+                      (x) =>
+                        x.domain.toLowerCase().replace(/^www\./, '') ===
+                        r.domain.toLowerCase().replace(/^www\./, ''),
+                    )
+                    return (
+                      <label
+                        key={`${r.position}-${r.domain}`}
+                        className={`flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm ${
+                          alreadyAdded ? 'text-white/50' : 'text-white/90'
+                        }`}
                       >
-                        <FileText className="h-4 w-4 shrink-0 text-white/50" />
+                        <Checkbox
+                          checked={discoverSelected.has(r.domain)}
+                          onCheckedChange={() =>
+                            toggleDiscoverSelected(r.domain)
+                          }
+                          disabled={alreadyAdded}
+                        />
+                        <span className="w-6 shrink-0 font-medium">
+                          #{r.position}
+                        </span>
+                        <span>{r.domain}</span>
+                        {alreadyAdded && (
+                          <span className="text-xs text-white/50">
+                            (already added)
+                          </span>
+                        )}
+                      </label>
+                    )
+                  })}
+                </div>
+                <Button
+                  type="button"
+                  disabled={discoverSelected.size === 0 || addDomainLoading}
+                  onClick={handleAddSelectedDomains}
+                  className="mt-2 bg-green-600 hover:bg-green-700"
+                >
+                  {addDomainLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    `Add selected (${discoverSelected.size})`
+                  )}
+                </Button>
+              </div>
+            )}
+          </Card>
+
+          {/* Add domain (manual) */}
+          <Card className="border-white/20 bg-black/40 p-4 backdrop-blur-sm">
+            <h2 className="mb-1 text-lg font-semibold text-white">
+              Step 2b – Add domain manually
+            </h2>
+            <p className="mb-3 text-sm text-white/70">
+              <strong>Directions:</strong> If you already know a competitor’s
+              domain (e.g. premiercarpetcleaning.com), enter it here. Optionally
+              add a display name for the table. Check “This is my domain” for
+              sasquatchcarpet.com so we can highlight your row in the rankings.
+            </p>
+            <form
+              onSubmit={handleAddDomain}
+              className="flex flex-wrap items-end gap-3"
+            >
+              <div className="min-w-[180px] flex-1 space-y-1">
+                <Label htmlFor="radar-domain" className="text-white/80">
+                  Domain
+                </Label>
+                <Input
+                  id="radar-domain"
+                  value={newDomain}
+                  onChange={(e) => setNewDomain(e.target.value)}
+                  placeholder="example.com"
+                  className="border-white/20 bg-white/5 text-white placeholder:text-white/40"
+                />
+              </div>
+              <div className="min-w-[140px] flex-1 space-y-1">
+                <Label htmlFor="radar-display-name" className="text-white/80">
+                  Display name (optional)
+                </Label>
+                <Input
+                  id="radar-display-name"
+                  value={newDomainDisplayName}
+                  onChange={(e) => setNewDomainDisplayName(e.target.value)}
+                  placeholder="Competitor A"
+                  className="border-white/20 bg-white/5 text-white placeholder:text-white/40"
+                />
+              </div>
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-white/80">
+                <Checkbox
+                  checked={newDomainIsMine}
+                  onCheckedChange={(v) => setNewDomainIsMine(Boolean(v))}
+                />
+                This is my domain
+              </label>
+              <Button
+                type="submit"
+                disabled={addDomainLoading || !newDomain.trim()}
+                className="bg-green-600 hover:bg-green-700"
+              >
+                {addDomainLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <>
+                    <Plus className="mr-1 h-4 w-4" />
+                    Add domain
+                  </>
+                )}
+              </Button>
+            </form>
+          </Card>
+        </div>
+      )}
+
+      {/* Section: Domains */}
+      {activeSection === 'domains' && (
+        <div className="space-y-6">
+          {/* Domains list */}
+          <Card className="border-white/20 bg-black/40 p-4 backdrop-blur-sm">
+            <h2 className="mb-1 text-lg font-semibold text-white">
+              Your domains ({domains.length})
+            </h2>
+            <p className="mb-3 text-sm text-white/60">
+              All domains you’re tracking (yours and competitors). Use the trash
+              icon to remove one.
+            </p>
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={generateDossiersLoading || domains.length === 0}
+                onClick={handleGenerateAllDossiers}
+                className="border-white/30 text-white/90 hover:bg-white/10"
+              >
+                {generateDossiersLoading ? (
+                  <>
+                    <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                    Generating dossiers…
+                  </>
+                ) : (
+                  <>
+                    <FileText className="mr-1.5 h-4 w-4" />
+                    Generate all dossiers
+                  </>
+                )}
+              </Button>
+              {generateDossiersResult && (
+                <span className="flex flex-col gap-1 text-sm text-white/70">
+                  <span>
+                    Generated {generateDossiersResult.generated}, failed{' '}
+                    {generateDossiersResult.failed}
+                    {generateDossiersResult.errors?.length ? (
+                      <span className="ml-1 text-amber-400">
+                        ({generateDossiersResult.errors.length} errors)
+                      </span>
+                    ) : null}
+                  </span>
+                  {generateDossiersResult.errors?.length ? (
+                    <details className="text-xs text-white/60">
+                      <summary className="cursor-pointer text-amber-400/90 hover:underline">
+                        Show error details
+                      </summary>
+                      <ul className="mt-1 max-h-32 list-inside list-disc overflow-y-auto">
+                        {generateDossiersResult.errors
+                          .slice(0, 10)
+                          .map((err, i) => (
+                            <li key={i}>{err}</li>
+                          ))}
+                        {generateDossiersResult.errors.length > 10 && (
+                          <li>
+                            … and {generateDossiersResult.errors.length - 10}{' '}
+                            more
+                          </li>
+                        )}
+                      </ul>
+                    </details>
+                  ) : null}
+                </span>
+              )}
+            </div>
+            {domains.length === 0 ? (
+              <p className="text-sm text-white/60">
+                No domains yet. Use “Discover competitors” (Step 2a) or “Add
+                domain manually” (Step 2b) above.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {domains.map((d) => (
+                  <li
+                    key={d.id}
+                    className="flex items-center justify-between rounded bg-white/5 px-3 py-2 text-white/90"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => openDossier(d.id)}
+                      className="flex min-w-0 flex-1 items-center gap-1.5 text-left hover:underline"
+                      title="Open competitor dossier"
+                    >
+                      <FileText className="h-4 w-4 shrink-0 text-white/50" />
+                      <span>
                         {d.display_name || d.domain}
                         {d.is_my_domain && (
-                          <span className="ml-1 text-green-400">(you)</span>
+                          <span className="ml-2 text-green-400">(you)</span>
                         )}
-                      </button>
-                    </td>
-                    {filteredKeywords.flatMap((kw) => {
-                      const key = `${kw.id}:${d.id}`
-                      const organic = latestMap.get(key)
-                      const mapRank = latestMapPack.get(key)
-                      const previous = previousMap.get(key)
-                      const movement =
-                        organic != null && previous != null
-                          ? previous - organic
-                          : null
-                      return [
-                        <td
-                          key={`${kw.id}-map`}
-                          className="border-r border-l border-white/10 p-2 text-center sm:p-3"
+                        {d.display_name && (
+                          <span className="ml-2 text-white/50">{d.domain}</span>
+                        )}
+                      </span>
+                    </button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-red-400 hover:bg-red-500/20 hover:text-red-300"
+                      onClick={() => handleDeleteDomain(d.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+        </div>
+      )}
+
+      {/* Section: Ranking history */}
+      {activeSection === 'history' && (
+        <div className="space-y-8">
+          {/* Rankings chart */}
+          {hasData && chartData.length > 0 && top3KeywordIds.length > 0 && (
+            <Card className="border-white/20 bg-black/40 p-4 backdrop-blur-sm">
+              <h2 className="mb-1 text-lg font-semibold text-white">
+                Rank history – Your domain (last 30 days)
+              </h2>
+              <p className="mb-4 text-sm text-white/60">
+                Line chart for your site’s position over time for your top 3
+                keywords. Lower position number = higher on Google. Data appears
+                after the cron runs at least once.
+              </p>
+              <div className="h-[300px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart
+                    data={chartData}
+                    margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
+                  >
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="rgba(255,255,255,0.1)"
+                    />
+                    <XAxis
+                      dataKey="date"
+                      stroke="rgba(255,255,255,0.6)"
+                      fontSize={12}
+                    />
+                    <YAxis
+                      reversed
+                      domain={[1, 100]}
+                      stroke="rgba(255,255,255,0.6)"
+                      fontSize={12}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        background: '#1a1a1a',
+                        border: '1px solid rgba(255,255,255,0.2)',
+                      }}
+                      labelStyle={{ color: '#e5e5e5' }}
+                    />
+                    <Legend />
+                    {top3KeywordIds.map((kid, i) => {
+                      const kw =
+                        keywords.find((k) => k.id === kid)?.keyword ?? kid
+                      const colors = ['#22c55e', '#3b82f6', '#a855f7']
+                      return (
+                        <Line
+                          key={kid}
+                          type="monotone"
+                          dataKey={kw}
+                          stroke={colors[i % 3]}
+                          strokeWidth={2}
+                          dot={false}
+                          connectNulls
+                        />
+                      )
+                    })}
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </Card>
+          )}
+
+          {/* Who's actually ranking #1–10 (from SerpApi, not just our list) */}
+          {keywords.length > 0 && snapshotByKeyword.size > 0 && (
+            <Card className="border-white/20 bg-black/40 p-4 backdrop-blur-sm">
+              <h2 className="mb-1 text-lg font-semibold text-white">
+                Who’s ranking #1–10 (from latest scan)
+              </h2>
+              <p className="mb-4 text-sm text-white/60">
+                Actual Google order from the last refresh. When Google shows a
+                local pack we also pull star rating, review count, and address
+                (town/area). Add any domain to &quot;Your domains&quot; to track
+                in the table below.
+              </p>
+              <div className="space-y-4">
+                {keywords.map((kw) => {
+                  const list = snapshotByKeyword.get(kw.id) ?? []
+                  const top10 = list.slice(0, 10)
+                  if (top10.length === 0) return null
+                  return (
+                    <div key={kw.id}>
+                      <h3 className="mb-1.5 text-sm font-medium text-white/90">
+                        {kw.keyword}
+                        <span className="ml-1.5 font-normal text-white/50">
+                          ({kw.location})
+                        </span>
+                      </h3>
+                      <ol className="list-inside list-decimal space-y-0.5 text-sm text-white/80">
+                        {top10.map((s, i) => (
+                          <li key={`${kw.id}-${i}-${s.domain}`}>
+                            {s.domain}
+                            {s.rating != null && (
+                              <span className="ml-2 text-amber-400">
+                                ★ {s.rating}
+                                {s.reviews != null && s.reviews > 0 && (
+                                  <span className="text-white/60">
+                                    {' '}
+                                    ({s.reviews} reviews)
+                                  </span>
+                                )}
+                              </span>
+                            )}
+                            {s.address && (
+                              <span className="block pl-6 text-xs text-white/50">
+                                {s.address}
+                              </span>
+                            )}
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  )
+                })}
+              </div>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {/* Section: Rankings table */}
+      {activeSection === 'table' && (
+        <div className="space-y-6">
+          {/* Rankings table - only when we have data */}
+          {hasData ? (
+            <Card className="overflow-hidden border-white/20 bg-black/40 backdrop-blur-sm">
+              <div className="border-b border-white/20 p-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-semibold text-white">
+                      Step 3 – Rankings table (companies × keywords)
+                    </h2>
+                    <p className="mt-1 text-sm text-white/60">
+                      Each row is a company; each column is a keyword (location
+                      shown under keyword). Use Location to show only one area;
+                      use Sort by to order rows. Green up = improved; red down =
+                      dropped.
+                    </p>
+                    {refreshMessage && (
+                      <p className="mt-2 text-sm text-green-400">
+                        {refreshMessage}
+                      </p>
+                    )}
+                  </div>
+                  <Button
+                    type="button"
+                    onClick={handleRefreshRankings}
+                    disabled={
+                      refreshLoading ||
+                      keywords.length === 0 ||
+                      domains.length === 0
+                    }
+                    className="shrink-0 bg-green-600 hover:bg-green-700"
+                  >
+                    {refreshLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <>
+                        <RefreshCw className="mr-1.5 h-4 w-4" />
+                        Refresh rankings
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-4 border-b border-white/10 px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <label
+                    htmlFor="radar-location"
+                    className="text-sm text-white/70"
+                  >
+                    Location:
+                  </label>
+                  <select
+                    id="radar-location"
+                    value={locationFilter}
+                    onChange={(e) => setLocationFilter(e.target.value)}
+                    className="rounded border border-white/20 bg-white/10 px-2 py-1.5 text-sm text-white focus:border-green-500 focus:outline-none"
+                  >
+                    <option value="">All locations</option>
+                    {locations.map((loc) => (
+                      <option key={loc} value={loc}>
+                        {loc}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-center gap-1.5 text-sm text-white/70">
+                  <span className="mr-1">Sort:</span>
+                  <button
+                    type="button"
+                    onClick={() => setRankSortBy('domain')}
+                    className={`rounded px-2.5 py-1 transition ${
+                      rankSortBy === 'domain'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-white/10 text-white/80 hover:bg-white/15'
+                    }`}
+                  >
+                    Company A–Z
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRankSortBy('best-organic')}
+                    className={`rounded px-2.5 py-1 transition ${
+                      rankSortBy === 'best-organic'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-white/10 text-white/80 hover:bg-white/15'
+                    }`}
+                  >
+                    Best organic
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRankSortBy('best-map')}
+                    className={`rounded px-2.5 py-1 transition ${
+                      rankSortBy === 'best-map'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-white/10 text-white/80 hover:bg-white/15'
+                    }`}
+                  >
+                    Best map
+                  </button>
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-white/20 text-white/80">
+                      <th className="p-2 font-semibold sm:p-3">Company</th>
+                      {filteredKeywords.map((kw) => (
+                        <th
+                          key={kw.id}
+                          colSpan={2}
+                          className="max-w-[180px] border-l border-white/10 p-0 sm:max-w-none"
+                          title={`${kw.keyword} — ${kw.location}`}
                         >
-                          {mapRank != null ? (
-                            <span className="inline-flex items-center gap-1 text-white/90">
+                          <div className="border-b border-white/10 p-2 sm:p-3">
+                            <span className="block truncate font-semibold">
+                              {kw.keyword}
+                            </span>
+                            <span className="block truncate text-xs font-normal text-white/60">
+                              {kw.location}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 text-center text-xs font-medium">
+                            <button
+                              type="button"
+                              onClick={() => setRankSortBy(`${kw.id}__map`)}
+                              className={`flex items-center justify-center gap-1 border-r border-white/10 py-1.5 transition ${
+                                rankSortBy === `${kw.id}__map`
+                                  ? 'bg-white/20 text-white'
+                                  : 'text-white/70 hover:bg-white/10 hover:text-white/80'
+                              }`}
+                              title={`Sort by ${kw.keyword} map rank`}
+                            >
                               <MapPin
-                                className="h-3.5 w-3.5 shrink-0 text-white/60"
+                                className="h-3.5 w-3.5 shrink-0"
                                 aria-hidden
                               />
-                              #{mapRank}
-                            </span>
-                          ) : (
-                            <span className="text-white/50">–</span>
-                          )}
-                        </td>,
-                        <td key={`${kw.id}-organic`} className="p-2 sm:p-3">
-                          {organic != null ? (
-                            <span className="flex items-center gap-1">
-                              #{organic}
-                              {movement !== null &&
-                                movement !== 0 &&
-                                (movement > 0 ? (
-                                  <ArrowUp
-                                    className="h-4 w-4 shrink-0 text-green-500"
-                                    aria-label="Improved"
+                              Map
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setRankSortBy(`${kw.id}__organic`)}
+                              className={`py-1.5 transition ${
+                                rankSortBy === `${kw.id}__organic`
+                                  ? 'bg-white/20 text-white'
+                                  : 'text-white/70 hover:bg-white/10 hover:text-white/80'
+                              }`}
+                              title={`Sort by ${kw.keyword} organic rank`}
+                            >
+                              Organic
+                            </button>
+                          </div>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedDomains.map((d) => (
+                      <tr
+                        key={d.id}
+                        className="border-b border-white/10 text-white/90"
+                      >
+                        <td className="sticky left-0 z-10 min-w-[140px] bg-black/40 p-2 font-medium sm:min-w-[180px] sm:p-3">
+                          <button
+                            type="button"
+                            onClick={() => openDossier(d.id)}
+                            className="flex items-center gap-1.5 text-left hover:underline"
+                            title="Open competitor dossier"
+                          >
+                            <FileText className="h-4 w-4 shrink-0 text-white/50" />
+                            {d.display_name || d.domain}
+                            {d.is_my_domain && (
+                              <span className="ml-1 text-green-400">(you)</span>
+                            )}
+                          </button>
+                        </td>
+                        {filteredKeywords.flatMap((kw) => {
+                          const key = `${kw.id}:${d.id}`
+                          const organic = latestMap.get(key)
+                          const mapRank = latestMapPack.get(key)
+                          const previous = previousMap.get(key)
+                          const movement =
+                            organic != null && previous != null
+                              ? previous - organic
+                              : null
+                          return [
+                            <td
+                              key={`${kw.id}-map`}
+                              className="border-r border-l border-white/10 p-2 text-center sm:p-3"
+                            >
+                              {mapRank != null ? (
+                                <span className="inline-flex items-center gap-1 text-white/90">
+                                  <MapPin
+                                    className="h-3.5 w-3.5 shrink-0 text-white/60"
+                                    aria-hidden
                                   />
-                                ) : (
-                                  <ArrowDown
-                                    className="h-4 w-4 shrink-0 text-red-500"
-                                    aria-label="Dropped"
-                                  />
-                                ))}
-                              {movement === 0 && (
-                                <Minus
-                                  className="h-4 w-4 shrink-0 text-white/50"
-                                  aria-label="No change"
-                                />
+                                  #{mapRank}
+                                </span>
+                              ) : (
+                                <span className="text-white/50">–</span>
                               )}
-                            </span>
-                          ) : (
-                            <span className="text-white/50">–</span>
-                          )}
-                        </td>,
-                      ]
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <p className="border-t border-white/10 p-3 text-xs text-white/50">
-            To refresh rankings: wait for the daily cron, or call GET
-            /api/cron/track-serps with header Authorization: Bearer
-            [CRON_SECRET]. Movement arrows compare to the previous scan.
-          </p>
-        </Card>
-      ) : (
-        <Card className="border-white/20 bg-black/40 p-4 backdrop-blur-sm">
-          <h2 className="mb-2 text-lg font-semibold text-white">
-            Step 3 – Rankings will appear here
-          </h2>
-          <p className="mb-3 text-white/70">
-            Add at least one keyword (Step 1) and one domain (Step 2a or 2b)
-            above. Then click “Refresh rankings” to run a scan now, or wait for
-            the daily cron. After a scan runs, this section will show a table of
-            positions and a chart for your domain.
-          </p>
-          <Button
-            type="button"
-            onClick={handleRefreshRankings}
-            disabled={
-              refreshLoading || keywords.length === 0 || domains.length === 0
-            }
-            className="bg-green-600 hover:bg-green-700"
-          >
-            {refreshLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <>
-                <RefreshCw className="mr-1.5 h-4 w-4" />
-                Refresh rankings
-              </>
-            )}
-          </Button>
-          {refreshMessage && (
-            <p className="mt-2 text-sm text-green-400">{refreshMessage}</p>
+                            </td>,
+                            <td key={`${kw.id}-organic`} className="p-2 sm:p-3">
+                              {organic != null ? (
+                                <span className="flex items-center gap-1">
+                                  #{organic}
+                                  {movement !== null &&
+                                    movement !== 0 &&
+                                    (movement > 0 ? (
+                                      <ArrowUp
+                                        className="h-4 w-4 shrink-0 text-green-500"
+                                        aria-label="Improved"
+                                      />
+                                    ) : (
+                                      <ArrowDown
+                                        className="h-4 w-4 shrink-0 text-red-500"
+                                        aria-label="Dropped"
+                                      />
+                                    ))}
+                                  {movement === 0 && (
+                                    <Minus
+                                      className="h-4 w-4 shrink-0 text-white/50"
+                                      aria-label="No change"
+                                    />
+                                  )}
+                                </span>
+                              ) : (
+                                <span className="text-white/50">–</span>
+                              )}
+                            </td>,
+                          ]
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="border-t border-white/10 p-3 text-xs text-white/50">
+                To refresh rankings: wait for the daily cron, or call GET
+                /api/cron/track-serps with header Authorization: Bearer
+                [CRON_SECRET]. Movement arrows compare to the previous scan.
+              </p>
+            </Card>
+          ) : (
+            <Card className="border-white/20 bg-black/40 p-4 backdrop-blur-sm">
+              <h2 className="mb-2 text-lg font-semibold text-white">
+                Step 3 – Rankings will appear here
+              </h2>
+              <p className="mb-3 text-white/70">
+                Add at least one keyword (Step 1) and one domain (Step 2a or 2b)
+                above. Then click “Refresh rankings” to run a scan now, or wait
+                for the daily cron. After a scan runs, this section will show a
+                table of positions and a chart for your domain.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="border-white/30 text-white/90"
+                  onClick={() => setActiveSection('data')}
+                >
+                  Go to Data entry
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleRefreshRankings}
+                  disabled={
+                    refreshLoading ||
+                    keywords.length === 0 ||
+                    domains.length === 0
+                  }
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  {refreshLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <>
+                      <RefreshCw className="mr-1.5 h-4 w-4" />
+                      Refresh rankings
+                    </>
+                  )}
+                </Button>
+              </div>
+              {refreshMessage && (
+                <p className="mt-2 text-sm text-green-400">{refreshMessage}</p>
+              )}
+            </Card>
           )}
-        </Card>
+        </div>
       )}
 
       {/* Dossier side panel */}
