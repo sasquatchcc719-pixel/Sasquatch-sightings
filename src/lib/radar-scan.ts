@@ -94,6 +94,8 @@ export async function runRadarScan(): Promise<RadarScanResult> {
             keyword_id: kw.id,
             position: s.position,
             domain: s.domain,
+            ...(s.rating != null && { rating: s.rating }),
+            ...(s.reviews != null && { reviews: s.reviews }),
           })),
         )
       }

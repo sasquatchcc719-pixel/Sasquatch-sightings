@@ -5,6 +5,8 @@ CREATE TABLE radar_serp_snapshots (
   keyword_id UUID NOT NULL REFERENCES radar_keywords(id) ON DELETE CASCADE,
   position INTEGER NOT NULL,
   domain TEXT NOT NULL,
+  rating NUMERIC(2,1),
+  reviews INTEGER,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 

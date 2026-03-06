@@ -47,6 +47,8 @@ type SerpSnapshotRow = {
   keyword_id: string
   position: number
   domain: string
+  rating?: number | null
+  reviews?: number | null
 }
 
 const SIXTY_DAYS_MS = 60 * 24 * 60 * 60 * 1000
@@ -107,7 +109,7 @@ export default function RadarPage() {
         .order('created_at', { ascending: false }),
       supabase
         .from('radar_serp_snapshots')
-        .select('keyword_id, position, domain')
+        .select('keyword_id, position, domain, rating, reviews')
         .order('keyword_id')
         .order('position', { ascending: true }),
     ])
@@ -355,11 +357,21 @@ export default function RadarPage() {
 
   const snapshotByKeyword = new Map<
     string,
-    { position: number; domain: string }[]
+    {
+      position: number
+      domain: string
+      rating?: number | null
+      reviews?: number | null
+    }[]
   >()
   for (const row of snapshots) {
     const list = snapshotByKeyword.get(row.keyword_id) ?? []
-    list.push({ position: row.position, domain: row.domain })
+    list.push({
+      position: row.position,
+      domain: row.domain,
+      rating: row.rating,
+      reviews: row.reviews,
+    })
     snapshotByKeyword.set(row.keyword_id, list)
   }
 
@@ -821,9 +833,9 @@ export default function RadarPage() {
             Who’s ranking #1–10 (from latest scan)
           </h2>
           <p className="mb-4 text-sm text-white/60">
-            Actual Google order from the last refresh. These domains are pulled
-            automatically from SerpApi; add any to “Your domains” to track them
-            in the table below.
+            Actual Google order from the last refresh. When Google shows a local
+            pack for this search, we pull star rating and review count too. Add
+            any domain to &quot;Your domains&quot; to track in the table below.
           </p>
           <div className="space-y-4">
             {keywords.map((kw) => {
@@ -840,7 +852,20 @@ export default function RadarPage() {
                   </h3>
                   <ol className="list-inside list-decimal space-y-0.5 text-sm text-white/80">
                     {top10.map((s, i) => (
-                      <li key={`${kw.id}-${i}-${s.domain}`}>{s.domain}</li>
+                      <li key={`${kw.id}-${i}-${s.domain}`}>
+                        {s.domain}
+                        {s.rating != null && (
+                          <span className="ml-2 text-amber-400">
+                            ★ {s.rating}
+                            {s.reviews != null && s.reviews > 0 && (
+                              <span className="text-white/60">
+                                {' '}
+                                ({s.reviews} reviews)
+                              </span>
+                            )}
+                          </span>
+                        )}
+                      </li>
                     ))}
                   </ol>
                 </div>

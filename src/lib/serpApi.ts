@@ -80,11 +80,36 @@ export async function fetchSerpRanks(
 
   const data = (await res.json()) as {
     organic_results?: Array<{ position?: number; link?: string }>
+    local_results?: {
+      places?: Array<{
+        position?: number
+        title?: string
+        rating?: number
+        reviews?: number
+        links?: { website?: string }
+      }>
+    }
     error?: string
   }
 
   if (data.error) {
     throw new Error(`SerpApi error: ${data.error}`)
+  }
+
+  const localRatingByDomain = new Map<
+    string,
+    { rating: number; reviews: number }
+  >()
+  const places = data.local_results?.places ?? []
+  for (const place of places) {
+    const website = place.links?.website
+    if (!website || place.rating == null) continue
+    const hostNorm = normalizeDomain(website)
+    if (!hostNorm) continue
+    localRatingByDomain.set(hostNorm, {
+      rating: place.rating,
+      reviews: place.reviews ?? 0,
+    })
   }
 
   const organic = data.organic_results ?? []
@@ -106,7 +131,12 @@ export async function fetchSerpRanks(
     const hostNorm = normalizeDomain(link)
     if (!hostNorm) continue
 
-    snapshot.push({ domain: hostNorm, position: pos })
+    const local = localRatingByDomain.get(hostNorm)
+    snapshot.push({
+      domain: hostNorm,
+      position: pos,
+      ...(local && { rating: local.rating, reviews: local.reviews }),
+    })
 
     const domainId = domainMap.get(hostNorm)
     if (domainId && !found.has(domainId)) {
@@ -124,7 +154,12 @@ export async function fetchSerpRanks(
   return { ranks, snapshot }
 }
 
-export type SerpDomainWithPosition = { domain: string; position: number }
+export type SerpDomainWithPosition = {
+  domain: string
+  position: number
+  rating?: number
+  reviews?: number
+}
 
 /**
  * Fetch organic results for a keyword and return domains with their Google position.
