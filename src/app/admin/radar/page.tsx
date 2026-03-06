@@ -18,6 +18,10 @@ import {
   Trash2,
   Search,
   RefreshCw,
+  FileText,
+  X,
+  Pencil,
+  ExternalLink,
 } from 'lucide-react'
 import {
   LineChart,
@@ -52,6 +56,16 @@ type SerpSnapshotRow = {
   rating?: number | null
   reviews?: number | null
   address?: string | null
+}
+
+type DossierProfile = {
+  threat_level: string | null
+  business_model: string | null
+  primary_strength: string | null
+  core_weakness: string | null
+  sasquatch_counter_attack: string | null
+  threat_archetype: string | null
+  updated_at?: string
 }
 
 const SIXTY_DAYS_MS = 60 * 24 * 60 * 60 * 1000
@@ -89,10 +103,26 @@ export default function RadarPage() {
   const [addDomainLoading, setAddDomainLoading] = useState(false)
   const [refreshLoading, setRefreshLoading] = useState(false)
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null)
-  /** Sort table: 'best' = best rank first, 'domain' = A–Z, or keyword id for that keyword's rank */
-  const [rankSortBy, setRankSortBy] = useState<string>('best')
+  /** Sort: 'domain' | 'best-organic' | 'best-map' | 'keywordId__organic' | 'keywordId__map' */
+  const [rankSortBy, setRankSortBy] = useState<string>('best-organic')
   /** Filter table columns by keyword location; '' = show all */
   const [locationFilter, setLocationFilter] = useState<string>('')
+  /** Dossier side panel */
+  const [dossierDomainId, setDossierDomainId] = useState<string | null>(null)
+  const [dossierData, setDossierData] = useState<{
+    domain: Domain
+    profile: DossierProfile | null
+  } | null>(null)
+  const [dossierLoading, setDossierLoading] = useState(false)
+  const [dossierEditMode, setDossierEditMode] = useState(false)
+  const [dossierForm, setDossierForm] = useState<DossierProfile | null>(null)
+  const [dossierSaving, setDossierSaving] = useState(false)
+  const [generateDossiersLoading, setGenerateDossiersLoading] = useState(false)
+  const [generateDossiersResult, setGenerateDossiersResult] = useState<{
+    generated: number
+    failed: number
+    errors?: string[]
+  } | null>(null)
 
   const loadData = useCallback(async () => {
     const supabase = createClient()
@@ -283,6 +313,114 @@ export default function RadarPage() {
     }
   }
 
+  const openDossier = useCallback(async (domainId: string) => {
+    setDossierDomainId(domainId)
+    setDossierData(null)
+    setDossierEditMode(false)
+    setDossierForm(null)
+    setDossierLoading(true)
+    try {
+      const res = await fetch(`/api/admin/radar/domains/${domainId}`)
+      if (!res.ok) {
+        if (res.status === 404) setDossierDomainId(null)
+        return
+      }
+      const data = (await res.json()) as {
+        domain: Domain
+        profile: DossierProfile | null
+      }
+      setDossierData(data)
+      setDossierForm(
+        data.profile
+          ? { ...data.profile }
+          : {
+              threat_level: null,
+              business_model: null,
+              primary_strength: null,
+              core_weakness: null,
+              sasquatch_counter_attack: null,
+              threat_archetype: null,
+            },
+      )
+    } catch {
+      setDossierDomainId(null)
+    } finally {
+      setDossierLoading(false)
+    }
+  }, [])
+
+  const closeDossier = useCallback(() => {
+    setDossierDomainId(null)
+    setDossierData(null)
+    setDossierEditMode(false)
+    setDossierForm(null)
+    setGenerateDossiersResult(null)
+  }, [])
+
+  const saveDossier = useCallback(async () => {
+    if (!dossierDomainId || !dossierForm) return
+    setDossierSaving(true)
+    try {
+      const res = await fetch(
+        `/api/admin/radar/domains/${dossierDomainId}/profile`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(dossierForm),
+        },
+      )
+      if (!res.ok) throw new Error('Save failed')
+      const profile = (await res.json()) as DossierProfile
+      setDossierData((prev) => (prev ? { ...prev, profile } : null))
+      setDossierForm(profile)
+      setDossierEditMode(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save dossier')
+    } finally {
+      setDossierSaving(false)
+    }
+  }, [dossierDomainId, dossierForm])
+
+  const handleGenerateAllDossiers = useCallback(async () => {
+    setGenerateDossiersLoading(true)
+    setGenerateDossiersResult(null)
+    setError(null)
+    try {
+      const res = await fetch('/api/admin/radar/dossiers/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const data = (await res.json()) as {
+        generated?: number
+        failed?: number
+        errors?: string[]
+        error?: string
+      }
+      if (!res.ok) {
+        setError(data.error ?? 'Generate failed')
+        return
+      }
+      setGenerateDossiersResult({
+        generated: data.generated ?? 0,
+        failed: data.failed ?? 0,
+        errors: data.errors,
+      })
+      if (dossierDomainId && dossierData) {
+        const fresh = await fetch(
+          `/api/admin/radar/domains/${dossierDomainId}`,
+        ).then((r) => r.json())
+        setDossierData(fresh)
+        setDossierForm(fresh.profile ? { ...fresh.profile } : dossierForm)
+      }
+      await loadData()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Generate dossiers failed')
+    } finally {
+      setGenerateDossiersLoading(false)
+    }
+  }, [dossierDomainId, dossierData, loadData])
+
   const handleAddSelectedDomains = async () => {
     if (discoverSelected.size === 0) return
     setAddDomainLoading(true)
@@ -387,41 +525,48 @@ export default function RadarPage() {
     snapshotByKeyword.set(row.keyword_id, list)
   }
 
-  // Sorted domains for table: best rank first, or by keyword, or A–Z
+  // Sorted domains: by company name, best organic, best map, or one keyword's organic/map (no combo)
   const sortedDomains = [...domains].sort((a, b) => {
     if (rankSortBy === 'domain') {
       return (a.display_name || a.domain).localeCompare(
         b.display_name || b.domain,
       )
     }
-    if (rankSortBy === 'best') {
+    if (rankSortBy === 'best-organic') {
       const bestA = Math.min(
-        ...keywords.map((k) => {
-          const key = `${k.id}:${a.id}`
-          const organic = latestMap.get(key) ?? 100
-          const map = latestMapPack.get(key)
-          return map != null ? Math.min(organic, map) : organic
-        }),
+        ...filteredKeywords.map((k) => latestMap.get(`${k.id}:${a.id}`) ?? 100),
       )
       const bestB = Math.min(
-        ...keywords.map((k) => {
-          const key = `${k.id}:${b.id}`
-          const organic = latestMap.get(key) ?? 100
-          const map = latestMapPack.get(key)
-          return map != null ? Math.min(organic, map) : organic
-        }),
+        ...filteredKeywords.map((k) => latestMap.get(`${k.id}:${b.id}`) ?? 100),
       )
       return bestA - bestB
     }
-    const keyA = `${rankSortBy}:${a.id}`
-    const keyB = `${rankSortBy}:${b.id}`
-    const organicA = latestMap.get(keyA) ?? 100
-    const organicB = latestMap.get(keyB) ?? 100
-    const mapA = latestMapPack.get(keyA)
-    const mapB = latestMapPack.get(keyB)
-    const rankA = mapA != null ? Math.min(organicA, mapA) : organicA
-    const rankB = mapB != null ? Math.min(organicB, mapB) : organicB
-    return rankA - rankB
+    if (rankSortBy === 'best-map') {
+      const bestA = Math.min(
+        ...filteredKeywords.map(
+          (k) => latestMapPack.get(`${k.id}:${a.id}`) ?? 99,
+        ),
+      )
+      const bestB = Math.min(
+        ...filteredKeywords.map(
+          (k) => latestMapPack.get(`${k.id}:${b.id}`) ?? 99,
+        ),
+      )
+      return bestA - bestB
+    }
+    if (rankSortBy.endsWith('__organic')) {
+      const kwId = rankSortBy.slice(0, -9)
+      const rankA = latestMap.get(`${kwId}:${a.id}`) ?? 100
+      const rankB = latestMap.get(`${kwId}:${b.id}`) ?? 100
+      return rankA - rankB
+    }
+    if (rankSortBy.endsWith('__map')) {
+      const kwId = rankSortBy.slice(0, -6)
+      const rankA = latestMapPack.get(`${kwId}:${a.id}`) ?? 99
+      const rankB = latestMapPack.get(`${kwId}:${b.id}`) ?? 99
+      return rankA - rankB
+    }
+    return 0
   })
 
   if (loading) {
@@ -757,6 +902,39 @@ export default function RadarPage() {
           All domains you’re tracking (yours and competitors). Use the trash
           icon to remove one.
         </p>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={generateDossiersLoading || domains.length === 0}
+            onClick={handleGenerateAllDossiers}
+            className="border-white/30 text-white/90 hover:bg-white/10"
+          >
+            {generateDossiersLoading ? (
+              <>
+                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                Generating dossiers…
+              </>
+            ) : (
+              <>
+                <FileText className="mr-1.5 h-4 w-4" />
+                Generate all dossiers
+              </>
+            )}
+          </Button>
+          {generateDossiersResult && (
+            <span className="text-sm text-white/70">
+              Generated {generateDossiersResult.generated}, failed{' '}
+              {generateDossiersResult.failed}
+              {generateDossiersResult.errors?.length ? (
+                <span className="ml-1 text-amber-400">
+                  ({generateDossiersResult.errors.length} errors)
+                </span>
+              ) : null}
+            </span>
+          )}
+        </div>
         {domains.length === 0 ? (
           <p className="text-sm text-white/60">
             No domains yet. Use “Discover competitors” (Step 2a) or “Add domain
@@ -769,15 +947,23 @@ export default function RadarPage() {
                 key={d.id}
                 className="flex items-center justify-between rounded bg-white/5 px-3 py-2 text-white/90"
               >
-                <span>
-                  {d.display_name || d.domain}
-                  {d.is_my_domain && (
-                    <span className="ml-2 text-green-400">(you)</span>
-                  )}
-                  {d.display_name && (
-                    <span className="ml-2 text-white/50">{d.domain}</span>
-                  )}
-                </span>
+                <button
+                  type="button"
+                  onClick={() => openDossier(d.id)}
+                  className="flex min-w-0 flex-1 items-center gap-1.5 text-left hover:underline"
+                  title="Open competitor dossier"
+                >
+                  <FileText className="h-4 w-4 shrink-0 text-white/50" />
+                  <span>
+                    {d.display_name || d.domain}
+                    {d.is_my_domain && (
+                      <span className="ml-2 text-green-400">(you)</span>
+                    )}
+                    {d.display_name && (
+                      <span className="ml-2 text-white/50">{d.domain}</span>
+                    )}
+                  </span>
+                </button>
                 <Button
                   type="button"
                   variant="ghost"
@@ -970,24 +1156,41 @@ export default function RadarPage() {
                 ))}
               </select>
             </div>
-            <div className="flex items-center gap-2">
-              <label htmlFor="radar-sort" className="text-sm text-white/70">
-                Sort by:
-              </label>
-              <select
-                id="radar-sort"
-                value={rankSortBy}
-                onChange={(e) => setRankSortBy(e.target.value)}
-                className="rounded border border-white/20 bg-white/10 px-2 py-1.5 text-sm text-white focus:border-green-500 focus:outline-none"
+            <div className="flex items-center gap-1.5 text-sm text-white/70">
+              <span className="mr-1">Sort:</span>
+              <button
+                type="button"
+                onClick={() => setRankSortBy('domain')}
+                className={`rounded px-2.5 py-1 transition ${
+                  rankSortBy === 'domain'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-white/10 text-white/80 hover:bg-white/15'
+                }`}
               >
-                <option value="best">Best rank (who’s #1 first)</option>
-                <option value="domain">Company name (A–Z)</option>
-                {keywords.map((k) => (
-                  <option key={k.id} value={k.id}>
-                    {k.keyword} ({k.location})
-                  </option>
-                ))}
-              </select>
+                Company A–Z
+              </button>
+              <button
+                type="button"
+                onClick={() => setRankSortBy('best-organic')}
+                className={`rounded px-2.5 py-1 transition ${
+                  rankSortBy === 'best-organic'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-white/10 text-white/80 hover:bg-white/15'
+                }`}
+              >
+                Best organic
+              </button>
+              <button
+                type="button"
+                onClick={() => setRankSortBy('best-map')}
+                className={`rounded px-2.5 py-1 transition ${
+                  rankSortBy === 'best-map'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-white/10 text-white/80 hover:bg-white/15'
+                }`}
+              >
+                Best map
+              </button>
             </div>
           </div>
           <div className="overflow-x-auto">
@@ -1010,15 +1213,35 @@ export default function RadarPage() {
                           {kw.location}
                         </span>
                       </div>
-                      <div className="grid grid-cols-2 text-center text-xs font-medium text-white/70">
-                        <span className="flex items-center justify-center gap-1 border-r border-white/10 py-1.5">
+                      <div className="grid grid-cols-2 text-center text-xs font-medium">
+                        <button
+                          type="button"
+                          onClick={() => setRankSortBy(`${kw.id}__map`)}
+                          className={`flex items-center justify-center gap-1 border-r border-white/10 py-1.5 transition ${
+                            rankSortBy === `${kw.id}__map`
+                              ? 'bg-white/20 text-white'
+                              : 'text-white/70 hover:bg-white/10 hover:text-white/80'
+                          }`}
+                          title={`Sort by ${kw.keyword} map rank`}
+                        >
                           <MapPin
                             className="h-3.5 w-3.5 shrink-0"
                             aria-hidden
                           />
                           Map
-                        </span>
-                        <span className="py-1.5">Organic</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setRankSortBy(`${kw.id}__organic`)}
+                          className={`py-1.5 transition ${
+                            rankSortBy === `${kw.id}__organic`
+                              ? 'bg-white/20 text-white'
+                              : 'text-white/70 hover:bg-white/10 hover:text-white/80'
+                          }`}
+                          title={`Sort by ${kw.keyword} organic rank`}
+                        >
+                          Organic
+                        </button>
                       </div>
                     </th>
                   ))}
@@ -1031,10 +1254,18 @@ export default function RadarPage() {
                     className="border-b border-white/10 text-white/90"
                   >
                     <td className="sticky left-0 z-10 min-w-[140px] bg-black/40 p-2 font-medium sm:min-w-[180px] sm:p-3">
-                      {d.display_name || d.domain}
-                      {d.is_my_domain && (
-                        <span className="ml-1 text-green-400">(you)</span>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => openDossier(d.id)}
+                        className="flex items-center gap-1.5 text-left hover:underline"
+                        title="Open competitor dossier"
+                      >
+                        <FileText className="h-4 w-4 shrink-0 text-white/50" />
+                        {d.display_name || d.domain}
+                        {d.is_my_domain && (
+                          <span className="ml-1 text-green-400">(you)</span>
+                        )}
+                      </button>
                     </td>
                     {filteredKeywords.flatMap((kw) => {
                       const key = `${kw.id}:${d.id}`
@@ -1135,6 +1366,282 @@ export default function RadarPage() {
             <p className="mt-2 text-sm text-green-400">{refreshMessage}</p>
           )}
         </Card>
+      )}
+
+      {/* Dossier side panel */}
+      {dossierDomainId && (
+        <>
+          <button
+            type="button"
+            aria-label="Close dossier"
+            className="fixed inset-0 z-40 bg-black/60"
+            onClick={closeDossier}
+          />
+          <div className="fixed top-0 right-0 z-50 flex h-full w-full max-w-md flex-col border-l border-white/20 bg-black/95 shadow-xl backdrop-blur sm:max-w-lg">
+            {dossierLoading ? (
+              <div className="flex flex-1 items-center justify-center gap-2 text-white">
+                <Loader2 className="h-6 w-6 animate-spin" />
+                <span>Loading dossier…</span>
+              </div>
+            ) : dossierData ? (
+              <>
+                <div className="flex items-center justify-between border-b border-white/20 p-4">
+                  <div className="min-w-0">
+                    <h3 className="truncate text-lg font-semibold text-white">
+                      {dossierData.domain.display_name ||
+                        dossierData.domain.domain}
+                    </h3>
+                    <a
+                      href={`https://${dossierData.domain.domain.replace(/^https?:\/\//, '')}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 truncate text-sm text-green-400 hover:underline"
+                    >
+                      {dossierData.domain.domain}
+                      <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+                    </a>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="text-white/80 hover:bg-white/10 hover:text-white"
+                    onClick={closeDossier}
+                  >
+                    <X className="h-5 w-5" />
+                  </Button>
+                </div>
+                <div className="flex-1 space-y-4 overflow-y-auto p-4">
+                  {dossierForm && (
+                    <>
+                      <div>
+                        <Label className="text-white/70">Threat level</Label>
+                        {dossierEditMode ? (
+                          <select
+                            value={dossierForm.threat_level ?? ''}
+                            onChange={(e) =>
+                              setDossierForm((p) =>
+                                p
+                                  ? {
+                                      ...p,
+                                      threat_level: e.target.value || null,
+                                    }
+                                  : null,
+                              )
+                            }
+                            className="mt-1 w-full rounded border border-white/20 bg-white/5 px-3 py-2 text-white"
+                          >
+                            <option value="">—</option>
+                            <option value="High">High</option>
+                            <option value="Medium">Medium</option>
+                            <option value="Low">Low</option>
+                            <option value="Paper Tiger">Paper Tiger</option>
+                          </select>
+                        ) : (
+                          <p className="mt-1 text-white">
+                            {dossierForm.threat_level ?? '—'}
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <Label className="text-white/70">Business model</Label>
+                        {dossierEditMode ? (
+                          <Input
+                            value={dossierForm.business_model ?? ''}
+                            onChange={(e) =>
+                              setDossierForm((p) =>
+                                p
+                                  ? {
+                                      ...p,
+                                      business_model: e.target.value || null,
+                                    }
+                                  : null,
+                              )
+                            }
+                            className="mt-1 border-white/20 bg-white/5 text-white"
+                          />
+                        ) : (
+                          <p className="mt-1 text-white">
+                            {dossierForm.business_model ?? '—'}
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <Label className="text-white/70">
+                          Primary strength
+                        </Label>
+                        {dossierEditMode ? (
+                          <textarea
+                            value={dossierForm.primary_strength ?? ''}
+                            onChange={(e) =>
+                              setDossierForm((p) =>
+                                p
+                                  ? {
+                                      ...p,
+                                      primary_strength: e.target.value || null,
+                                    }
+                                  : null,
+                              )
+                            }
+                            rows={3}
+                            className="mt-1 w-full rounded border border-white/20 bg-white/5 px-3 py-2 text-white"
+                          />
+                        ) : (
+                          <p className="mt-1 whitespace-pre-wrap text-white">
+                            {dossierForm.primary_strength ?? '—'}
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <Label className="text-white/70">Core weakness</Label>
+                        {dossierEditMode ? (
+                          <textarea
+                            value={dossierForm.core_weakness ?? ''}
+                            onChange={(e) =>
+                              setDossierForm((p) =>
+                                p
+                                  ? {
+                                      ...p,
+                                      core_weakness: e.target.value || null,
+                                    }
+                                  : null,
+                              )
+                            }
+                            rows={3}
+                            className="mt-1 w-full rounded border border-white/20 bg-white/5 px-3 py-2 text-white"
+                          />
+                        ) : (
+                          <p className="mt-1 whitespace-pre-wrap text-white">
+                            {dossierForm.core_weakness ?? '—'}
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <Label className="text-white/70">
+                          Sasquatch counter-attack
+                        </Label>
+                        {dossierEditMode ? (
+                          <textarea
+                            value={dossierForm.sasquatch_counter_attack ?? ''}
+                            onChange={(e) =>
+                              setDossierForm((p) =>
+                                p
+                                  ? {
+                                      ...p,
+                                      sasquatch_counter_attack:
+                                        e.target.value || null,
+                                    }
+                                  : null,
+                              )
+                            }
+                            rows={3}
+                            className="mt-1 w-full rounded border border-white/20 bg-white/5 px-3 py-2 text-white"
+                          />
+                        ) : (
+                          <p className="mt-1 whitespace-pre-wrap text-white">
+                            {dossierForm.sasquatch_counter_attack ?? '—'}
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <Label className="text-white/70">
+                          Threat archetype
+                        </Label>
+                        {dossierEditMode ? (
+                          <select
+                            value={dossierForm.threat_archetype ?? ''}
+                            onChange={(e) =>
+                              setDossierForm((p) =>
+                                p
+                                  ? {
+                                      ...p,
+                                      threat_archetype: e.target.value || null,
+                                    }
+                                  : null,
+                              )
+                            }
+                            className="mt-1 w-full rounded border border-white/20 bg-white/5 px-3 py-2 text-white"
+                          >
+                            <option value="">—</option>
+                            <option value="Franchise Cartel">
+                              Franchise Cartel
+                            </option>
+                            <option value="Legacy Heavyweight">
+                              Legacy Heavyweight
+                            </option>
+                            <option value="Jack of All Trades">
+                              Jack of All Trades
+                            </option>
+                            <option value="Niche Sniper">Niche Sniper</option>
+                          </select>
+                        ) : (
+                          <p className="mt-1 text-white">
+                            {dossierForm.threat_archetype ?? '—'}
+                          </p>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+                <div className="flex gap-2 border-t border-white/20 p-4">
+                  {dossierEditMode ? (
+                    <>
+                      <Button
+                        type="button"
+                        disabled={dossierSaving}
+                        onClick={saveDossier}
+                        className="bg-green-600 hover:bg-green-700"
+                      >
+                        {dossierSaving ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          'Save'
+                        )}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="border-white/30 text-white/80"
+                        onClick={() => {
+                          setDossierEditMode(false)
+                          setDossierForm(
+                            dossierData.profile
+                              ? { ...dossierData.profile }
+                              : {
+                                  threat_level: null,
+                                  business_model: null,
+                                  primary_strength: null,
+                                  core_weakness: null,
+                                  sasquatch_counter_attack: null,
+                                  threat_archetype: null,
+                                },
+                          )
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="border-white/30 text-white/80"
+                      onClick={() => setDossierEditMode(true)}
+                    >
+                      <Pencil className="mr-1.5 h-4 w-4" />
+                      Edit
+                    </Button>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-1 items-center justify-center p-4 text-white/70">
+                Failed to load dossier.
+              </div>
+            )}
+          </div>
+        </>
       )}
     </div>
   )

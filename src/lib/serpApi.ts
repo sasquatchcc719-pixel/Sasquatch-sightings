@@ -278,3 +278,58 @@ export async function fetchSerpDomains(
 
   return results
 }
+
+export type SerpSnippet = { title: string; snippet: string }
+
+/**
+ * Run a single SerpApi search and return organic titles + snippets.
+ * Used for competitor dossier deep-dive (web search context).
+ */
+export async function fetchSerpSnippets(
+  query: string,
+  location = 'Colorado Springs, Colorado, United States',
+): Promise<SerpSnippet[]> {
+  const apiKey = process.env.SERPAPI_API_KEY
+  if (!apiKey) {
+    throw new Error('SERPAPI_API_KEY is not set')
+  }
+
+  const params = new URLSearchParams({
+    engine: 'google',
+    q: query,
+    location,
+    num: '10',
+    gl: 'us',
+    hl: 'en',
+    api_key: apiKey,
+  })
+
+  const res = await fetch(`https://serpapi.com/search?${params.toString()}`, {
+    next: { revalidate: 0 },
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`SerpApi request failed: ${res.status} ${text}`)
+  }
+
+  const data = (await res.json()) as {
+    organic_results?: Array<{ title?: string; snippet?: string }>
+    error?: string
+  }
+
+  if (data.error) {
+    throw new Error(`SerpApi error: ${data.error}`)
+  }
+
+  const organic = data.organic_results ?? []
+  const snippets: SerpSnippet[] = []
+  for (const item of organic) {
+    const title = (item.title ?? '').trim()
+    const snippet = (item.snippet ?? '').trim()
+    if (title || snippet) {
+      snippets.push({ title, snippet })
+    }
+  }
+  return snippets
+}
