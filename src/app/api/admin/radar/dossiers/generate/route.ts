@@ -23,11 +23,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (!process.env.OPENAI_API_KEY) {
     return NextResponse.json(
       {
         error:
-          'ANTHROPIC_API_KEY is not set. Add it in Vercel → Project → Settings → Environment Variables, then redeploy. Dossier generation uses Claude for the AI step.',
+          'OPENAI_API_KEY is not set. Add it in Vercel → Project → Settings → Environment Variables, then redeploy. Dossier generation uses OpenAI (gpt-4o).',
       },
       { status: 503 },
     )

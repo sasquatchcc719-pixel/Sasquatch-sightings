@@ -1,10 +1,9 @@
 /**
  * AI-generated competitor dossier from deep-dive context.
- * Uses Anthropic Claude via Vercel AI SDK (same pattern as ai.ts).
+ * Uses OpenAI gpt-4o (same key as SMS bot). No Anthropic dependency for this feature.
  */
 
-import { createAnthropic } from '@ai-sdk/anthropic'
-import { generateText } from 'ai'
+import OpenAI from 'openai'
 
 export type DossierProfile = {
   threat_level: string | null
@@ -42,9 +41,9 @@ export async function generateDossierFromContext(
   displayName: string | null,
   combinedContext: string,
 ): Promise<DossierProfile> {
-  const apiKey = process.env.ANTHROPIC_API_KEY
+  const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) {
-    throw new Error('ANTHROPIC_API_KEY not configured')
+    throw new Error('OPENAI_API_KEY not configured')
   }
 
   const name = displayName || domain
@@ -65,20 +64,26 @@ ${combinedContext.slice(0, 28000)}
 
 Respond with ONLY a valid JSON object, no other text.`
 
-  const anthropic = createAnthropic({ apiKey })
-  const { text } = await generateText({
-    model: anthropic('claude-3-5-sonnet-20241022'),
-    prompt,
+  const openai = new OpenAI({ apiKey })
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [{ role: 'user', content: prompt }],
     temperature: 0.3,
+    max_tokens: 1024,
   })
 
-  const jsonStr = extractJson(text)
+  const raw = completion.choices[0]?.message?.content?.trim() ?? ''
+  if (!raw) {
+    throw new Error('OpenAI returned empty response')
+  }
+
+  const jsonStr = extractJson(raw)
   let parsed: Record<string, unknown>
   try {
     parsed = JSON.parse(jsonStr) as Record<string, unknown>
   } catch {
     throw new Error(
-      `Dossier AI did not return valid JSON: ${text.slice(0, 200)}`,
+      `Dossier AI did not return valid JSON: ${raw.slice(0, 200)}`,
     )
   }
 
