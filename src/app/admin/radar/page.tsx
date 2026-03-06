@@ -78,6 +78,8 @@ export default function RadarPage() {
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null)
   /** Sort table: 'best' = best rank first, 'domain' = A–Z, or keyword id for that keyword's rank */
   const [rankSortBy, setRankSortBy] = useState<string>('best')
+  /** Filter table columns by keyword location; '' = show all */
+  const [locationFilter, setLocationFilter] = useState<string>('')
 
   const loadData = useCallback(async () => {
     const supabase = createClient()
@@ -325,6 +327,13 @@ export default function RadarPage() {
     .sort((a, b) => (a.date < b.date ? -1 : 1))
 
   const hasData = keywords.length > 0 && domains.length > 0
+
+  const locations = [
+    ...new Set(keywords.map((k) => k.location)),
+  ].sort() as string[]
+  const filteredKeywords = locationFilter
+    ? keywords.filter((k) => k.location === locationFilter)
+    : keywords
 
   // Sorted domains for table: best rank first, or by keyword, or A–Z
   const sortedDomains = [...domains].sort((a, b) => {
@@ -784,9 +793,10 @@ export default function RadarPage() {
                   Step 3 – Rankings table (companies × keywords)
                 </h2>
                 <p className="mt-1 text-sm text-white/60">
-                  Each row is a company; each column is a keyword. Number =
-                  Google position (1 = first). Sort by “Best rank” to see who’s
-                  #1 first. Green up = improved; red down = dropped.
+                  Each row is a company; each column is a keyword (location
+                  shown under keyword). Use Location to show only one area; use
+                  Sort by to order rows. Green up = improved; red down =
+                  dropped.
                 </p>
                 {refreshMessage && (
                   <p className="mt-2 text-sm text-green-400">
@@ -815,37 +825,60 @@ export default function RadarPage() {
               </Button>
             </div>
           </div>
-          <div className="border-b border-white/10 px-3 py-2">
-            <label htmlFor="radar-sort" className="mr-2 text-sm text-white/70">
-              Sort by:
-            </label>
-            <select
-              id="radar-sort"
-              value={rankSortBy}
-              onChange={(e) => setRankSortBy(e.target.value)}
-              className="rounded border border-white/20 bg-white/10 px-2 py-1.5 text-sm text-white focus:border-green-500 focus:outline-none"
-            >
-              <option value="best">Best rank (who’s #1 first)</option>
-              <option value="domain">Company name (A–Z)</option>
-              {keywords.map((k) => (
-                <option key={k.id} value={k.id}>
-                  {k.keyword}
-                </option>
-              ))}
-            </select>
+          <div className="flex flex-wrap items-center gap-4 border-b border-white/10 px-3 py-2">
+            <div className="flex items-center gap-2">
+              <label htmlFor="radar-location" className="text-sm text-white/70">
+                Location:
+              </label>
+              <select
+                id="radar-location"
+                value={locationFilter}
+                onChange={(e) => setLocationFilter(e.target.value)}
+                className="rounded border border-white/20 bg-white/10 px-2 py-1.5 text-sm text-white focus:border-green-500 focus:outline-none"
+              >
+                <option value="">All locations</option>
+                {locations.map((loc) => (
+                  <option key={loc} value={loc}>
+                    {loc}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <label htmlFor="radar-sort" className="text-sm text-white/70">
+                Sort by:
+              </label>
+              <select
+                id="radar-sort"
+                value={rankSortBy}
+                onChange={(e) => setRankSortBy(e.target.value)}
+                className="rounded border border-white/20 bg-white/10 px-2 py-1.5 text-sm text-white focus:border-green-500 focus:outline-none"
+              >
+                <option value="best">Best rank (who’s #1 first)</option>
+                <option value="domain">Company name (A–Z)</option>
+                {keywords.map((k) => (
+                  <option key={k.id} value={k.id}>
+                    {k.keyword} ({k.location})
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-white/20 text-white/80">
                   <th className="p-2 font-semibold sm:p-3">Company</th>
-                  {keywords.map((kw) => (
+                  {filteredKeywords.map((kw) => (
                     <th
                       key={kw.id}
-                      className="max-w-[120px] truncate p-2 font-semibold sm:max-w-none sm:p-3"
-                      title={kw.keyword}
+                      className="max-w-[140px] p-2 font-semibold sm:max-w-none sm:p-3"
+                      title={`${kw.keyword} — ${kw.location}`}
                     >
-                      {kw.keyword}
+                      <span className="block truncate">{kw.keyword}</span>
+                      <span className="block truncate text-xs font-normal text-white/60">
+                        {kw.location}
+                      </span>
                     </th>
                   ))}
                 </tr>
@@ -862,7 +895,7 @@ export default function RadarPage() {
                         <span className="ml-1 text-green-400">(you)</span>
                       )}
                     </td>
-                    {keywords.map((kw) => {
+                    {filteredKeywords.map((kw) => {
                       const key = `${kw.id}:${d.id}`
                       const latest = latestMap.get(key)
                       const previous = previousMap.get(key)
