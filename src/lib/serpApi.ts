@@ -1,7 +1,7 @@
 /**
  * SerpApi Google Search integration for Radar (competitor SERP tracking).
- * Fetches top N organic results (num=20 to save credits); domains not in top N get rank N.
- * Uses gl/hl for US English. We do not pass no_cache so SerpApi can serve cached results.
+ * Fetches top N organic results; domains not in top N get rank N. num=50 balances
+ * accuracy (see real ranks 21–50) with credits. Uses gl/hl for US English.
  */
 
 export type SerpApiOrganicResult = {
@@ -36,12 +36,12 @@ function normalizeDomain(url: string): string | null {
   }
 }
 
-const SERP_NUM_RESULTS = 20
+const SERP_NUM_RESULTS = 50
 const NOT_FOUND_RANK = SERP_NUM_RESULTS
 
 /**
  * Fetch Google search results from SerpApi and return ranks for tracked domains.
- * Uses num=20 for faster responses and fewer credits; gl/hl for US English.
+ * num=50 so positions 21–50 are real (not all lumped as #20); gl/hl for US English.
  */
 export async function fetchSerpRanks(
   keyword: string,
