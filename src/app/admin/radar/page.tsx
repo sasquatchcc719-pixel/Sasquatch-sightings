@@ -133,11 +133,19 @@ export default function RadarPage() {
     'data' | 'domains' | 'history' | 'table'
   >('data')
   const [menuOpen, setMenuOpen] = useState(false)
+  const [profiles, setProfiles] = useState<
+    { domain_id: string; threat_level: string | null }[]
+  >([])
+
+  const threatLevelByDomainId = new Map<string, string | null>()
+  for (const p of profiles) {
+    threatLevelByDomainId.set(p.domain_id, p.threat_level)
+  }
 
   const loadData = useCallback(async () => {
     const supabase = createClient()
     const sixtyDaysAgo = new Date(Date.now() - SIXTY_DAYS_MS)
-    const [kwRes, domRes, rankRes, snapRes] = await Promise.all([
+    const [kwRes, domRes, rankRes, snapRes, profilesRes] = await Promise.all([
       supabase
         .from('radar_keywords')
         .select('id, keyword, location')
@@ -157,6 +165,7 @@ export default function RadarPage() {
         .select('keyword_id, position, domain, rating, reviews, address')
         .order('keyword_id')
         .order('position', { ascending: true }),
+      supabase.from('radar_domain_profiles').select('domain_id, threat_level'),
     ])
     if (kwRes.error) setError(kwRes.error.message)
     else setKeywords(kwRes.data ?? [])
@@ -167,6 +176,16 @@ export default function RadarPage() {
     if (snapRes.error) {
       if (snapRes.error.code !== '42P01') setError(snapRes.error.message)
     } else setSnapshots((snapRes.data as SerpSnapshotRow[]) ?? [])
+    if (profilesRes.error) {
+      if (profilesRes.error.code !== '42P01')
+        setError(profilesRes.error.message)
+    } else
+      setProfiles(
+        (profilesRes.data ?? []) as {
+          domain_id: string
+          threat_level: string | null
+        }[],
+      )
   }, [])
 
   useEffect(() => {
@@ -593,6 +612,35 @@ export default function RadarPage() {
     domains: 'Domains',
     history: 'Ranking history',
     table: 'Rankings table',
+  }
+
+  function threatBadgeClass(level: string | null): string {
+    if (!level) return 'bg-white/10 text-white/50'
+    switch (level) {
+      case 'High':
+        return 'bg-red-500/25 text-red-300 border border-red-500/40'
+      case 'Medium':
+        return 'bg-blue-500/25 text-blue-300 border border-blue-500/40'
+      case 'Low':
+        return 'bg-green-500/25 text-green-300 border border-green-500/40'
+      case 'Paper Tiger':
+        return 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+      default:
+        return 'bg-white/10 text-white/60'
+    }
+  }
+
+  function ThreatBadge({ domainId }: { domainId: string }) {
+    const level = threatLevelByDomainId.get(domainId) ?? null
+    const label = level || '—'
+    return (
+      <span
+        className={`inline-flex shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${threatBadgeClass(level)}`}
+        title={level ? `Threat: ${level}` : 'No dossier yet'}
+      >
+        {label}
+      </span>
+    )
   }
 
   return (
@@ -1105,39 +1153,55 @@ export default function RadarPage() {
               </p>
             ) : (
               <ul className="space-y-2">
-                {domains.map((d) => (
-                  <li
-                    key={d.id}
-                    className="flex items-center justify-between rounded bg-white/5 px-3 py-2 text-white/90"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => openDossier(d.id)}
-                      className="flex min-w-0 flex-1 items-center gap-1.5 text-left hover:underline"
-                      title="Open competitor dossier"
+                {domains.map((d) => {
+                  const threat = threatLevelByDomainId.get(d.id) ?? null
+                  const borderClass =
+                    threat === 'High'
+                      ? 'border-l-4 border-l-red-500'
+                      : threat === 'Medium'
+                        ? 'border-l-4 border-l-blue-500'
+                        : threat === 'Low'
+                          ? 'border-l-4 border-l-green-500'
+                          : threat === 'Paper Tiger'
+                            ? 'border-l-4 border-l-amber-500'
+                            : ''
+                  return (
+                    <li
+                      key={d.id}
+                      className={`flex items-center justify-between rounded bg-white/5 px-3 py-2 text-white/90 ${borderClass}`}
                     >
-                      <FileText className="h-4 w-4 shrink-0 text-white/50" />
-                      <span>
-                        {d.display_name || d.domain}
-                        {d.is_my_domain && (
-                          <span className="ml-2 text-green-400">(you)</span>
-                        )}
-                        {d.display_name && (
-                          <span className="ml-2 text-white/50">{d.domain}</span>
-                        )}
-                      </span>
-                    </button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="text-red-400 hover:bg-red-500/20 hover:text-red-300"
-                      onClick={() => handleDeleteDomain(d.id)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </li>
-                ))}
+                      <button
+                        type="button"
+                        onClick={() => openDossier(d.id)}
+                        className="flex min-w-0 flex-1 items-center gap-2 text-left hover:underline"
+                        title="Open competitor dossier"
+                      >
+                        <FileText className="h-4 w-4 shrink-0 text-white/50" />
+                        <span className="min-w-0 flex-1">
+                          {d.display_name || d.domain}
+                          {d.is_my_domain && (
+                            <span className="ml-2 text-green-400">(you)</span>
+                          )}
+                          {d.display_name && (
+                            <span className="ml-2 text-white/50">
+                              {d.domain}
+                            </span>
+                          )}
+                        </span>
+                        <ThreatBadge domainId={d.id} />
+                      </button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-400 hover:bg-red-500/20 hover:text-red-300"
+                        onClick={() => handleDeleteDomain(d.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </li>
+                  )
+                })}
               </ul>
             )}
           </Card>
@@ -1425,83 +1489,104 @@ export default function RadarPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedDomains.map((d) => (
-                      <tr
-                        key={d.id}
-                        className="border-b border-white/10 text-white/90"
-                      >
-                        <td className="sticky left-0 z-10 min-w-[140px] bg-black/40 p-2 font-medium sm:min-w-[180px] sm:p-3">
-                          <button
-                            type="button"
-                            onClick={() => openDossier(d.id)}
-                            className="flex items-center gap-1.5 text-left hover:underline"
-                            title="Open competitor dossier"
-                          >
-                            <FileText className="h-4 w-4 shrink-0 text-white/50" />
-                            {d.display_name || d.domain}
-                            {d.is_my_domain && (
-                              <span className="ml-1 text-green-400">(you)</span>
-                            )}
-                          </button>
-                        </td>
-                        {filteredKeywords.flatMap((kw) => {
-                          const key = `${kw.id}:${d.id}`
-                          const organic = latestMap.get(key)
-                          const mapRank = latestMapPack.get(key)
-                          const previous = previousMap.get(key)
-                          const movement =
-                            organic != null && previous != null
-                              ? previous - organic
-                              : null
-                          return [
-                            <td
-                              key={`${kw.id}-map`}
-                              className="border-r border-l border-white/10 p-2 text-center sm:p-3"
-                            >
-                              {mapRank != null ? (
-                                <span className="inline-flex items-center gap-1 text-white/90">
-                                  <MapPin
-                                    className="h-3.5 w-3.5 shrink-0 text-white/60"
-                                    aria-hidden
-                                  />
-                                  #{mapRank}
-                                </span>
-                              ) : (
-                                <span className="text-white/50">–</span>
-                              )}
-                            </td>,
-                            <td key={`${kw.id}-organic`} className="p-2 sm:p-3">
-                              {organic != null ? (
-                                <span className="flex items-center gap-1">
-                                  #{organic}
-                                  {movement !== null &&
-                                    movement !== 0 &&
-                                    (movement > 0 ? (
-                                      <ArrowUp
-                                        className="h-4 w-4 shrink-0 text-green-500"
-                                        aria-label="Improved"
-                                      />
-                                    ) : (
-                                      <ArrowDown
-                                        className="h-4 w-4 shrink-0 text-red-500"
-                                        aria-label="Dropped"
-                                      />
-                                    ))}
-                                  {movement === 0 && (
-                                    <Minus
-                                      className="h-4 w-4 shrink-0 text-white/50"
-                                      aria-label="No change"
+                    {sortedDomains.map((d) => {
+                      const threat = threatLevelByDomainId.get(d.id) ?? null
+                      const borderClass =
+                        threat === 'High'
+                          ? 'border-l-4 border-l-red-500'
+                          : threat === 'Medium'
+                            ? 'border-l-4 border-l-blue-500'
+                            : threat === 'Low'
+                              ? 'border-l-4 border-l-green-500'
+                              : threat === 'Paper Tiger'
+                                ? 'border-l-4 border-l-amber-500'
+                                : ''
+                      return (
+                        <tr
+                          key={d.id}
+                          className={`border-b border-white/10 text-white/90 ${borderClass}`}
+                        >
+                          <td className="sticky left-0 z-10 min-w-[140px] bg-black/40 p-2 font-medium sm:min-w-[180px] sm:p-3">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => openDossier(d.id)}
+                                className="flex items-center gap-1.5 text-left hover:underline"
+                                title="Open competitor dossier"
+                              >
+                                <FileText className="h-4 w-4 shrink-0 text-white/50" />
+                                {d.display_name || d.domain}
+                                {d.is_my_domain && (
+                                  <span className="ml-1 text-green-400">
+                                    (you)
+                                  </span>
+                                )}
+                              </button>
+                              <ThreatBadge domainId={d.id} />
+                            </div>
+                          </td>
+                          {filteredKeywords.flatMap((kw) => {
+                            const key = `${kw.id}:${d.id}`
+                            const organic = latestMap.get(key)
+                            const mapRank = latestMapPack.get(key)
+                            const previous = previousMap.get(key)
+                            const movement =
+                              organic != null && previous != null
+                                ? previous - organic
+                                : null
+                            return [
+                              <td
+                                key={`${kw.id}-map`}
+                                className="border-r border-l border-white/10 p-2 text-center sm:p-3"
+                              >
+                                {mapRank != null ? (
+                                  <span className="inline-flex items-center gap-1 text-white/90">
+                                    <MapPin
+                                      className="h-3.5 w-3.5 shrink-0 text-white/60"
+                                      aria-hidden
                                     />
-                                  )}
-                                </span>
-                              ) : (
-                                <span className="text-white/50">–</span>
-                              )}
-                            </td>,
-                          ]
-                        })}
-                      </tr>
-                    ))}
+                                    #{mapRank}
+                                  </span>
+                                ) : (
+                                  <span className="text-white/50">–</span>
+                                )}
+                              </td>,
+                              <td
+                                key={`${kw.id}-organic`}
+                                className="p-2 sm:p-3"
+                              >
+                                {organic != null ? (
+                                  <span className="flex items-center gap-1">
+                                    #{organic}
+                                    {movement !== null &&
+                                      movement !== 0 &&
+                                      (movement > 0 ? (
+                                        <ArrowUp
+                                          className="h-4 w-4 shrink-0 text-green-500"
+                                          aria-label="Improved"
+                                        />
+                                      ) : (
+                                        <ArrowDown
+                                          className="h-4 w-4 shrink-0 text-red-500"
+                                          aria-label="Dropped"
+                                        />
+                                      ))}
+                                    {movement === 0 && (
+                                      <Minus
+                                        className="h-4 w-4 shrink-0 text-white/50"
+                                        aria-label="No change"
+                                      />
+                                    )}
+                                  </span>
+                                ) : (
+                                  <span className="text-white/50">–</span>
+                                )}
+                              </td>,
+                            ]
+                          })}
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>

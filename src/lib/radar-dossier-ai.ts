@@ -1,9 +1,9 @@
 /**
  * AI-generated competitor dossier from deep-dive context.
- * Uses Google Gemini (gemini-1.5-flash). Env: GEMINI_API_KEY or Gemini_API_Key.
+ * Uses OpenAI gpt-4o (OPENAI_API_KEY). Same key as SMS bot.
  */
 
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import OpenAI from 'openai'
 
 export type DossierProfile = {
   threat_level: string | null
@@ -41,11 +41,9 @@ export async function generateDossierFromContext(
   displayName: string | null,
   combinedContext: string,
 ): Promise<DossierProfile> {
-  const apiKey = process.env.GEMINI_API_KEY ?? process.env.Gemini_API_Key
+  const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) {
-    throw new Error(
-      'GEMINI_API_KEY not set. In Vercel use the exact name GEMINI_API_KEY (all caps).',
-    )
+    throw new Error('OPENAI_API_KEY not configured')
   }
 
   const name = displayName || domain
@@ -66,31 +64,19 @@ ${combinedContext.slice(0, 28000)}
 
 Respond with ONLY a valid JSON object, no other text.`
 
-  const genAI = new GoogleGenerativeAI(apiKey)
-  const model = genAI.getGenerativeModel({
-    model: 'gemini-1.5-flash',
-    generationConfig: { temperature: 0.3, maxOutputTokens: 1024 },
+  const openai = new OpenAI({ apiKey })
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [{ role: 'user', content: prompt }],
+    temperature: 0.3,
+    max_tokens: 1024,
   })
 
-  let result: Awaited<ReturnType<typeof model.generateContent>>
-  try {
-    result = await model.generateContent(prompt)
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    if (/api key|invalid.*key|401|403|429|quota|permission/i.test(msg)) {
-      throw new Error(
-        `Gemini API key issue: ${msg}. Check Vercel env var is named GEMINI_API_KEY and the key is valid from Google AI Studio.`,
-      )
-    }
-    throw new Error(`Gemini API error: ${msg}`)
+  const raw = completion.choices[0]?.message?.content?.trim() ?? ''
+  if (!raw) {
+    throw new Error('OpenAI returned empty response')
   }
 
-  const response = result.response
-  if (!response?.text) {
-    throw new Error('Gemini returned empty response (possible block or filter)')
-  }
-
-  const raw = response.text().trim()
   const jsonStr = extractJson(raw)
   let parsed: Record<string, unknown>
   try {
