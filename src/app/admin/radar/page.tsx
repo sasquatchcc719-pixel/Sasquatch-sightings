@@ -924,13 +924,34 @@ export default function RadarPage() {
             )}
           </Button>
           {generateDossiersResult && (
-            <span className="text-sm text-white/70">
-              Generated {generateDossiersResult.generated}, failed{' '}
-              {generateDossiersResult.failed}
+            <span className="flex flex-col gap-1 text-sm text-white/70">
+              <span>
+                Generated {generateDossiersResult.generated}, failed{' '}
+                {generateDossiersResult.failed}
+                {generateDossiersResult.errors?.length ? (
+                  <span className="ml-1 text-amber-400">
+                    ({generateDossiersResult.errors.length} errors)
+                  </span>
+                ) : null}
+              </span>
               {generateDossiersResult.errors?.length ? (
-                <span className="ml-1 text-amber-400">
-                  ({generateDossiersResult.errors.length} errors)
-                </span>
+                <details className="text-xs text-white/60">
+                  <summary className="cursor-pointer text-amber-400/90 hover:underline">
+                    Show error details
+                  </summary>
+                  <ul className="mt-1 max-h-32 list-inside list-disc overflow-y-auto">
+                    {generateDossiersResult.errors
+                      .slice(0, 10)
+                      .map((err, i) => (
+                        <li key={i}>{err}</li>
+                      ))}
+                    {generateDossiersResult.errors.length > 10 && (
+                      <li>
+                        … and {generateDossiersResult.errors.length - 10} more
+                      </li>
+                    )}
+                  </ul>
+                </details>
               ) : null}
             </span>
           )}
