@@ -76,6 +76,8 @@ export default function RadarPage() {
   const [addDomainLoading, setAddDomainLoading] = useState(false)
   const [refreshLoading, setRefreshLoading] = useState(false)
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null)
+  /** Sort table: 'best' = best rank first, 'domain' = A–Z, or keyword id for that keyword's rank */
+  const [rankSortBy, setRankSortBy] = useState<string>('best')
 
   const loadData = useCallback(async () => {
     const supabase = createClient()
@@ -241,9 +243,11 @@ export default function RadarPage() {
         setError(data.error || 'Refresh failed')
         return
       }
-      setRefreshMessage(
-        `Done: ${data.keywords_processed} keywords processed, ${data.rankings_inserted} rankings saved.`,
-      )
+      const msg = `Done: ${data.keywords_processed} keywords processed, ${data.rankings_inserted} rankings saved.`
+      setRefreshMessage(msg)
+      if (data.rankings_inserted === 0 && data.error_detail) {
+        setError(data.error_detail)
+      }
       await loadData()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Refresh failed')
@@ -322,6 +326,27 @@ export default function RadarPage() {
 
   const hasData = keywords.length > 0 && domains.length > 0
 
+  // Sorted domains for table: best rank first, or by keyword, or A–Z
+  const sortedDomains = [...domains].sort((a, b) => {
+    if (rankSortBy === 'domain') {
+      return (a.display_name || a.domain).localeCompare(
+        b.display_name || b.domain,
+      )
+    }
+    if (rankSortBy === 'best') {
+      const bestA = Math.min(
+        ...keywords.map((k) => latestMap.get(`${k.id}:${a.id}`) ?? 100),
+      )
+      const bestB = Math.min(
+        ...keywords.map((k) => latestMap.get(`${k.id}:${b.id}`) ?? 100),
+      )
+      return bestA - bestB
+    }
+    const rankA = latestMap.get(`${rankSortBy}:${a.id}`) ?? 100
+    const rankB = latestMap.get(`${rankSortBy}:${b.id}`) ?? 100
+    return rankA - rankB
+  })
+
   if (loading) {
     return (
       <div className="flex min-h-[200px] items-center justify-center gap-2 text-white">
@@ -345,6 +370,13 @@ export default function RadarPage() {
         <h2 className="mb-2 text-lg font-semibold text-white">
           How to use Radar
         </h2>
+        <p className="mb-3 rounded bg-amber-500/20 px-2 py-1.5 text-sm text-amber-200">
+          <strong>Required setup:</strong> In Vercel (Project → Settings →
+          Environment Variables), add{' '}
+          <code className="rounded bg-black/30 px-1">SERPAPI_API_KEY</code> with
+          your SerpApi key from serpapi.com. Without it, rankings will stay
+          empty and refresh will report an error.
+        </p>
         <ol className="list-inside list-decimal space-y-1.5 text-sm text-white/80">
           <li>
             <strong className="text-white">Add keywords</strong> – Type the
@@ -749,12 +781,12 @@ export default function RadarPage() {
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-semibold text-white">
-                  Step 3 – Rankings table (keyword × domain)
+                  Step 3 – Rankings table (companies × keywords)
                 </h2>
                 <p className="mt-1 text-sm text-white/60">
-                  Each row is a keyword; each column is a domain. The number is
-                  that domain’s Google position (1 = first result). Green up
-                  arrow = improved since last scan; red down = dropped.
+                  Each row is a company; each column is a keyword. Number =
+                  Google position (1 = first). Sort by “Best rank” to see who’s
+                  #1 first. Green up = improved; red down = dropped.
                 </p>
                 {refreshMessage && (
                   <p className="mt-2 text-sm text-green-400">
@@ -783,29 +815,54 @@ export default function RadarPage() {
               </Button>
             </div>
           </div>
+          <div className="border-b border-white/10 px-3 py-2">
+            <label htmlFor="radar-sort" className="mr-2 text-sm text-white/70">
+              Sort by:
+            </label>
+            <select
+              id="radar-sort"
+              value={rankSortBy}
+              onChange={(e) => setRankSortBy(e.target.value)}
+              className="rounded border border-white/20 bg-white/10 px-2 py-1.5 text-sm text-white focus:border-green-500 focus:outline-none"
+            >
+              <option value="best">Best rank (who’s #1 first)</option>
+              <option value="domain">Company name (A–Z)</option>
+              {keywords.map((k) => (
+                <option key={k.id} value={k.id}>
+                  {k.keyword}
+                </option>
+              ))}
+            </select>
+          </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[600px] text-left text-sm">
+            <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-white/20 text-white/80">
-                  <th className="p-3 font-semibold">Keyword</th>
-                  {domains.map((d) => (
-                    <th key={d.id} className="p-3 font-semibold">
-                      {d.display_name || d.domain}
-                      {d.is_my_domain && (
-                        <span className="ml-1 text-green-400">(you)</span>
-                      )}
+                  <th className="p-2 font-semibold sm:p-3">Company</th>
+                  {keywords.map((kw) => (
+                    <th
+                      key={kw.id}
+                      className="max-w-[120px] truncate p-2 font-semibold sm:max-w-none sm:p-3"
+                      title={kw.keyword}
+                    >
+                      {kw.keyword}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {keywords.map((kw) => (
+                {sortedDomains.map((d) => (
                   <tr
-                    key={kw.id}
+                    key={d.id}
                     className="border-b border-white/10 text-white/90"
                   >
-                    <td className="p-3">{kw.keyword}</td>
-                    {domains.map((d) => {
+                    <td className="sticky left-0 z-10 min-w-[140px] bg-black/40 p-2 font-medium sm:min-w-[180px] sm:p-3">
+                      {d.display_name || d.domain}
+                      {d.is_my_domain && (
+                        <span className="ml-1 text-green-400">(you)</span>
+                      )}
+                    </td>
+                    {keywords.map((kw) => {
                       const key = `${kw.id}:${d.id}`
                       const latest = latestMap.get(key)
                       const previous = previousMap.get(key)
@@ -814,7 +871,7 @@ export default function RadarPage() {
                           ? previous - latest
                           : null
                       return (
-                        <td key={d.id} className="p-3">
+                        <td key={kw.id} className="p-2 sm:p-3">
                           {latest != null ? (
                             <span className="flex items-center gap-1">
                               #{latest}
@@ -822,18 +879,18 @@ export default function RadarPage() {
                                 movement !== 0 &&
                                 (movement > 0 ? (
                                   <ArrowUp
-                                    className="h-4 w-4 text-green-500"
+                                    className="h-4 w-4 shrink-0 text-green-500"
                                     aria-label="Improved"
                                   />
                                 ) : (
                                   <ArrowDown
-                                    className="h-4 w-4 text-red-500"
+                                    className="h-4 w-4 shrink-0 text-red-500"
                                     aria-label="Dropped"
                                   />
                                 ))}
                               {movement === 0 && (
                                 <Minus
-                                  className="h-4 w-4 text-white/50"
+                                  className="h-4 w-4 shrink-0 text-white/50"
                                   aria-label="No change"
                                 />
                               )}

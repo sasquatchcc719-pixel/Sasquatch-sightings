@@ -17,6 +17,8 @@ export type RadarScanResult = {
   keywords_processed: number
   rankings_inserted: number
   message?: string
+  /** When rankings_inserted is 0 but we had keywords/domains, the first error from SerpApi or insert */
+  error_detail?: string
 }
 
 export async function runRadarScan(): Promise<RadarScanResult> {
@@ -53,6 +55,7 @@ export async function runRadarScan(): Promise<RadarScanResult> {
   }
 
   let rankingsInserted = 0
+  let firstError: string | undefined
 
   for (let i = 0; i < keywords.length; i++) {
     const kw = keywords[i]
@@ -67,6 +70,8 @@ export async function runRadarScan(): Promise<RadarScanResult> {
         .from('radar_rankings')
         .insert(rows)
       if (insertError) {
+        const msg = `Insert failed: ${insertError.message}`
+        if (!firstError) firstError = msg
         console.error(
           `[Radar Scan] Insert error for keyword ${kw.id}:`,
           insertError,
@@ -75,6 +80,8 @@ export async function runRadarScan(): Promise<RadarScanResult> {
         rankingsInserted += rows.length
       }
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (!firstError) firstError = msg
       console.error(`[Radar Scan] SerpApi error for "${kw.keyword}":`, err)
     }
 
@@ -87,5 +94,6 @@ export async function runRadarScan(): Promise<RadarScanResult> {
     success: true,
     keywords_processed: keywords.length,
     rankings_inserted: rankingsInserted,
+    error_detail: rankingsInserted === 0 && firstError ? firstError : undefined,
   }
 }
