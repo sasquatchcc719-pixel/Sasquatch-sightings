@@ -16,6 +16,7 @@ import {
   Plus,
   Trash2,
   Search,
+  RefreshCw,
 } from 'lucide-react'
 import {
   LineChart,
@@ -73,6 +74,8 @@ export default function RadarPage() {
   const [discoverLoading, setDiscoverLoading] = useState(false)
   const [addKeywordLoading, setAddKeywordLoading] = useState(false)
   const [addDomainLoading, setAddDomainLoading] = useState(false)
+  const [refreshLoading, setRefreshLoading] = useState(false)
+  const [refreshMessage, setRefreshMessage] = useState<string | null>(null)
 
   const loadData = useCallback(async () => {
     const supabase = createClient()
@@ -227,6 +230,28 @@ export default function RadarPage() {
     })
   }
 
+  const handleRefreshRankings = async () => {
+    setRefreshLoading(true)
+    setRefreshMessage(null)
+    setError(null)
+    try {
+      const res = await fetch('/api/admin/radar/refresh', { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setError(data.error || 'Refresh failed')
+        return
+      }
+      setRefreshMessage(
+        `Done: ${data.keywords_processed} keywords processed, ${data.rankings_inserted} rankings saved.`,
+      )
+      await loadData()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Refresh failed')
+    } finally {
+      setRefreshLoading(false)
+    }
+  }
+
   const handleAddSelectedDomains = async () => {
     if (discoverSelected.size === 0) return
     setAddDomainLoading(true)
@@ -333,10 +358,10 @@ export default function RadarPage() {
             competitor’s domain. Mark your own site with “This is my domain.”
           </li>
           <li>
-            <strong className="text-white">Wait for rankings</strong> – A daily
-            cron job (or a manual run) checks Google for each keyword and saves
-            where each domain ranks. After it runs, the table and chart below
-            will show positions and movement.
+            <strong className="text-white">Get rankings</strong> – Click
+            “Refresh rankings” in Step 3 to run a scan now (checks Google for
+            each keyword and saves positions). Or wait for the daily cron. The
+            table and chart will then show positions and movement.
           </li>
         </ol>
       </Card>
@@ -721,16 +746,42 @@ export default function RadarPage() {
       {hasData ? (
         <Card className="overflow-hidden border-white/20 bg-black/40 backdrop-blur-sm">
           <div className="border-b border-white/20 p-3">
-            <h2 className="text-lg font-semibold text-white">
-              Step 3 – Rankings table (keyword × domain)
-            </h2>
-            <p className="mt-1 text-sm text-white/60">
-              Each row is a keyword; each column is a domain. The number is that
-              domain’s Google position (1 = first result). Green up arrow =
-              improved since last scan; red down = dropped. Rankings update when
-              the daily cron runs, or when you call /api/cron/track-serps with
-              CRON_SECRET.
-            </p>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-white">
+                  Step 3 – Rankings table (keyword × domain)
+                </h2>
+                <p className="mt-1 text-sm text-white/60">
+                  Each row is a keyword; each column is a domain. The number is
+                  that domain’s Google position (1 = first result). Green up
+                  arrow = improved since last scan; red down = dropped.
+                </p>
+                {refreshMessage && (
+                  <p className="mt-2 text-sm text-green-400">
+                    {refreshMessage}
+                  </p>
+                )}
+              </div>
+              <Button
+                type="button"
+                onClick={handleRefreshRankings}
+                disabled={
+                  refreshLoading ||
+                  keywords.length === 0 ||
+                  domains.length === 0
+                }
+                className="shrink-0 bg-green-600 hover:bg-green-700"
+              >
+                {refreshLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <>
+                    <RefreshCw className="mr-1.5 h-4 w-4" />
+                    Refresh rankings
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[600px] text-left text-sm">
@@ -809,12 +860,32 @@ export default function RadarPage() {
           <h2 className="mb-2 text-lg font-semibold text-white">
             Step 3 – Rankings will appear here
           </h2>
-          <p className="text-white/70">
+          <p className="mb-3 text-white/70">
             Add at least one keyword (Step 1) and one domain (Step 2a or 2b)
-            above. After the next SERP scan runs (daily cron or manual API
-            call), this section will show a table of positions and a chart for
-            your domain.
+            above. Then click “Refresh rankings” to run a scan now, or wait for
+            the daily cron. After a scan runs, this section will show a table of
+            positions and a chart for your domain.
           </p>
+          <Button
+            type="button"
+            onClick={handleRefreshRankings}
+            disabled={
+              refreshLoading || keywords.length === 0 || domains.length === 0
+            }
+            className="bg-green-600 hover:bg-green-700"
+          >
+            {refreshLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <>
+                <RefreshCw className="mr-1.5 h-4 w-4" />
+                Refresh rankings
+              </>
+            )}
+          </Button>
+          {refreshMessage && (
+            <p className="mt-2 text-sm text-green-400">{refreshMessage}</p>
+          )}
         </Card>
       )}
     </div>
