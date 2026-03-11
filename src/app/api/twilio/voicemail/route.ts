@@ -9,6 +9,33 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
 )
 
+const MIN_VOICEMAIL_EMAIL_DURATION_SECONDS = 5
+
+function hasMeaningfulTranscription(transcriptionText: string | null): boolean {
+  const normalized = transcriptionText?.trim().toLowerCase() ?? ''
+
+  if (!normalized) return false
+
+  return ![
+    '(no transcription available)',
+    'no transcription',
+    '(none)',
+    'none',
+  ].includes(normalized)
+}
+
+function shouldEmailVoicemail(
+  transcriptionText: string | null,
+  recordingDuration: string | null,
+): boolean {
+  const durationSeconds = Number(recordingDuration ?? '0')
+
+  return (
+    hasMeaningfulTranscription(transcriptionText) ||
+    durationSeconds >= MIN_VOICEMAIL_EMAIL_DURATION_SECONDS
+  )
+}
+
 function getBaseUrl(): string {
   const url =
     process.env.VERCEL_URL ||
@@ -127,41 +154,52 @@ export async function POST(request: NextRequest) {
       hour12: true,
     })
 
-    try {
-      await resend.emails.send({
-        from: 'Sasquatch Voicemail <onboarding@resend.dev>',
-        to: 'sasquatchcc719@gmail.com',
-        subject: `🎤 New Voicemail from ${normalizedPhone}`,
-        html: `
-          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #166534;">New Voicemail Received</h2>
-            
-            <div style="background: #f0fdf4; border-radius: 8px; padding: 16px; margin: 16px 0;">
-              <p style="margin: 0 0 8px 0;"><strong>📞 From:</strong> <a href="tel:${normalizedPhone}">${normalizedPhone}</a></p>
-              <p style="margin: 0 0 8px 0;"><strong>⏱️ Duration:</strong> ${recordingDuration} seconds</p>
-              <p style="margin: 0;"><strong>🕐 Time:</strong> ${timestamp}</p>
+    if (shouldEmailVoicemail(transcriptionText, recordingDuration)) {
+      try {
+        await resend.emails.send({
+          from: 'Sasquatch Voicemail <onboarding@resend.dev>',
+          to: 'sasquatchcc719@gmail.com',
+          subject: `🎤 New Voicemail from ${normalizedPhone}`,
+          html: `
+            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+              <h2 style="color: #166534;">New Voicemail Received</h2>
+              
+              <div style="background: #f0fdf4; border-radius: 8px; padding: 16px; margin: 16px 0;">
+                <p style="margin: 0 0 8px 0;"><strong>📞 From:</strong> <a href="tel:${normalizedPhone}">${normalizedPhone}</a></p>
+                <p style="margin: 0 0 8px 0;"><strong>⏱️ Duration:</strong> ${recordingDuration} seconds</p>
+                <p style="margin: 0;"><strong>🕐 Time:</strong> ${timestamp}</p>
+              </div>
+              
+              <h3 style="color: #166534;">Transcription</h3>
+              <div style="background: #f3f4f6; border-radius: 8px; padding: 16px; margin: 16px 0;">
+                <p style="margin: 0; white-space: pre-wrap;">${transcriptionText || '(No transcription available)'}</p>
+              </div>
+              
+              <div style="margin: 24px 0;">
+                <a href="${audioUrl}" style="display: inline-block; background: #166534; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold;">
+                  🔊 Listen to Voicemail
+                </a>
+              </div>
+              
+              <p style="color: #6b7280; font-size: 14px;">
+                View in admin: <a href="${adminBaseUrl}/admin/conversations?source=phone">Phone Calls</a>
+              </p>
             </div>
-            
-            <h3 style="color: #166534;">Transcription</h3>
-            <div style="background: #f3f4f6; border-radius: 8px; padding: 16px; margin: 16px 0;">
-              <p style="margin: 0; white-space: pre-wrap;">${transcriptionText || '(No transcription available)'}</p>
-            </div>
-            
-            <div style="margin: 24px 0;">
-              <a href="${audioUrl}" style="display: inline-block; background: #166534; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold;">
-                🔊 Listen to Voicemail
-              </a>
-            </div>
-            
-            <p style="color: #6b7280; font-size: 14px;">
-              View in admin: <a href="${adminBaseUrl}/admin/conversations?source=phone">Phone Calls</a>
-            </p>
-          </div>
-        `,
-      })
-      console.log('[Voicemail] Email sent to sasquatchcc719@gmail.com')
-    } catch (emailError) {
-      console.error('[Voicemail] Failed to send email:', emailError)
+          `,
+        })
+        console.log('[Voicemail] Email sent to sasquatchcc719@gmail.com')
+      } catch (emailError) {
+        console.error('[Voicemail] Failed to send email:', emailError)
+      }
+    } else {
+      console.log(
+        '[Voicemail] Skipping email for likely junk voicemail:',
+        JSON.stringify({
+          from: normalizedPhone,
+          duration: recordingDuration,
+          transcription: transcriptionText || '(none)',
+        }),
+      )
     }
 
     console.log('========================================')
