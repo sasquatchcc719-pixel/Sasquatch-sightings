@@ -9,12 +9,17 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
+import {
+  applyAppointmentBuffer,
+  calculateLineItemDurationMinutes,
+} from '@/lib/ops/availability'
 
 type ServiceItem = {
   id: string
   name: string
   category: string
   base_price: number | null
+  default_duration_minutes?: number | null
 }
 
 type CustomerAddress = {
@@ -104,6 +109,26 @@ function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
   return Array.isArray(value) ? value[0] || null : value
 }
 
+function pickDefaultCategory(categories: string[]): string {
+  const normalized = categories
+    .map((category) => category.trim())
+    .filter(Boolean)
+  if (normalized.length === 0) return ''
+
+  const exact = normalized.find(
+    (category) => category.toLowerCase() === 'carpet cleaning',
+  )
+  if (exact) return exact
+
+  const closeMatch = normalized.find((category) => {
+    const value = category.toLowerCase()
+    return value.includes('carpet') && value.includes('clean')
+  })
+  if (closeMatch) return closeMatch
+
+  return normalized[0]
+}
+
 function splitFullName(fullName: string): {
   firstName: string
   lastName: string
@@ -136,6 +161,10 @@ export function NewJobWorkspace() {
     appointments: [],
     events: [],
   })
+  const [availableSlots, setAvailableSlots] = useState<
+    Array<{ start_time: string; end_time: string }>
+  >([])
+  const [loadingSlots, setLoadingSlots] = useState(false)
 
   const [lineItems, setLineItems] = useState<LineItemForm[]>([])
 
@@ -183,11 +212,19 @@ export function NewJobWorkspace() {
         if (!response.ok) {
           throw new Error(result.error || 'Failed to load services')
         }
-        setServices(result.services || [])
-        if ((result.services || []).length > 0) {
-          const firstCategory = String(result.services[0].category || '').trim()
-          if (firstCategory) {
-            setSelectedCategory(firstCategory)
+        const fetchedServices = (result.services || []) as ServiceItem[]
+        setServices(fetchedServices)
+        if (fetchedServices.length > 0) {
+          const discoveredCategories = [
+            ...new Set(
+              fetchedServices.map((service) =>
+                String(service.category || '').trim(),
+              ),
+            ),
+          ]
+          const defaultCategory = pickDefaultCategory(discoveredCategories)
+          if (defaultCategory) {
+            setSelectedCategory(defaultCategory)
           }
         }
       } catch (loadError) {
@@ -286,7 +323,7 @@ export function NewJobWorkspace() {
       return
     }
     if (!selectedCategory || !categories.includes(selectedCategory)) {
-      setSelectedCategory(categories[0])
+      setSelectedCategory(pickDefaultCategory(categories))
     }
   }, [categories, selectedCategory])
 
@@ -316,6 +353,22 @@ export function NewJobWorkspace() {
   const totalSelectedUnits = lineItems.reduce(
     (sum, item) => sum + Math.max(0, Number(item.quantity || 0)),
     0,
+  )
+  const requiredMinutesForCurrentSelection = applyAppointmentBuffer(
+    lineItems.reduce((sum, item) => {
+      const service = servicesById.get(item.service_catalog_item_id)
+      const durationMinutes = Number(service?.default_duration_minutes || 0)
+      const quantity = Number(item.quantity || 0)
+      if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return sum
+      if (!Number.isFinite(quantity) || quantity <= 0) return sum
+      return (
+        sum +
+        calculateLineItemDurationMinutes({
+          durationMinutes,
+          quantity,
+        })
+      )
+    }, 0),
   )
   const unpricedLineItems = lineItems.filter(
     (item) =>
@@ -476,6 +529,58 @@ export function NewJobWorkspace() {
       setSaving(false)
     }
   }
+
+  useEffect(() => {
+    async function loadAvailableTimes() {
+      if (
+        !appointmentForm.appointment_date ||
+        requiredMinutesForCurrentSelection <= 0
+      ) {
+        setAvailableSlots([])
+        return
+      }
+      setLoadingSlots(true)
+      try {
+        const searchParams = new URLSearchParams({
+          date: appointmentForm.appointment_date,
+          required_minutes: String(requiredMinutesForCurrentSelection),
+        })
+        const response = await fetch(
+          `/api/admin/ops/slots?${searchParams.toString()}`,
+          { cache: 'no-store' },
+        )
+        const result = await response.json()
+        if (!response.ok) {
+          throw new Error(result.error || 'Failed to load available slots')
+        }
+        const slots: Array<{ start_time: string; end_time: string }> =
+          Array.isArray(result.slots) ? result.slots : []
+        setAvailableSlots(slots)
+        if (slots.length === 0) return
+
+        const currentStart = `${appointmentForm.start_time}:00`.slice(0, 8)
+        const stillValid = slots.some(
+          (slot) => slot.start_time === currentStart,
+        )
+        if (!stillValid) {
+          setAppointmentForm((current) => ({
+            ...current,
+            start_time: String(slots[0].start_time || '09:00').slice(0, 5),
+          }))
+        }
+      } catch (slotError) {
+        setError(
+          slotError instanceof Error
+            ? slotError.message
+            : 'Failed to load available slots',
+        )
+      } finally {
+        setLoadingSlots(false)
+      }
+    }
+
+    void loadAvailableTimes()
+  }, [appointmentForm.appointment_date, requiredMinutesForCurrentSelection])
 
   return (
     <div className="space-y-6">
@@ -1051,9 +1156,9 @@ export function NewJobWorkspace() {
               </div>
               <div>
                 <Label htmlFor="appointment-time">Start Time</Label>
-                <Input
+                <select
                   id="appointment-time"
-                  type="time"
+                  className="border-input bg-background h-10 w-full rounded-md border px-3 text-sm"
                   value={appointmentForm.start_time}
                   onChange={(event) =>
                     setAppointmentForm((current) => ({
@@ -1061,7 +1166,39 @@ export function NewJobWorkspace() {
                       start_time: event.target.value,
                     }))
                   }
-                />
+                  disabled={
+                    loadingSlots ||
+                    requiredMinutesForCurrentSelection <= 0 ||
+                    availableSlots.length === 0
+                  }
+                >
+                  {loadingSlots ? (
+                    <option value={appointmentForm.start_time}>
+                      Loading available times...
+                    </option>
+                  ) : availableSlots.length === 0 ? (
+                    <option value="">
+                      {requiredMinutesForCurrentSelection <= 0
+                        ? 'Add services with duration first'
+                        : 'No open times for this day'}
+                    </option>
+                  ) : (
+                    availableSlots.map((slot) => {
+                      const start = String(slot.start_time).slice(0, 5)
+                      const end = String(slot.end_time).slice(0, 5)
+                      return (
+                        <option key={slot.start_time} value={start}>
+                          {start} - {end}
+                        </option>
+                      )
+                    })
+                  )}
+                </select>
+                <div className="text-muted-foreground mt-1 text-xs">
+                  {requiredMinutesForCurrentSelection > 0
+                    ? `Only open times are shown (job + buffer: ${requiredMinutesForCurrentSelection} min).`
+                    : 'Pick services first so we can calculate valid openings.'}
+                </div>
               </div>
               <div>
                 <Label htmlFor="appointment-tech">Assigned Staff</Label>

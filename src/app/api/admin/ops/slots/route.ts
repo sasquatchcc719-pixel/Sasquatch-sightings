@@ -14,34 +14,58 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const date = searchParams.get('date')
     const serviceId = searchParams.get('service_id')
+    const requiredMinutesParam = searchParams.get('required_minutes')
     const quantity = Number(searchParams.get('quantity') || '1')
+    const requiredMinutesFromQuery = Number(requiredMinutesParam || '0')
 
-    if (!date || !serviceId) {
-      return NextResponse.json(
-        { error: 'date and service_id are required' },
-        { status: 400 },
-      )
+    if (!date) {
+      return NextResponse.json({ error: 'date is required' }, { status: 400 })
     }
 
-    const { data: service, error: serviceError } = await supabase
-      .from('service_catalog_items')
-      .select('default_duration_minutes, buffer_minutes')
-      .eq('id', serviceId)
-      .single()
-
-    if (serviceError) throw serviceError
+    let requiredMinutesWithBuffer = 0
 
     if (
-      !Number.isFinite(service.default_duration_minutes) ||
-      Number(service.default_duration_minutes) <= 0
+      Number.isFinite(requiredMinutesFromQuery) &&
+      requiredMinutesFromQuery > 0
     ) {
-      return NextResponse.json(
-        {
-          error:
-            'This service is missing a duration. Set one in Operations first.',
-        },
-        { status: 400 },
-      )
+      requiredMinutesWithBuffer = Math.round(requiredMinutesFromQuery)
+    } else {
+      if (!serviceId) {
+        return NextResponse.json(
+          {
+            error:
+              'service_id is required when required_minutes is not provided',
+          },
+          { status: 400 },
+        )
+      }
+
+      const { data: service, error: serviceError } = await supabase
+        .from('service_catalog_items')
+        .select('default_duration_minutes, buffer_minutes')
+        .eq('id', serviceId)
+        .single()
+
+      if (serviceError) throw serviceError
+
+      if (
+        !Number.isFinite(service.default_duration_minutes) ||
+        Number(service.default_duration_minutes) <= 0
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              'This service is missing a duration. Set one in Operations first.',
+          },
+          { status: 400 },
+        )
+      }
+
+      const requiredMinutes = calculateLineItemDurationMinutes({
+        durationMinutes: service.default_duration_minutes,
+        quantity,
+      })
+      requiredMinutesWithBuffer = applyAppointmentBuffer(requiredMinutes)
     }
 
     const [templatesResult, overridesResult, appointmentsResult] =
@@ -63,12 +87,6 @@ export async function GET(request: NextRequest) {
     if (templatesResult.error) throw templatesResult.error
     if (overridesResult.error) throw overridesResult.error
     if (appointmentsResult.error) throw appointmentsResult.error
-
-    const requiredMinutes = calculateLineItemDurationMinutes({
-      durationMinutes: service.default_duration_minutes,
-      quantity,
-    })
-    const requiredMinutesWithBuffer = applyAppointmentBuffer(requiredMinutes)
 
     const slots = getAvailableSlots({
       date,
