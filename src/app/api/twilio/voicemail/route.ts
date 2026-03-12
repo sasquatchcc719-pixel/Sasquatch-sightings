@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
+import twilio from 'twilio'
+import {
+  getHarryControlSnapshot,
+  isHarryChannelEnabled,
+  isHarryFunctionEnabled,
+} from '@/lib/harry/control'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -10,6 +16,7 @@ const supabase = createClient(
 )
 
 const MIN_VOICEMAIL_EMAIL_DURATION_SECONDS = 5
+const VOICEMAIL_CONTEXT_REPLY_DELAY_MS = 4000
 
 function hasMeaningfulTranscription(transcriptionText: string | null): boolean {
   const normalized = transcriptionText?.trim().toLowerCase() ?? ''
@@ -108,8 +115,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Add voicemail to conversation messages
+    let messages = existingConvo?.messages || []
     if (conversationId) {
-      const messages = existingConvo?.messages || []
       messages.push({
         role: 'user',
         content: `[VOICEMAIL - ${recordingDuration}s] ${transcriptionText || '(No transcription available)'}`,
@@ -131,6 +138,100 @@ export async function POST(request: NextRequest) {
           updated_at: new Date().toISOString(),
         })
         .eq('id', conversationId)
+    }
+
+    // Context-aware voicemail reply:
+    // Wait briefly for transcription callback data, then send a reply that references
+    // what the caller said. We skip if transcription isn't meaningful.
+    try {
+      const controlSnapshot = await getHarryControlSnapshot()
+      const canRunVoicemailAutoReply =
+        isHarryFunctionEnabled(controlSnapshot, 'global_enabled') &&
+        isHarryFunctionEnabled(controlSnapshot, 'auto_reply_enabled') &&
+        isHarryFunctionEnabled(
+          controlSnapshot,
+          'call_missed_auto_sms_enabled',
+        ) &&
+        isHarryChannelEnabled(controlSnapshot, 'inbound')
+
+      const hasTranscript = hasMeaningfulTranscription(transcriptionText)
+      if (canRunVoicemailAutoReply && conversationId && hasTranscript) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, VOICEMAIL_CONTEXT_REPLY_DELAY_MS),
+        )
+
+        const now = Date.now()
+        const hasRecentVoicemailReply = (messages || []).some(
+          (message: {
+            role?: string
+            content?: string
+            timestamp?: string
+          }) => {
+            if (message?.role !== 'assistant') return false
+            const text = String(message?.content || '').toLowerCase()
+            if (!text.includes('voicemail')) return false
+            const ts = Date.parse(String(message?.timestamp || ''))
+            if (!Number.isFinite(ts)) return false
+            return now - ts < 6 * 60 * 60 * 1000
+          },
+        )
+
+        if (!hasRecentVoicemailReply) {
+          const normalizedTranscript = String(transcriptionText || '')
+            .replace(/\s+/g, ' ')
+            .trim()
+          const summary =
+            normalizedTranscript.length > 120
+              ? `${normalizedTranscript.slice(0, 117)}...`
+              : normalizedTranscript
+          const harryMessage = `Hi! This is Harry from Sasquatch Carpet Cleaning. I got your voicemail about "${summary}". I can help here by text, or Charles can call you back shortly.`
+
+          const twilioClient = twilio(
+            process.env.TWILIO_ACCOUNT_SID,
+            process.env.TWILIO_AUTH_TOKEN,
+          )
+
+          const sms = await twilioClient.messages.create({
+            body: harryMessage,
+            to: normalizedPhone,
+            from: process.env.TWILIO_PHONE_NUMBER,
+          })
+
+          const nextMessages = [...(messages || [])]
+          nextMessages.push({
+            role: 'assistant',
+            content: harryMessage,
+            timestamp: new Date().toISOString(),
+            twilio_sid: sms.sid,
+          })
+
+          await supabase
+            .from('conversations')
+            .update({
+              messages: nextMessages,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', conversationId)
+
+          await supabase.from('sms_logs').insert({
+            recipient_phone: normalizedPhone,
+            message_type: 'ai_dispatcher',
+            message_content: harryMessage,
+            status: 'sent',
+            twilio_sid: sms.sid,
+            sent_at: new Date().toISOString(),
+          })
+        }
+      } else if (canRunVoicemailAutoReply && conversationId && !hasTranscript) {
+        console.log(
+          '[Voicemail] Skipping auto-reply due to missing/low-quality transcription.',
+        )
+      }
+    } catch (fallbackSmsError) {
+      console.error(
+        '[Voicemail] Failed after-hours SMS fallback:',
+        fallbackSmsError,
+      )
     }
 
     // Log to sms_logs for tracking (using it as general message log)

@@ -51,12 +51,13 @@ export async function POST(request: NextRequest) {
       isHarryFunctionEnabled(controlSnapshot, 'call_missed_auto_sms_enabled') &&
       isHarryChannelEnabled(controlSnapshot, 'inbound')
 
-    // Send SMS if:
-    // 1. No dialCallStatus (after-hours redirect - no dial happened)
-    // 2. Or dialCallStatus indicates call was missed (no-answer, busy, failed)
+    // Send immediate missed-call SMS only when an actual dial attempt was missed.
+    // For after-hours direct-to-voicemail (no dialCallStatus), voicemail route handles
+    // delayed context-aware follow-up once transcription is available.
     const shouldSendSMS =
       canRunHarryCallSms &&
-      (!dialCallStatus || !['completed', 'answered'].includes(dialCallStatus))
+      Boolean(dialCallStatus) &&
+      !['completed', 'answered'].includes(dialCallStatus)
 
     if (shouldSendSMS) {
       console.log(
@@ -161,6 +162,11 @@ export async function POST(request: NextRequest) {
         sent_at: new Date().toISOString(),
       })
     } else {
+      if (!dialCallStatus) {
+        console.log(
+          '[Call Handler] No dialCallStatus (after-hours voicemail flow) - waiting for voicemail transcription before SMS',
+        )
+      }
       console.log(
         `[Call Handler] Call was answered (${dialCallStatus}) - no SMS needed`,
       )
