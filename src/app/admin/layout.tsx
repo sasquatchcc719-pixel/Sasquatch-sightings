@@ -7,7 +7,7 @@ import Link from 'next/link'
 import { Suspense } from 'react'
 import { AdminNavigation } from '@/components/admin-navigation'
 import { OneSignalInit } from '@/components/onesignal-init'
-import { BubbleTunnelBackground } from '@/components/ui/bubble-tunnel-background'
+import { VideoBackground } from '@/components/public/VideoBackground'
 
 type AdminLayoutProps = {
   children: React.ReactNode
@@ -41,8 +41,9 @@ export default async function AdminLayout({ children }: AdminLayoutProps) {
   console.log('[AdminLayout] Access granted - internal ops role:', role)
 
   return (
-    <main className="admin-shell text-foreground relative min-h-screen">
-      <BubbleTunnelBackground count={150} />
+    <main className="text-foreground relative min-h-screen">
+      <VideoBackground video="clouds" />
+      <div className="pointer-events-none fixed inset-0 z-0 bg-slate-950/55" />
       <OneSignalInit />
       <div className="relative z-10 flex w-full flex-1 flex-col items-center gap-8 pb-10">
         <nav className="glass-nav flex h-14 w-full justify-center border-b">
