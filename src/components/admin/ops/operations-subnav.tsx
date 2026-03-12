@@ -83,7 +83,7 @@ const NAV_ITEMS: NavItem[] = [
   {
     href: '/admin/operations/settings',
     label: 'Settings',
-    description: 'Availability, slot checks, and sync settings',
+    description: 'Queue, cron, and lifecycle messaging status',
     icon: Settings,
   },
 ]

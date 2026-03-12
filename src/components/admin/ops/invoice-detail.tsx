@@ -242,6 +242,39 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     }
   }
 
+  const handleDeleteInvoice = async () => {
+    const confirmed = window.confirm(
+      'Delete this invoice? This is mainly for cleanup/testing and cannot be undone.',
+    )
+    if (!confirmed) return
+
+    setActionLoading('Delete Invoice')
+    setError(null)
+    try {
+      const response = await fetch(`/api/admin/ops/invoices/${invoiceId}`, {
+        method: 'DELETE',
+      })
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to delete invoice')
+      }
+      if (result.appointment_id) {
+        router.push(`/admin/operations/appointments/${result.appointment_id}`)
+      } else {
+        router.push('/admin/operations')
+      }
+      router.refresh()
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : 'Failed to delete invoice',
+      )
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
   if (loading) {
     return (
       <div className="text-muted-foreground flex items-center gap-3">
@@ -408,6 +441,16 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                 </Button>
               </>
             ) : null}
+            <Button
+              variant="outline"
+              disabled={Boolean(actionLoading)}
+              onClick={() => void handleDeleteInvoice()}
+            >
+              {actionLoading === 'Delete Invoice' ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Delete Invoice
+            </Button>
           </div>
         </Card>
 

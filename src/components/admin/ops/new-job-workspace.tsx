@@ -104,6 +104,22 @@ function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
   return Array.isArray(value) ? value[0] || null : value
 }
 
+function splitFullName(fullName: string): {
+  firstName: string
+  lastName: string
+} {
+  const parts = String(fullName || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+  if (parts.length === 0) return { firstName: '', lastName: '' }
+  if (parts.length === 1) return { firstName: parts[0], lastName: '' }
+  return {
+    firstName: parts[0],
+    lastName: parts.slice(1).join(' '),
+  }
+}
+
 export function NewJobWorkspace() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
@@ -307,10 +323,11 @@ export function NewJobWorkspace() {
   ).length
 
   const handleSelectCustomer = (customer: CustomerSearchResult) => {
+    const derivedName = splitFullName(customer.full_name)
     setSelectedCustomer(customer)
     setCustomerForm({
-      first_name: customer.first_name || '',
-      last_name: customer.last_name || '',
+      first_name: customer.first_name || derivedName.firstName,
+      last_name: customer.last_name || derivedName.lastName,
       business_name: customer.business_name || '',
       email: customer.email || '',
       phone: customer.phone || '',
@@ -330,6 +347,25 @@ export function NewJobWorkspace() {
         notes: firstAddress.notes || '',
       })
     }
+  }
+
+  const handleAddressSelectionChange = (value: string) => {
+    setAddressSelection(value)
+    if (value === 'new') return
+    const selectedAddress = selectedCustomer?.ops_service_addresses?.find(
+      (address) => address.id === value,
+    )
+    if (!selectedAddress) return
+    setAddressForm({
+      label: selectedAddress.label || 'Service Address',
+      street_1: selectedAddress.street_1,
+      street_2: selectedAddress.street_2 || '',
+      city: selectedAddress.city,
+      state: selectedAddress.state,
+      zip_code: selectedAddress.zip_code,
+      gate_code: selectedAddress.gate_code || '',
+      notes: selectedAddress.notes || '',
+    })
   }
 
   const handleLineItemChange = (
@@ -845,7 +881,9 @@ export function NewJobWorkspace() {
                   id="saved-address"
                   className="border-input bg-background mt-1 h-10 w-full rounded-md border px-3 text-sm"
                   value={addressSelection}
-                  onChange={(event) => setAddressSelection(event.target.value)}
+                  onChange={(event) =>
+                    handleAddressSelectionChange(event.target.value)
+                  }
                 >
                   {selectedCustomer.ops_service_addresses.map((address) => (
                     <option key={address.id} value={address.id}>
@@ -855,6 +893,31 @@ export function NewJobWorkspace() {
                   ))}
                   <option value="new">Add another address</option>
                 </select>
+              </div>
+            ) : null}
+
+            {addressSelection !== 'new' ? (
+              <div className="mt-3 rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3 text-sm">
+                <div className="font-medium">
+                  Using saved address for this job
+                </div>
+                <div className="mt-1 text-emerald-100/90">
+                  {addressForm.street_1}
+                  {addressForm.street_2
+                    ? `, ${addressForm.street_2}`
+                    : ''}, {addressForm.city}, {addressForm.state}{' '}
+                  {addressForm.zip_code}
+                </div>
+                <div className="mt-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setAddressSelection('new')}
+                  >
+                    Use New Address Instead
+                  </Button>
+                </div>
               </div>
             ) : null}
 
