@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/supabase/server'
 import { getUserWithRole } from '@/lib/auth'
+import {
+  isAnalystFeatureEnabled,
+  isAnalystHistoryReadonlyEnabled,
+} from '@/lib/harry/features'
 
 // GET - Fetch conversation history
 export async function GET() {
@@ -8,6 +12,12 @@ export async function GET() {
     const { user, role } = await getUserWithRole()
     if (!user || role !== 'admin') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    if (!isAnalystFeatureEnabled() && !isAnalystHistoryReadonlyEnabled()) {
+      return NextResponse.json(
+        { error: 'Analyst history is currently disabled' },
+        { status: 403 },
+      )
     }
 
     const supabase = await createClient()
@@ -36,6 +46,12 @@ export async function DELETE() {
     const { user, role } = await getUserWithRole()
     if (!user || role !== 'admin') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    if (!isAnalystFeatureEnabled()) {
+      return NextResponse.json(
+        { error: 'Analyst is currently disabled' },
+        { status: 403 },
+      )
     }
 
     const supabase = await createClient()

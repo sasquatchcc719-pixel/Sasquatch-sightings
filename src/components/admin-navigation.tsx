@@ -112,7 +112,7 @@ export function AdminNavigation() {
   const [operationsOpen, setOperationsOpen] = useState(false)
   const [marketingOpen, setMarketingOpen] = useState(false)
   const [callsOpen, setCallsOpen] = useState(false)
-  const [analystOpen, setAnalystOpen] = useState(false)
+  const [harryOpen, setHarryOpen] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
 
   // Close all dropdowns
@@ -120,7 +120,7 @@ export function AdminNavigation() {
     setOperationsOpen(false)
     setMarketingOpen(false)
     setCallsOpen(false)
-    setAnalystOpen(false)
+    setHarryOpen(false)
     setPreviewOpen(false)
   }
 
@@ -225,21 +225,14 @@ export function AdminNavigation() {
     },
   ]
 
-  // Analyst group (Harry)
-  const analystTabs: NavTab[] = [
+  // Harry controls (ops-safe control center)
+  const harryTabs: NavTab[] = [
     {
-      name: 'Chat',
-      href: '/admin/analyst',
-      icon: MessageSquare,
-      active: pathname === '/admin/analyst',
-      description: 'Talk to Harry',
-    },
-    {
-      name: 'Targets',
-      href: '/admin/analyst/targets',
-      icon: Target,
-      active: pathname === '/admin/analyst/targets',
-      description: 'Market intel config',
+      name: 'Control',
+      href: '/admin/harry/control',
+      icon: Bot,
+      active: pathname === '/admin/harry/control',
+      description: 'Runtime toggles, logic profiles, and knowledge controls',
     },
   ]
 
@@ -274,7 +267,7 @@ export function AdminNavigation() {
   const operationsActive = operationsTabs.some((tab) => tab.active)
   const marketingActive = marketingTabs.some((tab) => tab.active)
   const callsActive = callsTabs.some((tab) => tab.active)
-  const analystActive = analystTabs.some((tab) => tab.active)
+  const harryActive = harryTabs.some((tab) => tab.active)
 
   return (
     <div>
@@ -323,18 +316,18 @@ export function AdminNavigation() {
             tabs={callsTabs}
           />
 
-          {/* Analyst Dropdown (Harry) */}
+          {/* Harry Controls Dropdown */}
           <NavDropdown
-            label="Analyst"
+            label="Harry"
             icon={Bot}
-            isOpen={analystOpen}
+            isOpen={harryOpen}
             onToggle={() => {
               closeAll()
-              setAnalystOpen(!analystOpen)
+              setHarryOpen(!harryOpen)
             }}
             onClose={closeAll}
-            isActive={analystActive}
-            tabs={analystTabs}
+            isActive={harryActive}
+            tabs={harryTabs}
           />
 
           {/* Preview Pages dropdown */}

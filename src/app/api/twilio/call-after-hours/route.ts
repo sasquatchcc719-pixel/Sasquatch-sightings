@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import twilio from 'twilio'
+import {
+  getHarryControlSnapshot,
+  isHarryChannelEnabled,
+  isHarryFunctionEnabled,
+} from '@/lib/harry/control'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -40,11 +45,18 @@ export async function POST(request: NextRequest) {
       `[Call Handler] Caller: ${normalizedPhone}, Status: ${callStatus}, DialStatus: ${dialCallStatus}, SID: ${callSid}`,
     )
 
+    const controlSnapshot = await getHarryControlSnapshot()
+    const canRunHarryCallSms =
+      isHarryFunctionEnabled(controlSnapshot, 'global_enabled') &&
+      isHarryFunctionEnabled(controlSnapshot, 'call_missed_auto_sms_enabled') &&
+      isHarryChannelEnabled(controlSnapshot, 'inbound')
+
     // Send SMS if:
     // 1. No dialCallStatus (after-hours redirect - no dial happened)
     // 2. Or dialCallStatus indicates call was missed (no-answer, busy, failed)
     const shouldSendSMS =
-      !dialCallStatus || !['completed', 'answered'].includes(dialCallStatus)
+      canRunHarryCallSms &&
+      (!dialCallStatus || !['completed', 'answered'].includes(dialCallStatus))
 
     if (shouldSendSMS) {
       console.log(

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 import { getUserWithRole } from '@/lib/auth'
+import { isAnalystFeatureEnabled } from '@/lib/harry/features'
 import { searchGoogle, readWebpage, researchCompetitor } from '@/lib/web-search'
 import Anthropic from '@anthropic-ai/sdk'
 
@@ -14,6 +15,12 @@ export async function POST(request: NextRequest) {
     const { user, role } = await getUserWithRole()
     if (!user || role !== 'admin') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    if (!isAnalystFeatureEnabled()) {
+      return NextResponse.json(
+        { error: 'Analyst is currently disabled' },
+        { status: 403 },
+      )
     }
 
     const body = await request.json()
@@ -221,6 +228,12 @@ interface CompetitorAnalysis {
 
 // GET - Check scan status or get last scan results
 export async function GET() {
+  if (!isAnalystFeatureEnabled()) {
+    return NextResponse.json(
+      { error: 'Analyst is currently disabled' },
+      { status: 403 },
+    )
+  }
   const supabase = createAdminClient()
 
   const { data: competitors } = await supabase
