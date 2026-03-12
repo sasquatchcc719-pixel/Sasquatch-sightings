@@ -25,6 +25,7 @@ export async function GET() {
     const { data: services, error: servicesError } = await supabase
       .from('service_catalog_items')
       .select('*')
+      .order('sort_order', { ascending: true, nullsFirst: false })
       .order('name')
 
     if (servicesError) {

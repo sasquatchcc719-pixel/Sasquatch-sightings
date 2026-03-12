@@ -13,6 +13,7 @@ import {
   Clock,
   Database,
   Edit3,
+  GripVertical,
   ChevronLeft,
   ChevronRight,
   Loader2,
@@ -35,6 +36,7 @@ type ServiceItem = {
   source_system: string | null
   source_uuid: string | null
   is_active: boolean
+  sort_order?: number | null
 }
 
 type AvailabilityTemplate = {
@@ -188,6 +190,10 @@ export function OperationsDashboard({
   } | null>(null)
   const [editingServiceId, setEditingServiceId] = useState<string | null>(null)
   const [serviceCategoryFilter, setServiceCategoryFilter] = useState('all')
+  const [serviceOrderIds, setServiceOrderIds] = useState<string[]>([])
+  const [draggingServiceId, setDraggingServiceId] = useState<string | null>(
+    null,
+  )
   const [categorySource, setCategorySource] = useState('')
   const [categoryRenameTo, setCategoryRenameTo] = useState('')
   const [categoryMergeTarget, setCategoryMergeTarget] = useState('')
@@ -275,6 +281,28 @@ export function OperationsDashboard({
   }, [loadDashboard])
 
   const services = data?.services || []
+  useEffect(() => {
+    setServiceOrderIds((current) => {
+      const incomingIds = services.map((service) => service.id)
+      if (current.length === 0) return incomingIds
+      const kept = current.filter((id) => incomingIds.includes(id))
+      const added = incomingIds.filter((id) => !kept.includes(id))
+      return [...kept, ...added]
+    })
+  }, [services])
+
+  const orderedServices = useMemo(() => {
+    const byId = new Map(services.map((service) => [service.id, service]))
+    const ordered = serviceOrderIds
+      .map((id) => byId.get(id))
+      .filter((service): service is ServiceItem => Boolean(service))
+    if (ordered.length === services.length) return ordered
+    const missing = services.filter(
+      (service) => !serviceOrderIds.includes(service.id),
+    )
+    return [...ordered, ...missing]
+  }, [services, serviceOrderIds])
+
   const appointments = data?.appointments || []
   const quickbooksJobs = data?.quickbooksJobs || []
 
@@ -293,11 +321,11 @@ export function OperationsDashboard({
   }, [services, serviceForm.category])
 
   const filteredServices = useMemo(() => {
-    if (serviceCategoryFilter === 'all') return services
-    return services.filter(
+    if (serviceCategoryFilter === 'all') return orderedServices
+    return orderedServices.filter(
       (service) => service.category.trim() === serviceCategoryFilter,
     )
-  }, [services, serviceCategoryFilter])
+  }, [orderedServices, serviceCategoryFilter])
 
   useEffect(() => {
     if (
@@ -532,6 +560,41 @@ export function OperationsDashboard({
       )
     } finally {
       setSaving(false)
+    }
+  }
+
+  const persistServiceOrder = async (orderedIds: string[]) => {
+    const response = await fetch('/api/admin/ops/services/reorder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ordered_ids: orderedIds }),
+    })
+    const result = await response.json()
+    if (!response.ok) {
+      throw new Error(result.error || 'Failed to save service order')
+    }
+  }
+
+  const moveServiceBeforeTarget = async (targetId: string) => {
+    if (!draggingServiceId || draggingServiceId === targetId) return
+    const fromIndex = serviceOrderIds.indexOf(draggingServiceId)
+    const toIndex = serviceOrderIds.indexOf(targetId)
+    if (fromIndex === -1 || toIndex === -1) return
+    const next = [...serviceOrderIds]
+    next.splice(fromIndex, 1)
+    next.splice(toIndex, 0, draggingServiceId)
+    setServiceOrderIds(next)
+    try {
+      await persistServiceOrder(next)
+    } catch (orderError) {
+      setError(
+        orderError instanceof Error
+          ? orderError.message
+          : 'Failed to save service order',
+      )
+      await loadDashboard()
+    } finally {
+      setDraggingServiceId(null)
     }
   }
 
@@ -1311,35 +1374,49 @@ export function OperationsDashboard({
                   <div
                     key={service.id}
                     className="rounded-xl border border-white/10 bg-white/5 p-3"
+                    draggable
+                    onDragStart={() => setDraggingServiceId(service.id)}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={() => void moveServiceBeforeTarget(service.id)}
+                    onDragEnd={() => setDraggingServiceId(null)}
                   >
                     <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <div className="flex items-center gap-2 font-medium">
-                          {service.name}
-                          {service.source_system === 'housecall_pro' ? (
-                            <Badge className="bg-blue-500/20 text-blue-100">
-                              Imported
-                            </Badge>
-                          ) : null}
-                          {!service.is_active ? (
-                            <Badge className="bg-white/10 text-white/60">
-                              Hidden
-                            </Badge>
-                          ) : null}
-                          {service.online_booking_enabled ? (
-                            <Badge className="bg-emerald-500/20 text-emerald-100">
-                              Booking on
-                            </Badge>
-                          ) : null}
-                        </div>
-                        <div className="text-sm text-white/60">
-                          {service.default_duration_minutes !== null
-                            ? `${service.default_duration_minutes} min`
-                            : 'Needs duration'}{' '}
-                          + {service.buffer_minutes} min buffer
-                        </div>
-                        <div className="text-xs text-white/50">
-                          {service.category}
+                      <div className="flex items-start gap-2">
+                        <button
+                          type="button"
+                          className="cursor-grab rounded-md p-1 text-white/50 hover:bg-white/10 hover:text-white"
+                          aria-label="Drag to reorder service"
+                        >
+                          <GripVertical className="h-4 w-4" />
+                        </button>
+                        <div>
+                          <div className="flex items-center gap-2 font-medium">
+                            {service.name}
+                            {service.source_system === 'housecall_pro' ? (
+                              <Badge className="bg-blue-500/20 text-blue-100">
+                                Imported
+                              </Badge>
+                            ) : null}
+                            {!service.is_active ? (
+                              <Badge className="bg-white/10 text-white/60">
+                                Hidden
+                              </Badge>
+                            ) : null}
+                            {service.online_booking_enabled ? (
+                              <Badge className="bg-emerald-500/20 text-emerald-100">
+                                Booking on
+                              </Badge>
+                            ) : null}
+                          </div>
+                          <div className="text-sm text-white/60">
+                            {service.default_duration_minutes !== null
+                              ? `${service.default_duration_minutes} min`
+                              : 'Needs duration'}{' '}
+                            + {service.buffer_minutes} min buffer
+                          </div>
+                          <div className="text-xs text-white/50">
+                            {service.category}
+                          </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">

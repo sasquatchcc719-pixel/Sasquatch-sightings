@@ -18,6 +18,7 @@ export async function GET() {
     const { data, error } = await supabase
       .from('service_catalog_items')
       .select('*')
+      .order('sort_order', { ascending: true, nullsFirst: false })
       .order('name')
 
     if (error) {
@@ -76,6 +77,7 @@ export async function POST(request: NextRequest) {
         : 'fixed',
       online_booking_enabled: Boolean(body.online_booking_enabled),
       is_active: body.is_active === undefined ? true : Boolean(body.is_active),
+      sort_order: null as number | null,
     }
 
     if (
@@ -94,6 +96,16 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       )
     }
+
+    const { data: maxSortOrderRow } = await supabase
+      .from('service_catalog_items')
+      .select('sort_order')
+      .order('sort_order', { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle()
+
+    const nextSortOrder = Number(maxSortOrderRow?.sort_order || 0) + 1
+    payload.sort_order = nextSortOrder
 
     const { data, error } = await supabase
       .from('service_catalog_items')
