@@ -51,23 +51,35 @@ export async function POST(request: NextRequest) {
     const supabase = createAdminClient()
     const body = await request.json()
 
-    const fullName = String(body.customer?.full_name || '').trim()
+    const firstName = String(body.customer?.first_name || '').trim()
+    const lastName = String(body.customer?.last_name || '').trim()
+    const businessName = body.customer?.business_name
+      ? String(body.customer.business_name).trim()
+      : null
+    const fullName =
+      String(body.customer?.full_name || '').trim() ||
+      [firstName, lastName].filter(Boolean).join(' ').trim()
     const phone = normalizePhone(String(body.customer?.phone || '').trim())
     const email = body.customer?.email
       ? String(body.customer.email).trim()
       : null
 
-    if (!fullName || !phone) {
+    if (!firstName || !lastName || !phone || !email) {
       return NextResponse.json(
-        { error: 'Customer full name and phone are required' },
+        {
+          error:
+            'Customer first name, last name, email, and phone are required',
+        },
         { status: 400 },
       )
     }
 
+    const addressId = body.address?.id ? String(body.address.id).trim() : null
     const street1 = String(body.address?.street_1 || '').trim()
     const city = String(body.address?.city || '').trim()
+    const state = String(body.address?.state || 'CO').trim()
     const zipCode = String(body.address?.zip_code || '').trim()
-    if (!street1 || !city || !zipCode) {
+    if (!addressId && (!street1 || !city || !state || !zipCode)) {
       return NextResponse.json(
         { error: 'Service address must include street, city, and zip code' },
         { status: 400 },
@@ -200,6 +212,9 @@ export async function POST(request: NextRequest) {
         .from('ops_customers')
         .update({
           full_name: fullName,
+          first_name: firstName,
+          last_name: lastName,
+          business_name: businessName,
           email,
           notes: body.customer?.notes ? String(body.customer.notes) : null,
           updated_at: new Date().toISOString(),
@@ -212,6 +227,9 @@ export async function POST(request: NextRequest) {
         .from('ops_customers')
         .insert({
           full_name: fullName,
+          first_name: firstName,
+          last_name: lastName,
+          business_name: businessName,
           email,
           phone,
           notes: body.customer?.notes ? String(body.customer.notes) : null,
@@ -223,27 +241,56 @@ export async function POST(request: NextRequest) {
       customerId = customer.id
     }
 
-    const { data: address, error: addressError } = await supabase
-      .from('ops_service_addresses')
-      .insert({
-        customer_id: customerId,
-        label: body.address?.label
-          ? String(body.address.label)
-          : 'Service Address',
-        street_1: street1,
-        street_2: body.address?.street_2 ? String(body.address.street_2) : null,
-        city,
-        state: body.address?.state ? String(body.address.state) : 'CO',
-        zip_code: zipCode,
-        gate_code: body.address?.gate_code
-          ? String(body.address.gate_code)
-          : null,
-        notes: body.address?.notes ? String(body.address.notes) : null,
-      })
-      .select()
-      .single()
+    let address: {
+      id: string
+      street_1: string
+      street_2: string | null
+      city: string
+      state: string
+      zip_code: string
+    } | null = null
 
-    if (addressError) throw addressError
+    if (addressId) {
+      const { data: existingAddress, error: existingAddressError } =
+        await supabase
+          .from('ops_service_addresses')
+          .select('*')
+          .eq('id', addressId)
+          .eq('customer_id', customerId)
+          .single()
+
+      if (existingAddressError) throw existingAddressError
+      address = existingAddress
+    } else {
+      const { data: insertedAddress, error: addressError } = await supabase
+        .from('ops_service_addresses')
+        .insert({
+          customer_id: customerId,
+          label: body.address?.label
+            ? String(body.address.label)
+            : 'Service Address',
+          street_1: street1,
+          street_2: body.address?.street_2
+            ? String(body.address.street_2)
+            : null,
+          city,
+          state,
+          zip_code: zipCode,
+          gate_code: body.address?.gate_code
+            ? String(body.address.gate_code)
+            : null,
+          notes: body.address?.notes ? String(body.address.notes) : null,
+        })
+        .select()
+        .single()
+
+      if (addressError) throw addressError
+      address = insertedAddress
+    }
+
+    if (!address) {
+      throw new Error('Failed to resolve service address')
+    }
 
     const syncStatus = getQuickBooksSyncStatus()
     const { data: appointment, error: appointmentError } = await supabase
@@ -320,14 +367,14 @@ export async function POST(request: NextRequest) {
     }
 
     await Promise.all([
-      supabase.from('appointment_status_events').insert({
+      supabase.from('ops_appointment_status_events').insert({
         appointment_id: appointment.id,
         from_status: null,
         to_status: 'booked',
         changed_by: access.id,
         notes: 'Appointment created from internal operations dashboard',
       }),
-      supabase.from('invoice_status_events').insert({
+      supabase.from('ops_invoice_status_events').insert({
         invoice_id: invoice.id,
         from_status: null,
         to_status: 'draft',

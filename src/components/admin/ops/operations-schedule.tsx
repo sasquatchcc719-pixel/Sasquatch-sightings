@@ -1,0 +1,858 @@
+'use client'
+
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
+import {
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Plus,
+  RefreshCw,
+  ShieldBan,
+} from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+
+type ScheduleView = 'week' | 'day' | 'month'
+
+type Appointment = {
+  id: string
+  appointment_date: string
+  start_time: string
+  end_time: string
+  status: string
+  quoted_total: number
+  ops_customers:
+    | {
+        full_name: string
+        business_name: string | null
+        phone: string | null
+      }
+    | {
+        full_name: string
+        business_name: string | null
+        phone: string | null
+      }[]
+    | null
+  ops_service_addresses:
+    | {
+        street_1: string
+        city: string
+        state: string
+        zip_code: string
+      }
+    | {
+        street_1: string
+        city: string
+        state: string
+        zip_code: string
+      }[]
+    | null
+  ops_appointment_line_items: Array<{
+    id: string
+    name_snapshot: string
+  }>
+  ops_invoices:
+    | {
+        id: string
+        status: string
+      }
+    | {
+        id: string
+        status: string
+      }[]
+    | null
+}
+
+type CalendarEvent = {
+  id: string
+  title: string
+  description: string | null
+  start_date: string
+  end_date: string
+  start_time: string | null
+  end_time: string | null
+  is_all_day: boolean
+}
+
+type ScheduleResponse = {
+  appointments: Appointment[]
+  events: CalendarEvent[]
+}
+
+const HOURS = Array.from({ length: 13 }, (_, index) => 7 + index)
+const HOUR_HEIGHT = 84
+const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
+  if (!value) return null
+  return Array.isArray(value) ? value[0] || null : value
+}
+
+function formatDateKey(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function parseMinutes(timeValue: string | null | undefined): number {
+  if (!timeValue) return HOURS[0] * 60
+  const [hours, minutes] = timeValue.slice(0, 5).split(':').map(Number)
+  return hours * 60 + minutes
+}
+
+function startOfWeek(date: Date): Date {
+  const next = new Date(date)
+  next.setHours(0, 0, 0, 0)
+  next.setDate(next.getDate() - next.getDay())
+  return next
+}
+
+function endOfWeek(date: Date): Date {
+  const next = startOfWeek(date)
+  next.setDate(next.getDate() + 6)
+  return next
+}
+
+function addDays(date: Date, amount: number): Date {
+  const next = new Date(date)
+  next.setDate(next.getDate() + amount)
+  return next
+}
+
+function addMonths(date: Date, amount: number): Date {
+  return new Date(date.getFullYear(), date.getMonth() + amount, 1)
+}
+
+function startOfMonth(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), 1)
+}
+
+function endOfMonth(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth() + 1, 0)
+}
+
+function buildWeekDays(anchorDate: Date): Date[] {
+  const weekStart = startOfWeek(anchorDate)
+  return Array.from({ length: 7 }, (_, index) => addDays(weekStart, index))
+}
+
+function buildMonthGrid(anchorDate: Date): Date[] {
+  const monthStart = startOfMonth(anchorDate)
+  const gridStart = startOfWeek(monthStart)
+
+  return Array.from({ length: 42 }, (_, index) => addDays(gridStart, index))
+}
+
+function getViewLabel(view: ScheduleView, anchorDate: Date): string {
+  if (view === 'day') {
+    return anchorDate.toLocaleDateString('en-US', {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+    })
+  }
+
+  if (view === 'month') {
+    return anchorDate.toLocaleDateString('en-US', {
+      month: 'long',
+      year: 'numeric',
+    })
+  }
+
+  const weekStart = startOfWeek(anchorDate)
+  const weekEnd = endOfWeek(anchorDate)
+  const sameMonth = weekStart.getMonth() === weekEnd.getMonth()
+
+  return sameMonth
+    ? `${weekStart.toLocaleDateString('en-US', { month: 'long' })} ${String(
+        weekStart.getDate(),
+      ).padStart(2, '0')}-${String(weekEnd.getDate()).padStart(
+        2,
+        '0',
+      )}, ${weekStart.getFullYear()}`
+    : `${weekStart.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+      })} - ${weekEnd.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })}`
+}
+
+function getRangeForView(view: ScheduleView, anchorDate: Date) {
+  if (view === 'day') {
+    const dateKey = formatDateKey(anchorDate)
+    return { startDate: dateKey, endDate: dateKey }
+  }
+
+  if (view === 'month') {
+    const monthGrid = buildMonthGrid(anchorDate)
+    return {
+      startDate: formatDateKey(monthGrid[0]),
+      endDate: formatDateKey(monthGrid[monthGrid.length - 1]),
+    }
+  }
+
+  return {
+    startDate: formatDateKey(startOfWeek(anchorDate)),
+    endDate: formatDateKey(endOfWeek(anchorDate)),
+  }
+}
+
+function getStatusTone(status: string): string {
+  switch (status) {
+    case 'confirmed':
+      return 'border-emerald-500/40 bg-emerald-500/12'
+    case 'on_my_way':
+      return 'border-sky-500/40 bg-sky-500/12'
+    case 'completed':
+      return 'border-violet-500/40 bg-violet-500/12'
+    case 'cancelled':
+      return 'border-rose-500/40 bg-rose-500/10'
+    default:
+      return 'border-border bg-card'
+  }
+}
+
+function getEventTone(event: CalendarEvent): string {
+  return event.is_all_day
+    ? 'border-amber-500/40 bg-amber-500/12'
+    : 'border-slate-500/40 bg-slate-500/10'
+}
+
+function intersectsDay(event: CalendarEvent, dateKey: string): boolean {
+  return event.start_date <= dateKey && event.end_date >= dateKey
+}
+
+function getBlockPlacement(event: CalendarEvent) {
+  const workdayStart = HOURS[0] * 60
+  const workdayEnd = (HOURS[HOURS.length - 1] + 1) * 60
+  const startMinutes = event.is_all_day
+    ? workdayStart
+    : Math.max(parseMinutes(event.start_time), workdayStart)
+  const endMinutes = event.is_all_day
+    ? workdayEnd
+    : Math.min(parseMinutes(event.end_time), workdayEnd)
+  const top = ((startMinutes - workdayStart) / 60) * HOUR_HEIGHT
+  const height = Math.max(((endMinutes - startMinutes) / 60) * HOUR_HEIGHT, 42)
+  return { top, height }
+}
+
+function getAppointmentPlacement(appointment: Appointment) {
+  const workdayStart = HOURS[0] * 60
+  const startMinutes = Math.max(
+    parseMinutes(appointment.start_time),
+    workdayStart,
+  )
+  const endMinutes = Math.max(
+    parseMinutes(appointment.end_time),
+    startMinutes + 30,
+  )
+  const top = ((startMinutes - workdayStart) / 60) * HOUR_HEIGHT
+  const height = Math.max(((endMinutes - startMinutes) / 60) * HOUR_HEIGHT, 56)
+  return { top, height }
+}
+
+export function OperationsSchedule() {
+  const [view, setView] = useState<ScheduleView>('week')
+  const [anchorDate, setAnchorDate] = useState(() => new Date())
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [data, setData] = useState<ScheduleResponse>({
+    appointments: [],
+    events: [],
+  })
+  const [showBlockForm, setShowBlockForm] = useState(false)
+  const [blockForm, setBlockForm] = useState({
+    title: '',
+    description: '',
+    start_date: formatDateKey(new Date()),
+    end_date: formatDateKey(new Date()),
+    start_time: '',
+    end_time: '',
+    is_all_day: false,
+  })
+
+  const loadSchedule = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const { startDate, endDate } = getRangeForView(view, anchorDate)
+      const response = await fetch(
+        `/api/admin/ops/schedule?start_date=${startDate}&end_date=${endDate}`,
+        { cache: 'no-store' },
+      )
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to load schedule')
+      }
+      setData({
+        appointments: result.appointments || [],
+        events: result.events || [],
+      })
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : 'Failed to load schedule',
+      )
+    } finally {
+      setLoading(false)
+    }
+  }, [anchorDate, view])
+
+  useEffect(() => {
+    void loadSchedule()
+  }, [loadSchedule])
+
+  const displayedDays = useMemo(() => {
+    if (view === 'day') return [anchorDate]
+    if (view === 'week') return buildWeekDays(anchorDate)
+    return []
+  }, [anchorDate, view])
+
+  const appointmentsByDate = useMemo(() => {
+    const grouped = new Map<string, Appointment[]>()
+    for (const appointment of data.appointments) {
+      const current = grouped.get(appointment.appointment_date) || []
+      current.push(appointment)
+      grouped.set(appointment.appointment_date, current)
+    }
+    return grouped
+  }, [data.appointments])
+
+  const monthGrid = useMemo(() => buildMonthGrid(anchorDate), [anchorDate])
+  const viewLabel = getViewLabel(view, anchorDate)
+
+  const moveRange = (direction: 'prev' | 'next') => {
+    const multiplier = direction === 'prev' ? -1 : 1
+    if (view === 'day') {
+      setAnchorDate((current) => addDays(current, multiplier))
+      return
+    }
+    if (view === 'week') {
+      setAnchorDate((current) => addDays(current, multiplier * 7))
+      return
+    }
+    setAnchorDate((current) => addMonths(current, multiplier))
+  }
+
+  const handleBlockSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setSaving(true)
+    setError(null)
+    try {
+      const response = await fetch('/api/admin/ops/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(blockForm),
+      })
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to block time')
+      }
+      setBlockForm({
+        title: '',
+        description: '',
+        start_date: formatDateKey(anchorDate),
+        end_date: formatDateKey(anchorDate),
+        start_time: '',
+        end_time: '',
+        is_all_day: false,
+      })
+      setShowBlockForm(false)
+      await loadSchedule()
+    } catch (saveError) {
+      setError(
+        saveError instanceof Error ? saveError.message : 'Failed to block time',
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <Card className="border-border/60 bg-card/80 p-4 shadow-sm backdrop-blur">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setAnchorDate(new Date())}
+            >
+              Today
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => moveRange('prev')}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => moveRange('next')}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            <div className="min-w-48 text-sm font-semibold">{viewLabel}</div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="border-border flex rounded-xl border p-1">
+              {(['week', 'day', 'month'] as ScheduleView[]).map((option) => (
+                <Button
+                  key={option}
+                  type="button"
+                  size="sm"
+                  variant={view === option ? 'default' : 'ghost'}
+                  className="capitalize"
+                  onClick={() => setView(option)}
+                >
+                  {option}
+                </Button>
+              ))}
+            </div>
+            <Button asChild size="sm" className="gap-2">
+              <Link href="/admin/operations/new-job">
+                <Plus className="h-4 w-4" />
+                New Job
+              </Link>
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-2"
+              onClick={() => setShowBlockForm((current) => !current)}
+            >
+              <ShieldBan className="h-4 w-4" />
+              Block Time
+            </Button>
+            <Button
+              size="icon"
+              variant="outline"
+              onClick={() => void loadSchedule()}
+            >
+              {loading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
+        </div>
+
+        {showBlockForm ? (
+          <form
+            className="border-border/60 bg-background/70 mt-4 grid gap-3 rounded-2xl border p-4 md:grid-cols-3"
+            onSubmit={handleBlockSubmit}
+          >
+            <div className="md:col-span-3">
+              <Label htmlFor="block-title">Description</Label>
+              <Input
+                id="block-title"
+                value={blockForm.title}
+                onChange={(event) =>
+                  setBlockForm((current) => ({
+                    ...current,
+                    title: event.target.value,
+                  }))
+                }
+                placeholder="Vacation, doctor, sick day, hold, or anything else"
+              />
+            </div>
+            <div>
+              <Label htmlFor="block-start-date">Start Date</Label>
+              <Input
+                id="block-start-date"
+                type="date"
+                value={blockForm.start_date}
+                onChange={(event) =>
+                  setBlockForm((current) => ({
+                    ...current,
+                    start_date: event.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="block-end-date">End Date</Label>
+              <Input
+                id="block-end-date"
+                type="date"
+                value={blockForm.end_date}
+                onChange={(event) =>
+                  setBlockForm((current) => ({
+                    ...current,
+                    end_date: event.target.value,
+                  }))
+                }
+              />
+            </div>
+            <label className="text-muted-foreground flex items-center gap-2 self-end text-sm">
+              <input
+                type="checkbox"
+                checked={blockForm.is_all_day}
+                onChange={(event) =>
+                  setBlockForm((current) => ({
+                    ...current,
+                    is_all_day: event.target.checked,
+                    start_time: event.target.checked ? '' : current.start_time,
+                    end_time: event.target.checked ? '' : current.end_time,
+                  }))
+                }
+              />
+              All day / full range
+            </label>
+            {!blockForm.is_all_day ? (
+              <>
+                <div>
+                  <Label htmlFor="block-start-time">Start Time</Label>
+                  <Input
+                    id="block-start-time"
+                    type="time"
+                    value={blockForm.start_time}
+                    onChange={(event) =>
+                      setBlockForm((current) => ({
+                        ...current,
+                        start_time: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="block-end-time">End Time</Label>
+                  <Input
+                    id="block-end-time"
+                    type="time"
+                    value={blockForm.end_time}
+                    onChange={(event) =>
+                      setBlockForm((current) => ({
+                        ...current,
+                        end_time: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              </>
+            ) : null}
+            <div className="md:col-span-3">
+              <Label htmlFor="block-notes">Notes</Label>
+              <Textarea
+                id="block-notes"
+                value={blockForm.description}
+                onChange={(event) =>
+                  setBlockForm((current) => ({
+                    ...current,
+                    description: event.target.value,
+                  }))
+                }
+                placeholder="Optional notes for the block"
+              />
+            </div>
+            <div className="flex flex-wrap gap-2 md:col-span-3">
+              <Button type="submit" disabled={saving}>
+                {saving ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
+                Save Block
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowBlockForm(false)}
+              >
+                Cancel
+              </Button>
+            </div>
+          </form>
+        ) : null}
+      </Card>
+
+      {error ? (
+        <Card className="border-destructive/30 bg-destructive/10 text-destructive p-4 text-sm">
+          {error}
+        </Card>
+      ) : null}
+
+      {view === 'month' ? (
+        <Card className="border-border/60 bg-card/80 p-4 shadow-sm backdrop-blur">
+          <div className="text-muted-foreground grid grid-cols-7 gap-2 text-center text-xs font-medium tracking-[0.2em] uppercase">
+            {WEEKDAY_LABELS.map((label) => (
+              <div key={label}>{label}</div>
+            ))}
+          </div>
+          <div className="mt-3 grid grid-cols-7 gap-2">
+            {monthGrid.map((date) => {
+              const dateKey = formatDateKey(date)
+              const dayAppointments = appointmentsByDate.get(dateKey) || []
+              const dayEvents = data.events.filter((event) =>
+                intersectsDay(event, dateKey),
+              )
+              const isCurrentMonth = date.getMonth() === anchorDate.getMonth()
+
+              return (
+                <div
+                  key={dateKey}
+                  className={`min-h-36 rounded-2xl border p-3 ${
+                    isCurrentMonth
+                      ? 'border-border bg-background/70'
+                      : 'border-border/50 bg-muted/40 text-muted-foreground'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-semibold">
+                      {date.getDate()}
+                    </div>
+                    {(dayAppointments.length > 0 || dayEvents.length > 0) && (
+                      <Badge variant="outline">
+                        {dayAppointments.length + dayEvents.length}
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {dayEvents.slice(0, 2).map((event) => (
+                      <div
+                        key={event.id}
+                        className={`rounded-xl border px-2 py-1 text-xs ${getEventTone(event)}`}
+                      >
+                        {event.title}
+                      </div>
+                    ))}
+                    {dayAppointments.slice(0, 3).map((appointment) => {
+                      const customer = unwrapRelation(appointment.ops_customers)
+                      const invoice = unwrapRelation(appointment.ops_invoices)
+                      const href = invoice?.id
+                        ? `/admin/operations/invoices/${invoice.id}`
+                        : `/admin/operations/appointments/${appointment.id}`
+                      return (
+                        <Link
+                          key={appointment.id}
+                          href={href}
+                          className={`block rounded-xl border px-2 py-2 text-xs transition hover:shadow-sm ${getStatusTone(appointment.status)}`}
+                        >
+                          <div className="font-medium">
+                            {appointment.start_time.slice(0, 5)}{' '}
+                            {customer?.full_name}
+                          </div>
+                          <div className="text-muted-foreground mt-1">
+                            {appointment.ops_appointment_line_items[0]
+                              ?.name_snapshot || 'Service'}
+                          </div>
+                          {invoice?.id ? (
+                            <div className="text-muted-foreground mt-1">
+                              Invoice ready
+                            </div>
+                          ) : null}
+                        </Link>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </Card>
+      ) : (
+        <Card className="border-border/60 bg-card/80 overflow-hidden shadow-sm backdrop-blur">
+          <div className="overflow-x-auto">
+            <div
+              className="grid min-w-[900px]"
+              style={{
+                gridTemplateColumns:
+                  view === 'day'
+                    ? '72px minmax(0, 1fr)'
+                    : '72px repeat(7, minmax(180px, 1fr))',
+              }}
+            >
+              <div className="border-border/70 bg-muted/40 border-r border-b p-3" />
+              {displayedDays.map((date) => (
+                <div
+                  key={formatDateKey(date)}
+                  className="border-border/70 bg-muted/40 border-b p-3"
+                >
+                  <div className="text-muted-foreground text-xs font-medium tracking-[0.2em] uppercase">
+                    {WEEKDAY_LABELS[date.getDay()]}
+                  </div>
+                  <div className="mt-1 text-lg font-semibold">
+                    {date.toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                    })}
+                  </div>
+                </div>
+              ))}
+
+              <div className="border-border/70 bg-muted/30 relative border-r">
+                {HOURS.map((hour) => (
+                  <div
+                    key={hour}
+                    className="border-border/60 text-muted-foreground border-b px-3 pt-2 text-xs"
+                    style={{ height: HOUR_HEIGHT }}
+                  >
+                    {hour === 12
+                      ? '12pm'
+                      : hour > 12
+                        ? `${hour - 12}pm`
+                        : `${hour}am`}
+                  </div>
+                ))}
+              </div>
+
+              {displayedDays.map((date) => {
+                const dateKey = formatDateKey(date)
+                const dayAppointments = appointmentsByDate.get(dateKey) || []
+                const dayEvents = data.events.filter((event) =>
+                  intersectsDay(event, dateKey),
+                )
+
+                return (
+                  <div
+                    key={dateKey}
+                    className="border-border/70 relative border-r"
+                  >
+                    {HOURS.map((hour) => (
+                      <div
+                        key={`${dateKey}-${hour}`}
+                        className="border-border/50 border-b"
+                        style={{ height: HOUR_HEIGHT }}
+                      />
+                    ))}
+
+                    {dayEvents.map((event) => {
+                      const placement = getBlockPlacement(event)
+                      return (
+                        <div
+                          key={event.id}
+                          className={`absolute right-2 left-2 rounded-2xl border p-2 text-xs shadow-sm ${getEventTone(event)}`}
+                          style={{
+                            top: placement.top + 6,
+                            height: placement.height - 8,
+                          }}
+                        >
+                          <div className="font-semibold">{event.title}</div>
+                          {event.description ? (
+                            <div className="text-muted-foreground mt-1 line-clamp-2">
+                              {event.description}
+                            </div>
+                          ) : null}
+                        </div>
+                      )
+                    })}
+
+                    {dayAppointments.map((appointment) => {
+                      const customer = unwrapRelation(appointment.ops_customers)
+                      const address = unwrapRelation(
+                        appointment.ops_service_addresses,
+                      )
+                      const invoice = unwrapRelation(appointment.ops_invoices)
+                      const placement = getAppointmentPlacement(appointment)
+                      const href = invoice?.id
+                        ? `/admin/operations/invoices/${invoice.id}`
+                        : `/admin/operations/appointments/${appointment.id}`
+                      return (
+                        <Link
+                          key={appointment.id}
+                          href={href}
+                          className={`absolute right-2 left-2 rounded-2xl border p-3 text-xs shadow-sm transition hover:shadow-md ${getStatusTone(appointment.status)}`}
+                          style={{
+                            top: placement.top + 6,
+                            height: placement.height - 8,
+                          }}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="leading-tight font-semibold">
+                              {customer?.business_name ||
+                                customer?.full_name ||
+                                'Customer'}
+                            </div>
+                            <Badge variant="outline" className="capitalize">
+                              {appointment.status.replaceAll('_', ' ')}
+                            </Badge>
+                          </div>
+                          <div className="text-muted-foreground mt-1">
+                            {appointment.start_time.slice(0, 5)} -{' '}
+                            {appointment.end_time.slice(0, 5)}
+                          </div>
+                          <div className="mt-2 line-clamp-2">
+                            {appointment.ops_appointment_line_items
+                              .map((item) => item.name_snapshot)
+                              .join(', ')}
+                          </div>
+                          {address ? (
+                            <div className="text-muted-foreground mt-2 line-clamp-2">
+                              {address.street_1}, {address.city},{' '}
+                              {address.state} {address.zip_code}
+                            </div>
+                          ) : null}
+                          <div className="text-muted-foreground mt-2 flex items-center justify-between">
+                            <span>{customer?.phone || 'No phone'}</span>
+                            <span>
+                              $
+                              {Number(
+                                invoice?.status
+                                  ? appointment.quoted_total
+                                  : appointment.quoted_total,
+                              ).toFixed(2)}
+                            </span>
+                          </div>
+                        </Link>
+                      )
+                    })}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </Card>
+      )}
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="border-border/60 bg-card/80 p-4 shadow-sm backdrop-blur">
+          <div className="text-muted-foreground text-sm font-medium">
+            Appointments
+          </div>
+          <div className="mt-2 text-3xl font-semibold">
+            {data.appointments.length}
+          </div>
+          <p className="text-muted-foreground mt-2 text-sm">
+            Interactive jobs that open into their own detail screen.
+          </p>
+        </Card>
+        <Card className="border-border/60 bg-card/80 p-4 shadow-sm backdrop-blur">
+          <div className="text-muted-foreground text-sm font-medium">
+            Blocked Time
+          </div>
+          <div className="mt-2 text-3xl font-semibold">
+            {data.events.length}
+          </div>
+          <p className="text-muted-foreground mt-2 text-sm">
+            Vacation, holds, personal events, and any custom schedule block.
+          </p>
+        </Card>
+        <Card className="border-border/60 bg-card/80 p-4 shadow-sm backdrop-blur">
+          <div className="text-muted-foreground flex items-center gap-2 text-sm font-medium">
+            <CalendarDays className="h-4 w-4" />
+            Schedule flow
+          </div>
+          <p className="text-muted-foreground mt-2 text-sm">
+            Use the calendar as home, click a job to open it, or start a
+            full-screen booking flow from `New Job`.
+          </p>
+        </Card>
+      </div>
+    </div>
+  )
+}

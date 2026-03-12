@@ -1,5 +1,5 @@
-import { OperationsDashboard } from '@/components/admin/operations-dashboard'
+import { OperationsSchedule } from '@/components/admin/ops/operations-schedule'
 
 export default function OperationsPage() {
-  return <OperationsDashboard />
+  return <OperationsSchedule />
 }

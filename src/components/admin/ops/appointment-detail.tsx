@@ -1,0 +1,419 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { Loader2, Receipt } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { Badge } from '@/components/ui/badge'
+
+type AppointmentDetailProps = {
+  appointmentId: string
+}
+
+type AppointmentDetail = {
+  id: string
+  appointment_date: string
+  start_time: string
+  end_time: string
+  status: string
+  payment_status: string
+  internal_notes: string | null
+  quoted_total: number
+  ops_customers:
+    | {
+        full_name: string
+        first_name: string | null
+        last_name: string | null
+        business_name: string | null
+        email: string | null
+        phone: string
+        notes: string | null
+      }
+    | null
+    | Array<{
+        full_name: string
+        first_name: string | null
+        last_name: string | null
+        business_name: string | null
+        email: string | null
+        phone: string
+        notes: string | null
+      }>
+  ops_service_addresses:
+    | {
+        label: string | null
+        street_1: string
+        street_2: string | null
+        city: string
+        state: string
+        zip_code: string
+        gate_code: string | null
+        notes: string | null
+      }
+    | null
+    | Array<{
+        label: string | null
+        street_1: string
+        street_2: string | null
+        city: string
+        state: string
+        zip_code: string
+        gate_code: string | null
+        notes: string | null
+      }>
+  ops_appointment_line_items: Array<{
+    id: string
+    name_snapshot: string
+    quantity: number
+    unit_price: number
+    line_total: number
+  }>
+  ops_invoices:
+    | {
+        id: string
+        status: string
+        payment_status: string
+        total: number
+      }
+    | null
+    | Array<{
+        id: string
+        status: string
+        payment_status: string
+        total: number
+      }>
+}
+
+function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
+  if (!value) return null
+  return Array.isArray(value) ? value[0] || null : value
+}
+
+export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
+  const router = useRouter()
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [appointment, setAppointment] = useState<AppointmentDetail | null>(null)
+  const [form, setForm] = useState({
+    appointment_date: '',
+    start_time: '',
+    status: 'booked',
+    payment_status: 'unpaid',
+    internal_notes: '',
+  })
+
+  useEffect(() => {
+    async function loadAppointment() {
+      setLoading(true)
+      setError(null)
+      try {
+        const response = await fetch(
+          `/api/admin/ops/appointments/${appointmentId}`,
+          {
+            cache: 'no-store',
+          },
+        )
+        const result = await response.json()
+        if (!response.ok) {
+          throw new Error(result.error || 'Failed to load appointment')
+        }
+        setAppointment(result.appointment)
+        setForm({
+          appointment_date: result.appointment.appointment_date,
+          start_time: String(result.appointment.start_time).slice(0, 5),
+          status: result.appointment.status,
+          payment_status: result.appointment.payment_status,
+          internal_notes: result.appointment.internal_notes || '',
+        })
+      } catch (loadError) {
+        setError(
+          loadError instanceof Error
+            ? loadError.message
+            : 'Failed to load appointment',
+        )
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    void loadAppointment()
+  }, [appointmentId])
+
+  const handleSave = async () => {
+    setSaving(true)
+    setError(null)
+    try {
+      const response = await fetch(
+        `/api/admin/ops/appointments/${appointmentId}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(form),
+        },
+      )
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to update appointment')
+      }
+      router.refresh()
+    } catch (saveError) {
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : 'Failed to update appointment',
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="text-muted-foreground flex items-center gap-3">
+        <Loader2 className="h-5 w-5 animate-spin" />
+        Loading job detail...
+      </div>
+    )
+  }
+
+  if (!appointment) {
+    return <div className="text-muted-foreground text-sm">Job not found.</div>
+  }
+
+  const customer = unwrapRelation(appointment.ops_customers)
+  const address = unwrapRelation(appointment.ops_service_addresses)
+  const invoice = unwrapRelation(appointment.ops_invoices)
+
+  return (
+    <div className="space-y-6">
+      {error ? (
+        <Card className="border-destructive/30 bg-destructive/10 text-destructive p-4 text-sm">
+          {error}
+        </Card>
+      ) : null}
+
+      <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-muted-foreground text-xs font-medium tracking-[0.22em] uppercase">
+              Job
+            </p>
+            <h2 className="mt-1 text-2xl font-semibold">
+              {customer?.business_name ||
+                customer?.full_name ||
+                'Unknown customer'}
+            </h2>
+            <p className="text-muted-foreground mt-2 text-sm">
+              {appointment.ops_appointment_line_items
+                .map((item) => item.name_snapshot)
+                .join(', ')}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline" className="capitalize">
+              {appointment.status.replaceAll('_', ' ')}
+            </Badge>
+            <Badge variant="outline" className="capitalize">
+              {appointment.payment_status}
+            </Badge>
+            {invoice?.id ? (
+              <Button asChild size="sm" variant="outline">
+                <Link href={`/admin/operations/invoices/${invoice.id}`}>
+                  <Receipt className="mr-2 h-4 w-4" />
+                  Open Invoice
+                </Link>
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      </Card>
+
+      <div className="grid gap-6 xl:grid-cols-[1fr,0.9fr]">
+        <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
+          <h3 className="text-lg font-semibold">Schedule + Status</h3>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <div>
+              <Label htmlFor="job-date">Date</Label>
+              <Input
+                id="job-date"
+                type="date"
+                value={form.appointment_date}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    appointment_date: event.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="job-time">Start Time</Label>
+              <Input
+                id="job-time"
+                type="time"
+                value={form.start_time}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    start_time: event.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="job-status">Status</Label>
+              <select
+                id="job-status"
+                className="border-input bg-background h-10 w-full rounded-md border px-3 text-sm"
+                value={form.status}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    status: event.target.value,
+                  }))
+                }
+              >
+                <option value="booked">Booked</option>
+                <option value="confirmed">Confirmed</option>
+                <option value="on_my_way">On my way</option>
+                <option value="in_progress">In progress</option>
+                <option value="completed">Completed</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </div>
+            <div>
+              <Label htmlFor="job-payment-status">Payment Status</Label>
+              <select
+                id="job-payment-status"
+                className="border-input bg-background h-10 w-full rounded-md border px-3 text-sm"
+                value={form.payment_status}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    payment_status: event.target.value,
+                  }))
+                }
+              >
+                <option value="unpaid">Unpaid</option>
+                <option value="partial">Partial</option>
+                <option value="paid">Paid</option>
+                <option value="waived">Waived</option>
+              </select>
+            </div>
+            <div className="md:col-span-2">
+              <Label htmlFor="job-notes">Internal Notes</Label>
+              <Textarea
+                id="job-notes"
+                value={form.internal_notes}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    internal_notes: event.target.value,
+                  }))
+                }
+              />
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Save Job
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/admin/operations">Back to Schedule</Link>
+            </Button>
+          </div>
+        </Card>
+
+        <div className="space-y-6">
+          <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
+            <h3 className="text-lg font-semibold">Customer</h3>
+            <div className="mt-4 space-y-2 text-sm">
+              <div className="font-medium">
+                {customer?.full_name || 'Unknown'}
+              </div>
+              {customer?.business_name ? (
+                <div className="text-muted-foreground">
+                  {customer.business_name}
+                </div>
+              ) : null}
+              <div className="text-muted-foreground">
+                {customer?.phone || 'No phone'}
+              </div>
+              <div className="text-muted-foreground">
+                {customer?.email || 'No email'}
+              </div>
+              {customer?.notes ? (
+                <div className="border-border/60 bg-background/70 text-muted-foreground rounded-xl border p-3">
+                  {customer.notes}
+                </div>
+              ) : null}
+            </div>
+          </Card>
+
+          <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
+            <h3 className="text-lg font-semibold">Service Address</h3>
+            <div className="text-muted-foreground mt-4 space-y-2 text-sm">
+              <div className="text-foreground font-medium">
+                {address?.label || 'Service Address'}
+              </div>
+              <div>{address?.street_1}</div>
+              {address?.street_2 ? <div>{address.street_2}</div> : null}
+              <div>
+                {address?.city}, {address?.state} {address?.zip_code}
+              </div>
+              {address?.gate_code ? (
+                <div>Gate code: {address.gate_code}</div>
+              ) : null}
+              {address?.notes ? (
+                <div className="border-border/60 bg-background/70 rounded-xl border p-3">
+                  {address.notes}
+                </div>
+              ) : null}
+            </div>
+          </Card>
+        </div>
+      </div>
+
+      <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-lg font-semibold">Line Items</h3>
+          <Badge variant="outline">
+            ${Number(appointment.quoted_total).toFixed(2)}
+          </Badge>
+        </div>
+        <div className="mt-4 space-y-3">
+          {appointment.ops_appointment_line_items.map((item) => (
+            <div
+              key={item.id}
+              className="border-border/60 bg-background/70 rounded-2xl border p-4"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="font-medium">{item.name_snapshot}</div>
+                  <div className="text-muted-foreground mt-1 text-sm">
+                    Qty {Number(item.quantity)} · $
+                    {Number(item.unit_price).toFixed(2)} each
+                  </div>
+                </div>
+                <div className="font-semibold">
+                  ${Number(item.line_total).toFixed(2)}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
+  )
+}

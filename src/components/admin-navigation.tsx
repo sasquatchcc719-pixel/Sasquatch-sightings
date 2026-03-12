@@ -57,8 +57,8 @@ function NavDropdown({
         onClick={onToggle}
         className={`flex w-full items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all sm:w-auto sm:justify-start ${
           isActive
-            ? 'bg-green-600 text-white shadow-lg shadow-green-600/30'
-            : 'bg-white/20 text-white/70 backdrop-blur-sm hover:bg-white/30 hover:text-white'
+            ? 'bg-primary text-primary-foreground shadow-sm'
+            : 'bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground'
         }`}
       >
         <Icon className="h-4 w-4" />
@@ -71,7 +71,7 @@ function NavDropdown({
       {isOpen && (
         <>
           <div className="fixed inset-0 z-[100]" onClick={onClose} />
-          <div className="absolute top-full left-0 z-[110] mt-2 w-64 rounded-xl border border-white/20 bg-black shadow-2xl">
+          <div className="border-border bg-popover text-popover-foreground absolute top-full left-0 z-[110] mt-2 w-64 rounded-xl border shadow-2xl">
             <div className="p-2">
               {tabs.map((tab) => {
                 const TabIcon = tab.icon
@@ -82,14 +82,14 @@ function NavDropdown({
                     onClick={onClose}
                     className={`flex items-start gap-3 rounded-lg px-3 py-2 transition-colors ${
                       tab.active
-                        ? 'bg-green-600/30 text-green-400'
-                        : 'text-white/80 hover:bg-white/10 hover:text-white'
+                        ? 'bg-primary/10 text-primary'
+                        : 'text-foreground/80 hover:bg-accent hover:text-accent-foreground'
                     }`}
                   >
                     <TabIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
                     <div>
                       <div className="text-sm font-medium">{tab.name}</div>
-                      <div className="text-xs text-white/50">
+                      <div className="text-muted-foreground text-xs">
                         {tab.description}
                       </div>
                     </div>
@@ -344,7 +344,7 @@ export function AdminNavigation() {
                 closeAll()
                 setPreviewOpen(!previewOpen)
               }}
-              className="flex w-full items-center justify-center gap-2 rounded-full bg-white/20 px-4 py-2 text-sm font-medium text-white/70 backdrop-blur-sm transition-all hover:bg-white/30 hover:text-white sm:w-auto sm:justify-start"
+              className="bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground flex w-full items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all sm:w-auto sm:justify-start"
             >
               <Eye className="h-4 w-4" />
               Preview
@@ -356,9 +356,9 @@ export function AdminNavigation() {
             {previewOpen && (
               <>
                 <div className="fixed inset-0 z-[100]" onClick={closeAll} />
-                <div className="absolute top-full right-0 z-[110] mt-2 max-h-[70vh] w-72 overflow-y-auto rounded-xl border border-white/20 bg-black shadow-2xl">
+                <div className="border-border bg-popover text-popover-foreground absolute top-full right-0 z-[110] mt-2 max-h-[70vh] w-72 overflow-y-auto rounded-xl border shadow-2xl">
                   <div className="p-2">
-                    <div className="px-3 py-1 text-xs font-semibold text-white/50 uppercase">
+                    <div className="text-muted-foreground px-3 py-1 text-xs font-semibold uppercase">
                       Lead Generation
                     </div>
                     <a
@@ -366,12 +366,12 @@ export function AdminNavigation() {
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={closeAll}
-                      className="flex items-center gap-3 rounded-lg px-3 py-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+                      className="text-foreground/80 hover:bg-accent hover:text-accent-foreground flex items-center gap-3 rounded-lg px-3 py-2 transition-colors"
                     >
                       <CreditCard className="h-4 w-4 text-blue-400" />
                       <div>
                         <div className="text-sm font-medium">Business Card</div>
-                        <div className="text-xs text-white/50">
+                        <div className="text-muted-foreground text-xs">
                           Your NFC card landing page
                         </div>
                       </div>
@@ -382,12 +382,12 @@ export function AdminNavigation() {
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={closeAll}
-                      className="flex items-center gap-3 rounded-lg px-3 py-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+                      className="text-foreground/80 hover:bg-accent hover:text-accent-foreground flex items-center gap-3 rounded-lg px-3 py-2 transition-colors"
                     >
                       <Trophy className="h-4 w-4 text-amber-400" />
                       <div>
                         <div className="text-sm font-medium">Contest Page</div>
-                        <div className="text-xs text-white/50">
+                        <div className="text-muted-foreground text-xs">
                           Sasquatch sightings contest
                         </div>
                       </div>
@@ -398,14 +398,14 @@ export function AdminNavigation() {
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={closeAll}
-                      className="flex items-center gap-3 rounded-lg px-3 py-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+                      className="text-foreground/80 hover:bg-accent hover:text-accent-foreground flex items-center gap-3 rounded-lg px-3 py-2 transition-colors"
                     >
                       <Link2 className="h-4 w-4 text-green-400" />
                       <div>
                         <div className="text-sm font-medium">
                           Review & Share
                         </div>
-                        <div className="text-xs text-white/50">
+                        <div className="text-muted-foreground text-xs">
                           Post-service follow-up page
                         </div>
                       </div>
@@ -416,12 +416,12 @@ export function AdminNavigation() {
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={closeAll}
-                      className="flex items-center gap-3 rounded-lg px-3 py-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+                      className="text-foreground/80 hover:bg-accent hover:text-accent-foreground flex items-center gap-3 rounded-lg px-3 py-2 transition-colors"
                     >
                       <Map className="h-4 w-4 text-green-400" />
                       <div>
                         <div className="text-sm font-medium">Sightings Map</div>
-                        <div className="text-xs text-white/50">
+                        <div className="text-muted-foreground text-xs">
                           Public map of sightings
                         </div>
                       </div>
@@ -429,8 +429,8 @@ export function AdminNavigation() {
                     </a>
                   </div>
 
-                  <div className="border-t border-white/10 p-2">
-                    <div className="px-3 py-1 text-xs font-semibold text-white/50 uppercase">
+                  <div className="border-border/60 border-t p-2">
+                    <div className="text-muted-foreground px-3 py-1 text-xs font-semibold uppercase">
                       Vendor Pages
                     </div>
                     <a
@@ -438,14 +438,14 @@ export function AdminNavigation() {
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={closeAll}
-                      className="flex items-center gap-3 rounded-lg px-3 py-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+                      className="text-foreground/80 hover:bg-accent hover:text-accent-foreground flex items-center gap-3 rounded-lg px-3 py-2 transition-colors"
                     >
                       <MapPin className="h-4 w-4 text-red-400" />
                       <div>
                         <div className="text-sm font-medium">
                           Vendor Landing
                         </div>
-                        <div className="text-xs text-white/50">
+                        <div className="text-muted-foreground text-xs">
                           What customers see at vendor locations
                         </div>
                       </div>
@@ -456,14 +456,14 @@ export function AdminNavigation() {
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={closeAll}
-                      className="flex items-center gap-3 rounded-lg px-3 py-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+                      className="text-foreground/80 hover:bg-accent hover:text-accent-foreground flex items-center gap-3 rounded-lg px-3 py-2 transition-colors"
                     >
                       <Trophy className="h-4 w-4 text-amber-400" />
                       <div>
                         <div className="text-sm font-medium">
                           Vendor Contest
                         </div>
-                        <div className="text-xs text-white/50">
+                        <div className="text-muted-foreground text-xs">
                           Vendor-specific contest page
                         </div>
                       </div>
@@ -471,8 +471,8 @@ export function AdminNavigation() {
                     </a>
                   </div>
 
-                  <div className="border-t border-white/10 p-2">
-                    <div className="px-3 py-1 text-xs font-semibold text-white/50 uppercase">
+                  <div className="border-border/60 border-t p-2">
+                    <div className="text-muted-foreground px-3 py-1 text-xs font-semibold uppercase">
                       Partner Pages
                     </div>
                     <a
@@ -480,14 +480,14 @@ export function AdminNavigation() {
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={closeAll}
-                      className="flex items-center gap-3 rounded-lg px-3 py-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+                      className="text-foreground/80 hover:bg-accent hover:text-accent-foreground flex items-center gap-3 rounded-lg px-3 py-2 transition-colors"
                     >
                       <Users className="h-4 w-4 text-purple-400" />
                       <div>
                         <div className="text-sm font-medium">
                           Partner Signup
                         </div>
-                        <div className="text-xs text-white/50">
+                        <div className="text-muted-foreground text-xs">
                           Referral partner registration
                         </div>
                       </div>
@@ -498,14 +498,14 @@ export function AdminNavigation() {
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={closeAll}
-                      className="flex items-center gap-3 rounded-lg px-3 py-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+                      className="text-foreground/80 hover:bg-accent hover:text-accent-foreground flex items-center gap-3 rounded-lg px-3 py-2 transition-colors"
                     >
                       <Award className="h-4 w-4 text-green-400" />
                       <div>
                         <div className="text-sm font-medium">
                           Preferred Partners
                         </div>
-                        <div className="text-xs text-white/50">
+                        <div className="text-muted-foreground text-xs">
                           Public partner directory
                         </div>
                       </div>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -12,7 +13,8 @@ import {
   Clock,
   Database,
   Edit3,
-  FileUp,
+  ChevronLeft,
+  ChevronRight,
   Loader2,
   Receipt,
   RefreshCw,
@@ -137,12 +139,45 @@ const WEEKDAY_LABELS = [
   'Saturday',
 ] as const
 
+type OperationsDashboardProps = {
+  view?: 'calendar' | 'services'
+}
+
 function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
   if (!value) return null
   return Array.isArray(value) ? value[0] || null : value
 }
 
-export function OperationsDashboard() {
+function formatDateKey(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function startOfMonth(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), 1)
+}
+
+function addMonths(date: Date, amount: number): Date {
+  return new Date(date.getFullYear(), date.getMonth() + amount, 1)
+}
+
+function buildMonthGrid(date: Date): Date[] {
+  const monthStart = startOfMonth(date)
+  const gridStart = new Date(monthStart)
+  gridStart.setDate(monthStart.getDate() - monthStart.getDay())
+
+  return Array.from({ length: 42 }, (_, index) => {
+    const next = new Date(gridStart)
+    next.setDate(gridStart.getDate() + index)
+    return next
+  })
+}
+
+export function OperationsDashboard({
+  view = 'calendar',
+}: OperationsDashboardProps) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -151,12 +186,13 @@ export function OperationsDashboard() {
     requiredMinutes: number
     slots: Array<{ start_time: string; end_time: string }>
   } | null>(null)
-  const [importSummary, setImportSummary] = useState<{
-    imported: number
-    skipped: number
-  } | null>(null)
-  const [csvImportText, setCsvImportText] = useState('')
   const [editingServiceId, setEditingServiceId] = useState<string | null>(null)
+  const [currentMonth, setCurrentMonth] = useState(() =>
+    startOfMonth(new Date()),
+  )
+  const [selectedDate, setSelectedDate] = useState(() =>
+    formatDateKey(new Date()),
+  )
 
   const [serviceForm, setServiceForm] = useState({
     name: '',
@@ -260,43 +296,39 @@ export function OperationsDashboard() {
     [services],
   )
 
-  const handleCsvFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-    const text = await file.text()
-    setCsvImportText(text)
-  }
-
-  const handleServiceImport = async (event: React.FormEvent) => {
-    event.preventDefault()
-    setSaving(true)
-    setError(null)
-    setImportSummary(null)
-
-    try {
-      const response = await fetch('/api/admin/ops/services', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ csv_text: csvImportText }),
-      })
-      const result = await response.json()
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to import pricebook CSV')
-      }
-      setImportSummary({
-        imported: result.imported || 0,
-        skipped: result.skipped || 0,
-      })
-      await loadDashboard()
-    } catch (importError) {
-      setError(
-        importError instanceof Error
-          ? importError.message
-          : 'Failed to import pricebook CSV',
-      )
-    } finally {
-      setSaving(false)
+  const appointmentsByDate = useMemo(() => {
+    const grouped = new Map<string, Appointment[]>()
+    for (const appointment of appointments) {
+      const existing = grouped.get(appointment.appointment_date) || []
+      existing.push(appointment)
+      grouped.set(appointment.appointment_date, existing)
     }
+
+    for (const [date, entries] of grouped.entries()) {
+      grouped.set(
+        date,
+        [...entries].sort((a, b) => a.start_time.localeCompare(b.start_time)),
+      )
+    }
+
+    return grouped
+  }, [appointments])
+
+  const monthGrid = useMemo(() => buildMonthGrid(currentMonth), [currentMonth])
+  const selectedDateAppointments = appointmentsByDate.get(selectedDate) || []
+  const monthLabel = currentMonth.toLocaleString('en-US', {
+    month: 'long',
+    year: 'numeric',
+  })
+
+  const handleDateSelect = (date: Date) => {
+    const dateKey = formatDateKey(date)
+    setSelectedDate(dateKey)
+    setCurrentMonth(startOfMonth(date))
+    setAppointmentForm((current) => ({
+      ...current,
+      appointment_date: dateKey,
+    }))
   }
 
   const startEditingService = (service: ServiceItem) => {
@@ -580,12 +612,12 @@ export function OperationsDashboard() {
         <div className="space-y-2">
           <h1 className="flex items-center gap-2 text-3xl font-bold text-white">
             <Calendar className="h-8 w-8" />
-            Operations Foundation
+            {view === 'calendar' ? 'Operations Calendar' : 'Service Catalog'}
           </h1>
           <p className="max-w-3xl text-sm text-white/70">
-            Internal-only booking replacement foundation. Housecall Pro remains
-            live while you test roles, service durations, availability, draft
-            invoices, and QuickBooks sync queues here.
+            {view === 'calendar'
+              ? 'Internal-only booking view for the new system. Housecall Pro stays live while you test calendar flow, availability, draft invoices, and QuickBooks sync queues here.'
+              : 'Manage the services that feed scheduling, pricing, booking rules, and future website booking.'}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -611,6 +643,23 @@ export function OperationsDashboard() {
           SQL migration before using the internal operations tools.
         </Card>
       )}
+
+      <div className="flex flex-wrap gap-2">
+        <Button
+          asChild
+          variant={view === 'calendar' ? 'default' : 'outline'}
+          size="sm"
+        >
+          <Link href="/admin/operations">Calendar</Link>
+        </Button>
+        <Button
+          asChild
+          variant={view === 'services' ? 'default' : 'outline'}
+          size="sm"
+        >
+          <Link href="/admin/operations/services">Services</Link>
+        </Button>
+      </div>
 
       <div className="grid gap-4 md:grid-cols-4">
         <Card className="border-white/10 bg-black/30 p-4 text-white">
@@ -650,871 +699,1059 @@ export function OperationsDashboard() {
         </Card>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-2">
-        <Card className="border-white/10 bg-black/30 p-6 text-white">
-          <h2 className="text-xl font-semibold">Service Catalog</h2>
-          <p className="mt-1 text-sm text-white/60">
-            Import your real pricebook, then edit duration, buffer, booking
-            flags, and categories directly here.
-          </p>
-          <form
-            className="mt-4 space-y-3 rounded-xl border border-white/10 bg-white/5 p-4"
-            onSubmit={handleServiceImport}
-          >
-            <div className="flex items-center gap-2 text-sm font-medium text-white/80">
-              <FileUp className="h-4 w-4" />
-              Housecall Pro CSV import
-            </div>
-            <p className="text-sm text-white/60">
-              Paste the export or load the CSV file. Generic restoration
-              defaults are skipped automatically.
-            </p>
-            <Input
-              type="file"
-              accept=".csv,text/csv"
-              onChange={(event) => void handleCsvFile(event)}
-            />
-            <Textarea
-              value={csvImportText}
-              onChange={(event) => setCsvImportText(event.target.value)}
-              placeholder="Paste your Housecall Pro pricebook CSV here"
-              className="min-h-40"
-            />
-            <Button type="submit" disabled={saving || !csvImportText.trim()}>
-              {saving ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : null}
-              Import Pricebook CSV
-            </Button>
-            {importSummary && (
-              <div className="text-sm text-emerald-200">
-                Imported {importSummary.imported} services and skipped{' '}
-                {importSummary.skipped} filtered rows.
-              </div>
-            )}
-          </form>
-          <form className="mt-4 space-y-3" onSubmit={handleServiceSave}>
-            <div className="grid gap-3 md:grid-cols-2">
+      {view === 'calendar' ? (
+        <div className="grid gap-6 xl:grid-cols-[1.75fr,1fr]">
+          <Card className="border-white/10 bg-black/30 p-6 text-white">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <Label htmlFor="service-name">Service Name</Label>
-                <Input
-                  id="service-name"
-                  value={serviceForm.name}
-                  onChange={(event) =>
-                    setServiceForm((current) => ({
-                      ...current,
-                      name: event.target.value,
-                    }))
-                  }
-                />
+                <h2 className="text-xl font-semibold">Calendar</h2>
+                <p className="mt-1 text-sm text-white/60">
+                  This is the main operations view. Pick a day to see bookings
+                  and schedule new internal test appointments.
+                </p>
               </div>
-              <div>
-                <Label htmlFor="service-category">Category</Label>
-                <Input
-                  id="service-category"
-                  value={serviceForm.category}
-                  onChange={(event) =>
-                    setServiceForm((current) => ({
-                      ...current,
-                      category: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <Label htmlFor="service-duration">
-                  Default Duration (minutes)
-                </Label>
-                <Input
-                  id="service-duration"
-                  type="number"
-                  placeholder="Set manually later if needed"
-                  value={serviceForm.default_duration_minutes}
-                  onChange={(event) =>
-                    setServiceForm((current) => ({
-                      ...current,
-                      default_duration_minutes: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <Label htmlFor="service-buffer">Buffer (minutes)</Label>
-                <Input
-                  id="service-buffer"
-                  type="number"
-                  value={serviceForm.buffer_minutes}
-                  onChange={(event) =>
-                    setServiceForm((current) => ({
-                      ...current,
-                      buffer_minutes: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <Label htmlFor="service-price">Base Price</Label>
-                <Input
-                  id="service-price"
-                  type="number"
-                  step="0.01"
-                  value={serviceForm.base_price}
-                  onChange={(event) =>
-                    setServiceForm((current) => ({
-                      ...current,
-                      base_price: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <Label htmlFor="service-unit">Pricing Unit</Label>
-                <Input
-                  id="service-unit"
-                  value={serviceForm.pricing_unit}
-                  onChange={(event) =>
-                    setServiceForm((current) => ({
-                      ...current,
-                      pricing_unit: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-            </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              <label className="flex items-center gap-2 text-sm text-white/80">
-                <input
-                  type="checkbox"
-                  checked={serviceForm.online_booking_enabled}
-                  onChange={(event) =>
-                    setServiceForm((current) => ({
-                      ...current,
-                      online_booking_enabled: event.target.checked,
-                    }))
-                  }
-                />
-                Online booking enabled
-              </label>
-              <label className="flex items-center gap-2 text-sm text-white/80">
-                <input
-                  type="checkbox"
-                  checked={serviceForm.is_active}
-                  onChange={(event) =>
-                    setServiceForm((current) => ({
-                      ...current,
-                      is_active: event.target.checked,
-                    }))
-                  }
-                />
-                Service active
-              </label>
-            </div>
-            <div>
-              <Label htmlFor="service-description">Description</Label>
-              <Textarea
-                id="service-description"
-                value={serviceForm.description}
-                onChange={(event) =>
-                  setServiceForm((current) => ({
-                    ...current,
-                    description: event.target.value,
-                  }))
-                }
-              />
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button type="submit" disabled={saving}>
-                {saving ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : null}
-                {editingServiceId ? 'Save Service' : 'Add Service'}
-              </Button>
-              {editingServiceId ? (
+              <div className="flex items-center gap-2">
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={cancelEditingService}
+                  size="sm"
+                  onClick={() =>
+                    setCurrentMonth((current) => addMonths(current, -1))
+                  }
                 >
-                  Cancel Edit
+                  <ChevronLeft className="h-4 w-4" />
                 </Button>
-              ) : null}
-            </div>
-          </form>
-          <div className="mt-6 space-y-3">
-            {services.length === 0 ? (
-              <p className="text-sm text-white/50">No services entered yet.</p>
-            ) : (
-              services.map((service) => (
-                <div
-                  key={service.id}
-                  className="rounded-xl border border-white/10 bg-white/5 p-3"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="flex items-center gap-2 font-medium">
-                        {service.name}
-                        {service.source_system === 'housecall_pro' ? (
-                          <Badge className="bg-blue-500/20 text-blue-100">
-                            Imported
-                          </Badge>
-                        ) : null}
-                        {!service.is_active ? (
-                          <Badge className="bg-white/10 text-white/60">
-                            Hidden
-                          </Badge>
-                        ) : null}
-                        {service.online_booking_enabled ? (
-                          <Badge className="bg-emerald-500/20 text-emerald-100">
-                            Booking on
-                          </Badge>
-                        ) : null}
-                      </div>
-                      <div className="text-sm text-white/60">
-                        {service.default_duration_minutes !== null
-                          ? `${service.default_duration_minutes} min`
-                          : 'Needs duration'}{' '}
-                        + {service.buffer_minutes} min buffer
-                      </div>
-                      <div className="text-xs text-white/50">
-                        {service.category}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge className="bg-white/10 text-white/70">
-                        {service.base_price !== null
-                          ? `$${Number(service.base_price).toFixed(2)}`
-                          : 'Price later'}
-                      </Badge>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => startEditingService(service)}
-                      >
-                        <Edit3 className="mr-2 h-3 w-3" />
-                        Edit
-                      </Button>
-                    </div>
-                  </div>
-                  {service.description ? (
-                    <p className="mt-2 text-xs text-white/50">
-                      {service.description}
-                    </p>
-                  ) : null}
+                <div className="min-w-36 text-center text-sm font-medium">
+                  {monthLabel}
                 </div>
-              ))
-            )}
-          </div>
-        </Card>
-
-        <Card className="border-white/10 bg-black/30 p-6 text-white">
-          <h2 className="text-xl font-semibold">Availability + Slot Preview</h2>
-          <p className="mt-1 text-sm text-white/60">
-            Configure weekly hours and test the same slot engine Harry will use
-            later.
-          </p>
-          <form
-            className="mt-4 space-y-3 rounded-xl border border-white/10 bg-white/5 p-4"
-            onSubmit={(event) =>
-              void handleAvailabilityCreate(event, 'template')
-            }
-          >
-            <div className="grid gap-3 md:grid-cols-4">
-              <div>
-                <Label htmlFor="template-day">Day</Label>
-                <select
-                  id="template-day"
-                  className="h-10 w-full rounded-md border border-white/10 bg-black px-3 text-sm text-white"
-                  value={templateForm.day_of_week}
-                  onChange={(event) =>
-                    setTemplateForm((current) => ({
-                      ...current,
-                      day_of_week: event.target.value,
-                    }))
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setCurrentMonth((current) => addMonths(current, 1))
                   }
                 >
-                  {WEEKDAY_LABELS.map((label, index) => (
-                    <option key={label} value={index}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <Label htmlFor="template-start">Start</Label>
-                <Input
-                  id="template-start"
-                  type="time"
-                  value={templateForm.start_time}
-                  onChange={(event) =>
-                    setTemplateForm((current) => ({
-                      ...current,
-                      start_time: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <Label htmlFor="template-end">End</Label>
-                <Input
-                  id="template-end"
-                  type="time"
-                  value={templateForm.end_time}
-                  onChange={(event) =>
-                    setTemplateForm((current) => ({
-                      ...current,
-                      end_time: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <Label htmlFor="template-interval">Interval</Label>
-                <Input
-                  id="template-interval"
-                  type="number"
-                  value={templateForm.slot_interval_minutes}
-                  onChange={(event) =>
-                    setTemplateForm((current) => ({
-                      ...current,
-                      slot_interval_minutes: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-            </div>
-            <Button type="submit" disabled={saving}>
-              Add Weekly Hours
-            </Button>
-          </form>
-
-          <form
-            className="mt-4 space-y-3 rounded-xl border border-white/10 bg-white/5 p-4"
-            onSubmit={(event) =>
-              void handleAvailabilityCreate(event, 'override')
-            }
-          >
-            <div className="grid gap-3 md:grid-cols-2">
-              <div>
-                <Label htmlFor="override-date">Override Date</Label>
-                <Input
-                  id="override-date"
-                  type="date"
-                  value={overrideForm.override_date}
-                  onChange={(event) =>
-                    setOverrideForm((current) => ({
-                      ...current,
-                      override_date: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <Label htmlFor="override-reason">Reason</Label>
-                <Input
-                  id="override-reason"
-                  value={overrideForm.reason}
-                  onChange={(event) =>
-                    setOverrideForm((current) => ({
-                      ...current,
-                      reason: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <Label htmlFor="override-start">Blocked Start</Label>
-                <Input
-                  id="override-start"
-                  type="time"
-                  value={overrideForm.start_time}
-                  onChange={(event) =>
-                    setOverrideForm((current) => ({
-                      ...current,
-                      start_time: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <Label htmlFor="override-end">Blocked End</Label>
-                <Input
-                  id="override-end"
-                  type="time"
-                  value={overrideForm.end_time}
-                  onChange={(event) =>
-                    setOverrideForm((current) => ({
-                      ...current,
-                      end_time: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-            </div>
-            <Button type="submit" variant="outline" disabled={saving}>
-              Add Override
-            </Button>
-          </form>
-
-          <form className="mt-4 space-y-3" onSubmit={handleSlotPreview}>
-            <div className="grid gap-3 md:grid-cols-3">
-              <div>
-                <Label htmlFor="slot-date">Date</Label>
-                <Input
-                  id="slot-date"
-                  type="date"
-                  value={slotForm.date}
-                  onChange={(event) =>
-                    setSlotForm((current) => ({
-                      ...current,
-                      date: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <Label htmlFor="slot-service">Service</Label>
-                <select
-                  id="slot-service"
-                  className="h-10 w-full rounded-md border border-white/10 bg-black px-3 text-sm text-white"
-                  value={slotForm.service_id}
-                  onChange={(event) =>
-                    setSlotForm((current) => ({
-                      ...current,
-                      service_id: event.target.value,
-                    }))
-                  }
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleDateSelect(new Date())}
                 >
-                  {services.map((service) => (
-                    <option key={service.id} value={service.id}>
-                      {service.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <Label htmlFor="slot-quantity">Quantity</Label>
-                <Input
-                  id="slot-quantity"
-                  type="number"
-                  value={slotForm.quantity}
-                  onChange={(event) =>
-                    setSlotForm((current) => ({
-                      ...current,
-                      quantity: event.target.value,
-                    }))
-                  }
-                />
+                  Today
+                </Button>
               </div>
             </div>
-            <Button
-              type="submit"
-              variant="outline"
-              disabled={saving || services.length === 0}
-            >
-              Preview Slots
-            </Button>
-          </form>
+            <div className="mt-4 grid grid-cols-7 gap-2 text-center text-xs tracking-wide text-white/40 uppercase">
+              {WEEKDAY_LABELS.map((label) => (
+                <div key={label}>{label.slice(0, 3)}</div>
+              ))}
+            </div>
+            <div className="mt-3 grid grid-cols-7 gap-2">
+              {monthGrid.map((date) => {
+                const dateKey = formatDateKey(date)
+                const dayAppointments = appointmentsByDate.get(dateKey) || []
+                const isSelected = dateKey === selectedDate
+                const isCurrentMonth =
+                  date.getMonth() === currentMonth.getMonth()
 
-          {slotPreview && (
-            <div className="mt-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4">
-              <div className="text-sm text-emerald-100">
-                Required time: {slotPreview.requiredMinutes} minutes
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {slotPreview.slots.length === 0 ? (
-                  <span className="text-sm text-white/60">
-                    No slots available.
-                  </span>
-                ) : (
-                  slotPreview.slots.map((slot) => (
-                    <Badge
-                      key={`${slot.start_time}-${slot.end_time}`}
-                      className="bg-white/10 text-white"
+                return (
+                  <button
+                    key={dateKey}
+                    type="button"
+                    onClick={() => handleDateSelect(date)}
+                    className={`min-h-28 rounded-xl border p-3 text-left transition ${
+                      isSelected
+                        ? 'border-green-500 bg-green-500/15'
+                        : 'border-white/10 bg-white/5 hover:bg-white/10'
+                    } ${isCurrentMonth ? 'text-white' : 'text-white/35'}`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-semibold">
+                        {date.getDate()}
+                      </span>
+                      {dayAppointments.length > 0 ? (
+                        <Badge className="bg-white/10 text-white/80">
+                          {dayAppointments.length}
+                        </Badge>
+                      ) : null}
+                    </div>
+                    <div className="mt-2 space-y-1">
+                      {dayAppointments.slice(0, 2).map((appointment) => {
+                        const customer = unwrapRelation(
+                          appointment.ops_customers,
+                        )
+                        return (
+                          <div
+                            key={appointment.id}
+                            className="rounded-md bg-black/30 px-2 py-1 text-xs text-white/80"
+                          >
+                            <div className="font-medium">
+                              {appointment.start_time.slice(0, 5)}
+                            </div>
+                            <div className="truncate">
+                              {customer?.full_name || 'Customer'}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </Card>
+
+          <Card className="border-white/10 bg-black/30 p-6 text-white">
+            <h2 className="text-xl font-semibold">
+              {new Date(`${selectedDate}T12:00:00`).toLocaleDateString(
+                'en-US',
+                {
+                  weekday: 'long',
+                  month: 'long',
+                  day: 'numeric',
+                  year: 'numeric',
+                },
+              )}
+            </h2>
+            <p className="mt-1 text-sm text-white/60">
+              Day agenda and quick actions for the selected date.
+            </p>
+            <div className="mt-4 space-y-3">
+              {selectedDateAppointments.length === 0 ? (
+                <p className="text-sm text-white/50">
+                  No appointments on this day yet.
+                </p>
+              ) : (
+                selectedDateAppointments.map((appointment) => {
+                  const customer = unwrapRelation(appointment.ops_customers)
+                  const invoice = unwrapRelation(appointment.ops_invoices)
+                  return (
+                    <div
+                      key={appointment.id}
+                      className="rounded-xl border border-white/10 bg-white/5 p-3"
                     >
-                      {slot.start_time.slice(0, 5)} -{' '}
-                      {slot.end_time.slice(0, 5)}
-                    </Badge>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="font-medium">
+                            {appointment.start_time.slice(0, 5)} -{' '}
+                            {appointment.end_time.slice(0, 5)}
+                          </div>
+                          <div className="text-sm text-white/70">
+                            {customer?.full_name || 'Unknown customer'}
+                          </div>
+                        </div>
+                        <Badge className="bg-white/10 text-white/80">
+                          {appointment.status}
+                        </Badge>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            void handleAppointmentStatus(
+                              appointment.id,
+                              'confirmed',
+                            )
+                          }
+                        >
+                          Confirm
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            void handleAppointmentStatus(
+                              appointment.id,
+                              'on_my_way',
+                            )
+                          }
+                        >
+                          On My Way
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            void handleAppointmentStatus(
+                              appointment.id,
+                              'completed',
+                              'paid',
+                            )
+                          }
+                        >
+                          Complete
+                        </Button>
+                      </div>
+                      <div className="mt-2 text-xs text-white/50">
+                        Invoice: {invoice?.status || 'draft'} | Total: $
+                        {Number(
+                          invoice?.total || appointment.quoted_total,
+                        ).toFixed(2)}
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          </Card>
+        </div>
+      ) : null}
+
+      {view === 'services' ? (
+        <div className="grid gap-6">
+          <Card className="border-white/10 bg-black/30 p-6 text-white">
+            <h2 className="text-xl font-semibold">Service Catalog</h2>
+            <p className="mt-1 text-sm text-white/60">
+              Add and maintain services here. This is where you control price,
+              duration, buffer, category, booking visibility, and whether a
+              service is active.
+            </p>
+            <form className="mt-4 space-y-3" onSubmit={handleServiceSave}>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <Label htmlFor="service-name">Service Name</Label>
+                  <Input
+                    id="service-name"
+                    value={serviceForm.name}
+                    onChange={(event) =>
+                      setServiceForm((current) => ({
+                        ...current,
+                        name: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="service-category">Category</Label>
+                  <Input
+                    id="service-category"
+                    value={serviceForm.category}
+                    onChange={(event) =>
+                      setServiceForm((current) => ({
+                        ...current,
+                        category: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="service-duration">
+                    Default Duration (minutes)
+                  </Label>
+                  <Input
+                    id="service-duration"
+                    type="number"
+                    placeholder="Set manually later if needed"
+                    value={serviceForm.default_duration_minutes}
+                    onChange={(event) =>
+                      setServiceForm((current) => ({
+                        ...current,
+                        default_duration_minutes: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="service-buffer">Buffer (minutes)</Label>
+                  <Input
+                    id="service-buffer"
+                    type="number"
+                    value={serviceForm.buffer_minutes}
+                    onChange={(event) =>
+                      setServiceForm((current) => ({
+                        ...current,
+                        buffer_minutes: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="service-price">Base Price</Label>
+                  <Input
+                    id="service-price"
+                    type="number"
+                    step="0.01"
+                    value={serviceForm.base_price}
+                    onChange={(event) =>
+                      setServiceForm((current) => ({
+                        ...current,
+                        base_price: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="service-unit">Pricing Unit</Label>
+                  <Input
+                    id="service-unit"
+                    value={serviceForm.pricing_unit}
+                    onChange={(event) =>
+                      setServiceForm((current) => ({
+                        ...current,
+                        pricing_unit: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="flex items-center gap-2 text-sm text-white/80">
+                  <input
+                    type="checkbox"
+                    checked={serviceForm.online_booking_enabled}
+                    onChange={(event) =>
+                      setServiceForm((current) => ({
+                        ...current,
+                        online_booking_enabled: event.target.checked,
+                      }))
+                    }
+                  />
+                  Online booking enabled
+                </label>
+                <label className="flex items-center gap-2 text-sm text-white/80">
+                  <input
+                    type="checkbox"
+                    checked={serviceForm.is_active}
+                    onChange={(event) =>
+                      setServiceForm((current) => ({
+                        ...current,
+                        is_active: event.target.checked,
+                      }))
+                    }
+                  />
+                  Service active
+                </label>
+              </div>
+              <div>
+                <Label htmlFor="service-description">Description</Label>
+                <Textarea
+                  id="service-description"
+                  value={serviceForm.description}
+                  onChange={(event) =>
+                    setServiceForm((current) => ({
+                      ...current,
+                      description: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button type="submit" disabled={saving}>
+                  {saving ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : null}
+                  {editingServiceId ? 'Save Service' : 'Add Service'}
+                </Button>
+                {editingServiceId ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={cancelEditingService}
+                  >
+                    Cancel Edit
+                  </Button>
+                ) : null}
+              </div>
+            </form>
+            <div className="mt-6 space-y-3">
+              {services.length === 0 ? (
+                <p className="text-sm text-white/50">
+                  No services entered yet.
+                </p>
+              ) : (
+                services.map((service) => (
+                  <div
+                    key={service.id}
+                    className="rounded-xl border border-white/10 bg-white/5 p-3"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="flex items-center gap-2 font-medium">
+                          {service.name}
+                          {service.source_system === 'housecall_pro' ? (
+                            <Badge className="bg-blue-500/20 text-blue-100">
+                              Imported
+                            </Badge>
+                          ) : null}
+                          {!service.is_active ? (
+                            <Badge className="bg-white/10 text-white/60">
+                              Hidden
+                            </Badge>
+                          ) : null}
+                          {service.online_booking_enabled ? (
+                            <Badge className="bg-emerald-500/20 text-emerald-100">
+                              Booking on
+                            </Badge>
+                          ) : null}
+                        </div>
+                        <div className="text-sm text-white/60">
+                          {service.default_duration_minutes !== null
+                            ? `${service.default_duration_minutes} min`
+                            : 'Needs duration'}{' '}
+                          + {service.buffer_minutes} min buffer
+                        </div>
+                        <div className="text-xs text-white/50">
+                          {service.category}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge className="bg-white/10 text-white/70">
+                          {service.base_price !== null
+                            ? `$${Number(service.base_price).toFixed(2)}`
+                            : 'Price later'}
+                        </Badge>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => startEditingService(service)}
+                        >
+                          <Edit3 className="mr-2 h-3 w-3" />
+                          Edit
+                        </Button>
+                      </div>
+                    </div>
+                    {service.description ? (
+                      <p className="mt-2 text-xs text-white/50">
+                        {service.description}
+                      </p>
+                    ) : null}
+                  </div>
+                ))
+              )}
+            </div>
+          </Card>
+        </div>
+      ) : (
+        <div className="grid gap-6 xl:grid-cols-2">
+          <Card className="border-white/10 bg-black/30 p-6 text-white">
+            <h2 className="text-xl font-semibold">
+              Availability + Openings Test
+            </h2>
+            <p className="mt-1 text-sm text-white/60">
+              Configure your work hours and sanity-check available openings
+              without leaving the calendar screen.
+            </p>
+            <form
+              className="mt-4 space-y-3 rounded-xl border border-white/10 bg-white/5 p-4"
+              onSubmit={(event) =>
+                void handleAvailabilityCreate(event, 'template')
+              }
+            >
+              <div className="grid gap-3 md:grid-cols-4">
+                <div>
+                  <Label htmlFor="template-day">Day</Label>
+                  <select
+                    id="template-day"
+                    className="h-10 w-full rounded-md border border-white/10 bg-black px-3 text-sm text-white"
+                    value={templateForm.day_of_week}
+                    onChange={(event) =>
+                      setTemplateForm((current) => ({
+                        ...current,
+                        day_of_week: event.target.value,
+                      }))
+                    }
+                  >
+                    {WEEKDAY_LABELS.map((label, index) => (
+                      <option key={label} value={index}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <Label htmlFor="template-start">Start</Label>
+                  <Input
+                    id="template-start"
+                    type="time"
+                    value={templateForm.start_time}
+                    onChange={(event) =>
+                      setTemplateForm((current) => ({
+                        ...current,
+                        start_time: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="template-end">End</Label>
+                  <Input
+                    id="template-end"
+                    type="time"
+                    value={templateForm.end_time}
+                    onChange={(event) =>
+                      setTemplateForm((current) => ({
+                        ...current,
+                        end_time: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="template-interval">Interval</Label>
+                  <Input
+                    id="template-interval"
+                    type="number"
+                    value={templateForm.slot_interval_minutes}
+                    onChange={(event) =>
+                      setTemplateForm((current) => ({
+                        ...current,
+                        slot_interval_minutes: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+              <Button type="submit" disabled={saving}>
+                Add Weekly Hours
+              </Button>
+            </form>
+
+            <form
+              className="mt-4 space-y-3 rounded-xl border border-white/10 bg-white/5 p-4"
+              onSubmit={(event) =>
+                void handleAvailabilityCreate(event, 'override')
+              }
+            >
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <Label htmlFor="override-date">Override Date</Label>
+                  <Input
+                    id="override-date"
+                    type="date"
+                    value={overrideForm.override_date}
+                    onChange={(event) =>
+                      setOverrideForm((current) => ({
+                        ...current,
+                        override_date: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="override-reason">Reason</Label>
+                  <Input
+                    id="override-reason"
+                    value={overrideForm.reason}
+                    onChange={(event) =>
+                      setOverrideForm((current) => ({
+                        ...current,
+                        reason: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="override-start">Blocked Start</Label>
+                  <Input
+                    id="override-start"
+                    type="time"
+                    value={overrideForm.start_time}
+                    onChange={(event) =>
+                      setOverrideForm((current) => ({
+                        ...current,
+                        start_time: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="override-end">Blocked End</Label>
+                  <Input
+                    id="override-end"
+                    type="time"
+                    value={overrideForm.end_time}
+                    onChange={(event) =>
+                      setOverrideForm((current) => ({
+                        ...current,
+                        end_time: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+              <Button type="submit" variant="outline" disabled={saving}>
+                Add Override
+              </Button>
+            </form>
+
+            <form className="mt-4 space-y-3" onSubmit={handleSlotPreview}>
+              <div className="grid gap-3 md:grid-cols-3">
+                <div>
+                  <Label htmlFor="slot-date">Date</Label>
+                  <Input
+                    id="slot-date"
+                    type="date"
+                    value={slotForm.date}
+                    onChange={(event) =>
+                      setSlotForm((current) => ({
+                        ...current,
+                        date: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="slot-service">Service</Label>
+                  <select
+                    id="slot-service"
+                    className="h-10 w-full rounded-md border border-white/10 bg-black px-3 text-sm text-white"
+                    value={slotForm.service_id}
+                    onChange={(event) =>
+                      setSlotForm((current) => ({
+                        ...current,
+                        service_id: event.target.value,
+                      }))
+                    }
+                  >
+                    {services.map((service) => (
+                      <option key={service.id} value={service.id}>
+                        {service.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <Label htmlFor="slot-quantity">Quantity</Label>
+                  <Input
+                    id="slot-quantity"
+                    type="number"
+                    value={slotForm.quantity}
+                    onChange={(event) =>
+                      setSlotForm((current) => ({
+                        ...current,
+                        quantity: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+              <Button
+                type="submit"
+                variant="outline"
+                disabled={saving || services.length === 0}
+              >
+                Preview Slots
+              </Button>
+            </form>
+
+            {slotPreview && (
+              <div className="mt-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4">
+                <div className="text-sm text-emerald-100">
+                  Required time: {slotPreview.requiredMinutes} minutes
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {slotPreview.slots.length === 0 ? (
+                    <span className="text-sm text-white/60">
+                      No slots available.
+                    </span>
+                  ) : (
+                    slotPreview.slots.map((slot) => (
+                      <Badge
+                        key={`${slot.start_time}-${slot.end_time}`}
+                        className="bg-white/10 text-white"
+                      >
+                        {slot.start_time.slice(0, 5)} -{' '}
+                        {slot.end_time.slice(0, 5)}
+                      </Badge>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
+
+      {view === 'calendar' ? (
+        <>
+          <div className="grid gap-6 xl:grid-cols-2">
+            <Card className="border-white/10 bg-black/30 p-6 text-white">
+              <h2 className="text-xl font-semibold">Internal Booking Lab</h2>
+              <p className="mt-1 text-sm text-white/60">
+                Create internal test appointments, invoice drafts, and
+                QuickBooks queue entries without replacing the live booking
+                link.
+              </p>
+              <form
+                className="mt-4 space-y-3"
+                onSubmit={handleAppointmentCreate}
+              >
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div>
+                    <Label htmlFor="appt-name">Customer Name</Label>
+                    <Input
+                      id="appt-name"
+                      value={appointmentForm.full_name}
+                      onChange={(event) =>
+                        setAppointmentForm((current) => ({
+                          ...current,
+                          full_name: event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="appt-phone">Phone</Label>
+                    <Input
+                      id="appt-phone"
+                      value={appointmentForm.phone}
+                      onChange={(event) =>
+                        setAppointmentForm((current) => ({
+                          ...current,
+                          phone: event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="appt-email">Email</Label>
+                    <Input
+                      id="appt-email"
+                      type="email"
+                      value={appointmentForm.email}
+                      onChange={(event) =>
+                        setAppointmentForm((current) => ({
+                          ...current,
+                          email: event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="appt-street">Street</Label>
+                    <Input
+                      id="appt-street"
+                      value={appointmentForm.street_1}
+                      onChange={(event) =>
+                        setAppointmentForm((current) => ({
+                          ...current,
+                          street_1: event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="appt-city">City</Label>
+                    <Input
+                      id="appt-city"
+                      value={appointmentForm.city}
+                      onChange={(event) =>
+                        setAppointmentForm((current) => ({
+                          ...current,
+                          city: event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="appt-zip">Zip</Label>
+                    <Input
+                      id="appt-zip"
+                      value={appointmentForm.zip_code}
+                      onChange={(event) =>
+                        setAppointmentForm((current) => ({
+                          ...current,
+                          zip_code: event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="appt-date">Date</Label>
+                    <Input
+                      id="appt-date"
+                      type="date"
+                      value={appointmentForm.appointment_date}
+                      onChange={(event) =>
+                        setAppointmentForm((current) => ({
+                          ...current,
+                          appointment_date: event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="appt-time">Start Time</Label>
+                    <Input
+                      id="appt-time"
+                      type="time"
+                      value={appointmentForm.start_time}
+                      onChange={(event) =>
+                        setAppointmentForm((current) => ({
+                          ...current,
+                          start_time: event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="appt-service">Service</Label>
+                    <select
+                      id="appt-service"
+                      className="h-10 w-full rounded-md border border-white/10 bg-black px-3 text-sm text-white"
+                      value={appointmentForm.service_id}
+                      onChange={(event) => {
+                        const nextService = servicesById.get(event.target.value)
+                        setAppointmentForm((current) => ({
+                          ...current,
+                          service_id: event.target.value,
+                          unit_price:
+                            nextService?.base_price !== null &&
+                            nextService?.base_price !== undefined
+                              ? String(nextService.base_price)
+                              : '',
+                        }))
+                      }}
+                    >
+                      {services.map((service) => (
+                        <option key={service.id} value={service.id}>
+                          {service.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <Label htmlFor="appt-quantity">Quantity</Label>
+                    <Input
+                      id="appt-quantity"
+                      type="number"
+                      value={appointmentForm.quantity}
+                      onChange={(event) =>
+                        setAppointmentForm((current) => ({
+                          ...current,
+                          quantity: event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="appt-price">Unit Price</Label>
+                    <Input
+                      id="appt-price"
+                      type="number"
+                      step="0.01"
+                      value={appointmentForm.unit_price}
+                      onChange={(event) =>
+                        setAppointmentForm((current) => ({
+                          ...current,
+                          unit_price: event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label htmlFor="appt-notes">Internal Notes</Label>
+                  <Textarea
+                    id="appt-notes"
+                    value={appointmentForm.internal_notes}
+                    onChange={(event) =>
+                      setAppointmentForm((current) => ({
+                        ...current,
+                        internal_notes: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <Button
+                  type="submit"
+                  disabled={saving || services.length === 0}
+                >
+                  {saving ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : null}
+                  Create Test Appointment + Draft Invoice
+                </Button>
+              </form>
+            </Card>
+
+            <Card className="border-white/10 bg-black/30 p-6 text-white">
+              <h2 className="text-xl font-semibold">
+                QuickBooks + Automation Boundary
+              </h2>
+              <p className="mt-1 text-sm text-white/60">
+                Every new booking creates a draft invoice immediately and queues
+                sync work without turning any live accounting automation on yet.
+              </p>
+              <div className="mt-4 space-y-3">
+                {quickbooksJobs.length === 0 ? (
+                  <p className="text-sm text-white/50">
+                    No sync jobs queued yet. Create an internal appointment to
+                    test the flow.
+                  </p>
+                ) : (
+                  quickbooksJobs.map((job) => (
+                    <div
+                      key={job.id}
+                      className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3"
+                    >
+                      <div>
+                        <div className="font-medium capitalize">
+                          {job.entity_type} sync
+                        </div>
+                        <div className="text-xs text-white/50">
+                          {new Date(job.created_at).toLocaleString()}
+                        </div>
+                      </div>
+                      <Badge className="bg-white/10 text-white/80">
+                        {job.status}
+                      </Badge>
+                    </div>
                   ))
                 )}
               </div>
-            </div>
-          )}
-        </Card>
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-2">
-        <Card className="border-white/10 bg-black/30 p-6 text-white">
-          <h2 className="text-xl font-semibold">Internal Booking Lab</h2>
-          <p className="mt-1 text-sm text-white/60">
-            Create internal test appointments, invoice drafts, and QuickBooks
-            queue entries without replacing the live booking link.
-          </p>
-          <form className="mt-4 space-y-3" onSubmit={handleAppointmentCreate}>
-            <div className="grid gap-3 md:grid-cols-2">
-              <div>
-                <Label htmlFor="appt-name">Customer Name</Label>
-                <Input
-                  id="appt-name"
-                  value={appointmentForm.full_name}
-                  onChange={(event) =>
-                    setAppointmentForm((current) => ({
-                      ...current,
-                      full_name: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <Label htmlFor="appt-phone">Phone</Label>
-                <Input
-                  id="appt-phone"
-                  value={appointmentForm.phone}
-                  onChange={(event) =>
-                    setAppointmentForm((current) => ({
-                      ...current,
-                      phone: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <Label htmlFor="appt-email">Email</Label>
-                <Input
-                  id="appt-email"
-                  type="email"
-                  value={appointmentForm.email}
-                  onChange={(event) =>
-                    setAppointmentForm((current) => ({
-                      ...current,
-                      email: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <Label htmlFor="appt-street">Street</Label>
-                <Input
-                  id="appt-street"
-                  value={appointmentForm.street_1}
-                  onChange={(event) =>
-                    setAppointmentForm((current) => ({
-                      ...current,
-                      street_1: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <Label htmlFor="appt-city">City</Label>
-                <Input
-                  id="appt-city"
-                  value={appointmentForm.city}
-                  onChange={(event) =>
-                    setAppointmentForm((current) => ({
-                      ...current,
-                      city: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <Label htmlFor="appt-zip">Zip</Label>
-                <Input
-                  id="appt-zip"
-                  value={appointmentForm.zip_code}
-                  onChange={(event) =>
-                    setAppointmentForm((current) => ({
-                      ...current,
-                      zip_code: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <Label htmlFor="appt-date">Date</Label>
-                <Input
-                  id="appt-date"
-                  type="date"
-                  value={appointmentForm.appointment_date}
-                  onChange={(event) =>
-                    setAppointmentForm((current) => ({
-                      ...current,
-                      appointment_date: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <Label htmlFor="appt-time">Start Time</Label>
-                <Input
-                  id="appt-time"
-                  type="time"
-                  value={appointmentForm.start_time}
-                  onChange={(event) =>
-                    setAppointmentForm((current) => ({
-                      ...current,
-                      start_time: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <Label htmlFor="appt-service">Service</Label>
-                <select
-                  id="appt-service"
-                  className="h-10 w-full rounded-md border border-white/10 bg-black px-3 text-sm text-white"
-                  value={appointmentForm.service_id}
-                  onChange={(event) => {
-                    const nextService = servicesById.get(event.target.value)
-                    setAppointmentForm((current) => ({
-                      ...current,
-                      service_id: event.target.value,
-                      unit_price:
-                        nextService?.base_price !== null &&
-                        nextService?.base_price !== undefined
-                          ? String(nextService.base_price)
-                          : '',
-                    }))
-                  }}
-                >
-                  {services.map((service) => (
-                    <option key={service.id} value={service.id}>
-                      {service.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <Label htmlFor="appt-quantity">Quantity</Label>
-                <Input
-                  id="appt-quantity"
-                  type="number"
-                  value={appointmentForm.quantity}
-                  onChange={(event) =>
-                    setAppointmentForm((current) => ({
-                      ...current,
-                      quantity: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <Label htmlFor="appt-price">Unit Price</Label>
-                <Input
-                  id="appt-price"
-                  type="number"
-                  step="0.01"
-                  value={appointmentForm.unit_price}
-                  onChange={(event) =>
-                    setAppointmentForm((current) => ({
-                      ...current,
-                      unit_price: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-            </div>
-            <div>
-              <Label htmlFor="appt-notes">Internal Notes</Label>
-              <Textarea
-                id="appt-notes"
-                value={appointmentForm.internal_notes}
-                onChange={(event) =>
-                  setAppointmentForm((current) => ({
-                    ...current,
-                    internal_notes: event.target.value,
-                  }))
-                }
-              />
-            </div>
-            <Button type="submit" disabled={saving || services.length === 0}>
-              {saving ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : null}
-              Create Test Appointment + Draft Invoice
-            </Button>
-          </form>
-        </Card>
-
-        <Card className="border-white/10 bg-black/30 p-6 text-white">
-          <h2 className="text-xl font-semibold">
-            QuickBooks + Automation Boundary
-          </h2>
-          <p className="mt-1 text-sm text-white/60">
-            Every new booking creates a draft invoice immediately and queues
-            sync work without turning any live accounting automation on yet.
-          </p>
-          <div className="mt-4 space-y-3">
-            {quickbooksJobs.length === 0 ? (
-              <p className="text-sm text-white/50">
-                No sync jobs queued yet. Create an internal appointment to test
-                the flow.
-              </p>
-            ) : (
-              quickbooksJobs.map((job) => (
-                <div
-                  key={job.id}
-                  className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3"
-                >
-                  <div>
-                    <div className="font-medium capitalize">
-                      {job.entity_type} sync
-                    </div>
-                    <div className="text-xs text-white/50">
-                      {new Date(job.created_at).toLocaleString()}
-                    </div>
-                  </div>
-                  <Badge className="bg-white/10 text-white/80">
-                    {job.status}
-                  </Badge>
+              <div className="mt-6 rounded-xl border border-white/10 bg-white/5 p-4">
+                <div className="flex items-center gap-2 font-medium">
+                  <Sparkles className="h-4 w-4" />
+                  Completion automation boundary
                 </div>
-              ))
-            )}
+                <p className="mt-2 text-sm text-white/60">
+                  When you mark an appointment completed, the system now stages
+                  a marketing queue record and advances the invoice toward
+                  QuickBooks sync without touching your current live stats or
+                  job-posting tools.
+                </p>
+              </div>
+            </Card>
           </div>
-          <div className="mt-6 rounded-xl border border-white/10 bg-white/5 p-4">
-            <div className="flex items-center gap-2 font-medium">
-              <Sparkles className="h-4 w-4" />
-              Completion automation boundary
+
+          <Card className="border-white/10 bg-black/30 p-6 text-white">
+            <h2 className="text-xl font-semibold">
+              Upcoming Internal Appointments
+            </h2>
+            <p className="mt-1 text-sm text-white/60">
+              These are internal-only test jobs backed by the new appointment,
+              invoice, and queue tables.
+            </p>
+            <div className="mt-4 space-y-4">
+              {appointments.length === 0 ? (
+                <p className="text-sm text-white/50">
+                  No internal appointments yet.
+                </p>
+              ) : (
+                appointments.map((appointment) => {
+                  const customer = unwrapRelation(appointment.ops_customers)
+                  const address = unwrapRelation(
+                    appointment.ops_service_addresses,
+                  )
+                  const invoice = unwrapRelation(appointment.ops_invoices)
+
+                  return (
+                    <div
+                      key={appointment.id}
+                      className="rounded-2xl border border-white/10 bg-white/5 p-4"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div className="text-lg font-semibold">
+                            {customer?.full_name || 'Unknown customer'}
+                          </div>
+                          <div className="text-sm text-white/60">
+                            {appointment.appointment_date} at{' '}
+                            {appointment.start_time.slice(0, 5)} -{' '}
+                            {appointment.end_time.slice(0, 5)}
+                          </div>
+                          <div className="text-sm text-white/60">
+                            {address
+                              ? `${address.street_1}, ${address.city}, ${address.state} ${address.zip_code}`
+                              : 'No address'}
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Badge className="bg-blue-500/20 text-blue-100">
+                            {appointment.status}
+                          </Badge>
+                          <Badge className="bg-white/10 text-white/80">
+                            Invoice: {invoice?.status || 'draft'}
+                          </Badge>
+                          <Badge className="bg-white/10 text-white/80">
+                            QB: {appointment.quickbooks_sync_status}
+                          </Badge>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-2 text-sm text-white/70">
+                        {appointment.ops_appointment_line_items.map((item) => (
+                          <span
+                            key={item.id}
+                            className="rounded-full border border-white/10 bg-black/30 px-3 py-1"
+                          >
+                            {item.name_snapshot} x{item.quantity} ($
+                            {Number(item.line_total).toFixed(2)})
+                          </span>
+                        ))}
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            void handleAppointmentStatus(
+                              appointment.id,
+                              'confirmed',
+                            )
+                          }
+                        >
+                          Confirm
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            void handleAppointmentStatus(
+                              appointment.id,
+                              'on_my_way',
+                            )
+                          }
+                        >
+                          On My Way
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            void handleAppointmentStatus(
+                              appointment.id,
+                              'completed',
+                              'paid',
+                            )
+                          }
+                        >
+                          Complete + Mark Paid
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            void handleAppointmentStatus(
+                              appointment.id,
+                              'cancelled',
+                            )
+                          }
+                        >
+                          Cancel
+                        </Button>
+                        <span className="ml-auto text-sm text-white/70">
+                          Total: $
+                          {Number(
+                            invoice?.total || appointment.quoted_total,
+                          ).toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  )
+                })
+              )}
             </div>
-            <p className="mt-2 text-sm text-white/60">
-              When you mark an appointment completed, the system now stages a
-              marketing queue record and advances the invoice toward QuickBooks
-              sync without touching your current live stats or job-posting
-              tools.
-            </p>
-          </div>
-        </Card>
-      </div>
-
-      <Card className="border-white/10 bg-black/30 p-6 text-white">
-        <h2 className="text-xl font-semibold">
-          Upcoming Internal Appointments
-        </h2>
-        <p className="mt-1 text-sm text-white/60">
-          These are internal-only test jobs backed by the new appointment,
-          invoice, and queue tables.
-        </p>
-        <div className="mt-4 space-y-4">
-          {appointments.length === 0 ? (
-            <p className="text-sm text-white/50">
-              No internal appointments yet.
-            </p>
-          ) : (
-            appointments.map((appointment) => {
-              const customer = unwrapRelation(appointment.ops_customers)
-              const address = unwrapRelation(appointment.ops_service_addresses)
-              const invoice = unwrapRelation(appointment.ops_invoices)
-
-              return (
-                <div
-                  key={appointment.id}
-                  className="rounded-2xl border border-white/10 bg-white/5 p-4"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <div className="text-lg font-semibold">
-                        {customer?.full_name || 'Unknown customer'}
-                      </div>
-                      <div className="text-sm text-white/60">
-                        {appointment.appointment_date} at{' '}
-                        {appointment.start_time.slice(0, 5)} -{' '}
-                        {appointment.end_time.slice(0, 5)}
-                      </div>
-                      <div className="text-sm text-white/60">
-                        {address
-                          ? `${address.street_1}, ${address.city}, ${address.state} ${address.zip_code}`
-                          : 'No address'}
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Badge className="bg-blue-500/20 text-blue-100">
-                        {appointment.status}
-                      </Badge>
-                      <Badge className="bg-white/10 text-white/80">
-                        Invoice: {invoice?.status || 'draft'}
-                      </Badge>
-                      <Badge className="bg-white/10 text-white/80">
-                        QB: {appointment.quickbooks_sync_status}
-                      </Badge>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 flex flex-wrap gap-2 text-sm text-white/70">
-                    {appointment.ops_appointment_line_items.map((item) => (
-                      <span
-                        key={item.id}
-                        className="rounded-full border border-white/10 bg-black/30 px-3 py-1"
-                      >
-                        {item.name_snapshot} x{item.quantity} ($
-                        {Number(item.line_total).toFixed(2)})
-                      </span>
-                    ))}
-                  </div>
-
-                  <div className="mt-4 flex flex-wrap items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() =>
-                        void handleAppointmentStatus(
-                          appointment.id,
-                          'confirmed',
-                        )
-                      }
-                    >
-                      Confirm
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() =>
-                        void handleAppointmentStatus(
-                          appointment.id,
-                          'on_my_way',
-                        )
-                      }
-                    >
-                      On My Way
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() =>
-                        void handleAppointmentStatus(
-                          appointment.id,
-                          'completed',
-                          'paid',
-                        )
-                      }
-                    >
-                      Complete + Mark Paid
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() =>
-                        void handleAppointmentStatus(
-                          appointment.id,
-                          'cancelled',
-                        )
-                      }
-                    >
-                      Cancel
-                    </Button>
-                    <span className="ml-auto text-sm text-white/70">
-                      Total: $
-                      {Number(
-                        invoice?.total || appointment.quoted_total,
-                      ).toFixed(2)}
-                    </span>
-                  </div>
-                </div>
-              )
-            })
-          )}
-        </div>
-      </Card>
+          </Card>
+        </>
+      ) : null}
     </div>
   )
 }
