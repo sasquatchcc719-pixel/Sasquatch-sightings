@@ -177,6 +177,10 @@ function buildMonthGrid(date: Date): Date[] {
   })
 }
 
+function normalizeCategory(value: string): string {
+  return value.trim().toLowerCase()
+}
+
 export function OperationsDashboard({
   view = 'calendar',
 }: OperationsDashboardProps) {
@@ -307,17 +311,16 @@ export function OperationsDashboard({
   const quickbooksJobs = data?.quickbooksJobs || []
 
   const serviceCategories = useMemo(() => {
-    const categories = new Set<string>([
-      'standard carpet cleaning',
-      'restoration',
-    ])
+    const categories = new Set<string>()
     for (const service of services) {
       const category = String(service.category || '').trim()
       if (category) categories.add(category)
     }
     const currentFormCategory = String(serviceForm.category || '').trim()
     if (currentFormCategory) categories.add(currentFormCategory)
-    return [...categories].sort((a, b) => a.localeCompare(b))
+    return [...categories].sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: 'base' }),
+    )
   }, [services, serviceForm.category])
 
   const filteredServices = useMemo(() => {
@@ -475,8 +478,10 @@ export function OperationsDashboard({
       throw new Error('Source and target categories are required')
     }
 
+    const normalizedSource = normalizeCategory(source)
     const affectedServices = services.filter(
-      (service) => service.category.trim() === source,
+      (service) =>
+        normalizeCategory(service.category || '') === normalizedSource,
     )
     if (affectedServices.length === 0) {
       throw new Error('No services found in that category')
@@ -545,7 +550,10 @@ export function OperationsDashboard({
     setSaving(true)
     setError(null)
     try {
-      if (categorySource.trim() === categoryMergeTarget.trim()) {
+      if (
+        normalizeCategory(categorySource) ===
+        normalizeCategory(categoryMergeTarget)
+      ) {
         throw new Error('Choose a different target category')
       }
       await updateCategoryAcrossServices(categorySource, categoryMergeTarget)
