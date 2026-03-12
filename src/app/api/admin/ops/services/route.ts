@@ -158,32 +158,54 @@ export async function PUT(request: NextRequest) {
         .map((service) => [service.source_uuid, service]),
     )
 
-    const payload = services.map((service) => {
+    const servicesToInsert = services.filter(
+      (service) => !bySourceUuid.has(service.source_uuid),
+    )
+    const servicesToUpdate = services.filter((service) =>
+      bySourceUuid.has(service.source_uuid),
+    )
+
+    const insertedServices: typeof services = []
+    const updatedServices: typeof services = []
+
+    if (servicesToInsert.length > 0) {
+      const { data: insertedData, error: insertError } = await supabase
+        .from('service_catalog_items')
+        .insert(servicesToInsert)
+        .select()
+
+      if (insertError) {
+        throw insertError
+      }
+
+      insertedServices.push(...(insertedData || []))
+    }
+
+    for (const service of servicesToUpdate) {
       const existing = bySourceUuid.get(service.source_uuid)
-      return existing
-        ? {
-            ...service,
-            slug: existing.slug,
-          }
-        : service
-    })
+      if (!existing?.source_uuid) continue
 
-    const { data, error } = await supabase
-      .from('service_catalog_items')
-      .upsert(payload, {
-        onConflict: 'source_uuid',
-        ignoreDuplicates: false,
-      })
-      .select()
+      const { data: updatedData, error: updateError } = await supabase
+        .from('service_catalog_items')
+        .update({
+          ...service,
+          slug: existing.slug,
+        })
+        .eq('source_uuid', existing.source_uuid)
+        .select()
+        .single()
 
-    if (error) {
-      throw error
+      if (updateError) {
+        throw updateError
+      }
+
+      updatedServices.push(updatedData)
     }
 
     return NextResponse.json({
-      imported: data?.length || 0,
+      imported: insertedServices.length + updatedServices.length,
       skipped,
-      services: data || [],
+      services: [...insertedServices, ...updatedServices],
     })
   } catch (error) {
     console.error('[ops/services][PUT] Error:', error)
