@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient, createClient } from '@/supabase/server'
 import { getUserWithRole } from '@/lib/auth'
+import { isAnalystFeatureEnabled } from '@/lib/harry/features'
 
 // GET - List all targets
 export async function GET() {
@@ -8,6 +9,12 @@ export async function GET() {
     const { user, role } = await getUserWithRole()
     if (!user || role !== 'admin') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    if (!isAnalystFeatureEnabled()) {
+      return NextResponse.json(
+        { error: 'Analyst is currently disabled' },
+        { status: 403 },
+      )
     }
 
     const supabase = await createClient()
@@ -38,6 +45,12 @@ export async function POST(request: NextRequest) {
     const { user, role } = await getUserWithRole()
     if (!user || role !== 'admin') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    if (!isAnalystFeatureEnabled()) {
+      return NextResponse.json(
+        { error: 'Analyst is currently disabled' },
+        { status: 403 },
+      )
     }
 
     const body = await request.json()
@@ -87,6 +100,12 @@ export async function PATCH(request: NextRequest) {
     if (!user || role !== 'admin') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+    if (!isAnalystFeatureEnabled()) {
+      return NextResponse.json(
+        { error: 'Analyst is currently disabled' },
+        { status: 403 },
+      )
+    }
 
     const body = await request.json()
     const { id, type, value, source, url, notes, is_active } = body
@@ -135,6 +154,12 @@ export async function DELETE(request: NextRequest) {
     const { user, role } = await getUserWithRole()
     if (!user || role !== 'admin') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    if (!isAnalystFeatureEnabled()) {
+      return NextResponse.json(
+        { error: 'Analyst is currently disabled' },
+        { status: 403 },
+      )
     }
 
     const { searchParams } = new URL(request.url)

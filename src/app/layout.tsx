@@ -9,6 +9,7 @@ import Script from 'next/script'
 import './globals.css'
 import ReactQueryProvider from '@/providers/ReactQueryProvider'
 import { OneSignalPublicInit } from '@/components/onesignal-public-init'
+import { ThemeSwitcher } from '@/components/theme-switcher'
 
 const defaultUrl = process.env.VERCEL_URL
   ? `https://${process.env.VERCEL_URL}`
@@ -81,6 +82,11 @@ export default function RootLayout({ children }: RootLayoutProps) {
           enableSystem
           disableTransitionOnChange
         >
+          <div className="fixed top-4 right-4 z-[250]">
+            <div className="border-border/70 bg-background/85 rounded-full border shadow-lg backdrop-blur">
+              <ThemeSwitcher />
+            </div>
+          </div>
           <ReactQueryProvider>
             {children}
             <Suspense fallback={null}>

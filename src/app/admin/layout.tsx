@@ -1,14 +1,12 @@
 import { redirect } from 'next/navigation'
 import { EnvVarWarning } from '@/components/env-var-warning'
 import { AuthButton } from '@/components/auth-button'
-import { ThemeSwitcher } from '@/components/theme-switcher'
 import { hasEnvVars } from '@/utils/env'
 import { getUserWithRole } from '@/lib/auth'
 import Link from 'next/link'
 import { Suspense } from 'react'
 import { AdminNavigation } from '@/components/admin-navigation'
 import { OneSignalInit } from '@/components/onesignal-init'
-import { VideoBackground } from '@/components/public/VideoBackground'
 
 type AdminLayoutProps = {
   children: React.ReactNode
@@ -29,35 +27,32 @@ export default async function AdminLayout({ children }: AdminLayoutProps) {
   }
 
   // CRITICAL: Partners must NOT access admin routes
-  // Only allow if role is explicitly 'admin' OR if there's no partner record (legacy admin)
-  if (role !== 'admin') {
+  // Allow internal staff roles here; individual pages/APIs can still enforce stricter access.
+  if (role === 'partner' || !role) {
     console.log(
-      '[AdminLayout] User is NOT admin (role:',
+      '[AdminLayout] User is not an internal ops role (role:',
       role,
       '), redirecting to /partners',
     )
     redirect('/partners')
   }
 
-  console.log('[AdminLayout] Access granted - user is admin')
+  console.log('[AdminLayout] Access granted - internal ops role:', role)
 
   return (
-    <main className="relative flex min-h-screen flex-col items-center overflow-hidden">
-      {/* Video Background */}
-      <VideoBackground video="psychedelic" />
-
+    <main className="bg-background text-foreground min-h-screen">
       <OneSignalInit />
-      <div className="relative z-10 flex w-full flex-1 flex-col items-center gap-20">
-        <nav className="flex h-14 w-full justify-center border-b border-white/20 bg-black/10 backdrop-blur-sm">
-          <div className="flex w-full max-w-5xl items-center justify-between px-4 text-sm">
+      <div className="flex w-full flex-1 flex-col items-center gap-8 pb-10">
+        <nav className="border-border/70 bg-background/85 flex h-14 w-full justify-center border-b backdrop-blur">
+          <div className="flex w-full max-w-[1440px] items-center justify-between px-4 text-sm">
             <Link
               href={'/admin'}
-              className="flex items-center gap-2 font-semibold text-white drop-shadow-lg"
+              className="text-foreground flex items-center gap-2 font-semibold"
             >
               <img
                 src="/vector6-no-background.svg"
                 alt="Sasquatch"
-                className="h-8 w-auto drop-shadow-lg"
+                className="h-8 w-auto"
               />
               <span className="hidden sm:inline">Admin</span>
             </Link>
@@ -70,18 +65,17 @@ export default async function AdminLayout({ children }: AdminLayoutProps) {
             )}
           </div>
         </nav>
-        <div className="flex w-full max-w-5xl flex-1 flex-col gap-8 p-5">
-          <div className="relative z-[200] rounded-2xl border border-white/20 bg-black/20 p-6 shadow-2xl backdrop-blur-sm">
+        <div className="flex w-full max-w-[1440px] flex-1 flex-col gap-6 p-4 sm:p-5">
+          <div className="border-border/60 bg-card/80 relative z-[200] rounded-2xl border p-4 shadow-sm backdrop-blur">
             <AdminNavigation />
           </div>
-          <div className="relative z-[10] rounded-2xl border border-white/20 bg-black/20 p-6 shadow-2xl backdrop-blur-sm">
+          <div className="border-border/60 bg-card/80 relative z-[10] rounded-2xl border p-4 shadow-sm backdrop-blur sm:p-6">
             {children}
           </div>
         </div>
 
-        <footer className="relative z-10 mx-auto flex w-full items-center justify-center gap-8 border-t border-white/20 bg-black/10 py-16 text-center text-xs text-white/80 backdrop-blur-sm">
+        <footer className="border-border/70 bg-background/70 text-muted-foreground mx-auto flex w-full items-center justify-center gap-8 border-t py-8 text-center text-xs backdrop-blur">
           <p>Sasquatch Carpet Cleaning</p>
-          <ThemeSwitcher />
         </footer>
       </div>
     </main>

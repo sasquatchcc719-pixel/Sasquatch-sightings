@@ -2,7 +2,6 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/supabase/server'
 import { getUserWithRole } from '@/lib/auth'
 import { PartnerDashboard } from '@/components/partners/partner-dashboard'
-import { ThemeSwitcher } from '@/components/theme-switcher'
 import { LogoutButton } from '@/components/logout-button'
 import Link from 'next/link'
 
@@ -59,7 +58,6 @@ export default async function PartnersPage() {
             <span className="hidden text-sm text-white/70 sm:block">
               {partner.company_name}
             </span>
-            <ThemeSwitcher />
             <LogoutButton />
           </div>
         </div>

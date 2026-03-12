@@ -11,6 +11,15 @@ import {
   shouldEscalate,
   isAIEnabled,
 } from '@/lib/openai-chat'
+import {
+  containsKnownBookingLink,
+  getHarryControlSnapshot,
+  getHarryActiveBookingUrl,
+  isHarryChannelEnabled,
+  isHarryFunctionEnabled,
+  rewriteBookingLinks,
+} from '@/lib/harry/control'
+import { buildSmsSlotOffer } from '@/lib/ops/sms-booking'
 import { sendCustomerSMS, sendAdminSMS } from '@/lib/twilio'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
@@ -191,6 +200,12 @@ function detectContestMention(message: string): boolean {
 // Determine conversation source type from message content
 type ConversationSource = 'vendor' | 'business_card' | 'contest' | 'inbound'
 
+function sourceTypeToChannelKey(
+  sourceType: ConversationSource,
+): 'vendor' | 'business_card' | 'contest' | 'inbound' {
+  return sourceType
+}
+
 async function determineSourceType(
   message: string,
   supabase: ReturnType<typeof createAdminClient>,
@@ -238,6 +253,13 @@ async function determineSourceType(
 
 export async function POST(request: NextRequest) {
   try {
+    const emptyTwiml = new NextResponse(
+      '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+      {
+        headers: { 'Content-Type': 'text/xml' },
+      },
+    )
+
     // Parse Twilio webhook data (form-encoded)
     const formData = await request.formData()
     const fromPhone = formData.get('From') as string
@@ -326,6 +348,41 @@ export async function POST(request: NextRequest) {
       messageBody,
       supabase,
     )
+    const controlSnapshot = await getHarryControlSnapshot()
+    const channelKey = sourceTypeToChannelKey(sourceType)
+    const isHarryGlobalEnabled = isHarryFunctionEnabled(
+      controlSnapshot,
+      'global_enabled',
+    )
+    const isInboundIntakeEnabled = isHarryFunctionEnabled(
+      controlSnapshot,
+      'inbound_channel_intake_enabled',
+    )
+    const isChannelEnabled = isHarryChannelEnabled(controlSnapshot, channelKey)
+    const shouldProcessInbound =
+      isHarryGlobalEnabled && isInboundIntakeEnabled && isChannelEnabled
+    const canSendAutoReply = isHarryFunctionEnabled(
+      controlSnapshot,
+      'auto_reply_enabled',
+    )
+    const canSendBookingOffers = isHarryFunctionEnabled(
+      controlSnapshot,
+      'booking_offers_enabled',
+    )
+    const activeBookingUrl = getHarryActiveBookingUrl(controlSnapshot)
+    const canCreateLeads = isHarryFunctionEnabled(
+      controlSnapshot,
+      'auto_create_leads_enabled',
+    )
+    const canSendEscalationAlerts = isHarryFunctionEnabled(
+      controlSnapshot,
+      'escalation_alerts_enabled',
+    )
+    const canSendInboundEmails = isHarryFunctionEnabled(
+      controlSnapshot,
+      'inbound_email_notifications_enabled',
+    )
+
     console.log(`📋 Detected source type: ${sourceType}`)
     if (matchedPartner) {
       console.log(
@@ -341,6 +398,18 @@ export async function POST(request: NextRequest) {
       inbound: 'inbound',
     }
     const dbSource = sourceMap[sourceType]
+
+    if (!shouldProcessInbound) {
+      console.log(
+        `[Harry Control] Inbound processing disabled (source: ${sourceType}, global: ${isHarryGlobalEnabled}, intake: ${isInboundIntakeEnabled}, channel: ${isChannelEnabled})`,
+      )
+      return emptyTwiml
+    }
+
+    const maybeSendInboundEmail = async (aiReply: string | null) => {
+      if (!canSendInboundEmails) return
+      await sendInboundEmail(aiReply)
+    }
 
     // Find existing conversation with SAME phone AND SAME source type
     let { data: conversation, error: fetchError } = await supabase
@@ -418,7 +487,8 @@ export async function POST(request: NextRequest) {
     })
 
     // Check if AI should respond
-    const aiShouldRespond = conversation.ai_enabled && isAIEnabled()
+    const aiShouldRespond =
+      conversation.ai_enabled && isAIEnabled() && canSendAutoReply
 
     if (!aiShouldRespond) {
       // AI disabled - just log the message, don't respond
@@ -432,19 +502,16 @@ export async function POST(request: NextRequest) {
       )
 
       // Notify admin about incoming message
-      await sendAdminSMS(
-        `💬 Inbound SMS from ${normalizedPhone}:\n"${messageBody}"\n\n(AI is disabled - manual response needed)`,
-        'ai_dispatcher_inbound',
-      )
+      if (canSendEscalationAlerts) {
+        await sendAdminSMS(
+          `💬 Inbound SMS from ${normalizedPhone}:\n"${messageBody}"\n\n(AI is disabled - manual response needed)`,
+          'ai_dispatcher_inbound',
+        )
+      }
 
-      await sendInboundEmail(null)
+      await maybeSendInboundEmail(null)
 
-      return new NextResponse(
-        '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
-        {
-          headers: { 'Content-Type': 'text/xml' },
-        },
-      )
+      return emptyTwiml
     }
 
     // Generate AI response
@@ -467,6 +534,8 @@ export async function POST(request: NextRequest) {
         messageBody,
         messages,
         partnerContext,
+        channelKey,
+        activeBookingUrl,
       )
 
       if (!aiResponse) {
@@ -476,25 +545,27 @@ export async function POST(request: NextRequest) {
           .from('conversations')
           .update({ messages })
           .eq('id', conversation.id)
-        await sendInboundEmail(null)
-        return new NextResponse(
-          '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
-          {
-            headers: { 'Content-Type': 'text/xml' },
-          },
-        )
+        await maybeSendInboundEmail(null)
+        return emptyTwiml
       }
 
       // HARD GATE: Never send the booking link without first+last name, email, and full address (street + zip).
       // Extraction uses only USER messages (not the bot's), so "name given early" is from their own texts.
-      const BOOKING_LINK_MARKER = 'sightings.sasquatchcarpet.com/book'
       const extractedInfo = extractCustomerInfo(messages)
       const hasFullName =
         extractedInfo.name && extractedInfo.name.trim().split(/\s+/).length >= 2
       const hasFullAddress = extractedInfo.address && extractedInfo.zipCode
       const hasRequiredInfo =
         hasFullName && hasFullAddress && extractedInfo.email
-      if (aiResponse.includes(BOOKING_LINK_MARKER) && !hasRequiredInfo) {
+      if (containsKnownBookingLink(aiResponse) && !canSendBookingOffers) {
+        aiResponse =
+          'I can still help with your quote here. Our team will follow up directly to handle booking options.'
+      }
+      if (
+        containsKnownBookingLink(aiResponse) &&
+        !hasRequiredInfo &&
+        canSendBookingOffers
+      ) {
         const missing: string[] = []
         if (!hasFullName)
           missing.push(extractedInfo.name ? 'last name' : 'first and last name')
@@ -526,6 +597,25 @@ export async function POST(request: NextRequest) {
         )
       }
 
+      if (
+        containsKnownBookingLink(aiResponse) &&
+        hasRequiredInfo &&
+        canSendBookingOffers
+      ) {
+        const slotOffer = await buildSmsSlotOffer({
+          supabase,
+          serviceNeeded: extractedInfo.serviceNeeded,
+        })
+
+        if (slotOffer) {
+          aiResponse = slotOffer
+        }
+      }
+
+      if (canSendBookingOffers && containsKnownBookingLink(aiResponse)) {
+        aiResponse = rewriteBookingLinks(aiResponse, activeBookingUrl)
+      }
+
       // Add AI response to conversation
       messages.push({
         role: 'assistant',
@@ -548,7 +638,7 @@ export async function POST(request: NextRequest) {
 
       // Check if we should create a lead (has enough info and no lead exists yet)
       // Required: first+last name, full address (street + zip), email (same as booking-link gate)
-      if (!conversation.lead_id) {
+      if (!conversation.lead_id && canCreateLeads) {
         const hasFullNameForLead =
           extractedInfo.name &&
           extractedInfo.name.trim().split(/\s+/).length >= 2
@@ -606,10 +696,10 @@ export async function POST(request: NextRequest) {
         toNumber || undefined,
       )
 
-      await sendInboundEmail(aiResponse)
+      await maybeSendInboundEmail(aiResponse)
 
       // Notify admin if escalated
-      if (needsEscalation) {
+      if (needsEscalation && canSendEscalationAlerts) {
         await sendAdminSMS(
           `🚨 Customer escalation needed!\nPhone: ${normalizedPhone}\nLast message: "${messageBody}"\n\nAI Response: "${aiResponse}"`,
           'ai_dispatcher_escalation',
@@ -633,21 +723,18 @@ export async function POST(request: NextRequest) {
         .eq('id', conversation.id)
 
       // Notify admin
-      await sendAdminSMS(
-        `⚠️ AI Dispatcher Error!\nPhone: ${normalizedPhone}\nMessage: "${messageBody}"\n\nError: ${aiError}\n\nPlease respond manually.`,
-        'ai_dispatcher_error',
-      )
+      if (canSendEscalationAlerts) {
+        await sendAdminSMS(
+          `⚠️ AI Dispatcher Error!\nPhone: ${normalizedPhone}\nMessage: "${messageBody}"\n\nError: ${aiError}\n\nPlease respond manually.`,
+          'ai_dispatcher_error',
+        )
+      }
 
-      await sendInboundEmail(null)
+      await maybeSendInboundEmail(null)
     }
 
     // Return empty TwiML (we already sent response via sendCustomerSMS)
-    return new NextResponse(
-      '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
-      {
-        headers: { 'Content-Type': 'text/xml' },
-      },
-    )
+    return emptyTwiml
   } catch (error) {
     console.error('Inbound SMS webhook error:', error)
     return NextResponse.json(

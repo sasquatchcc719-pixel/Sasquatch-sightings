@@ -1,7 +1,6 @@
 import { redirect } from 'next/navigation'
 import { getUserWithRole } from '@/lib/auth'
 import { PartnerDashboard } from '@/components/partners/partner-dashboard'
-import { ThemeSwitcher } from '@/components/theme-switcher'
 import Link from 'next/link'
 
 // Mock data so admins can preview the Partner Dashboard. Changes to the
@@ -104,7 +103,6 @@ export default async function PartnerDashboardDemoPage() {
             <span className="hidden text-sm text-white/70 sm:block">
               {DEMO_PARTNER.company_name}
             </span>
-            <ThemeSwitcher />
           </div>
         </div>
       </nav>

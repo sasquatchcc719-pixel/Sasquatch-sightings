@@ -4,6 +4,7 @@
  */
 
 import OpenAI from 'openai'
+import { createAdminClient } from '@/supabase/server'
 
 const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
@@ -321,6 +322,8 @@ export async function generateAIResponse(
   customerMessage: string,
   conversationHistory: Message[] = [],
   context?: { partnerName?: string; couponCode?: string },
+  channelKey: 'inbound' | 'contest' | 'vendor' | 'business_card' = 'inbound',
+  bookingUrlOverride?: string,
 ): Promise<string> {
   if (!openai) {
     throw new Error('OpenAI not configured')
@@ -332,8 +335,65 @@ export async function generateAIResponse(
   }
 
   try {
+    const supabase = createAdminClient()
+    let knowledgeContext = ''
+    let profileContext = ''
+
+    try {
+      const [{ data: knowledgeRows }, { data: profileRow }] = await Promise.all(
+        [
+          supabase
+            .from('harry_knowledge_blocks')
+            .select('title, content')
+            .eq('is_enabled', true)
+            .order('sort_order', { ascending: true }),
+          supabase
+            .from('harry_logic_profiles')
+            .select('label, booking_mode, prompt_overrides')
+            .eq('channel_key', channelKey)
+            .eq('is_enabled', true)
+            .maybeSingle(),
+        ],
+      )
+
+      if ((knowledgeRows || []).length > 0) {
+        knowledgeContext = `
+
+DASHBOARD KNOWLEDGE (editable controls):
+${(knowledgeRows || [])
+  .map((row) => `- ${row.title}: ${String(row.content || '').trim()}`)
+  .filter((row) => row.length > 4)
+  .join('\n')}
+`
+      }
+
+      if (profileRow) {
+        profileContext = `
+
+CHANNEL LOGIC PROFILE:
+- Profile: ${profileRow.label}
+- Booking mode: ${profileRow.booking_mode}
+- Overrides: ${profileRow.prompt_overrides || 'None'}
+`
+      }
+    } catch (contextError) {
+      console.error(
+        '[Harry] Failed to load dynamic prompt context:',
+        contextError,
+      )
+    }
+
+    const bookingOverrideContext = bookingUrlOverride
+      ? `
+
+BOOKING DESTINATION OVERRIDE:
+- Always use this booking link when sharing booking: ${bookingUrlOverride}
+`
+      : ''
+
     // Build system prompt with partner context if available
-    let systemPrompt = SYSTEM_PROMPT
+    let systemPrompt =
+      SYSTEM_PROMPT + knowledgeContext + profileContext + bookingOverrideContext
     if (context?.couponCode) {
       const partnerContext = `
 
@@ -343,7 +403,12 @@ CURRENT CUSTOMER CONTEXT:
 - ALWAYS mention their code "${context.couponCode}" when discussing the discount
 - Tell them to add "${context.couponCode}" in the notes when booking to get their $20 off
 `
-      systemPrompt = SYSTEM_PROMPT + partnerContext
+      systemPrompt =
+        SYSTEM_PROMPT +
+        knowledgeContext +
+        profileContext +
+        bookingOverrideContext +
+        partnerContext
     }
 
     // Build messages array with system prompt + conversation history + new message

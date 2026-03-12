@@ -1,12 +1,9 @@
 import Link from 'next/link'
 import { Button } from './ui/button'
-import { createClient } from '@/supabase/server'
+import { getUserWithRole } from '@/lib/auth'
 
 export async function AdminLink() {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const { user, role } = await getUserWithRole()
 
   // If no user, show Login button
   if (!user) {
@@ -20,6 +17,10 @@ export async function AdminLink() {
         <Link href="/auth/login">Login</Link>
       </Button>
     )
+  }
+
+  if (role === 'partner') {
+    return null
   }
 
   return (

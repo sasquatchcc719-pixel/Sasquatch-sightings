@@ -130,6 +130,7 @@ function getTypeLabel(type: string): string {
 export default function TargetsPage() {
   const [targets, setTargets] = useState<Target[]>([])
   const [loading, setLoading] = useState(true)
+  const [analystEnabled, setAnalystEnabled] = useState(false)
   const [newTarget, setNewTarget] = useState('')
   const [adding, setAdding] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -137,7 +138,20 @@ export default function TargetsPage() {
 
   // Fetch targets
   useEffect(() => {
-    fetchTargets()
+    async function loadState() {
+      try {
+        const response = await fetch('/api/admin/harry/control')
+        const result = await response.json()
+        if (response.ok) {
+          setAnalystEnabled(Boolean(result?.runtime?.analyst_enabled))
+        }
+      } catch {
+        setAnalystEnabled(false)
+      } finally {
+        fetchTargets()
+      }
+    }
+    void loadState()
   }, [])
 
   async function fetchTargets() {
@@ -153,6 +167,7 @@ export default function TargetsPage() {
   }
 
   async function addTarget() {
+    if (!analystEnabled) return
     if (!newTarget.trim()) return
 
     const parsed = parseTargetInput(newTarget)
@@ -183,6 +198,7 @@ export default function TargetsPage() {
   }
 
   async function toggleActive(target: Target) {
+    if (!analystEnabled) return
     try {
       await fetch('/api/analyst/targets', {
         method: 'PATCH',
@@ -196,6 +212,7 @@ export default function TargetsPage() {
   }
 
   async function deleteTarget(id: string) {
+    if (!analystEnabled) return
     if (!confirm('Delete this target?')) return
 
     try {
@@ -207,6 +224,7 @@ export default function TargetsPage() {
   }
 
   async function saveEdit(target: Target) {
+    if (!analystEnabled) return
     if (!editValue.trim()) {
       setEditingId(null)
       return
@@ -234,21 +252,34 @@ export default function TargetsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">
-            Market Intel Targets
+            Legacy Analyst Targets
           </h1>
-          <p className="text-white/60">Configure what Harry should watch</p>
+          <p className="text-white/60">
+            {analystEnabled
+              ? 'Configure what Harry should watch'
+              : 'Disabled. Radar remains active; use Harry Control for live behavior.'}
+          </p>
         </div>
         <Button
           asChild
           variant="outline"
           className="border-white/20 bg-white/10 text-white hover:bg-white/20"
         >
-          <Link href="/admin/analyst">
+          <Link
+            href={analystEnabled ? '/admin/analyst' : '/admin/harry/control'}
+          >
             <MessageSquare className="mr-2 h-4 w-4" />
-            Chat with Harry
+            {analystEnabled ? 'Chat with Harry' : 'Open Harry Control'}
           </Link>
         </Button>
       </div>
+
+      {!analystEnabled ? (
+        <Card className="border-white/20 bg-black/40 p-4 text-sm text-white/70">
+          Analyst targets are disabled by policy. Existing data is preserved and
+          can be re-enabled later without data loss.
+        </Card>
+      ) : null}
 
       {/* Add Target */}
       <Card className="border-white/20 bg-black/40 p-4">
@@ -265,7 +296,7 @@ export default function TargetsPage() {
           />
           <Button
             onClick={addTarget}
-            disabled={adding || !newTarget.trim()}
+            disabled={!analystEnabled || adding || !newTarget.trim()}
             className="bg-green-600 hover:bg-green-700"
           >
             <Plus className="mr-2 h-4 w-4" />

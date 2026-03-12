@@ -23,6 +23,7 @@ export default function AnalystChatPage() {
   const [loading, setLoading] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [historyLoaded, setHistoryLoaded] = useState(false)
+  const [analystEnabled, setAnalystEnabled] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -51,8 +52,25 @@ export default function AnalystChatPage() {
     loadHistory()
   }, [])
 
+  useEffect(() => {
+    async function loadControlState() {
+      try {
+        const response = await fetch('/api/admin/harry/control')
+        const result = await response.json()
+        if (response.ok) {
+          setAnalystEnabled(Boolean(result?.runtime?.analyst_enabled))
+        }
+      } catch {
+        setAnalystEnabled(false)
+      }
+    }
+
+    void loadControlState()
+  }, [])
+
   // Clear conversation history
   async function clearHistory() {
+    if (!analystEnabled) return
     if (!confirm('Clear all conversation history with Harry?')) return
 
     try {
@@ -65,6 +83,7 @@ export default function AnalystChatPage() {
 
   // Run competitor scan
   async function runScan() {
+    if (!analystEnabled) return
     if (scanning) return
 
     setScanning(true)
@@ -137,6 +156,7 @@ export default function AnalystChatPage() {
   }, [])
 
   async function sendMessage() {
+    if (!analystEnabled) return
     if (!input.trim() || loading) return
 
     const userMessage = input.trim()
@@ -196,50 +216,64 @@ export default function AnalystChatPage() {
           </div>
           <div>
             <h1 className="text-xl font-bold text-white">
-              Harry - Sasquatch Analyst
+              Harry - Legacy Analyst
             </h1>
             <p className="text-sm text-white/60">
-              Business intel + competitor research
+              {analystEnabled
+                ? 'Business intel + competitor research'
+                : 'Disabled. History is read-only while Harry controls are moving to the new dashboard.'}
             </p>
           </div>
         </div>
         <div className="flex gap-2">
-          <Button
-            onClick={runScan}
-            disabled={scanning}
-            variant="outline"
-            className="border-amber-500/50 bg-amber-500/20 text-amber-300 hover:bg-amber-500/30"
-          >
-            {scanning ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Scanning...
-              </>
-            ) : (
-              <>
-                <Radar className="mr-2 h-4 w-4" />
-                Scan
-              </>
-            )}
-          </Button>
-          <Button
-            onClick={clearHistory}
-            variant="outline"
-            className="border-red-500/30 bg-red-500/10 text-red-300 hover:bg-red-500/20"
-            title="Clear conversation history"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-          <Button
-            asChild
-            variant="outline"
-            className="border-white/20 bg-white/10 text-white hover:bg-white/20"
-          >
-            <Link href="/admin/analyst/targets">
-              <Target className="mr-2 h-4 w-4" />
-              Targets
-            </Link>
-          </Button>
+          {analystEnabled ? (
+            <>
+              <Button
+                onClick={runScan}
+                disabled={scanning}
+                variant="outline"
+                className="border-amber-500/50 bg-amber-500/20 text-amber-300 hover:bg-amber-500/30"
+              >
+                {scanning ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Scanning...
+                  </>
+                ) : (
+                  <>
+                    <Radar className="mr-2 h-4 w-4" />
+                    Scan
+                  </>
+                )}
+              </Button>
+              <Button
+                onClick={clearHistory}
+                variant="outline"
+                className="border-red-500/30 bg-red-500/10 text-red-300 hover:bg-red-500/20"
+                title="Clear conversation history"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+              <Button
+                asChild
+                variant="outline"
+                className="border-white/20 bg-white/10 text-white hover:bg-white/20"
+              >
+                <Link href="/admin/analyst/targets">
+                  <Target className="mr-2 h-4 w-4" />
+                  Targets
+                </Link>
+              </Button>
+            </>
+          ) : (
+            <Button
+              asChild
+              variant="outline"
+              className="border-white/20 bg-white/10 text-white hover:bg-white/20"
+            >
+              <Link href="/admin/harry/control">Open Harry Control</Link>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -296,13 +330,18 @@ export default function AnalystChatPage() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask Harry anything..."
+            placeholder={
+              analystEnabled
+                ? 'Ask Harry anything...'
+                : 'Analyst chat is disabled. Use Harry Control.'
+            }
             rows={2}
             className="flex-1 resize-none rounded-xl border border-white/20 bg-black/40 px-4 py-3 text-white placeholder:text-white/40 focus:border-green-500 focus:ring-1 focus:ring-green-500 focus:outline-none"
+            disabled={!analystEnabled}
           />
           <Button
             onClick={sendMessage}
-            disabled={loading || !input.trim()}
+            disabled={!analystEnabled || loading || !input.trim()}
             className="h-auto bg-green-600 px-6 hover:bg-green-700"
           >
             <Send className="h-5 w-5" />

@@ -3,6 +3,7 @@ import { createAdminClient } from '@/supabase/server'
 import { getUserWithRole } from '@/lib/auth'
 import { searchGoogle } from '@/lib/web-search'
 import { getPriceBookSummary } from '@/lib/price-book'
+import { isAnalystFeatureEnabled } from '@/lib/harry/features'
 import Anthropic from '@anthropic-ai/sdk'
 
 const anthropic = new Anthropic({
@@ -275,6 +276,12 @@ export async function POST(request: NextRequest) {
     const { user, role } = await getUserWithRole()
     if (!user || role !== 'admin') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    if (!isAnalystFeatureEnabled()) {
+      return NextResponse.json(
+        { error: 'Analyst is currently disabled' },
+        { status: 403 },
+      )
     }
 
     const body = await request.json()
