@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getUserWithRole, requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
+import { seedHarryProfileDefaults } from '@/lib/harry/control'
 
 type ProfileInput = {
   profile_key: string
@@ -35,6 +36,7 @@ function isMissingRelationError(message: string | undefined): boolean {
 export async function GET() {
   try {
     await requireAnyRole(['admin', 'owner', 'dispatcher'])
+    await seedHarryProfileDefaults()
     const supabase = createAdminClient()
     const { data, error } = await supabase
       .from('harry_logic_profiles')

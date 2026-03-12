@@ -186,6 +186,73 @@ export async function seedHarryControlDefaults(params?: { userId?: string }) {
   }
 }
 
+const HARRY_PROFILE_DEFAULTS: Array<{
+  profile_key: string
+  label: string
+  channel_key: string
+  booking_mode: string
+  prompt_overrides: string
+  is_enabled: boolean
+}> = [
+  {
+    profile_key: 'inbound',
+    label: 'Inbound Default Profile',
+    channel_key: 'inbound',
+    booking_mode: 'bounded_auto_booking',
+    prompt_overrides: `Use standard quote-first SMS behavior for direct inbound leads.
+- Ask clarifying size/quantity questions before final quote.
+- Enforce required booking info before sending booking link.
+- Keep tone concise and practical for direct service inquiries.
+- Apply escalation policy for emergencies/angry customers.`,
+    is_enabled: true,
+  },
+  {
+    profile_key: 'contest',
+    label: 'Contest Profile',
+    channel_key: 'contest',
+    booking_mode: 'bounded_auto_booking',
+    prompt_overrides: `Contest channel behavior:
+- Acknowledge contest/sighting context naturally.
+- Prioritize converting to booking while keeping friendly contest tone.
+- Keep responses concise; avoid long technical explanations.
+- Enforce same booking-info requirements before booking link.`,
+    is_enabled: true,
+  },
+  {
+    profile_key: 'vendor',
+    label: 'Vendor Profile',
+    channel_key: 'vendor',
+    booking_mode: 'bounded_auto_booking',
+    prompt_overrides: `Vendor NFC channel behavior:
+- Acknowledge the partner location scan when known.
+- Mention partner discount context when metadata includes coupon/partner name.
+- Preserve standard quote flow and booking requirements.
+- Stay concise and conversion-focused for higher-intent referrals.`,
+    is_enabled: true,
+  },
+  {
+    profile_key: 'business_card',
+    label: 'Business Card Profile',
+    channel_key: 'business_card',
+    booking_mode: 'bounded_auto_booking',
+    prompt_overrides: `Business card channel behavior:
+- Treat as direct personal referral from card discovery.
+- Do not inject partner-vendor language unless metadata confirms a partner.
+- Use standard quoting + booking requirements.
+- Keep tone personal, clear, and efficient.`,
+    is_enabled: true,
+  },
+  {
+    profile_key: 'main_line',
+    label: 'Main Line Profile',
+    channel_key: 'main',
+    booking_mode: 'bounded_auto_booking',
+    prompt_overrides: `Reserved profile for future explicit main-line channel routing.
+- Mirror inbound behavior unless channel routing changes.`,
+    is_enabled: true,
+  },
+]
+
 export async function getHarryControlSnapshot(params?: {
   bypassCache?: boolean
 }): Promise<HarryControlSnapshot> {
@@ -415,6 +482,55 @@ export async function seedHarryKnowledgeDefaults(params?: { userId?: string }) {
           updated_by: params?.userId || null,
         },
         { onConflict: 'category_key' },
+      )
+
+    if (upsertError && !isMissingRelationError(upsertError.message)) {
+      throw upsertError
+    }
+  }
+}
+
+export async function seedHarryProfileDefaults(params?: { userId?: string }) {
+  const supabase = createAdminClient()
+  const { data, error } = await supabase
+    .from('harry_logic_profiles')
+    .select(
+      'profile_key, prompt_overrides, channel_key, booking_mode, label, is_enabled',
+    )
+
+  if (error) {
+    if (isMissingRelationError(error.message)) return
+    throw error
+  }
+
+  const existingByKey = new Map(
+    (data || []).map((row) => [row.profile_key, row]),
+  )
+
+  for (const profile of HARRY_PROFILE_DEFAULTS) {
+    const existing = existingByKey.get(profile.profile_key)
+    const shouldSeed =
+      !existing || String(existing.prompt_overrides || '').trim().length === 0
+
+    if (!shouldSeed) continue
+
+    const { error: upsertError } = await supabase
+      .from('harry_logic_profiles')
+      .upsert(
+        {
+          profile_key: profile.profile_key,
+          label: existing?.label || profile.label,
+          channel_key: existing?.channel_key || profile.channel_key,
+          booking_mode: existing?.booking_mode || profile.booking_mode,
+          prompt_overrides: profile.prompt_overrides,
+          is_enabled:
+            typeof existing?.is_enabled === 'boolean'
+              ? existing.is_enabled
+              : profile.is_enabled,
+          updated_at: new Date().toISOString(),
+          updated_by: params?.userId || null,
+        },
+        { onConflict: 'profile_key' },
       )
 
     if (upsertError && !isMissingRelationError(upsertError.message)) {
