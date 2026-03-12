@@ -51,10 +51,11 @@ export async function POST(request: NextRequest) {
       isHarryFunctionEnabled(controlSnapshot, 'call_missed_auto_sms_enabled') &&
       isHarryChannelEnabled(controlSnapshot, 'inbound')
 
-    // Send immediate missed-call SMS only when an actual dial attempt was missed.
-    // For after-hours direct-to-voicemail (no dialCallStatus), voicemail route handles
-    // delayed context-aware follow-up once transcription is available.
+    // Do not send immediate Harry SMS from call handler.
+    // We defer all missed-call follow-up to voicemail route so Harry can wait
+    // and reply with voicemail context.
     const shouldSendSMS =
+      false &&
       canRunHarryCallSms &&
       Boolean(dialCallStatus) &&
       !['completed', 'answered'].includes(dialCallStatus)
@@ -162,13 +163,8 @@ export async function POST(request: NextRequest) {
         sent_at: new Date().toISOString(),
       })
     } else {
-      if (!dialCallStatus) {
-        console.log(
-          '[Call Handler] No dialCallStatus (after-hours voicemail flow) - waiting for voicemail transcription before SMS',
-        )
-      }
       console.log(
-        `[Call Handler] Call was answered (${dialCallStatus}) - no SMS needed`,
+        '[Call Handler] Deferring missed-call SMS to voicemail route for delayed context-aware reply.',
       )
     }
 

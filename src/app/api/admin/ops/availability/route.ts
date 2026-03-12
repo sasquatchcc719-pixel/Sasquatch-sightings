@@ -94,3 +94,58 @@ export async function POST(request: NextRequest) {
     )
   }
 }
+
+export async function PUT(request: NextRequest) {
+  try {
+    await requireAnyRole(['admin', 'owner', 'dispatcher'])
+    const supabase = createAdminClient()
+    const body = await request.json()
+    const templates = Array.isArray(body?.templates) ? body.templates : null
+
+    if (!templates || templates.length === 0) {
+      return NextResponse.json(
+        { error: 'templates array is required' },
+        { status: 400 },
+      )
+    }
+
+    const normalizedTemplates = templates.map(
+      (template: {
+        day_of_week: number
+        start_time: string
+        end_time: string
+        slot_interval_minutes?: number
+      }) => ({
+        day_of_week: Number(template.day_of_week),
+        start_time: String(template.start_time),
+        end_time: String(template.end_time),
+        slot_interval_minutes: Number(template.slot_interval_minutes || 30),
+        is_active: true,
+      }),
+    )
+
+    const { error: deleteError } = await supabase
+      .from('availability_templates')
+      .delete()
+      .gte('day_of_week', 0)
+
+    if (deleteError) throw deleteError
+
+    const { data, error: insertError } = await supabase
+      .from('availability_templates')
+      .insert(normalizedTemplates)
+      .select('*')
+      .order('day_of_week')
+      .order('start_time')
+
+    if (insertError) throw insertError
+
+    return NextResponse.json({ templates: data || [] })
+  } catch (error) {
+    console.error('[ops/availability][PUT] Error:', error)
+    return NextResponse.json(
+      { error: 'Failed to save business hours templates' },
+      { status: 500 },
+    )
+  }
+}

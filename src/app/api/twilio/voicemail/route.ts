@@ -16,7 +16,22 @@ const supabase = createClient(
 )
 
 const MIN_VOICEMAIL_EMAIL_DURATION_SECONDS = 5
-const VOICEMAIL_CONTEXT_REPLY_DELAY_MS = 4000
+const VOICEMAIL_CONTEXT_REPLY_DELAY_MS = 120000
+const RECENT_REPLY_SUPPRESSION_MS = 15 * 60 * 1000
+
+type ConversationMessage = {
+  role?: string
+  content?: string
+  timestamp?: string
+  twilio_sid?: string
+  metadata?: {
+    type?: string
+    transcription?: string | null
+    recording_url?: string | null
+    recording_sid?: string | null
+    duration?: string | null
+  } | null
+}
 
 function hasMeaningfulTranscription(transcriptionText: string | null): boolean {
   const normalized = transcriptionText?.trim().toLowerCase() ?? ''
@@ -49,6 +64,23 @@ function getBaseUrl(): string {
     process.env.NEXT_PUBLIC_APP_URL ||
     'sightings.sasquatchcarpet.com'
   return url.startsWith('http') ? url : `https://${url}`
+}
+
+function getLatestVoicemailTranscription(
+  messages: ConversationMessage[],
+): string | null {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i]
+    if (message?.role !== 'user') continue
+    const fromMetadata = message?.metadata?.transcription
+    if (
+      message?.metadata?.type === 'voicemail' &&
+      hasMeaningfulTranscription(fromMetadata ?? null)
+    ) {
+      return String(fromMetadata).trim()
+    }
+  }
+  return null
 }
 
 export async function POST(request: NextRequest) {
@@ -115,7 +147,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Add voicemail to conversation messages
-    let messages = existingConvo?.messages || []
+    let messages = (existingConvo?.messages || []) as ConversationMessage[]
     if (conversationId) {
       messages.push({
         role: 'user',
@@ -154,37 +186,47 @@ export async function POST(request: NextRequest) {
         ) &&
         isHarryChannelEnabled(controlSnapshot, 'inbound')
 
-      const hasTranscript = hasMeaningfulTranscription(transcriptionText)
-      if (canRunVoicemailAutoReply && conversationId && hasTranscript) {
+      if (canRunVoicemailAutoReply && conversationId) {
         await new Promise((resolve) =>
           setTimeout(resolve, VOICEMAIL_CONTEXT_REPLY_DELAY_MS),
         )
 
+        const { data: refreshedConvo } = await supabase
+          .from('conversations')
+          .select('messages')
+          .eq('id', conversationId)
+          .single()
+
+        const latestMessages = (refreshedConvo?.messages ||
+          messages ||
+          []) as ConversationMessage[]
         const now = Date.now()
-        const hasRecentVoicemailReply = (messages || []).some(
-          (message: {
-            role?: string
-            content?: string
-            timestamp?: string
-          }) => {
-            if (message?.role !== 'assistant') return false
-            const text = String(message?.content || '').toLowerCase()
-            if (!text.includes('voicemail')) return false
-            const ts = Date.parse(String(message?.timestamp || ''))
-            if (!Number.isFinite(ts)) return false
-            return now - ts < 6 * 60 * 60 * 1000
-          },
-        )
+        const hasRecentVoicemailReply = latestMessages.some((message) => {
+          if (message?.role !== 'assistant') return false
+          const ts = Date.parse(String(message?.timestamp || ''))
+          if (!Number.isFinite(ts)) return false
+          return now - ts < RECENT_REPLY_SUPPRESSION_MS
+        })
 
         if (!hasRecentVoicemailReply) {
-          const normalizedTranscript = String(transcriptionText || '')
-            .replace(/\s+/g, ' ')
-            .trim()
-          const summary =
-            normalizedTranscript.length > 120
-              ? `${normalizedTranscript.slice(0, 117)}...`
-              : normalizedTranscript
-          const harryMessage = `Hi! This is Harry from Sasquatch Carpet Cleaning. I got your voicemail about "${summary}". I can help here by text, or Charles can call you back shortly.`
+          const latestTranscript =
+            getLatestVoicemailTranscription(latestMessages) ||
+            (hasMeaningfulTranscription(transcriptionText)
+              ? String(transcriptionText).trim()
+              : null)
+
+          const harryMessage = latestTranscript
+            ? (() => {
+                const normalizedTranscript = latestTranscript
+                  .replace(/\s+/g, ' ')
+                  .trim()
+                const summary =
+                  normalizedTranscript.length > 120
+                    ? `${normalizedTranscript.slice(0, 117)}...`
+                    : normalizedTranscript
+                return `Hi! This is Harry from Sasquatch Carpet Cleaning. I got your voicemail about "${summary}". I can help here by text, or Charles can call you back shortly.`
+              })()
+            : 'Hi! This is Harry from Sasquatch Carpet Cleaning. I saw your missed call. I can help here by text, or Charles can call you back shortly.'
 
           const twilioClient = twilio(
             process.env.TWILIO_ACCOUNT_SID,
@@ -197,7 +239,7 @@ export async function POST(request: NextRequest) {
             from: process.env.TWILIO_PHONE_NUMBER,
           })
 
-          const nextMessages = [...(messages || [])]
+          const nextMessages = [...latestMessages]
           nextMessages.push({
             role: 'assistant',
             content: harryMessage,
@@ -222,10 +264,6 @@ export async function POST(request: NextRequest) {
             sent_at: new Date().toISOString(),
           })
         }
-      } else if (canRunVoicemailAutoReply && conversationId && !hasTranscript) {
-        console.log(
-          '[Voicemail] Skipping auto-reply due to missing/low-quality transcription.',
-        )
       }
     } catch (fallbackSmsError) {
       console.error(

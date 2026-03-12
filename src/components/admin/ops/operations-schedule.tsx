@@ -85,9 +85,35 @@ type ScheduleResponse = {
   events: CalendarEvent[]
 }
 
+type AvailabilityTemplate = {
+  id?: string
+  day_of_week: number
+  start_time: string
+  end_time: string
+  slot_interval_minutes: number
+  is_active?: boolean
+}
+
+type BusinessHoursRow = {
+  day_of_week: number
+  is_active: boolean
+  start_time: string
+  end_time: string
+}
+
 const HOURS = Array.from({ length: 13 }, (_, index) => 7 + index)
 const HOUR_HEIGHT = 84
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const DEFAULT_SLOT_INTERVAL_MINUTES = 30
+const DEFAULT_BUSINESS_HOURS_ROWS: BusinessHoursRow[] = [
+  { day_of_week: 0, is_active: false, start_time: '09:00', end_time: '17:00' },
+  { day_of_week: 1, is_active: true, start_time: '09:00', end_time: '17:00' },
+  { day_of_week: 2, is_active: true, start_time: '09:00', end_time: '17:00' },
+  { day_of_week: 3, is_active: true, start_time: '09:00', end_time: '17:00' },
+  { day_of_week: 4, is_active: true, start_time: '09:00', end_time: '17:00' },
+  { day_of_week: 5, is_active: true, start_time: '09:00', end_time: '17:00' },
+  { day_of_week: 6, is_active: true, start_time: '09:00', end_time: '17:00' },
+]
 
 function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
   if (!value) return null
@@ -211,15 +237,15 @@ function getRangeForView(view: ScheduleView, anchorDate: Date) {
 function getStatusTone(status: string): string {
   switch (status) {
     case 'confirmed':
-      return 'border-emerald-500/40 bg-emerald-500/12'
+      return 'border-emerald-400 bg-emerald-100'
     case 'on_my_way':
-      return 'border-sky-500/40 bg-sky-500/12'
+      return 'border-emerald-400 bg-emerald-100'
     case 'completed':
-      return 'border-violet-500/40 bg-violet-500/12'
+      return 'border-emerald-400 bg-emerald-100'
     case 'cancelled':
-      return 'border-rose-500/40 bg-rose-500/10'
+      return 'border-emerald-400 bg-emerald-100'
     default:
-      return 'border-border bg-card'
+      return 'border-emerald-400 bg-emerald-100'
   }
 }
 
@@ -262,16 +288,115 @@ function getAppointmentPlacement(appointment: Appointment) {
   return { top, height }
 }
 
+function templatesToBusinessRows(
+  templates: AvailabilityTemplate[],
+): BusinessHoursRow[] {
+  const rowsByDay = new Map<number, BusinessHoursRow>()
+  for (const row of DEFAULT_BUSINESS_HOURS_ROWS) {
+    rowsByDay.set(row.day_of_week, { ...row })
+  }
+
+  const sorted = [...templates].sort(
+    (a, b) => parseMinutes(a.start_time) - parseMinutes(b.start_time),
+  )
+  for (const template of sorted) {
+    if (template.is_active === false) continue
+    if (!rowsByDay.has(template.day_of_week)) continue
+    rowsByDay.set(template.day_of_week, {
+      day_of_week: template.day_of_week,
+      is_active: true,
+      start_time: template.start_time.slice(0, 5),
+      end_time: template.end_time.slice(0, 5),
+    })
+  }
+
+  return DEFAULT_BUSINESS_HOURS_ROWS.map(
+    (defaultRow) => rowsByDay.get(defaultRow.day_of_week) || defaultRow,
+  )
+}
+
+function businessRowsToTemplates(
+  rows: BusinessHoursRow[],
+): AvailabilityTemplate[] {
+  return rows
+    .filter((row) => row.is_active)
+    .map((row) => ({
+      day_of_week: row.day_of_week,
+      start_time: row.start_time,
+      end_time: row.end_time,
+      slot_interval_minutes: DEFAULT_SLOT_INTERVAL_MINUTES,
+      is_active: true,
+    }))
+}
+
+function getBusinessDayRanges(templates: AvailabilityTemplate[]) {
+  const byDay = new Map<number, Array<{ start: number; end: number }>>()
+  for (const template of templates) {
+    if (template.is_active === false) continue
+    const current = byDay.get(template.day_of_week) || []
+    current.push({
+      start: parseMinutes(template.start_time),
+      end: parseMinutes(template.end_time),
+    })
+    byDay.set(template.day_of_week, current)
+  }
+
+  for (const [day, ranges] of byDay.entries()) {
+    byDay.set(
+      day,
+      ranges.sort((a, b) => a.start - b.start),
+    )
+  }
+
+  return byDay
+}
+
+function getOffHourSegmentsForGrid(
+  ranges: Array<{ start: number; end: number }>,
+): Array<{ start: number; end: number }> {
+  const workdayStart = HOURS[0] * 60
+  const workdayEnd = (HOURS[HOURS.length - 1] + 1) * 60
+  if (ranges.length === 0) {
+    return [{ start: workdayStart, end: workdayEnd }]
+  }
+
+  const segments: Array<{ start: number; end: number }> = []
+  let cursor = workdayStart
+
+  for (const range of ranges) {
+    const nextStart = Math.max(range.start, workdayStart)
+    const nextEnd = Math.min(range.end, workdayEnd)
+    if (nextStart > cursor) {
+      segments.push({ start: cursor, end: nextStart })
+    }
+    cursor = Math.max(cursor, nextEnd)
+  }
+
+  if (cursor < workdayEnd) {
+    segments.push({ start: cursor, end: workdayEnd })
+  }
+
+  return segments
+}
+
 export function OperationsSchedule() {
   const [view, setView] = useState<ScheduleView>('week')
   const [anchorDate, setAnchorDate] = useState(() => new Date())
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [businessHoursSaving, setBusinessHoursSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [data, setData] = useState<ScheduleResponse>({
     appointments: [],
     events: [],
   })
+  const [availabilityTemplates, setAvailabilityTemplates] = useState<
+    AvailabilityTemplate[]
+  >([])
+  const [businessHoursRows, setBusinessHoursRows] = useState<
+    BusinessHoursRow[]
+  >(() => DEFAULT_BUSINESS_HOURS_ROWS.map((row) => ({ ...row })))
+  const [showBusinessHours, setShowBusinessHours] = useState(false)
   const [showBlockForm, setShowBlockForm] = useState(false)
   const [blockForm, setBlockForm] = useState({
     title: '',
@@ -288,18 +413,37 @@ export function OperationsSchedule() {
     setError(null)
     try {
       const { startDate, endDate } = getRangeForView(view, anchorDate)
-      const response = await fetch(
-        `/api/admin/ops/schedule?start_date=${startDate}&end_date=${endDate}`,
-        { cache: 'no-store' },
-      )
-      const result = await response.json()
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to load schedule')
+      const [scheduleResponse, availabilityResponse] = await Promise.all([
+        fetch(
+          `/api/admin/ops/schedule?start_date=${startDate}&end_date=${endDate}`,
+          {
+            cache: 'no-store',
+          },
+        ),
+        fetch('/api/admin/ops/availability', { cache: 'no-store' }),
+      ])
+      const scheduleResult = await scheduleResponse.json()
+      const availabilityResult = await availabilityResponse.json()
+      if (!scheduleResponse.ok) {
+        throw new Error(scheduleResult.error || 'Failed to load schedule')
+      }
+      if (!availabilityResponse.ok) {
+        throw new Error(
+          availabilityResult.error || 'Failed to load business hours',
+        )
       }
       setData({
-        appointments: result.appointments || [],
-        events: result.events || [],
+        appointments: scheduleResult.appointments || [],
+        events: scheduleResult.events || [],
       })
+      const templates = (availabilityResult.templates ||
+        []) as AvailabilityTemplate[]
+      const effectiveTemplates =
+        templates.length > 0
+          ? templates
+          : businessRowsToTemplates(DEFAULT_BUSINESS_HOURS_ROWS)
+      setAvailabilityTemplates(effectiveTemplates)
+      setBusinessHoursRows(templatesToBusinessRows(effectiveTemplates))
     } catch (loadError) {
       setError(
         loadError instanceof Error
@@ -333,6 +477,39 @@ export function OperationsSchedule() {
 
   const monthGrid = useMemo(() => buildMonthGrid(anchorDate), [anchorDate])
   const viewLabel = getViewLabel(view, anchorDate)
+  const businessDayRanges = useMemo(
+    () => getBusinessDayRanges(availabilityTemplates),
+    [availabilityTemplates],
+  )
+
+  const saveBusinessHours = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setBusinessHoursSaving(true)
+    setError(null)
+    try {
+      const templates = businessRowsToTemplates(businessHoursRows)
+      const response = await fetch('/api/admin/ops/availability', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ templates }),
+      })
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to save business hours')
+      }
+      const nextTemplates = (result.templates || []) as AvailabilityTemplate[]
+      setAvailabilityTemplates(nextTemplates)
+      setBusinessHoursRows(templatesToBusinessRows(nextTemplates))
+    } catch (saveError) {
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : 'Failed to save business hours',
+      )
+    } finally {
+      setBusinessHoursSaving(false)
+    }
+  }
 
   const moveRange = (direction: 'prev' | 'next') => {
     const multiplier = direction === 'prev' ? -1 : 1
@@ -439,6 +616,14 @@ export function OperationsSchedule() {
             >
               <ShieldBan className="h-4 w-4" />
               Block Time
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-2"
+              onClick={() => setShowBusinessHours((current) => !current)}
+            >
+              Business Hours
             </Button>
             <Button
               size="icon"
@@ -579,6 +764,105 @@ export function OperationsSchedule() {
             </div>
           </form>
         ) : null}
+
+        {showBusinessHours ? (
+          <form
+            className="border-border/60 bg-background/70 mt-4 space-y-3 rounded-2xl border p-4"
+            onSubmit={saveBusinessHours}
+          >
+            <div>
+              <div className="text-sm font-semibold">Business Hours</div>
+              <p className="text-muted-foreground mt-1 text-xs">
+                Set the working window by day. Outside this window is treated as
+                off-hours in the calendar and slot generation.
+              </p>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              {businessHoursRows.map((row) => (
+                <div
+                  key={row.day_of_week}
+                  className="border-border/60 rounded-xl border p-3"
+                >
+                  <label className="flex items-center justify-between gap-2 text-sm font-medium">
+                    <span>{WEEKDAY_LABELS[row.day_of_week]}</span>
+                    <input
+                      type="checkbox"
+                      checked={row.is_active}
+                      onChange={(event) =>
+                        setBusinessHoursRows((current) =>
+                          current.map((entry) =>
+                            entry.day_of_week === row.day_of_week
+                              ? { ...entry, is_active: event.target.checked }
+                              : entry,
+                          ),
+                        )
+                      }
+                    />
+                  </label>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <div>
+                      <Label htmlFor={`biz-start-${row.day_of_week}`}>
+                        Start
+                      </Label>
+                      <Input
+                        id={`biz-start-${row.day_of_week}`}
+                        type="time"
+                        value={row.start_time}
+                        disabled={!row.is_active}
+                        onChange={(event) =>
+                          setBusinessHoursRows((current) =>
+                            current.map((entry) =>
+                              entry.day_of_week === row.day_of_week
+                                ? { ...entry, start_time: event.target.value }
+                                : entry,
+                            ),
+                          )
+                        }
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor={`biz-end-${row.day_of_week}`}>End</Label>
+                      <Input
+                        id={`biz-end-${row.day_of_week}`}
+                        type="time"
+                        value={row.end_time}
+                        disabled={!row.is_active}
+                        onChange={(event) =>
+                          setBusinessHoursRows((current) =>
+                            current.map((entry) =>
+                              entry.day_of_week === row.day_of_week
+                                ? { ...entry, end_time: event.target.value }
+                                : entry,
+                            ),
+                          )
+                        }
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" disabled={businessHoursSaving}>
+                {businessHoursSaving ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
+                Save Business Hours
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() =>
+                  setBusinessHoursRows(
+                    DEFAULT_BUSINESS_HOURS_ROWS.map((row) => ({ ...row })),
+                  )
+                }
+              >
+                Reset to Mon-Sat 9:00-17:00
+              </Button>
+            </div>
+          </form>
+        ) : null}
       </Card>
 
       {error ? (
@@ -588,8 +872,8 @@ export function OperationsSchedule() {
       ) : null}
 
       {view === 'month' ? (
-        <Card className="border-border/60 bg-card/80 p-4 shadow-sm backdrop-blur">
-          <div className="text-muted-foreground grid grid-cols-7 gap-2 text-center text-xs font-medium tracking-[0.2em] uppercase">
+        <Card className="border-border/60 bg-white p-4 shadow-sm">
+          <div className="grid grid-cols-7 gap-2 text-center text-xs font-medium tracking-[0.2em] text-slate-500 uppercase">
             {WEEKDAY_LABELS.map((label) => (
               <div key={label}>{label}</div>
             ))}
@@ -608,8 +892,8 @@ export function OperationsSchedule() {
                   key={dateKey}
                   className={`min-h-36 rounded-2xl border p-3 ${
                     isCurrentMonth
-                      ? 'border-border bg-background/70'
-                      : 'border-border/50 bg-muted/40 text-muted-foreground'
+                      ? 'border-slate-200 bg-white'
+                      : 'border-slate-200 bg-slate-100 text-slate-500'
                   }`}
                 >
                   <div className="flex items-center justify-between">
@@ -641,13 +925,14 @@ export function OperationsSchedule() {
                         <Link
                           key={appointment.id}
                           href={href}
-                          className={`block rounded-xl border px-2 py-2 text-xs transition hover:shadow-sm ${getStatusTone(appointment.status)}`}
+                          className={`text-foreground block rounded-xl border px-2 py-2 text-xs transition hover:shadow-sm ${getStatusTone(appointment.status)}`}
                         >
                           <div className="font-medium">
                             {appointment.start_time.slice(0, 5)}{' '}
                             {customer?.full_name}
                           </div>
                           <div className="text-muted-foreground mt-1">
+                            {/* Keep service context visible in compact month tiles */}
                             {appointment.ops_appointment_line_items[0]
                               ?.name_snapshot || 'Service'}
                           </div>
@@ -666,7 +951,7 @@ export function OperationsSchedule() {
           </div>
         </Card>
       ) : (
-        <Card className="border-border/60 bg-card/80 overflow-hidden shadow-sm backdrop-blur">
+        <Card className="border-border/60 overflow-hidden bg-white shadow-sm">
           <div className="overflow-x-auto">
             <div
               className="grid min-w-[900px]"
@@ -677,13 +962,13 @@ export function OperationsSchedule() {
                     : '72px repeat(7, minmax(180px, 1fr))',
               }}
             >
-              <div className="border-border/70 bg-muted/40 border-r border-b p-3" />
+              <div className="border-r border-b border-slate-200 bg-slate-100 p-3" />
               {displayedDays.map((date) => (
                 <div
                   key={formatDateKey(date)}
-                  className="border-border/70 bg-muted/40 border-b p-3"
+                  className="border-b border-slate-200 bg-slate-100 p-3"
                 >
-                  <div className="text-muted-foreground text-xs font-medium tracking-[0.2em] uppercase">
+                  <div className="text-xs font-medium tracking-[0.2em] text-slate-500 uppercase">
                     {WEEKDAY_LABELS[date.getDay()]}
                   </div>
                   <div className="mt-1 text-lg font-semibold">
@@ -695,11 +980,11 @@ export function OperationsSchedule() {
                 </div>
               ))}
 
-              <div className="border-border/70 bg-muted/30 relative border-r">
+              <div className="relative border-r border-slate-200 bg-slate-50">
                 {HOURS.map((hour) => (
                   <div
                     key={hour}
-                    className="border-border/60 text-muted-foreground border-b px-3 pt-2 text-xs"
+                    className="border-b border-slate-200 px-3 pt-2 text-xs text-slate-500"
                     style={{ height: HOUR_HEIGHT }}
                   >
                     {hour === 12
@@ -717,19 +1002,36 @@ export function OperationsSchedule() {
                 const dayEvents = data.events.filter((event) =>
                   intersectsDay(event, dateKey),
                 )
+                const dayRanges = businessDayRanges.get(date.getDay()) || []
+                const offHourSegments = getOffHourSegmentsForGrid(dayRanges)
 
                 return (
                   <div
                     key={dateKey}
-                    className="border-border/70 relative border-r"
+                    className="relative border-r border-slate-200 bg-white"
                   >
                     {HOURS.map((hour) => (
                       <div
                         key={`${dateKey}-${hour}`}
-                        className="border-border/50 border-b"
+                        className="border-b border-slate-200"
                         style={{ height: HOUR_HEIGHT }}
                       />
                     ))}
+
+                    {offHourSegments.map((segment, index) => {
+                      const gridStartMinutes = HOURS[0] * 60
+                      const top =
+                        ((segment.start - gridStartMinutes) / 60) * HOUR_HEIGHT
+                      const height =
+                        ((segment.end - segment.start) / 60) * HOUR_HEIGHT
+                      return (
+                        <div
+                          key={`${dateKey}-off-${index}`}
+                          className="absolute right-0 left-0 bg-slate-100/80"
+                          style={{ top, height }}
+                        />
+                      )
+                    })}
 
                     {dayEvents.map((event) => {
                       const placement = getBlockPlacement(event)
@@ -766,7 +1068,7 @@ export function OperationsSchedule() {
                         <Link
                           key={appointment.id}
                           href={href}
-                          className={`absolute right-2 left-2 rounded-2xl border p-3 text-xs shadow-sm transition hover:shadow-md ${getStatusTone(appointment.status)}`}
+                          className={`text-foreground absolute right-2 left-2 rounded-2xl border p-3 text-xs shadow-sm transition hover:shadow-md ${getStatusTone(appointment.status)}`}
                           style={{
                             top: placement.top + 6,
                             height: placement.height - 8,
