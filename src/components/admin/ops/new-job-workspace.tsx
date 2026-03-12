@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Loader2, Plus, Search, Trash2 } from 'lucide-react'
+import { Loader2, Minus, Plus, Search, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge'
 type ServiceItem = {
   id: string
   name: string
+  category: string
   base_price: number | null
 }
 
@@ -109,6 +110,7 @@ export function NewJobWorkspace() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [services, setServices] = useState<ServiceItem[]>([])
+  const [selectedCategory, setSelectedCategory] = useState('')
   const [customerQuery, setCustomerQuery] = useState('')
   const [customerResults, setCustomerResults] = useState<
     CustomerSearchResult[]
@@ -119,14 +121,7 @@ export function NewJobWorkspace() {
     events: [],
   })
 
-  const [lineItems, setLineItems] = useState<LineItemForm[]>([
-    {
-      service_catalog_item_id: '',
-      name_snapshot: '',
-      quantity: '1',
-      unit_price: '',
-    },
-  ])
+  const [lineItems, setLineItems] = useState<LineItemForm[]>([])
 
   const [customerForm, setCustomerForm] = useState({
     first_name: '',
@@ -174,24 +169,10 @@ export function NewJobWorkspace() {
         }
         setServices(result.services || [])
         if ((result.services || []).length > 0) {
-          setLineItems((current) =>
-            current.map((item, index) =>
-              index === 0
-                ? {
-                    ...item,
-                    service_catalog_item_id:
-                      item.service_catalog_item_id || result.services[0].id,
-                    name_snapshot:
-                      item.name_snapshot || result.services[0].name,
-                    unit_price:
-                      item.unit_price ||
-                      (result.services[0].base_price !== null
-                        ? String(result.services[0].base_price)
-                        : ''),
-                  }
-                : item,
-            ),
-          )
+          const firstCategory = String(result.services[0].category || '').trim()
+          if (firstCategory) {
+            setSelectedCategory(firstCategory)
+          }
         }
       } catch (loadError) {
         setError(
@@ -277,6 +258,35 @@ export function NewJobWorkspace() {
     [services],
   )
 
+  const categories = useMemo(() => {
+    return [
+      ...new Set(services.map((service) => service.category.trim())),
+    ].sort((a, b) => a.localeCompare(b))
+  }, [services])
+
+  useEffect(() => {
+    if (categories.length === 0) {
+      if (selectedCategory) setSelectedCategory('')
+      return
+    }
+    if (!selectedCategory || !categories.includes(selectedCategory)) {
+      setSelectedCategory(categories[0])
+    }
+  }, [categories, selectedCategory])
+
+  const servicesInSelectedCategory = useMemo(() => {
+    if (!selectedCategory) return services
+    return services.filter(
+      (service) => service.category.trim() === selectedCategory,
+    )
+  }, [services, selectedCategory])
+
+  const lineItemByServiceId = useMemo(() => {
+    return new Map(
+      lineItems.map((item) => [item.service_catalog_item_id, item]),
+    )
+  }, [lineItems])
+
   const selectedWeekDays = useMemo(() => {
     const start = startOfWeek(appointmentForm.appointment_date)
     return Array.from({ length: 7 }, (_, index) => addDays(start, index))
@@ -340,6 +350,41 @@ export function NewJobWorkspace() {
         }
       }),
     )
+  }
+
+  const upsertLineItemQuantity = (
+    service: ServiceItem,
+    nextQuantity: number,
+  ) => {
+    setLineItems((current) => {
+      const existing = current.find(
+        (item) => item.service_catalog_item_id === service.id,
+      )
+      if (nextQuantity <= 0) {
+        return current.filter(
+          (item) => item.service_catalog_item_id !== service.id,
+        )
+      }
+      if (existing) {
+        return current.map((item) =>
+          item.service_catalog_item_id === service.id
+            ? { ...item, quantity: String(nextQuantity) }
+            : item,
+        )
+      }
+      return [
+        ...current,
+        {
+          service_catalog_item_id: service.id,
+          name_snapshot: service.name,
+          quantity: String(nextQuantity),
+          unit_price:
+            service.base_price !== null && service.base_price !== undefined
+              ? String(service.base_price)
+              : '',
+        },
+      ]
+    })
   }
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -419,8 +464,8 @@ export function NewJobWorkspace() {
               <div>
                 <h3 className="text-lg font-semibold">Job Details + Pricing</h3>
                 <p className="text-muted-foreground mt-1 text-sm">
-                  Build the line items first. Prices stay editable for owner
-                  overrides.
+                  Choose a category, tap plus/minus for quantities, then adjust
+                  price if needed.
                 </p>
               </div>
               <Button
@@ -431,24 +476,85 @@ export function NewJobWorkspace() {
                   setLineItems((current) => [
                     ...current,
                     {
-                      service_catalog_item_id: services[0]?.id || '',
-                      name_snapshot: services[0]?.name || '',
+                      service_catalog_item_id: '',
+                      name_snapshot: '',
                       quantity: '1',
-                      unit_price:
-                        services[0]?.base_price !== null &&
-                        services[0]?.base_price !== undefined
-                          ? String(services[0].base_price)
-                          : '',
+                      unit_price: '',
                     },
                   ])
                 }
               >
                 <Plus className="mr-2 h-4 w-4" />
-                Add Line
+                Add Custom Line
               </Button>
             </div>
 
             <div className="mt-4 space-y-4">
+              <div>
+                <Label htmlFor="service-category-picker">Category</Label>
+                <select
+                  id="service-category-picker"
+                  className="border-input bg-background mt-1 h-10 w-full rounded-md border px-3 text-sm"
+                  value={selectedCategory}
+                  onChange={(event) => setSelectedCategory(event.target.value)}
+                >
+                  {categories.map((category) => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid gap-2">
+                {servicesInSelectedCategory.map((service) => {
+                  const quantity =
+                    Number(
+                      lineItemByServiceId.get(service.id)?.quantity || '0',
+                    ) || 0
+                  return (
+                    <div
+                      key={service.id}
+                      className="border-border/60 bg-background/70 flex items-center justify-between rounded-2xl border px-3 py-2"
+                    >
+                      <div>
+                        <div className="font-medium">{service.name}</div>
+                        <div className="text-muted-foreground text-xs">
+                          {service.base_price !== null
+                            ? `$${Number(service.base_price).toFixed(2)} each`
+                            : 'Set price manually'}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          onClick={() =>
+                            upsertLineItemQuantity(service, quantity - 1)
+                          }
+                        >
+                          <Minus className="h-4 w-4" />
+                        </Button>
+                        <div className="min-w-8 text-center font-semibold">
+                          {quantity}
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          onClick={() =>
+                            upsertLineItemQuantity(service, quantity + 1)
+                          }
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
               {lineItems.map((item, index) => (
                 <div
                   key={`${item.service_catalog_item_id}-${index}`}
@@ -469,6 +575,7 @@ export function NewJobWorkspace() {
                           )
                         }
                       >
+                        <option value="">Select service</option>
                         {services.map((service) => (
                           <option key={service.id} value={service.id}>
                             {service.name}

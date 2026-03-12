@@ -187,6 +187,7 @@ export function OperationsDashboard({
     slots: Array<{ start_time: string; end_time: string }>
   } | null>(null)
   const [editingServiceId, setEditingServiceId] = useState<string | null>(null)
+  const [serviceCategoryFilter, setServiceCategoryFilter] = useState('all')
   const [currentMonth, setCurrentMonth] = useState(() =>
     startOfMonth(new Date()),
   )
@@ -273,6 +274,36 @@ export function OperationsDashboard({
   const services = data?.services || []
   const appointments = data?.appointments || []
   const quickbooksJobs = data?.quickbooksJobs || []
+
+  const serviceCategories = useMemo(() => {
+    const categories = new Set<string>([
+      'standard carpet cleaning',
+      'restoration',
+    ])
+    for (const service of services) {
+      const category = String(service.category || '').trim()
+      if (category) categories.add(category)
+    }
+    const currentFormCategory = String(serviceForm.category || '').trim()
+    if (currentFormCategory) categories.add(currentFormCategory)
+    return [...categories].sort((a, b) => a.localeCompare(b))
+  }, [services, serviceForm.category])
+
+  const filteredServices = useMemo(() => {
+    if (serviceCategoryFilter === 'all') return services
+    return services.filter(
+      (service) => service.category.trim() === serviceCategoryFilter,
+    )
+  }, [services, serviceCategoryFilter])
+
+  useEffect(() => {
+    if (
+      serviceCategoryFilter !== 'all' &&
+      !serviceCategories.includes(serviceCategoryFilter)
+    ) {
+      setServiceCategoryFilter('all')
+    }
+  }, [serviceCategories, serviceCategoryFilter])
 
   useEffect(() => {
     if (!slotForm.service_id && services.length > 0) {
@@ -927,8 +958,9 @@ export function OperationsDashboard({
                 </div>
                 <div>
                   <Label htmlFor="service-category">Category</Label>
-                  <Input
+                  <select
                     id="service-category"
+                    className="h-10 w-full rounded-md border border-white/10 bg-black px-3 text-sm text-white"
                     value={serviceForm.category}
                     onChange={(event) =>
                       setServiceForm((current) => ({
@@ -936,7 +968,13 @@ export function OperationsDashboard({
                         category: event.target.value,
                       }))
                     }
-                  />
+                  >
+                    {serviceCategories.map((category) => (
+                      <option key={category} value={category}>
+                        {category}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <Label htmlFor="service-duration">
@@ -1058,12 +1096,41 @@ export function OperationsDashboard({
               </div>
             </form>
             <div className="mt-6 space-y-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="min-w-60">
+                  <Label htmlFor="services-category-filter">
+                    Filter Category
+                  </Label>
+                  <select
+                    id="services-category-filter"
+                    className="mt-1 h-10 w-full rounded-md border border-white/10 bg-black px-3 text-sm text-white"
+                    value={serviceCategoryFilter}
+                    onChange={(event) =>
+                      setServiceCategoryFilter(event.target.value)
+                    }
+                  >
+                    <option value="all">All categories</option>
+                    {serviceCategories.map((category) => (
+                      <option key={category} value={category}>
+                        {category}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <Badge className="bg-white/10 text-white/80">
+                  Showing {filteredServices.length} of {services.length}
+                </Badge>
+              </div>
               {services.length === 0 ? (
                 <p className="text-sm text-white/50">
                   No services entered yet.
                 </p>
+              ) : filteredServices.length === 0 ? (
+                <p className="text-sm text-white/50">
+                  No services found in this category yet.
+                </p>
               ) : (
-                services.map((service) => (
+                filteredServices.map((service) => (
                   <div
                     key={service.id}
                     className="rounded-xl border border-white/10 bg-white/5 p-3"
