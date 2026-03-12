@@ -5,6 +5,7 @@ export const HARRY_CONTROL_KEYS = [
   'inbound_channel_intake_enabled',
   'auto_reply_enabled',
   'booking_offers_enabled',
+  'booking_use_ops_link_enabled',
   'auto_create_leads_enabled',
   'escalation_alerts_enabled',
   'inbound_email_notifications_enabled',
@@ -63,84 +64,104 @@ const HARRY_CONTROL_DEFAULTS: HarryControlDefault[] = [
     setting_key: 'global_enabled',
     group_key: 'safety',
     label: 'Global Harry Enable',
-    description: 'Master toggle for all Harry automation.',
+    description:
+      'Master kill switch for Harry automation. OFF stops all Harry-driven inbound processing, replies, booking offers, and auto actions.',
     is_enabled: true,
   },
   {
     setting_key: 'inbound_channel_intake_enabled',
     group_key: 'inbound',
     label: 'Inbound Channel Intake',
-    description: 'Allow inbound messages to enter Harry workflows.',
+    description:
+      'Controls whether inbound messages enter Harry workflows at all. OFF keeps Twilio endpoint alive but skips Harry processing logic.',
     is_enabled: true,
   },
   {
     setting_key: 'auto_reply_enabled',
     group_key: 'reply',
     label: 'Auto Reply',
-    description: 'Allow Harry to send automatic text responses.',
+    description:
+      'Controls whether Harry sends automatic SMS replies. OFF logs inbound conversation updates but does not send AI responses.',
     is_enabled: true,
   },
   {
     setting_key: 'booking_offers_enabled',
     group_key: 'booking',
     label: 'Booking Offers',
-    description: 'Allow Harry to share booking links and slot offers.',
+    description:
+      'Controls whether Harry can share booking links and slot-offer messaging after qualification checks.',
     is_enabled: true,
+  },
+  {
+    setting_key: 'booking_use_ops_link_enabled',
+    group_key: 'booking',
+    label: 'Use Ops Booking Destination',
+    description:
+      'Booking link destination switch for Harry SMS replies only. OFF uses website booking URL; ON uses ops booking URL from env. Does not update website CTA buttons or referral SMS templates yet.',
+    is_enabled: false,
   },
   {
     setting_key: 'auto_create_leads_enabled',
     group_key: 'booking',
     label: 'Auto Create Leads',
-    description: 'Allow automatic lead creation when data is complete.',
+    description:
+      'Controls auto lead creation in conversation flow when required customer details are complete.',
     is_enabled: true,
   },
   {
     setting_key: 'escalation_alerts_enabled',
     group_key: 'escalation',
     label: 'Escalation Alerts',
-    description: 'Allow escalation and error alerts to admins.',
+    description:
+      'Controls admin SMS escalation and error alerts from Harry runtime events.',
     is_enabled: true,
   },
   {
     setting_key: 'inbound_email_notifications_enabled',
     group_key: 'notifications',
     label: 'Inbound Email Notifications',
-    description: 'Send inbound summary emails with Harry replies.',
+    description:
+      'Controls inbound summary emails that include customer message and Harry reply status.',
     is_enabled: true,
   },
   {
     setting_key: 'call_missed_auto_sms_enabled',
     group_key: 'calls',
     label: 'Missed Call Auto SMS',
-    description: 'Send Harry SMS after missed and after-hours calls.',
+    description:
+      'Controls after-hours/missed-call Harry SMS initiation from call webhook flow.',
     is_enabled: true,
   },
   {
     setting_key: 'channel_main_enabled',
     group_key: 'channels',
     label: 'Main Channel',
-    description: 'Enable Harry for main inbound traffic.',
+    description:
+      'Controls Harry for direct inbound/main text traffic detected as default inbound source.',
     is_enabled: true,
   },
   {
     setting_key: 'channel_contest_enabled',
     group_key: 'channels',
     label: 'Contest Channel',
-    description: 'Enable Harry for contest conversations.',
+    description:
+      'Controls Harry for contest-classified conversations and contest-origin text interactions.',
     is_enabled: true,
   },
   {
     setting_key: 'channel_vendor_enabled',
     group_key: 'channels',
     label: 'Vendor Channel',
-    description: 'Enable Harry for vendor-source conversations.',
+    description:
+      'Controls Harry for vendor/NFC partner classified conversations with partner metadata context.',
     is_enabled: true,
   },
   {
     setting_key: 'channel_business_card_enabled',
     group_key: 'channels',
     label: 'Business Card Channel',
-    description: 'Enable Harry for business-card conversations.',
+    description:
+      'Controls Harry for business-card classified conversations that are non-vendor referrals.',
     is_enabled: true,
   },
 ]
@@ -174,15 +195,35 @@ function toFallbackSnapshot(): HarryControlSnapshot {
 
 export async function seedHarryControlDefaults(params?: { userId?: string }) {
   const supabase = createAdminClient()
+  const { data: existingRows, error: existingError } = await supabase
+    .from('harry_control_settings')
+    .select('setting_key, is_enabled')
+
+  if (existingError) {
+    if (!isMissingRelationError(existingError.message)) {
+      throw existingError
+    }
+    return
+  }
+
+  const existingByKey = new Map(
+    (existingRows || []).map((row) => [row.setting_key, row.is_enabled]),
+  )
+
   const rows = HARRY_CONTROL_DEFAULTS.map((row) => ({
     ...row,
+    is_enabled: existingByKey.has(row.setting_key)
+      ? Boolean(existingByKey.get(row.setting_key))
+      : row.is_enabled,
     updated_by: params?.userId || null,
+    updated_at: new Date().toISOString(),
   }))
-  const { error } = await supabase
+
+  const { error: upsertError } = await supabase
     .from('harry_control_settings')
     .upsert(rows, { onConflict: 'setting_key' })
-  if (error && !isMissingRelationError(error.message)) {
-    throw error
+  if (upsertError && !isMissingRelationError(upsertError.message)) {
+    throw upsertError
   }
 }
 
@@ -337,6 +378,55 @@ export function getHarryControlDefaults(): HarryControlDefault[] {
 
 export function isKnownHarryControlKey(key: string): key is HarryControlKey {
   return KNOWN_KEYS.has(key)
+}
+
+const DEFAULT_WEBSITE_BOOKING_URL = 'https://sightings.sasquatchcarpet.com/book'
+const DEFAULT_HOUSECALL_BOOKING_URL =
+  'https://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true'
+
+export function getHarryWebsiteBookingUrl(): string {
+  return process.env.BOOKING_PUBLIC_URL || DEFAULT_WEBSITE_BOOKING_URL
+}
+
+export function getHarryOpsBookingUrl(): string {
+  return process.env.OPS_BOOKING_PUBLIC_URL || getHarryWebsiteBookingUrl()
+}
+
+export function getHarryActiveBookingUrl(
+  snapshot: HarryControlSnapshot,
+): string {
+  const useOps = isHarryFunctionEnabled(
+    snapshot,
+    'booking_use_ops_link_enabled',
+  )
+  return useOps ? getHarryOpsBookingUrl() : getHarryWebsiteBookingUrl()
+}
+
+export function containsKnownBookingLink(text: string): boolean {
+  const value = String(text || '')
+  if (!value) return false
+  return (
+    value.includes(DEFAULT_WEBSITE_BOOKING_URL) ||
+    value.includes(DEFAULT_HOUSECALL_BOOKING_URL) ||
+    value.includes(getHarryWebsiteBookingUrl()) ||
+    value.includes(getHarryOpsBookingUrl())
+  )
+}
+
+export function rewriteBookingLinks(text: string, targetUrl: string): string {
+  if (!text || !targetUrl) return text
+  let updated = text
+  const candidates = [
+    DEFAULT_WEBSITE_BOOKING_URL,
+    DEFAULT_HOUSECALL_BOOKING_URL,
+    getHarryWebsiteBookingUrl(),
+    getHarryOpsBookingUrl(),
+  ]
+  for (const candidate of candidates) {
+    if (!candidate) continue
+    updated = updated.split(candidate).join(targetUrl)
+  }
+  return updated
 }
 
 const HARRY_KNOWLEDGE_DEFAULTS: Array<{

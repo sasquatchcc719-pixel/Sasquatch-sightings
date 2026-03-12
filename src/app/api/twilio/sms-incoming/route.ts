@@ -12,9 +12,12 @@ import {
   isAIEnabled,
 } from '@/lib/openai-chat'
 import {
+  containsKnownBookingLink,
   getHarryControlSnapshot,
+  getHarryActiveBookingUrl,
   isHarryChannelEnabled,
   isHarryFunctionEnabled,
+  rewriteBookingLinks,
 } from '@/lib/harry/control'
 import { buildSmsSlotOffer } from '@/lib/ops/sms-booking'
 import { sendCustomerSMS, sendAdminSMS } from '@/lib/twilio'
@@ -366,6 +369,7 @@ export async function POST(request: NextRequest) {
       controlSnapshot,
       'booking_offers_enabled',
     )
+    const activeBookingUrl = getHarryActiveBookingUrl(controlSnapshot)
     const canCreateLeads = isHarryFunctionEnabled(
       controlSnapshot,
       'auto_create_leads_enabled',
@@ -531,6 +535,7 @@ export async function POST(request: NextRequest) {
         messages,
         partnerContext,
         channelKey,
+        activeBookingUrl,
       )
 
       if (!aiResponse) {
@@ -546,19 +551,18 @@ export async function POST(request: NextRequest) {
 
       // HARD GATE: Never send the booking link without first+last name, email, and full address (street + zip).
       // Extraction uses only USER messages (not the bot's), so "name given early" is from their own texts.
-      const BOOKING_LINK_MARKER = 'sightings.sasquatchcarpet.com/book'
       const extractedInfo = extractCustomerInfo(messages)
       const hasFullName =
         extractedInfo.name && extractedInfo.name.trim().split(/\s+/).length >= 2
       const hasFullAddress = extractedInfo.address && extractedInfo.zipCode
       const hasRequiredInfo =
         hasFullName && hasFullAddress && extractedInfo.email
-      if (aiResponse.includes(BOOKING_LINK_MARKER) && !canSendBookingOffers) {
+      if (containsKnownBookingLink(aiResponse) && !canSendBookingOffers) {
         aiResponse =
           'I can still help with your quote here. Our team will follow up directly to handle booking options.'
       }
       if (
-        aiResponse.includes(BOOKING_LINK_MARKER) &&
+        containsKnownBookingLink(aiResponse) &&
         !hasRequiredInfo &&
         canSendBookingOffers
       ) {
@@ -594,7 +598,7 @@ export async function POST(request: NextRequest) {
       }
 
       if (
-        aiResponse.includes(BOOKING_LINK_MARKER) &&
+        containsKnownBookingLink(aiResponse) &&
         hasRequiredInfo &&
         canSendBookingOffers
       ) {
@@ -606,6 +610,10 @@ export async function POST(request: NextRequest) {
         if (slotOffer) {
           aiResponse = slotOffer
         }
+      }
+
+      if (canSendBookingOffers && containsKnownBookingLink(aiResponse)) {
+        aiResponse = rewriteBookingLinks(aiResponse, activeBookingUrl)
       }
 
       // Add AI response to conversation

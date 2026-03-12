@@ -3,7 +3,10 @@ import { requireAnyRole, getUserWithRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import {
   clearHarryControlCache,
+  getHarryActiveBookingUrl,
   getHarryControlSnapshot,
+  getHarryOpsBookingUrl,
+  getHarryWebsiteBookingUrl,
   isKnownHarryControlKey,
   seedHarryControlDefaults,
 } from '@/lib/harry/control'
@@ -25,6 +28,12 @@ export async function GET() {
         ai_dispatcher_enabled: process.env.AI_DISPATCHER_ENABLED === 'true',
         analyst_enabled: isAnalystFeatureEnabled(),
         analyst_history_readonly: isAnalystHistoryReadonlyEnabled(),
+        booking_destination_mode: snapshot.settings.booking_use_ops_link_enabled
+          ? 'ops'
+          : 'website',
+        booking_website_url: getHarryWebsiteBookingUrl(),
+        booking_ops_url: getHarryOpsBookingUrl(),
+        booking_active_url: getHarryActiveBookingUrl(snapshot),
       },
     })
   } catch (error) {

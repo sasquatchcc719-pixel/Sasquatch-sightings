@@ -16,6 +16,8 @@ Operate Harry safely with explicit toggles and rapid rollback paths.
 - Every function group has an ON/OFF switch.
 - Current live functions are seeded ON.
 - New functions must default OFF until manually enabled.
+- Booking destination cutover is controlled by `Use Ops Booking Destination`.
+- Detailed scope for booking cutover: `docs/HARRY-BOOKING-SWITCH-NOTES.md`.
 
 ## Emergency Response
 

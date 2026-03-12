@@ -41,6 +41,10 @@ type RuntimeResponse = {
   ai_dispatcher_enabled: boolean
   analyst_enabled: boolean
   analyst_history_readonly: boolean
+  booking_destination_mode?: 'website' | 'ops'
+  booking_website_url?: string
+  booking_ops_url?: string
+  booking_active_url?: string
 }
 
 const GROUP_LABELS: Record<string, string> = {
@@ -216,8 +220,9 @@ export function HarryControlDashboard() {
           <div>
             <h2 className="text-2xl font-semibold">Harry Control Dashboard</h2>
             <p className="text-muted-foreground mt-1 text-sm">
-              Every live Harry function has an explicit on/off switch. New
-              functions default to off.
+              Central runtime controls for inbound automation, booking-link
+              behavior, channel logic, and editable knowledge used by Harry in
+              live SMS.
             </p>
           </div>
           <Button
@@ -239,7 +244,12 @@ export function HarryControlDashboard() {
 
       <Card className="border-border/60 bg-card/80 p-6 shadow-sm backdrop-blur">
         <h3 className="text-lg font-semibold">Runtime Status</h3>
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <p className="text-muted-foreground mt-1 text-sm">
+          These values show environment-level gates that can still override
+          dashboard toggles. If a value is OFF here, related Harry features stay
+          unavailable even if a function toggle is ON.
+        </p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-4">
           <div className="border-border/60 bg-background/70 rounded-xl border p-3">
             <div className="text-muted-foreground text-xs uppercase">
               AI Dispatcher Env
@@ -270,6 +280,19 @@ export function HarryControlDashboard() {
               </Badge>
             </div>
           </div>
+          <div className="border-border/60 bg-background/70 rounded-xl border p-3">
+            <div className="text-muted-foreground text-xs uppercase">
+              Booking Destination
+            </div>
+            <div className="mt-1 flex flex-col gap-1">
+              <Badge variant="outline">
+                {(runtime?.booking_destination_mode || 'website').toUpperCase()}
+              </Badge>
+              <div className="text-muted-foreground text-[11px] break-all">
+                Active: {runtime?.booking_active_url || 'not set'}
+              </div>
+            </div>
+          </div>
         </div>
       </Card>
 
@@ -278,6 +301,11 @@ export function HarryControlDashboard() {
           <Power className="h-4 w-4" />
           <h3 className="text-lg font-semibold">Function Toggles</h3>
         </div>
+        <p className="text-muted-foreground mt-1 text-sm">
+          Use these to control live behavior without redeploying. Every toggle
+          applies immediately to new inbound events and keeps existing data
+          intact.
+        </p>
         <div className="mt-4 space-y-6">
           {[...groupedSettings.entries()].map(([groupKey, rows]) => (
             <div key={groupKey}>
@@ -321,10 +349,32 @@ export function HarryControlDashboard() {
       </Card>
 
       <Card className="border-border/60 bg-card/80 p-6 shadow-sm backdrop-blur">
+        <h3 className="text-lg font-semibold">Booking Switch Notes</h3>
+        <div className="text-muted-foreground mt-2 space-y-1 text-sm">
+          <p>
+            Current behavior: the booking destination switch only changes links
+            sent by Harry inside automated SMS replies.
+          </p>
+          <p>
+            Not covered yet: website CTA buttons, manually sent SMS templates,
+            and any non-Harry booking surfaces still use their existing
+            destinations.
+          </p>
+          <p>
+            Ops mode requires an `OPS_BOOKING_PUBLIC_URL` environment value to
+            route to the new operations booking flow.
+          </p>
+          <p>Website URL: {runtime?.booking_website_url || 'not set'}</p>
+          <p>Ops URL: {runtime?.booking_ops_url || 'not set'}</p>
+        </div>
+      </Card>
+
+      <Card className="border-border/60 bg-card/80 p-6 shadow-sm backdrop-blur">
         <h3 className="text-lg font-semibold">Channel Logic Profiles</h3>
         <p className="text-muted-foreground mt-1 text-sm">
-          Profiles define per-channel logic notes while booking mode remains
-          bounded auto-booking.
+          Profiles define channel-specific behavior, including tone and context
+          handling differences (inbound vs contest vs vendor vs business card),
+          while keeping the same qualification guardrails.
         </p>
         <div className="mt-4 grid gap-3">
           {profiles.map((profile) => {
@@ -443,7 +493,9 @@ export function HarryControlDashboard() {
       <Card className="border-border/60 bg-card/80 p-6 shadow-sm backdrop-blur">
         <h3 className="text-lg font-semibold">Knowledge Categories</h3>
         <p className="text-muted-foreground mt-1 text-sm">
-          Edit the core knowledge Harry uses when responding and booking.
+          Edit the live policy and pricing context appended to Harry prompts.
+          These blocks let you tune responses without touching code, and each
+          block can be enabled or disabled independently.
         </p>
         <div className="mt-4 grid gap-3">
           {knowledgeBlocks.map((block) => {

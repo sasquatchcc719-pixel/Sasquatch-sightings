@@ -323,6 +323,7 @@ export async function generateAIResponse(
   conversationHistory: Message[] = [],
   context?: { partnerName?: string; couponCode?: string },
   channelKey: 'inbound' | 'contest' | 'vendor' | 'business_card' = 'inbound',
+  bookingUrlOverride?: string,
 ): Promise<string> {
   if (!openai) {
     throw new Error('OpenAI not configured')
@@ -382,8 +383,17 @@ CHANNEL LOGIC PROFILE:
       )
     }
 
+    const bookingOverrideContext = bookingUrlOverride
+      ? `
+
+BOOKING DESTINATION OVERRIDE:
+- Always use this booking link when sharing booking: ${bookingUrlOverride}
+`
+      : ''
+
     // Build system prompt with partner context if available
-    let systemPrompt = SYSTEM_PROMPT + knowledgeContext + profileContext
+    let systemPrompt =
+      SYSTEM_PROMPT + knowledgeContext + profileContext + bookingOverrideContext
     if (context?.couponCode) {
       const partnerContext = `
 
@@ -393,7 +403,12 @@ CURRENT CUSTOMER CONTEXT:
 - ALWAYS mention their code "${context.couponCode}" when discussing the discount
 - Tell them to add "${context.couponCode}" in the notes when booking to get their $20 off
 `
-      systemPrompt = SYSTEM_PROMPT + partnerContext
+      systemPrompt =
+        SYSTEM_PROMPT +
+        knowledgeContext +
+        profileContext +
+        bookingOverrideContext +
+        partnerContext
     }
 
     // Build messages array with system prompt + conversation history + new message
