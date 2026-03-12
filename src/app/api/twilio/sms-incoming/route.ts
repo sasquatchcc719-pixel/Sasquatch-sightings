@@ -11,6 +11,7 @@ import {
   shouldEscalate,
   isAIEnabled,
 } from '@/lib/openai-chat'
+import { buildSmsSlotOffer } from '@/lib/ops/sms-booking'
 import { sendCustomerSMS, sendAdminSMS } from '@/lib/twilio'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
@@ -524,6 +525,17 @@ export async function POST(request: NextRequest) {
         console.log(
           `[SMS] Booking link blocked: missing ${missing.join(', ')}. Extracted: name=${extractedInfo.name ?? 'null'}, email=${extractedInfo.email ? '***' : 'null'}, address=${extractedInfo.address ?? 'null'}, zip=${extractedInfo.zipCode ?? 'null'}. Sent info request instead.`,
         )
+      }
+
+      if (aiResponse.includes(BOOKING_LINK_MARKER) && hasRequiredInfo) {
+        const slotOffer = await buildSmsSlotOffer({
+          supabase,
+          serviceNeeded: extractedInfo.serviceNeeded,
+        })
+
+        if (slotOffer) {
+          aiResponse = slotOffer
+        }
       }
 
       // Add AI response to conversation

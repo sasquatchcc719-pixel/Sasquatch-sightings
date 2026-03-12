@@ -39,6 +39,18 @@ export function LoginForm({
       })
       if (error) throw error
 
+      const { data: staffUser } = await supabase
+        .from('staff_users')
+        .select('role')
+        .eq('user_id', data.user.id)
+        .eq('is_active', true)
+        .maybeSingle()
+
+      if (staffUser?.role) {
+        router.push('/admin/operations')
+        return
+      }
+
       // Check if user has a partner record to determine role
       const { data: partner } = await supabase
         .from('partners')
@@ -51,7 +63,7 @@ export function LoginForm({
         router.push('/partners')
       } else {
         // Admin or legacy user without partner record
-        router.push('/protected')
+        router.push('/admin')
       }
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : 'An error occurred')

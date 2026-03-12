@@ -29,17 +29,17 @@ export default async function AdminLayout({ children }: AdminLayoutProps) {
   }
 
   // CRITICAL: Partners must NOT access admin routes
-  // Only allow if role is explicitly 'admin' OR if there's no partner record (legacy admin)
-  if (role !== 'admin') {
+  // Allow internal staff roles here; individual pages/APIs can still enforce stricter access.
+  if (role === 'partner' || !role) {
     console.log(
-      '[AdminLayout] User is NOT admin (role:',
+      '[AdminLayout] User is not an internal ops role (role:',
       role,
       '), redirecting to /partners',
     )
     redirect('/partners')
   }
 
-  console.log('[AdminLayout] Access granted - user is admin')
+  console.log('[AdminLayout] Access granted - internal ops role:', role)
 
   return (
     <main className="relative flex min-h-screen flex-col items-center overflow-hidden">

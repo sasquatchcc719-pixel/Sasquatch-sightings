@@ -8,6 +8,7 @@ import {
   Trophy,
   Users,
   ExternalLink,
+  Calendar,
   Phone,
   MessageSquare,
   BarChart3,
@@ -125,6 +126,13 @@ export function AdminNavigation() {
 
   // Operations group (Jobs + Stats)
   const operationsTabs: NavTab[] = [
+    {
+      name: 'Operations',
+      href: '/admin/operations',
+      icon: Calendar,
+      active: pathname === '/admin/operations',
+      description: 'Internal booking, calendar, invoices, and sync queue',
+    },
     {
       name: 'Jobs',
       href: '/admin',

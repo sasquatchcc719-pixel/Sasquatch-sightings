@@ -37,7 +37,7 @@ export async function middleware(request: NextRequest) {
         },
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value, options }) =>
-            request.cookies.set(name, value)
+            request.cookies.set(name, value),
           )
           response = NextResponse.next({
             request: {
@@ -45,11 +45,11 @@ export async function middleware(request: NextRequest) {
             },
           })
           cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
+            response.cookies.set(name, value, options),
           )
         },
       },
-    }
+    },
   )
 
   // Get user session
@@ -61,7 +61,10 @@ export async function middleware(request: NextRequest) {
   console.log('[Middleware] User:', user?.email || 'not logged in')
 
   // If not logged in and trying to access protected routes
-  if (!user && (pathname.startsWith('/admin') || pathname.startsWith('/partners'))) {
+  if (
+    !user &&
+    (pathname.startsWith('/admin') || pathname.startsWith('/partners'))
+  ) {
     // Allow /partners/register without auth
     if (pathname === '/partners/register') {
       return response
@@ -72,7 +75,24 @@ export async function middleware(request: NextRequest) {
 
   // If logged in, check role for protected routes
   if (user) {
-    // Fetch partner record to determine role
+    // Prefer internal staff role, then partner role, then fall back to legacy admin.
+    const { data: staffUser, error: staffError } = await supabase
+      .from('staff_users')
+      .select('role')
+      .eq('user_id', user.id)
+      .eq('is_active', true)
+      .maybeSingle()
+
+    if (
+      staffError &&
+      !staffError.message.toLowerCase().includes('staff_users')
+    ) {
+      console.error(
+        '[Middleware] staff_users lookup failed:',
+        staffError.message,
+      )
+    }
+
     const { data: partner, error } = await supabase
       .from('partners')
       .select('role')
@@ -85,13 +105,15 @@ export async function middleware(request: NextRequest) {
     // Determine role:
     // - If partner record exists, use its role
     // - If NO partner record, this is a legacy admin (before Partner Portal)
-    const userRole = partner?.role || 'admin'
+    const userRole = staffUser?.role || partner?.role || 'admin'
     console.log('[Middleware] Determined role:', userRole)
 
-    // PROTECT /admin/* routes - only admins (including legacy admins without partner record)
+    // PROTECT /admin/* routes - allow internal ops roles, but never partners.
     if (pathname.startsWith('/admin')) {
-      if (userRole !== 'admin') {
-        console.log('[Middleware] Partner trying to access /admin, redirecting to /partners')
+      if (userRole === 'partner') {
+        console.log(
+          '[Middleware] Partner trying to access /admin, redirecting to /partners',
+        )
         return NextResponse.redirect(new URL('/partners', request.url))
       }
     }
@@ -99,7 +121,9 @@ export async function middleware(request: NextRequest) {
     // PROTECT /partners route - only partners allowed (except /partners/register)
     if (pathname.startsWith('/partners') && pathname !== '/partners/register') {
       if (userRole !== 'partner') {
-        console.log('[Middleware] Admin trying to access /partners, redirecting to /admin')
+        console.log(
+          '[Middleware] Admin trying to access /partners, redirecting to /admin',
+        )
         return NextResponse.redirect(new URL('/admin', request.url))
       }
     }

@@ -1,0 +1,76 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { requireAnyRole } from '@/lib/auth'
+import { createAdminClient } from '@/supabase/server'
+import {
+  calculateLineItemDurationMinutes,
+  getAvailableSlots,
+} from '@/lib/ops/availability'
+
+export async function GET(request: NextRequest) {
+  try {
+    await requireAnyRole(['admin', 'owner', 'dispatcher', 'tech', 'marketing'])
+    const supabase = createAdminClient()
+    const { searchParams } = new URL(request.url)
+    const date = searchParams.get('date')
+    const serviceId = searchParams.get('service_id')
+    const quantity = Number(searchParams.get('quantity') || '1')
+
+    if (!date || !serviceId) {
+      return NextResponse.json(
+        { error: 'date and service_id are required' },
+        { status: 400 },
+      )
+    }
+
+    const { data: service, error: serviceError } = await supabase
+      .from('service_catalog_items')
+      .select('default_duration_minutes, buffer_minutes')
+      .eq('id', serviceId)
+      .single()
+
+    if (serviceError) throw serviceError
+
+    const [templatesResult, overridesResult, appointmentsResult] =
+      await Promise.all([
+        supabase
+          .from('availability_templates')
+          .select('*')
+          .eq('is_active', true),
+        supabase
+          .from('availability_overrides')
+          .select('*')
+          .eq('override_date', date),
+        supabase
+          .from('ops_appointments')
+          .select('appointment_date, start_time, end_time, status')
+          .eq('appointment_date', date),
+      ])
+
+    if (templatesResult.error) throw templatesResult.error
+    if (overridesResult.error) throw overridesResult.error
+    if (appointmentsResult.error) throw appointmentsResult.error
+
+    const requiredMinutes = calculateLineItemDurationMinutes({
+      durationMinutes: service.default_duration_minutes,
+      bufferMinutes: service.buffer_minutes,
+      quantity,
+    })
+
+    const slots = getAvailableSlots({
+      date,
+      requiredMinutes,
+      templates: templatesResult.data || [],
+      overrides: overridesResult.data || [],
+      appointments: appointmentsResult.data || [],
+      maxResults: 8,
+    })
+
+    return NextResponse.json({ slots, requiredMinutes })
+  } catch (error) {
+    console.error('[ops/slots] Error:', error)
+    return NextResponse.json(
+      { error: 'Failed to generate available slots' },
+      { status: 500 },
+    )
+  }
+}
