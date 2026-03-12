@@ -8,6 +8,9 @@ const SETTINGS = {
   business_hours_start: 9, // 9 AM
   business_hours_end: 17, // 5 PM
   business_days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+  // TEMPORARY: open line mode for urgent inbound call.
+  // When true, non-owner callers bypass IVR and ring Chuck directly.
+  temporary_open_line_mode: true,
   // Forwarding to Chuck and Wife with Whisper
   forward_to_numbers: ['+17197498807', '+17206447577'],
   forward_to_number_display: '+17192498791', // Shows as Business Number on Caller ID
@@ -82,6 +85,14 @@ export async function POST(request: NextRequest) {
     <Say>Welcome back. Enter the number you wish to call, starting with 1.</Say>
   </Gather>
   <Say>We didn't receive any input. Goodbye.</Say>
+</Response>`
+    } else if (SETTINGS.temporary_open_line_mode) {
+      console.log('[Call Router] Temporary open line mode active - direct ring')
+      twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Dial timeout="${SETTINGS.dial_timeout}" action="${afterHoursUrl}" callerId="${callerPhone}">
+    <Number>${SETTINGS.forward_to_numbers[0]}</Number>
+  </Dial>
 </Response>`
     } else if (isBusinessHours) {
       // IVR Menu Implementation
