@@ -107,6 +107,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [invoice, setInvoice] = useState<InvoiceDetail | null>(null)
   const [status, setStatus] = useState('draft')
@@ -199,6 +200,45 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
       )
     } finally {
       setSaving(false)
+    }
+  }
+
+  const runAppointmentAction = async (updates: {
+    status?: string
+    payment_status?: string
+    label: string
+  }) => {
+    const appointment = unwrapRelation(invoice?.ops_appointments)
+    if (!appointment?.id) return
+    setActionLoading(updates.label)
+    setError(null)
+    try {
+      const response = await fetch(
+        `/api/admin/ops/appointments/${appointment.id}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...(updates.status ? { status: updates.status } : {}),
+            ...(updates.payment_status
+              ? { payment_status: updates.payment_status }
+              : {}),
+          }),
+        },
+      )
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to update job')
+      }
+      router.refresh()
+    } catch (actionError) {
+      setError(
+        actionError instanceof Error
+          ? actionError.message
+          : 'Failed to update job',
+      )
+    } finally {
+      setActionLoading(null)
     }
   }
 
@@ -304,6 +344,70 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
               ) : null}
               Save Invoice
             </Button>
+            {appointment?.id ? (
+              <>
+                <Button
+                  variant="outline"
+                  disabled={Boolean(actionLoading)}
+                  onClick={() =>
+                    void runAppointmentAction({
+                      label: 'Confirm',
+                      status: 'confirmed',
+                    })
+                  }
+                >
+                  {actionLoading === 'Confirm' ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : null}
+                  Confirm
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={Boolean(actionLoading)}
+                  onClick={() =>
+                    void runAppointmentAction({
+                      label: 'On My Way',
+                      status: 'on_my_way',
+                    })
+                  }
+                >
+                  {actionLoading === 'On My Way' ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : null}
+                  On My Way
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={Boolean(actionLoading)}
+                  onClick={() =>
+                    void runAppointmentAction({
+                      label: 'Complete',
+                      status: 'completed',
+                    })
+                  }
+                >
+                  {actionLoading === 'Complete' ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : null}
+                  Finished
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={Boolean(actionLoading)}
+                  onClick={() =>
+                    void runAppointmentAction({
+                      label: 'Mark Paid',
+                      payment_status: 'paid',
+                    })
+                  }
+                >
+                  {actionLoading === 'Mark Paid' ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : null}
+                  Mark Paid
+                </Button>
+              </>
+            ) : null}
           </div>
         </Card>
 

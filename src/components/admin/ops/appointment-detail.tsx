@@ -98,6 +98,7 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [appointment, setAppointment] = useState<AppointmentDetail | null>(null)
   const [form, setForm] = useState({
@@ -170,6 +171,48 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
       )
     } finally {
       setSaving(false)
+    }
+  }
+
+  const runQuickAction = async (updates: {
+    status?: string
+    payment_status?: string
+    label: string
+  }) => {
+    setActionLoading(updates.label)
+    setError(null)
+    try {
+      const response = await fetch(
+        `/api/admin/ops/appointments/${appointmentId}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...(updates.status ? { status: updates.status } : {}),
+            ...(updates.payment_status
+              ? { payment_status: updates.payment_status }
+              : {}),
+          }),
+        },
+      )
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to update job status')
+      }
+      setForm((current) => ({
+        ...current,
+        status: updates.status || current.status,
+        payment_status: updates.payment_status || current.payment_status,
+      }))
+      router.refresh()
+    } catch (actionError) {
+      setError(
+        actionError instanceof Error
+          ? actionError.message
+          : 'Failed to update job status',
+      )
+    } finally {
+      setActionLoading(null)
     }
   }
 
@@ -331,6 +374,84 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
             </Button>
             <Button asChild variant="outline">
               <Link href="/admin/operations">Back to Schedule</Link>
+            </Button>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              disabled={Boolean(actionLoading)}
+              onClick={() =>
+                void runQuickAction({
+                  label: 'Confirm',
+                  status: 'confirmed',
+                })
+              }
+            >
+              {actionLoading === 'Confirm' ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Confirm
+            </Button>
+            <Button
+              variant="outline"
+              disabled={Boolean(actionLoading)}
+              onClick={() =>
+                void runQuickAction({
+                  label: 'On My Way',
+                  status: 'on_my_way',
+                })
+              }
+            >
+              {actionLoading === 'On My Way' ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              On My Way
+            </Button>
+            <Button
+              variant="outline"
+              disabled={Boolean(actionLoading)}
+              onClick={() =>
+                void runQuickAction({
+                  label: 'Complete',
+                  status: 'completed',
+                })
+              }
+            >
+              {actionLoading === 'Complete' ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Complete
+            </Button>
+            <Button
+              variant="outline"
+              disabled={Boolean(actionLoading)}
+              onClick={() =>
+                void runQuickAction({
+                  label: 'Cancel',
+                  status: 'cancelled',
+                })
+              }
+            >
+              {actionLoading === 'Cancel' ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Cancel
+            </Button>
+            <Button
+              variant="outline"
+              disabled={Boolean(actionLoading)}
+              onClick={() =>
+                void runQuickAction({
+                  label: 'Mark Paid',
+                  payment_status: 'paid',
+                })
+              }
+            >
+              {actionLoading === 'Mark Paid' ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Mark Paid
             </Button>
           </div>
         </Card>

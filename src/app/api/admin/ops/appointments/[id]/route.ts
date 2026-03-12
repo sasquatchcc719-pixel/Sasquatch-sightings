@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { calculateLineItemDurationMinutes } from '@/lib/ops/availability'
+import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
 
 function addMinutesToTime(value: string, minutesToAdd: number): string {
   const [hours, minutes] = value.split(':').map(Number)
@@ -189,6 +190,20 @@ export async function PATCH(
         changed_by: access.id,
         notes: 'Appointment updated from operations job detail',
       })
+    }
+
+    if (current.status !== nextStatus) {
+      if (nextStatus === 'on_my_way') {
+        await sendOpsLifecycleCommunications({
+          event: 'on_my_way',
+          appointmentId: id,
+        })
+      } else if (nextStatus === 'completed') {
+        await sendOpsLifecycleCommunications({
+          event: 'job_finished',
+          appointmentId: id,
+        })
+      }
     }
 
     return NextResponse.json({ appointment: updated })

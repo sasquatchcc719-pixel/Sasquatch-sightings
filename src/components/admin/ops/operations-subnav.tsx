@@ -12,6 +12,7 @@ import {
   Wrench,
   Repeat,
   FileText,
+  MessageSquare,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -72,6 +73,12 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Invoices',
     description: 'Draft invoices and payment status',
     icon: Receipt,
+  },
+  {
+    href: '/admin/operations/communications',
+    label: 'Communications',
+    description: 'Lifecycle SMS and email templates',
+    icon: MessageSquare,
   },
   {
     href: '/admin/operations/settings',

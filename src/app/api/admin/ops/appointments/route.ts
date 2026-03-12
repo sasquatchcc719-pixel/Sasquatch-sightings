@@ -7,6 +7,7 @@ import {
   getQuickBooksSyncStatus,
 } from '@/lib/quickbooks'
 import { calculateLineItemDurationMinutes } from '@/lib/ops/availability'
+import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
 
 type IncomingLineItem = {
   service_catalog_item_id?: string | null
@@ -416,6 +417,11 @@ export async function POST(request: NextRequest) {
       ]),
     ])
 
+    await sendOpsLifecycleCommunications({
+      event: 'job_scheduled',
+      appointmentId: appointment.id,
+    })
+
     return NextResponse.json(
       {
         appointment,
@@ -609,6 +615,20 @@ export async function PATCH(request: NextRequest) {
         })
 
       if (marketingError) throw marketingError
+    }
+
+    if (nextStatus !== appointment.status) {
+      if (nextStatus === 'on_my_way') {
+        await sendOpsLifecycleCommunications({
+          event: 'on_my_way',
+          appointmentId,
+        })
+      } else if (nextStatus === 'completed') {
+        await sendOpsLifecycleCommunications({
+          event: 'job_finished',
+          appointmentId,
+        })
+      }
     }
 
     return NextResponse.json({ success: true })
