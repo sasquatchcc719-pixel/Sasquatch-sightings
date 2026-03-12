@@ -10,7 +10,7 @@ const SETTINGS = {
   business_days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
   // TEMPORARY: open line mode for urgent inbound call.
   // When true, non-owner callers bypass IVR and ring Chuck directly.
-  temporary_open_line_mode: true,
+  temporary_open_line_mode: false,
   // Forwarding to Chuck and Wife with Whisper
   forward_to_numbers: ['+17197498807', '+17206447577'],
   forward_to_number_display: '+17192498791', // Shows as Business Number on Caller ID
