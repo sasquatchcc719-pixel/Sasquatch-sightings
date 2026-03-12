@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getUserWithRole, requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
+import { seedHarryKnowledgeDefaults } from '@/lib/harry/control'
 
 type KnowledgeInput = {
   category_key: string
@@ -34,6 +35,7 @@ function isMissingRelationError(message: string | undefined): boolean {
 export async function GET() {
   try {
     await requireAnyRole(['admin', 'owner', 'dispatcher'])
+    await seedHarryKnowledgeDefaults()
     const supabase = createAdminClient()
     const { data, error } = await supabase
       .from('harry_knowledge_blocks')
