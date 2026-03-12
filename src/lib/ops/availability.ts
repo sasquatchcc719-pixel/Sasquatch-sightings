@@ -25,6 +25,8 @@ export type SlotOption = {
   end_time: string
 }
 
+export const DEFAULT_APPOINTMENT_BUFFER_MINUTES = 30
+
 const ACTIVE_APPOINTMENT_STATUSES = new Set([
   'booked',
   'confirmed',
@@ -54,14 +56,21 @@ function overlaps(
 
 export function calculateLineItemDurationMinutes(params: {
   durationMinutes: number
-  bufferMinutes: number
   quantity: number
 }): number {
   const quantity = Number.isFinite(params.quantity) ? params.quantity : 1
-  return Math.max(
-    0,
-    Math.round(params.durationMinutes * quantity + params.bufferMinutes),
-  )
+  return Math.max(0, Math.round(params.durationMinutes * quantity))
+}
+
+export function applyAppointmentBuffer(
+  serviceMinutes: number,
+  bufferMinutes: number = DEFAULT_APPOINTMENT_BUFFER_MINUTES,
+): number {
+  const normalizedServiceMinutes = Number.isFinite(serviceMinutes)
+    ? serviceMinutes
+    : 0
+  const normalizedBuffer = Number.isFinite(bufferMinutes) ? bufferMinutes : 0
+  return Math.max(0, Math.round(normalizedServiceMinutes + normalizedBuffer))
 }
 
 export function getAvailableSlots(params: {

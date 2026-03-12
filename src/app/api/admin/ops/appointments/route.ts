@@ -6,7 +6,10 @@ import {
   buildQuickBooksInvoicePayload,
   getQuickBooksSyncStatus,
 } from '@/lib/quickbooks'
-import { calculateLineItemDurationMinutes } from '@/lib/ops/availability'
+import {
+  applyAppointmentBuffer,
+  calculateLineItemDurationMinutes,
+} from '@/lib/ops/availability'
 import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
 
 type IncomingLineItem = {
@@ -178,11 +181,11 @@ export async function POST(request: NextRequest) {
         sum +
         calculateLineItemDurationMinutes({
           durationMinutes: item.duration_minutes,
-          bufferMinutes: item.buffer_minutes,
           quantity: item.quantity,
         }),
       0,
     )
+    const totalMinutesWithBuffer = applyAppointmentBuffer(totalMinutes)
 
     const quotedTotal = normalizedLineItems.reduce(
       (sum: number, item: NormalizedLineItem) => sum + item.line_total,
@@ -310,7 +313,7 @@ export async function POST(request: NextRequest) {
         quickbooks_sync_status: syncStatus,
         appointment_date: appointmentDate,
         start_time: `${startTime}:00`.slice(0, 8),
-        end_time: addMinutesToTime(startTime, totalMinutes),
+        end_time: addMinutesToTime(startTime, totalMinutesWithBuffer),
         quoted_total: Number(quotedTotal.toFixed(2)),
         internal_notes: body.appointment?.internal_notes
           ? String(body.appointment.internal_notes)

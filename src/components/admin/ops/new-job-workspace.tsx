@@ -297,6 +297,14 @@ export function NewJobWorkspace() {
     const unitPrice = Number(item.unit_price || 0)
     return sum + quantity * unitPrice
   }, 0)
+  const totalSelectedUnits = lineItems.reduce(
+    (sum, item) => sum + Math.max(0, Number(item.quantity || 0)),
+    0,
+  )
+  const unpricedLineItems = lineItems.filter(
+    (item) =>
+      Number(item.quantity || 0) > 0 && Number(item.unit_price || 0) <= 0,
+  ).length
 
   const handleSelectCustomer = (customer: CustomerSearchResult) => {
     setSelectedCustomer(customer)
@@ -512,6 +520,8 @@ export function NewJobWorkspace() {
                     Number(
                       lineItemByServiceId.get(service.id)?.quantity || '0',
                     ) || 0
+                  const lineSubtotal =
+                    Number(service.base_price || 0) * quantity
                   return (
                     <div
                       key={service.id}
@@ -524,6 +534,11 @@ export function NewJobWorkspace() {
                             ? `$${Number(service.base_price).toFixed(2)} each`
                             : 'Set price manually'}
                         </div>
+                        {quantity > 0 ? (
+                          <div className="text-xs font-semibold">
+                            Running line total: ${lineSubtotal.toFixed(2)}
+                          </div>
+                        ) : null}
                       </div>
                       <div className="flex items-center gap-2">
                         <Button
@@ -651,6 +666,27 @@ export function NewJobWorkspace() {
                   ) : null}
                 </div>
               ))}
+            </div>
+
+            <div className="border-border/60 bg-background/80 mt-4 rounded-2xl border p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="text-sm font-semibold">Running Quote</div>
+                  <div className="text-muted-foreground text-xs">
+                    {totalSelectedUnits} selected item
+                    {totalSelectedUnits === 1 ? '' : 's'}
+                  </div>
+                </div>
+                <div className="text-xl font-bold">
+                  ${totalQuote.toFixed(2)}
+                </div>
+              </div>
+              {unpricedLineItems > 0 ? (
+                <p className="text-muted-foreground mt-2 text-xs">
+                  {unpricedLineItems} selected service
+                  {unpricedLineItems === 1 ? ' has' : 's have'} no price yet.
+                </p>
+              ) : null}
             </div>
           </Card>
 
@@ -1010,6 +1046,21 @@ export function NewJobWorkspace() {
               Cancel
             </Button>
           </div>
+
+          <Card className="border-border/60 bg-card/95 sticky bottom-3 z-20 p-3 shadow-lg backdrop-blur">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-muted-foreground text-xs font-medium uppercase">
+                  Quick Quote
+                </p>
+                <p className="text-sm">
+                  {totalSelectedUnits} selected · Tap items above for instant
+                  total
+                </p>
+              </div>
+              <div className="text-2xl font-bold">${totalQuote.toFixed(2)}</div>
+            </div>
+          </Card>
         </div>
 
         <div className="space-y-6">

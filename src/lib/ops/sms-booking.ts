@@ -1,5 +1,9 @@
 import type { createAdminClient } from '@/supabase/server'
-import { getAvailableSlots } from '@/lib/ops/availability'
+import {
+  applyAppointmentBuffer,
+  calculateLineItemDurationMinutes,
+  getAvailableSlots,
+} from '@/lib/ops/availability'
 
 const OPS_SMS_BOOKING_ENABLED = process.env.OPS_SMS_BOOKING_ENABLED === 'true'
 
@@ -79,9 +83,12 @@ export async function buildSmsSlotOffer(params: {
     return null
   }
 
-  const requiredMinutes =
-    Number(selectedService.default_duration_minutes) +
-    Number(selectedService.buffer_minutes || 0)
+  const requiredMinutes = applyAppointmentBuffer(
+    calculateLineItemDurationMinutes({
+      durationMinutes: Number(selectedService.default_duration_minutes),
+      quantity: 1,
+    }),
+  )
 
   const slotLabels: string[] = []
 

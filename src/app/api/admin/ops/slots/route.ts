@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import {
+  applyAppointmentBuffer,
   calculateLineItemDurationMinutes,
   getAvailableSlots,
 } from '@/lib/ops/availability'
@@ -65,20 +66,23 @@ export async function GET(request: NextRequest) {
 
     const requiredMinutes = calculateLineItemDurationMinutes({
       durationMinutes: service.default_duration_minutes,
-      bufferMinutes: service.buffer_minutes,
       quantity,
     })
+    const requiredMinutesWithBuffer = applyAppointmentBuffer(requiredMinutes)
 
     const slots = getAvailableSlots({
       date,
-      requiredMinutes,
+      requiredMinutes: requiredMinutesWithBuffer,
       templates: templatesResult.data || [],
       overrides: overridesResult.data || [],
       appointments: appointmentsResult.data || [],
       maxResults: 8,
     })
 
-    return NextResponse.json({ slots, requiredMinutes })
+    return NextResponse.json({
+      slots,
+      requiredMinutes: requiredMinutesWithBuffer,
+    })
   } catch (error) {
     console.error('[ops/slots] Error:', error)
     return NextResponse.json(

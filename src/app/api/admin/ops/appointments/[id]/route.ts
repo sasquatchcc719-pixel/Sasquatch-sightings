@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
-import { calculateLineItemDurationMinutes } from '@/lib/ops/availability'
+import {
+  applyAppointmentBuffer,
+  calculateLineItemDurationMinutes,
+} from '@/lib/ops/availability'
 import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
 
 function addMinutesToTime(value: string, minutesToAdd: number): string {
@@ -144,11 +147,11 @@ export async function PATCH(
         sum +
         calculateLineItemDurationMinutes({
           durationMinutes: Number(item.duration_minutes),
-          bufferMinutes: Number(item.buffer_minutes),
           quantity: Number(item.quantity),
         }),
       0,
     )
+    const totalMinutesWithBuffer = applyAppointmentBuffer(totalMinutes)
 
     const nextStatus = body.status ? String(body.status) : current.status
     const nextPaymentStatus = body.payment_status
@@ -160,7 +163,7 @@ export async function PATCH(
       .update({
         appointment_date: appointmentDate,
         start_time: `${startTime}:00`.slice(0, 8),
-        end_time: addMinutesToTime(startTime, totalMinutes),
+        end_time: addMinutesToTime(startTime, totalMinutesWithBuffer),
         status: nextStatus,
         payment_status: nextPaymentStatus,
         internal_notes:

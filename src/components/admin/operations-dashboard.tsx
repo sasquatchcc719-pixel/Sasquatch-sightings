@@ -188,6 +188,9 @@ export function OperationsDashboard({
   } | null>(null)
   const [editingServiceId, setEditingServiceId] = useState<string | null>(null)
   const [serviceCategoryFilter, setServiceCategoryFilter] = useState('all')
+  const [categorySource, setCategorySource] = useState('')
+  const [categoryRenameTo, setCategoryRenameTo] = useState('')
+  const [categoryMergeTarget, setCategoryMergeTarget] = useState('')
   const [currentMonth, setCurrentMonth] = useState(() =>
     startOfMonth(new Date()),
   )
@@ -428,6 +431,104 @@ export function OperationsDashboard({
           : editingServiceId
             ? 'Failed to update service'
             : 'Failed to create service',
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const updateCategoryAcrossServices = async (
+    sourceCategory: string,
+    nextCategory: string,
+  ) => {
+    const source = sourceCategory.trim()
+    const target = nextCategory.trim()
+    if (!source || !target) {
+      throw new Error('Source and target categories are required')
+    }
+
+    const affectedServices = services.filter(
+      (service) => service.category.trim() === source,
+    )
+    if (affectedServices.length === 0) {
+      throw new Error('No services found in that category')
+    }
+
+    const updates = await Promise.all(
+      affectedServices.map(async (service) => {
+        const response = await fetch(`/api/admin/ops/services/${service.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: service.name,
+            description: service.description,
+            category: target,
+            default_duration_minutes: service.default_duration_minutes,
+            buffer_minutes: service.buffer_minutes,
+            base_price: service.base_price,
+            pricing_unit: service.pricing_unit,
+            online_booking_enabled: service.online_booking_enabled,
+            is_active: service.is_active,
+          }),
+        })
+        const result = await response.json()
+        if (!response.ok) {
+          throw new Error(
+            result.error ||
+              `Failed updating service category for ${service.name}`,
+          )
+        }
+        return result.service
+      }),
+    )
+
+    return updates.length
+  }
+
+  const handleCategoryRename = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setSaving(true)
+    setError(null)
+    try {
+      const updatedCount = await updateCategoryAcrossServices(
+        categorySource,
+        categoryRenameTo,
+      )
+      setCategorySource(categoryRenameTo.trim())
+      setCategoryRenameTo('')
+      await loadDashboard()
+      setError(null)
+      if (updatedCount > 0) {
+        setServiceCategoryFilter('all')
+      }
+    } catch (renameError) {
+      setError(
+        renameError instanceof Error
+          ? renameError.message
+          : 'Failed to rename category',
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleCategoryMerge = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setSaving(true)
+    setError(null)
+    try {
+      if (categorySource.trim() === categoryMergeTarget.trim()) {
+        throw new Error('Choose a different target category')
+      }
+      await updateCategoryAcrossServices(categorySource, categoryMergeTarget)
+      setCategorySource(categoryMergeTarget.trim())
+      await loadDashboard()
+      setServiceCategoryFilter('all')
+    } catch (mergeError) {
+      setError(
+        mergeError instanceof Error
+          ? mergeError.message
+          : 'Failed to move category services',
       )
     } finally {
       setSaving(false)
@@ -958,9 +1059,9 @@ export function OperationsDashboard({
                 </div>
                 <div>
                   <Label htmlFor="service-category">Category</Label>
-                  <select
+                  <Input
                     id="service-category"
-                    className="h-10 w-full rounded-md border border-white/10 bg-black px-3 text-sm text-white"
+                    list="service-category-options"
                     value={serviceForm.category}
                     onChange={(event) =>
                       setServiceForm((current) => ({
@@ -968,13 +1069,13 @@ export function OperationsDashboard({
                         category: event.target.value,
                       }))
                     }
-                  >
+                    placeholder="Ex: legendary restoration clean"
+                  />
+                  <datalist id="service-category-options">
                     {serviceCategories.map((category) => (
-                      <option key={category} value={category}>
-                        {category}
-                      </option>
+                      <option key={category} value={category} />
                     ))}
-                  </select>
+                  </datalist>
                 </div>
                 <div>
                   <Label htmlFor="service-duration">
@@ -1096,6 +1197,82 @@ export function OperationsDashboard({
               </div>
             </form>
             <div className="mt-6 space-y-3">
+              <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                <p className="text-sm font-medium">Category Cleanup</p>
+                <p className="mt-1 text-xs text-white/60">
+                  Rename a category, or move all services into another category
+                  to effectively delete the old one.
+                </p>
+                <div className="mt-3 grid gap-3 lg:grid-cols-3">
+                  <div>
+                    <Label htmlFor="category-source">Category</Label>
+                    <select
+                      id="category-source"
+                      className="mt-1 h-10 w-full rounded-md border border-white/10 bg-black px-3 text-sm text-white"
+                      value={categorySource}
+                      onChange={(event) =>
+                        setCategorySource(event.target.value)
+                      }
+                    >
+                      <option value="">Select category</option>
+                      {serviceCategories.map((category) => (
+                        <option key={category} value={category}>
+                          {category}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <form className="space-y-1" onSubmit={handleCategoryRename}>
+                    <Label htmlFor="category-rename">Rename to</Label>
+                    <Input
+                      id="category-rename"
+                      value={categoryRenameTo}
+                      onChange={(event) =>
+                        setCategoryRenameTo(event.target.value)
+                      }
+                      placeholder="New category name"
+                    />
+                    <Button
+                      type="submit"
+                      variant="outline"
+                      size="sm"
+                      disabled={saving || !categorySource || !categoryRenameTo}
+                    >
+                      Rename Category
+                    </Button>
+                  </form>
+                  <form className="space-y-1" onSubmit={handleCategoryMerge}>
+                    <Label htmlFor="category-merge">Move all services to</Label>
+                    <select
+                      id="category-merge"
+                      className="h-10 w-full rounded-md border border-white/10 bg-black px-3 text-sm text-white"
+                      value={categoryMergeTarget}
+                      onChange={(event) =>
+                        setCategoryMergeTarget(event.target.value)
+                      }
+                    >
+                      <option value="">Select target</option>
+                      {serviceCategories
+                        .filter((category) => category !== categorySource)
+                        .map((category) => (
+                          <option key={category} value={category}>
+                            {category}
+                          </option>
+                        ))}
+                    </select>
+                    <Button
+                      type="submit"
+                      variant="outline"
+                      size="sm"
+                      disabled={
+                        saving || !categorySource || !categoryMergeTarget
+                      }
+                    >
+                      Move + Remove Old Category
+                    </Button>
+                  </form>
+                </div>
+              </div>
               <div className="flex flex-wrap items-center gap-3">
                 <div className="min-w-60">
                   <Label htmlFor="services-category-filter">
