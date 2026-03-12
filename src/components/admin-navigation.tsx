@@ -57,8 +57,8 @@ function NavDropdown({
         onClick={onToggle}
         className={`flex w-full items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all sm:w-auto sm:justify-start ${
           isActive
-            ? 'bg-primary text-primary-foreground shadow-sm'
-            : 'bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+            ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 text-slate-950 shadow-[0_0_20px_rgba(16,185,129,0.35)]'
+            : 'bg-white/10 text-slate-100 hover:bg-white/20 hover:text-white'
         }`}
       >
         <Icon className="h-4 w-4" />
@@ -337,7 +337,7 @@ export function AdminNavigation() {
                 closeAll()
                 setPreviewOpen(!previewOpen)
               }}
-              className="bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground flex w-full items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all sm:w-auto sm:justify-start"
+              className="flex w-full items-center justify-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-medium text-slate-100 transition-all hover:bg-white/20 hover:text-white sm:w-auto sm:justify-start"
             >
               <Eye className="h-4 w-4" />
               Preview

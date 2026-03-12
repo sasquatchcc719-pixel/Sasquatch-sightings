@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { Suspense } from 'react'
 import { AdminNavigation } from '@/components/admin-navigation'
 import { OneSignalInit } from '@/components/onesignal-init'
+import { BubbleTunnelBackground } from '@/components/ui/bubble-tunnel-background'
 
 type AdminLayoutProps = {
   children: React.ReactNode
@@ -40,14 +41,15 @@ export default async function AdminLayout({ children }: AdminLayoutProps) {
   console.log('[AdminLayout] Access granted - internal ops role:', role)
 
   return (
-    <main className="bg-background text-foreground min-h-screen">
+    <main className="admin-shell text-foreground relative min-h-screen">
+      <BubbleTunnelBackground count={150} />
       <OneSignalInit />
-      <div className="flex w-full flex-1 flex-col items-center gap-8 pb-10">
-        <nav className="border-border/70 bg-background/85 flex h-14 w-full justify-center border-b backdrop-blur">
+      <div className="relative z-10 flex w-full flex-1 flex-col items-center gap-8 pb-10">
+        <nav className="glass-nav flex h-14 w-full justify-center border-b">
           <div className="flex w-full max-w-[1440px] items-center justify-between px-4 text-sm">
             <Link
               href={'/admin'}
-              className="text-foreground flex items-center gap-2 font-semibold"
+              className="text-foreground flex items-center gap-2 font-semibold drop-shadow-[0_0_14px_rgba(16,185,129,0.35)]"
             >
               <img
                 src="/vector6-no-background.svg"
@@ -66,15 +68,15 @@ export default async function AdminLayout({ children }: AdminLayoutProps) {
           </div>
         </nav>
         <div className="flex w-full max-w-[1440px] flex-1 flex-col gap-6 p-4 sm:p-5">
-          <div className="border-border/60 bg-card/80 relative z-[200] rounded-2xl border p-4 shadow-sm backdrop-blur">
+          <div className="glass-panel glass-accent-ring relative z-[200] rounded-2xl border p-4">
             <AdminNavigation />
           </div>
-          <div className="border-border/60 bg-card/80 relative z-[10] rounded-2xl border p-4 shadow-sm backdrop-blur sm:p-6">
+          <div className="glass-panel glass-accent-ring relative z-[10] rounded-2xl border p-4 sm:p-6">
             {children}
           </div>
         </div>
 
-        <footer className="border-border/70 bg-background/70 text-muted-foreground mx-auto flex w-full items-center justify-center gap-8 border-t py-8 text-center text-xs backdrop-blur">
+        <footer className="glass-nav text-muted-foreground mx-auto flex w-full items-center justify-center gap-8 border-t py-8 text-center text-xs">
           <p>Sasquatch Carpet Cleaning</p>
         </footer>
       </div>

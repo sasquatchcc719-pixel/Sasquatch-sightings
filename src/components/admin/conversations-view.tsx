@@ -66,12 +66,18 @@ export function ConversationsView({
   const [sending, setSending] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [bulkDeleting, setBulkDeleting] = useState(false)
 
   // Filter conversations based on selected status
   const filteredConversations =
     filterStatus === 'all'
       ? conversations
       : conversations.filter((c) => c.status === filterStatus)
+  const allFilteredIds = filteredConversations.map((c) => c.id)
+  const allFilteredSelected =
+    allFilteredIds.length > 0 &&
+    allFilteredIds.every((id) => selectedIds.includes(id))
 
   const handleSendReply = async () => {
     if (!selectedConvo || !replyText.trim()) return
@@ -142,6 +148,9 @@ export function ConversationsView({
         setConversations((prev) =>
           prev.filter((c) => c.id !== selectedConvo.id),
         )
+        setSelectedIds((current) =>
+          current.filter((id) => id !== selectedConvo.id),
+        )
         setSelectedConvo(null)
         setConfirmDelete(false)
       } else {
@@ -152,6 +161,66 @@ export function ConversationsView({
       alert('Failed to delete conversation')
     } finally {
       setDeleting(false)
+    }
+  }
+
+  const toggleConversationSelected = (conversationId: string) => {
+    setSelectedIds((current) =>
+      current.includes(conversationId)
+        ? current.filter((id) => id !== conversationId)
+        : [...current, conversationId],
+    )
+  }
+
+  const toggleSelectAllFiltered = () => {
+    if (allFilteredSelected) {
+      setSelectedIds((current) =>
+        current.filter((id) => !allFilteredIds.includes(id)),
+      )
+      return
+    }
+    setSelectedIds((current) => {
+      const next = [...current]
+      for (const id of allFilteredIds) {
+        if (!next.includes(id)) next.push(id)
+      }
+      return next
+    })
+  }
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return
+    const confirmed = window.confirm(
+      `Delete ${selectedIds.length} selected conversation${selectedIds.length === 1 ? '' : 's'}? This cannot be undone.`,
+    )
+    if (!confirmed) return
+
+    setBulkDeleting(true)
+    try {
+      const response = await fetch('/api/conversations/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: selectedIds }),
+      })
+      if (!response.ok) {
+        alert('Failed to delete selected conversations')
+        return
+      }
+      setConversations((current) =>
+        current.filter(
+          (conversation) => !selectedIds.includes(conversation.id),
+        ),
+      )
+      if (selectedConvo && selectedIds.includes(selectedConvo.id)) {
+        setSelectedConvo(null)
+        setConfirmDelete(false)
+      }
+      setSelectedIds([])
+    } catch (error) {
+      console.error('Bulk delete error:', error)
+      alert('Failed to delete selected conversations')
+    } finally {
+      setBulkDeleting(false)
     }
   }
 
@@ -299,6 +368,37 @@ export function ConversationsView({
                 : `No ${filterStatus} conversations`
               : 'Click a conversation to view full message history'}
           </CardDescription>
+          {filteredConversations.length > 0 && (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={toggleSelectAllFiltered}
+              >
+                {allFilteredSelected
+                  ? 'Unselect All Shown'
+                  : 'Select All Shown'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setSelectedIds([])}
+                disabled={selectedIds.length === 0}
+              >
+                Clear Selection
+              </Button>
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={handleBulkDelete}
+                disabled={selectedIds.length === 0 || bulkDeleting}
+              >
+                {bulkDeleting
+                  ? 'Deleting...'
+                  : `Delete Selected (${selectedIds.length})`}
+              </Button>
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           {filteredConversations.length === 0 ? (
@@ -319,44 +419,54 @@ export function ConversationsView({
                     onClick={() => setSelectedConvo(convo)}
                     className="hover:bg-muted w-full cursor-pointer rounded-lg border p-3 text-left transition-colors sm:p-4"
                   >
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-                      <div className="min-w-0 flex-1">
-                        <div className="mb-1 flex flex-wrap items-center gap-2">
-                          <a
-                            href={`tel:${convo.phone_number}`}
-                            className="text-sm font-medium text-blue-400 hover:underline sm:text-base"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {convo.phone_number}
-                          </a>
-                          {getStatusBadge(convo.status)}
-                          {getSourceLabel(convo.source) && (
-                            <Badge
-                              variant="outline"
-                              className="text-xs font-normal text-muted-foreground"
+                    <div className="flex items-start gap-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(convo.id)}
+                        onChange={() => toggleConversationSelected(convo.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        aria-label={`Select conversation ${convo.phone_number}`}
+                        className="mt-1"
+                      />
+                      <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                        <div className="min-w-0 flex-1">
+                          <div className="mb-1 flex flex-wrap items-center gap-2">
+                            <a
+                              href={`tel:${convo.phone_number}`}
+                              className="text-sm font-medium text-blue-400 hover:underline sm:text-base"
+                              onClick={(e) => e.stopPropagation()}
                             >
-                              {getSourceLabel(convo.source)}
-                            </Badge>
+                              {convo.phone_number}
+                            </a>
+                            {getStatusBadge(convo.status)}
+                            {getSourceLabel(convo.source) && (
+                              <Badge
+                                variant="outline"
+                                className="text-muted-foreground text-xs font-normal"
+                              >
+                                {getSourceLabel(convo.source)}
+                              </Badge>
+                            )}
+                          </div>
+                          {convo.lead?.name && (
+                            <div className="text-muted-foreground mb-1 text-xs sm:text-sm">
+                              {convo.lead.name}
+                            </div>
+                          )}
+                          {lastMessage && (
+                            <div className="text-muted-foreground line-clamp-2 text-xs sm:text-sm">
+                              {lastMessage.role === 'user' ? '💬 ' : '🤖 '}
+                              {lastMessage.content}
+                            </div>
                           )}
                         </div>
-                        {convo.lead?.name && (
-                          <div className="text-muted-foreground mb-1 text-xs sm:text-sm">
-                            {convo.lead.name}
+                        <div className="flex items-center gap-2 text-right sm:flex-col sm:items-end sm:gap-0">
+                          <div className="text-muted-foreground text-xs whitespace-nowrap">
+                            {formatTime(convo.updated_at)}
                           </div>
-                        )}
-                        {lastMessage && (
-                          <div className="text-muted-foreground line-clamp-2 text-xs sm:text-sm">
-                            {lastMessage.role === 'user' ? '💬 ' : '🤖 '}
-                            {lastMessage.content}
+                          <div className="text-muted-foreground text-xs sm:mt-1">
+                            {messageCount} msg{messageCount !== 1 ? 's' : ''}
                           </div>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 text-right sm:flex-col sm:items-end sm:gap-0">
-                        <div className="text-muted-foreground text-xs whitespace-nowrap">
-                          {formatTime(convo.updated_at)}
-                        </div>
-                        <div className="text-muted-foreground text-xs sm:mt-1">
-                          {messageCount} msg{messageCount !== 1 ? 's' : ''}
                         </div>
                       </div>
                     </div>

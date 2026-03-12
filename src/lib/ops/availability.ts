@@ -26,6 +26,50 @@ export type SlotOption = {
 }
 
 export const DEFAULT_APPOINTMENT_BUFFER_MINUTES = 30
+export const DEFAULT_FALLBACK_AVAILABILITY_TEMPLATES: AvailabilityTemplate[] = [
+  {
+    day_of_week: 1,
+    start_time: '09:00',
+    end_time: '17:00',
+    slot_interval_minutes: 30,
+    is_active: true,
+  },
+  {
+    day_of_week: 2,
+    start_time: '09:00',
+    end_time: '17:00',
+    slot_interval_minutes: 30,
+    is_active: true,
+  },
+  {
+    day_of_week: 3,
+    start_time: '09:00',
+    end_time: '17:00',
+    slot_interval_minutes: 30,
+    is_active: true,
+  },
+  {
+    day_of_week: 4,
+    start_time: '09:00',
+    end_time: '17:00',
+    slot_interval_minutes: 30,
+    is_active: true,
+  },
+  {
+    day_of_week: 5,
+    start_time: '09:00',
+    end_time: '17:00',
+    slot_interval_minutes: 30,
+    is_active: true,
+  },
+  {
+    day_of_week: 6,
+    start_time: '09:00',
+    end_time: '17:00',
+    slot_interval_minutes: 30,
+    is_active: true,
+  },
+]
 
 const ACTIVE_APPOINTMENT_STATUSES = new Set([
   'booked',
@@ -94,8 +138,10 @@ export function getAvailableSlots(params: {
     return []
   }
 
+  const effectiveTemplates =
+    templates.length > 0 ? templates : DEFAULT_FALLBACK_AVAILABILITY_TEMPLATES
   const dayOfWeek = new Date(`${date}T12:00:00`).getDay()
-  const dayTemplates = templates.filter(
+  const dayTemplates = effectiveTemplates.filter(
     (template) => template.is_active && template.day_of_week === dayOfWeek,
   )
 
