@@ -1392,11 +1392,6 @@ export function OperationsDashboard({
                         <div>
                           <div className="flex items-center gap-2 font-medium">
                             {service.name}
-                            {service.source_system === 'housecall_pro' ? (
-                              <Badge className="bg-blue-500/20 text-blue-100">
-                                Imported
-                              </Badge>
-                            ) : null}
                             {!service.is_active ? (
                               <Badge className="bg-white/10 text-white/60">
                                 Hidden
