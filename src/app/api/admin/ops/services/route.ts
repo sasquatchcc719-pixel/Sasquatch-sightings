@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
+import { mapHousecallProPricebook } from '@/lib/ops/service-import'
 
 function slugify(value: string): string {
   return value
@@ -47,8 +48,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const defaultDurationMinutes = Number(body.default_duration_minutes)
-    const bufferMinutes = Number(body.buffer_minutes ?? 15)
+    const defaultDurationMinutes =
+      body.default_duration_minutes === '' ||
+      body.default_duration_minutes === null
+        ? null
+        : Number(body.default_duration_minutes)
+    const bufferMinutes = Number(body.buffer_minutes ?? 30)
     const basePrice =
       body.base_price === '' || body.base_price === null
         ? null
@@ -59,21 +64,26 @@ export async function POST(request: NextRequest) {
       slug: slugify(body.slug || name),
       description: body.description ? String(body.description).trim() : null,
       category: body.category ? String(body.category).trim() : 'cleaning',
-      default_duration_minutes: defaultDurationMinutes,
+      default_duration_minutes:
+        defaultDurationMinutes !== null &&
+        Number.isFinite(defaultDurationMinutes)
+          ? defaultDurationMinutes
+          : null,
       buffer_minutes: bufferMinutes,
       base_price: Number.isFinite(basePrice) ? basePrice : null,
       pricing_unit: body.pricing_unit
         ? String(body.pricing_unit).trim()
         : 'fixed',
-      is_active: true,
+      online_booking_enabled: Boolean(body.online_booking_enabled),
+      is_active: body.is_active === undefined ? true : Boolean(body.is_active),
     }
 
     if (
-      !Number.isFinite(defaultDurationMinutes) ||
-      defaultDurationMinutes <= 0
+      defaultDurationMinutes !== null &&
+      (!Number.isFinite(defaultDurationMinutes) || defaultDurationMinutes <= 0)
     ) {
       return NextResponse.json(
-        { error: 'Default duration must be a positive number' },
+        { error: 'Default duration must be blank or a positive number' },
         { status: 400 },
       )
     }
@@ -100,6 +110,85 @@ export async function POST(request: NextRequest) {
     console.error('[ops/services][POST] Error:', error)
     return NextResponse.json(
       { error: 'Failed to create service catalog item' },
+      { status: 500 },
+    )
+  }
+}
+
+export async function PUT(request: NextRequest) {
+  try {
+    await requireAnyRole(['admin', 'owner', 'dispatcher'])
+    const supabase = createAdminClient()
+    const body = await request.json()
+
+    const csvText = String(body.csv_text || '')
+    if (!csvText.trim()) {
+      return NextResponse.json(
+        { error: 'csv_text is required' },
+        { status: 400 },
+      )
+    }
+
+    const { data: existingServices, error: existingServicesError } =
+      await supabase.from('service_catalog_items').select('slug, source_uuid')
+
+    if (existingServicesError) {
+      throw existingServicesError
+    }
+
+    const existingSlugs = new Set(
+      (existingServices || []).map((service) => service.slug),
+    )
+    const { services, skipped } = mapHousecallProPricebook({
+      csvText,
+      existingSlugs,
+      defaultBufferMinutes: 30,
+    })
+
+    if (services.length === 0) {
+      return NextResponse.json(
+        { error: 'No importable service rows were found in the CSV' },
+        { status: 400 },
+      )
+    }
+
+    const bySourceUuid = new Map(
+      (existingServices || [])
+        .filter((service) => service.source_uuid)
+        .map((service) => [service.source_uuid, service]),
+    )
+
+    const payload = services.map((service) => {
+      const existing = bySourceUuid.get(service.source_uuid)
+      return existing
+        ? {
+            ...service,
+            slug: existing.slug,
+          }
+        : service
+    })
+
+    const { data, error } = await supabase
+      .from('service_catalog_items')
+      .upsert(payload, {
+        onConflict: 'source_uuid',
+        ignoreDuplicates: false,
+      })
+      .select()
+
+    if (error) {
+      throw error
+    }
+
+    return NextResponse.json({
+      imported: data?.length || 0,
+      skipped,
+      services: data || [],
+    })
+  } catch (error) {
+    console.error('[ops/services][PUT] Error:', error)
+    return NextResponse.json(
+      { error: 'Failed to import service catalog CSV' },
       { status: 500 },
     )
   }

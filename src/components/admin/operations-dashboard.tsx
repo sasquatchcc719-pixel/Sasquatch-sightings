@@ -11,6 +11,8 @@ import {
   Calendar,
   Clock,
   Database,
+  Edit3,
+  FileUp,
   Loader2,
   Receipt,
   RefreshCw,
@@ -21,11 +23,15 @@ import {
 type ServiceItem = {
   id: string
   name: string
+  description: string | null
   category: string
-  default_duration_minutes: number
+  default_duration_minutes: number | null
   buffer_minutes: number
   base_price: number | null
   pricing_unit: string
+  online_booking_enabled: boolean
+  source_system: string | null
+  source_uuid: string | null
   is_active: boolean
 }
 
@@ -145,15 +151,23 @@ export function OperationsDashboard() {
     requiredMinutes: number
     slots: Array<{ start_time: string; end_time: string }>
   } | null>(null)
+  const [importSummary, setImportSummary] = useState<{
+    imported: number
+    skipped: number
+  } | null>(null)
+  const [csvImportText, setCsvImportText] = useState('')
+  const [editingServiceId, setEditingServiceId] = useState<string | null>(null)
 
   const [serviceForm, setServiceForm] = useState({
     name: '',
     category: 'cleaning',
-    default_duration_minutes: '90',
-    buffer_minutes: '15',
+    default_duration_minutes: '',
+    buffer_minutes: '30',
     base_price: '',
     pricing_unit: 'fixed',
     description: '',
+    online_booking_enabled: false,
+    is_active: true,
   })
 
   const [templateForm, setTemplateForm] = useState({
@@ -246,35 +260,111 @@ export function OperationsDashboard() {
     [services],
   )
 
-  const handleServiceCreate = async (event: React.FormEvent) => {
+  const handleCsvFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    const text = await file.text()
+    setCsvImportText(text)
+  }
+
+  const handleServiceImport = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setSaving(true)
+    setError(null)
+    setImportSummary(null)
+
+    try {
+      const response = await fetch('/api/admin/ops/services', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ csv_text: csvImportText }),
+      })
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to import pricebook CSV')
+      }
+      setImportSummary({
+        imported: result.imported || 0,
+        skipped: result.skipped || 0,
+      })
+      await loadDashboard()
+    } catch (importError) {
+      setError(
+        importError instanceof Error
+          ? importError.message
+          : 'Failed to import pricebook CSV',
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const startEditingService = (service: ServiceItem) => {
+    setEditingServiceId(service.id)
+    setServiceForm({
+      name: service.name,
+      category: service.category,
+      default_duration_minutes:
+        service.default_duration_minutes !== null
+          ? String(service.default_duration_minutes)
+          : '',
+      buffer_minutes: String(service.buffer_minutes ?? 30),
+      base_price: service.base_price !== null ? String(service.base_price) : '',
+      pricing_unit: service.pricing_unit,
+      description: service.description || '',
+      online_booking_enabled: service.online_booking_enabled,
+      is_active: service.is_active,
+    })
+  }
+
+  const cancelEditingService = () => {
+    setEditingServiceId(null)
+    setServiceForm({
+      name: '',
+      category: 'cleaning',
+      default_duration_minutes: '',
+      buffer_minutes: '30',
+      base_price: '',
+      pricing_unit: 'fixed',
+      description: '',
+      online_booking_enabled: false,
+      is_active: true,
+    })
+  }
+
+  const handleServiceSave = async (event: React.FormEvent) => {
     event.preventDefault()
     setSaving(true)
     setError(null)
     try {
-      const response = await fetch('/api/admin/ops/services', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(serviceForm),
-      })
+      const response = await fetch(
+        editingServiceId
+          ? `/api/admin/ops/services/${editingServiceId}`
+          : '/api/admin/ops/services',
+        {
+          method: editingServiceId ? 'PATCH' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(serviceForm),
+        },
+      )
       const result = await response.json()
       if (!response.ok) {
-        throw new Error(result.error || 'Failed to create service')
+        throw new Error(
+          result.error ||
+            (editingServiceId
+              ? 'Failed to update service'
+              : 'Failed to create service'),
+        )
       }
-      setServiceForm({
-        name: '',
-        category: 'cleaning',
-        default_duration_minutes: '90',
-        buffer_minutes: '15',
-        base_price: '',
-        pricing_unit: 'fixed',
-        description: '',
-      })
+      cancelEditingService()
       await loadDashboard()
     } catch (saveError) {
       setError(
         saveError instanceof Error
           ? saveError.message
-          : 'Failed to create service',
+          : editingServiceId
+            ? 'Failed to update service'
+            : 'Failed to create service',
       )
     } finally {
       setSaving(false)
@@ -564,9 +654,46 @@ export function OperationsDashboard() {
         <Card className="border-white/10 bg-black/30 p-6 text-white">
           <h2 className="text-xl font-semibold">Service Catalog</h2>
           <p className="mt-1 text-sm text-white/60">
-            Start entering the real durations and buffers from Housecall Pro.
+            Import your real pricebook, then edit duration, buffer, booking
+            flags, and categories directly here.
           </p>
-          <form className="mt-4 space-y-3" onSubmit={handleServiceCreate}>
+          <form
+            className="mt-4 space-y-3 rounded-xl border border-white/10 bg-white/5 p-4"
+            onSubmit={handleServiceImport}
+          >
+            <div className="flex items-center gap-2 text-sm font-medium text-white/80">
+              <FileUp className="h-4 w-4" />
+              Housecall Pro CSV import
+            </div>
+            <p className="text-sm text-white/60">
+              Paste the export or load the CSV file. Generic restoration
+              defaults are skipped automatically.
+            </p>
+            <Input
+              type="file"
+              accept=".csv,text/csv"
+              onChange={(event) => void handleCsvFile(event)}
+            />
+            <Textarea
+              value={csvImportText}
+              onChange={(event) => setCsvImportText(event.target.value)}
+              placeholder="Paste your Housecall Pro pricebook CSV here"
+              className="min-h-40"
+            />
+            <Button type="submit" disabled={saving || !csvImportText.trim()}>
+              {saving ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Import Pricebook CSV
+            </Button>
+            {importSummary && (
+              <div className="text-sm text-emerald-200">
+                Imported {importSummary.imported} services and skipped{' '}
+                {importSummary.skipped} filtered rows.
+              </div>
+            )}
+          </form>
+          <form className="mt-4 space-y-3" onSubmit={handleServiceSave}>
             <div className="grid gap-3 md:grid-cols-2">
               <div>
                 <Label htmlFor="service-name">Service Name</Label>
@@ -601,6 +728,7 @@ export function OperationsDashboard() {
                 <Input
                   id="service-duration"
                   type="number"
+                  placeholder="Set manually later if needed"
                   value={serviceForm.default_duration_minutes}
                   onChange={(event) =>
                     setServiceForm((current) => ({
@@ -653,6 +781,34 @@ export function OperationsDashboard() {
                 />
               </div>
             </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="flex items-center gap-2 text-sm text-white/80">
+                <input
+                  type="checkbox"
+                  checked={serviceForm.online_booking_enabled}
+                  onChange={(event) =>
+                    setServiceForm((current) => ({
+                      ...current,
+                      online_booking_enabled: event.target.checked,
+                    }))
+                  }
+                />
+                Online booking enabled
+              </label>
+              <label className="flex items-center gap-2 text-sm text-white/80">
+                <input
+                  type="checkbox"
+                  checked={serviceForm.is_active}
+                  onChange={(event) =>
+                    setServiceForm((current) => ({
+                      ...current,
+                      is_active: event.target.checked,
+                    }))
+                  }
+                />
+                Service active
+              </label>
+            </div>
             <div>
               <Label htmlFor="service-description">Description</Label>
               <Textarea
@@ -666,12 +822,23 @@ export function OperationsDashboard() {
                 }
               />
             </div>
-            <Button type="submit" disabled={saving}>
-              {saving ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" disabled={saving}>
+                {saving ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
+                {editingServiceId ? 'Save Service' : 'Add Service'}
+              </Button>
+              {editingServiceId ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={cancelEditingService}
+                >
+                  Cancel Edit
+                </Button>
               ) : null}
-              Add Service
-            </Button>
+            </div>
           </form>
           <div className="mt-6 space-y-3">
             {services.length === 0 ? (
@@ -684,18 +851,56 @@ export function OperationsDashboard() {
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <div className="font-medium">{service.name}</div>
+                      <div className="flex items-center gap-2 font-medium">
+                        {service.name}
+                        {service.source_system === 'housecall_pro' ? (
+                          <Badge className="bg-blue-500/20 text-blue-100">
+                            Imported
+                          </Badge>
+                        ) : null}
+                        {!service.is_active ? (
+                          <Badge className="bg-white/10 text-white/60">
+                            Hidden
+                          </Badge>
+                        ) : null}
+                        {service.online_booking_enabled ? (
+                          <Badge className="bg-emerald-500/20 text-emerald-100">
+                            Booking on
+                          </Badge>
+                        ) : null}
+                      </div>
                       <div className="text-sm text-white/60">
-                        {service.default_duration_minutes} min +{' '}
-                        {service.buffer_minutes} min buffer
+                        {service.default_duration_minutes !== null
+                          ? `${service.default_duration_minutes} min`
+                          : 'Needs duration'}{' '}
+                        + {service.buffer_minutes} min buffer
+                      </div>
+                      <div className="text-xs text-white/50">
+                        {service.category}
                       </div>
                     </div>
-                    <Badge className="bg-white/10 text-white/70">
-                      {service.base_price !== null
-                        ? `$${Number(service.base_price).toFixed(2)}`
-                        : 'Price later'}
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge className="bg-white/10 text-white/70">
+                        {service.base_price !== null
+                          ? `$${Number(service.base_price).toFixed(2)}`
+                          : 'Price later'}
+                      </Badge>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => startEditingService(service)}
+                      >
+                        <Edit3 className="mr-2 h-3 w-3" />
+                        Edit
+                      </Button>
+                    </div>
                   </div>
+                  {service.description ? (
+                    <p className="mt-2 text-xs text-white/50">
+                      {service.description}
+                    </p>
+                  ) : null}
                 </div>
               ))
             )}

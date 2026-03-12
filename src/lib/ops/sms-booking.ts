@@ -60,6 +60,13 @@ export async function buildSmsSlotOffer(params: {
       matchesService(params.serviceNeeded, service.name, service.category),
     ) || services[0]
 
+  if (
+    !Number.isFinite(selectedService.default_duration_minutes) ||
+    Number(selectedService.default_duration_minutes) <= 0
+  ) {
+    return null
+  }
+
   const [templatesResult, overridesResult] = await Promise.all([
     params.supabase
       .from('availability_templates')

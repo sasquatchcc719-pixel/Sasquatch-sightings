@@ -30,6 +30,19 @@ export async function GET(request: NextRequest) {
 
     if (serviceError) throw serviceError
 
+    if (
+      !Number.isFinite(service.default_duration_minutes) ||
+      Number(service.default_duration_minutes) <= 0
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            'This service is missing a duration. Set one in Operations first.',
+        },
+        { status: 400 },
+      )
+    }
+
     const [templatesResult, overridesResult, appointmentsResult] =
       await Promise.all([
         supabase

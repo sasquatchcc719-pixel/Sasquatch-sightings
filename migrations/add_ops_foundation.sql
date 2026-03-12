@@ -19,10 +19,14 @@ CREATE TABLE IF NOT EXISTS service_catalog_items (
   slug TEXT NOT NULL UNIQUE,
   description TEXT,
   category TEXT NOT NULL DEFAULT 'cleaning',
-  default_duration_minutes INTEGER NOT NULL CHECK (default_duration_minutes > 0),
-  buffer_minutes INTEGER NOT NULL DEFAULT 15 CHECK (buffer_minutes >= 0),
+  default_duration_minutes INTEGER,
+  buffer_minutes INTEGER NOT NULL DEFAULT 30 CHECK (buffer_minutes >= 0),
   base_price DECIMAL(10, 2),
   pricing_unit TEXT NOT NULL DEFAULT 'fixed',
+  online_booking_enabled BOOLEAN DEFAULT false,
+  source_system TEXT,
+  source_uuid TEXT,
+  imported_at TIMESTAMPTZ,
   is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
@@ -223,6 +227,7 @@ CREATE TABLE IF NOT EXISTS ops_marketing_post_queue (
 
 CREATE INDEX IF NOT EXISTS idx_staff_users_user_id ON staff_users(user_id);
 CREATE INDEX IF NOT EXISTS idx_service_catalog_items_active ON service_catalog_items(is_active);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_service_catalog_items_source_uuid ON service_catalog_items(source_uuid) WHERE source_uuid IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_service_area_rules_lookup ON service_area_rules(city, zip_code);
 CREATE INDEX IF NOT EXISTS idx_availability_templates_day ON availability_templates(day_of_week, is_active);
 CREATE INDEX IF NOT EXISTS idx_availability_overrides_date ON availability_overrides(override_date);
