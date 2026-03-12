@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
   CalendarDays,
   ChevronLeft,
@@ -380,6 +381,7 @@ function getOffHourSegmentsForGrid(
 }
 
 export function OperationsSchedule() {
+  const router = useRouter()
   const [view, setView] = useState<ScheduleView>('week')
   const [anchorDate, setAnchorDate] = useState(() => new Date())
   const [loading, setLoading] = useState(true)
@@ -522,6 +524,11 @@ export function OperationsSchedule() {
       return
     }
     setAnchorDate((current) => addMonths(current, multiplier))
+  }
+
+  const openNewJobAt = (dateKey: string, hour: number) => {
+    const hh = String(hour).padStart(2, '0')
+    router.push(`/admin/operations/new-job?date=${dateKey}&time=${hh}:00`)
   }
 
   const handleBlockSubmit = async (event: React.FormEvent) => {
@@ -1011,10 +1018,14 @@ export function OperationsSchedule() {
                     className="relative border-r border-slate-200 bg-white"
                   >
                     {HOURS.map((hour) => (
-                      <div
+                      <button
                         key={`${dateKey}-${hour}`}
-                        className="border-b border-slate-200"
+                        type="button"
+                        className="focus-visible:ring-ring relative z-0 block w-full border-b border-slate-200 text-left transition hover:bg-emerald-50/60 focus-visible:ring-2 focus-visible:outline-none"
                         style={{ height: HOUR_HEIGHT }}
+                        onClick={() => openNewJobAt(dateKey, hour)}
+                        title={`Create job at ${String(hour).padStart(2, '0')}:00`}
+                        aria-label={`Create job on ${dateKey} at ${String(hour).padStart(2, '0')}:00`}
                       />
                     ))}
 
@@ -1027,7 +1038,7 @@ export function OperationsSchedule() {
                       return (
                         <div
                           key={`${dateKey}-off-${index}`}
-                          className="absolute right-0 left-0 bg-slate-100/80"
+                          className="pointer-events-none absolute right-0 left-0 bg-slate-100/80"
                           style={{ top, height }}
                         />
                       )

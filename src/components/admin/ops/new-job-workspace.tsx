@@ -1,7 +1,7 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Loader2, Minus, Plus, Search, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -147,6 +147,8 @@ function splitFullName(fullName: string): {
 
 export function NewJobWorkspace() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const hasAppliedPrefillRef = useRef(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -200,6 +202,32 @@ export function NewJobWorkspace() {
 
   const [selectedCustomer, setSelectedCustomer] =
     useState<CustomerSearchResult | null>(null)
+
+  useEffect(() => {
+    if (hasAppliedPrefillRef.current) return
+
+    const dateParam = String(searchParams.get('date') || '').trim()
+    const timeParam = String(searchParams.get('time') || '')
+      .trim()
+      .slice(0, 5)
+
+    const validDate = /^\d{4}-\d{2}-\d{2}$/.test(dateParam) ? dateParam : null
+    const validTime = /^([01]\d|2[0-3]):[0-5]\d$/.test(timeParam)
+      ? timeParam
+      : null
+
+    if (!validDate && !validTime) {
+      hasAppliedPrefillRef.current = true
+      return
+    }
+
+    setAppointmentForm((current) => ({
+      ...current,
+      appointment_date: validDate || current.appointment_date,
+      start_time: validTime || current.start_time,
+    }))
+    hasAppliedPrefillRef.current = true
+  }, [searchParams])
 
   useEffect(() => {
     async function loadServices() {
