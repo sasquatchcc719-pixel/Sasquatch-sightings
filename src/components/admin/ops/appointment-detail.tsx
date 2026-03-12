@@ -216,6 +216,38 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
     }
   }
 
+  const handleDeleteJob = async () => {
+    const confirmed = window.confirm(
+      'Delete this job and its invoice? This cannot be undone.',
+    )
+    if (!confirmed) return
+
+    setActionLoading('Delete Job')
+    setError(null)
+    try {
+      const response = await fetch(
+        `/api/admin/ops/appointments/${appointmentId}`,
+        {
+          method: 'DELETE',
+        },
+      )
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to delete job')
+      }
+      router.push('/admin/operations')
+      router.refresh()
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : 'Failed to delete job',
+      )
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
   if (loading) {
     return (
       <div className="text-muted-foreground flex items-center gap-3">
@@ -452,6 +484,16 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : null}
               Mark Paid
+            </Button>
+            <Button
+              variant="outline"
+              disabled={Boolean(actionLoading)}
+              onClick={() => void handleDeleteJob()}
+            >
+              {actionLoading === 'Delete Job' ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Delete Job
             </Button>
           </div>
         </Card>

@@ -449,7 +449,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
               {actionLoading === 'Delete Invoice' ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : null}
-              Delete Invoice
+              Delete Invoice Only
             </Button>
           </div>
         </Card>

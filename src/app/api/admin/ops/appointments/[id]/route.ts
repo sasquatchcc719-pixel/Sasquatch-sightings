@@ -218,3 +218,57 @@ export async function PATCH(
     )
   }
 }
+
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    await requireAnyRole(['admin', 'owner', 'dispatcher'])
+    const supabase = createAdminClient()
+    const { id } = await params
+
+    const { data: appointment, error: appointmentError } = await supabase
+      .from('ops_appointments')
+      .select('id')
+      .eq('id', id)
+      .single()
+
+    if (appointmentError) throw appointmentError
+
+    const { data: invoices, error: invoicesError } = await supabase
+      .from('ops_invoices')
+      .select('id')
+      .eq('appointment_id', id)
+
+    if (invoicesError) throw invoicesError
+
+    const invoiceIds = (invoices || []).map((row) => row.id)
+    if (invoiceIds.length > 0) {
+      const { error: syncCleanupError } = await supabase
+        .from('ops_quickbooks_sync_jobs')
+        .delete()
+        .eq('entity_type', 'invoice')
+        .in('entity_id', invoiceIds)
+      if (syncCleanupError) throw syncCleanupError
+    }
+
+    const { error: deleteError } = await supabase
+      .from('ops_appointments')
+      .delete()
+      .eq('id', id)
+
+    if (deleteError) throw deleteError
+
+    return NextResponse.json({
+      success: true,
+      appointment_id: appointment.id,
+    })
+  } catch (error) {
+    console.error('[ops/appointments/:id][DELETE] Error:', error)
+    return NextResponse.json(
+      { error: 'Failed to delete appointment' },
+      { status: 500 },
+    )
+  }
+}
