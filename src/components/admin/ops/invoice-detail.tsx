@@ -1,20 +1,33 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   CalendarClock,
+  Camera,
   Loader2,
   Mail,
   MapPin,
   MessageSquare,
+  Newspaper,
   Phone,
+  Trash2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
+
+type JobPhoto = {
+  id: string
+  appointment_id: string
+  storage_path: string
+  public_url: string
+  label: 'before' | 'after' | 'general'
+  watermarked: boolean
+  created_at: string
+}
 
 type InvoiceDetailProps = {
   invoiceId: string
@@ -132,6 +145,19 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     ok: boolean
     message: string
   } | null>(null)
+  const [photos, setPhotos] = useState<JobPhoto[]>([])
+  const [photoUploading, setPhotoUploading] = useState(false)
+  const [photoLabel, setPhotoLabel] = useState<'before' | 'after' | 'general'>(
+    'general',
+  )
+  const [photoWatermark, setPhotoWatermark] = useState(false)
+  const [photoError, setPhotoError] = useState<string | null>(null)
+  const [creatingPost, setCreatingPost] = useState(false)
+  const [postFeedback, setPostFeedback] = useState<{
+    ok: boolean
+    message: string
+  } | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [lineItems, setLineItems] = useState<
     Array<{
       id: string
@@ -158,6 +184,21 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
         setStatus(result.invoice.status)
         setDiscount(String(result.invoice.discount_amount || 0))
         setPaymentStatus(result.invoice.payment_status)
+
+        // Load photos for this appointment
+        const appt = Array.isArray(result.invoice.ops_appointments)
+          ? result.invoice.ops_appointments[0]
+          : result.invoice.ops_appointments
+        if (appt?.id) {
+          const photosRes = await fetch(
+            `/api/admin/ops/appointments/${appt.id}/photos`,
+            { cache: 'no-store' },
+          )
+          if (photosRes.ok) {
+            const photosData = await photosRes.json()
+            setPhotos(photosData.photos ?? [])
+          }
+        }
         setLineItems(
           (result.invoice.ops_invoice_line_items || []).map(
             (item: {
@@ -330,6 +371,76 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
       setSendFeedback({ channel, ok: false, message: 'Failed to send' })
     } finally {
       setSendLoading(null)
+    }
+  }
+
+  const handlePhotoUpload = async (file: File) => {
+    const apptId = unwrapRelation(invoice?.ops_appointments)?.id
+    if (!apptId) return
+    setPhotoUploading(true)
+    setPhotoError(null)
+    try {
+      const fd = new FormData()
+      fd.append('image', file)
+      fd.append('label', photoLabel)
+      fd.append('watermark', String(photoWatermark))
+      const res = await fetch(`/api/admin/ops/appointments/${apptId}/photos`, {
+        method: 'POST',
+        body: fd,
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Upload failed')
+      setPhotos((prev) => [...prev, data.photo])
+    } catch (err) {
+      setPhotoError(err instanceof Error ? err.message : 'Upload failed')
+    } finally {
+      setPhotoUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  const handlePhotoDelete = async (photoId: string) => {
+    const apptId = unwrapRelation(invoice?.ops_appointments)?.id
+    if (!apptId) return
+    try {
+      const res = await fetch(
+        `/api/admin/ops/appointments/${apptId}/photos?photoId=${photoId}`,
+        { method: 'DELETE' },
+      )
+      if (!res.ok) throw new Error('Delete failed')
+      setPhotos((prev) => prev.filter((p) => p.id !== photoId))
+    } catch (err) {
+      setPhotoError(err instanceof Error ? err.message : 'Delete failed')
+    }
+  }
+
+  const handleCreateJobPost = async () => {
+    const apptId = unwrapRelation(invoice?.ops_appointments)?.id
+    if (!apptId) return
+    setCreatingPost(true)
+    setPostFeedback(null)
+    try {
+      const res = await fetch(
+        `/api/admin/ops/appointments/${apptId}/create-job-post`,
+        { method: 'POST' },
+      )
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to create job post')
+      setPostFeedback({
+        ok: true,
+        message: 'Draft created! Opening for review…',
+      })
+      setTimeout(() => {
+        router.push(`/admin/jobs/${data.jobId}`)
+      }, 800)
+    } catch (err) {
+      setPostFeedback({
+        ok: false,
+        message:
+          err instanceof Error ? err.message : 'Failed to create job post',
+      })
+    } finally {
+      setCreatingPost(false)
     }
   }
 
@@ -732,6 +843,154 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
             <span>Total</span>
             <span className="tabular-nums">${total.toFixed(2)}</span>
           </div>
+        </div>
+      </Card>
+      {/* Job Photos */}
+      <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Camera className="text-muted-foreground h-5 w-5" />
+            <h3 className="text-lg font-semibold">Job Photos</h3>
+            {photos.length > 0 ? (
+              <Badge variant="outline">{photos.length}</Badge>
+            ) : null}
+          </div>
+          {photos.length > 0 ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-2"
+              disabled={creatingPost}
+              onClick={() => void handleCreateJobPost()}
+            >
+              {creatingPost ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Newspaper className="h-4 w-4" />
+              )}
+              Create Job Post
+            </Button>
+          ) : null}
+        </div>
+
+        {postFeedback ? (
+          <p
+            className={`mt-2 text-sm ${postFeedback.ok ? 'text-green-600' : 'text-red-500'}`}
+          >
+            {postFeedback.message}
+          </p>
+        ) : null}
+
+        {/* Existing photos */}
+        {photos.length > 0 ? (
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            {photos.map((photo) => (
+              <div key={photo.id} className="group relative">
+                <a
+                  href={photo.public_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <img
+                    src={photo.public_url}
+                    alt={photo.label}
+                    className="aspect-square w-full rounded-xl object-cover shadow-sm transition group-hover:opacity-90"
+                  />
+                </a>
+                <div className="mt-1 flex items-center justify-between px-0.5">
+                  <span
+                    className={`rounded px-1.5 py-0.5 text-xs font-semibold uppercase ${
+                      photo.label === 'before'
+                        ? 'bg-blue-100 text-blue-700'
+                        : photo.label === 'after'
+                          ? 'bg-green-100 text-green-700'
+                          : 'bg-slate-100 text-slate-600'
+                    }`}
+                  >
+                    {photo.label}
+                  </span>
+                  <button
+                    type="button"
+                    className="text-muted-foreground hover:text-destructive p-1"
+                    onClick={() => void handlePhotoDelete(photo.id)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-muted-foreground mt-3 text-sm">
+            No photos yet. Upload before and after shots below.
+          </p>
+        )}
+
+        {/* Upload controls */}
+        <div className="border-border/60 mt-4 space-y-3 border-t pt-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <Label htmlFor="photo-label" className="text-xs">
+                Label
+              </Label>
+              <select
+                id="photo-label"
+                className="border-input bg-background mt-1 h-9 rounded-md border px-2 text-sm"
+                value={photoLabel}
+                onChange={(e) =>
+                  setPhotoLabel(
+                    e.target.value as 'before' | 'after' | 'general',
+                  )
+                }
+              >
+                <option value="before">Before</option>
+                <option value="after">After</option>
+                <option value="general">General</option>
+              </select>
+            </div>
+
+            <label className="flex cursor-pointer items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={photoWatermark}
+                onChange={(e) => setPhotoWatermark(e.target.checked)}
+                className="h-4 w-4 rounded"
+              />
+              Add watermark
+            </label>
+
+            <div className="flex items-center gap-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) void handlePhotoUpload(file)
+                }}
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="gap-2"
+                disabled={photoUploading}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {photoUploading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Camera className="h-4 w-4" />
+                )}
+                {photoUploading ? 'Uploading…' : 'Choose Photo'}
+              </Button>
+            </div>
+          </div>
+
+          {photoError ? (
+            <p className="text-sm text-red-500">{photoError}</p>
+          ) : null}
         </div>
       </Card>
     </div>
