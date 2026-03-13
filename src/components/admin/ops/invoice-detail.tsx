@@ -157,6 +157,8 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
       base_price: number | null
     }>
   >([])
+  const [showServicePicker, setShowServicePicker] = useState(false)
+  const [pickerCategory, setPickerCategory] = useState<string | null>(null)
   const [photos, setPhotos] = useState<JobPhoto[]>([])
   const [photoUploading, setPhotoUploading] = useState(false)
   const [photoWatermark, setPhotoWatermark] = useState(false)
@@ -796,40 +798,113 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
       </Card>
 
       <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center justify-between gap-3">
           <h3 className="text-lg font-semibold">Line Items</h3>
-          <select
-            className="border-input bg-background h-9 rounded-md border px-3 text-sm"
-            value=""
-            onChange={(e) => {
-              const serviceId = e.target.value
-              if (!serviceId) return
-              const service = serviceCatalog.find((s) => s.id === serviceId)
-              if (!service) return
-              setLineItems((current) => [
-                ...current,
-                {
-                  id: `new-${Date.now()}`,
-                  appointment_line_item_id: null,
-                  description: service.name,
-                  quantity: 1,
-                  unit_price:
-                    service.base_price != null
-                      ? String(service.base_price)
-                      : '0',
-                },
-              ])
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setPickerCategory(null)
+              setShowServicePicker(true)
             }}
           >
-            <option value="">+ Add service…</option>
-            {serviceCatalog.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-                {s.base_price != null ? ` — $${s.base_price}` : ''}
-              </option>
-            ))}
-          </select>
+            + Add Service
+          </Button>
         </div>
+
+        {/* ── Service Picker Modal ─────────────────────────── */}
+        {showServicePicker ? (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center">
+            <div className="bg-card w-full max-w-sm rounded-t-2xl p-5 shadow-xl sm:rounded-2xl">
+              <div className="mb-4 flex items-center justify-between">
+                <h4 className="text-base font-semibold">
+                  {pickerCategory ? pickerCategory : 'Select a category'}
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowServicePicker(false)
+                    setPickerCategory(null)
+                  }}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {pickerCategory === null ? (
+                /* Step 1 — Category list */
+                <div className="space-y-2">
+                  {Array.from(new Set(serviceCatalog.map((s) => s.category)))
+                    .sort()
+                    .map((cat) => (
+                      <button
+                        key={cat}
+                        type="button"
+                        className="border-border/60 hover:bg-accent w-full rounded-xl border px-4 py-3 text-left text-sm font-medium transition-colors"
+                        onClick={() => setPickerCategory(cat)}
+                      >
+                        {cat}
+                        <span className="text-muted-foreground ml-2 text-xs font-normal">
+                          (
+                          {
+                            serviceCatalog.filter((s) => s.category === cat)
+                              .length
+                          }
+                          )
+                        </span>
+                      </button>
+                    ))}
+                </div>
+              ) : (
+                /* Step 2 — Services in selected category */
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    className="text-muted-foreground mb-1 flex items-center gap-1 text-xs hover:underline"
+                    onClick={() => setPickerCategory(null)}
+                  >
+                    ← Back
+                  </button>
+                  {serviceCatalog
+                    .filter((s) => s.category === pickerCategory)
+                    .map((service) => (
+                      <button
+                        key={service.id}
+                        type="button"
+                        className="border-border/60 hover:bg-accent flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left text-sm transition-colors"
+                        onClick={() => {
+                          setLineItems((current) => [
+                            ...current,
+                            {
+                              id: `new-${Date.now()}`,
+                              appointment_line_item_id: null,
+                              description: service.name,
+                              quantity: 1,
+                              unit_price:
+                                service.base_price != null
+                                  ? String(service.base_price)
+                                  : '0',
+                            },
+                          ])
+                          setShowServicePicker(false)
+                          setPickerCategory(null)
+                        }}
+                      >
+                        <span className="font-medium">{service.name}</span>
+                        {service.base_price != null ? (
+                          <span className="text-muted-foreground text-xs">
+                            ${service.base_price}
+                          </span>
+                        ) : null}
+                      </button>
+                    ))}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : null}
         <div className="mt-3 space-y-2">
           {lineItems.map((item, index) => (
             <div
