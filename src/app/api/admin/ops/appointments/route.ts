@@ -188,10 +188,12 @@ export async function POST(request: NextRequest) {
     )
     const totalMinutesWithBuffer = applyAppointmentBuffer(totalMinutes)
 
-    const quotedTotal = normalizedLineItems.reduce(
+    const quotedSubtotal = normalizedLineItems.reduce(
       (sum: number, item: NormalizedLineItem) => sum + item.line_total,
       0,
     )
+    const discountAmount = Math.max(0, Number(body.discount_amount || 0))
+    const quotedTotal = Math.max(0, quotedSubtotal - discountAmount)
 
     const appointmentDate = String(
       body.appointment?.appointment_date || '',
@@ -388,7 +390,8 @@ export async function POST(request: NextRequest) {
         appointment_id: appointment.id,
         status: 'draft',
         payment_status: 'unpaid',
-        subtotal: Number(quotedTotal.toFixed(2)),
+        subtotal: Number(quotedSubtotal.toFixed(2)),
+        discount_amount: Number(discountAmount.toFixed(2)),
         total: Number(quotedTotal.toFixed(2)),
         sync_status: syncStatus,
       })

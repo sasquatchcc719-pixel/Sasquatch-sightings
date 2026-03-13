@@ -19,6 +19,7 @@ type InvoiceDetail = {
   payment_status: string
   subtotal: number
   total: number
+  discount_amount: number | null
   ops_appointments:
     | {
         id: string
@@ -111,6 +112,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   const [invoice, setInvoice] = useState<InvoiceDetail | null>(null)
   const [status, setStatus] = useState('draft')
   const [paymentStatus, setPaymentStatus] = useState('unpaid')
+  const [discount, setDiscount] = useState('0')
   const [sendLoading, setSendLoading] = useState<'sms' | 'email' | null>(null)
   const [sendFeedback, setSendFeedback] = useState<{
     channel: 'sms' | 'email'
@@ -141,6 +143,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
         }
         setInvoice(result.invoice)
         setStatus(result.invoice.status)
+        setDiscount(String(result.invoice.discount_amount || 0))
         setPaymentStatus(result.invoice.payment_status)
         setLineItems(
           (result.invoice.ops_invoice_line_items || []).map(
@@ -183,6 +186,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
         body: JSON.stringify({
           status,
           payment_status: paymentStatus,
+          discount_amount: Number(discount || 0),
           line_items: lineItems.map((item) => ({
             id: item.id,
             appointment_line_item_id: item.appointment_line_item_id,
@@ -334,10 +338,12 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   const appointment = unwrapRelation(invoice.ops_appointments)
   const customer = unwrapRelation(appointment?.ops_customers)
   const address = unwrapRelation(appointment?.ops_service_addresses)
-  const total = lineItems.reduce(
+  const subtotalCalc = lineItems.reduce(
     (sum, item) => sum + item.quantity * Number(item.unit_price || 0),
     0,
   )
+  const discountAmount = Math.max(0, Number(discount || 0))
+  const total = Math.max(0, subtotalCalc - discountAmount)
 
   return (
     <div className="space-y-6">
@@ -627,8 +633,36 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
           ))}
         </div>
 
-        <div className="mt-4 flex items-center justify-end text-lg font-semibold">
-          Total: ${total.toFixed(2)}
+        <div className="border-border/60 mt-3 space-y-1 border-t pt-3">
+          {discountAmount > 0 ? (
+            <div className="flex items-center justify-end gap-6 text-sm text-slate-600">
+              <span>Subtotal</span>
+              <span className="tabular-nums">${subtotalCalc.toFixed(2)}</span>
+            </div>
+          ) : null}
+          <div className="flex items-center justify-end gap-4">
+            <div className="flex items-center gap-2">
+              <Label
+                htmlFor="invoice-discount"
+                className="text-sm whitespace-nowrap text-slate-500"
+              >
+                Discount ($)
+              </Label>
+              <Input
+                id="invoice-discount"
+                type="number"
+                min="0"
+                step="0.01"
+                value={discount}
+                className="h-8 w-24 text-right text-sm"
+                onChange={(e) => setDiscount(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="flex items-center justify-end gap-6 text-lg font-bold">
+            <span>Total</span>
+            <span className="tabular-nums">${total.toFixed(2)}</span>
+          </div>
         </div>
       </Card>
     </div>

@@ -201,6 +201,7 @@ export function NewJobWorkspace() {
     internal_notes: '',
   })
 
+  const [discount, setDiscount] = useState('0')
   const [selectedCustomer, setSelectedCustomer] =
     useState<CustomerSearchResult | null>(null)
 
@@ -374,11 +375,13 @@ export function NewJobWorkspace() {
     return Array.from({ length: 7 }, (_, index) => addDays(start, index))
   }, [appointmentForm.appointment_date])
 
-  const totalQuote = lineItems.reduce((sum, item) => {
+  const subtotalQuote = lineItems.reduce((sum, item) => {
     const quantity = Number(item.quantity || 1)
     const unitPrice = Number(item.unit_price || 0)
     return sum + quantity * unitPrice
   }, 0)
+  const discountAmount = Math.max(0, Number(discount || 0))
+  const totalQuote = Math.max(0, subtotalQuote - discountAmount)
   const totalSelectedUnits = lineItems.reduce(
     (sum, item) => sum + Math.max(0, Number(item.quantity || 0)),
     0,
@@ -534,6 +537,7 @@ export function NewJobWorkspace() {
                 ...addressForm,
               },
         appointment: appointmentForm,
+        discount_amount: Math.max(0, Number(discount || 0)),
         line_items: lineItems.map((item) => ({
           service_catalog_item_id: item.service_catalog_item_id || null,
           name_snapshot: item.name_snapshot,
@@ -853,9 +857,33 @@ export function NewJobWorkspace() {
                     {totalSelectedUnits === 1 ? '' : 's'}
                   </div>
                 </div>
-                <div className="text-xl font-bold">
-                  ${totalQuote.toFixed(2)}
+                <div className="flex flex-col items-end gap-1">
+                  {discountAmount > 0 ? (
+                    <div className="text-sm text-slate-500 tabular-nums line-through">
+                      ${subtotalQuote.toFixed(2)}
+                    </div>
+                  ) : null}
+                  <div className="text-xl font-bold">
+                    ${totalQuote.toFixed(2)}
+                  </div>
                 </div>
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <label
+                  htmlFor="new-job-discount"
+                  className="text-sm whitespace-nowrap text-slate-500"
+                >
+                  Discount ($)
+                </label>
+                <input
+                  id="new-job-discount"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={discount}
+                  onChange={(e) => setDiscount(e.target.value)}
+                  className="border-input bg-background h-8 w-24 rounded-md border px-2 text-right text-sm"
+                />
               </div>
               {unpricedLineItems > 0 ? (
                 <p className="text-muted-foreground mt-2 text-xs">

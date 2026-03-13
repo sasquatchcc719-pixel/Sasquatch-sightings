@@ -47,6 +47,7 @@ type TemplateContext = {
   service_summary: string
   address_line: string
   tech_name: string
+  quoted_total: string
 }
 
 type AppointmentWithRelations = {
@@ -88,6 +89,7 @@ type AppointmentWithRelations = {
   ops_appointment_line_items: Array<{
     name_snapshot: string
   }>
+  quoted_total: number | null
 }
 
 const APPOINTMENT_SELECT = `
@@ -96,6 +98,7 @@ const APPOINTMENT_SELECT = `
   appointment_date,
   start_time,
   end_time,
+  quoted_total,
   ops_customers (
     full_name,
     first_name,
@@ -241,6 +244,7 @@ async function getAppointmentContext(
       ? `${address.street_1}, ${address.city}, ${address.state} ${address.zip_code}`
       : '',
     tech_name: 'Charles',
+    quoted_total: Number(appointment.quoted_total || 0).toFixed(2),
   }
 
   return { appointment, context }

@@ -157,10 +157,14 @@ export async function PATCH(
       (sum, item) => sum + Number(item.line_total || 0),
       0,
     )
+    const discountAmount =
+      body.discount_amount !== undefined
+        ? Math.max(0, Number(body.discount_amount || 0))
+        : Number(current.discount_amount || 0)
     const total = Number(
       (
         subtotal -
-        Number(current.discount_amount || 0) +
+        discountAmount +
         Number(current.minimum_charge_adjustment || 0) +
         Number(current.tax_amount || 0)
       ).toFixed(2),
@@ -171,6 +175,7 @@ export async function PATCH(
       .update({
         subtotal: Number(subtotal.toFixed(2)),
         total,
+        discount_amount: discountAmount,
         status:
           body.status !== undefined ? String(body.status) : current.status,
         payment_status:
