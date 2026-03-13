@@ -5,12 +5,14 @@ import { useRouter } from 'next/navigation'
 import {
   CalendarClock,
   Camera,
+  CreditCard,
   Loader2,
   Mail,
   MapPin,
   MessageSquare,
   Phone,
   Trash2,
+  X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -144,6 +146,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     ok: boolean
     message: string
   } | null>(null)
+  const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [photos, setPhotos] = useState<JobPhoto[]>([])
   const [photoUploading, setPhotoUploading] = useState(false)
   const [photoWatermark, setPhotoWatermark] = useState(false)
@@ -516,6 +519,14 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
               ${total.toFixed(2)}
             </Badge>
             <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                className="gap-2 bg-blue-600 text-white hover:bg-blue-700"
+                onClick={() => setShowPaymentModal(true)}
+              >
+                <CreditCard className="h-4 w-4" />
+                Collect Payment
+              </Button>
               <Button
                 size="sm"
                 variant="outline"
@@ -945,6 +956,65 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
           ) : null}
         </div>
       </Card>
+
+      {/* In-person payment modal */}
+      {showPaymentModal ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+          onClick={() => setShowPaymentModal(false)}
+        >
+          <div
+            className="relative w-full max-w-sm rounded-2xl bg-white p-8 text-center shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
+              onClick={() => setShowPaymentModal(false)}
+            >
+              <X className="h-5 w-5" />
+            </button>
+
+            <p className="text-sm font-medium tracking-widest text-slate-400 uppercase">
+              Amount Due
+            </p>
+            <p className="mt-1 text-5xl font-bold text-slate-900">
+              ${total.toFixed(2)}
+            </p>
+            {customer?.business_name || customer?.full_name ? (
+              <p className="mt-1 text-sm text-slate-500">
+                {customer.business_name || customer.full_name}
+              </p>
+            ) : null}
+
+            <div className="mt-6 flex justify-center">
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(
+                  `https://venmo.com/SasquatchCarpet?txn=pay&amount=${total.toFixed(2)}&note=${encodeURIComponent(`Sasquatch Carpet Cleaning - ${customer?.business_name || customer?.full_name || 'Service'}`)}`,
+                )}`}
+                alt="Venmo QR code"
+                width={240}
+                height={240}
+                className="rounded-xl border border-slate-200"
+              />
+            </div>
+
+            <p className="mt-3 text-xs text-slate-400">
+              Customer scans with their Venmo app
+            </p>
+
+            <a
+              href={`https://venmo.com/SasquatchCarpet?txn=pay&amount=${total.toFixed(2)}&note=${encodeURIComponent(`Sasquatch Carpet Cleaning - ${customer?.business_name || customer?.full_name || 'Service'}`)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-[#008CFF] py-3 text-sm font-semibold text-white hover:bg-blue-600"
+            >
+              <CreditCard className="h-4 w-4" />
+              Open Venmo App
+            </a>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
