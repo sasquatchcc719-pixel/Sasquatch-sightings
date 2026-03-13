@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Loader2 } from 'lucide-react'
+import { ExternalLink, Loader2, MapPin } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -101,6 +101,18 @@ type InvoiceDetail = {
 function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
   if (!value) return null
   return Array.isArray(value) ? value[0] || null : value
+}
+
+function buildMapsUrl(
+  street_1: string,
+  city: string,
+  state: string,
+  zip_code: string,
+): string {
+  const destination = encodeURIComponent(
+    `${street_1}, ${city}, ${state} ${zip_code}`,
+  )
+  return `https://www.google.com/maps/dir/?api=1&destination=${destination}`
 }
 
 export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
@@ -298,6 +310,24 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     0,
   )
 
+  const mapsUrl =
+    address?.street_1 && address?.city && address?.state && address?.zip_code
+      ? buildMapsUrl(
+          address.street_1,
+          address.city,
+          address.state,
+          address.zip_code,
+        )
+      : null
+
+  const customerName =
+    customer?.business_name || customer?.full_name || 'Customer'
+  const serviceDate = appointment?.appointment_date
+  const timeRange =
+    appointment?.start_time && appointment?.end_time
+      ? `${appointment.start_time.slice(0, 5)} – ${appointment.end_time.slice(0, 5)}`
+      : null
+
   return (
     <div className="space-y-6">
       {error ? (
@@ -306,185 +336,107 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
         </Card>
       ) : null}
 
-      <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
+      {/* ── Invoice Header ── */}
+      <Card className="border-border/60 bg-card/80 p-6 shadow-sm backdrop-blur">
         <div className="flex flex-wrap items-start justify-between gap-4">
+          {/* Identity block */}
           <div>
             <p className="text-muted-foreground text-xs font-medium tracking-[0.22em] uppercase">
               Invoice
             </p>
-            <h2 className="mt-1 text-2xl font-semibold">
-              {customer?.business_name || customer?.full_name || 'Customer'}
-            </h2>
-            <p className="text-muted-foreground mt-2 text-sm">
-              {appointment?.appointment_date} ·{' '}
-              {appointment?.start_time.slice(0, 5)} -{' '}
-              {appointment?.end_time.slice(0, 5)}
-            </p>
+            <h2 className="mt-1 text-2xl font-semibold">{customerName}</h2>
+            {customer?.phone ? (
+              <p className="text-muted-foreground mt-0.5 text-sm">
+                {customer.phone}
+              </p>
+            ) : null}
+            {address ? (
+              <p className="text-muted-foreground mt-1 text-sm">
+                {address.street_1}, {address.city}, {address.state}{' '}
+                {address.zip_code}
+              </p>
+            ) : null}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline">${total.toFixed(2)}</Badge>
-            {appointment?.id ? (
-              <Button asChild variant="outline">
-                <Link href={`/admin/operations/appointments/${appointment.id}`}>
-                  Open Job
-                </Link>
-              </Button>
-            ) : null}
+          {/* Invoice meta + actions */}
+          <div className="flex flex-col items-end gap-3">
+            <div className="text-right">
+              {serviceDate ? (
+                <p className="text-muted-foreground text-sm">
+                  Date:{' '}
+                  <span className="text-foreground font-medium">
+                    {serviceDate}
+                  </span>
+                </p>
+              ) : null}
+              {timeRange ? (
+                <p className="text-muted-foreground text-sm">
+                  Time:{' '}
+                  <span className="text-foreground font-medium">
+                    {timeRange}
+                  </span>
+                </p>
+              ) : null}
+              <p className="mt-1 text-xl font-bold">${total.toFixed(2)}</p>
+              <Badge variant="outline" className="mt-1 capitalize">
+                {paymentStatus}
+              </Badge>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {mapsUrl ? (
+                <Button asChild variant="outline" size="sm" className="gap-2">
+                  <a href={mapsUrl} target="_blank" rel="noopener noreferrer">
+                    <MapPin className="h-4 w-4" />
+                    Route
+                  </a>
+                </Button>
+              ) : null}
+              {appointment?.id ? (
+                <Button asChild variant="outline" size="sm" className="gap-2">
+                  <Link
+                    href={`/admin/operations/appointments/${appointment.id}`}
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    Open Job
+                  </Link>
+                </Button>
+              ) : null}
+            </div>
           </div>
         </div>
       </Card>
 
-      <div className="grid gap-6 xl:grid-cols-[1fr,0.9fr]">
-        <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
-          <h3 className="text-lg font-semibold">Invoice Status</h3>
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            <div>
-              <Label htmlFor="invoice-status">Status</Label>
-              <select
-                id="invoice-status"
-                className="border-input bg-background h-10 w-full rounded-md border px-3 text-sm"
-                value={status}
-                onChange={(event) => setStatus(event.target.value)}
+      {/* ── Line Items ── */}
+      <Card className="border-border/60 bg-card/80 overflow-hidden shadow-sm backdrop-blur">
+        <div className="p-5 pb-3">
+          <h3 className="text-lg font-semibold">Line Items</h3>
+        </div>
+
+        {/* Table header */}
+        <div className="border-border/60 border-t">
+          <div className="bg-muted/40 grid grid-cols-[1fr,80px,100px,100px] gap-0 px-5 py-2 text-xs font-medium tracking-wide text-slate-500 uppercase">
+            <span>Description</span>
+            <span className="text-center">Qty</span>
+            <span className="text-right">Unit Price</span>
+            <span className="text-right">Total</span>
+          </div>
+        </div>
+
+        {/* Table rows */}
+        <div className="divide-border/60 divide-y">
+          {lineItems.map((item, index) => {
+            const lineTotal = item.quantity * Number(item.unit_price || 0)
+            return (
+              <div
+                key={item.id}
+                className="grid grid-cols-[1fr,80px,100px,100px] items-center gap-0 px-5 py-3"
               >
-                <option value="draft">Draft</option>
-                <option value="ready">Ready</option>
-                <option value="sent">Sent</option>
-                <option value="paid">Paid</option>
-                <option value="void">Void</option>
-              </select>
-            </div>
-            <div>
-              <Label htmlFor="invoice-payment-status">Payment Status</Label>
-              <select
-                id="invoice-payment-status"
-                className="border-input bg-background h-10 w-full rounded-md border px-3 text-sm"
-                value={paymentStatus}
-                onChange={(event) => setPaymentStatus(event.target.value)}
-              >
-                <option value="unpaid">Unpaid</option>
-                <option value="partial">Partial</option>
-                <option value="paid">Paid</option>
-                <option value="waived">Waived</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Button onClick={handleSave} disabled={saving}>
-              {saving ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : null}
-              Save Invoice
-            </Button>
-            {appointment?.id ? (
-              <>
-                <Button
-                  variant="outline"
-                  disabled={Boolean(actionLoading)}
-                  onClick={() =>
-                    void runAppointmentAction({
-                      label: 'Confirm',
-                      status: 'confirmed',
-                    })
-                  }
-                >
-                  {actionLoading === 'Confirm' ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : null}
-                  Confirm
-                </Button>
-                <Button
-                  variant="outline"
-                  disabled={Boolean(actionLoading)}
-                  onClick={() =>
-                    void runAppointmentAction({
-                      label: 'On My Way',
-                      status: 'on_my_way',
-                    })
-                  }
-                >
-                  {actionLoading === 'On My Way' ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : null}
-                  On My Way
-                </Button>
-                <Button
-                  variant="outline"
-                  disabled={Boolean(actionLoading)}
-                  onClick={() =>
-                    void runAppointmentAction({
-                      label: 'Complete',
-                      status: 'completed',
-                    })
-                  }
-                >
-                  {actionLoading === 'Complete' ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : null}
-                  Finished
-                </Button>
-                <Button
-                  variant="outline"
-                  disabled={Boolean(actionLoading)}
-                  onClick={() =>
-                    void runAppointmentAction({
-                      label: 'Mark Paid',
-                      payment_status: 'paid',
-                    })
-                  }
-                >
-                  {actionLoading === 'Mark Paid' ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : null}
-                  Mark Paid
-                </Button>
-              </>
-            ) : null}
-            <Button
-              variant="outline"
-              disabled={Boolean(actionLoading)}
-              onClick={() => void handleDeleteInvoice()}
-            >
-              {actionLoading === 'Delete Invoice' ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : null}
-              Delete Invoice Only
-            </Button>
-          </div>
-        </Card>
-
-        <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
-          <h3 className="text-lg font-semibold">Billing Context</h3>
-          <div className="text-muted-foreground mt-4 space-y-2 text-sm">
-            <div className="text-foreground font-medium">
-              {customer?.business_name || customer?.full_name}
-            </div>
-            <div>{customer?.phone || 'No phone'}</div>
-            <div>
-              {address?.street_1}, {address?.city}, {address?.state}{' '}
-              {address?.zip_code}
-            </div>
-          </div>
-        </Card>
-      </div>
-
-      <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
-        <h3 className="text-lg font-semibold">Line Items</h3>
-        <div className="mt-4 space-y-4">
-          {lineItems.map((item, index) => (
-            <div
-              key={item.id}
-              className="border-border/60 bg-background/70 rounded-2xl border p-4"
-            >
-              <div className="grid gap-3 md:grid-cols-[1.6fr,0.8fr,0.8fr]">
-                <div>
-                  <Label htmlFor={`line-description-${index}`}>
-                    Description
-                  </Label>
+                <div className="pr-4">
                   <Input
                     id={`line-description-${index}`}
                     value={item.description}
+                    className="h-8 text-sm"
                     onChange={(event) =>
                       setLineItems((current) =>
                         current.map((line, lineIndex) =>
@@ -496,21 +448,21 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                     }
                   />
                 </div>
-                <div>
-                  <Label htmlFor={`line-quantity-${index}`}>Quantity</Label>
+                <div className="flex justify-center">
                   <Input
                     id={`line-quantity-${index}`}
                     value={String(item.quantity)}
                     disabled
+                    className="h-8 w-14 text-center text-sm"
                   />
                 </div>
-                <div>
-                  <Label htmlFor={`line-price-${index}`}>Unit Price</Label>
+                <div className="flex justify-end">
                   <Input
                     id={`line-price-${index}`}
                     type="number"
                     step="0.01"
                     value={item.unit_price}
+                    className="h-8 w-24 text-right text-sm"
                     onChange={(event) =>
                       setLineItems((current) =>
                         current.map((line, lineIndex) =>
@@ -522,13 +474,141 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                     }
                   />
                 </div>
+                <div className="text-right text-sm font-medium tabular-nums">
+                  ${lineTotal.toFixed(2)}
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
 
-        <div className="mt-4 flex items-center justify-end text-lg font-semibold">
-          Total: ${total.toFixed(2)}
+        {/* Total row */}
+        <div className="border-border/60 bg-muted/20 border-t px-5 py-3">
+          <div className="flex items-center justify-end gap-6">
+            <span className="text-muted-foreground text-sm font-medium">
+              Total
+            </span>
+            <span className="text-xl font-bold tabular-nums">
+              ${total.toFixed(2)}
+            </span>
+          </div>
+        </div>
+      </Card>
+
+      {/* ── Invoice Controls ── */}
+      <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
+        <h3 className="text-lg font-semibold">Invoice Controls</h3>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <div>
+            <Label htmlFor="invoice-status">Invoice Status</Label>
+            <select
+              id="invoice-status"
+              className="border-input bg-background h-10 w-full rounded-md border px-3 text-sm"
+              value={status}
+              onChange={(event) => setStatus(event.target.value)}
+            >
+              <option value="draft">Draft</option>
+              <option value="ready">Ready</option>
+              <option value="sent">Sent</option>
+              <option value="paid">Paid</option>
+              <option value="void">Void</option>
+            </select>
+          </div>
+          <div>
+            <Label htmlFor="invoice-payment-status">Payment Status</Label>
+            <select
+              id="invoice-payment-status"
+              className="border-input bg-background h-10 w-full rounded-md border px-3 text-sm"
+              value={paymentStatus}
+              onChange={(event) => setPaymentStatus(event.target.value)}
+            >
+              <option value="unpaid">Unpaid</option>
+              <option value="partial">Partial</option>
+              <option value="paid">Paid</option>
+              <option value="waived">Waived</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button onClick={handleSave} disabled={saving}>
+            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            Save Invoice
+          </Button>
+          {appointment?.id ? (
+            <>
+              <Button
+                variant="outline"
+                disabled={Boolean(actionLoading)}
+                onClick={() =>
+                  void runAppointmentAction({
+                    label: 'Confirm',
+                    status: 'confirmed',
+                  })
+                }
+              >
+                {actionLoading === 'Confirm' ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
+                Confirm
+              </Button>
+              <Button
+                variant="outline"
+                disabled={Boolean(actionLoading)}
+                onClick={() =>
+                  void runAppointmentAction({
+                    label: 'On My Way',
+                    status: 'on_my_way',
+                  })
+                }
+              >
+                {actionLoading === 'On My Way' ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
+                On My Way
+              </Button>
+              <Button
+                variant="outline"
+                disabled={Boolean(actionLoading)}
+                onClick={() =>
+                  void runAppointmentAction({
+                    label: 'Complete',
+                    status: 'completed',
+                  })
+                }
+              >
+                {actionLoading === 'Complete' ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
+                Finished
+              </Button>
+              <Button
+                variant="outline"
+                disabled={Boolean(actionLoading)}
+                onClick={() =>
+                  void runAppointmentAction({
+                    label: 'Mark Paid',
+                    payment_status: 'paid',
+                  })
+                }
+              >
+                {actionLoading === 'Mark Paid' ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
+                Mark Paid
+              </Button>
+            </>
+          ) : null}
+          <Button
+            variant="outline"
+            disabled={Boolean(actionLoading)}
+            onClick={() => void handleDeleteInvoice()}
+          >
+            {actionLoading === 'Delete Invoice' ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : null}
+            Delete Invoice Only
+          </Button>
         </div>
       </Card>
     </div>
