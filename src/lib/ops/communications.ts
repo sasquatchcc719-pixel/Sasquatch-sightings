@@ -6,13 +6,18 @@ export const OPS_TEMPLATE_KEYS = [
   'job_scheduled_sms',
   'on_my_way_sms',
   'job_finished_sms',
+  'job_rescheduled_sms',
   'job_scheduled_email',
   'job_finished_email',
   'satisfaction_checkin_email',
 ] as const
 
 export type OpsTemplateKey = (typeof OPS_TEMPLATE_KEYS)[number]
-export type OpsLifecycleEvent = 'job_scheduled' | 'on_my_way' | 'job_finished'
+export type OpsLifecycleEvent =
+  | 'job_scheduled'
+  | 'on_my_way'
+  | 'job_finished'
+  | 'job_rescheduled'
 
 type OpsTemplateRow = {
   template_key: OpsTemplateKey
@@ -161,6 +166,9 @@ function eventToTemplateKeys(event: OpsLifecycleEvent): OpsTemplateKey[] {
   }
   if (event === 'on_my_way') {
     return ['on_my_way_sms']
+  }
+  if (event === 'job_rescheduled') {
+    return ['job_rescheduled_sms']
   }
   return [
     'job_finished_sms',

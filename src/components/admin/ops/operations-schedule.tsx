@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -448,6 +448,21 @@ export function OperationsSchedule() {
   >(() => DEFAULT_BUSINESS_HOURS_ROWS.map((row) => ({ ...row })))
   const [showBusinessHours, setShowBusinessHours] = useState(false)
   const [showBlockForm, setShowBlockForm] = useState(false)
+
+  // Drag-and-drop reschedule state
+  const [draggingAppointment, setDraggingAppointment] =
+    useState<Appointment | null>(null)
+  const [dragPreview, setDragPreview] = useState<{
+    dateKey: string
+    snappedMinutes: number
+  } | null>(null)
+  const [pendingNotify, setPendingNotify] = useState<{
+    appointmentId: string
+    customerName: string
+  } | null>(null)
+  const draggingYOffsetRef = useRef<number>(0)
+  const didDragRef = useRef<boolean>(false)
+
   const [blockForm, setBlockForm] = useState({
     title: '',
     description: '',
@@ -579,6 +594,95 @@ export function OperationsSchedule() {
     router.push(`/admin/operations/new-job?date=${dateKey}&time=${hh}:00`)
   }
 
+  const PX_PER_MINUTE = HOUR_HEIGHT / 60
+  const GRID_START_MINUTES = HOURS[0] * 60
+
+  const snapToMinutes = (rawMinutes: number): number => {
+    const snapped = Math.round(rawMinutes / 15) * 15
+    return Math.max(GRID_START_MINUTES, snapped)
+  }
+
+  const minutesToTimeString = (minutes: number): string => {
+    const h = Math.floor(minutes / 60) % 24
+    const m = minutes % 60
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`
+  }
+
+  const handleDragOver = (
+    e: React.DragEvent<HTMLDivElement>,
+    dateKey: string,
+  ) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    const rect = e.currentTarget.getBoundingClientRect()
+    const rawY = e.clientY - rect.top - draggingYOffsetRef.current
+    const rawMinutes = GRID_START_MINUTES + rawY / PX_PER_MINUTE
+    const snappedMinutes = snapToMinutes(rawMinutes)
+    setDragPreview({ dateKey, snappedMinutes })
+  }
+
+  const handleDrop = async (
+    e: React.DragEvent<HTMLDivElement>,
+    dateKey: string,
+  ) => {
+    e.preventDefault()
+    const appointmentId = e.dataTransfer.getData('appointmentId')
+    if (!appointmentId) return
+
+    const rect = e.currentTarget.getBoundingClientRect()
+    const rawY = e.clientY - rect.top - draggingYOffsetRef.current
+    const rawMinutes = GRID_START_MINUTES + rawY / PX_PER_MINUTE
+    const snappedMinutes = snapToMinutes(rawMinutes)
+    const newTime = minutesToTimeString(snappedMinutes)
+
+    setDragPreview(null)
+    setDraggingAppointment(null)
+
+    try {
+      const response = await fetch(
+        `/api/admin/ops/appointments/${appointmentId}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            appointment_date: dateKey,
+            start_time: newTime,
+          }),
+        },
+      )
+      if (!response.ok) {
+        const result = await response.json()
+        setError(result.error || 'Failed to reschedule job')
+        return
+      }
+      await loadSchedule()
+
+      // Find the appointment that was moved to show customer name in popup
+      const moved = data.appointments.find((a) => a.id === appointmentId)
+      if (moved) {
+        const customer = unwrapRelation(moved.ops_customers)
+        const customerName =
+          customer?.business_name || customer?.full_name || 'Customer'
+        setPendingNotify({ appointmentId, customerName })
+      }
+    } catch {
+      setError('Failed to reschedule job')
+    }
+  }
+
+  const sendRescheduleNotification = async (appointmentId: string) => {
+    try {
+      await fetch(`/api/admin/ops/appointments/${appointmentId}/notify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: 'job_rescheduled' }),
+      })
+    } catch {
+      // Best-effort — don't block UI if notification fails
+    }
+    setPendingNotify(null)
+  }
+
   const handleBlockSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
     setSaving(true)
@@ -615,6 +719,38 @@ export function OperationsSchedule() {
 
   return (
     <div className="space-y-6">
+      {/* Notify customer popup after reschedule */}
+      {pendingNotify ? (
+        <div className="pointer-events-none fixed inset-0 z-50 flex items-end justify-center pb-8">
+          <Card className="border-border/60 bg-card/95 pointer-events-auto flex items-center gap-4 rounded-2xl border p-4 shadow-xl backdrop-blur">
+            <p className="text-sm font-medium">
+              Notify{' '}
+              <span className="font-semibold">
+                {pendingNotify.customerName}
+              </span>{' '}
+              of the new time?
+            </p>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                onClick={() =>
+                  void sendRescheduleNotification(pendingNotify.appointmentId)
+                }
+              >
+                Yes
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setPendingNotify(null)}
+              >
+                No
+              </Button>
+            </div>
+          </Card>
+        </div>
+      ) : null}
+
       <Card className="border-border/60 bg-card/80 p-4 shadow-sm backdrop-blur">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -1064,7 +1200,31 @@ export function OperationsSchedule() {
                   <div
                     key={dateKey}
                     className="relative border-r border-slate-200 bg-white"
+                    onDragOver={(e) => handleDragOver(e, dateKey)}
+                    onDragLeave={() => setDragPreview(null)}
+                    onDrop={(e) => void handleDrop(e, dateKey)}
                   >
+                    {/* Drop ghost preview */}
+                    {dragPreview?.dateKey === dateKey && draggingAppointment
+                      ? (() => {
+                          const ghostPlacement =
+                            getAppointmentPlacement(draggingAppointment)
+                          const ghostTop =
+                            ((dragPreview.snappedMinutes - GRID_START_MINUTES) /
+                              60) *
+                            HOUR_HEIGHT
+                          return (
+                            <div
+                              className="pointer-events-none absolute right-2 left-2 rounded-2xl border-2 border-dashed border-emerald-400 bg-emerald-100/60"
+                              style={{
+                                top: ghostTop + 6,
+                                height: ghostPlacement.height - 8,
+                              }}
+                            />
+                          )
+                        })()
+                      : null}
+
                     {HOURS.map((hour) => (
                       <button
                         key={`${dateKey}-${hour}`}
@@ -1120,17 +1280,42 @@ export function OperationsSchedule() {
                       const href = invoice?.id
                         ? `/admin/operations/invoices/${invoice.id}`
                         : `/admin/operations/appointments/${appointment.id}`
+                      const isDragging =
+                        draggingAppointment?.id === appointment.id
                       return (
-                        <Link
+                        <div
                           key={appointment.id}
-                          href={href}
-                          className={`absolute right-2 left-2 overflow-hidden rounded-2xl border p-3 text-xs text-slate-900 shadow-sm transition hover:shadow-md ${getStatusTone(appointment.status)}`}
+                          draggable
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData(
+                              'appointmentId',
+                              appointment.id,
+                            )
+                            e.dataTransfer.effectAllowed = 'move'
+                            draggingYOffsetRef.current = e.nativeEvent.offsetY
+                            didDragRef.current = false
+                            setDraggingAppointment(appointment)
+                            setTimeout(() => {
+                              didDragRef.current = true
+                            }, 50)
+                          }}
+                          onDragEnd={() => {
+                            setDraggingAppointment(null)
+                            setDragPreview(null)
+                          }}
+                          className={`absolute right-2 left-2 cursor-grab overflow-hidden rounded-2xl border p-3 text-xs text-slate-900 shadow-sm transition active:cursor-grabbing ${getStatusTone(appointment.status)} ${isDragging ? 'opacity-40' : 'hover:shadow-md'}`}
                           style={{
                             top: placement.top + 6,
                             height: placement.height - 8,
                           }}
                         >
-                          <div className="flex h-full flex-col overflow-hidden">
+                          <Link
+                            href={href}
+                            className="flex h-full flex-col overflow-hidden"
+                            onClick={(e) => {
+                              if (didDragRef.current) e.preventDefault()
+                            }}
+                          >
                             <div className="flex items-start justify-between gap-2">
                               <div className="line-clamp-1 leading-tight font-semibold">
                                 {customer?.business_name ||
@@ -1155,8 +1340,8 @@ export function OperationsSchedule() {
                             <div className="mt-auto pt-2 text-right font-semibold text-slate-800">
                               ${Number(appointment.quoted_total).toFixed(2)}
                             </div>
-                          </div>
-                        </Link>
+                          </Link>
+                        </div>
                       )
                     })}
                   </div>
