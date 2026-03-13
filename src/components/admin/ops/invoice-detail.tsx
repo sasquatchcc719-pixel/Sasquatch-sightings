@@ -149,6 +149,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     message: string
   } | null>(null)
   const [showPaymentModal, setShowPaymentModal] = useState(false)
+  const [paymentTab, setPaymentTab] = useState<'qr' | 'tap'>('qr')
   const [streetViewFailed, setStreetViewFailed] = useState(false)
   const [serviceCatalog, setServiceCatalog] = useState<
     Array<{
@@ -1171,7 +1172,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
           onClick={() => setShowPaymentModal(false)}
         >
           <div
-            className="relative w-full max-w-sm rounded-2xl bg-white p-8 text-center shadow-2xl"
+            className="relative w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <button
@@ -1182,6 +1183,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
               <X className="h-5 w-5" />
             </button>
 
+            {/* Amount */}
             <p className="text-sm font-medium tracking-widest text-slate-400 uppercase">
               Amount Due
             </p>
@@ -1194,34 +1196,86 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
               </p>
             ) : null}
 
-            <div className="mt-6 flex justify-center">
-              <img
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(
-                  `https://venmo.com/SasquatchCarpet?txn=pay&amount=${total.toFixed(2)}&note=${encodeURIComponent(`Sasquatch Carpet Cleaning - ${customer?.business_name || customer?.full_name || 'Service'}`)}`,
-                )}`}
-                alt="Venmo QR code"
-                width={240}
-                height={240}
-                className="rounded-xl border border-slate-200"
-              />
+            {/* Tab toggle */}
+            <div className="mt-5 flex rounded-xl border border-slate-200 p-1">
+              <button
+                type="button"
+                className={`flex-1 rounded-lg py-2 text-sm font-semibold transition-colors ${
+                  paymentTab === 'qr'
+                    ? 'bg-[#008CFF] text-white'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+                onClick={() => setPaymentTab('qr')}
+              >
+                QR Code
+              </button>
+              <button
+                type="button"
+                className={`flex-1 rounded-lg py-2 text-sm font-semibold transition-colors ${
+                  paymentTab === 'tap'
+                    ? 'bg-[#008CFF] text-white'
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+                onClick={() => setPaymentTab('tap')}
+              >
+                Tap Card
+              </button>
             </div>
 
-            <p className="mt-4 text-sm font-medium text-slate-700">
-              Hand your phone to the customer
-            </p>
-            <p className="mt-1 text-xs text-slate-400">
-              They scan the QR code or tap the button below
-            </p>
-
-            <a
-              href={`https://venmo.com/SasquatchCarpet?txn=pay&amount=${total.toFixed(2)}&note=${encodeURIComponent(`Sasquatch Carpet Cleaning - ${customer?.business_name || customer?.full_name || 'Service'}`)}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-[#008CFF] py-3 text-sm font-semibold text-white hover:bg-blue-600"
-            >
-              <CreditCard className="h-4 w-4" />
-              Pay with Venmo
-            </a>
+            {paymentTab === 'qr' ? (
+              <>
+                <div className="mt-5 flex justify-center">
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(
+                      `https://venmo.com/SasquatchCarpet?txn=pay&amount=${total.toFixed(2)}&note=${encodeURIComponent(`Sasquatch Carpet Cleaning - ${customer?.business_name || customer?.full_name || 'Service'}`)}`,
+                    )}`}
+                    alt="Venmo QR code"
+                    width={220}
+                    height={220}
+                    className="rounded-xl border border-slate-200"
+                  />
+                </div>
+                <p className="mt-3 text-sm font-medium text-slate-700">
+                  Hand your phone to the customer
+                </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  They scan the QR code or tap the button below
+                </p>
+                <a
+                  href={`https://venmo.com/SasquatchCarpet?txn=pay&amount=${total.toFixed(2)}&note=${encodeURIComponent(`Sasquatch Carpet Cleaning - ${customer?.business_name || customer?.full_name || 'Service'}`)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#008CFF] py-3 text-sm font-semibold text-white hover:bg-blue-600"
+                >
+                  <CreditCard className="h-4 w-4" />
+                  Pay with Venmo
+                </a>
+              </>
+            ) : (
+              <>
+                <div className="mt-6 flex flex-col items-center gap-2">
+                  <div className="flex h-20 w-20 items-center justify-center rounded-full bg-blue-50">
+                    <CreditCard className="h-10 w-10 text-[#008CFF]" />
+                  </div>
+                  <p className="mt-2 text-base font-semibold text-slate-800">
+                    Accept a card tap
+                  </p>
+                  <p className="text-sm leading-relaxed text-slate-500">
+                    Open Venmo → tap <strong>⊕</strong> →{' '}
+                    <strong>Accept money</strong> → enter{' '}
+                    <strong>${total.toFixed(2)}</strong> → have the customer tap
+                    their card
+                  </p>
+                </div>
+                <a
+                  href="venmo://"
+                  className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-[#008CFF] py-3 text-sm font-semibold text-white hover:bg-blue-600"
+                >
+                  <CreditCard className="h-4 w-4" />
+                  Open Venmo
+                </a>
+              </>
+            )}
           </div>
         </div>
       ) : null}
