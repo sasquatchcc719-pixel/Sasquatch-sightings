@@ -313,6 +313,7 @@ CUSTOMER INFO CHECKLIST (collect before sending booking link):
 ✓ Email - "What's your email for the confirmation?"
 ✓ Full address (street, city, zip) - "What's your full address including city and zip?" (if only street: "What city and zip code?")
 ✓ Phone - (automatic from SMS)
+✓ Lead source - "How did you hear about us?" Ask this naturally after you have the service details and before or alongside gathering booking info. Options: Google, Word of mouth / Referral, Nextdoor, Facebook, Yelp, Repeat customer, Other. You only need to ask once - if they've already mentioned finding an NFC card or contest, that counts as their source (don't ask again).
 `
 
 /**

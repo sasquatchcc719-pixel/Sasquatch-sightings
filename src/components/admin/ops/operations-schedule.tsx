@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
   CalendarDays,
   ChevronLeft,
@@ -430,8 +430,16 @@ function getOffHourSegmentsForGrid(
 
 export function OperationsSchedule() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [view, setView] = useState<ScheduleView>('week')
-  const [anchorDate, setAnchorDate] = useState(() => new Date())
+  const [anchorDate, setAnchorDate] = useState(() => {
+    const dateParam = searchParams.get('date')
+    if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+      const parsed = new Date(`${dateParam}T12:00:00`)
+      if (!isNaN(parsed.getTime())) return parsed
+    }
+    return new Date()
+  })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [businessHoursSaving, setBusinessHoursSaving] = useState(false)

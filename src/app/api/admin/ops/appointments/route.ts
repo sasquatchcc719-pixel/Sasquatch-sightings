@@ -354,6 +354,7 @@ export async function POST(request: NextRequest) {
           body.appointment?.assigned_staff_user_id || null,
         booking_channel: body.appointment?.booking_channel || 'admin',
         source: body.appointment?.source || 'internal',
+        lead_source: body.lead_source ? String(body.lead_source) : null,
         status: 'booked',
         payment_status: 'unpaid',
         quickbooks_sync_status: syncStatus,

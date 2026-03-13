@@ -202,6 +202,7 @@ export function NewJobWorkspace() {
   })
 
   const [discount, setDiscount] = useState('0')
+  const [leadSource, setLeadSource] = useState('')
   const [selectedCustomer, setSelectedCustomer] =
     useState<CustomerSearchResult | null>(null)
 
@@ -538,6 +539,7 @@ export function NewJobWorkspace() {
               },
         appointment: appointmentForm,
         discount_amount: Math.max(0, Number(discount || 0)),
+        lead_source: leadSource.trim() || null,
         line_items: lineItems.map((item) => ({
           service_catalog_item_id: item.service_catalog_item_id || null,
           name_snapshot: item.name_snapshot,
@@ -1276,6 +1278,26 @@ export function NewJobWorkspace() {
                   }
                   placeholder="Future staff selector"
                 />
+              </div>
+              <div>
+                <Label htmlFor="lead-source">Lead Source</Label>
+                <select
+                  id="lead-source"
+                  className="border-input bg-background h-10 w-full rounded-md border px-3 text-sm"
+                  value={leadSource}
+                  onChange={(event) => setLeadSource(event.target.value)}
+                >
+                  <option value="">— Select source —</option>
+                  <option value="Google">Google</option>
+                  <option value="Word of mouth / Referral">
+                    Word of mouth / Referral
+                  </option>
+                  <option value="Nextdoor">Nextdoor</option>
+                  <option value="Facebook">Facebook</option>
+                  <option value="Yelp">Yelp</option>
+                  <option value="Repeat customer">Repeat customer</option>
+                  <option value="Other">Other</option>
+                </select>
               </div>
               <div className="md:col-span-3">
                 <Label htmlFor="internal-notes">Internal Notes</Label>

@@ -2,7 +2,14 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Loader2, Mail, MapPin, MessageSquare } from 'lucide-react'
+import {
+  CalendarClock,
+  Loader2,
+  Mail,
+  MapPin,
+  MessageSquare,
+  Phone,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -27,16 +34,19 @@ type InvoiceDetail = {
         start_time: string
         end_time: string
         status: string
+        lead_source: string | null
         ops_customers:
           | {
               full_name: string
               business_name: string | null
               phone: string | null
+              email: string | null
             }
           | {
               full_name: string
               business_name: string | null
               phone: string | null
+              email: string | null
             }[]
           | null
         ops_service_addresses:
@@ -61,16 +71,19 @@ type InvoiceDetail = {
         start_time: string
         end_time: string
         status: string
+        lead_source: string | null
         ops_customers:
           | {
               full_name: string
               business_name: string | null
               phone: string | null
+              email: string | null
             }
           | {
               full_name: string
               business_name: string | null
               phone: string | null
+              email: string | null
             }[]
           | null
         ops_service_addresses:
@@ -547,15 +560,71 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
 
         <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
           <h3 className="text-lg font-semibold">Billing Context</h3>
-          <div className="text-muted-foreground mt-4 space-y-2 text-sm">
+          <div className="mt-4 space-y-3 text-sm">
             <div className="text-foreground font-medium">
               {customer?.business_name || customer?.full_name}
             </div>
-            <div>{customer?.phone || 'No phone'}</div>
-            <div>
-              {address?.street_1}, {address?.city}, {address?.state}{' '}
-              {address?.zip_code}
-            </div>
+            {customer?.phone ? (
+              <div className="flex items-center gap-2">
+                <span className="text-muted-foreground flex-1 tabular-nums">
+                  {customer.phone}
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 gap-1.5 px-2"
+                  asChild
+                >
+                  <a href={`tel:${customer.phone}`}>
+                    <Phone className="h-3.5 w-3.5" />
+                    Call
+                  </a>
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 gap-1.5 px-2"
+                  asChild
+                >
+                  <a href={`sms:${customer.phone}`}>
+                    <MessageSquare className="h-3.5 w-3.5" />
+                    Text
+                  </a>
+                </Button>
+              </div>
+            ) : (
+              <div className="text-muted-foreground">No phone on file</div>
+            )}
+            {customer?.email ? (
+              <div className="text-muted-foreground">{customer.email}</div>
+            ) : null}
+            {address ? (
+              <div className="text-muted-foreground">
+                {address.street_1}, {address.city}, {address.state}{' '}
+                {address.zip_code}
+              </div>
+            ) : null}
+            {appointment?.lead_source ? (
+              <div className="text-muted-foreground">
+                <span className="text-foreground/70 font-medium">Source:</span>{' '}
+                {appointment.lead_source}
+              </div>
+            ) : null}
+            {appointment?.id ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-1 w-full gap-2"
+                onClick={() =>
+                  router.push(
+                    `/admin/operations?date=${appointment.appointment_date}`,
+                  )
+                }
+              >
+                <CalendarClock className="h-4 w-4" />
+                Reschedule on Calendar
+              </Button>
+            ) : null}
           </div>
         </Card>
       </div>

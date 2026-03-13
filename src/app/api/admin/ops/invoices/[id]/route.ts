@@ -13,6 +13,7 @@ const INVOICE_SELECT = `
     payment_status,
     quoted_total,
     internal_notes,
+    lead_source,
     ops_customers (
       id,
       full_name,
