@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge'
 import {
   applyAppointmentBuffer,
   calculateLineItemDurationMinutes,
+  DEFAULT_APPOINTMENT_BUFFER_MINUTES,
 } from '@/lib/ops/availability'
 
 type ServiceItem = {
@@ -382,21 +383,27 @@ export function NewJobWorkspace() {
     (sum, item) => sum + Math.max(0, Number(item.quantity || 0)),
     0,
   )
+  const serviceMinutesForCurrentSelection = lineItems.reduce((sum, item) => {
+    const service = servicesById.get(item.service_catalog_item_id)
+    const durationMinutes = Number(service?.default_duration_minutes || 0)
+    const quantity = Number(item.quantity || 0)
+    if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return sum
+    if (!Number.isFinite(quantity) || quantity <= 0) return sum
+    return (
+      sum +
+      calculateLineItemDurationMinutes({
+        durationMinutes,
+        quantity,
+      })
+    )
+  }, 0)
+  const bufferMinutesForCurrentSelection =
+    serviceMinutesForCurrentSelection > 0
+      ? DEFAULT_APPOINTMENT_BUFFER_MINUTES
+      : 0
   const requiredMinutesForCurrentSelection = applyAppointmentBuffer(
-    lineItems.reduce((sum, item) => {
-      const service = servicesById.get(item.service_catalog_item_id)
-      const durationMinutes = Number(service?.default_duration_minutes || 0)
-      const quantity = Number(item.quantity || 0)
-      if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return sum
-      if (!Number.isFinite(quantity) || quantity <= 0) return sum
-      return (
-        sum +
-        calculateLineItemDurationMinutes({
-          durationMinutes,
-          quantity,
-        })
-      )
-    }, 0),
+    serviceMinutesForCurrentSelection,
+    bufferMinutesForCurrentSelection,
   )
   const unpricedLineItems = lineItems.filter(
     (item) =>
@@ -1224,7 +1231,7 @@ export function NewJobWorkspace() {
                 </select>
                 <div className="text-muted-foreground mt-1 text-xs">
                   {requiredMinutesForCurrentSelection > 0
-                    ? `Only open times are shown (job + buffer: ${requiredMinutesForCurrentSelection} min).`
+                    ? `Only open times are shown (service: ${serviceMinutesForCurrentSelection} min + one travel buffer: ${bufferMinutesForCurrentSelection} min = ${requiredMinutesForCurrentSelection} min).`
                     : 'Pick services first so we can calculate valid openings.'}
                 </div>
               </div>

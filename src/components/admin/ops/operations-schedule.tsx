@@ -978,7 +978,7 @@ export function OperationsSchedule() {
                   <div className="text-xs font-medium tracking-[0.2em] text-slate-500 uppercase">
                     {WEEKDAY_LABELS[date.getDay()]}
                   </div>
-                  <div className="mt-1 text-lg font-semibold">
+                  <div className="mt-1 text-lg font-semibold text-slate-700">
                     {date.toLocaleDateString('en-US', {
                       month: 'short',
                       day: 'numeric',
@@ -1067,9 +1067,6 @@ export function OperationsSchedule() {
 
                     {dayAppointments.map((appointment) => {
                       const customer = unwrapRelation(appointment.ops_customers)
-                      const address = unwrapRelation(
-                        appointment.ops_service_addresses,
-                      )
                       const invoice = unwrapRelation(appointment.ops_invoices)
                       const placement = getAppointmentPlacement(appointment)
                       const href = invoice?.id
@@ -1079,47 +1076,38 @@ export function OperationsSchedule() {
                         <Link
                           key={appointment.id}
                           href={href}
-                          className={`text-foreground absolute right-2 left-2 rounded-2xl border p-3 text-xs shadow-sm transition hover:shadow-md ${getStatusTone(appointment.status)}`}
+                          className={`absolute right-2 left-2 overflow-hidden rounded-2xl border p-3 text-xs text-slate-900 shadow-sm transition hover:shadow-md ${getStatusTone(appointment.status)}`}
                           style={{
                             top: placement.top + 6,
                             height: placement.height - 8,
                           }}
                         >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="leading-tight font-semibold">
-                              {customer?.business_name ||
-                                customer?.full_name ||
-                                'Customer'}
+                          <div className="flex h-full flex-col overflow-hidden">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="line-clamp-1 leading-tight font-semibold">
+                                {customer?.business_name ||
+                                  customer?.full_name ||
+                                  'Customer'}
+                              </div>
+                              <Badge
+                                variant="outline"
+                                className="border-slate-300 bg-white/70 text-slate-700 capitalize"
+                              >
+                                {appointment.status.replaceAll('_', ' ')}
+                              </Badge>
                             </div>
-                            <Badge variant="outline" className="capitalize">
-                              {appointment.status.replaceAll('_', ' ')}
-                            </Badge>
-                          </div>
-                          <div className="text-muted-foreground mt-1">
-                            {appointment.start_time.slice(0, 5)} -{' '}
-                            {appointment.end_time.slice(0, 5)}
-                          </div>
-                          <div className="mt-2 line-clamp-2">
-                            {appointment.ops_appointment_line_items
-                              .map((item) => item.name_snapshot)
-                              .join(', ')}
-                          </div>
-                          {address ? (
-                            <div className="text-muted-foreground mt-2 line-clamp-2">
-                              {address.street_1}, {address.city},{' '}
-                              {address.state} {address.zip_code}
+                            <div className="mt-1 text-slate-700">
+                              {appointment.start_time.slice(0, 5)} -{' '}
+                              {appointment.end_time.slice(0, 5)}
                             </div>
-                          ) : null}
-                          <div className="text-muted-foreground mt-2 flex items-center justify-between">
-                            <span>{customer?.phone || 'No phone'}</span>
-                            <span>
-                              $
-                              {Number(
-                                invoice?.status
-                                  ? appointment.quoted_total
-                                  : appointment.quoted_total,
-                              ).toFixed(2)}
-                            </span>
+                            <div className="mt-2 line-clamp-1 text-slate-800">
+                              {appointment.ops_appointment_line_items
+                                .map((item) => item.name_snapshot)
+                                .join(', ')}
+                            </div>
+                            <div className="mt-auto pt-2 text-right font-semibold text-slate-800">
+                              ${Number(appointment.quoted_total).toFixed(2)}
+                            </div>
                           </div>
                         </Link>
                       )
