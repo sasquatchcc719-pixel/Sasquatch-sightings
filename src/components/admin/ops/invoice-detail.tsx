@@ -1,9 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Mail, MapPin, MessageSquare } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -112,6 +111,12 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   const [invoice, setInvoice] = useState<InvoiceDetail | null>(null)
   const [status, setStatus] = useState('draft')
   const [paymentStatus, setPaymentStatus] = useState('unpaid')
+  const [sendLoading, setSendLoading] = useState<'sms' | 'email' | null>(null)
+  const [sendFeedback, setSendFeedback] = useState<{
+    channel: 'sms' | 'email'
+    ok: boolean
+    message: string
+  } | null>(null)
   const [lineItems, setLineItems] = useState<
     Array<{
       id: string
@@ -275,6 +280,40 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     }
   }
 
+  const handleSend = async (channel: 'sms' | 'email') => {
+    setSendLoading(channel)
+    setSendFeedback(null)
+    try {
+      const response = await fetch(
+        `/api/admin/ops/invoices/${invoiceId}/send`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ channel }),
+        },
+      )
+      const result = await response.json()
+      if (!response.ok) {
+        setSendFeedback({
+          channel,
+          ok: false,
+          message: result.error || 'Failed to send',
+        })
+      } else {
+        setSendFeedback({
+          channel,
+          ok: true,
+          message: channel === 'sms' ? 'Text sent!' : 'Email sent!',
+        })
+        setTimeout(() => setSendFeedback(null), 4000)
+      }
+    } catch {
+      setSendFeedback({ channel, ok: false, message: 'Failed to send' })
+    } finally {
+      setSendLoading(null)
+    }
+  }
+
   if (loading) {
     return (
       <div className="text-muted-foreground flex items-center gap-3">
@@ -322,14 +361,58 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline">${total.toFixed(2)}</Badge>
-            {appointment?.id ? (
-              <Button asChild variant="outline">
-                <Link href={`/admin/operations/appointments/${appointment.id}`}>
-                  Open Job
-                </Link>
+          <div className="flex flex-col items-end gap-2">
+            <Badge variant="outline" className="text-base">
+              ${total.toFixed(2)}
+            </Badge>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-2"
+                disabled={sendLoading !== null}
+                onClick={() => void handleSend('sms')}
+              >
+                {sendLoading === 'sms' ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <MessageSquare className="h-4 w-4" />
+                )}
+                Text
               </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-2"
+                disabled={sendLoading !== null}
+                onClick={() => void handleSend('email')}
+              >
+                {sendLoading === 'email' ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Mail className="h-4 w-4" />
+                )}
+                Email
+              </Button>
+              {address?.street_1 ? (
+                <Button size="sm" variant="outline" className="gap-2" asChild>
+                  <a
+                    href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${address.street_1}, ${address.city}, ${address.state} ${address.zip_code}`)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <MapPin className="h-4 w-4" />
+                    Route
+                  </a>
+                </Button>
+              ) : null}
+            </div>
+            {sendFeedback ? (
+              <p
+                className={`text-xs ${sendFeedback.ok ? 'text-green-600' : 'text-red-500'}`}
+              >
+                {sendFeedback.message}
+              </p>
             ) : null}
           </div>
         </div>
@@ -471,20 +554,24 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
 
       <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
         <h3 className="text-lg font-semibold">Line Items</h3>
-        <div className="mt-4 space-y-4">
+        <div className="mt-3 space-y-2">
           {lineItems.map((item, index) => (
             <div
               key={item.id}
-              className="border-border/60 bg-background/70 rounded-2xl border p-4"
+              className="border-border/60 bg-background/70 rounded-xl border p-3"
             >
-              <div className="grid gap-3 md:grid-cols-[1.6fr,0.8fr,0.8fr]">
+              <div className="flex flex-col gap-2">
                 <div>
-                  <Label htmlFor={`line-description-${index}`}>
+                  <Label
+                    htmlFor={`line-description-${index}`}
+                    className="text-xs"
+                  >
                     Description
                   </Label>
                   <Input
                     id={`line-description-${index}`}
                     value={item.description}
+                    className="h-8 text-sm"
                     onChange={(event) =>
                       setLineItems((current) =>
                         current.map((line, lineIndex) =>
@@ -496,31 +583,42 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                     }
                   />
                 </div>
-                <div>
-                  <Label htmlFor={`line-quantity-${index}`}>Quantity</Label>
-                  <Input
-                    id={`line-quantity-${index}`}
-                    value={String(item.quantity)}
-                    disabled
-                  />
-                </div>
-                <div>
-                  <Label htmlFor={`line-price-${index}`}>Unit Price</Label>
-                  <Input
-                    id={`line-price-${index}`}
-                    type="number"
-                    step="0.01"
-                    value={item.unit_price}
-                    onChange={(event) =>
-                      setLineItems((current) =>
-                        current.map((line, lineIndex) =>
-                          lineIndex === index
-                            ? { ...line, unit_price: event.target.value }
-                            : line,
-                        ),
-                      )
-                    }
-                  />
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label
+                      htmlFor={`line-quantity-${index}`}
+                      className="text-xs"
+                    >
+                      Qty
+                    </Label>
+                    <Input
+                      id={`line-quantity-${index}`}
+                      value={String(item.quantity)}
+                      disabled
+                      className="h-8 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor={`line-price-${index}`} className="text-xs">
+                      Unit Price
+                    </Label>
+                    <Input
+                      id={`line-price-${index}`}
+                      type="number"
+                      step="0.01"
+                      value={item.unit_price}
+                      className="h-8 text-sm"
+                      onChange={(event) =>
+                        setLineItems((current) =>
+                          current.map((line, lineIndex) =>
+                            lineIndex === index
+                              ? { ...line, unit_price: event.target.value }
+                              : line,
+                          ),
+                        )
+                      }
+                    />
+                  </div>
                 </div>
               </div>
             </div>
