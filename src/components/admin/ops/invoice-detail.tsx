@@ -247,33 +247,35 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     }
   }
 
-  const handleDeleteInvoice = async () => {
+  const handleDeleteJob = async () => {
     const confirmed = window.confirm(
-      'Delete this invoice? This is mainly for cleanup/testing and cannot be undone.',
+      'Delete this job? The appointment and invoice will both be permanently removed.',
     )
     if (!confirmed) return
 
-    setActionLoading('Delete Invoice')
+    const apptId = unwrapRelation(invoice?.ops_appointments)?.id
+    if (!apptId) {
+      setError('No appointment linked to this invoice.')
+      return
+    }
+
+    setActionLoading('Delete Job')
     setError(null)
     try {
-      const response = await fetch(`/api/admin/ops/invoices/${invoiceId}`, {
+      const response = await fetch(`/api/admin/ops/appointments/${apptId}`, {
         method: 'DELETE',
       })
       const result = await response.json()
       if (!response.ok) {
-        throw new Error(result.error || 'Failed to delete invoice')
+        throw new Error(result.error || 'Failed to delete job')
       }
-      if (result.appointment_id) {
-        router.push(`/admin/operations/appointments/${result.appointment_id}`)
-      } else {
-        router.push('/admin/operations')
-      }
+      router.push('/admin/operations')
       router.refresh()
     } catch (deleteError) {
       setError(
         deleteError instanceof Error
           ? deleteError.message
-          : 'Failed to delete invoice',
+          : 'Failed to delete job',
       )
     } finally {
       setActionLoading(null)
@@ -525,14 +527,14 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
               </>
             ) : null}
             <Button
-              variant="outline"
+              variant="destructive"
               disabled={Boolean(actionLoading)}
-              onClick={() => void handleDeleteInvoice()}
+              onClick={() => void handleDeleteJob()}
             >
-              {actionLoading === 'Delete Invoice' ? (
+              {actionLoading === 'Delete Job' ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : null}
-              Delete Invoice Only
+              Delete Job
             </Button>
           </div>
         </Card>
