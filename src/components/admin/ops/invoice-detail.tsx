@@ -499,292 +499,260 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
         </Card>
       ) : null}
 
-      <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
-        <div className="flex flex-wrap items-start justify-between gap-4">
+      {/* ── Customer header card ───────────────────────────── */}
+      <Card className="border-border/60 bg-card/80 p-6 shadow-sm backdrop-blur">
+        {/* Name + total */}
+        <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-muted-foreground text-xs font-medium tracking-[0.22em] uppercase">
+            <p className="text-muted-foreground text-xs font-medium tracking-[0.2em] uppercase">
               Invoice
             </p>
-            <h2 className="mt-1 text-2xl font-semibold">
+            <h2 className="mt-1 text-3xl font-bold">
               {customer?.business_name || customer?.full_name || 'Customer'}
             </h2>
-            <p className="text-muted-foreground mt-2 text-sm">
+            <p className="text-muted-foreground mt-1 text-sm">
               {appointment?.appointment_date} ·{' '}
-              {appointment?.start_time.slice(0, 5)} -{' '}
+              {appointment?.start_time.slice(0, 5)} –{' '}
               {appointment?.end_time.slice(0, 5)}
             </p>
           </div>
+          <p className="text-3xl font-bold tabular-nums">${total.toFixed(2)}</p>
+        </div>
 
-          <div className="flex flex-col items-end gap-2">
-            <Badge variant="outline" className="text-base">
-              ${total.toFixed(2)}
-            </Badge>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                size="sm"
-                className="gap-2 bg-blue-600 text-white hover:bg-blue-700"
-                onClick={() => setShowPaymentModal(true)}
-              >
-                <CreditCard className="h-4 w-4" />
-                Venmo
+        {/* Contact info */}
+        <div className="mt-5 space-y-2 text-sm">
+          {customer?.phone ? (
+            <div className="flex items-center gap-3">
+              <Phone className="text-muted-foreground h-4 w-4 shrink-0" />
+              <span className="flex-1 text-base tabular-nums">
+                {customer.phone}
+              </span>
+              <Button className="gap-2" asChild>
+                <a href={`tel:${customer.phone}`}>
+                  <Phone className="h-4 w-4" />
+                  Call
+                </a>
               </Button>
-
-              {/* Manual contact — opens native apps */}
-              {customer?.phone ? (
-                <Button size="sm" variant="outline" className="gap-2" asChild>
-                  <a href={`tel:${customer.phone}`}>
-                    <Phone className="h-4 w-4" />
-                    Call
-                  </a>
-                </Button>
-              ) : null}
-              {customer?.phone ? (
-                <Button size="sm" variant="outline" className="gap-2" asChild>
-                  <a href={`sms:${customer.phone}`}>
-                    <MessageSquare className="h-4 w-4" />
-                    Text
-                  </a>
-                </Button>
-              ) : null}
-
-              {/* Invoice delivery — sends automatically */}
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-2"
-                disabled={sendLoading !== null}
-                onClick={() => void handleSend('sms')}
-              >
-                {sendLoading === 'sms' ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Send className="h-4 w-4" />
-                )}
-                Send Invoice
+              <Button variant="outline" className="gap-2" asChild>
+                <a href={`sms:${customer.phone}`}>
+                  <MessageSquare className="h-4 w-4" />
+                  Text
+                </a>
               </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-2"
-                disabled={sendLoading !== null}
-                onClick={() => void handleSend('email')}
-              >
-                {sendLoading === 'email' ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Mail className="h-4 w-4" />
-                )}
-                Email Invoice
-              </Button>
-
-              {address?.street_1 ? (
-                <Button size="sm" variant="outline" className="gap-2" asChild>
-                  <a
-                    href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${address.street_1}, ${address.city}, ${address.state} ${address.zip_code}`)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <MapPin className="h-4 w-4" />
-                    Route
-                  </a>
-                </Button>
-              ) : null}
             </div>
-            {sendFeedback ? (
-              <p
-                className={`text-xs ${sendFeedback.ok ? 'text-green-600' : 'text-red-500'}`}
-              >
-                {sendFeedback.message}
-              </p>
+          ) : (
+            <p className="text-muted-foreground">No phone on file</p>
+          )}
+          {customer?.email ? (
+            <div className="text-muted-foreground flex items-center gap-2">
+              <Mail className="h-4 w-4 shrink-0" />
+              <span>{customer.email}</span>
+            </div>
+          ) : null}
+          {address ? (
+            <div className="text-muted-foreground flex items-center gap-2">
+              <MapPin className="h-4 w-4 shrink-0" />
+              <span>
+                {address.street_1}, {address.city}, {address.state}{' '}
+                {address.zip_code}
+              </span>
+            </div>
+          ) : null}
+          {appointment?.lead_source ? (
+            <p className="text-muted-foreground">
+              Source: {appointment.lead_source}
+            </p>
+          ) : null}
+        </div>
+
+        {/* Divider + invoice delivery actions */}
+        <div className="border-border/60 mt-6 border-t pt-5">
+          <p className="text-muted-foreground mb-3 text-xs font-semibold tracking-widest uppercase">
+            Send Invoice
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              className="gap-2 bg-blue-600 text-white hover:bg-blue-700"
+              onClick={() => setShowPaymentModal(true)}
+            >
+              <CreditCard className="h-4 w-4" />
+              Venmo
+            </Button>
+            <Button
+              variant="outline"
+              className="gap-2"
+              disabled={sendLoading !== null}
+              onClick={() => void handleSend('sms')}
+            >
+              {sendLoading === 'sms' ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+              Send Invoice
+            </Button>
+            <Button
+              variant="outline"
+              className="gap-2"
+              disabled={sendLoading !== null}
+              onClick={() => void handleSend('email')}
+            >
+              {sendLoading === 'email' ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Mail className="h-4 w-4" />
+              )}
+              Email Invoice
+            </Button>
+            {address?.street_1 ? (
+              <Button variant="outline" className="gap-2" asChild>
+                <a
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${address.street_1}, ${address.city}, ${address.state} ${address.zip_code}`)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <MapPin className="h-4 w-4" />
+                  Route
+                </a>
+              </Button>
             ) : null}
           </div>
+          {sendFeedback ? (
+            <p
+              className={`mt-2 text-sm ${sendFeedback.ok ? 'text-green-600' : 'text-red-500'}`}
+            >
+              {sendFeedback.message}
+            </p>
+          ) : null}
         </div>
       </Card>
 
-      <div className="grid gap-6 xl:grid-cols-[1fr,0.9fr]">
-        <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
-          <h3 className="text-lg font-semibold">Invoice Status</h3>
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            <div>
-              <Label htmlFor="invoice-status">Status</Label>
-              <select
-                id="invoice-status"
-                className="border-input bg-background h-10 w-full rounded-md border px-3 text-sm"
-                value={status}
-                onChange={(event) => setStatus(event.target.value)}
-              >
-                <option value="draft">Draft</option>
-                <option value="ready">Ready</option>
-                <option value="sent">Sent</option>
-                <option value="paid">Paid</option>
-                <option value="void">Void</option>
-              </select>
-            </div>
-            <div>
-              <Label htmlFor="invoice-payment-status">Payment Status</Label>
-              <select
-                id="invoice-payment-status"
-                className="border-input bg-background h-10 w-full rounded-md border px-3 text-sm"
-                value={paymentStatus}
-                onChange={(event) => setPaymentStatus(event.target.value)}
-              >
-                <option value="unpaid">Unpaid</option>
-                <option value="partial">Partial</option>
-                <option value="paid">Paid</option>
-                <option value="waived">Waived</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Button onClick={handleSave} disabled={saving}>
-              {saving ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : null}
-              Save Invoice
-            </Button>
-            {appointment?.id ? (
-              <>
-                <Button
-                  variant="outline"
-                  disabled={Boolean(actionLoading)}
-                  onClick={() =>
-                    void runAppointmentAction({
-                      label: 'Confirm',
-                      status: 'confirmed',
-                    })
-                  }
-                >
-                  {actionLoading === 'Confirm' ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : null}
-                  Confirm
-                </Button>
-                <Button
-                  variant="outline"
-                  disabled={Boolean(actionLoading)}
-                  onClick={() =>
-                    void runAppointmentAction({
-                      label: 'On My Way',
-                      status: 'on_my_way',
-                    })
-                  }
-                >
-                  {actionLoading === 'On My Way' ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : null}
-                  On My Way
-                </Button>
-                <Button
-                  variant="outline"
-                  disabled={Boolean(actionLoading)}
-                  onClick={() => void handleFinishJob()}
-                >
-                  {actionLoading === 'Complete' ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : null}
-                  Finished
-                </Button>
-                <Button
-                  variant="outline"
-                  disabled={Boolean(actionLoading)}
-                  onClick={() =>
-                    void runAppointmentAction({
-                      label: 'Mark Paid',
-                      payment_status: 'paid',
-                    })
-                  }
-                >
-                  {actionLoading === 'Mark Paid' ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : null}
-                  Mark Paid
-                </Button>
-              </>
-            ) : null}
-            <Button
-              variant="destructive"
-              disabled={Boolean(actionLoading)}
-              onClick={() => void handleDeleteJob()}
+      {/* ── Invoice status card ─────────────────────────────── */}
+      <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
+        <h3 className="text-lg font-semibold">Invoice Status</h3>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <div>
+            <Label htmlFor="invoice-status">Status</Label>
+            <select
+              id="invoice-status"
+              className="border-input bg-background h-10 w-full rounded-md border px-3 text-sm"
+              value={status}
+              onChange={(event) => setStatus(event.target.value)}
             >
-              {actionLoading === 'Delete Job' ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : null}
-              Delete Job
-            </Button>
+              <option value="draft">Draft</option>
+              <option value="ready">Ready</option>
+              <option value="sent">Sent</option>
+              <option value="paid">Paid</option>
+              <option value="void">Void</option>
+            </select>
           </div>
-        </Card>
+          <div>
+            <Label htmlFor="invoice-payment-status">Payment Status</Label>
+            <select
+              id="invoice-payment-status"
+              className="border-input bg-background h-10 w-full rounded-md border px-3 text-sm"
+              value={paymentStatus}
+              onChange={(event) => setPaymentStatus(event.target.value)}
+            >
+              <option value="unpaid">Unpaid</option>
+              <option value="partial">Partial</option>
+              <option value="paid">Paid</option>
+              <option value="waived">Waived</option>
+            </select>
+          </div>
+        </div>
 
-        <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
-          <h3 className="text-lg font-semibold">Billing Context</h3>
-          <div className="mt-4 space-y-3 text-sm">
-            <div className="text-foreground font-medium">
-              {customer?.business_name || customer?.full_name}
-            </div>
-            {customer?.phone ? (
-              <div className="flex items-center gap-2">
-                <span className="text-muted-foreground flex-1 tabular-nums">
-                  {customer.phone}
-                </span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 gap-1.5 px-2"
-                  asChild
-                >
-                  <a href={`tel:${customer.phone}`}>
-                    <Phone className="h-3.5 w-3.5" />
-                    Call
-                  </a>
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 gap-1.5 px-2"
-                  asChild
-                >
-                  <a href={`sms:${customer.phone}`}>
-                    <MessageSquare className="h-3.5 w-3.5" />
-                    Text
-                  </a>
-                </Button>
-              </div>
-            ) : (
-              <div className="text-muted-foreground">No phone on file</div>
-            )}
-            {customer?.email ? (
-              <div className="text-muted-foreground">{customer.email}</div>
-            ) : null}
-            {address ? (
-              <div className="text-muted-foreground">
-                {address.street_1}, {address.city}, {address.state}{' '}
-                {address.zip_code}
-              </div>
-            ) : null}
-            {appointment?.lead_source ? (
-              <div className="text-muted-foreground">
-                <span className="text-foreground/70 font-medium">Source:</span>{' '}
-                {appointment.lead_source}
-              </div>
-            ) : null}
-            {appointment?.id ? (
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button onClick={handleSave} disabled={saving}>
+            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            Save Invoice
+          </Button>
+          {appointment?.id ? (
+            <>
               <Button
-                size="sm"
                 variant="outline"
-                className="mt-1 w-full gap-2"
+                disabled={Boolean(actionLoading)}
                 onClick={() =>
-                  router.push(
-                    `/admin/operations?date=${appointment.appointment_date}`,
-                  )
+                  void runAppointmentAction({
+                    label: 'Confirm',
+                    status: 'confirmed',
+                  })
                 }
               >
-                <CalendarClock className="h-4 w-4" />
-                Reschedule on Calendar
+                {actionLoading === 'Confirm' ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
+                Confirm
               </Button>
+              <Button
+                variant="outline"
+                disabled={Boolean(actionLoading)}
+                onClick={() =>
+                  void runAppointmentAction({
+                    label: 'On My Way',
+                    status: 'on_my_way',
+                  })
+                }
+              >
+                {actionLoading === 'On My Way' ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
+                On My Way
+              </Button>
+              <Button
+                variant="outline"
+                disabled={Boolean(actionLoading)}
+                onClick={() => void handleFinishJob()}
+              >
+                {actionLoading === 'Complete' ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
+                Finished
+              </Button>
+              <Button
+                variant="outline"
+                disabled={Boolean(actionLoading)}
+                onClick={() =>
+                  void runAppointmentAction({
+                    label: 'Mark Paid',
+                    payment_status: 'paid',
+                  })
+                }
+              >
+                {actionLoading === 'Mark Paid' ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
+                Mark Paid
+              </Button>
+            </>
+          ) : null}
+          <Button
+            variant="destructive"
+            disabled={Boolean(actionLoading)}
+            onClick={() => void handleDeleteJob()}
+          >
+            {actionLoading === 'Delete Job' ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : null}
-          </div>
-        </Card>
-      </div>
+            Delete Job
+          </Button>
+          {appointment?.id ? (
+            <Button
+              variant="outline"
+              disabled={Boolean(actionLoading)}
+              className="gap-2"
+              onClick={() =>
+                router.push(
+                  `/admin/operations?date=${appointment.appointment_date}`,
+                )
+              }
+            >
+              <CalendarClock className="h-4 w-4" />
+              Reschedule
+            </Button>
+          ) : null}
+        </div>
+      </Card>
 
       <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
         <h3 className="text-lg font-semibold">Line Items</h3>
