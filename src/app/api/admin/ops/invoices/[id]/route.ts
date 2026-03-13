@@ -210,10 +210,10 @@ export async function PATCH(
         discount_amount: discountAmount,
         status:
           body.status !== undefined ? String(body.status) : current.status,
-        payment_status:
-          body.payment_status !== undefined
-            ? String(body.payment_status)
-            : current.payment_status,
+        payment_method:
+          body.payment_method !== undefined
+            ? body.payment_method
+            : current.payment_method,
         updated_at: new Date().toISOString(),
       })
       .eq('id', id)
@@ -227,10 +227,6 @@ export async function PATCH(
         .from('ops_appointments')
         .update({
           quoted_total: Number(subtotal.toFixed(2)),
-          payment_status:
-            body.payment_status !== undefined
-              ? String(body.payment_status)
-              : current.payment_status,
           updated_at: new Date().toISOString(),
         })
         .eq('id', current.appointment_id)

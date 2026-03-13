@@ -39,6 +39,7 @@ type InvoiceDetail = {
   id: string
   status: string
   payment_status: string
+  payment_method: string | null
   subtotal: number
   total: number
   discount_amount: number | null
@@ -138,8 +139,8 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [invoice, setInvoice] = useState<InvoiceDetail | null>(null)
-  const [status, setStatus] = useState('draft')
-  const [paymentStatus, setPaymentStatus] = useState('unpaid')
+  const [status, setStatus] = useState('pending')
+  const [paymentMethod, setPaymentMethod] = useState<string | null>(null)
   const [discount, setDiscount] = useState('0')
   const [sendLoading, setSendLoading] = useState<'sms' | 'email' | null>(null)
   const [sendFeedback, setSendFeedback] = useState<{
@@ -189,7 +190,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
         setInvoice(result.invoice)
         setStatus(result.invoice.status)
         setDiscount(String(result.invoice.discount_amount || 0))
-        setPaymentStatus(result.invoice.payment_status)
+        setPaymentMethod(result.invoice.payment_method ?? null)
 
         // Load photos for this appointment
         const appt = Array.isArray(result.invoice.ops_appointments)
@@ -256,7 +257,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           status,
-          payment_status: paymentStatus,
+          payment_method: paymentMethod,
           discount_amount: Number(discount || 0),
           line_items: lineItems.map((item) => ({
             id: item.id,
@@ -383,11 +384,34 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
           message: channel === 'sms' ? 'Text sent!' : 'Email sent!',
         })
         setTimeout(() => setSendFeedback(null), 4000)
+        // Auto-advance status to sent
+        if (status === 'pending') {
+          setStatus('sent')
+          await fetch(`/api/admin/ops/invoices/${invoiceId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'sent' }),
+          })
+        }
       }
     } catch {
       setSendFeedback({ channel, ok: false, message: 'Failed to send' })
     } finally {
       setSendLoading(null)
+    }
+  }
+
+  const handleMarkPaid = async (method: string) => {
+    setStatus('paid')
+    setPaymentMethod(method)
+    try {
+      await fetch(`/api/admin/ops/invoices/${invoiceId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'paid', payment_method: method }),
+      })
+    } catch {
+      // best-effort — state is already updated optimistically
     }
   }
 
@@ -672,128 +696,153 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
 
       {/* ── Invoice status card ─────────────────────────────── */}
       <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
-        <h3 className="text-lg font-semibold">Invoice Status</h3>
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <div>
-            <Label htmlFor="invoice-status">Status</Label>
-            <select
-              id="invoice-status"
-              className="border-input bg-background h-10 w-full rounded-md border px-3 text-sm"
-              value={status}
-              onChange={(event) => setStatus(event.target.value)}
-            >
-              <option value="draft">Draft</option>
-              <option value="ready">Ready</option>
-              <option value="sent">Sent</option>
-              <option value="paid">Paid</option>
-              <option value="void">Void</option>
-            </select>
-          </div>
-          <div>
-            <Label htmlFor="invoice-payment-status">Payment Status</Label>
-            <select
-              id="invoice-payment-status"
-              className="border-input bg-background h-10 w-full rounded-md border px-3 text-sm"
-              value={paymentStatus}
-              onChange={(event) => setPaymentStatus(event.target.value)}
-            >
-              <option value="unpaid">Unpaid</option>
-              <option value="partial">Partial</option>
-              <option value="paid">Paid</option>
-              <option value="waived">Waived</option>
-            </select>
-          </div>
+        {/* Status badge */}
+        <div className="mb-5 flex items-center justify-between">
+          <h3 className="text-lg font-semibold">Invoice</h3>
+          <span
+            className={`rounded-full px-3 py-1 text-sm font-semibold ${
+              status === 'paid'
+                ? 'bg-green-100 text-green-800'
+                : status === 'sent'
+                  ? 'bg-blue-100 text-blue-800'
+                  : status === 'void'
+                    ? 'bg-gray-100 text-gray-500'
+                    : 'bg-amber-100 text-amber-800'
+            }`}
+          >
+            {status === 'paid' && paymentMethod
+              ? `Paid · ${paymentMethod.charAt(0).toUpperCase() + paymentMethod.slice(1)}`
+              : status === 'paid'
+                ? 'Paid'
+                : status === 'sent'
+                  ? 'Sent'
+                  : status === 'void'
+                    ? 'Void'
+                    : 'Pending'}
+          </span>
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Button onClick={handleSave} disabled={saving}>
-            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            Save Invoice
-          </Button>
-          {appointment?.id ? (
-            <>
-              <Button
-                variant="outline"
-                disabled={Boolean(actionLoading)}
-                onClick={() =>
-                  void runAppointmentAction({
-                    label: 'Confirm',
-                    status: 'confirmed',
-                  })
-                }
-              >
-                {actionLoading === 'Confirm' ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : null}
-                Confirm
-              </Button>
-              <Button
-                variant="outline"
-                disabled={Boolean(actionLoading)}
-                onClick={() =>
-                  void runAppointmentAction({
-                    label: 'On My Way',
-                    status: 'on_my_way',
-                  })
-                }
-              >
-                {actionLoading === 'On My Way' ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : null}
-                On My Way
-              </Button>
-              <Button
-                variant="outline"
-                disabled={Boolean(actionLoading)}
-                onClick={() => void handleFinishJob()}
-              >
-                {actionLoading === 'Complete' ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : null}
-                Finished
-              </Button>
-              <Button
-                variant="outline"
-                disabled={Boolean(actionLoading)}
-                onClick={() =>
-                  void runAppointmentAction({
-                    label: 'Mark Paid',
-                    payment_status: 'paid',
-                  })
-                }
-              >
-                {actionLoading === 'Mark Paid' ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : null}
-                Mark Paid
-              </Button>
-            </>
-          ) : null}
-          <Button
-            variant="destructive"
-            disabled={Boolean(actionLoading)}
-            onClick={() => void handleDeleteJob()}
-          >
-            {actionLoading === 'Delete Job' ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : null}
-            Delete Job
-          </Button>
-          {appointment?.id ? (
+        {/* Mark as Paid */}
+        {status !== 'paid' ? (
+          <div className="mb-5">
+            <p className="text-muted-foreground mb-2 text-xs font-semibold tracking-widest uppercase">
+              Mark as Paid
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {['Cash', 'Venmo', 'Check', 'Card'].map((method) => (
+                <Button
+                  key={method}
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 border-green-300 text-green-700 hover:bg-green-50"
+                  onClick={() => void handleMarkPaid(method.toLowerCase())}
+                >
+                  {method}
+                </Button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="mb-5">
             <Button
-              variant="outline"
-              disabled={Boolean(actionLoading)}
-              className="gap-2"
-              onClick={() =>
-                router.push(
-                  `/admin/operations?date=${appointment.appointment_date}`,
-                )
-              }
+              size="sm"
+              variant="ghost"
+              className="text-muted-foreground text-xs"
+              onClick={() => {
+                setStatus('pending')
+                setPaymentMethod(null)
+              }}
             >
-              <CalendarClock className="h-4 w-4" />
-              Reschedule
+              Undo payment
             </Button>
-          ) : null}
+          </div>
+        )}
+
+        {/* Job actions */}
+        <div className="border-border/60 border-t pt-4">
+          <p className="text-muted-foreground mb-2 text-xs font-semibold tracking-widest uppercase">
+            Job Actions
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={handleSave} disabled={saving} size="sm">
+              {saving ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Save
+            </Button>
+            {appointment?.id ? (
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={Boolean(actionLoading)}
+                  onClick={() =>
+                    void runAppointmentAction({
+                      label: 'Confirm',
+                      status: 'confirmed',
+                    })
+                  }
+                >
+                  {actionLoading === 'Confirm' ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : null}
+                  Confirm
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={Boolean(actionLoading)}
+                  onClick={() =>
+                    void runAppointmentAction({
+                      label: 'On My Way',
+                      status: 'on_my_way',
+                    })
+                  }
+                >
+                  {actionLoading === 'On My Way' ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : null}
+                  On My Way
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={Boolean(actionLoading)}
+                  onClick={() => void handleFinishJob()}
+                >
+                  {actionLoading === 'Complete' ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : null}
+                  Finished
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={Boolean(actionLoading)}
+                  className="gap-2"
+                  onClick={() =>
+                    router.push(
+                      `/admin/operations?date=${appointment.appointment_date}`,
+                    )
+                  }
+                >
+                  <CalendarClock className="h-4 w-4" />
+                  Reschedule
+                </Button>
+              </>
+            ) : null}
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={Boolean(actionLoading)}
+              onClick={() => void handleDeleteJob()}
+            >
+              {actionLoading === 'Delete Job' ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Delete Job
+            </Button>
+          </div>
         </div>
       </Card>
 
