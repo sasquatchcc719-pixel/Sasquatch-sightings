@@ -758,7 +758,28 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
       </Card>
 
       <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
-        <h3 className="text-lg font-semibold">Line Items</h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold">Line Items</h3>
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-2"
+            onClick={() =>
+              setLineItems((current) => [
+                ...current,
+                {
+                  id: `new-${Date.now()}`,
+                  appointment_line_item_id: null,
+                  description: '',
+                  quantity: 1,
+                  unit_price: '0',
+                },
+              ])
+            }
+          >
+            + Add Item
+          </Button>
+        </div>
         <div className="mt-3 space-y-2">
           {lineItems.map((item, index) => (
             <div
@@ -766,27 +787,40 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
               className="border-border/60 bg-background/70 rounded-xl border p-3"
             >
               <div className="flex flex-col gap-2">
-                <div>
-                  <Label
-                    htmlFor={`line-description-${index}`}
-                    className="text-xs"
-                  >
-                    Description
-                  </Label>
-                  <Input
-                    id={`line-description-${index}`}
-                    value={item.description}
-                    className="h-8 text-sm"
-                    onChange={(event) =>
+                <div className="flex items-start gap-2">
+                  <div className="flex-1">
+                    <Label
+                      htmlFor={`line-description-${index}`}
+                      className="text-xs"
+                    >
+                      Description
+                    </Label>
+                    <Input
+                      id={`line-description-${index}`}
+                      value={item.description}
+                      className="h-8 text-sm"
+                      onChange={(event) =>
+                        setLineItems((current) =>
+                          current.map((line, lineIndex) =>
+                            lineIndex === index
+                              ? { ...line, description: event.target.value }
+                              : line,
+                          ),
+                        )
+                      }
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="text-muted-foreground hover:text-destructive mt-5 p-1"
+                    onClick={() =>
                       setLineItems((current) =>
-                        current.map((line, lineIndex) =>
-                          lineIndex === index
-                            ? { ...line, description: event.target.value }
-                            : line,
-                        ),
+                        current.filter((_, lineIndex) => lineIndex !== index),
                       )
                     }
-                  />
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
@@ -798,9 +832,26 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                     </Label>
                     <Input
                       id={`line-quantity-${index}`}
+                      type="number"
+                      min="1"
+                      step="1"
                       value={String(item.quantity)}
-                      disabled
                       className="h-8 text-sm"
+                      onChange={(event) =>
+                        setLineItems((current) =>
+                          current.map((line, lineIndex) =>
+                            lineIndex === index
+                              ? {
+                                  ...line,
+                                  quantity: Math.max(
+                                    1,
+                                    Number(event.target.value) || 1,
+                                  ),
+                                }
+                              : line,
+                          ),
+                        )
+                      }
                     />
                   </div>
                   <div>

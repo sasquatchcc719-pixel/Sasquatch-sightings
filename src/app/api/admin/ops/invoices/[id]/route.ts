@@ -104,46 +104,77 @@ export async function PATCH(
 
     const lineItems = Array.isArray(body.line_items) ? body.line_items : []
 
+    const existingDbIds = (current.ops_invoice_line_items || []).map(
+      (l: { id: string }) => l.id,
+    )
+
+    // Delete items that were removed on the client
+    const submittedRealIds = lineItems
+      .map((i: { id?: string }) => String(i.id || ''))
+      .filter((lid: string) => !lid.startsWith('new-') && lid.length > 0)
+    const idsToDelete = existingDbIds.filter(
+      (dbId: string) => !submittedRealIds.includes(dbId),
+    )
+    if (idsToDelete.length > 0) {
+      const { error: deleteError } = await supabase
+        .from('ops_invoice_line_items')
+        .delete()
+        .in('id', idsToDelete)
+      if (deleteError) throw deleteError
+    }
+
     for (const item of lineItems) {
       const lineId = String(item.id || '').trim()
-      if (!lineId) continue
       const description = String(item.description || '').trim()
       const unitPrice = Number(item.unit_price || 0)
       const quantity = Number(item.quantity || 1)
       const lineTotal = Number((unitPrice * quantity).toFixed(2))
 
-      const existingLine = (current.ops_invoice_line_items || []).find(
-        (line: {
-          id: string
-          appointment_line_item_id: string | null
-          quantity: number
-        }) => line.id === lineId,
-      )
+      const isNew = !lineId || lineId.startsWith('new-')
 
-      if (!existingLine) continue
-
-      const { error: invoiceLineError } = await supabase
-        .from('ops_invoice_line_items')
-        .update({
-          description,
-          unit_price: unitPrice,
-          line_total: lineTotal,
-        })
-        .eq('id', lineId)
-
-      if (invoiceLineError) throw invoiceLineError
-
-      if (existingLine.appointment_line_item_id) {
-        const { error: appointmentLineError } = await supabase
-          .from('ops_appointment_line_items')
-          .update({
-            name_snapshot: description,
+      if (isNew) {
+        // Insert brand-new line item
+        const { error: insertError } = await supabase
+          .from('ops_invoice_line_items')
+          .insert({
+            invoice_id: id,
+            appointment_line_item_id: null,
+            description,
+            quantity,
             unit_price: unitPrice,
             line_total: lineTotal,
           })
-          .eq('id', existingLine.appointment_line_item_id)
+        if (insertError) throw insertError
+      } else {
+        // Update existing line item
+        const existingLine = (current.ops_invoice_line_items || []).find(
+          (line: { id: string; appointment_line_item_id: string | null }) =>
+            line.id === lineId,
+        )
+        if (!existingLine) continue
 
-        if (appointmentLineError) throw appointmentLineError
+        const { error: invoiceLineError } = await supabase
+          .from('ops_invoice_line_items')
+          .update({
+            description,
+            quantity,
+            unit_price: unitPrice,
+            line_total: lineTotal,
+          })
+          .eq('id', lineId)
+        if (invoiceLineError) throw invoiceLineError
+
+        if (existingLine.appointment_line_item_id) {
+          const { error: appointmentLineError } = await supabase
+            .from('ops_appointment_line_items')
+            .update({
+              name_snapshot: description,
+              unit_price: unitPrice,
+              line_total: lineTotal,
+            })
+            .eq('id', existingLine.appointment_line_item_id)
+          if (appointmentLineError) throw appointmentLineError
+        }
       }
     }
 
