@@ -29,6 +29,22 @@ function buildSmsBody(
   ].join('\n')
 }
 
+function buildPhotoGrid(photoUrls: string[]): string {
+  if (photoUrls.length === 0) return ''
+  const cells = photoUrls
+    .slice(0, 6)
+    .map(
+      (url) =>
+        `<td style="padding:4px;"><img src="${url}" width="160" height="160" style="border-radius:8px;object-fit:cover;display:block;" /></td>`,
+    )
+    .join('')
+  return `
+  <div style="margin-top:24px;">
+    <p style="margin:0 0 10px;font-size:13px;font-weight:600;color:#374151;">Job Photos</p>
+    <table style="border-collapse:collapse;"><tr>${cells}</tr></table>
+  </div>`
+}
+
 function buildEmailHtml(
   customerName: string,
   address: string,
@@ -41,6 +57,7 @@ function buildEmailHtml(
   }>,
   total: number,
   venmoUrl: string,
+  photoUrls: string[] = [],
 ): string {
   const itemRows = lineItems
     .map(
@@ -97,6 +114,8 @@ function buildEmailHtml(
         Pay with Venmo — $${total.toFixed(2)}
       </a>
 
+      ${buildPhotoGrid(photoUrls)}
+
       <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;">Questions? Call or text us anytime. We appreciate your business!</p>
     </div>
   </div>
@@ -127,6 +146,7 @@ export async function POST(
         id,
         total,
         ops_appointments (
+          id,
           appointment_date,
           ops_customers (
             full_name,
@@ -190,6 +210,26 @@ export async function POST(
     }>
 
     const venmoUrl = buildVenmoLink(total, customerName)
+
+    // Fetch any job photos to include in the email
+    const rawAppt = invoice.ops_appointments
+    const apptId: string | null = rawAppt
+      ? Array.isArray(rawAppt)
+        ? ((rawAppt[0] as { id?: string })?.id ?? null)
+        : ((rawAppt as { id?: string })?.id ?? null)
+      : null
+    let photoUrls: string[] = []
+    if (apptId) {
+      const { data: photos } = await supabase
+        .from('ops_job_photos')
+        .select('public_url')
+        .eq('appointment_id', apptId)
+        .order('created_at', { ascending: true })
+      photoUrls = (photos ?? []).map(
+        (p: { public_url: string }) => p.public_url,
+      )
+    }
+
     const errors: string[] = []
 
     // Send SMS
@@ -226,6 +266,7 @@ export async function POST(
               lineItems,
               total,
               venmoUrl,
+              photoUrls,
             ),
           })
         }

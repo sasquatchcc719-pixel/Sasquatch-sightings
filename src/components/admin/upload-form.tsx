@@ -90,9 +90,10 @@ export function UploadForm() {
   const [invoiceAmount, setInvoiceAmount] = useState('')
   const [hoursWorked, setHoursWorked] = useState('')
 
-  // Check for fromCombine query parameter
+  // Check for query parameters that trigger preloaded data
   const searchParams = useSearchParams()
   const fromCombine = searchParams.get('fromCombine')
+  const fromInvoice = searchParams.get('fromInvoice')
 
   const {
     register,
@@ -165,6 +166,26 @@ export function UploadForm() {
         })
     }
   }, [fromCombine]) // Re-run when coming from combine tool
+
+  // Pre-fill invoice fields when navigating from a finished job
+  useEffect(() => {
+    if (!fromInvoice) return
+    const raw = sessionStorage.getItem('preloadedInvoiceData')
+    if (!raw) return
+    try {
+      const data = JSON.parse(raw) as {
+        invoiceAmount?: string
+        hoursWorked?: string
+        description?: string
+      }
+      if (data.invoiceAmount) setInvoiceAmount(data.invoiceAmount)
+      if (data.hoursWorked) setHoursWorked(data.hoursWorked)
+      if (data.description) setValue('description', data.description)
+      sessionStorage.removeItem('preloadedInvoiceData')
+    } catch {
+      // ignore malformed data
+    }
+  }, [fromInvoice, setValue])
 
   // Process image: Extract EXIF (BEFORE compression), then compress
   useEffect(() => {

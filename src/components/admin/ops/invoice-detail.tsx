@@ -9,7 +9,6 @@ import {
   Mail,
   MapPin,
   MessageSquare,
-  Newspaper,
   Phone,
   Trash2,
 } from 'lucide-react'
@@ -147,16 +146,8 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   } | null>(null)
   const [photos, setPhotos] = useState<JobPhoto[]>([])
   const [photoUploading, setPhotoUploading] = useState(false)
-  const [photoLabel, setPhotoLabel] = useState<'before' | 'after' | 'general'>(
-    'general',
-  )
   const [photoWatermark, setPhotoWatermark] = useState(false)
   const [photoError, setPhotoError] = useState<string | null>(null)
-  const [creatingPost, setCreatingPost] = useState(false)
-  const [postFeedback, setPostFeedback] = useState<{
-    ok: boolean
-    message: string
-  } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [lineItems, setLineItems] = useState<
     Array<{
@@ -382,7 +373,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     try {
       const fd = new FormData()
       fd.append('image', file)
-      fd.append('label', photoLabel)
+      fd.append('label', 'general')
       fd.append('watermark', String(photoWatermark))
       const res = await fetch(`/api/admin/ops/appointments/${apptId}/photos`, {
         method: 'POST',
@@ -414,33 +405,60 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     }
   }
 
-  const handleCreateJobPost = async () => {
-    const apptId = unwrapRelation(invoice?.ops_appointments)?.id
-    if (!apptId) return
-    setCreatingPost(true)
-    setPostFeedback(null)
+  const handleFinishJob = async () => {
+    const appt = unwrapRelation(invoice?.ops_appointments)
+    if (!appt?.id) return
+    setActionLoading('Complete')
+    setError(null)
     try {
-      const res = await fetch(
-        `/api/admin/ops/appointments/${apptId}/create-job-post`,
-        { method: 'POST' },
+      const response = await fetch(`/api/admin/ops/appointments/${appt.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'completed' }),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Failed to update job')
+
+      // Compute hours worked from start/end times
+      let hoursWorked = ''
+      if (appt.start_time && appt.end_time) {
+        const [sh, sm] = appt.start_time.split(':').map(Number)
+        const [eh, em] = appt.end_time.split(':').map(Number)
+        const mins = eh * 60 + em - (sh * 60 + sm)
+        if (mins > 0) hoursWorked = (mins / 60).toFixed(2)
+      }
+
+      // Compute invoice total from current line items
+      const subtotal = lineItems.reduce(
+        (sum, item) => sum + item.quantity * Number(item.unit_price || 0),
+        0,
       )
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Failed to create job post')
-      setPostFeedback({
-        ok: true,
-        message: 'Draft created! Opening for review…',
-      })
-      setTimeout(() => {
-        router.push(`/admin/jobs/${data.jobId}`)
-      }, 800)
-    } catch (err) {
-      setPostFeedback({
-        ok: false,
-        message:
-          err instanceof Error ? err.message : 'Failed to create job post',
-      })
-    } finally {
-      setCreatingPost(false)
+      const invoiceTotal = Math.max(
+        0,
+        subtotal - Math.max(0, Number(discount || 0)),
+      )
+
+      // Pass invoice data to the jobs upload form via sessionStorage
+      const preloadData = {
+        invoiceAmount: invoiceTotal.toFixed(2),
+        hoursWorked,
+        description: lineItems
+          .map((li) => li.description)
+          .filter(Boolean)
+          .join(', '),
+      }
+      sessionStorage.setItem(
+        'preloadedInvoiceData',
+        JSON.stringify(preloadData),
+      )
+      router.push('/admin?fromInvoice=1')
+    } catch (actionError) {
+      setError(
+        actionError instanceof Error
+          ? actionError.message
+          : 'Failed to update job',
+      )
+      setActionLoading(null)
     }
   }
 
@@ -627,12 +645,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                 <Button
                   variant="outline"
                   disabled={Boolean(actionLoading)}
-                  onClick={() =>
-                    void runAppointmentAction({
-                      label: 'Complete',
-                      status: 'completed',
-                    })
-                  }
+                  onClick={() => void handleFinishJob()}
                 >
                   {actionLoading === 'Complete' ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -847,41 +860,15 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
       </Card>
       {/* Job Photos */}
       <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <Camera className="text-muted-foreground h-5 w-5" />
-            <h3 className="text-lg font-semibold">Job Photos</h3>
-            {photos.length > 0 ? (
-              <Badge variant="outline">{photos.length}</Badge>
-            ) : null}
-          </div>
+        <div className="flex items-center gap-2">
+          <Camera className="text-muted-foreground h-5 w-5" />
+          <h3 className="text-lg font-semibold">Job Photos</h3>
           {photos.length > 0 ? (
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-2"
-              disabled={creatingPost}
-              onClick={() => void handleCreateJobPost()}
-            >
-              {creatingPost ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Newspaper className="h-4 w-4" />
-              )}
-              Create Job Post
-            </Button>
+            <Badge variant="outline">{photos.length}</Badge>
           ) : null}
         </div>
 
-        {postFeedback ? (
-          <p
-            className={`mt-2 text-sm ${postFeedback.ok ? 'text-green-600' : 'text-red-500'}`}
-          >
-            {postFeedback.message}
-          </p>
-        ) : null}
-
-        {/* Existing photos */}
+        {/* Photo gallery */}
         {photos.length > 0 ? (
           <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {photos.map((photo) => (
@@ -893,22 +880,11 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                 >
                   <img
                     src={photo.public_url}
-                    alt={photo.label}
+                    alt="Job photo"
                     className="aspect-square w-full rounded-xl object-cover shadow-sm transition group-hover:opacity-90"
                   />
                 </a>
-                <div className="mt-1 flex items-center justify-between px-0.5">
-                  <span
-                    className={`rounded px-1.5 py-0.5 text-xs font-semibold uppercase ${
-                      photo.label === 'before'
-                        ? 'bg-blue-100 text-blue-700'
-                        : photo.label === 'after'
-                          ? 'bg-green-100 text-green-700'
-                          : 'bg-slate-100 text-slate-600'
-                    }`}
-                  >
-                    {photo.label}
-                  </span>
+                <div className="mt-1 flex justify-end px-0.5">
                   <button
                     type="button"
                     className="text-muted-foreground hover:text-destructive p-1"
@@ -922,74 +898,50 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
           </div>
         ) : (
           <p className="text-muted-foreground mt-3 text-sm">
-            No photos yet. Upload before and after shots below.
+            No photos yet. These will be included in the invoice email.
           </p>
         )}
 
         {/* Upload controls */}
-        <div className="border-border/60 mt-4 space-y-3 border-t pt-4">
-          <div className="flex flex-wrap items-end gap-3">
-            <div>
-              <Label htmlFor="photo-label" className="text-xs">
-                Label
-              </Label>
-              <select
-                id="photo-label"
-                className="border-input bg-background mt-1 h-9 rounded-md border px-2 text-sm"
-                value={photoLabel}
-                onChange={(e) =>
-                  setPhotoLabel(
-                    e.target.value as 'before' | 'after' | 'general',
-                  )
-                }
-              >
-                <option value="before">Before</option>
-                <option value="after">After</option>
-                <option value="general">General</option>
-              </select>
-            </div>
+        <div className="border-border/60 mt-4 flex flex-wrap items-center gap-3 border-t pt-4">
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={photoWatermark}
+              onChange={(e) => setPhotoWatermark(e.target.checked)}
+              className="h-4 w-4 rounded"
+            />
+            Add Sasquatch watermark
+          </label>
 
-            <label className="flex cursor-pointer items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={photoWatermark}
-                onChange={(e) => setPhotoWatermark(e.target.checked)}
-                className="h-4 w-4 rounded"
-              />
-              Add watermark
-            </label>
-
-            <div className="flex items-center gap-2">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0]
-                  if (file) void handlePhotoUpload(file)
-                }}
-              />
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="gap-2"
-                disabled={photoUploading}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                {photoUploading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Camera className="h-4 w-4" />
-                )}
-                {photoUploading ? 'Uploading…' : 'Choose Photo'}
-              </Button>
-            </div>
-          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (file) void handlePhotoUpload(file)
+            }}
+          />
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="gap-2"
+            disabled={photoUploading}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {photoUploading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Camera className="h-4 w-4" />
+            )}
+            {photoUploading ? 'Uploading…' : 'Add Photo'}
+          </Button>
 
           {photoError ? (
-            <p className="text-sm text-red-500">{photoError}</p>
+            <p className="w-full text-sm text-red-500">{photoError}</p>
           ) : null}
         </div>
       </Card>
