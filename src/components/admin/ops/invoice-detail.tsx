@@ -148,6 +148,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     message: string
   } | null>(null)
   const [showPaymentModal, setShowPaymentModal] = useState(false)
+  const [streetViewFailed, setStreetViewFailed] = useState(false)
   const [serviceCatalog, setServiceCatalog] = useState<
     Array<{
       id: string
@@ -648,6 +649,24 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
           ) : null}
         </div>
       </Card>
+
+      {/* ── Street View panel ───────────────────────────────── */}
+      {address && !streetViewFailed ? (
+        <Card className="border-border/60 overflow-hidden shadow-sm">
+          <img
+            src={`/api/admin/streetview?address=${encodeURIComponent(
+              `${address.street_1}, ${address.city}, ${address.state} ${address.zip_code}`,
+            )}`}
+            alt={`Street view of ${address.street_1}`}
+            className="w-full object-cover"
+            style={{ height: '200px' }}
+            onError={() => setStreetViewFailed(true)}
+          />
+          <div className="bg-muted/40 text-muted-foreground px-4 py-2 text-xs">
+            Street View · {address.street_1}, {address.city}
+          </div>
+        </Card>
+      ) : null}
 
       {/* ── Invoice status card ─────────────────────────────── */}
       <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
