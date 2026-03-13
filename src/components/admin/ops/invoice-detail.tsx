@@ -999,8 +999,11 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
               />
             </div>
 
-            <p className="mt-3 text-xs text-slate-400">
-              Customer scans with their Venmo app
+            <p className="mt-4 text-sm font-medium text-slate-700">
+              Hand your phone to the customer
+            </p>
+            <p className="mt-1 text-xs text-slate-400">
+              They scan the QR code or tap the button below
             </p>
 
             <a
@@ -1010,7 +1013,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
               className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-[#008CFF] py-3 text-sm font-semibold text-white hover:bg-blue-600"
             >
               <CreditCard className="h-4 w-4" />
-              Open Venmo App
+              Pay with Venmo
             </a>
           </div>
         </div>
