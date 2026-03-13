@@ -203,6 +203,7 @@ export function NewJobWorkspace() {
 
   const [discount, setDiscount] = useState('0')
   const [leadSource, setLeadSource] = useState('')
+  const [useCustomTime, setUseCustomTime] = useState(false)
   const [selectedCustomer, setSelectedCustomer] =
     useState<CustomerSearchResult | null>(null)
 
@@ -597,7 +598,10 @@ export function NewJobWorkspace() {
         const slots: Array<{ start_time: string; end_time: string }> =
           Array.isArray(result.slots) ? result.slots : []
         setAvailableSlots(slots)
-        if (slots.length === 0) return
+        if (slots.length === 0) {
+          setUseCustomTime(true)
+          return
+        }
 
         const currentStart = `${appointmentForm.start_time}:00`.slice(0, 8)
         const stillValid = slots.some(
@@ -1264,6 +1268,33 @@ export function NewJobWorkspace() {
                     ? `Only open times are shown (service: ${serviceMinutesForCurrentSelection} min + one travel buffer: ${bufferMinutesForCurrentSelection} min = ${requiredMinutesForCurrentSelection} min).`
                     : 'Pick services first so we can calculate valid openings.'}
                 </div>
+                <button
+                  type="button"
+                  className="mt-1 text-xs text-blue-600 underline hover:text-blue-800"
+                  onClick={() => setUseCustomTime((v) => !v)}
+                >
+                  {useCustomTime
+                    ? '← Back to available slots'
+                    : 'Book outside business hours →'}
+                </button>
+                {useCustomTime && (
+                  <div className="mt-2">
+                    <input
+                      type="time"
+                      className="border-input bg-background h-10 w-full rounded-md border px-3 text-sm"
+                      value={appointmentForm.start_time}
+                      onChange={(event) =>
+                        setAppointmentForm((current) => ({
+                          ...current,
+                          start_time: event.target.value,
+                        }))
+                      }
+                    />
+                    <p className="text-muted-foreground mt-1 text-xs">
+                      Admin override — any time accepted, no conflict check.
+                    </p>
+                  </div>
+                )}
               </div>
               <div>
                 <Label htmlFor="appointment-tech">Assigned Staff</Label>
