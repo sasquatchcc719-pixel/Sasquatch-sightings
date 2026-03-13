@@ -148,6 +148,14 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     message: string
   } | null>(null)
   const [showPaymentModal, setShowPaymentModal] = useState(false)
+  const [serviceCatalog, setServiceCatalog] = useState<
+    Array<{
+      id: string
+      name: string
+      category: string
+      base_price: number | null
+    }>
+  >([])
   const [photos, setPhotos] = useState<JobPhoto[]>([])
   const [photoUploading, setPhotoUploading] = useState(false)
   const [photoWatermark, setPhotoWatermark] = useState(false)
@@ -224,6 +232,17 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
 
     void loadInvoice()
   }, [invoiceId])
+
+  useEffect(() => {
+    fetch('/api/admin/ops/services', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data.services)) setServiceCatalog(data.services)
+      })
+      .catch(() => {
+        /* non-fatal */
+      })
+  }, [])
 
   const handleSave = async () => {
     setSaving(true)
@@ -758,27 +777,39 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
       </Card>
 
       <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <h3 className="text-lg font-semibold">Line Items</h3>
-          <Button
-            size="sm"
-            variant="outline"
-            className="gap-2"
-            onClick={() =>
+          <select
+            className="border-input bg-background h-9 rounded-md border px-3 text-sm"
+            value=""
+            onChange={(e) => {
+              const serviceId = e.target.value
+              if (!serviceId) return
+              const service = serviceCatalog.find((s) => s.id === serviceId)
+              if (!service) return
               setLineItems((current) => [
                 ...current,
                 {
                   id: `new-${Date.now()}`,
                   appointment_line_item_id: null,
-                  description: '',
+                  description: service.name,
                   quantity: 1,
-                  unit_price: '0',
+                  unit_price:
+                    service.base_price != null
+                      ? String(service.base_price)
+                      : '0',
                 },
               ])
-            }
+            }}
           >
-            + Add Item
-          </Button>
+            <option value="">+ Add service…</option>
+            {serviceCatalog.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+                {s.base_price != null ? ` — $${s.base_price}` : ''}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="mt-3 space-y-2">
           {lineItems.map((item, index) => (
