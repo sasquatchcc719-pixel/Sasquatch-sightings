@@ -790,66 +790,41 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
         )}
 
         {/* Job actions */}
-        <div className="border-border/60 border-t pt-4">
-          <p className="text-muted-foreground mb-2 text-xs font-semibold tracking-widest uppercase">
-            Job Actions
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={handleSave} disabled={saving} size="sm">
-              {saving ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : null}
-              Save
-            </Button>
-            {appointment?.id ? (
-              <>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={Boolean(actionLoading)}
-                  onClick={() =>
-                    void runAppointmentAction({
-                      label: 'Confirm',
-                      status: 'confirmed',
-                    })
-                  }
-                >
-                  {actionLoading === 'Confirm' ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : null}
-                  Confirm
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={Boolean(actionLoading)}
-                  onClick={() =>
-                    void runAppointmentAction({
-                      label: 'On My Way',
-                      status: 'on_my_way',
-                    })
-                  }
-                >
-                  {actionLoading === 'On My Way' ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : null}
-                  On My Way
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={Boolean(actionLoading)}
-                  onClick={() => void handleFinishJob()}
-                >
-                  {actionLoading === 'Complete' ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : null}
-                  Finished
-                </Button>
-              </>
-            ) : null}
+        {appointment?.id ? (
+          <div className="border-border/60 border-t pt-4">
+            <p className="text-muted-foreground mb-3 text-xs font-semibold tracking-widest uppercase">
+              Job Actions
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <Button
+                variant="outline"
+                className="h-14 text-base font-semibold"
+                disabled={Boolean(actionLoading)}
+                onClick={() =>
+                  void runAppointmentAction({
+                    label: 'On My Way',
+                    status: 'on_my_way',
+                  })
+                }
+              >
+                {actionLoading === 'On My Way' ? (
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                ) : null}
+                On My Way
+              </Button>
+              <Button
+                className="h-14 text-base font-semibold"
+                disabled={Boolean(actionLoading)}
+                onClick={() => void handleFinishJob()}
+              >
+                {actionLoading === 'Complete' ? (
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                ) : null}
+                Finished
+              </Button>
+            </div>
           </div>
-        </div>
+        ) : null}
       </Card>
 
       <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
@@ -1087,9 +1062,17 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
               />
             </div>
           </div>
-          <div className="flex items-center justify-end gap-6 text-lg font-bold">
-            <span>Total</span>
-            <span className="tabular-nums">${total.toFixed(2)}</span>
+          <div className="flex items-center justify-between gap-4">
+            <Button onClick={handleSave} disabled={saving} className="px-8">
+              {saving ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Save Invoice
+            </Button>
+            <div className="flex items-center gap-6 text-lg font-bold">
+              <span>Total</span>
+              <span className="tabular-nums">${total.toFixed(2)}</span>
+            </div>
           </div>
         </div>
       </Card>
