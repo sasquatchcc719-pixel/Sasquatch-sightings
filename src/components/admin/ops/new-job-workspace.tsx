@@ -204,6 +204,20 @@ export function NewJobWorkspace() {
   const [discount, setDiscount] = useState('0')
   const [leadSource, setLeadSource] = useState('')
   const [useCustomTime, setUseCustomTime] = useState(false)
+
+  // Address autocomplete
+  const [addrQuery, setAddrQuery] = useState('')
+  const [addrSuggestions, setAddrSuggestions] = useState<
+    Array<{
+      label: string
+      street: string
+      city: string
+      state: string
+      zip: string
+    }>
+  >([])
+  const [addrLoading, setAddrLoading] = useState(false)
+  const addrDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [selectedCustomer, setSelectedCustomer] =
     useState<CustomerSearchResult | null>(null)
 
@@ -1112,16 +1126,115 @@ export function NewJobWorkspace() {
                 </div>
                 <div className="md:col-span-2">
                   <Label htmlFor="street-1">Street</Label>
-                  <Input
-                    id="street-1"
-                    value={addressForm.street_1}
-                    onChange={(event) =>
-                      setAddressForm((current) => ({
-                        ...current,
-                        street_1: event.target.value,
-                      }))
-                    }
-                  />
+                  <div className="relative">
+                    <Input
+                      id="street-1"
+                      autoComplete="off"
+                      value={addrQuery || addressForm.street_1}
+                      placeholder="Start typing an address…"
+                      onChange={(event) => {
+                        const q = event.target.value
+                        setAddrQuery(q)
+                        setAddressForm((current) => ({
+                          ...current,
+                          street_1: q,
+                        }))
+                        if (addrDebounceRef.current)
+                          clearTimeout(addrDebounceRef.current)
+                        if (q.length < 3) {
+                          setAddrSuggestions([])
+                          return
+                        }
+                        addrDebounceRef.current = setTimeout(async () => {
+                          setAddrLoading(true)
+                          try {
+                            // Biased toward Colorado Springs
+                            const res = await fetch(
+                              `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=6&lang=en&lat=38.8339&lon=-104.8214&layer=house`,
+                            )
+                            const data = (await res.json()) as {
+                              features: Array<{
+                                properties: {
+                                  housenumber?: string
+                                  street?: string
+                                  name?: string
+                                  city?: string
+                                  state?: string
+                                  postcode?: string
+                                  country?: string
+                                }
+                              }>
+                            }
+                            const suggestions = (data.features ?? [])
+                              .filter(
+                                (f) => f.properties.country === 'United States',
+                              )
+                              .map((f) => {
+                                const p = f.properties
+                                const streetLine = [
+                                  p.housenumber,
+                                  p.street ?? p.name,
+                                ]
+                                  .filter(Boolean)
+                                  .join(' ')
+                                return {
+                                  label: [
+                                    streetLine,
+                                    p.city,
+                                    p.state,
+                                    p.postcode,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(', '),
+                                  street: streetLine,
+                                  city: p.city ?? '',
+                                  state: p.state ?? '',
+                                  zip: p.postcode ?? '',
+                                }
+                              })
+                              .filter((s) => s.street)
+                            setAddrSuggestions(suggestions)
+                          } catch {
+                            setAddrSuggestions([])
+                          } finally {
+                            setAddrLoading(false)
+                          }
+                        }, 320)
+                      }}
+                    />
+                    {addrLoading ? (
+                      <Loader2 className="text-muted-foreground absolute top-2.5 right-3 h-4 w-4 animate-spin" />
+                    ) : null}
+                    {addrSuggestions.length > 0 ? (
+                      <ul className="border-border bg-card absolute z-50 mt-1 w-full overflow-hidden rounded-xl border shadow-lg">
+                        {addrSuggestions.map((s, i) => (
+                          <li key={i}>
+                            <button
+                              type="button"
+                              className="hover:bg-accent w-full px-4 py-2.5 text-left text-sm"
+                              onClick={() => {
+                                setAddressForm((current) => ({
+                                  ...current,
+                                  street_1: s.street,
+                                  city: s.city || current.city,
+                                  state: s.state
+                                    ? s.state.length === 2
+                                      ? s.state
+                                      : s.state.slice(0, 2).toUpperCase()
+                                    : current.state,
+                                  zip_code: s.zip || current.zip_code,
+                                }))
+                                setAddrQuery('')
+                                setAddrSuggestions([])
+                              }}
+                            >
+                              {s.label}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
                 </div>
                 <div>
                   <Label htmlFor="street-2">Unit / Street 2</Label>
