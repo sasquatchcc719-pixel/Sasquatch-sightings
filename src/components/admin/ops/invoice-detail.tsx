@@ -547,6 +547,37 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
 
       {/* ── Customer header card ───────────────────────────── */}
       <Card className="border-border/60 bg-card/80 p-6 shadow-sm backdrop-blur">
+        {/* Top action row */}
+        <div className="mb-4 flex items-center justify-end gap-2">
+          {appointment?.id ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5"
+              disabled={Boolean(actionLoading)}
+              onClick={() =>
+                router.push(
+                  `/admin/operations?date=${appointment.appointment_date}`,
+                )
+              }
+            >
+              <CalendarClock className="h-3.5 w-3.5" />
+              Reschedule
+            </Button>
+          ) : null}
+          <Button
+            size="sm"
+            variant="destructive"
+            disabled={Boolean(actionLoading)}
+            onClick={() => void handleDeleteJob()}
+          >
+            {actionLoading === 'Delete Job' ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : null}
+            Delete Job
+          </Button>
+        </div>
+
         {/* Name + total */}
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -815,33 +846,8 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                   ) : null}
                   Finished
                 </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={Boolean(actionLoading)}
-                  className="gap-2"
-                  onClick={() =>
-                    router.push(
-                      `/admin/operations?date=${appointment.appointment_date}`,
-                    )
-                  }
-                >
-                  <CalendarClock className="h-4 w-4" />
-                  Reschedule
-                </Button>
               </>
             ) : null}
-            <Button
-              size="sm"
-              variant="destructive"
-              disabled={Boolean(actionLoading)}
-              onClick={() => void handleDeleteJob()}
-            >
-              {actionLoading === 'Delete Job' ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : null}
-              Delete Job
-            </Button>
           </div>
         </div>
       </Card>
