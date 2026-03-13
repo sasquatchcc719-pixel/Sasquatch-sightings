@@ -550,12 +550,27 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
             </div>
           ) : null}
           {address ? (
-            <div className="text-muted-foreground flex items-center gap-2">
-              <MapPin className="h-4 w-4 shrink-0" />
-              <span>
+            <div className="flex items-center gap-2">
+              <MapPin className="text-muted-foreground h-4 w-4 shrink-0" />
+              <span className="text-muted-foreground flex-1">
                 {address.street_1}, {address.city}, {address.state}{' '}
                 {address.zip_code}
               </span>
+              <Button
+                size="sm"
+                variant="outline"
+                className="shrink-0 gap-1.5"
+                asChild
+              >
+                <a
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${address.street_1}, ${address.city}, ${address.state} ${address.zip_code}`)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <MapPin className="h-3.5 w-3.5" />
+                  Route
+                </a>
+              </Button>
             </div>
           ) : null}
           {appointment?.lead_source ? (
@@ -604,18 +619,6 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
               )}
               Email Invoice
             </Button>
-            {address?.street_1 ? (
-              <Button variant="outline" className="gap-2" asChild>
-                <a
-                  href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${address.street_1}, ${address.city}, ${address.state} ${address.zip_code}`)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <MapPin className="h-4 w-4" />
-                  Route
-                </a>
-              </Button>
-            ) : null}
           </div>
           {sendFeedback ? (
             <p
