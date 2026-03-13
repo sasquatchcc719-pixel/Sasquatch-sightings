@@ -11,6 +11,7 @@ import {
   MapPin,
   MessageSquare,
   Phone,
+  Send,
   Trash2,
   X,
 } from 'lucide-react'
@@ -527,6 +528,26 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                 <CreditCard className="h-4 w-4" />
                 Collect Payment
               </Button>
+
+              {/* Manual contact — opens native apps */}
+              {customer?.phone ? (
+                <Button size="sm" variant="outline" className="gap-2" asChild>
+                  <a href={`tel:${customer.phone}`}>
+                    <Phone className="h-4 w-4" />
+                    Call
+                  </a>
+                </Button>
+              ) : null}
+              {customer?.phone ? (
+                <Button size="sm" variant="outline" className="gap-2" asChild>
+                  <a href={`sms:${customer.phone}`}>
+                    <MessageSquare className="h-4 w-4" />
+                    Text
+                  </a>
+                </Button>
+              ) : null}
+
+              {/* Invoice delivery — sends automatically */}
               <Button
                 size="sm"
                 variant="outline"
@@ -537,9 +558,9 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                 {sendLoading === 'sms' ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  <MessageSquare className="h-4 w-4" />
+                  <Send className="h-4 w-4" />
                 )}
-                Text
+                Send Invoice
               </Button>
               <Button
                 size="sm"
@@ -553,8 +574,9 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                 ) : (
                   <Mail className="h-4 w-4" />
                 )}
-                Email
+                Email Invoice
               </Button>
+
               {address?.street_1 ? (
                 <Button size="sm" variant="outline" className="gap-2" asChild>
                   <a
