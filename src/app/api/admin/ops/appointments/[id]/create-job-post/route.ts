@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { generateJobSlug } from '@/lib/slug'
+import { generateJobDescription } from '@/lib/ai'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -212,25 +213,41 @@ export async function POST(_request: NextRequest, { params }: Params) {
       )
     }
 
-    // Build description from available data
-    const servicesText = lineItemNames.filter(Boolean).join(', ')
-    const totalText = invoice?.total
-      ? ` — $${Number(invoice.total).toFixed(0)}`
-      : ''
-    const notesText = appointment.internal_notes
-      ? `\n\n${appointment.internal_notes}`
-      : ''
-    const description =
-      `${servicesText} in ${resolvedCity}, CO${totalText}.${notesText}`.trim()
-
-    // Generate slug
+    // Generate slug + service name
     const { data: serviceRow } = await supabase
       .from('services')
       .select('name, slug')
       .eq('id', serviceId)
       .single()
 
-    const slug = generateJobSlug(serviceRow?.name ?? servicesText, resolvedCity)
+    const servicesText = lineItemNames.filter(Boolean).join(', ')
+    const serviceName = serviceRow?.name ?? servicesText
+    const slug = generateJobSlug(serviceName, resolvedCity)
+
+    // Build a voice note for the AI to work from
+    const voiceNote = [
+      servicesText,
+      appointment.internal_notes ?? '',
+      invoice?.total ? `Total: $${Number(invoice.total).toFixed(0)}` : '',
+    ]
+      .filter(Boolean)
+      .join('. ')
+
+    // Generate AI description (falls back to plain text if AI unavailable)
+    let description = `${servicesText} in ${resolvedCity}, CO.`
+    try {
+      description = await generateJobDescription(
+        voiceNote,
+        serviceName,
+        resolvedCity,
+        neighborhood || null,
+      )
+    } catch (aiErr) {
+      console.error(
+        '[create-job-post] AI description failed, using fallback:',
+        aiErr,
+      )
+    }
 
     // Create DRAFT job record
     const { data: job, error: insertError } = await supabase
