@@ -18,6 +18,11 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  applyAppointmentBuffer,
+  calculateLineItemDurationMinutes,
+  DEFAULT_APPOINTMENT_BUFFER_MINUTES,
+} from '@/lib/ops/availability'
 
 type ScheduleView = 'week' | 'day' | 'month'
 
@@ -57,6 +62,8 @@ type Appointment = {
   ops_appointment_line_items: Array<{
     id: string
     name_snapshot: string
+    quantity?: number | null
+    duration_minutes?: number | null
   }>
   ops_invoices:
     | {
@@ -132,6 +139,13 @@ function parseMinutes(timeValue: string | null | undefined): number {
   if (!timeValue) return HOURS[0] * 60
   const [hours, minutes] = timeValue.slice(0, 5).split(':').map(Number)
   return hours * 60 + minutes
+}
+
+function minutesToTimeLabel(totalMinutes: number): string {
+  const safe = Math.max(0, totalMinutes)
+  const hours = Math.floor(safe / 60) % 24
+  const minutes = safe % 60
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
 }
 
 function startOfWeek(date: Date): Date {
@@ -276,17 +290,51 @@ function getBlockPlacement(event: CalendarEvent) {
 
 function getAppointmentPlacement(appointment: Appointment) {
   const workdayStart = HOURS[0] * 60
+  const serviceMinutes = appointment.ops_appointment_line_items.reduce(
+    (sum, lineItem) => {
+      const durationMinutes = Number(lineItem.duration_minutes || 0)
+      const quantity = Number(lineItem.quantity || 0)
+      if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return sum
+      if (!Number.isFinite(quantity) || quantity <= 0) return sum
+      return (
+        sum +
+        calculateLineItemDurationMinutes({
+          durationMinutes,
+          quantity,
+        })
+      )
+    },
+    0,
+  )
+  const appointmentMinutesFromLineItems =
+    serviceMinutes > 0
+      ? applyAppointmentBuffer(
+          serviceMinutes,
+          DEFAULT_APPOINTMENT_BUFFER_MINUTES,
+        )
+      : 0
+
   const startMinutes = Math.max(
     parseMinutes(appointment.start_time),
     workdayStart,
   )
-  const endMinutes = Math.max(
-    parseMinutes(appointment.end_time),
-    startMinutes + 30,
+  const fallbackMinutes = Math.max(
+    parseMinutes(appointment.end_time) - parseMinutes(appointment.start_time),
+    30,
   )
+  const totalMinutes = Math.max(
+    appointmentMinutesFromLineItems,
+    fallbackMinutes,
+  )
+  const endMinutes = Math.max(startMinutes + totalMinutes, startMinutes + 30)
   const top = ((startMinutes - workdayStart) / 60) * HOUR_HEIGHT
   const height = Math.max(((endMinutes - startMinutes) / 60) * HOUR_HEIGHT, 56)
-  return { top, height }
+  return {
+    top,
+    height,
+    startLabel: minutesToTimeLabel(startMinutes),
+    endLabel: minutesToTimeLabel(endMinutes),
+  }
 }
 
 function templatesToBusinessRows(
@@ -1097,8 +1145,7 @@ export function OperationsSchedule() {
                               </Badge>
                             </div>
                             <div className="mt-1 text-slate-700">
-                              {appointment.start_time.slice(0, 5)} -{' '}
-                              {appointment.end_time.slice(0, 5)}
+                              {placement.startLabel} - {placement.endLabel}
                             </div>
                             <div className="mt-2 line-clamp-1 text-slate-800">
                               {appointment.ops_appointment_line_items
