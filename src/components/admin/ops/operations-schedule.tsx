@@ -475,7 +475,7 @@ export function OperationsSchedule() {
   const touchStartXRef = useRef<number>(0)
   const touchStartYRef = useRef<number>(0)
   const touchCurrentXRef = useRef<number>(0)
-  const [swipeOffset, setSwipeOffset] = useState(0)
+  const calendarRef = useRef<HTMLDivElement>(null)
   const dayStripRef = useRef<HTMLDivElement>(null)
 
   const [blockForm, setBlockForm] = useState({
@@ -629,21 +629,60 @@ export function OperationsSchedule() {
     touchStartXRef.current = e.touches[0].clientX
     touchStartYRef.current = e.touches[0].clientY
     touchCurrentXRef.current = e.touches[0].clientX
+    const el = calendarRef.current
+    if (el) el.style.transition = 'none'
   }, [])
 
   const handleCalTouchMove = useCallback((e: React.TouchEvent) => {
     const dx = e.touches[0].clientX - touchStartXRef.current
     const dy = e.touches[0].clientY - touchStartYRef.current
-    // Let vertical scroll win if it's more vertical than horizontal
     if (Math.abs(dy) > Math.abs(dx) + 8) return
     touchCurrentXRef.current = e.touches[0].clientX
-    setSwipeOffset(dx * 0.3)
+    const el = calendarRef.current
+    if (el) el.style.transform = `translateX(${dx * 0.6}px)`
   }, [])
 
   const handleCalTouchEnd = useCallback(() => {
     const delta = touchCurrentXRef.current - touchStartXRef.current
-    setSwipeOffset(0)
-    if (Math.abs(delta) > 50) moveRange(delta < 0 ? 'next' : 'prev')
+    const el = calendarRef.current
+
+    if (Math.abs(delta) < 50) {
+      // Snap back
+      if (el) {
+        el.style.transition = 'transform 200ms ease-out'
+        el.style.transform = 'translateX(0)'
+      }
+      return
+    }
+
+    const direction = delta < 0 ? 'next' : 'prev'
+    const exitX =
+      delta < 0 ? -window.innerWidth * 1.05 : window.innerWidth * 1.05
+
+    if (el) {
+      // Slide fully off screen
+      el.style.transition = 'transform 220ms cubic-bezier(0.4, 0, 0.2, 1)'
+      el.style.transform = `translateX(${exitX}px)`
+
+      setTimeout(() => {
+        // Instantly move to entrance side, update content, then slide in
+        const entranceX =
+          direction === 'next'
+            ? window.innerWidth * 0.4
+            : -window.innerWidth * 0.4
+        el.style.transition = 'none'
+        el.style.transform = `translateX(${entranceX}px)`
+        moveRange(direction)
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            el.style.transition = 'transform 220ms cubic-bezier(0.4, 0, 0.2, 1)'
+            el.style.transform = 'translateX(0)'
+          })
+        })
+      }, 220)
+    } else {
+      moveRange(direction)
+    }
   }, [moveRange])
 
   const openNewJobAt = (dateKey: string, hour: number) => {
@@ -1249,10 +1288,7 @@ export function OperationsSchedule() {
           onTouchMove={handleCalTouchMove}
           onTouchEnd={handleCalTouchEnd}
         >
-          <div
-            className="transition-transform duration-75 ease-out"
-            style={{ transform: `translateX(${swipeOffset}px)` }}
-          >
+          <div ref={calendarRef}>
             <div className={view === 'day' ? '' : 'overflow-x-auto'}>
               <div
                 className={view === 'day' ? 'grid' : 'grid min-w-[900px]'}
