@@ -526,7 +526,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                 onClick={() => setShowPaymentModal(true)}
               >
                 <CreditCard className="h-4 w-4" />
-                Collect Payment
+                Venmo
               </Button>
 
               {/* Manual contact — opens native apps */}
