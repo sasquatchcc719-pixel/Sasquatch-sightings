@@ -19,7 +19,20 @@ import {
   Settings as SettingsIcon,
   Rocket,
   Users,
+  CalendarCheck,
 } from 'lucide-react'
+
+type OpsStats = {
+  weekStart: string
+  weekEnd: string
+  jobCount: number
+  invoicedJobCount: number
+  totalRevenue: number
+  averageTicket: number
+  statusCounts: Record<string, number>
+  paymentStatusCounts: Record<string, number>
+  leadSourceCounts: Record<string, number>
+}
 
 type Settings = {
   annual_revenue_goal: number
@@ -87,6 +100,8 @@ export default function StatsPage() {
     useState<HiringReadiness | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [opsStats, setOpsStats] = useState<OpsStats | null>(null)
+  const [opsLoading, setOpsLoading] = useState(true)
 
   // Quick entry form state
   const [showQuickEntry, setShowQuickEntry] = useState(false)
@@ -471,6 +486,25 @@ export default function StatsPage() {
     fetchData()
   }, [])
 
+  useEffect(() => {
+    async function fetchOpsStats() {
+      setOpsLoading(true)
+      try {
+        const response = await fetch('/api/admin/ops/stats', {
+          cache: 'no-store',
+        })
+        const result = await response.json()
+        if (!response.ok) throw new Error(result.error || 'Failed to load')
+        setOpsStats(result)
+      } catch {
+        // Non-fatal — existing stats still show
+      } finally {
+        setOpsLoading(false)
+      }
+    }
+    void fetchOpsStats()
+  }, [])
+
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -731,6 +765,151 @@ export default function StatsPage() {
               </div>
             </form>
           </Card>
+        )}
+      </div>
+
+      {/* Live Ops Stats — from ops_appointments + ops_invoices */}
+      <div className="mb-8">
+        <div className="mb-4 flex items-center gap-2">
+          <CalendarCheck className="h-5 w-5 text-green-600" />
+          <h2 className="text-xl font-semibold">This Week — Live Jobs</h2>
+          {opsStats ? (
+            <span className="text-muted-foreground text-xs">
+              ({opsStats.weekStart} – {opsStats.weekEnd})
+            </span>
+          ) : null}
+        </div>
+
+        {opsLoading ? (
+          <div className="text-muted-foreground flex items-center gap-2 text-sm">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading live job data...
+          </div>
+        ) : opsStats ? (
+          <div className="space-y-4">
+            {/* Top stat cards */}
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+              <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
+                <div className="text-muted-foreground mb-1 flex items-center gap-2">
+                  <Briefcase className="h-4 w-4" />
+                  <p className="text-sm font-medium">Jobs Booked</p>
+                </div>
+                <p className="text-2xl font-bold">{opsStats.jobCount}</p>
+              </Card>
+
+              <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
+                <div className="text-muted-foreground mb-1 flex items-center gap-2">
+                  <DollarSign className="h-4 w-4" />
+                  <p className="text-sm font-medium">Total Invoiced</p>
+                </div>
+                <p className="text-2xl font-bold">
+                  {formatCurrency(opsStats.totalRevenue)}
+                </p>
+              </Card>
+
+              <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
+                <div className="text-muted-foreground mb-1 flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4" />
+                  <p className="text-sm font-medium">Avg Ticket</p>
+                </div>
+                <p className="text-2xl font-bold">
+                  {formatCurrency(opsStats.averageTicket)}
+                </p>
+              </Card>
+
+              <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
+                <div className="text-muted-foreground mb-1 flex items-center gap-2">
+                  <Target className="h-4 w-4" />
+                  <p className="text-sm font-medium">Unpaid</p>
+                </div>
+                <p className="text-2xl font-bold">
+                  {opsStats.paymentStatusCounts['unpaid'] ?? 0}
+                </p>
+                <p className="text-muted-foreground mt-0.5 text-xs">
+                  invoices outstanding
+                </p>
+              </Card>
+            </div>
+
+            {/* Job status + Lead source */}
+            <div className="grid gap-4 md:grid-cols-2">
+              <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
+                <h3 className="mb-3 text-sm font-semibold">Job Status</h3>
+                <div className="space-y-2">
+                  {Object.entries(opsStats.statusCounts).length === 0 ? (
+                    <p className="text-muted-foreground text-sm">
+                      No jobs this week
+                    </p>
+                  ) : (
+                    Object.entries(opsStats.statusCounts)
+                      .sort((a, b) => b[1] - a[1])
+                      .map(([status, count]) => {
+                        const pct =
+                          opsStats.jobCount > 0
+                            ? Math.round((count / opsStats.jobCount) * 100)
+                            : 0
+                        return (
+                          <div key={status} className="flex items-center gap-3">
+                            <div className="w-24 shrink-0 text-sm capitalize">
+                              {status.replace(/_/g, ' ')}
+                            </div>
+                            <div className="bg-muted h-2 flex-1 overflow-hidden rounded-full">
+                              <div
+                                className="h-2 rounded-full bg-green-500"
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                            <div className="w-12 shrink-0 text-right text-sm font-semibold">
+                              {count}
+                            </div>
+                          </div>
+                        )
+                      })
+                  )}
+                </div>
+              </Card>
+
+              <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
+                <h3 className="mb-3 text-sm font-semibold">Lead Source</h3>
+                <div className="space-y-2">
+                  {Object.entries(opsStats.leadSourceCounts).length === 0 ? (
+                    <p className="text-muted-foreground text-sm">
+                      No lead source data yet
+                    </p>
+                  ) : (
+                    Object.entries(opsStats.leadSourceCounts)
+                      .sort((a, b) => b[1] - a[1])
+                      .map(([source, count]) => {
+                        const pct =
+                          opsStats.jobCount > 0
+                            ? Math.round((count / opsStats.jobCount) * 100)
+                            : 0
+                        return (
+                          <div key={source} className="flex items-center gap-3">
+                            <div className="w-32 shrink-0 truncate text-sm">
+                              {source}
+                            </div>
+                            <div className="bg-muted h-2 flex-1 overflow-hidden rounded-full">
+                              <div
+                                className="h-2 rounded-full bg-green-500"
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                            <div className="w-12 shrink-0 text-right text-sm font-semibold">
+                              {count}
+                            </div>
+                          </div>
+                        )
+                      })
+                  )}
+                </div>
+              </Card>
+            </div>
+          </div>
+        ) : (
+          <p className="text-muted-foreground text-sm">
+            Could not load live job data.
+          </p>
         )}
       </div>
 
