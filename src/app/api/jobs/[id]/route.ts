@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/supabase/server'
+import { buildJobUrl, notifyGoogleIndexing } from '@/lib/google-indexing'
 
 type RouteContext = {
   params: Promise<{ id: string }>
@@ -27,7 +28,13 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     // Parse request body
     const body = await request.json()
-    const { ai_description, status, published_at, invoice_amount, hours_worked } = body
+    const {
+      ai_description,
+      status,
+      published_at,
+      invoice_amount,
+      hours_worked,
+    } = body
 
     // Build update object with only provided fields
     const updates: {
@@ -70,8 +77,16 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       console.error('Database update error:', updateError)
       return NextResponse.json(
         { error: 'Failed to update job' },
-        { status: 500 }
+        { status: 500 },
       )
+    }
+
+    // When a job is published, ping Google to index the main-domain page immediately
+    if (updates.status === 'published' && job.city && job.slug) {
+      const jobUrl = buildJobUrl(job.city, job.slug)
+      notifyGoogleIndexing(jobUrl).catch(() => {
+        /* already logged inside helper */
+      })
     }
 
     return NextResponse.json({ success: true, job })
@@ -79,7 +94,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     console.error('Job update API error:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }
