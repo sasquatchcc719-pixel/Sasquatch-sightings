@@ -58,6 +58,11 @@ export async function PUT(request: NextRequest) {
       sip_endpoints,
       sip_domain,
       dial_timeout,
+      temporary_open_line_mode,
+      twilio_primary_forward_number,
+      twilio_failover_forward_number,
+      ivr_schedule_timeout_seconds,
+      ivr_technical_timeout_seconds,
     } = body
 
     // Validate business hours
@@ -79,6 +84,26 @@ export async function PUT(request: NextRequest) {
         { status: 400 },
       )
     }
+    if (
+      ivr_schedule_timeout_seconds !== undefined &&
+      (Number(ivr_schedule_timeout_seconds) < 10 ||
+        Number(ivr_schedule_timeout_seconds) > 120)
+    ) {
+      return NextResponse.json(
+        { error: 'Invalid schedule timeout' },
+        { status: 400 },
+      )
+    }
+    if (
+      ivr_technical_timeout_seconds !== undefined &&
+      (Number(ivr_technical_timeout_seconds) < 10 ||
+        Number(ivr_technical_timeout_seconds) > 120)
+    ) {
+      return NextResponse.json(
+        { error: 'Invalid technical timeout' },
+        { status: 400 },
+      )
+    }
 
     // Build update object with only provided fields
     const updates: Record<string, unknown> = {}
@@ -93,6 +118,20 @@ export async function PUT(request: NextRequest) {
     if (sip_endpoints !== undefined) updates.sip_endpoints = sip_endpoints
     if (sip_domain !== undefined) updates.sip_domain = sip_domain
     if (dial_timeout !== undefined) updates.dial_timeout = dial_timeout
+    if (temporary_open_line_mode !== undefined)
+      updates.temporary_open_line_mode = Boolean(temporary_open_line_mode)
+    if (twilio_primary_forward_number !== undefined)
+      updates.twilio_primary_forward_number = twilio_primary_forward_number
+    if (twilio_failover_forward_number !== undefined)
+      updates.twilio_failover_forward_number = twilio_failover_forward_number
+    if (ivr_schedule_timeout_seconds !== undefined)
+      updates.ivr_schedule_timeout_seconds = Number(
+        ivr_schedule_timeout_seconds,
+      )
+    if (ivr_technical_timeout_seconds !== undefined)
+      updates.ivr_technical_timeout_seconds = Number(
+        ivr_technical_timeout_seconds,
+      )
 
     // Get the first (and only) settings row
     const { data: existing } = await supabase

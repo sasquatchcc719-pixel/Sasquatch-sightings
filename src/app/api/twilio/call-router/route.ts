@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getCallRoutingConfig } from '@/lib/twilio/call-routing-config'
 
 // Robust Hardcoded Business Hours Logic (Fallback Plan)
 // This removes the dependency on the database for the critical path of answering a call.
@@ -8,13 +9,8 @@ const SETTINGS = {
   business_hours_start: 9, // 9 AM
   business_hours_end: 17, // 5 PM
   business_days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
-  // TEMPORARY: open line mode for urgent inbound call.
-  // When true, non-owner callers bypass IVR and ring Chuck directly.
-  temporary_open_line_mode: false,
-  // Forwarding to Chuck and Wife with Whisper
-  forward_to_numbers: ['+17197498807', '+17206447577'],
+  // Static fallback values. Dynamic values come from phone_settings.
   forward_to_number_display: '+17192498791', // Shows as Business Number on Caller ID
-  dial_timeout: 20,
   timezone: 'America/Denver',
 }
 
@@ -30,6 +26,7 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
     const callerPhone = formData.get('From') as string
+    const routingConfig = await getCallRoutingConfig()
 
     console.log(`[Call Router] Incoming call from: ${callerPhone}`)
 
@@ -66,7 +63,10 @@ export async function POST(request: NextRequest) {
 
     // Check if the caller is one of the owners (simulring numbers)
     // If so, provide the ability to dial out as the business
-    const isOwnerCalling = SETTINGS.forward_to_numbers.includes(callerPhone)
+    const isOwnerCalling = [
+      routingConfig.primaryForwardNumber,
+      routingConfig.failoverForwardNumber,
+    ].includes(callerPhone)
 
     let twimlResponse
 
@@ -86,12 +86,12 @@ export async function POST(request: NextRequest) {
   </Gather>
   <Say>We didn't receive any input. Goodbye.</Say>
 </Response>`
-    } else if (SETTINGS.temporary_open_line_mode) {
+    } else if (routingConfig.temporaryOpenLineMode) {
       console.log('[Call Router] Temporary open line mode active - direct ring')
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial timeout="${SETTINGS.dial_timeout}" action="${afterHoursUrl}" callerId="${callerPhone}">
-    <Number>${SETTINGS.forward_to_numbers[0]}</Number>
+  <Dial timeout="${routingConfig.openLineTimeoutSeconds}" action="${afterHoursUrl}" callerId="${callerPhone}" answerOnBridge="true">
+    <Number>${routingConfig.primaryForwardNumber}</Number>
   </Dial>
 </Response>`
     } else if (isBusinessHours) {

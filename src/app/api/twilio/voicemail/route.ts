@@ -83,6 +83,38 @@ function getLatestVoicemailTranscription(
   return null
 }
 
+function buildVoicemailAutoReply(latestTranscript: string | null): string {
+  // Keep replies concise and natural; never quote transcript text back.
+  const base =
+    'Hi! This is Harry from Sasquatch Carpet Cleaning. Thanks for your voicemail.'
+
+  if (!latestTranscript) {
+    return `${base} I can help by text, or Charles can call you back shortly.`
+  }
+
+  const normalized = latestTranscript.toLowerCase()
+  const mentionsFutureWork =
+    normalized.includes('downstairs') ||
+    normalized.includes('few weeks') ||
+    normalized.includes('next month') ||
+    normalized.includes('later this month')
+  const mentionsPositiveFeedback =
+    normalized.includes('pleased') ||
+    normalized.includes('loved') ||
+    normalized.includes('great') ||
+    normalized.includes('thank')
+
+  if (mentionsFutureWork) {
+    return `${base} No rush at all. When you're ready to schedule, just reply here and we'll get you booked.`
+  }
+
+  if (mentionsPositiveFeedback) {
+    return `${base} We really appreciate the kind feedback. If you'd like, Charles can call you back, or we can handle everything right here by text.`
+  }
+
+  return `${base} I can help by text, or Charles can call you back shortly.`
+}
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
@@ -215,18 +247,7 @@ export async function POST(request: NextRequest) {
               ? String(transcriptionText).trim()
               : null)
 
-          const harryMessage = latestTranscript
-            ? (() => {
-                const normalizedTranscript = latestTranscript
-                  .replace(/\s+/g, ' ')
-                  .trim()
-                const summary =
-                  normalizedTranscript.length > 120
-                    ? `${normalizedTranscript.slice(0, 117)}...`
-                    : normalizedTranscript
-                return `Hi! This is Harry from Sasquatch Carpet Cleaning. I got your voicemail about "${summary}". I can help here by text, or Charles can call you back shortly.`
-              })()
-            : 'Hi! This is Harry from Sasquatch Carpet Cleaning. I saw your missed call. I can help here by text, or Charles can call you back shortly.'
+          const harryMessage = buildVoicemailAutoReply(latestTranscript)
 
           const twilioClient = twilio(
             process.env.TWILIO_ACCOUNT_SID,

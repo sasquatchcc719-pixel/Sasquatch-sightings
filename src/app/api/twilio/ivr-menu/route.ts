@@ -1,8 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-
-// Specific numbers based on user request
-const CHUCK_PHONE = '+17197498807'
-const WIFE_PHONE = '+17206447577'
+import { getCallRoutingConfig } from '@/lib/twilio/call-routing-config'
 
 function getBaseUrl(): string {
   const url =
@@ -17,6 +14,7 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData()
     const digits = formData.get('Digits') as string
     const callerPhone = formData.get('From') as string
+    const routingConfig = await getCallRoutingConfig()
 
     console.log(`[IVR Menu] Selection: ${digits} from ${callerPhone}`)
 
@@ -27,21 +25,21 @@ export async function POST(request: NextRequest) {
     let twimlResponse
 
     if (digits === '1') {
-      // Option 1: Schedule -> Dial Wife first, failover to Chuck
-      console.log(`[IVR Menu] Option 1 (Schedule) -> Dialing Wife first`)
+      // Option 1: Schedule -> Dial failover target first, then primary.
+      console.log(`[IVR Menu] Option 1 (Schedule) -> Dialing first target`)
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial timeout="20" action="${failoverUrl}" callerId="${callerPhone}">
-    <Number>${WIFE_PHONE}</Number>
+  <Dial timeout="${routingConfig.ivrScheduleTimeoutSeconds}" action="${failoverUrl}" callerId="${callerPhone}" answerOnBridge="true">
+    <Number>${routingConfig.failoverForwardNumber}</Number>
   </Dial>
 </Response>`
     } else if (digits === '2') {
-      // Option 2: Technical -> Dial Chuck directly
-      console.log(`[IVR Menu] Option 2 (Technical) -> Dialing Chuck`)
+      // Option 2: Technical -> Dial primary target directly
+      console.log(`[IVR Menu] Option 2 (Technical) -> Dialing primary target`)
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial timeout="20" action="${afterHoursUrl}" callerId="${callerPhone}">
-    <Number>${CHUCK_PHONE}</Number>
+  <Dial timeout="${routingConfig.ivrTechnicalTimeoutSeconds}" action="${afterHoursUrl}" callerId="${callerPhone}" answerOnBridge="true">
+    <Number>${routingConfig.primaryForwardNumber}</Number>
   </Dial>
 </Response>`
     } else {

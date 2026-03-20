@@ -19,6 +19,7 @@ interface PhoneSettings {
   id: string
   voicemail_message: string
   voicemail_voice: string
+  temporary_open_line_mode: boolean
   business_hours_start: number
   business_hours_end: number
   business_days: string[]
@@ -169,6 +170,46 @@ export default function PhoneSettingsPage() {
       )}
 
       <div className="grid gap-6">
+        {/* Emergency Open Line Mode */}
+        <Card
+          className={`border-2 p-6 ${
+            settings.temporary_open_line_mode
+              ? 'border-red-300 bg-red-50'
+              : 'border-emerald-300 bg-emerald-50'
+          }`}
+        >
+          <div className="flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
+            <div>
+              <h2 className="text-xl font-semibold">
+                Master Switch: Open Line Mode
+              </h2>
+              <p className="mt-1 text-sm text-slate-700">
+                Bypass IVR/business-hours and ring your phone directly. Use this
+                for verification calls and urgent situations.
+              </p>
+            </div>
+            <Button
+              type="button"
+              size="lg"
+              className={`min-w-[220px] text-base font-bold ${
+                settings.temporary_open_line_mode
+                  ? 'bg-red-600 hover:bg-red-700'
+                  : 'bg-emerald-600 hover:bg-emerald-700'
+              }`}
+              onClick={() =>
+                setSettings({
+                  ...settings,
+                  temporary_open_line_mode: !settings.temporary_open_line_mode,
+                })
+              }
+            >
+              {settings.temporary_open_line_mode
+                ? 'ON - Direct Ring Active'
+                : 'OFF - Normal Harry Routing'}
+            </Button>
+          </div>
+        </Card>
+
         {/* Voicemail Settings */}
         <Card className="p-6">
           <h2 className="mb-4 text-xl font-semibold">Voicemail Settings</h2>

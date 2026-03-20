@@ -234,6 +234,13 @@ export function AdminNavigation() {
       active: pathname === '/admin/harry/control',
       description: 'Runtime toggles, logic profiles, and knowledge controls',
     },
+    {
+      name: 'George Henderson',
+      href: '/admin/harry/george',
+      icon: Bot,
+      active: pathname === '/admin/harry/george',
+      description: 'Smart field copilot with confirmation-gated actions',
+    },
   ]
 
   // Calls group (Phone system)

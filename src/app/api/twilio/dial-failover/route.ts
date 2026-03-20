@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-
-// Specific numbers based on user request
-const CHUCK_PHONE = '+17197498807'
+import { getCallRoutingConfig } from '@/lib/twilio/call-routing-config'
 
 function getBaseUrl(): string {
   const url =
@@ -38,6 +36,7 @@ export async function POST(request: NextRequest) {
     console.log(
       `[Dial Failover] Primary leg failed/unanswered. Dialing Chuck...`,
     )
+    const routingConfig = await getCallRoutingConfig()
 
     const baseUrl = getBaseUrl()
     const afterHoursUrl = `${baseUrl}/api/twilio/call-after-hours`
@@ -46,8 +45,8 @@ export async function POST(request: NextRequest) {
     // Maintaining callerId of the original caller
     const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial timeout="20" action="${afterHoursUrl}" callerId="${callerPhone}">
-    <Number>${CHUCK_PHONE}</Number>
+  <Dial timeout="${routingConfig.ivrTechnicalTimeoutSeconds}" action="${afterHoursUrl}" callerId="${callerPhone}" answerOnBridge="true">
+    <Number>${routingConfig.primaryForwardNumber}</Number>
   </Dial>
 </Response>`
 

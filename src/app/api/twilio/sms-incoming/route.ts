@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 import { Resend } from 'resend'
+import twilio from 'twilio'
 import {
   generateAIResponse,
   shouldEscalate,
@@ -57,6 +58,14 @@ function extractCustomerInfo(
     .filter((m) => m.role === 'user')
     .map((m) => m.content)
     .join(' ')
+  const userLines = messages
+    .filter((m) => m.role === 'user')
+    .flatMap((m) =>
+      String(m.content || '')
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0),
+    )
 
   // Extract name - look for patterns like "I'm John", "My name is John", "This is John", "It's Sarah"
   const namePatterns = [
@@ -84,6 +93,63 @@ function extractCustomerInfo(
         info.name = name
         break
       }
+    }
+  }
+
+  // Fallback: detect name in standalone lines like:
+  // "Anne Farrell"
+  if (!info.name) {
+    const disallowedNameLineTokens = new Set([
+      'street',
+      'st',
+      'avenue',
+      'ave',
+      'road',
+      'rd',
+      'drive',
+      'dr',
+      'lane',
+      'ln',
+      'way',
+      'court',
+      'ct',
+      'circle',
+      'cir',
+      'boulevard',
+      'blvd',
+      'place',
+      'pl',
+      'room',
+      'rooms',
+      'steps',
+      'step',
+      'sq',
+      'sqft',
+      'square',
+      'email',
+      'thanks',
+      'cleaning',
+      'info',
+      'service',
+      'city',
+      'zip',
+    ])
+    const fullNameLine = userLines.find((line) => {
+      if (/@/.test(line) || /\d/.test(line)) return false
+      if (line.length < 4 || line.length > 40) return false
+      const words = line
+        .split(/\s+/)
+        .map((w) => w.replace(/[^A-Za-z'-]/g, ''))
+        .filter(Boolean)
+      if (words.length < 2 || words.length > 3) return false
+      if (!words.every((w) => /^[A-Z][a-zA-Z'-]+$/.test(w))) return false
+      if (words.some((w) => disallowedNameLineTokens.has(w.toLowerCase()))) {
+        return false
+      }
+      return true
+    })
+    if (fullNameLine) {
+      info.name = fullNameLine
     }
   }
 
@@ -204,6 +270,188 @@ function sourceTypeToChannelKey(
   sourceType: ConversationSource,
 ): 'vendor' | 'business_card' | 'contest' | 'inbound' {
   return sourceType
+}
+
+type ConversationMessageRecord = {
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  timestamp?: string
+  twilio_sid?: string
+  sent_by?: string
+}
+
+function shouldHoldForHuman(params: {
+  latestUserMessage: string
+  messages: ConversationMessageRecord[]
+}): { hold: boolean; reason: string } {
+  const text = params.latestUserMessage.toLowerCase()
+
+  const hasRecentManualOutbound = params.messages.some((m) => {
+    if (m.role !== 'assistant' || m.sent_by !== 'admin_external') return false
+    const ts = Date.parse(String(m.timestamp || ''))
+    if (!Number.isFinite(ts)) return false
+    return Date.now() - ts < 24 * 60 * 60 * 1000
+  })
+
+  // Hiring/subcontractor context: don't let Harry sell carpet cleaning here.
+  const hiringKeywords = [
+    'subcontractor',
+    'cleaning lady',
+    'commercial',
+    'liability insurance',
+    '1099',
+    'w9',
+    'independent contractor',
+    'accounts we are targeting',
+    'offices',
+    'janitorial',
+    'nightly cleaning',
+  ]
+  if (hiringKeywords.some((k) => text.includes(k))) {
+    return { hold: true, reason: 'hiring_or_subcontractor_context' }
+  }
+
+  // Context-dependent replies (yes/no/that works/etc.) right after a manual outbound
+  // usually mean this is an active human-managed thread.
+  const contextReplySignals = [
+    "that's not a problem",
+    'sounds good',
+    'yes for',
+    "i don't but",
+    "i've planned",
+    'that works',
+    'absolutely',
+    'no problem at all',
+  ]
+  if (
+    hasRecentManualOutbound &&
+    contextReplySignals.some((k) => text.includes(k))
+  ) {
+    return { hold: true, reason: 'manual_thread_in_progress' }
+  }
+
+  const serviceIntentKeywords = [
+    'carpet',
+    'upholstery',
+    'tile',
+    'grout',
+    'rug',
+    'stairs',
+    'pet treatment',
+    'quote',
+    'estimate',
+    'book',
+    'booking',
+    'schedule',
+    'cleaning',
+    'bedroom',
+    'living room',
+    'basement',
+    'sofa',
+    'sectional',
+    'loveseat',
+  ]
+  const mentionsServiceIntent = serviceIntentKeywords.some((k) =>
+    text.includes(k),
+  )
+
+  const businessOpsKeywords = [
+    'insurance policy',
+    'liability policy',
+    'premium',
+    'year',
+    'annual',
+    '$500',
+    '$1000',
+    'payroll',
+    'commission',
+    'hourly',
+    '1099',
+    'w9',
+    'ein',
+    'vendor packet',
+    'subcontract',
+    'subcontractor',
+    'background check',
+    'drug test',
+    'application',
+    'interview',
+    'hiring',
+  ]
+  const appearsBusinessOps = businessOpsKeywords.some((k) => text.includes(k))
+
+  // If the text looks like business/recruiting chatter (not a cleaning inquiry),
+  // hold for human instead of sending a generic service reply.
+  if (appearsBusinessOps && !mentionsServiceIntent) {
+    return { hold: true, reason: 'off_topic_business_context' }
+  }
+
+  return { hold: false, reason: '' }
+}
+
+async function syncRecentOutboundContext(params: {
+  messages: ConversationMessageRecord[]
+  customerPhone: string
+  businessNumber: string | null
+}): Promise<ConversationMessageRecord[]> {
+  const { messages, customerPhone, businessNumber } = params
+  if (!businessNumber) return messages
+  if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN) {
+    return messages
+  }
+
+  try {
+    const twilioClient = twilio(
+      process.env.TWILIO_ACCOUNT_SID,
+      process.env.TWILIO_AUTH_TOKEN,
+    )
+
+    // Pull recent outbound messages from the same business number to this customer.
+    // This captures manual app sends (Talky, etc.) so Harry gets full context.
+    const outboundMessages = await twilioClient.messages.list({
+      from: businessNumber,
+      to: customerPhone,
+      limit: 20,
+    })
+
+    if (!outboundMessages.length) return messages
+
+    const existingTwilioSids = new Set(
+      messages
+        .map((m) => String(m?.twilio_sid || '').trim())
+        .filter((sid) => sid.length > 0),
+    )
+
+    const additions = outboundMessages
+      .filter((m) => {
+        if (!m.sid || existingTwilioSids.has(m.sid)) return false
+        // Keep only sent outbound traffic.
+        return m.direction?.startsWith('outbound') ?? false
+      })
+      .map((m) => ({
+        role: 'assistant' as const,
+        content: String(m.body || ''),
+        timestamp:
+          (m.dateSent || m.dateCreated || new Date()).toISOString?.() ||
+          new Date().toISOString(),
+        twilio_sid: m.sid,
+        sent_by: 'admin_external',
+      }))
+      .filter((m) => m.content.length > 0)
+
+    if (!additions.length) return messages
+
+    additions.sort((a, b) => {
+      const t1 = Date.parse(String(a.timestamp || ''))
+      const t2 = Date.parse(String(b.timestamp || ''))
+      return t1 - t2
+    })
+
+    return [...messages, ...additions]
+  } catch (error) {
+    console.error('[SMS] Failed to sync outbound context:', error)
+    return messages
+  }
 }
 
 async function determineSourceType(
@@ -477,14 +725,57 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Start from current history.
+    let messages = ((conversation.messages as any[]) ||
+      []) as ConversationMessageRecord[]
+
+    // IMPORTANT: pull any recent manual outbound messages first (Talky, etc.)
+    // so Harry sees full context before responding to the new inbound text.
+    const inferredBusinessNumber = toNumber
+      ? normalizePhone(toNumber)
+      : process.env.TWILIO_PHONE_NUMBER || null
+    messages = await syncRecentOutboundContext({
+      messages,
+      customerPhone: normalizedPhone,
+      businessNumber: inferredBusinessNumber,
+    })
+
     // Add customer message to conversation history
-    const messages = (conversation.messages as any[]) || []
     messages.push({
       role: 'user',
       content: messageBody,
       timestamp: new Date().toISOString(),
       twilio_sid: twilioSid,
     })
+
+    // Check if this thread should be held for human handling.
+    const holdDecision = shouldHoldForHuman({
+      latestUserMessage: messageBody,
+      messages,
+    })
+    if (holdDecision.hold) {
+      await supabase
+        .from('conversations')
+        .update({
+          messages,
+          status: 'escalated',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', conversation.id)
+
+      if (canSendEscalationAlerts) {
+        await sendAdminSMS(
+          `🚧 Harry held reply (${holdDecision.reason})\nPhone: ${normalizedPhone}\nMessage: "${messageBody}"\n\nThread marked escalated for manual handling.`,
+          'ai_dispatcher_escalation',
+        )
+      }
+
+      await maybeSendInboundEmail(null)
+      console.log(
+        `[SMS] Auto-reply suppressed, escalated for human: ${holdDecision.reason}`,
+      )
+      return emptyTwiml
+    }
 
     // Check if AI should respond
     const aiShouldRespond =
