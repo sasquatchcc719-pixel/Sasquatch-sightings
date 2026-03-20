@@ -1,4 +1,5 @@
 export type GeorgeActionName =
+  | 'query_database'
   | 'set_open_line_mode'
   | 'set_harry_toggle'
   | 'hold_conversation'
@@ -7,8 +8,15 @@ export type GeorgeActionName =
   | 'set_failover_target'
   | 'update_harry_profile'
   | 'update_harry_knowledge_block'
+  | 'update_appointment_status'
+  | 'send_customer_sms'
 
 export type GeorgeActionPayload =
+  | {
+      name: 'query_database'
+      args: { sql: string; description: string }
+      reason: string
+    }
   | { name: 'set_open_line_mode'; args: { enabled: boolean }; reason: string }
   | {
       name: 'set_harry_toggle'
@@ -48,6 +56,25 @@ export type GeorgeActionPayload =
         title?: string
         is_enabled?: boolean
       }
+      reason: string
+    }
+  | {
+      name: 'update_appointment_status'
+      args: {
+        appointment_id: string
+        status:
+          | 'pending'
+          | 'confirmed'
+          | 'in_progress'
+          | 'completed'
+          | 'cancelled'
+          | 'no_show'
+      }
+      reason: string
+    }
+  | {
+      name: 'send_customer_sms'
+      args: { phone: string; message: string }
       reason: string
     }
 

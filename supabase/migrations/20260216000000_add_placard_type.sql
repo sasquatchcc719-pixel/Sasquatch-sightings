@@ -6,9 +6,11 @@ ADD COLUMN IF NOT EXISTS placard_type text DEFAULT 'standard';
 -- Update existing rows to have 'standard' if null (though default handles new rows)
 UPDATE partners SET placard_type = 'standard' WHERE placard_type IS NULL;
 
--- Add check constraint to ensure valid values
-ALTER TABLE partners 
-ADD CONSTRAINT check_placard_type CHECK (placard_type IN ('standard', 'contest'));
+-- Add check constraint to ensure valid values (idempotent)
+DO $$ BEGIN
+  ALTER TABLE partners ADD CONSTRAINT check_placard_type CHECK (placard_type IN ('standard', 'contest'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- Comment on column
 COMMENT ON COLUMN partners.placard_type IS 'Configuration for which placard is displayed: standard ($20 off) or contest (Enter to Win)';
