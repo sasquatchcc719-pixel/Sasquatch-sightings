@@ -5,6 +5,8 @@ export type GeorgeActionName =
   | 'resume_conversation'
   | 'set_ivr_timeout'
   | 'set_failover_target'
+  | 'update_harry_profile'
+  | 'update_harry_knowledge_block'
 
 export type GeorgeActionPayload =
   | { name: 'set_open_line_mode'; args: { enabled: boolean }; reason: string }
@@ -26,6 +28,26 @@ export type GeorgeActionPayload =
   | {
       name: 'set_failover_target'
       args: { target: 'primary' | 'failover'; phone: string }
+      reason: string
+    }
+  | {
+      name: 'update_harry_profile'
+      args: {
+        profile_key: string
+        prompt_overrides: string
+        booking_mode?: string
+        is_enabled?: boolean
+      }
+      reason: string
+    }
+  | {
+      name: 'update_harry_knowledge_block'
+      args: {
+        category_key: string
+        content: string
+        title?: string
+        is_enabled?: boolean
+      }
       reason: string
     }
 

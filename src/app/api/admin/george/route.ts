@@ -98,6 +98,50 @@ function parseAction(input: unknown): GeorgeActionPayload | null {
     return { name, args: { target, phone }, reason }
   }
 
+  if (name === 'update_harry_profile') {
+    const profileKey = String(args.profile_key || '').trim()
+    const promptOverrides = String(args.prompt_overrides || '').trim()
+    const bookingModeRaw = String(args.booking_mode || '').trim()
+    const isEnabledRaw = args.is_enabled
+    if (!profileKey || !promptOverrides) return null
+    const payload: GeorgeActionPayload = {
+      name,
+      args: {
+        profile_key: profileKey,
+        prompt_overrides: promptOverrides,
+      },
+      reason,
+    }
+    if (bookingModeRaw) {
+      payload.args.booking_mode = bookingModeRaw
+    }
+    if (isEnabledRaw !== undefined) {
+      payload.args.is_enabled = Boolean(isEnabledRaw)
+    }
+    return payload
+  }
+
+  if (name === 'update_harry_knowledge_block') {
+    const categoryKey = String(args.category_key || '').trim()
+    const content = String(args.content || '').trim()
+    const title = String(args.title || '').trim()
+    const isEnabledRaw = args.is_enabled
+    if (!categoryKey || !content) return null
+    const payload: GeorgeActionPayload = {
+      name,
+      args: {
+        category_key: categoryKey,
+        content,
+      },
+      reason,
+    }
+    if (title) payload.args.title = title
+    if (isEnabledRaw !== undefined) {
+      payload.args.is_enabled = Boolean(isEnabledRaw)
+    }
+    return payload
+  }
+
   return null
 }
 
@@ -110,6 +154,32 @@ async function getPhoneSettingsSnapshot(
       'id, temporary_open_line_mode, dial_timeout, twilio_primary_forward_number, twilio_failover_forward_number, ivr_schedule_timeout_seconds, ivr_technical_timeout_seconds',
     )
     .limit(1)
+    .maybeSingle()
+  return data
+}
+
+async function getHarryProfileSnapshot(
+  supabase: ReturnType<typeof createAdminClient>,
+  profileKey: string,
+) {
+  const { data } = await supabase
+    .from('harry_logic_profiles')
+    .select(
+      'id, profile_key, label, channel_key, booking_mode, prompt_overrides, is_enabled',
+    )
+    .eq('profile_key', profileKey)
+    .maybeSingle()
+  return data
+}
+
+async function getHarryKnowledgeSnapshot(
+  supabase: ReturnType<typeof createAdminClient>,
+  categoryKey: string,
+) {
+  const { data } = await supabase
+    .from('harry_knowledge_blocks')
+    .select('id, category_key, title, content, is_enabled, sort_order')
+    .eq('category_key', categoryKey)
     .maybeSingle()
   return data
 }
@@ -204,6 +274,60 @@ async function buildPreview(
       target: `phone_settings.${key}`,
       before: { [key]: Number(current?.[key] || 0) },
       after: { [key]: action.args.seconds },
+    }
+  }
+
+  if (action.name === 'update_harry_profile') {
+    const current = await getHarryProfileSnapshot(
+      supabase,
+      action.args.profile_key,
+    )
+    return {
+      target: `harry_logic_profiles.${action.args.profile_key}`,
+      before: {
+        booking_mode: current?.booking_mode || null,
+        is_enabled:
+          current?.is_enabled === undefined
+            ? null
+            : Boolean(current.is_enabled),
+        prompt_overrides: String(current?.prompt_overrides || ''),
+      },
+      after: {
+        booking_mode:
+          action.args.booking_mode ||
+          String(current?.booking_mode || 'bounded_auto_booking'),
+        is_enabled:
+          action.args.is_enabled !== undefined
+            ? action.args.is_enabled
+            : Boolean(current?.is_enabled ?? true),
+        prompt_overrides: action.args.prompt_overrides,
+      },
+    }
+  }
+
+  if (action.name === 'update_harry_knowledge_block') {
+    const current = await getHarryKnowledgeSnapshot(
+      supabase,
+      action.args.category_key,
+    )
+    return {
+      target: `harry_knowledge_blocks.${action.args.category_key}`,
+      before: {
+        title: String(current?.title || ''),
+        is_enabled:
+          current?.is_enabled === undefined
+            ? null
+            : Boolean(current.is_enabled),
+        content: String(current?.content || ''),
+      },
+      after: {
+        title: action.args.title || String(current?.title || ''),
+        is_enabled:
+          action.args.is_enabled !== undefined
+            ? action.args.is_enabled
+            : Boolean(current?.is_enabled ?? true),
+        content: action.args.content,
+      },
     }
   }
 
@@ -308,6 +432,56 @@ async function executeAction(
     return
   }
 
+  if (action.name === 'update_harry_profile') {
+    const current = await getHarryProfileSnapshot(
+      supabase,
+      action.args.profile_key,
+    )
+    if (!current?.id) {
+      throw new Error(`Harry profile not found: ${action.args.profile_key}`)
+    }
+    const { error } = await supabase
+      .from('harry_logic_profiles')
+      .update({
+        prompt_overrides: action.args.prompt_overrides,
+        booking_mode: action.args.booking_mode || current.booking_mode,
+        is_enabled:
+          action.args.is_enabled !== undefined
+            ? action.args.is_enabled
+            : current.is_enabled,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', current.id)
+    if (error) throw error
+    return
+  }
+
+  if (action.name === 'update_harry_knowledge_block') {
+    const current = await getHarryKnowledgeSnapshot(
+      supabase,
+      action.args.category_key,
+    )
+    if (!current?.id) {
+      throw new Error(
+        `Harry knowledge block not found: ${action.args.category_key}`,
+      )
+    }
+    const { error } = await supabase
+      .from('harry_knowledge_blocks')
+      .update({
+        title: action.args.title || current.title,
+        content: action.args.content,
+        is_enabled:
+          action.args.is_enabled !== undefined
+            ? action.args.is_enabled
+            : current.is_enabled,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', current.id)
+    if (error) throw error
+    return
+  }
+
   const { data: row } = await supabase
     .from('phone_settings')
     .select('id')
@@ -332,7 +506,7 @@ Return ONLY strict JSON with this shape:
   "mode": "ask" | "propose_action",
   "assistant_message": "string",
   "action": {
-    "name": "set_open_line_mode" | "set_harry_toggle" | "hold_conversation" | "resume_conversation" | "set_ivr_timeout" | "set_failover_target",
+    "name": "set_open_line_mode" | "set_harry_toggle" | "hold_conversation" | "resume_conversation" | "set_ivr_timeout" | "set_failover_target" | "update_harry_profile" | "update_harry_knowledge_block",
     "args": { ... },
     "reason": "string"
   }
@@ -346,6 +520,8 @@ Rules:
 - hold/resume conversation requires phone number in E.164.
 - set_ivr_timeout target: "schedule" or "technical", seconds between 10 and 120.
 - set_failover_target target: "primary" or "failover" with E.164 phone.
+- update_harry_profile requires profile_key + prompt_overrides, optional booking_mode and is_enabled.
+- update_harry_knowledge_block requires category_key + content, optional title and is_enabled.
 - Mention that every mutation requires explicit confirmation.
 - Current rollout mode is "${rolloutMode}".`
 }
@@ -540,6 +716,16 @@ export async function POST(request: NextRequest) {
 
     const harrySnapshot = await getHarryControlSnapshot({ bypassCache: true })
     const phoneSettings = await getPhoneSettingsSnapshot(supabase)
+    const [{ data: profileRows }, { data: knowledgeRows }] = await Promise.all([
+      supabase
+        .from('harry_logic_profiles')
+        .select('profile_key, booking_mode, is_enabled, prompt_overrides')
+        .order('profile_key', { ascending: true }),
+      supabase
+        .from('harry_knowledge_blocks')
+        .select('category_key, title, is_enabled, content')
+        .order('sort_order', { ascending: true }),
+    ])
     const contextSummary = {
       rollout_mode: rolloutMode,
       harry_controls: {
@@ -562,6 +748,18 @@ export async function POST(request: NextRequest) {
         twilio_failover_forward_number:
           phoneSettings?.twilio_failover_forward_number || null,
       },
+      harry_profiles: (profileRows || []).map((row) => ({
+        profile_key: row.profile_key,
+        booking_mode: row.booking_mode,
+        is_enabled: row.is_enabled,
+        prompt_overrides: String(row.prompt_overrides || '').slice(0, 1200),
+      })),
+      harry_knowledge_blocks: (knowledgeRows || []).map((row) => ({
+        category_key: row.category_key,
+        title: row.title,
+        is_enabled: row.is_enabled,
+        content: String(row.content || '').slice(0, 1200),
+      })),
     }
 
     const completion = await openai.chat.completions.create({
@@ -606,7 +804,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         mode: 'message',
         assistant_message:
-          'I can only run allowlisted actions. Try a supported command like toggling auto-reply, open-line mode, hold/resume by phone, timeout, or failover target.',
+          'I can only run allowlisted actions. Try toggles, conversation hold/resume, Twilio timeout/target updates, or Harry profile/knowledge logic updates.',
       } as GeorgeChatResponse)
     }
 
