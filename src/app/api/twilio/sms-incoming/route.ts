@@ -740,6 +740,17 @@ export async function POST(request: NextRequest) {
       businessNumber: inferredBusinessNumber,
     })
 
+    // Deduplicate: Check if we've already processed this Twilio message
+    const alreadyProcessed = messages.some(
+      (m) => m.twilio_sid && m.twilio_sid === twilioSid,
+    )
+    if (alreadyProcessed) {
+      console.log(
+        `⚠️  Duplicate message detected (SID: ${twilioSid}) - skipping processing`,
+      )
+      return emptyTwiml
+    }
+
     // Add customer message to conversation history
     messages.push({
       role: 'user',
