@@ -17,6 +17,7 @@ import { Label } from '@/components/ui/label'
 import { Card } from '@/components/ui/card'
 import { RecentJobsCarousel } from '@/components/nfc/recent-jobs-carousel'
 import { VideoBackground } from '@/components/public/VideoBackground'
+import { PushOptInBanner } from '@/components/push-opt-in-banner'
 
 export default function TapLandingPage() {
   const router = useRouter()
@@ -307,6 +308,17 @@ export default function TapLandingPage() {
             <Share2 className="mr-2 h-5 w-5" />
             Share This Deal
           </Button>
+
+          {/* Request Callback */}
+          <Button
+            onClick={() => setShowForm(!showForm)}
+            size="lg"
+            variant="outline"
+            className="w-full border-2 py-6 text-lg font-semibold"
+          >
+            <MessageSquare className="mr-2 h-5 w-5" />
+            {showForm ? 'Hide Form' : 'Request a Call Back'}
+          </Button>
         </div>
 
         {/* Location Partner Badge (if applicable) */}
@@ -431,6 +443,11 @@ export default function TapLandingPage() {
           ✓ Link copied to clipboard!
         </div>
       )}
+
+      <PushOptInBanner
+        headline="Get $20 off your next cleaning"
+        subline="Allow notifications for exclusive deals and last-minute openings."
+      />
     </div>
   )
 }

@@ -7,6 +7,7 @@ import {
   PartnerInfo,
   PartnerStats,
 } from '@/components/partners/PartnerLandingLayout'
+import { PushOptInBanner } from '@/components/push-opt-in-banner'
 
 export default function LocationPartnerPage() {
   const params = useParams()
@@ -130,18 +131,24 @@ export default function LocationPartnerPage() {
   }
 
   return (
-    <PartnerLandingLayout
-      partner={partner}
-      partnerStats={partnerStats}
-      onPartnerStatsChange={setPartnerStats}
-      onTrackClick={trackButtonClick}
-      onLoginRequest={handleLoginRequest}
-      loginError={loginError}
-      isLoggingIn={isLoggingIn}
-      loginModalOpen={loginModalOpen}
-      setLoginModalOpen={setLoginModalOpen}
-      logoTapCount={logoTapCount}
-      onLogoTap={handleLogoTap}
-    />
+    <>
+      <PartnerLandingLayout
+        partner={partner}
+        partnerStats={partnerStats}
+        onPartnerStatsChange={setPartnerStats}
+        onTrackClick={trackButtonClick}
+        onLoginRequest={handleLoginRequest}
+        loginError={loginError}
+        isLoggingIn={isLoggingIn}
+        loginModalOpen={loginModalOpen}
+        setLoginModalOpen={setLoginModalOpen}
+        logoTapCount={logoTapCount}
+        onLogoTap={handleLogoTap}
+      />
+      <PushOptInBanner
+        headline="Get $20 off carpet cleaning"
+        subline="Allow notifications for deals from Sasquatch Carpet Cleaning."
+      />
+    </>
   )
 }

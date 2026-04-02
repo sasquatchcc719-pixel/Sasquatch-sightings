@@ -38,6 +38,7 @@ import {
   type GpsCoordinates,
 } from '@/lib/image-utils'
 import { CONTEST_SMS_NUMBER, CONTEST_SMS_NUMBER_E164 } from '@/lib/phone'
+import { PushOptInBanner } from '@/components/push-opt-in-banner'
 
 // Form validation schema
 const sightingFormSchema = z.object({
@@ -341,6 +342,10 @@ export default function SightingsPage() {
     return (
       <div className="relative flex min-h-screen flex-col items-center justify-center p-4">
         <VideoBackground video="clouds" />
+        <PushOptInBanner
+          headline="You're entered! Get notified if you win 🏆"
+          subline="Allow notifications and we'll alert you the moment you win."
+        />
         <Card className="relative z-10 w-full max-w-2xl border-white/20 bg-black/90 p-6 text-white sm:p-8">
           {/* Step 1 Complete Header */}
           <div className="mb-6 text-center">
