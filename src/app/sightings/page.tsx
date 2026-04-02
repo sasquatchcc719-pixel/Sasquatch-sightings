@@ -72,6 +72,16 @@ type SightingFormData = z.output<typeof sightingFormSchema>
 type FormResolver = import('react-hook-form').Resolver<SightingFormData>
 
 export default function SightingsPage() {
+  // Track page view so we can see how many people scan the truck QR
+  // but never complete the form (the drop-off rate)
+  useEffect(() => {
+    fetch('/api/tap/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cardId: 'truck-qr-contest', action: 'page_view' }),
+    }).catch(() => {})
+  }, [])
+
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [gpsCoordinates, setGpsCoordinates] = useState<GpsCoordinates | null>(
     null,
