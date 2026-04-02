@@ -159,6 +159,13 @@ export function AdminNavigation() {
   // Marketing group (leads, vendors, partners, cards, contest)
   const marketingTabs: NavTab[] = [
     {
+      name: 'NFC & QR Analytics',
+      href: '/admin/tap-analytics',
+      icon: BarChart3,
+      active: pathname === '/admin/tap-analytics',
+      description: 'Business card taps, truck QR scans, drop-off rates',
+    },
+    {
       name: 'All Leads',
       href: '/admin/leads',
       icon: Phone,
@@ -166,11 +173,25 @@ export function AdminNavigation() {
       description: 'Lead pipeline & follow-ups',
     },
     {
+      name: 'Contest',
+      href: '/admin/sightings',
+      icon: Trophy,
+      active: pathname === '/admin/sightings',
+      description: 'Sightings & contest entries',
+    },
+    {
       name: 'Vendors',
       href: '/admin/vendors',
       icon: Store,
       active: pathname === '/admin/vendors',
       description: 'Manage vendor locations & station health',
+    },
+    {
+      name: 'Partners',
+      href: '/admin/partners',
+      icon: Users,
+      active: pathname === '/admin/partners',
+      description: 'Referral partners',
     },
     {
       name: 'AI Chats',
@@ -193,35 +214,14 @@ export function AdminNavigation() {
       active:
         pathname === '/admin/conversations' &&
         searchParams.get('source') === 'contest',
-      description: 'AI chats from truck/contest (compare funnel to Vendor)',
-    },
-    {
-      name: 'Partners',
-      href: '/admin/partners',
-      icon: Users,
-      active: pathname === '/admin/partners',
-      description: 'Referral partners',
-    },
-    {
-      name: 'Business Cards',
-      href: '/admin/tap-analytics',
-      icon: CreditCard,
-      active: pathname === '/admin/tap-analytics',
-      description: 'Your personal NFC card taps',
-    },
-    {
-      name: 'Contest',
-      href: '/admin/sightings',
-      icon: Trophy,
-      active: pathname === '/admin/sightings',
-      description: 'Sightings & conversations',
+      description: 'AI chats from truck/contest QR',
     },
     {
       name: 'Push',
       href: '/admin/push',
       icon: Megaphone,
       active: pathname === '/admin/push',
-      description: 'Send push notifications (ramble + generate)',
+      description: 'Send push notifications',
     },
   ]
 
