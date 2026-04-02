@@ -15,6 +15,11 @@ import {
   MessageSquare,
   Trash2,
   Pencil,
+  Send,
+  AlertCircle,
+  CheckCircle,
+  Loader2,
+  Store,
 } from 'lucide-react'
 import { createClient } from '@/supabase/client'
 import {
@@ -24,6 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
 
 interface LocationPartner {
   id: string
@@ -110,10 +116,44 @@ interface NFCLead {
   created_at: string
 }
 
+type VendorMessage = {
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  timestamp: string
+}
+
+type VendorConversation = {
+  id: string
+  phone_number: string
+  source: string | null
+  lead_id: string | null
+  messages: VendorMessage[]
+  ai_enabled: boolean
+  status: 'active' | 'completed' | 'escalated'
+  created_at: string
+  updated_at: string
+  lead?: { id: string; name: string; source: string; status: string } | null
+}
+
 export default function LocationPartnersPage() {
+  const [activeView, setActiveView] = useState<'locations' | 'chat'>(
+    'locations',
+  )
+
   const [partners, setPartners] = useState<LocationPartner[]>([])
   const [nfcLeads, setNfcLeads] = useState<NFCLead[]>([])
   const [isLoading, setIsLoading] = useState(true)
+
+  // Chat tab state
+  const [conversations, setConversations] = useState<VendorConversation[]>([])
+  const [selectedConvo, setSelectedConvo] = useState<VendorConversation | null>(
+    null,
+  )
+  const [convoFilter, setConvoFilter] = useState<
+    'all' | 'active' | 'escalated'
+  >('all')
+  const [replyText, setReplyText] = useState('')
+  const [sending, setSending] = useState(false)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [newPartner, setNewPartner] = useState({
@@ -196,7 +236,114 @@ export default function LocationPartnersPage() {
     }
 
     void fetchData()
+    void fetchConversations()
   }, [])
+
+  const fetchConversations = async () => {
+    try {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('conversations')
+        .select('*, lead:leads(id, name, source, status)')
+        .in('source', ['NFC Card', 'nfc_card'])
+        .order('updated_at', { ascending: false })
+      if (error) throw error
+      setConversations((data as VendorConversation[]) || [])
+    } catch (error) {
+      console.error('Failed to fetch vendor conversations:', error)
+    }
+  }
+
+  const formatTime = (ts: string) => {
+    const d = new Date(ts)
+    const now = new Date()
+    const diffMs = now.getTime() - d.getTime()
+    const diffMins = Math.floor(diffMs / 60000)
+    if (diffMins < 60) return `${diffMins}m ago`
+    const diffHours = Math.floor(diffMins / 60)
+    if (diffHours < 24) return `${diffHours}h ago`
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  }
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'active':
+        return (
+          <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+            Active
+          </Badge>
+        )
+      case 'escalated':
+        return <Badge variant="destructive">Escalated</Badge>
+      case 'completed':
+        return (
+          <Badge variant="secondary" className="bg-gray-100 text-gray-600">
+            Completed
+          </Badge>
+        )
+      default:
+        return <Badge variant="secondary">{status}</Badge>
+    }
+  }
+
+  const handleSendReply = async () => {
+    if (!selectedConvo || !replyText.trim()) return
+    setSending(true)
+    try {
+      const response = await fetch(
+        `/api/conversations/${selectedConvo.id}/reply`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            conversationId: selectedConvo.id,
+            message: replyText.trim(),
+          }),
+        },
+      )
+      if (response.ok) {
+        setReplyText('')
+        void fetchConversations()
+      } else {
+        alert('Failed to send message')
+      }
+    } catch (error) {
+      console.error('Send error:', error)
+      alert('Failed to send message')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const handleUpdateConvoStatus = async (
+    conversationId: string,
+    newStatus: string,
+  ) => {
+    try {
+      const response = await fetch(`/api/conversations/${conversationId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      })
+      if (response.ok) {
+        void fetchConversations()
+        if (selectedConvo?.id === conversationId) {
+          setSelectedConvo({
+            ...selectedConvo,
+            status: newStatus as VendorConversation['status'],
+          })
+        }
+      } else {
+        alert('Failed to update status')
+      }
+    } catch (error) {
+      console.error('Update error:', error)
+    }
+  }
+
+  const filteredConversations = conversations.filter((c) =>
+    convoFilter === 'all' ? true : c.status === convoFilter,
+  )
 
   const loadData = async () => {
     try {
@@ -410,706 +557,999 @@ export default function LocationPartnersPage() {
             Add Vendor
           </Button>
         </div>
-
-        {/* NFC Leads from AI Chat */}
-        {nfcLeads.length > 0 && (
-          <Card className="mb-8 border-2 border-blue-400 bg-blue-50 p-6 dark:border-blue-600 dark:bg-blue-900/20">
-            <div className="mb-4 flex items-center gap-2">
-              <MessageSquare className="h-5 w-5 text-blue-600" />
-              <h2 className="text-xl font-bold text-blue-800 dark:text-blue-200">
-                NFC Card Leads ({nfcLeads.length})
-              </h2>
-            </div>
-            <p className="mb-4 text-sm text-blue-700 dark:text-blue-300">
-              These leads came from vendor NFC card scans and started an AI
-              chat. Match them to HouseCall Pro bookings to track conversions.
-            </p>
-            <div className="space-y-3">
-              {nfcLeads.map((lead) => (
-                <div
-                  key={lead.id}
-                  className="rounded-lg bg-white p-4 shadow-sm dark:bg-gray-800"
-                >
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="font-semibold">
-                        {lead.name || 'Unknown Name'}
-                      </div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400">
-                        {lead.phone && (
-                          <a
-                            href={`tel:${lead.phone}`}
-                            className="text-blue-600 hover:underline"
-                          >
-                            {lead.phone}
-                          </a>
-                        )}
-                      </div>
-                      {lead.notes && (
-                        <div className="mt-1 text-xs text-gray-500 italic dark:text-gray-400">
-                          {lead.notes.length > 100
-                            ? lead.notes.substring(0, 100) + '...'
-                            : lead.notes}
-                        </div>
-                      )}
-                    </div>
-                    <div className="text-right">
-                      <Badge
-                        variant="outline"
-                        className={
-                          lead.status === 'new'
-                            ? 'border-green-500 text-green-600'
-                            : lead.status === 'contacted'
-                              ? 'border-blue-500 text-blue-600'
-                              : 'border-gray-500 text-gray-600'
-                        }
-                      >
-                        {lead.status}
-                      </Badge>
-                      <div className="mt-1 text-xs text-gray-500">
-                        {new Date(lead.created_at).toLocaleDateString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                          hour: 'numeric',
-                          minute: '2-digit',
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
-        )}
-
-        {/* Create Partner Modal */}
-        {isDialogOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-            <Card className="max-h-[90vh] w-full max-w-2xl overflow-y-auto p-6">
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-2xl font-bold">
-                  {editingId ? 'Edit Vendor' : 'Create Vendor'}
-                </h2>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setIsDialogOpen(false)}
-                >
-                  <X className="h-5 w-5" />
-                </Button>
-              </div>
-              <form onSubmit={handleSavePartner} className="space-y-4">
-                <div>
-                  <Label htmlFor="company_name">Business Name *</Label>
-                  <Input
-                    id="company_name"
-                    value={newPartner.company_name}
-                    onChange={(e) =>
-                      setNewPartner({
-                        ...newPartner,
-                        company_name: e.target.value,
-                      })
-                    }
-                    placeholder="Joe's Barbershop"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="location_name">Display Name (Optional)</Label>
-                  <Input
-                    id="location_name"
-                    value={newPartner.location_name}
-                    onChange={(e) =>
-                      setNewPartner({
-                        ...newPartner,
-                        location_name: e.target.value,
-                      })
-                    }
-                    placeholder="Joe's Barbershop - Monument"
-                  />
-                  <p className="mt-1 text-xs text-gray-500">
-                    Shown on landing page when customers tap the card
-                  </p>
-                </div>
-
-                <div>
-                  <Label htmlFor="location_address">Address</Label>
-                  <Input
-                    id="location_address"
-                    value={newPartner.location_address}
-                    onChange={(e) =>
-                      setNewPartner({
-                        ...newPartner,
-                        location_address: e.target.value,
-                      })
-                    }
-                    placeholder="123 Main St, Monument, CO 80132"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="location_type">Location Type</Label>
-                  <Input
-                    id="location_type"
-                    value={newPartner.location_type}
-                    onChange={(e) =>
-                      setNewPartner({
-                        ...newPartner,
-                        location_type: e.target.value,
-                      })
-                    }
-                    placeholder="barbershop, bar, gym, coffee_shop, etc."
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="phone">Phone Number *</Label>
-                  <Input
-                    id="phone"
-                    type="tel"
-                    value={newPartner.phone}
-                    onChange={(e) =>
-                      setNewPartner({ ...newPartner, phone: e.target.value })
-                    }
-                    placeholder="719-555-0123"
-                    required
-                  />
-                  <p className="mt-1 text-xs text-gray-500">
-                    Contact number for this location
-                  </p>
-                </div>
-
-                <div>
-                  <Label htmlFor="card_id">Card ID (Optional)</Label>
-                  <Input
-                    id="card_id"
-                    value={newPartner.card_id}
-                    onChange={(e) =>
-                      setNewPartner({ ...newPartner, card_id: e.target.value })
-                    }
-                    placeholder="barbershop-001"
-                  />
-                  <p className="mt-1 text-xs text-gray-500">
-                    Physical card identifier for tracking
-                  </p>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between gap-2">
-                    <Label>Google Review Station URL (Optional)</Label>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-7 shrink-0 text-xs"
-                      onClick={() =>
-                        window.open(
-                          'https://developers.google.com/maps/documentation/javascript/examples/places-placeid-finder#maps_places_placeid_finder-typescript',
-                          '_blank',
-                          'noopener,noreferrer',
-                        )
-                      }
-                    >
-                      <MapPin className="mr-1 h-3.5 w-3.5" />
-                      Get review link
-                    </Button>
-                  </div>
-
-                  <div>
-                    <Label
-                      htmlFor="google_review_url"
-                      className="text-xs font-medium text-gray-600 dark:text-gray-400"
-                    >
-                      Box 1 — Paste URL (if you already have the full link)
-                    </Label>
-                    <Input
-                      id="google_review_url"
-                      type="url"
-                      className="mt-1"
-                      value={newPartner.google_review_url}
-                      onChange={(e) =>
-                        setNewPartner({
-                          ...newPartner,
-                          google_review_url: e.target.value,
-                        })
-                      }
-                      placeholder="https://search.google.com/local/writereview?placeid=... or https://g.page/r/..."
-                    />
-                  </div>
-
-                  <div>
-                    <Label
-                      htmlFor="place_id_input"
-                      className="text-xs font-medium text-gray-600 dark:text-gray-400"
-                    >
-                      Box 2 — Paste Place ID to generate a URL (from the finder
-                      tool above)
-                    </Label>
-                    <div className="mt-1 flex flex-wrap items-center gap-2">
-                      <Input
-                        id="place_id_input"
-                        type="text"
-                        className="h-9 min-w-[200px] flex-1 font-mono text-sm"
-                        placeholder="Paste Place ID (e.g. ChIJ...)"
-                        value={placeIdInput}
-                        onChange={(e) => setPlaceIdInput(e.target.value)}
-                      />
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        className="h-9 text-xs"
-                        onClick={() => {
-                          const raw = placeIdInput.trim()
-                          if (!raw) return
-                          const placeId = raw.includes('placeid=')
-                            ? new URLSearchParams(raw.split('?')[1] || '').get(
-                                'placeid',
-                              ) || raw
-                            : raw
-                          if (placeId) {
-                            setNewPartner({
-                              ...newPartner,
-                              google_review_url: `https://search.google.com/local/writereview?placeid=${placeId}`,
-                            })
-                            setPlaceIdInput('')
-                          }
-                        }}
-                        disabled={!placeIdInput.trim()}
-                      >
-                        Generate URL
-                      </Button>
-                    </div>
-                    <p className="mt-1 text-xs text-gray-500">
-                      Generated URL will appear in Box 1. Save, then copy from
-                      the vendor card for NFC.
-                    </p>
-                  </div>
-                </div>
-
-                <div>
-                  <Label htmlFor="placard_type">Placard Type</Label>
-                  <Select
-                    value={newPartner.placard_type}
-                    onValueChange={(value) =>
-                      setNewPartner({ ...newPartner, placard_type: value })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select placard type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="standard">
-                        Standard ($20 Off)
-                      </SelectItem>
-                      <SelectItem value="contest">
-                        Contest (Enter to Win)
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <p className="mt-1 text-xs text-gray-500">
-                    Which landing page to show when card is tapped
-                  </p>
-                </div>
-
-                <Button type="submit" className="w-full">
-                  {editingId ? 'Save Changes' : 'Create Vendor'}
-                </Button>
-              </form>
-            </Card>
-          </div>
-        )}
-
-        {/* Stats Overview */}
-        <div className="mb-6 grid grid-cols-2 gap-3 sm:mb-8 sm:gap-4 md:grid-cols-4">
-          <Card className="p-4 sm:p-6">
-            <div className="text-xl font-bold sm:text-2xl">
-              {partners.length}
-            </div>
-            <div className="text-xs text-gray-600 sm:text-sm dark:text-gray-400">
-              Active Locations
-            </div>
-          </Card>
-          <Card className="p-4 sm:p-6">
-            <div className="text-xl font-bold sm:text-2xl">
-              {partners.reduce((sum, p) => sum + (p.total_taps || 0), 0)}
-            </div>
-            <div className="text-xs text-gray-600 sm:text-sm dark:text-gray-400">
-              Total Taps
-            </div>
-          </Card>
-          <Card className="p-4 sm:p-6">
-            <div className="text-xl font-bold sm:text-2xl">
-              {partners.reduce((sum, p) => sum + (p.total_conversions || 0), 0)}
-            </div>
-            <div className="text-xs text-gray-600 sm:text-sm dark:text-gray-400">
-              Bookings
-            </div>
-          </Card>
-          <Card className="p-4 sm:p-6">
-            <div className="text-xl font-bold text-green-600 sm:text-2xl">
-              {partners.length > 0
-                ? (
-                    (partners.reduce(
-                      (sum, p) => sum + (p.total_conversions || 0),
-                      0,
-                    ) /
-                      Math.max(
-                        partners.reduce(
-                          (sum, p) => sum + (p.total_taps || 0),
-                          0,
-                        ),
-                        1,
-                      )) *
-                    100
-                  ).toFixed(1)
-                : 0}
-              %
-            </div>
-            <div className="text-xs text-gray-600 sm:text-sm dark:text-gray-400">
-              Conv. Rate
-            </div>
-          </Card>
+        {/* View Toggle */}
+        <div className="mb-6 flex gap-2 border-b pb-2">
+          <Button
+            variant={activeView === 'locations' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => setActiveView('locations')}
+            className="gap-2"
+          >
+            <Store className="h-4 w-4" />
+            Locations ({partners.length})
+          </Button>
+          <Button
+            variant={activeView === 'chat' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => setActiveView('chat')}
+            className="gap-2"
+          >
+            <MessageSquare className="h-4 w-4" />
+            Chat ({conversations.length})
+          </Button>
         </div>
-
-        {/* Partners List */}
-        {partners.length === 0 ? (
-          <Card className="p-12 text-center">
-            <MapPin className="mx-auto mb-4 h-12 w-12 text-gray-400" />
-            <h3 className="mb-2 text-lg font-semibold">No vendors yet</h3>
-            <p className="mb-4 text-sm text-gray-600 dark:text-gray-400">
-              Add your first vendor to start tracking NFC card taps
-            </p>
-          </Card>
-        ) : (
-          <div className="space-y-4">
-            {partners.map((partner) => (
-              <Card key={partner.id} className="p-4 sm:p-6">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="flex-1">
-                    <h3 className="text-lg font-bold sm:text-xl">
-                      {partner.location_name || partner.company_name}
-                    </h3>
-                    {partner.location_address && (
-                      <p className="mt-1 text-xs text-gray-600 sm:text-sm dark:text-gray-400">
-                        <MapPin className="mr-1 inline h-3 w-3 sm:h-4 sm:w-4" />
-                        {partner.location_address}
-                      </p>
-                    )}
-                    {partner.location_type && (
-                      <p className="mt-1 text-xs tracking-wide text-gray-500 uppercase">
-                        {partner.location_type}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    <a
-                      href={`/tap?partner=${partner.id}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <Button variant="outline" size="sm">
-                        <ExternalLink className="mr-1 h-4 w-4" />
-                        View
-                      </Button>
-                    </a>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => startEditPartner(partner)}
-                    >
-                      <Pencil className="mr-1 h-4 w-4" />
-                      Edit
-                    </Button>
-
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-red-600 hover:bg-red-50 hover:text-red-700"
-                      onClick={() =>
-                        deleteVendor(
-                          partner.id,
-                          partner.location_name || partner.company_name,
-                        )
-                      }
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
+        {/* ── LOCATIONS VIEW ── */}
+        {activeView === 'locations' && (
+          <>
+            {/* NFC Leads from AI Chat */}
+            {nfcLeads.length > 0 && (
+              <Card className="mb-8 border-2 border-blue-400 bg-blue-50 p-6 dark:border-blue-600 dark:bg-blue-900/20">
+                <div className="mb-4 flex items-center gap-2">
+                  <MessageSquare className="h-5 w-5 text-blue-600" />
+                  <h2 className="text-xl font-bold text-blue-800 dark:text-blue-200">
+                    NFC Card Leads ({nfcLeads.length})
+                  </h2>
                 </div>
-
-                {/* Station Health Status */}
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs text-gray-500">Sasquatch:</span>
-                    <StatusBadge
-                      status={getStationStatus(
-                        partner.last_sasquatch_tap_at,
-                        partner.total_taps,
-                      )}
-                      label={
-                        getStationStatus(
-                          partner.last_sasquatch_tap_at,
-                          partner.total_taps,
-                        ) === 'active'
-                          ? 'Active'
-                          : getStationStatus(
-                                partner.last_sasquatch_tap_at,
-                                partner.total_taps,
-                              ) === 'warning'
-                            ? 'Check In'
-                            : getStationStatus(
-                                  partner.last_sasquatch_tap_at,
-                                  partner.total_taps,
-                                ) === 'inactive'
-                              ? 'Inactive'
-                              : 'No Taps'
-                      }
-                    />
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs text-gray-500">Review:</span>
-                    {partner.google_review_url ? (
-                      <StatusBadge
-                        status={getStationStatus(partner.last_review_tap_at, 1)}
-                        label={
-                          getStationStatus(partner.last_review_tap_at, 1) ===
-                          'active'
-                            ? 'Active'
-                            : getStationStatus(
-                                  partner.last_review_tap_at,
-                                  1,
-                                ) === 'warning'
-                              ? 'Check In'
-                              : getStationStatus(
-                                    partner.last_review_tap_at,
-                                    1,
-                                  ) === 'inactive'
-                                ? 'Inactive'
-                                : 'No Taps'
-                        }
-                      />
-                    ) : (
-                      <StatusBadge status="not_configured" label="Not Set Up" />
-                    )}
-                  </div>
-                </div>
-
-                {/* Stats Grid */}
-                <div className="mt-4 grid grid-cols-2 gap-2 sm:mt-6 sm:gap-4 md:grid-cols-6">
-                  <div
-                    className={`cursor-pointer rounded-lg p-3 transition-colors sm:p-4 ${
-                      expandedPartnerId === partner.id
-                        ? 'bg-blue-100 ring-2 ring-blue-500'
-                        : 'bg-blue-50 hover:bg-blue-100'
-                    } dark:bg-blue-900/20`}
-                    onClick={() => handleExpandHistory(partner.id)}
-                  >
-                    <div className="flex items-center justify-between text-lg font-bold text-blue-600 sm:text-2xl">
-                      {partner.total_taps || 0}
-                      {expandedPartnerId === partner.id ? (
-                        <span className="text-xs text-blue-400">▼</span>
-                      ) : (
-                        <span className="text-xs text-blue-300">▶</span>
-                      )}
-                    </div>
-                    <div className="text-xs text-blue-600/80">
-                      Taps (Click for History)
-                    </div>
-                  </div>
-
-                  <div className="rounded-lg bg-green-50 p-3 sm:p-4 dark:bg-green-900/20">
-                    <div className="text-lg font-bold text-green-600 sm:text-2xl">
-                      {partner.total_conversions || 0}
-                    </div>
-                    <div className="text-xs text-green-600/80">Jobs</div>
-                  </div>
-
-                  <div className="rounded-lg bg-purple-50 p-3 sm:p-4 dark:bg-purple-900/20">
-                    <div className="text-lg font-bold text-purple-600 sm:text-2xl">
-                      {conversionRate(
-                        partner.total_taps,
-                        partner.total_conversions,
-                      )}
-                    </div>
-                    <div className="text-xs text-purple-600/80">Rate</div>
-                  </div>
-
-                  <div className="rounded-lg bg-amber-50 p-3 sm:p-4 dark:bg-amber-900/20">
-                    <div className="text-lg font-bold text-amber-600 sm:text-2xl">
-                      {partner.coupon_code || 'N/A'}
-                    </div>
-                    <div className="text-xs text-amber-600/80">Coupon</div>
-                  </div>
-
-                  <div className="col-span-2 rounded-lg bg-gray-50 p-3 sm:col-span-1 sm:p-4 md:col-span-2 dark:bg-gray-800">
-                    <div className="text-xs font-semibold text-gray-600 dark:text-gray-400">
-                      {partner.phone || 'No phone'}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {partner.card_id || 'No card ID'}
-                    </div>
-                  </div>
-                </div>
-
-                {/* History Chart */}
-                {expandedPartnerId === partner.id && (
-                  <div className="mt-4 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-                    <h4 className="mb-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
-                      Taps Over Last 30 Days
-                    </h4>
-                    {isLoadingHistory ? (
-                      <div className="flex h-40 items-center justify-center text-sm text-gray-400">
-                        Loading history...
-                      </div>
-                    ) : (
-                      <div className="relative h-48 w-full">
-                        {partnerHistory.length > 0 &&
-                        Math.max(...partnerHistory.map((d) => d.count)) > 0 ? (
-                          <div className="absolute inset-0 flex items-end justify-between gap-1">
-                            {partnerHistory.map((day, i) => {
-                              const max = Math.max(
-                                ...partnerHistory.map((d) => d.count),
-                              )
-                              const height =
-                                day.count === 0 ? 4 : (day.count / max) * 100
-                              return (
-                                <div
-                                  key={i}
-                                  className="group relative flex flex-1 flex-col justify-end"
-                                >
-                                  {/* Tooltip */}
-                                  <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 rounded bg-gray-800 px-2 py-1 text-xs whitespace-nowrap text-white opacity-0 group-hover:opacity-100">
-                                    {day.date}: {day.count} taps
-                                  </div>
-                                  {/* Bar */}
-                                  <div
-                                    className={`w-full rounded-t ${
-                                      day.count > 0
-                                        ? 'bg-blue-500 hover:bg-blue-600'
-                                        : 'bg-gray-100 dark:bg-gray-700'
-                                    } transition-all duration-300`}
-                                    style={{
-                                      height: `${height}%`,
-                                      minHeight: '4px',
-                                    }}
-                                  />
-                                </div>
-                              )
-                            })}
+                <p className="mb-4 text-sm text-blue-700 dark:text-blue-300">
+                  These leads came from vendor NFC card scans and started an AI
+                  chat. Match them to HouseCall Pro bookings to track
+                  conversions.
+                </p>
+                <div className="space-y-3">
+                  {nfcLeads.map((lead) => (
+                    <div
+                      key={lead.id}
+                      className="rounded-lg bg-white p-4 shadow-sm dark:bg-gray-800"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <div className="font-semibold">
+                            {lead.name || 'Unknown Name'}
                           </div>
-                        ) : (
-                          <div className="flex h-full items-center justify-center text-sm text-gray-400">
-                            No tap history available
+                          <div className="text-sm text-gray-600 dark:text-gray-400">
+                            {lead.phone && (
+                              <a
+                                href={`tel:${lead.phone}`}
+                                className="text-blue-600 hover:underline"
+                              >
+                                {lead.phone}
+                              </a>
+                            )}
                           </div>
-                        )}
+                          {lead.notes && (
+                            <div className="mt-1 text-xs text-gray-500 italic dark:text-gray-400">
+                              {lead.notes.length > 100
+                                ? lead.notes.substring(0, 100) + '...'
+                                : lead.notes}
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <Badge
+                            variant="outline"
+                            className={
+                              lead.status === 'new'
+                                ? 'border-green-500 text-green-600'
+                                : lead.status === 'contacted'
+                                  ? 'border-blue-500 text-blue-600'
+                                  : 'border-gray-500 text-gray-600'
+                            }
+                          >
+                            {lead.status}
+                          </Badge>
+                          <div className="mt-1 text-xs text-gray-500">
+                            {new Date(lead.created_at).toLocaleDateString(
+                              'en-US',
+                              {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: 'numeric',
+                                minute: '2-digit',
+                              },
+                            )}
+                          </div>
+                        </div>
                       </div>
-                    )}
-                    <div className="mt-2 flex justify-between text-xs text-gray-400">
-                      <span>30 days ago</span>
-                      <span>Today</span>
                     </div>
-                  </div>
-                )}
-
-                {/* Placard Configuration */}
-                <div className="mt-4 flex items-center justify-between rounded-lg border bg-gray-50 p-3 dark:bg-gray-800">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">Active Placard:</span>
-                    <Badge
-                      variant={
-                        partner.placard_type === 'contest'
-                          ? 'default'
-                          : 'secondary'
-                      }
-                    >
-                      {partner.placard_type === 'contest'
-                        ? '🏆 Contest'
-                        : '💲 Standard ($20 Off)'}
-                    </Badge>
-                  </div>
-                  <Select
-                    value={partner.placard_type || 'standard'}
-                    onValueChange={(value) =>
-                      updatePlacardType(partner.id, value)
-                    }
-                  >
-                    <SelectTrigger className="w-[180px]">
-                      <SelectValue placeholder="Change type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="standard">
-                        Standard ($20 Off)
-                      </SelectItem>
-                      <SelectItem value="contest">
-                        Contest (Enter to Win)
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Station URLs */}
-                <div className="mt-3 grid grid-cols-1 gap-2 sm:mt-4 sm:grid-cols-2">
-                  {/* Sasquatch Station URL */}
-                  <div className="rounded-lg bg-blue-50 p-2 sm:p-3 dark:bg-blue-900/20">
-                    <div className="mb-1 flex items-center justify-between">
-                      <span className="text-xs font-semibold text-blue-700 dark:text-blue-300">
-                        Sasquatch Station
-                      </span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 px-2 text-xs"
-                        onClick={() => copyUrl(partner.id)}
-                      >
-                        {copiedId === partner.id ? (
-                          '✓'
-                        ) : (
-                          <Copy className="h-3 w-3" />
-                        )}
-                      </Button>
-                    </div>
-                    <code className="block overflow-x-auto text-xs whitespace-nowrap text-blue-600 dark:text-blue-400">
-                      /tap?partner={partner.id}
-                    </code>
-                  </div>
-
-                  {/* Google Review Station URL — paste in edit, copy here for NFC */}
-                  <div
-                    className={`rounded-lg p-2 sm:p-3 ${partner.google_review_url ? 'bg-green-50 dark:bg-green-900/20' : 'bg-gray-100 dark:bg-gray-800'}`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span
-                        className={`shrink-0 text-xs font-semibold ${partner.google_review_url ? 'text-green-700 dark:text-green-300' : 'text-gray-500'}`}
-                      >
-                        Google Review Station
-                      </span>
-                      {partner.google_review_url ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 shrink-0 px-2 text-xs"
-                          onClick={() => copyReviewUrl(partner.id)}
-                        >
-                          {copiedReviewId === partner.id ? 'Copied' : 'Copy'}
-                        </Button>
-                      ) : null}
-                    </div>
-                    {partner.google_review_url ? (
-                      <code className="mt-1 block overflow-x-auto text-xs break-all whitespace-nowrap text-green-600 dark:text-green-400">
-                        {partner.google_review_url}
-                      </code>
-                    ) : (
-                      <span className="text-xs text-gray-400 italic">
-                        Not set — add in Edit
-                      </span>
-                    )}
-                  </div>
+                  ))}
                 </div>
               </Card>
-            ))}
+            )}
+
+            {/* Create Partner Modal */}
+            {isDialogOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+                <Card className="max-h-[90vh] w-full max-w-2xl overflow-y-auto p-6">
+                  <div className="mb-4 flex items-center justify-between">
+                    <h2 className="text-2xl font-bold">
+                      {editingId ? 'Edit Vendor' : 'Create Vendor'}
+                    </h2>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setIsDialogOpen(false)}
+                    >
+                      <X className="h-5 w-5" />
+                    </Button>
+                  </div>
+                  <form onSubmit={handleSavePartner} className="space-y-4">
+                    <div>
+                      <Label htmlFor="company_name">Business Name *</Label>
+                      <Input
+                        id="company_name"
+                        value={newPartner.company_name}
+                        onChange={(e) =>
+                          setNewPartner({
+                            ...newPartner,
+                            company_name: e.target.value,
+                          })
+                        }
+                        placeholder="Joe's Barbershop"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="location_name">
+                        Display Name (Optional)
+                      </Label>
+                      <Input
+                        id="location_name"
+                        value={newPartner.location_name}
+                        onChange={(e) =>
+                          setNewPartner({
+                            ...newPartner,
+                            location_name: e.target.value,
+                          })
+                        }
+                        placeholder="Joe's Barbershop - Monument"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">
+                        Shown on landing page when customers tap the card
+                      </p>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="location_address">Address</Label>
+                      <Input
+                        id="location_address"
+                        value={newPartner.location_address}
+                        onChange={(e) =>
+                          setNewPartner({
+                            ...newPartner,
+                            location_address: e.target.value,
+                          })
+                        }
+                        placeholder="123 Main St, Monument, CO 80132"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="location_type">Location Type</Label>
+                      <Input
+                        id="location_type"
+                        value={newPartner.location_type}
+                        onChange={(e) =>
+                          setNewPartner({
+                            ...newPartner,
+                            location_type: e.target.value,
+                          })
+                        }
+                        placeholder="barbershop, bar, gym, coffee_shop, etc."
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="phone">Phone Number *</Label>
+                      <Input
+                        id="phone"
+                        type="tel"
+                        value={newPartner.phone}
+                        onChange={(e) =>
+                          setNewPartner({
+                            ...newPartner,
+                            phone: e.target.value,
+                          })
+                        }
+                        placeholder="719-555-0123"
+                        required
+                      />
+                      <p className="mt-1 text-xs text-gray-500">
+                        Contact number for this location
+                      </p>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="card_id">Card ID (Optional)</Label>
+                      <Input
+                        id="card_id"
+                        value={newPartner.card_id}
+                        onChange={(e) =>
+                          setNewPartner({
+                            ...newPartner,
+                            card_id: e.target.value,
+                          })
+                        }
+                        placeholder="barbershop-001"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">
+                        Physical card identifier for tracking
+                      </p>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between gap-2">
+                        <Label>Google Review Station URL (Optional)</Label>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 shrink-0 text-xs"
+                          onClick={() =>
+                            window.open(
+                              'https://developers.google.com/maps/documentation/javascript/examples/places-placeid-finder#maps_places_placeid_finder-typescript',
+                              '_blank',
+                              'noopener,noreferrer',
+                            )
+                          }
+                        >
+                          <MapPin className="mr-1 h-3.5 w-3.5" />
+                          Get review link
+                        </Button>
+                      </div>
+
+                      <div>
+                        <Label
+                          htmlFor="google_review_url"
+                          className="text-xs font-medium text-gray-600 dark:text-gray-400"
+                        >
+                          Box 1 — Paste URL (if you already have the full link)
+                        </Label>
+                        <Input
+                          id="google_review_url"
+                          type="url"
+                          className="mt-1"
+                          value={newPartner.google_review_url}
+                          onChange={(e) =>
+                            setNewPartner({
+                              ...newPartner,
+                              google_review_url: e.target.value,
+                            })
+                          }
+                          placeholder="https://search.google.com/local/writereview?placeid=... or https://g.page/r/..."
+                        />
+                      </div>
+
+                      <div>
+                        <Label
+                          htmlFor="place_id_input"
+                          className="text-xs font-medium text-gray-600 dark:text-gray-400"
+                        >
+                          Box 2 — Paste Place ID to generate a URL (from the
+                          finder tool above)
+                        </Label>
+                        <div className="mt-1 flex flex-wrap items-center gap-2">
+                          <Input
+                            id="place_id_input"
+                            type="text"
+                            className="h-9 min-w-[200px] flex-1 font-mono text-sm"
+                            placeholder="Paste Place ID (e.g. ChIJ...)"
+                            value={placeIdInput}
+                            onChange={(e) => setPlaceIdInput(e.target.value)}
+                          />
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            className="h-9 text-xs"
+                            onClick={() => {
+                              const raw = placeIdInput.trim()
+                              if (!raw) return
+                              const placeId = raw.includes('placeid=')
+                                ? new URLSearchParams(
+                                    raw.split('?')[1] || '',
+                                  ).get('placeid') || raw
+                                : raw
+                              if (placeId) {
+                                setNewPartner({
+                                  ...newPartner,
+                                  google_review_url: `https://search.google.com/local/writereview?placeid=${placeId}`,
+                                })
+                                setPlaceIdInput('')
+                              }
+                            }}
+                            disabled={!placeIdInput.trim()}
+                          >
+                            Generate URL
+                          </Button>
+                        </div>
+                        <p className="mt-1 text-xs text-gray-500">
+                          Generated URL will appear in Box 1. Save, then copy
+                          from the vendor card for NFC.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="placard_type">Placard Type</Label>
+                      <Select
+                        value={newPartner.placard_type}
+                        onValueChange={(value) =>
+                          setNewPartner({ ...newPartner, placard_type: value })
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select placard type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="standard">
+                            Standard ($20 Off)
+                          </SelectItem>
+                          <SelectItem value="contest">
+                            Contest (Enter to Win)
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="mt-1 text-xs text-gray-500">
+                        Which landing page to show when card is tapped
+                      </p>
+                    </div>
+
+                    <Button type="submit" className="w-full">
+                      {editingId ? 'Save Changes' : 'Create Vendor'}
+                    </Button>
+                  </form>
+                </Card>
+              </div>
+            )}
+
+            {/* Stats Overview */}
+            <div className="mb-6 grid grid-cols-2 gap-3 sm:mb-8 sm:gap-4 md:grid-cols-4">
+              <Card className="p-4 sm:p-6">
+                <div className="text-xl font-bold sm:text-2xl">
+                  {partners.length}
+                </div>
+                <div className="text-xs text-gray-600 sm:text-sm dark:text-gray-400">
+                  Active Locations
+                </div>
+              </Card>
+              <Card className="p-4 sm:p-6">
+                <div className="text-xl font-bold sm:text-2xl">
+                  {partners.reduce((sum, p) => sum + (p.total_taps || 0), 0)}
+                </div>
+                <div className="text-xs text-gray-600 sm:text-sm dark:text-gray-400">
+                  Total Taps
+                </div>
+              </Card>
+              <Card className="p-4 sm:p-6">
+                <div className="text-xl font-bold sm:text-2xl">
+                  {partners.reduce(
+                    (sum, p) => sum + (p.total_conversions || 0),
+                    0,
+                  )}
+                </div>
+                <div className="text-xs text-gray-600 sm:text-sm dark:text-gray-400">
+                  Bookings
+                </div>
+              </Card>
+              <Card className="p-4 sm:p-6">
+                <div className="text-xl font-bold text-green-600 sm:text-2xl">
+                  {partners.length > 0
+                    ? (
+                        (partners.reduce(
+                          (sum, p) => sum + (p.total_conversions || 0),
+                          0,
+                        ) /
+                          Math.max(
+                            partners.reduce(
+                              (sum, p) => sum + (p.total_taps || 0),
+                              0,
+                            ),
+                            1,
+                          )) *
+                        100
+                      ).toFixed(1)
+                    : 0}
+                  %
+                </div>
+                <div className="text-xs text-gray-600 sm:text-sm dark:text-gray-400">
+                  Conv. Rate
+                </div>
+              </Card>
+            </div>
+
+            {/* Partners List */}
+            {partners.length === 0 ? (
+              <Card className="p-12 text-center">
+                <MapPin className="mx-auto mb-4 h-12 w-12 text-gray-400" />
+                <h3 className="mb-2 text-lg font-semibold">No vendors yet</h3>
+                <p className="mb-4 text-sm text-gray-600 dark:text-gray-400">
+                  Add your first vendor to start tracking NFC card taps
+                </p>
+              </Card>
+            ) : (
+              <div className="space-y-4">
+                {partners.map((partner) => (
+                  <Card key={partner.id} className="p-4 sm:p-6">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="flex-1">
+                        <h3 className="text-lg font-bold sm:text-xl">
+                          {partner.location_name || partner.company_name}
+                        </h3>
+                        {partner.location_address && (
+                          <p className="mt-1 text-xs text-gray-600 sm:text-sm dark:text-gray-400">
+                            <MapPin className="mr-1 inline h-3 w-3 sm:h-4 sm:w-4" />
+                            {partner.location_address}
+                          </p>
+                        )}
+                        {partner.location_type && (
+                          <p className="mt-1 text-xs tracking-wide text-gray-500 uppercase">
+                            {partner.location_type}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        <a
+                          href={`/tap?partner=${partner.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <Button variant="outline" size="sm">
+                            <ExternalLink className="mr-1 h-4 w-4" />
+                            View
+                          </Button>
+                        </a>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => startEditPartner(partner)}
+                        >
+                          <Pencil className="mr-1 h-4 w-4" />
+                          Edit
+                        </Button>
+
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                          onClick={() =>
+                            deleteVendor(
+                              partner.id,
+                              partner.location_name || partner.company_name,
+                            )
+                          }
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Station Health Status */}
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-gray-500">
+                          Sasquatch:
+                        </span>
+                        <StatusBadge
+                          status={getStationStatus(
+                            partner.last_sasquatch_tap_at,
+                            partner.total_taps,
+                          )}
+                          label={
+                            getStationStatus(
+                              partner.last_sasquatch_tap_at,
+                              partner.total_taps,
+                            ) === 'active'
+                              ? 'Active'
+                              : getStationStatus(
+                                    partner.last_sasquatch_tap_at,
+                                    partner.total_taps,
+                                  ) === 'warning'
+                                ? 'Check In'
+                                : getStationStatus(
+                                      partner.last_sasquatch_tap_at,
+                                      partner.total_taps,
+                                    ) === 'inactive'
+                                  ? 'Inactive'
+                                  : 'No Taps'
+                          }
+                        />
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-gray-500">Review:</span>
+                        {partner.google_review_url ? (
+                          <StatusBadge
+                            status={getStationStatus(
+                              partner.last_review_tap_at,
+                              1,
+                            )}
+                            label={
+                              getStationStatus(
+                                partner.last_review_tap_at,
+                                1,
+                              ) === 'active'
+                                ? 'Active'
+                                : getStationStatus(
+                                      partner.last_review_tap_at,
+                                      1,
+                                    ) === 'warning'
+                                  ? 'Check In'
+                                  : getStationStatus(
+                                        partner.last_review_tap_at,
+                                        1,
+                                      ) === 'inactive'
+                                    ? 'Inactive'
+                                    : 'No Taps'
+                            }
+                          />
+                        ) : (
+                          <StatusBadge
+                            status="not_configured"
+                            label="Not Set Up"
+                          />
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Stats Grid */}
+                    <div className="mt-4 grid grid-cols-2 gap-2 sm:mt-6 sm:gap-4 md:grid-cols-6">
+                      <div
+                        className={`cursor-pointer rounded-lg p-3 transition-colors sm:p-4 ${
+                          expandedPartnerId === partner.id
+                            ? 'bg-blue-100 ring-2 ring-blue-500'
+                            : 'bg-blue-50 hover:bg-blue-100'
+                        } dark:bg-blue-900/20`}
+                        onClick={() => handleExpandHistory(partner.id)}
+                      >
+                        <div className="flex items-center justify-between text-lg font-bold text-blue-600 sm:text-2xl">
+                          {partner.total_taps || 0}
+                          {expandedPartnerId === partner.id ? (
+                            <span className="text-xs text-blue-400">▼</span>
+                          ) : (
+                            <span className="text-xs text-blue-300">▶</span>
+                          )}
+                        </div>
+                        <div className="text-xs text-blue-600/80">
+                          Taps (Click for History)
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg bg-green-50 p-3 sm:p-4 dark:bg-green-900/20">
+                        <div className="text-lg font-bold text-green-600 sm:text-2xl">
+                          {partner.total_conversions || 0}
+                        </div>
+                        <div className="text-xs text-green-600/80">Jobs</div>
+                      </div>
+
+                      <div className="rounded-lg bg-purple-50 p-3 sm:p-4 dark:bg-purple-900/20">
+                        <div className="text-lg font-bold text-purple-600 sm:text-2xl">
+                          {conversionRate(
+                            partner.total_taps,
+                            partner.total_conversions,
+                          )}
+                        </div>
+                        <div className="text-xs text-purple-600/80">Rate</div>
+                      </div>
+
+                      <div className="rounded-lg bg-amber-50 p-3 sm:p-4 dark:bg-amber-900/20">
+                        <div className="text-lg font-bold text-amber-600 sm:text-2xl">
+                          {partner.coupon_code || 'N/A'}
+                        </div>
+                        <div className="text-xs text-amber-600/80">Coupon</div>
+                      </div>
+
+                      <div className="col-span-2 rounded-lg bg-gray-50 p-3 sm:col-span-1 sm:p-4 md:col-span-2 dark:bg-gray-800">
+                        <div className="text-xs font-semibold text-gray-600 dark:text-gray-400">
+                          {partner.phone || 'No phone'}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {partner.card_id || 'No card ID'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* History Chart */}
+                    {expandedPartnerId === partner.id && (
+                      <div className="mt-4 rounded-lg border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+                        <h4 className="mb-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                          Taps Over Last 30 Days
+                        </h4>
+                        {isLoadingHistory ? (
+                          <div className="flex h-40 items-center justify-center text-sm text-gray-400">
+                            Loading history...
+                          </div>
+                        ) : (
+                          <div className="relative h-48 w-full">
+                            {partnerHistory.length > 0 &&
+                            Math.max(...partnerHistory.map((d) => d.count)) >
+                              0 ? (
+                              <div className="absolute inset-0 flex items-end justify-between gap-1">
+                                {partnerHistory.map((day, i) => {
+                                  const max = Math.max(
+                                    ...partnerHistory.map((d) => d.count),
+                                  )
+                                  const height =
+                                    day.count === 0
+                                      ? 4
+                                      : (day.count / max) * 100
+                                  return (
+                                    <div
+                                      key={i}
+                                      className="group relative flex flex-1 flex-col justify-end"
+                                    >
+                                      {/* Tooltip */}
+                                      <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 rounded bg-gray-800 px-2 py-1 text-xs whitespace-nowrap text-white opacity-0 group-hover:opacity-100">
+                                        {day.date}: {day.count} taps
+                                      </div>
+                                      {/* Bar */}
+                                      <div
+                                        className={`w-full rounded-t ${
+                                          day.count > 0
+                                            ? 'bg-blue-500 hover:bg-blue-600'
+                                            : 'bg-gray-100 dark:bg-gray-700'
+                                        } transition-all duration-300`}
+                                        style={{
+                                          height: `${height}%`,
+                                          minHeight: '4px',
+                                        }}
+                                      />
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            ) : (
+                              <div className="flex h-full items-center justify-center text-sm text-gray-400">
+                                No tap history available
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        <div className="mt-2 flex justify-between text-xs text-gray-400">
+                          <span>30 days ago</span>
+                          <span>Today</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Placard Configuration */}
+                    <div className="mt-4 flex items-center justify-between rounded-lg border bg-gray-50 p-3 dark:bg-gray-800">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium">
+                          Active Placard:
+                        </span>
+                        <Badge
+                          variant={
+                            partner.placard_type === 'contest'
+                              ? 'default'
+                              : 'secondary'
+                          }
+                        >
+                          {partner.placard_type === 'contest'
+                            ? '🏆 Contest'
+                            : '💲 Standard ($20 Off)'}
+                        </Badge>
+                      </div>
+                      <Select
+                        value={partner.placard_type || 'standard'}
+                        onValueChange={(value) =>
+                          updatePlacardType(partner.id, value)
+                        }
+                      >
+                        <SelectTrigger className="w-[180px]">
+                          <SelectValue placeholder="Change type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="standard">
+                            Standard ($20 Off)
+                          </SelectItem>
+                          <SelectItem value="contest">
+                            Contest (Enter to Win)
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Station URLs */}
+                    <div className="mt-3 grid grid-cols-1 gap-2 sm:mt-4 sm:grid-cols-2">
+                      {/* Sasquatch Station URL */}
+                      <div className="rounded-lg bg-blue-50 p-2 sm:p-3 dark:bg-blue-900/20">
+                        <div className="mb-1 flex items-center justify-between">
+                          <span className="text-xs font-semibold text-blue-700 dark:text-blue-300">
+                            Sasquatch Station
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 px-2 text-xs"
+                            onClick={() => copyUrl(partner.id)}
+                          >
+                            {copiedId === partner.id ? (
+                              '✓'
+                            ) : (
+                              <Copy className="h-3 w-3" />
+                            )}
+                          </Button>
+                        </div>
+                        <code className="block overflow-x-auto text-xs whitespace-nowrap text-blue-600 dark:text-blue-400">
+                          /tap?partner={partner.id}
+                        </code>
+                      </div>
+
+                      {/* Google Review Station URL — paste in edit, copy here for NFC */}
+                      <div
+                        className={`rounded-lg p-2 sm:p-3 ${partner.google_review_url ? 'bg-green-50 dark:bg-green-900/20' : 'bg-gray-100 dark:bg-gray-800'}`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span
+                            className={`shrink-0 text-xs font-semibold ${partner.google_review_url ? 'text-green-700 dark:text-green-300' : 'text-gray-500'}`}
+                          >
+                            Google Review Station
+                          </span>
+                          {partner.google_review_url ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 shrink-0 px-2 text-xs"
+                              onClick={() => copyReviewUrl(partner.id)}
+                            >
+                              {copiedReviewId === partner.id
+                                ? 'Copied'
+                                : 'Copy'}
+                            </Button>
+                          ) : null}
+                        </div>
+                        {partner.google_review_url ? (
+                          <code className="mt-1 block overflow-x-auto text-xs break-all whitespace-nowrap text-green-600 dark:text-green-400">
+                            {partner.google_review_url}
+                          </code>
+                        ) : (
+                          <span className="text-xs text-gray-400 italic">
+                            Not set — add in Edit
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </>
+        )}{' '}
+        {/* end LOCATIONS VIEW */}
+        {/* ── CHAT VIEW ── */}
+        {activeView === 'chat' && (
+          <div className="space-y-4">
+            {/* Filter buttons */}
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                onClick={() => setConvoFilter('all')}
+                className={`rounded-lg border p-2 text-center transition-all ${
+                  convoFilter === 'all'
+                    ? 'bg-blue-50 ring-2 ring-blue-500 dark:bg-blue-950'
+                    : 'hover:bg-gray-50 dark:hover:bg-gray-800'
+                }`}
+              >
+                <div className="text-lg font-bold">{conversations.length}</div>
+                <div className="text-xs text-gray-500">Total</div>
+              </button>
+              <button
+                onClick={() => setConvoFilter('active')}
+                className={`rounded-lg border p-2 text-center transition-all ${
+                  convoFilter === 'active'
+                    ? 'bg-blue-50 ring-2 ring-blue-500 dark:bg-blue-950'
+                    : 'hover:bg-gray-50 dark:hover:bg-gray-800'
+                }`}
+              >
+                <div className="text-lg font-bold">
+                  {conversations.filter((c) => c.status === 'active').length}
+                </div>
+                <div className="text-xs text-gray-500">Active</div>
+              </button>
+              <button
+                onClick={() => setConvoFilter('escalated')}
+                className={`rounded-lg border p-2 text-center transition-all ${
+                  convoFilter === 'escalated'
+                    ? 'bg-blue-50 ring-2 ring-blue-500 dark:bg-blue-950'
+                    : 'hover:bg-gray-50 dark:hover:bg-gray-800'
+                }`}
+              >
+                <div className="text-lg font-bold">
+                  {conversations.filter((c) => c.status === 'escalated').length}
+                </div>
+                <div className="text-xs text-gray-500">Escalated</div>
+              </button>
+            </div>
+
+            {filteredConversations.length === 0 ? (
+              <Card className="py-8 text-center text-gray-500">
+                {convoFilter === 'all'
+                  ? "No vendor chats yet. When someone texts after tapping a card, they'll appear here."
+                  : `No ${convoFilter} conversations.`}
+              </Card>
+            ) : (
+              <div className="space-y-2">
+                {filteredConversations.map((convo) => {
+                  const lastMessage = convo.messages[convo.messages.length - 1]
+                  return (
+                    <Card
+                      key={convo.id}
+                      onClick={() => setSelectedConvo(convo)}
+                      className="cursor-pointer p-3 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="mb-1 flex flex-wrap items-center gap-2">
+                            <a
+                              href={`tel:${convo.phone_number}`}
+                              className="text-sm font-medium text-blue-500 hover:underline"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {convo.phone_number}
+                            </a>
+                            {getStatusBadge(convo.status)}
+                          </div>
+                          {convo.lead?.name && (
+                            <div className="mb-1 text-xs text-gray-500">
+                              {convo.lead.name}
+                            </div>
+                          )}
+                          {lastMessage && (
+                            <div className="line-clamp-2 text-xs text-gray-500">
+                              {lastMessage.role === 'user' ? '💬 ' : '🤖 '}
+                              {lastMessage.content}
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-right text-xs text-gray-400">
+                          <div>{formatTime(convo.updated_at)}</div>
+                          <div>{convo.messages.length} msgs</div>
+                        </div>
+                      </div>
+                    </Card>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+        {/* Conversation Detail Modal */}
+        {selectedConvo && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+            onClick={() => setSelectedConvo(null)}
+          >
+            <div
+              className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-xl dark:bg-gray-900"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="border-b p-4">
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <a
+                      href={`tel:${selectedConvo.phone_number}`}
+                      className="text-lg font-semibold text-blue-500 hover:underline"
+                    >
+                      {selectedConvo.phone_number}
+                    </a>
+                    {getStatusBadge(selectedConvo.status)}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSelectedConvo(null)}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+                {selectedConvo.lead && (
+                  <div className="mb-2 text-sm text-gray-500">
+                    Lead: {selectedConvo.lead.name}
+                  </div>
+                )}
+                <div className="mb-3 text-xs text-gray-400">
+                  Started: {formatTime(selectedConvo.created_at)} •{' '}
+                  {selectedConvo.messages.length} messages
+                </div>
+                <div className="flex gap-2">
+                  {selectedConvo.status !== 'completed' && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        handleUpdateConvoStatus(selectedConvo.id, 'completed')
+                      }
+                    >
+                      <CheckCircle className="mr-1 h-3 w-3" />
+                      Complete
+                    </Button>
+                  )}
+                  {selectedConvo.status === 'completed' && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        handleUpdateConvoStatus(selectedConvo.id, 'active')
+                      }
+                    >
+                      Reopen
+                    </Button>
+                  )}
+                  {selectedConvo.status !== 'escalated' && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        handleUpdateConvoStatus(selectedConvo.id, 'escalated')
+                      }
+                    >
+                      <AlertCircle className="mr-1 h-3 w-3" />
+                      Flag
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex-1 space-y-3 overflow-y-auto p-4">
+                {selectedConvo.messages.map((msg, idx) => (
+                  <div
+                    key={idx}
+                    className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                  >
+                    <div
+                      className={`max-w-[80%] rounded-lg p-3 ${
+                        msg.role === 'user'
+                          ? 'bg-blue-600 text-white'
+                          : msg.role === 'system'
+                            ? 'bg-red-100 text-xs text-red-800'
+                            : 'bg-gray-100 dark:bg-gray-800'
+                      }`}
+                    >
+                      <div className="text-sm whitespace-pre-wrap">
+                        {msg.content}
+                      </div>
+                      <div
+                        className={`mt-1 text-xs ${msg.role === 'user' ? 'text-blue-100' : 'text-gray-400'}`}
+                      >
+                        {formatTime(msg.timestamp)}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="border-t p-4">
+                <div className="flex gap-2">
+                  <Textarea
+                    value={replyText}
+                    onChange={(e) => setReplyText(e.target.value)}
+                    placeholder="Type your reply..."
+                    className="min-h-[80px] flex-1"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey))
+                        handleSendReply()
+                    }}
+                  />
+                  <Button
+                    onClick={handleSendReply}
+                    disabled={!replyText.trim() || sending}
+                    className="self-end"
+                  >
+                    {sending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <>
+                        <Send className="mr-1 h-4 w-4" />
+                        Send
+                      </>
+                    )}
+                  </Button>
+                </div>
+                <p className="mt-2 text-xs text-gray-400">
+                  Cmd/Ctrl + Enter to send
+                </p>
+              </div>
+            </div>
           </div>
         )}
       </div>

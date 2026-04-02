@@ -23,6 +23,8 @@ import {
   X,
   AlertCircle,
   CheckCircle,
+  QrCode,
+  TrendingDown,
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -74,6 +76,9 @@ export default function SightingsAdminPage() {
     'entries',
   )
 
+  // QR scan stats from nfc_card_taps
+  const [qrScans, setQrScans] = useState<number | null>(null)
+
   // Sightings state
   const [sightings, setSightings] = useState<Sighting[]>([])
   const [filteredSightings, setFilteredSightings] = useState<Sighting[]>([])
@@ -112,8 +117,18 @@ export default function SightingsAdminPage() {
       setLoading(false)
     }
 
+    async function fetchQrScans() {
+      const supabase = createClient()
+      const { count } = await supabase
+        .from('nfc_card_taps')
+        .select('*', { count: 'exact', head: true })
+        .eq('card_id', 'truck-qr-contest')
+      setQrScans(count ?? 0)
+    }
+
     fetchSightings()
     fetchConversations()
+    fetchQrScans()
   }, [])
 
   // Fetch contest conversations
@@ -395,6 +410,42 @@ export default function SightingsAdminPage() {
         </Button>
       </div>
 
+      {/* QR Scan Stats */}
+      <div className="grid grid-cols-3 gap-3">
+        <Card className="p-3 sm:p-4">
+          <div className="flex items-center gap-2 text-xs text-gray-500 sm:text-sm">
+            <QrCode className="h-4 w-4 text-purple-500" />
+            Truck QR Scans
+          </div>
+          <p className="mt-1 text-2xl font-bold sm:text-3xl">
+            {qrScans === null ? '…' : qrScans}
+          </p>
+          <p className="text-xs text-gray-500">page loads from QR code</p>
+        </Card>
+        <Card className="p-3 sm:p-4">
+          <div className="flex items-center gap-2 text-xs text-gray-500 sm:text-sm">
+            <Trophy className="h-4 w-4 text-green-500" />
+            Entries
+          </div>
+          <p className="mt-1 text-2xl font-bold sm:text-3xl">
+            {sightings.length}
+          </p>
+          <p className="text-xs text-gray-500">completed forms</p>
+        </Card>
+        <Card className="p-3 sm:p-4">
+          <div className="flex items-center gap-2 text-xs text-gray-500 sm:text-sm">
+            <TrendingDown className="h-4 w-4 text-red-500" />
+            Drop-off
+          </div>
+          <p className="mt-1 text-2xl font-bold sm:text-3xl">
+            {qrScans === null || qrScans === 0
+              ? '—'
+              : `${Math.round(((qrScans - sightings.length) / qrScans) * 100)}%`}
+          </p>
+          <p className="text-xs text-gray-500">scanned but didn&apos;t enter</p>
+        </Card>
+      </div>
+
       {/* View Toggle */}
       <div className="flex gap-2 border-b pb-2">
         <Button
@@ -413,7 +464,7 @@ export default function SightingsAdminPage() {
           className="gap-2"
         >
           <MessageSquare className="h-4 w-4" />
-          Conversations ({conversations.length})
+          Chat ({conversations.length})
         </Button>
       </div>
 

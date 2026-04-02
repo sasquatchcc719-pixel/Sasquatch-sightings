@@ -107,7 +107,6 @@ function NavDropdown({
 export function AdminNavigation() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const isVendorSource = searchParams.get('source') === 'vendor'
   const isAIChatsSource = searchParams.get('source') === 'ai_chats'
   const [operationsOpen, setOperationsOpen] = useState(false)
   const [marketingOpen, setMarketingOpen] = useState(false)
@@ -159,11 +158,11 @@ export function AdminNavigation() {
   // Marketing group (leads, vendors, partners, cards, contest)
   const marketingTabs: NavTab[] = [
     {
-      name: 'NFC & QR Analytics',
+      name: 'Card Analytics',
       href: '/admin/tap-analytics',
       icon: BarChart3,
       active: pathname === '/admin/tap-analytics',
-      description: 'Business card taps, truck QR scans, drop-off rates',
+      description: 'Business card taps, clicks, and conversion breakdown',
     },
     {
       name: 'All Leads',
@@ -194,29 +193,6 @@ export function AdminNavigation() {
       description: 'Referral partners',
     },
     {
-      name: 'AI Chats',
-      href: '/admin/conversations?source=ai_chats',
-      icon: MessageSquare,
-      active: pathname === '/admin/conversations' && isAIChatsSource,
-      description: 'All AI-initiated chats (vendor, card, contest)',
-    },
-    {
-      name: 'Vendor Chats',
-      href: '/admin/conversations?source=vendor',
-      icon: Store,
-      active: pathname === '/admin/conversations' && isVendorSource,
-      description: 'AI chats from vendor NFC cards only (higher-intent)',
-    },
-    {
-      name: 'Contest Chats',
-      href: '/admin/conversations?source=contest',
-      icon: Trophy,
-      active:
-        pathname === '/admin/conversations' &&
-        searchParams.get('source') === 'contest',
-      description: 'AI chats from truck/contest QR',
-    },
-    {
       name: 'Push',
       href: '/admin/push',
       icon: Megaphone,
@@ -240,6 +216,13 @@ export function AdminNavigation() {
       icon: Bot,
       active: pathname === '/admin/harry/george',
       description: 'Smart field copilot with confirmation-gated actions',
+    },
+    {
+      name: 'AI Chats',
+      href: '/admin/conversations?source=ai_chats',
+      icon: MessageSquare,
+      active: pathname === '/admin/conversations' && isAIChatsSource,
+      description: 'All AI-initiated chats (vendor, card, contest)',
     },
   ]
 

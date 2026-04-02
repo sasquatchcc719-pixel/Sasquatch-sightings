@@ -63,6 +63,9 @@ type TapStats = {
   monthTaps: number
   topCities: { city: string; count: number }[]
   deviceBreakdown: { mobile: number; tablet: number; desktop: number }
+  // Source breakdown
+  cardScans: number
+  contestScans: number
 }
 
 type Message = {
@@ -349,6 +352,10 @@ export default function TapAnalyticsPage() {
         monthTaps,
         topCities,
         deviceBreakdown,
+        cardScans: tapData.filter((t) => t.card_id !== 'truck-qr-contest')
+          .length,
+        contestScans: tapData.filter((t) => t.card_id === 'truck-qr-contest')
+          .length,
       })
     } catch (error) {
       console.error('Failed to fetch stats:', error)
@@ -382,7 +389,7 @@ export default function TapAnalyticsPage() {
   return (
     <div className="mx-auto max-w-6xl space-y-4 p-4 sm:space-y-6 sm:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-2xl font-bold sm:text-3xl">Business Cards</h1>
+        <h1 className="text-2xl font-bold sm:text-3xl">Card Analytics</h1>
         <div className="flex flex-wrap gap-2">
           {(['today', 'week', 'month', 'all'] as const).map((tf) => (
             <button
