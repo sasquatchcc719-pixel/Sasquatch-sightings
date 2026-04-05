@@ -18,16 +18,39 @@ export async function generateJobDescription(
   voiceNote: string,
   serviceName: string,
   city: string,
-  neighborhood: string | null
+  neighborhood: string | null,
 ): Promise<string> {
   console.log('🧠 [AI] Starting AI generation...')
-  
-  try {
-    const locationString = neighborhood
-      ? `${neighborhood}, ${city}`
-      : city
 
-    const prompt = `You are writing a professional technician log for a carpet cleaning company website. Convert this field note into a 150-word description emphasizing the specific cleaning challenge and treatment used. Tone: Professional case study. Location: ${locationString}. Service: ${serviceName}. Field note: ${voiceNote}`
+  try {
+    const locationString = neighborhood ? `${neighborhood}, ${city}` : city
+
+    // Rotate through 6 description styles so published job pages don't all sound the same
+    const descriptionStyles = [
+      `Professional case study tone. Open with the specific cleaning challenge, describe the treatment approach, and close with the result. Emphasize the technical process (pre-spray, CRB agitation, hot water extraction, acid rinse). 120-150 words.`,
+      `Storytelling tone. Paint a picture of what the space looked like before, what the homeowner was dealing with, and how it looked after. Make the transformation feel real. 120-150 words.`,
+      `Empathy-first tone. Start from the homeowner's perspective — what they were struggling with and why it mattered to them. Then explain how we solved it technically. 120-150 words.`,
+      `Educational tone. Use this job as an example to teach the reader something useful about carpet care — why the specific technique matters, what causes this type of problem, or what most people don't know. 120-150 words.`,
+      `Local community tone. Ground the post in the specific neighborhood and make it feel like a neighbor helping a neighbor. Reference the area naturally and write with warmth. 120-150 words.`,
+      `Results-focused tone. Lead with the outcome — what the space looks, feels, and smells like now. Use sensory language. Then briefly explain the process that got it there. 120-150 words.`,
+    ]
+
+    const style =
+      descriptionStyles[Math.floor(Math.random() * descriptionStyles.length)]
+
+    const prompt = `You are writing a job completion description for Sasquatch Carpet Cleaning's website. Each published job is a real SEO page — write with enough local and technical detail to be genuinely useful and indexable.
+
+Location: ${locationString}
+Service: ${serviceName}
+Field notes from technician: ${voiceNote}
+
+Style for this post: ${style}
+
+Rules:
+- Always mention the location (${locationString}) naturally
+- Include specific technical details from the field notes
+- No pricing, no hashtags, no excessive exclamation points
+- Write as if a knowledgeable human wrote it, not a template`
 
     console.log('📝 [AI] Prompt prepared:', {
       location: locationString,
