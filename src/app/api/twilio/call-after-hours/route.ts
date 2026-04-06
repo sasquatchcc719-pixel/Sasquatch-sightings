@@ -51,11 +51,8 @@ export async function POST(request: NextRequest) {
       isHarryFunctionEnabled(controlSnapshot, 'call_missed_auto_sms_enabled') &&
       isHarryChannelEnabled(controlSnapshot, 'inbound')
 
-    // Do not send immediate Harry SMS from call handler.
-    // We defer all missed-call follow-up to voicemail route so Harry can wait
-    // and reply with voicemail context.
+    // Send Harry SMS any time a call doesn't get answered
     const shouldSendSMS =
-      false &&
       canRunHarryCallSms &&
       Boolean(dialCallStatus) &&
       !['completed', 'answered'].includes(dialCallStatus)
@@ -164,7 +161,7 @@ export async function POST(request: NextRequest) {
       })
     } else {
       console.log(
-        '[Call Handler] Deferring missed-call SMS to voicemail route for delayed context-aware reply.',
+        `[Call Handler] SMS suppressed — shouldSendSMS=${shouldSendSMS}, canRunHarryCallSms=${canRunHarryCallSms}, dialCallStatus=${dialCallStatus}`,
       )
     }
 

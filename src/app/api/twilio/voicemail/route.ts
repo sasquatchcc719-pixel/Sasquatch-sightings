@@ -240,7 +240,15 @@ export async function POST(request: NextRequest) {
           return now - ts < RECENT_REPLY_SUPPRESSION_MS
         })
 
-        if (!hasRecentVoicemailReply) {
+        // Also suppress if call-after-hours already sent a missed-call SMS
+        const hasRecentMissedCallSms = latestMessages.some((message) => {
+          if (message?.role !== 'assistant') return false
+          const ts = Date.parse(String(message?.timestamp || ''))
+          if (!Number.isFinite(ts)) return false
+          return now - ts < 5 * 60 * 1000 // within last 5 minutes
+        })
+
+        if (!hasRecentVoicemailReply && !hasRecentMissedCallSms) {
           const latestTranscript =
             getLatestVoicemailTranscription(latestMessages) ||
             (hasMeaningfulTranscription(transcriptionText)
