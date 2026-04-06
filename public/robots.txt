@@ -1,4 +1,5 @@
 User-agent: *
 Allow: /
+Disallow: /favicon.ico
 
 Sitemap: https://sightings.sasquatchcarpet.com/sitemap.xml

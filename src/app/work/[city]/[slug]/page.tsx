@@ -66,9 +66,15 @@ export async function generateMetadata({
     job.ai_description?.substring(0, 160) ||
     `Professional ${serviceName.toLowerCase()} services in ${location}. Quality results from Sasquatch Carpet Cleaning.`
 
+  const hasUnknownCity = isUnknownCity(job.city)
+  const hasUnknownSlug = job.slug?.includes('unknown')
+
   return {
     title,
     description,
+    ...(hasUnknownCity || hasUnknownSlug
+      ? { robots: { index: false, follow: false } }
+      : {}),
     openGraph: {
       title,
       description,

@@ -43,23 +43,23 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     },
   ]
 
-  // Job pages (dynamic) — never use "unknown" in sitemap URLs
-  const jobPages: MetadataRoute.Sitemap = (jobs || []).map((job) => {
-    const cityForSlug = isUnknownCity(job.city)
-      ? 'Colorado'
-      : (job.city ?? 'Colorado')
-    const citySlug = cityForSlug
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
+  // Job pages (dynamic) — skip unknown city/slug jobs entirely
+  const jobPages: MetadataRoute.Sitemap = (jobs || [])
+    .filter((job) => !isUnknownCity(job.city) && !job.slug?.includes('unknown'))
+    .map((job) => {
+      const cityForSlug = job.city ?? 'Colorado'
+      const citySlug = cityForSlug
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
 
-    return {
-      url: `${baseUrl}/work/${citySlug}/${job.slug}`,
-      lastModified: new Date(job.published_at),
-      changeFrequency: 'weekly' as const,
-      priority: 0.8,
-    }
-  })
+      return {
+        url: `${baseUrl}/work/${citySlug}/${job.slug}`,
+        lastModified: new Date(job.published_at),
+        changeFrequency: 'weekly' as const,
+        priority: 0.8,
+      }
+    })
 
   // Sighting share pages (dynamic)
   const sightingPages: MetadataRoute.Sitemap = (sightings || []).map(
