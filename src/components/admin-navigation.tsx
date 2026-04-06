@@ -24,6 +24,7 @@ import {
   Target,
   Link2,
   Megaphone,
+  ImagePlay,
 } from 'lucide-react'
 
 interface NavTab {
@@ -198,6 +199,13 @@ export function AdminNavigation() {
       icon: Megaphone,
       active: pathname === '/admin/push',
       description: 'Send push notifications',
+    },
+    {
+      name: 'Social Posts',
+      href: '/admin/social-posts',
+      icon: ImagePlay,
+      active: pathname === '/admin/social-posts',
+      description: 'GBP job posts, offers & event campaigns',
     },
   ]
 
