@@ -25,6 +25,7 @@ import {
   Link2,
   Megaphone,
   ImagePlay,
+  Mail,
 } from 'lucide-react'
 
 interface NavTab {
@@ -234,7 +235,7 @@ export function AdminNavigation() {
     },
   ]
 
-  // Calls group (Phone system)
+  // Comms group (Phone system + email)
   const callsTabs: NavTab[] = [
     {
       name: 'Direct Texts',
@@ -244,6 +245,13 @@ export function AdminNavigation() {
         pathname === '/admin/conversations' &&
         searchParams.get('source') === 'phone',
       description: 'Texts from people who contacted your number directly',
+    },
+    {
+      name: 'Email Outbox',
+      href: '/admin/email-outbox',
+      icon: Mail,
+      active: pathname === '/admin/email-outbox',
+      description: 'Emails sent to customers',
     },
     {
       name: 'Voicemails',
@@ -300,9 +308,9 @@ export function AdminNavigation() {
             tabs={marketingTabs}
           />
 
-          {/* Calls Dropdown */}
+          {/* Comms Dropdown */}
           <NavDropdown
-            label="Calls"
+            label="Comms"
             icon={Phone}
             isOpen={callsOpen}
             onToggle={() => {

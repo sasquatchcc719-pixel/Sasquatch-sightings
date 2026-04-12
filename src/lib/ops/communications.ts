@@ -341,14 +341,32 @@ export async function sendOpsLifecycleCommunications(params: {
 
     if (!resend || !customerEmail) continue
     try {
-      await resend.emails.send({
+      const sent = await resend.emails.send({
         from: fromEmail,
         to: customerEmail,
         subject: subject || 'Update from Sasquatch Carpet Cleaning',
         html: `<div style="font-family:Arial,sans-serif;white-space:pre-wrap;line-height:1.5;">${body}</div>`,
       })
+      await supabase.from('ops_email_log').insert({
+        appointment_id: appointment.id,
+        customer_id: appointment.customer_id,
+        template_key: template.template_key,
+        to_email: customerEmail,
+        subject: subject || 'Update from Sasquatch Carpet Cleaning',
+        resend_id: sent.data?.id || null,
+        status: 'sent',
+      })
     } catch (error) {
       console.error('[ops/communications] Failed to send email:', error)
+      await supabase.from('ops_email_log').insert({
+        appointment_id: appointment.id,
+        customer_id: appointment.customer_id,
+        template_key: template.template_key,
+        to_email: customerEmail,
+        subject: subject || 'Update from Sasquatch Carpet Cleaning',
+        status: 'failed',
+        error_message: error instanceof Error ? error.message : 'Unknown error',
+      })
     }
   }
 }
