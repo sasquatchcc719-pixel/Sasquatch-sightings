@@ -12,6 +12,7 @@ import {
   getAvailableSlots,
 } from '@/lib/ops/availability'
 import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
+import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
 
 type IncomingLineItem = {
   service_catalog_item_id?: string | null
@@ -476,6 +477,10 @@ export async function POST(request: NextRequest) {
         '[ops/appointments][POST] Communications error (non-fatal):',
         err,
       )
+    })
+
+    syncAppointmentToQuickBooks(appointment.id).catch((err) => {
+      console.error('[ops/appointments][POST] QB sync error (non-fatal):', err)
     })
 
     return NextResponse.json(

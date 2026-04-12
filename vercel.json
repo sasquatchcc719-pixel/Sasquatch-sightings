@@ -14,7 +14,7 @@
     },
     {
       "path": "/api/cron/quickbooks-sync",
-      "schedule": "*/5 * * * *"
+      "schedule": "0 8 * * *"
     }
   ],
   "redirects": [

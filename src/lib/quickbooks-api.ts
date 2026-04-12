@@ -1,4 +1,8 @@
-import { getValidQBAccessToken } from '@/lib/quickbooks-auth'
+import {
+  getValidQBAccessToken,
+  getQBConnectionStatus,
+} from '@/lib/quickbooks-auth'
+import { createAdminClient } from '@/supabase/server'
 
 const QB_BASE_URL = 'https://quickbooks.api.intuit.com/v3/company'
 
@@ -152,4 +156,86 @@ export async function createQBInvoice(params: {
 
   const data = await res.json()
   return data.Invoice.Id
+}
+
+export async function syncAppointmentToQuickBooks(appointmentId: string) {
+  const status = await getQBConnectionStatus()
+  if (!status.connected || !status.sync_enabled) return
+
+  const supabase = createAdminClient()
+
+  const { data: appointment } = await supabase
+    .from('ops_appointments')
+    .select(
+      `
+      id,
+      appointment_date,
+      ops_customers (
+        id, full_name, first_name, email, phone, quickbooks_customer_id,
+        ops_service_addresses ( street_1, street_2, city, state, zip_code )
+      ),
+      ops_invoices (
+        id, subtotal, total, discount_amount, quickbooks_invoice_id,
+        ops_invoice_line_items ( description, quantity, unit_price, line_total )
+      )
+    `,
+    )
+    .eq('id', appointmentId)
+    .single()
+
+  if (!appointment) throw new Error(`Appointment ${appointmentId} not found`)
+
+  const customer = Array.isArray(appointment.ops_customers)
+    ? appointment.ops_customers[0]
+    : appointment.ops_customers
+  const invoice = Array.isArray(appointment.ops_invoices)
+    ? appointment.ops_invoices[0]
+    : appointment.ops_invoices
+
+  if (!customer || !invoice) throw new Error('Missing customer or invoice data')
+
+  const address = Array.isArray(customer.ops_service_addresses)
+    ? customer.ops_service_addresses[0]
+    : customer.ops_service_addresses
+
+  // Sync customer if not already in QB
+  let qbCustomerId = customer.quickbooks_customer_id
+  if (!qbCustomerId) {
+    qbCustomerId = await createQBCustomer({
+      customerId: customer.id,
+      displayName: customer.full_name,
+      email: customer.email,
+      phone: customer.phone || '',
+      address: {
+        street_1: address?.street_1 || '',
+        street_2: address?.street_2,
+        city: address?.city || '',
+        state: address?.state || 'CO',
+        zip_code: address?.zip_code || '',
+      },
+    })
+    await supabase
+      .from('ops_customers')
+      .update({ quickbooks_customer_id: qbCustomerId })
+      .eq('id', customer.id)
+  }
+
+  // Sync invoice if not already in QB
+  if (!invoice.quickbooks_invoice_id) {
+    const lineItems = Array.isArray(invoice.ops_invoice_line_items)
+      ? invoice.ops_invoice_line_items
+      : []
+
+    const qbInvoiceId = await createQBInvoice({
+      qbCustomerId,
+      serviceDate: appointment.appointment_date,
+      lineItems,
+      discountAmount: Number(invoice.discount_amount || 0),
+    })
+
+    await supabase
+      .from('ops_invoices')
+      .update({ quickbooks_invoice_id: qbInvoiceId, sync_status: 'synced' })
+      .eq('id', invoice.id)
+  }
 }
