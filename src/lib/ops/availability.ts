@@ -114,7 +114,8 @@ export function applyAppointmentBuffer(
     ? serviceMinutes
     : 0
   const normalizedBuffer = Number.isFinite(bufferMinutes) ? bufferMinutes : 0
-  return Math.max(0, Math.round(normalizedServiceMinutes + normalizedBuffer))
+  const total = Math.max(0, normalizedServiceMinutes + normalizedBuffer)
+  return Math.ceil(total / 60) * 60
 }
 
 export function getAvailableSlots(params: {

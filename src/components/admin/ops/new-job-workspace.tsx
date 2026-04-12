@@ -573,7 +573,7 @@ export function NewJobWorkspace() {
         throw new Error(result.error || 'Failed to create job')
       }
 
-      router.push(`/admin/operations/appointments/${result.appointment.id}`)
+      router.push('/admin/operations')
       router.refresh()
     } catch (submitError) {
       setError(
