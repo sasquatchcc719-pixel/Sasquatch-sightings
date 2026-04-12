@@ -165,6 +165,7 @@ export async function getValidQBAccessToken(): Promise<{
 
 export async function getQBConnectionStatus(): Promise<{
   connected: boolean
+  sync_enabled: boolean
   realmId: string | null
   accessTokenExpiresAt: string | null
   refreshTokenExpiresAt: string | null
@@ -173,7 +174,9 @@ export async function getQBConnectionStatus(): Promise<{
 
   const { data } = await supabase
     .from('quickbooks_oauth_tokens')
-    .select('realm_id, access_token_expires_at, refresh_token_expires_at')
+    .select(
+      'realm_id, access_token_expires_at, refresh_token_expires_at, sync_enabled',
+    )
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
@@ -181,6 +184,7 @@ export async function getQBConnectionStatus(): Promise<{
   if (!data) {
     return {
       connected: false,
+      sync_enabled: false,
       realmId: null,
       accessTokenExpiresAt: null,
       refreshTokenExpiresAt: null,
@@ -191,6 +195,7 @@ export async function getQBConnectionStatus(): Promise<{
 
   return {
     connected: !refreshExpired,
+    sync_enabled: data.sync_enabled ?? true,
     realmId: data.realm_id,
     accessTokenExpiresAt: data.access_token_expires_at,
     refreshTokenExpiresAt: data.refresh_token_expires_at,

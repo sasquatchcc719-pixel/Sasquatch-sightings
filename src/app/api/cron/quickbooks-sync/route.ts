@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 import { createQBCustomer, createQBInvoice } from '@/lib/quickbooks-api'
+import { getQBConnectionStatus } from '@/lib/quickbooks-auth'
 
 const BATCH_SIZE = 20
 
@@ -22,6 +23,16 @@ export async function GET(request: NextRequest) {
     const authHeader = request.headers.get('authorization')
     if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const qbStatus = await getQBConnectionStatus()
+    if (!qbStatus.connected || !qbStatus.sync_enabled) {
+      return NextResponse.json({
+        processed: 0,
+        synced: 0,
+        failed: 0,
+        skipped: 'sync disabled or not connected',
+      })
     }
 
     const supabase = createAdminClient()
