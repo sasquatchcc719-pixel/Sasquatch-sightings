@@ -4,18 +4,18 @@ const QB_TOKEN_URL = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer'
 const QB_AUTH_URL = 'https://appcenter.intuit.com/connect/oauth2'
 
 export function getQBClientId(): string {
-  return process.env.QUICKBOOKS_CLIENT_ID || ''
+  return (process.env.QUICKBOOKS_CLIENT_ID || '').trim()
 }
 
 export function getQBClientSecret(): string {
-  return process.env.QUICKBOOKS_CLIENT_SECRET || ''
+  return (process.env.QUICKBOOKS_CLIENT_SECRET || '').trim()
 }
 
 export function getQBRedirectUri(): string {
   return (
     process.env.QUICKBOOKS_REDIRECT_URI ||
     'https://sightings.sasquatchcarpet.com/api/admin/quickbooks/callback'
-  )
+  ).trim()
 }
 
 export function buildQBAuthUrl(state: string): string {

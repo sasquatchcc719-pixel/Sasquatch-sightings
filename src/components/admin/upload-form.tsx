@@ -37,21 +37,9 @@ import {
 
 // Form validation schema - using z.any() with runtime checks to avoid SSR FileList error
 const uploadFormSchema = z.object({
-  image: z
-    .any()
-    .refine((files) => {
-      // Allow empty FileList if we have a preloaded/compressed file
-      return (
-        (files instanceof FileList && files.length > 0) || files === undefined
-      )
-    }, 'Image is required')
-    .refine((files) => {
-      // Skip type check if no files (preloaded image scenario)
-      if (!files || (files instanceof FileList && files.length === 0)) {
-        return true
-      }
-      return files instanceof FileList && files[0]?.type.startsWith('image/')
-    }, 'File must be an image'),
+  // Image validation is handled in onSubmit — compressedFile covers both
+  // the file input path and the preloaded combiner path
+  image: z.any(),
   serviceId: z.string().min(1, 'Service type is required'),
   description: z
     .string()
@@ -66,7 +54,11 @@ type Service = {
   slug: string
 }
 
-export function UploadForm() {
+export function UploadForm({
+  preloadedImageDataUrl,
+}: {
+  preloadedImageDataUrl?: string | null
+}) {
   const [services, setServices] = useState<Service[]>([])
   const [isLoadingServices, setIsLoadingServices] = useState(true)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
@@ -127,45 +119,42 @@ export function UploadForm() {
     fetchServices()
   }, [])
 
-  // Check for preloaded image from Before/After tool
+  // Load combined image passed directly from the Before/After combiner on the same page
+  useEffect(() => {
+    if (!preloadedImageDataUrl) return
+    fetch(preloadedImageDataUrl)
+      .then((res) => res.blob())
+      .then((blob) => {
+        const file = new File([blob], `combined-${Date.now()}.jpg`, {
+          type: 'image/jpeg',
+        })
+        setImagePreview(preloadedImageDataUrl)
+        setCompressedFile(file)
+        setGpsCoordinates(null)
+        setGpsSource('none')
+      })
+      .catch((err) => console.error('Failed to load combined image:', err))
+  }, [preloadedImageDataUrl])
+
+  // Legacy: Check for preloaded image from Before/After tool via sessionStorage (old flow)
   useEffect(() => {
     const preloadedImageData = sessionStorage.getItem('preloadedImage')
-    console.log(
-      'Checking for preloaded image...',
-      preloadedImageData ? 'Found!' : 'Not found',
-    )
-
     if (preloadedImageData) {
-      // Convert data URL to File
       fetch(preloadedImageData)
         .then((res) => res.blob())
-        .then(async (blob) => {
+        .then((blob) => {
           const file = new File([blob], `combined-${Date.now()}.jpg`, {
             type: 'image/jpeg',
           })
-
-          // Set the image preview
           setImagePreview(preloadedImageData)
-
-          // Set compressed file (already compressed by Before/After tool)
           setCompressedFile(file)
-
-          // Combined images don't have GPS, so user will need to add manually
           setGpsCoordinates(null)
           setGpsSource('none')
-
-          // Clear sessionStorage
           sessionStorage.removeItem('preloadedImage')
-
-          console.log(
-            '✅ Loaded combined image from Before/After tool (ready to upload)',
-          )
         })
-        .catch((err) => {
-          console.error('Failed to load preloaded image:', err)
-        })
+        .catch((err) => console.error('Failed to load preloaded image:', err))
     }
-  }, [fromCombine]) // Re-run when coming from combine tool
+  }, [fromCombine])
 
   // Pre-fill invoice fields when navigating from a finished job
   useEffect(() => {
@@ -475,37 +464,55 @@ export function UploadForm() {
           <Camera className="mr-2 inline-block h-4 w-4" />
           Job Photo
         </Label>
-        <Input
-          id="image"
-          type="file"
-          accept="image/*"
-          {...register('image')}
-          className="cursor-pointer file:cursor-pointer"
-          disabled={isProcessingImage}
-        />
-        {errors.image && (
-          <p className="text-destructive text-sm">
-            {String(errors.image.message)}
-          </p>
-        )}
 
-        {/* Processing Indicator */}
-        {isProcessingImage && (
-          <div className="text-muted-foreground flex items-center gap-2 text-sm">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Processing image (extracting GPS, compressing)...
-          </div>
-        )}
-
-        {/* Image Preview */}
-        {imagePreview && (
-          <div className="mt-4 space-y-3">
+        {/* If a combined image is preloaded, show it instead of the file input */}
+        {imagePreview ? (
+          <div className="space-y-3">
             <img
               src={imagePreview}
               alt="Preview"
-              className="h-48 w-full rounded-lg object-cover"
+              className="w-full rounded-lg border"
             />
+            <button
+              type="button"
+              className="text-muted-foreground text-xs underline"
+              onClick={() => {
+                setImagePreview(null)
+                setCompressedFile(null)
+                setGpsCoordinates(null)
+                setGpsSource(null)
+              }}
+            >
+              Clear and choose a different photo
+            </button>
+          </div>
+        ) : (
+          <>
+            <Input
+              id="image"
+              type="file"
+              accept="image/*"
+              {...register('image')}
+              className="cursor-pointer file:cursor-pointer"
+              disabled={isProcessingImage}
+            />
+            {errors.image && (
+              <p className="text-destructive text-sm">
+                {String(errors.image.message)}
+              </p>
+            )}
+            {isProcessingImage && (
+              <div className="text-muted-foreground flex items-center gap-2 text-sm">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Processing image (extracting GPS, compressing)...
+              </div>
+            )}
+          </>
+        )}
 
+        {/* GPS + manual override — only show when image is loaded */}
+        {imagePreview && (
+          <div className="space-y-3">
             {/* GPS Status Indicator */}
             <div className="bg-muted/50 flex items-center justify-between rounded-md border p-3">
               <div className="flex items-center gap-2">

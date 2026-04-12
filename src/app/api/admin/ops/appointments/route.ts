@@ -465,13 +465,19 @@ export async function POST(request: NextRequest) {
       ]),
     ])
 
-    await Promise.allSettled([
+    const [commsResult, qbResult] = await Promise.allSettled([
       sendOpsLifecycleCommunications({
         event: 'job_scheduled',
         appointmentId: appointment.id,
       }),
       syncAppointmentToQuickBooks(appointment.id),
     ])
+    if (commsResult.status === 'rejected') {
+      console.error('[ops/appointments][POST] Comms error:', commsResult.reason)
+    }
+    if (qbResult.status === 'rejected') {
+      console.error('[ops/appointments][POST] QB sync error:', qbResult.reason)
+    }
 
     return NextResponse.json(
       {

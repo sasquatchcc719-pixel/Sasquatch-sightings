@@ -136,9 +136,9 @@ export function AdminNavigation() {
     },
     {
       name: 'Jobs',
-      href: '/admin',
+      href: '/admin/jobs',
       icon: Briefcase,
-      active: pathname === '/admin',
+      active: pathname === '/admin/jobs',
       description: 'Manage completed jobs',
     },
     {

@@ -1,5 +1,5 @@
 export const QUICKBOOKS_SYNC_ENABLED =
-  process.env.QUICKBOOKS_SYNC_ENABLED === 'true'
+  process.env.QUICKBOOKS_SYNC_ENABLED?.trim() === 'true'
 
 export type QuickBooksEntityType = 'customer' | 'invoice'
 export type QuickBooksSyncStatus = 'held' | 'pending' | 'synced' | 'failed'

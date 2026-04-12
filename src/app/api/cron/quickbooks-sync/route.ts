@@ -37,15 +37,30 @@ export async function GET(request: NextRequest) {
 
     const supabase = createAdminClient()
 
-    const { data: jobs, error: jobsError } = await supabase
+    // Fetch customer jobs first — invoices depend on customers being synced
+    const { data: customerJobs, error: customerJobsError } = await supabase
       .from('ops_quickbooks_sync_jobs')
       .select('id, entity_type, entity_id, payload')
       .eq('status', 'pending')
+      .eq('entity_type', 'customer')
       .order('created_at', { ascending: true })
       .limit(BATCH_SIZE)
 
-    if (jobsError) throw jobsError
-    if (!jobs || jobs.length === 0) {
+    if (customerJobsError) throw customerJobsError
+
+    const { data: invoiceJobs, error: invoiceJobsError } = await supabase
+      .from('ops_quickbooks_sync_jobs')
+      .select('id, entity_type, entity_id, payload')
+      .eq('status', 'pending')
+      .eq('entity_type', 'invoice')
+      .order('created_at', { ascending: true })
+      .limit(BATCH_SIZE)
+
+    if (invoiceJobsError) throw invoiceJobsError
+
+    const jobs = [...(customerJobs || []), ...(invoiceJobs || [])]
+
+    if (jobs.length === 0) {
       return NextResponse.json({ processed: 0, synced: 0, failed: 0 })
     }
 
