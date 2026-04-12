@@ -543,6 +543,12 @@ export function NewJobWorkspace() {
     setSaving(true)
     setError(null)
 
+    if (!leadSource.trim()) {
+      setError('Please select a lead source before saving.')
+      setSaving(false)
+      return
+    }
+
     try {
       const payload = {
         customer: customerForm,
