@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/supabase/server'
+import { encrypt, decrypt } from '@/lib/quickbooks-crypto'
 
 const QB_TOKEN_URL = 'https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer'
 const QB_AUTH_URL = 'https://appcenter.intuit.com/connect/oauth2'
@@ -55,19 +56,19 @@ export async function exchangeCodeForTokens(code: string): Promise<{
   })
 
   if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`QB token exchange failed: ${res.status} ${text}`)
+    throw new Error(`QB token exchange failed: ${res.status}`)
   }
 
   return res.json()
 }
 
-export async function refreshQBTokens(refreshToken: string): Promise<{
+export async function refreshQBTokens(encryptedRefreshToken: string): Promise<{
   access_token: string
   refresh_token: string
   expires_in: number
   x_refresh_token_expires_in: number
 }> {
+  const refreshToken = decrypt(encryptedRefreshToken)
   const credentials = Buffer.from(
     `${getQBClientId()}:${getQBClientSecret()}`,
   ).toString('base64')
@@ -86,8 +87,7 @@ export async function refreshQBTokens(refreshToken: string): Promise<{
   })
 
   if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`QB token refresh failed: ${res.status} ${text}`)
+    throw new Error(`QB token refresh failed: ${res.status}`)
   }
 
   return res.json()
@@ -105,9 +105,9 @@ export async function saveQBTokens(params: {
 
   const { error } = await supabase.from('quickbooks_oauth_tokens').upsert(
     {
-      realm_id: params.realmId,
-      access_token: params.accessToken,
-      refresh_token: params.refreshToken,
+      realm_id: encrypt(params.realmId),
+      access_token: encrypt(params.accessToken),
+      refresh_token: encrypt(params.refreshToken),
       access_token_expires_at: new Date(
         now + params.accessTokenExpiresIn * 1000,
       ).toISOString(),
@@ -141,26 +141,24 @@ export async function getValidQBAccessToken(): Promise<{
   const accessExpiresAt = new Date(data.access_token_expires_at)
   const refreshExpiresAt = new Date(data.refresh_token_expires_at)
 
-  if (refreshExpiresAt < now) {
-    // Refresh token expired — need to re-authorize
-    return null
-  }
+  if (refreshExpiresAt < now) return null
 
-  // If access token expires within 5 minutes, refresh it
+  const realmId = decrypt(data.realm_id)
+
   const fiveMinutes = 5 * 60 * 1000
   if (accessExpiresAt.getTime() - now.getTime() < fiveMinutes) {
     const refreshed = await refreshQBTokens(data.refresh_token)
     await saveQBTokens({
-      realmId: data.realm_id,
+      realmId,
       accessToken: refreshed.access_token,
       refreshToken: refreshed.refresh_token,
       accessTokenExpiresIn: refreshed.expires_in,
       refreshTokenExpiresIn: refreshed.x_refresh_token_expires_in,
     })
-    return { accessToken: refreshed.access_token, realmId: data.realm_id }
+    return { accessToken: refreshed.access_token, realmId }
   }
 
-  return { accessToken: data.access_token, realmId: data.realm_id }
+  return { accessToken: decrypt(data.access_token), realmId }
 }
 
 export async function getQBConnectionStatus(): Promise<{
@@ -193,10 +191,17 @@ export async function getQBConnectionStatus(): Promise<{
 
   const refreshExpired = new Date(data.refresh_token_expires_at) < new Date()
 
+  let realmId: string | null = null
+  try {
+    realmId = decrypt(data.realm_id)
+  } catch {
+    realmId = data.realm_id
+  }
+
   return {
     connected: !refreshExpired,
     sync_enabled: data.sync_enabled ?? true,
-    realmId: data.realm_id,
+    realmId,
     accessTokenExpiresAt: data.access_token_expires_at,
     refreshTokenExpiresAt: data.refresh_token_expires_at,
   }

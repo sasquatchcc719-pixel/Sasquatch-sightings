@@ -31,12 +31,19 @@ export async function GET() {
         .maybeSingle(),
     ])
 
-    return NextResponse.json({
-      ...connectionStatus,
-      pending: pendingResult.count || 0,
-      failed: failedResult.count || 0,
-      last_synced_at: syncedResult.data?.updated_at || null,
-    })
+    return NextResponse.json(
+      {
+        ...connectionStatus,
+        pending: pendingResult.count || 0,
+        failed: failedResult.count || 0,
+        last_synced_at: syncedResult.data?.updated_at || null,
+      },
+      {
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+        },
+      },
+    )
   } catch (error) {
     console.error('[quickbooks/status] Error:', error)
     return NextResponse.json(

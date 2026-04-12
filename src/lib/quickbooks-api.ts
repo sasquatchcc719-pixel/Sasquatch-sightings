@@ -92,8 +92,7 @@ export async function createQBCustomer(params: {
   )
 
   if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`QB create customer failed: ${res.status} ${text}`)
+    throw new Error(`QB create customer failed: ${res.status}`)
   }
 
   const data = await res.json()
@@ -150,8 +149,7 @@ export async function createQBInvoice(params: {
   )
 
   if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`QB create invoice failed: ${res.status} ${text}`)
+    throw new Error(`QB create invoice failed: ${res.status}`)
   }
 
   const data = await res.json()

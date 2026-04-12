@@ -30,7 +30,6 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Validate state
     const savedState = request.cookies.get('qb_oauth_state')?.value
     if (!savedState || savedState !== state) {
       return NextResponse.redirect(
@@ -52,8 +51,8 @@ export async function GET(request: NextRequest) {
     )
     response.cookies.delete('qb_oauth_state')
     return response
-  } catch (error) {
-    console.error('[quickbooks/callback] Error:', error)
+  } catch {
+    console.error('[quickbooks/callback] Token exchange failed')
     return NextResponse.redirect(
       new URL('/admin/operations?qb_error=token_exchange_failed', request.url),
     )
