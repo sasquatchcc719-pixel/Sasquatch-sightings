@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/quickbooks-sync",
       "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/ops-communications",
+      "schedule": "0 14 * * *"
     }
   ],
   "redirects": [

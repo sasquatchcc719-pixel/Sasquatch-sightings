@@ -469,19 +469,13 @@ export async function POST(request: NextRequest) {
       ]),
     ])
 
-    sendOpsLifecycleCommunications({
-      event: 'job_scheduled',
-      appointmentId: appointment.id,
-    }).catch((err) => {
-      console.error(
-        '[ops/appointments][POST] Communications error (non-fatal):',
-        err,
-      )
-    })
-
-    syncAppointmentToQuickBooks(appointment.id).catch((err) => {
-      console.error('[ops/appointments][POST] QB sync error (non-fatal):', err)
-    })
+    await Promise.allSettled([
+      sendOpsLifecycleCommunications({
+        event: 'job_scheduled',
+        appointmentId: appointment.id,
+      }),
+      syncAppointmentToQuickBooks(appointment.id),
+    ])
 
     return NextResponse.json(
       {
