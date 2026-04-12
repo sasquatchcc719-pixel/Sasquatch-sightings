@@ -468,9 +468,14 @@ export async function POST(request: NextRequest) {
       ]),
     ])
 
-    await sendOpsLifecycleCommunications({
+    sendOpsLifecycleCommunications({
       event: 'job_scheduled',
       appointmentId: appointment.id,
+    }).catch((err) => {
+      console.error(
+        '[ops/appointments][POST] Communications error (non-fatal):',
+        err,
+      )
     })
 
     return NextResponse.json(
