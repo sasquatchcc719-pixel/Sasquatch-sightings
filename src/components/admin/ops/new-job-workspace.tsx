@@ -988,7 +988,7 @@ export function NewJobWorkspace() {
 
               <div className="grid gap-3 md:grid-cols-2">
                 <div>
-                  <Label htmlFor="first-name">First Name</Label>
+                  <Label htmlFor="first-name">First Name *</Label>
                   <Input
                     id="first-name"
                     value={customerForm.first_name}
@@ -1001,7 +1001,7 @@ export function NewJobWorkspace() {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="last-name">Last Name</Label>
+                  <Label htmlFor="last-name">Last Name *</Label>
                   <Input
                     id="last-name"
                     value={customerForm.last_name}
@@ -1027,7 +1027,7 @@ export function NewJobWorkspace() {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="customer-phone">Phone</Label>
+                  <Label htmlFor="customer-phone">Phone *</Label>
                   <Input
                     id="customer-phone"
                     value={customerForm.phone}
@@ -1040,7 +1040,7 @@ export function NewJobWorkspace() {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="customer-email">Email</Label>
+                  <Label htmlFor="customer-email">Email *</Label>
                   <Input
                     id="customer-email"
                     type="email"
@@ -1143,7 +1143,7 @@ export function NewJobWorkspace() {
                   />
                 </div>
                 <div className="md:col-span-2">
-                  <Label htmlFor="street-1">Street</Label>
+                  <Label htmlFor="street-1">Street *</Label>
                   <div className="relative">
                     <Input
                       id="street-1"
@@ -1281,7 +1281,7 @@ export function NewJobWorkspace() {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="city">City</Label>
+                  <Label htmlFor="city">City *</Label>
                   <Input
                     id="city"
                     value={addressForm.city}
@@ -1294,7 +1294,7 @@ export function NewJobWorkspace() {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="state">State</Label>
+                  <Label htmlFor="state">State *</Label>
                   <Input
                     id="state"
                     value={addressForm.state}
@@ -1307,7 +1307,7 @@ export function NewJobWorkspace() {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="zip-code">Zip</Label>
+                  <Label htmlFor="zip-code">Zip *</Label>
                   <Input
                     id="zip-code"
                     value={addressForm.zip_code}
@@ -1341,7 +1341,7 @@ export function NewJobWorkspace() {
             <h3 className="text-lg font-semibold">Schedule</h3>
             <div className="mt-4 grid gap-3 md:grid-cols-3">
               <div>
-                <Label htmlFor="appointment-date">Date</Label>
+                <Label htmlFor="appointment-date">Date *</Label>
                 <Input
                   id="appointment-date"
                   type="date"
@@ -1355,7 +1355,7 @@ export function NewJobWorkspace() {
                 />
               </div>
               <div>
-                <Label htmlFor="appointment-time">Start Time</Label>
+                <Label htmlFor="appointment-time">Start Time *</Label>
                 <select
                   id="appointment-time"
                   className="border-input bg-background h-10 w-full rounded-md border px-3 text-sm"
@@ -1442,7 +1442,7 @@ export function NewJobWorkspace() {
                 />
               </div>
               <div>
-                <Label htmlFor="lead-source">Lead Source</Label>
+                <Label htmlFor="lead-source">Lead Source *</Label>
                 <select
                   id="lead-source"
                   className="border-input bg-background h-10 w-full rounded-md border px-3 text-sm"

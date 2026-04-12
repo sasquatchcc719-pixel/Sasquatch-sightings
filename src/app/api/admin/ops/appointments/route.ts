@@ -163,21 +163,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (
-      normalizedLineItems.some(
-        (item: NormalizedLineItem) =>
-          !Number.isFinite(item.duration_minutes) || item.duration_minutes <= 0,
-      )
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            'One or more selected services are missing a duration. Set durations in Operations before booking.',
-        },
-        { status: 400 },
-      )
-    }
-
     const totalMinutes = normalizedLineItems.reduce(
       (sum: number, item: NormalizedLineItem) =>
         sum +
@@ -187,6 +172,17 @@ export async function POST(request: NextRequest) {
         }),
       0,
     )
+
+    if (totalMinutes <= 0) {
+      return NextResponse.json(
+        {
+          error:
+            'At least one selected service needs a duration. Set durations in Operations → Services before booking.',
+        },
+        { status: 400 },
+      )
+    }
+
     const totalMinutesWithBuffer = applyAppointmentBuffer(totalMinutes)
 
     const quotedSubtotal = normalizedLineItems.reduce(
