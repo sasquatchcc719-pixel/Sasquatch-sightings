@@ -21,6 +21,7 @@ type ServiceItem = {
   category: string
   base_price: number | null
   default_duration_minutes?: number | null
+  buffer_minutes?: number | null
 }
 
 type CustomerAddress = {
@@ -84,6 +85,8 @@ type LineItemForm = {
   name_snapshot: string
   quantity: string
   unit_price: string
+  duration_minutes: number
+  buffer_minutes: number
 }
 
 function formatDateKey(date: Date): string {
@@ -493,6 +496,9 @@ export function NewJobWorkspace() {
               service?.base_price !== null && service?.base_price !== undefined
                 ? String(service.base_price)
                 : item.unit_price,
+            duration_minutes:
+              service?.default_duration_minutes ?? item.duration_minutes,
+            buffer_minutes: service?.buffer_minutes ?? item.buffer_minutes,
           }
         }
         return {
@@ -533,6 +539,8 @@ export function NewJobWorkspace() {
             service.base_price !== null && service.base_price !== undefined
               ? String(service.base_price)
               : '',
+          duration_minutes: service.default_duration_minutes ?? 0,
+          buffer_minutes: service.buffer_minutes ?? 0,
         },
       ]
     })
@@ -566,6 +574,8 @@ export function NewJobWorkspace() {
           name_snapshot: item.name_snapshot,
           quantity: Number(item.quantity || 1),
           unit_price: Number(item.unit_price || 0),
+          duration_minutes: Number(item.duration_minutes || 0),
+          buffer_minutes: Number(item.buffer_minutes || 0),
         })),
       }
 
@@ -694,6 +704,8 @@ export function NewJobWorkspace() {
                       name_snapshot: '',
                       quantity: '1',
                       unit_price: '',
+                      duration_minutes: 0,
+                      buffer_minutes: 0,
                     },
                   ])
                 }
