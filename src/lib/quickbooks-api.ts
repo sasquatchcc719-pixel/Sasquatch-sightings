@@ -92,7 +92,8 @@ export async function createQBCustomer(params: {
   )
 
   if (!res.ok) {
-    throw new Error(`QB create customer failed: ${res.status}`)
+    const tid = res.headers.get('intuit_tid') || 'unknown'
+    throw new Error(`QB create customer failed: ${res.status} (tid: ${tid})`)
   }
 
   const data = await res.json()
@@ -149,7 +150,8 @@ export async function createQBInvoice(params: {
   )
 
   if (!res.ok) {
-    throw new Error(`QB create invoice failed: ${res.status}`)
+    const tid = res.headers.get('intuit_tid') || 'unknown'
+    throw new Error(`QB create invoice failed: ${res.status} (tid: ${tid})`)
   }
 
   const data = await res.json()
