@@ -31,6 +31,3 @@ export async function GET(request: NextRequest) {
     )
   }
 }
-
-// Unused request param required by Next.js App Router signature
-export const dynamic = 'force-dynamic'
