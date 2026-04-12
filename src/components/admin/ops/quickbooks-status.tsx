@@ -17,6 +17,8 @@ export function QuickBooksStatus() {
   const [status, setStatus] = useState<QBStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [toggling, setToggling] = useState(false)
+  const [disconnecting, setDisconnecting] = useState(false)
+  const [retrying, setRetrying] = useState(false)
 
   useEffect(() => {
     fetch('/api/admin/quickbooks/status')
@@ -42,6 +44,49 @@ export function QuickBooksStatus() {
       }
     } finally {
       setToggling(false)
+    }
+  }
+
+  async function handleDisconnect() {
+    if (!confirm('Disconnect QuickBooks? You can reconnect anytime.')) return
+    setDisconnecting(true)
+    try {
+      const res = await fetch('/api/admin/quickbooks/disconnect', {
+        method: 'POST',
+      })
+      if (res.ok) {
+        setStatus((prev) =>
+          prev
+            ? { ...prev, connected: false, sync_enabled: false, realmId: null }
+            : prev,
+        )
+      }
+    } finally {
+      setDisconnecting(false)
+    }
+  }
+
+  async function handleRetry() {
+    setRetrying(true)
+    try {
+      const res = await fetch('/api/admin/quickbooks/retry', { method: 'POST' })
+      if (res.ok) {
+        const data = await res.json()
+        setStatus((prev) =>
+          prev
+            ? {
+                ...prev,
+                failed: 0,
+                pending:
+                  prev.pending +
+                  (data.retried || 0) +
+                  (data.promoted_from_held || 0),
+              }
+            : prev,
+        )
+      }
+    } finally {
+      setRetrying(false)
     }
   }
 
@@ -116,6 +161,25 @@ export function QuickBooksStatus() {
                 </span>
               </div>
             )}
+          </div>
+
+          <div className="flex gap-2 pt-1">
+            {status.failed > 0 && (
+              <button
+                onClick={handleRetry}
+                disabled={retrying}
+                className="rounded-md bg-yellow-600/20 px-3 py-1.5 text-xs font-medium text-yellow-400 transition-colors hover:bg-yellow-600/30 disabled:opacity-50"
+              >
+                {retrying ? 'Retrying...' : `Retry ${status.failed} failed`}
+              </button>
+            )}
+            <button
+              onClick={handleDisconnect}
+              disabled={disconnecting}
+              className="rounded-md bg-red-600/20 px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-600/30 disabled:opacity-50"
+            >
+              {disconnecting ? 'Disconnecting...' : 'Disconnect'}
+            </button>
           </div>
         </>
       ) : (

@@ -6,6 +6,7 @@ import { Loader2, MessageSquare, Play, RefreshCw } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { QuickBooksStatus } from '@/components/admin/ops/quickbooks-status'
 
 type QueueStats = {
   pending: number
@@ -135,6 +136,17 @@ export function OperationsSettings() {
           Supabase. Immediate lifecycle messages send instantly and do not wait
           for cron.
         </p>
+      </Card>
+
+      <Card className="border-border/60 bg-card/80 p-6 shadow-sm backdrop-blur">
+        <h3 className="text-lg font-semibold">QuickBooks Integration</h3>
+        <p className="text-muted-foreground mt-1 text-sm">
+          Connect to QuickBooks Online to sync customers and invoices
+          automatically. Use the toggle to pause syncing without disconnecting.
+        </p>
+        <div className="mt-4">
+          <QuickBooksStatus />
+        </div>
       </Card>
 
       <Card className="border-border/60 bg-card/80 p-6 shadow-sm backdrop-blur">
