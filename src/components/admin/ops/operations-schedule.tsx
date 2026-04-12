@@ -817,7 +817,7 @@ export function OperationsSchedule() {
     <div className="space-y-6">
       {/* Notify customer popup after reschedule */}
       {pendingNotify ? (
-        <div className="pointer-events-none fixed inset-0 z-50 flex items-end justify-center pb-8">
+        <div className="pointer-events-none fixed inset-x-0 top-4 z-50 flex items-start justify-center px-4">
           <Card className="border-border/60 bg-card/95 pointer-events-auto flex items-center gap-4 rounded-2xl border p-4 shadow-xl backdrop-blur">
             <p className="text-sm font-medium">
               Notify{' '}
