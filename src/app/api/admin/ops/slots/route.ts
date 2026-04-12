@@ -28,7 +28,9 @@ export async function GET(request: NextRequest) {
       Number.isFinite(requiredMinutesFromQuery) &&
       requiredMinutesFromQuery > 0
     ) {
-      requiredMinutesWithBuffer = Math.round(requiredMinutesFromQuery)
+      requiredMinutesWithBuffer = applyAppointmentBuffer(
+        requiredMinutesFromQuery,
+      )
     } else {
       if (!serviceId) {
         return NextResponse.json(
