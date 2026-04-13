@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
-import { validateAgentRequest, getAgentPromoSettings } from '@/lib/agent-auth'
+import {
+  validateAgentRequest,
+  getAgentPromoSettings,
+  checkRateLimit,
+} from '@/lib/agent-auth'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -41,6 +45,20 @@ export async function GET(request: Request) {
       return NextResponse.json(
         { error: auth.error },
         { status: auth.status, headers: CORS },
+      )
+    }
+
+    const rl = checkRateLimit(auth.key.id, '/api/agent/services')
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: 'Rate limit exceeded. Please slow down.' },
+        {
+          status: 429,
+          headers: {
+            ...CORS,
+            'Retry-After': String(Math.ceil((rl.retryAfterMs || 60000) / 1000)),
+          },
+        },
       )
     }
 

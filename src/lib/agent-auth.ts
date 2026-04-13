@@ -15,6 +15,43 @@ function hashKey(raw: string): string {
   return createHash('sha256').update(raw).digest('hex')
 }
 
+/* ------------------------------------------------------------------ */
+/*  In-memory sliding-window rate limiter (per API key, per endpoint)  */
+/* ------------------------------------------------------------------ */
+
+const rateLimitStore = new Map<string, number[]>()
+
+const RATE_LIMITS: Record<string, { windowMs: number; maxRequests: number }> = {
+  '/api/agent/services': { windowMs: 60_000, maxRequests: 30 },
+  '/api/agent/availability': { windowMs: 60_000, maxRequests: 30 },
+  '/api/agent/estimate': { windowMs: 60_000, maxRequests: 30 },
+  '/api/agent/book': { windowMs: 60_000, maxRequests: 5 },
+}
+
+export function checkRateLimit(
+  keyId: string,
+  pathname: string,
+): { allowed: boolean; retryAfterMs?: number } {
+  const config = RATE_LIMITS[pathname]
+  if (!config) return { allowed: true }
+
+  const bucketKey = `${keyId}:${pathname}`
+  const now = Date.now()
+  const windowStart = now - config.windowMs
+
+  let timestamps = rateLimitStore.get(bucketKey) ?? []
+  timestamps = timestamps.filter((t) => t > windowStart)
+
+  if (timestamps.length >= config.maxRequests) {
+    const oldest = timestamps[0]
+    return { allowed: false, retryAfterMs: oldest + config.windowMs - now }
+  }
+
+  timestamps.push(now)
+  rateLimitStore.set(bucketKey, timestamps)
+  return { allowed: true }
+}
+
 export async function validateAgentRequest(
   request: Request,
 ): Promise<AgentAuthResult> {

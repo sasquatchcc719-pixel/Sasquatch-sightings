@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
-import { validateAgentRequest, getAgentPromoSettings } from '@/lib/agent-auth'
+import {
+  validateAgentRequest,
+  getAgentPromoSettings,
+  checkRateLimit,
+} from '@/lib/agent-auth'
 import {
   applyAppointmentBuffer,
   calculateLineItemDurationMinutes,
@@ -39,6 +43,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: auth.error },
         { status: auth.status, headers: CORS },
+      )
+    }
+
+    const rl = checkRateLimit(auth.key.id, '/api/agent/book')
+    if (!rl.allowed) {
+      return NextResponse.json(
+        {
+          error:
+            'Rate limit exceeded. Booking is limited to 5 requests per minute.',
+        },
+        {
+          status: 429,
+          headers: {
+            ...CORS,
+            'Retry-After': String(Math.ceil((rl.retryAfterMs || 60000) / 1000)),
+          },
+        },
       )
     }
 
