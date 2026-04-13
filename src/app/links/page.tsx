@@ -232,11 +232,11 @@ export default function LinksPage() {
 
         {/* Action Buttons */}
         <div className="mb-6 space-y-3">
-          {/* PRIMARY CTA - Book Again */}
+          {/* PRIMARY CTA - Book Again via Text */}
           <a
-            href="https://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true"
-            target="_blank"
-            rel="noopener noreferrer"
+            href={`sms:719-249-8791?body=${encodeURIComponent(
+              `Hi! I'd like to book another cleaning. My code is ${couponCode} for $20 off.`,
+            )}`}
             className="group relative block w-full overflow-hidden rounded-2xl shadow-2xl transition-all hover:scale-105"
           >
             {/* Button with 3D effect */}
@@ -253,7 +253,7 @@ export default function LinksPage() {
                   🎁 $20 OFF Your Next Clean
                 </p>
                 <p className="mt-1 text-lg font-bold text-white/90">
-                  Use code: {couponCode} in notes
+                  Text us · Code: {couponCode}
                 </p>
               </div>
 

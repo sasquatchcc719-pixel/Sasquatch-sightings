@@ -380,8 +380,8 @@ export function isKnownHarryControlKey(key: string): key is HarryControlKey {
   return KNOWN_KEYS.has(key)
 }
 
-const DEFAULT_WEBSITE_BOOKING_URL = 'https://sightings.sasquatchcarpet.com/book'
-/** Legacy Housecall Pro URL — only to detect/rewrite old links in messages, never for new replies */
+const DEFAULT_WEBSITE_BOOKING_URL = 'https://sightings.sasquatchcarpet.com'
+/** Retired — kept only for detection of old HCP links in legacy messages */
 const LEGACY_HCP_BOOKING_URL =
   'https://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true'
 

@@ -279,7 +279,7 @@ export async function POST(request: NextRequest) {
     )
 
     // Define the welcome message for both SMS and Chatbot memory (only sent if express SMS consent)
-    const welcomeMessage = `Thanks for entering the Sasquatch contest! 🦶\nBook your carpet cleaning now and get $20 off:\nhttps://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true\nUse coupon: SCC20 (add to notes when booking)\nQuestions? Call (719) 249-8791`
+    const welcomeMessage = `Thanks for entering the Sasquatch contest! 🦶\nReply to this text to get a quote and book your $20 off cleaning — we'll handle everything right here!\nUse code SCC20 when booking.\nQuestions? Call (719) 249-8791`
 
     if (smsConsent) {
       console.log(

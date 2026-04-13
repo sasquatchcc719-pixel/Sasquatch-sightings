@@ -232,12 +232,14 @@ export default function TapLandingPage() {
 
         {/* Action Buttons - Moved right under card */}
         <div className="mb-6 space-y-3">
-          {/* PRIMARY CTA - Book Online with Animation */}
+          {/* PRIMARY CTA - Text to Book */}
           <a
-            href="https://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true"
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={() => trackButtonClick('booking_page')}
+            href={`sms:719-249-8791?body=${encodeURIComponent(
+              partnerName
+                ? `Hi! I scanned the card at ${partnerName} and I'd like to get a quote and book a cleaning.`
+                : "Hi! I scanned your card and I'd like to get a quote and book a cleaning.",
+            )}`}
+            onClick={() => trackButtonClick('booking_sms')}
             className="group relative block w-full overflow-hidden rounded-2xl shadow-2xl transition-all hover:scale-105"
           >
             {/* Button with 3D effect */}
@@ -248,13 +250,13 @@ export default function TapLandingPage() {
               {/* Button text with press animation */}
               <div className="animate-button-press relative">
                 <p className="mb-1 text-sm font-semibold tracking-wide text-white/90 uppercase">
-                  Click to Schedule
+                  Tap to Schedule
                 </p>
                 <p className="text-3xl font-black text-white drop-shadow-lg">
-                  📅 BOOK NOW
+                  📱 TEXT TO BOOK
                 </p>
                 <p className="mt-1 text-lg font-bold text-white/90">
-                  Use code: {couponCode} in notes
+                  Use code: {couponCode} for $20 off
                 </p>
               </div>
 

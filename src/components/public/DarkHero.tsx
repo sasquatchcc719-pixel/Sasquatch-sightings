@@ -167,15 +167,13 @@ export function DarkHero() {
           <Button
             size="lg"
             className="border-0 bg-gradient-to-r from-cyan-600 to-cyan-500 px-8 py-6 text-lg tracking-wider text-white shadow-lg shadow-cyan-500/25 transition-all hover:scale-105 hover:from-cyan-500 hover:to-cyan-400 hover:shadow-cyan-500/40"
-            asChild
+            onClick={() => {
+              document
+                .getElementById('contact')
+                ?.scrollIntoView({ behavior: 'smooth' })
+            }}
           >
-            <a
-              href="https://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              BOOK NOW
-            </a>
+            BOOK NOW
           </Button>
           <Button
             size="lg"

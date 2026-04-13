@@ -522,11 +522,7 @@ export default function SightingsPage() {
               className="w-full bg-blue-600 hover:bg-blue-700"
               asChild
             >
-              <a
-                href="https://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
+              <a href="sms:7192498791?body=Hi!%20I%27d%20like%20to%20get%20a%20quote%20and%20book%20a%20cleaning.">
                 <CalendarCheck className="mr-2 h-5 w-5" />
                 Book Online Now
               </a>

@@ -1,7 +1,10 @@
+'use client'
+
 import { Button } from '@/components/ui/button'
 
-const BOOK_URL =
-  'https://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true'
+function scrollToContact() {
+  document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth' })
+}
 
 const STANDARD_PRICING = [
   { label: 'Step / Landing', price: '$6', unit: 'per step' },
@@ -107,12 +110,10 @@ export function ServicesSection() {
             <PriceTable rows={STANDARD_PRICING} />
             <div className="mt-auto">
               <Button
-                asChild
                 className="w-full border border-white/20 bg-transparent tracking-wider text-white hover:bg-white/10"
+                onClick={scrollToContact}
               >
-                <a href={BOOK_URL} target="_blank" rel="noopener noreferrer">
-                  BOOK NOW
-                </a>
+                BOOK NOW
               </Button>
             </div>
           </div>
@@ -134,12 +135,10 @@ export function ServicesSection() {
             <PriceTable rows={LEGENDARY_PRICING} />
             <div className="mt-auto">
               <Button
-                asChild
                 className="w-full bg-gradient-to-r from-cyan-600 to-cyan-500 tracking-wider text-white hover:from-cyan-500 hover:to-cyan-400"
+                onClick={scrollToContact}
               >
-                <a href={BOOK_URL} target="_blank" rel="noopener noreferrer">
-                  BOOK NOW
-                </a>
+                BOOK NOW
               </Button>
             </div>
           </div>
@@ -175,12 +174,10 @@ export function ServicesSection() {
               </ul>
               <div className="mt-auto">
                 <Button
-                  asChild
                   className="w-full border border-white/20 bg-transparent tracking-wider text-white hover:bg-white/10"
+                  onClick={scrollToContact}
                 >
-                  <a href={BOOK_URL} target="_blank" rel="noopener noreferrer">
-                    ADD TO BOOKING
-                  </a>
+                  ADD TO BOOKING
                 </Button>
               </div>
             </div>

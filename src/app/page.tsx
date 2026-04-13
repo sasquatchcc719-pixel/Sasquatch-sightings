@@ -2,6 +2,7 @@ import { createClient } from '@/supabase/server'
 import { MapView } from '@/components/public/MapView'
 import { DarkHero } from '@/components/public/DarkHero'
 import { ServicesSection } from '@/components/public/ServicesSection'
+import { ContactSection } from '@/components/public/ContactSection'
 import { Button } from '@/components/ui/button'
 import { Suspense } from 'react'
 import { AdminLink } from '@/components/admin-link'
@@ -113,13 +114,7 @@ export default async function Home() {
                 Check back soon to see our latest work across Colorado!
               </p>
               <Button asChild className="bg-cyan-600 hover:bg-cyan-500">
-                <a
-                  href="https://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Book Online
-                </a>
+                <a href="#contact">Book Online</a>
               </Button>
             </div>
           </div>
@@ -129,6 +124,9 @@ export default async function Home() {
           </div>
         )}
       </section>
+
+      {/* Contact / Booking Section */}
+      <ContactSection />
 
       {/* Info Bar */}
       <div className="z-10 bg-gradient-to-r from-cyan-700 to-cyan-600 px-4 py-4 text-white">
@@ -146,9 +144,7 @@ export default async function Home() {
                 📞 (719) 249-8791
               </a>
               <a
-                href="https://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true"
-                target="_blank"
-                rel="noopener noreferrer"
+                href="#contact"
                 className="font-semibold transition-colors hover:underline"
               >
                 Book Online →

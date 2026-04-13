@@ -256,7 +256,7 @@ export async function POST(request: NextRequest) {
     // Twilio SMS to customer (auto-response with booking link)
     await sendCustomerSMS(
       client_phone,
-      `Thanks for reaching out! ${partner?.name || 'Your partner'} recommended us.\nBook now or we'll call you within 24 hours:\nhttps://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true\n- Sasquatch Carpet Cleaning\n(719) 249-8791`,
+      `Thanks for reaching out! ${partner?.name || 'Your partner'} recommended us.\nText us back to get a quote and book — we'll take care of everything right here in this chat!\n- Sasquatch Carpet Cleaning\n(719) 249-8791`,
       leadId,
       'partner_referral',
     )

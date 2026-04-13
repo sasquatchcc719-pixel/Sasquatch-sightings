@@ -9,8 +9,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 import { sendCustomerSMS } from '@/lib/twilio'
 
-const BOOKING_LINK =
-  'https://book.housecallpro.com/book/Sasquatch-Carpet-Cleaning-LLC/9841a0d5dee444b48d42e926168cb865?v2=true'
+const BOOKING_PROMPT =
+  'Reply to this text and our assistant Harry will get you a quote and book you in — no links needed!'
 
 export async function GET(request: NextRequest) {
   try {
@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
     } else if (day3Leads && day3Leads.length > 0) {
       for (const lead of day3Leads) {
         try {
-          const message = `Hi ${lead.name || 'there'}, still need carpet cleaning?\nYou have $20 off! Use coupon: SCC20 (add to notes)\nBook now: ${BOOKING_LINK}\n- Sasquatch Carpet Cleaning\n(719) 249-8791`
+          const message = `Hi ${lead.name || 'there'}, still need carpet cleaning?\nYou have $20 off with code SCC20!\n${BOOKING_PROMPT}\n- Sasquatch Carpet Cleaning\n(719) 249-8791`
 
           await sendCustomerSMS(lead.phone, message, lead.id, 'day_3_nurture')
 
@@ -94,7 +94,7 @@ export async function GET(request: NextRequest) {
     } else if (day7Leads && day7Leads.length > 0) {
       for (const lead of day7Leads) {
         try {
-          const message = `Special offer for ${lead.name || 'you'}!\nGet $25 off when you book this week.\nUse coupon: SCC25 (add to notes)\n${BOOKING_LINK}\n- Sasquatch Carpet Cleaning\n(719) 249-8791`
+          const message = `Special offer for ${lead.name || 'you'}!\nGet $25 off when you book this week — use code SCC25!\n${BOOKING_PROMPT}\n- Sasquatch Carpet Cleaning\n(719) 249-8791`
 
           await sendCustomerSMS(lead.phone, message, lead.id, 'day_7_nurture')
 
@@ -136,7 +136,7 @@ export async function GET(request: NextRequest) {
     } else if (day14Leads && day14Leads.length > 0) {
       for (const lead of day14Leads) {
         try {
-          const message = `Last chance, ${lead.name || 'friend'}!\nBook this week and get $30 off.\nUse coupon: SCC30 (add to notes)\n${BOOKING_LINK}\nReply STOP to unsubscribe\n- Sasquatch Carpet Cleaning\n(719) 249-8791`
+          const message = `Last chance, ${lead.name || 'friend'}!\nBook this week and get $30 off — use code SCC30!\n${BOOKING_PROMPT}\nReply STOP to unsubscribe\n- Sasquatch Carpet Cleaning\n(719) 249-8791`
 
           await sendCustomerSMS(lead.phone, message, lead.id, 'day_14_nurture')
 
