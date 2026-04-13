@@ -114,6 +114,8 @@ export function OperationsSettings() {
     }
   }
 
+  const [togglingKey, setTogglingKey] = useState<string | null>(null)
+
   const templateByKey = new Map(
     templates.map((template) => [template.template_key, template]),
   )
@@ -127,6 +129,67 @@ export function OperationsSettings() {
     templateByKey.get('job_finished_sms')?.is_enabled || false
   const jobFinishedEmailEnabled =
     templateByKey.get('job_finished_email')?.is_enabled || false
+
+  const setTemplateEnabled = async (
+    templateKey: string,
+    is_enabled: boolean,
+  ) => {
+    setTogglingKey(templateKey)
+    setError(null)
+    try {
+      const response = await fetch('/api/admin/ops/communications/templates', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ template_key: templateKey, is_enabled }),
+      })
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to update template')
+      }
+      await loadStatus()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to update template')
+    } finally {
+      setTogglingKey(null)
+    }
+  }
+
+  function ChannelSwitch({
+    label,
+    enabled,
+    disabled,
+    onToggle,
+  }: {
+    label: string
+    enabled: boolean
+    disabled?: boolean
+    onToggle: () => void
+  }) {
+    return (
+      <div className="flex items-center gap-3">
+        <span className="text-muted-foreground w-12 text-xs font-medium">
+          {label}
+        </span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={enabled}
+          disabled={disabled}
+          onClick={() => onToggle()}
+          className={`focus-visible:ring-ring relative inline-flex h-8 w-14 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${
+            enabled ? 'bg-primary' : 'bg-muted'
+          }`}
+        >
+          <span
+            className={`pointer-events-none inline-block h-7 w-7 transform rounded-full bg-white shadow ring-0 transition ${
+              enabled ? 'translate-x-6' : 'translate-x-0.5'
+            }`}
+          />
+        </button>
+        <span className="text-xs font-medium">{enabled ? 'On' : 'Off'}</span>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -189,13 +252,29 @@ export function OperationsSettings() {
                 Triggered when a dispatcher creates a job in Operations.
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Badge variant={jobScheduledSmsEnabled ? 'default' : 'outline'}>
-                SMS {jobScheduledSmsEnabled ? 'ON' : 'OFF'}
-              </Badge>
-              <Badge variant={jobScheduledEmailEnabled ? 'default' : 'outline'}>
-                Email {jobScheduledEmailEnabled ? 'ON' : 'OFF'}
-              </Badge>
+            <div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center">
+              <ChannelSwitch
+                label="SMS"
+                enabled={jobScheduledSmsEnabled}
+                disabled={togglingKey === 'job_scheduled_sms'}
+                onToggle={() =>
+                  void setTemplateEnabled(
+                    'job_scheduled_sms',
+                    !jobScheduledSmsEnabled,
+                  )
+                }
+              />
+              <ChannelSwitch
+                label="Email"
+                enabled={jobScheduledEmailEnabled}
+                disabled={togglingKey === 'job_scheduled_email'}
+                onToggle={() =>
+                  void setTemplateEnabled(
+                    'job_scheduled_email',
+                    !jobScheduledEmailEnabled,
+                  )
+                }
+              />
             </div>
           </div>
 
@@ -206,9 +285,14 @@ export function OperationsSettings() {
                 Triggered when job status is changed to <code>on_my_way</code>.
               </div>
             </div>
-            <Badge variant={onMyWaySmsEnabled ? 'default' : 'outline'}>
-              SMS {onMyWaySmsEnabled ? 'ON' : 'OFF'}
-            </Badge>
+            <ChannelSwitch
+              label="SMS"
+              enabled={onMyWaySmsEnabled}
+              disabled={togglingKey === 'on_my_way_sms'}
+              onToggle={() =>
+                void setTemplateEnabled('on_my_way_sms', !onMyWaySmsEnabled)
+              }
+            />
           </div>
 
           <div className="border-border/60 bg-background/70 flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4">
@@ -218,13 +302,29 @@ export function OperationsSettings() {
                 Triggered when job status is changed to <code>completed</code>.
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Badge variant={jobFinishedSmsEnabled ? 'default' : 'outline'}>
-                SMS {jobFinishedSmsEnabled ? 'ON' : 'OFF'}
-              </Badge>
-              <Badge variant={jobFinishedEmailEnabled ? 'default' : 'outline'}>
-                Email {jobFinishedEmailEnabled ? 'ON' : 'OFF'}
-              </Badge>
+            <div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center">
+              <ChannelSwitch
+                label="SMS"
+                enabled={jobFinishedSmsEnabled}
+                disabled={togglingKey === 'job_finished_sms'}
+                onToggle={() =>
+                  void setTemplateEnabled(
+                    'job_finished_sms',
+                    !jobFinishedSmsEnabled,
+                  )
+                }
+              />
+              <ChannelSwitch
+                label="Email"
+                enabled={jobFinishedEmailEnabled}
+                disabled={togglingKey === 'job_finished_email'}
+                onToggle={() =>
+                  void setTemplateEnabled(
+                    'job_finished_email',
+                    !jobFinishedEmailEnabled,
+                  )
+                }
+              />
             </div>
           </div>
         </div>

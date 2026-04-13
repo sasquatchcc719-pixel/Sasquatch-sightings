@@ -60,6 +60,7 @@ type Appointment = {
     name_snapshot: string
     quantity?: number | null
     duration_minutes?: number | null
+    line_total?: number | null
   }>
   ops_invoices:
     | {
@@ -128,7 +129,7 @@ function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
   return Array.isArray(value) ? value[0] || null : value
 }
 
-/** Prefer appointment quote; fall back to invoice total when quote was cleared. */
+/** Prefer max of quote, invoice total, or sum of line items (HCP/import may zero one field). */
 function calendarDisplayAmount(appointment: Appointment): string {
   const inv = unwrapRelation(appointment.ops_invoices)
   const quoted = Number(appointment.quoted_total || 0)
@@ -136,7 +137,11 @@ function calendarDisplayAmount(appointment: Appointment): string {
     inv && typeof inv === 'object' && 'total' in inv
       ? Number((inv as { total?: number }).total || 0)
       : 0
-  const n = quoted > 0 ? quoted : invTotal
+  const lineSum = (appointment.ops_appointment_line_items || []).reduce(
+    (sum, li) => sum + Number(li.line_total || 0),
+    0,
+  )
+  const n = Math.max(quoted, invTotal, lineSum, 0)
   return Number.isFinite(n) ? n.toFixed(2) : '0.00'
 }
 

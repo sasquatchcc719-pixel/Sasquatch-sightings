@@ -31,7 +31,7 @@ export async function GET() {
 
 export async function PUT(request: NextRequest) {
   try {
-    await requireAnyRole(['admin', 'owner', 'dispatcher'])
+    await requireAnyRole(['admin', 'owner', 'dispatcher', 'tech'])
     const supabase = createAdminClient()
     const body = await request.json()
 

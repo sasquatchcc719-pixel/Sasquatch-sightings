@@ -287,7 +287,26 @@ export default function StatsPage() {
 
       if (entriesError) throw entriesError
 
-      // Combine jobs and entries for calculations
+      let supplementRows: {
+        invoice_amount: number
+        hours_worked: number
+        date: string
+      }[] = []
+      try {
+        const supRes = await fetch('/api/admin/stats/utilization-supplement', {
+          cache: 'no-store',
+        })
+        if (supRes.ok) {
+          const supJson = (await supRes.json()) as {
+            rows?: typeof supplementRows
+          }
+          supplementRows = supJson.rows || []
+        }
+      } catch {
+        /* non-fatal */
+      }
+
+      // Combine jobs, manual/quick entries, and completed ops not yet in jobs/revenue_entries
       const allRevenue = [
         ...(jobs || []).map((j) => ({ ...j, date: j.created_at })),
         ...(entries || []).map((e) => ({
@@ -295,20 +314,35 @@ export default function StatsPage() {
           date: e.entry_date,
           hours_worked: (e.hours_worked || 0) + (e.drive_minutes || 0) / 60,
         })),
+        ...supplementRows.map((r) => ({
+          invoice_amount: r.invoice_amount,
+          hours_worked: r.hours_worked,
+          date: r.date,
+        })),
       ]
 
       // Calculate stats
       const now = new Date()
-      const startOfWeek = new Date(now)
-      startOfWeek.setDate(now.getDate() - now.getDay()) // Sunday
-      startOfWeek.setHours(0, 0, 0, 0)
+      // Same week as "Live Jobs" (Mon–Sun) and /api/admin/ops/stats
+      const getMonday = (d: Date) => {
+        const date = new Date(d)
+        const day = date.getDay()
+        const diff = date.getDate() - day + (day === 0 ? -6 : 1)
+        date.setDate(diff)
+        date.setHours(0, 0, 0, 0)
+        return date
+      }
+      const mondayWeekStart = getMonday(now)
+      const nextMonday = new Date(mondayWeekStart)
+      nextMonday.setDate(nextMonday.getDate() + 7)
 
       const startOfYear = new Date(now.getFullYear(), 0, 1)
 
-      // Filter by date
-      const thisWeekData = allRevenue.filter(
-        (item) => new Date(item.date) >= startOfWeek,
-      )
+      // Filter by date (calendar week Mon–Sun)
+      const thisWeekData = allRevenue.filter((item) => {
+        const itemDate = new Date(item.date)
+        return itemDate >= mondayWeekStart && itemDate < nextMonday
+      })
       const ytdData = allRevenue.filter(
         (item) => new Date(item.date) >= startOfYear,
       )
@@ -399,17 +433,7 @@ export default function StatsPage() {
       const hiringThreshold = userSettings.hiring_threshold
       const requiredWeeks = userSettings.hiring_consecutive_weeks
 
-      // Get Monday of current week (ISO week standard)
-      const getMonday = (d: Date) => {
-        const date = new Date(d)
-        const day = date.getDay()
-        const diff = date.getDate() - day + (day === 0 ? -6 : 1) // Adjust when day is Sunday
-        date.setDate(diff)
-        date.setHours(0, 0, 0, 0)
-        return date
-      }
-
-      // Generate last 8 weeks of data
+      // Generate last 8 weeks of data (getMonday defined above)
       const recentWeeks: WeeklyRevenueData[] = []
       const currentMonday = getMonday(now)
 
@@ -919,7 +943,14 @@ export default function StatsPage() {
 
       {/* This Week */}
       <div className="mb-8">
-        <h2 className="mb-4 text-xl font-semibold">This Week</h2>
+        <h2 className="mb-1 text-xl font-semibold">This Week</h2>
+        <p className="text-muted-foreground mb-4 max-w-3xl text-sm leading-relaxed">
+          Revenue and hours here include published posts, manual entries,{' '}
+          <strong>Finish job &amp; update stats</strong>, and completed
+          Operations jobs (same week as Live Jobs, Mon–Sun). You do{' '}
+          <strong>not</strong> need photos or a social post for these numbers to
+          update.
+        </p>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-5">
           <Card className="p-4">
             <div className="text-muted-foreground mb-1 flex items-center gap-2">

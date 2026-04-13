@@ -258,6 +258,7 @@ export async function POST(request: NextRequest, { params }: Params) {
         slug,
         status: 'published',
         published_at: new Date().toISOString(),
+        ops_invoice_id: invoiceId,
         ...(invoiceTotal > 0 ? { invoice_amount: invoiceTotal } : {}),
         ...(hoursWorked ? { hours_worked: hoursWorked } : {}),
       })
