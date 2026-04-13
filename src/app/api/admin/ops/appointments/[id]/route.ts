@@ -5,7 +5,10 @@ import {
   applyAppointmentBuffer,
   calculateLineItemDurationMinutes,
 } from '@/lib/ops/availability'
-import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
+import {
+  getOnMyWaySmsRenderedBody,
+  sendOpsLifecycleCommunications,
+} from '@/lib/ops/communications'
 import { getQuickBooksSyncStatus } from '@/lib/quickbooks'
 import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
 import { sendCustomerSMS } from '@/lib/twilio'
@@ -275,6 +278,7 @@ export async function PATCH(
       template_key: string
       channel: 'sms' | 'email'
       body: string
+      actually_sent?: boolean
     }[] = []
 
     if (current.status !== nextStatus) {
@@ -283,7 +287,23 @@ export async function PATCH(
           event: 'on_my_way',
           appointmentId: id,
         })
-        lifecycleNotifications = sent
+        lifecycleNotifications = sent.map((n) => ({
+          ...n,
+          actually_sent:
+            n.channel === 'sms' ? (n.actually_sent ?? true) : undefined,
+        }))
+        const hasSms = lifecycleNotifications.some((n) => n.channel === 'sms')
+        if (!hasSms) {
+          const previewBody = await getOnMyWaySmsRenderedBody(id)
+          if (previewBody != null) {
+            lifecycleNotifications.push({
+              template_key: 'on_my_way_sms',
+              channel: 'sms',
+              body: previewBody,
+              actually_sent: false,
+            })
+          }
+        }
       } else if (nextStatus === 'completed') {
         const { sent } = await sendOpsLifecycleCommunications({
           event: 'job_finished',

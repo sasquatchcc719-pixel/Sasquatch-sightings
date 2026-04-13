@@ -283,6 +283,27 @@ export type LifecycleNotificationSent = {
   template_key: string
   channel: 'sms' | 'email'
   body: string
+  /** false when the body is a preview (e.g. template disabled or SMS not sent) */
+  actually_sent?: boolean
+}
+
+/** Rendered On My Way SMS from DB template (even if `is_enabled` is false). */
+export async function getOnMyWaySmsRenderedBody(
+  appointmentId: string,
+): Promise<string | null> {
+  const supabase = createAdminClient()
+  const { data: template } = await supabase
+    .from('ops_communication_templates')
+    .select('body_template')
+    .eq('template_key', 'on_my_way_sms')
+    .maybeSingle()
+
+  if (!template?.body_template) return null
+
+  const { context } = await getAppointmentContext(supabase, appointmentId)
+  if (!context) return null
+
+  return renderTemplate(template.body_template, context)
 }
 
 export async function sendOpsLifecycleCommunications(params: {
@@ -347,6 +368,7 @@ export async function sendOpsLifecycleCommunications(params: {
         template_key: template.template_key,
         channel: 'sms',
         body,
+        actually_sent: true,
       })
       continue
     }

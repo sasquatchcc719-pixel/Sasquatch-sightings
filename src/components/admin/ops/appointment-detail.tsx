@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Loader2, Receipt } from 'lucide-react'
+import { Loader2, MessageSquare, Receipt } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -121,7 +121,10 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
     payment_status: 'unpaid',
     internal_notes: '',
   })
-  const [lastOnMyWaySms, setLastOnMyWaySms] = useState<string | null>(null)
+  type OnMyWaySmsInfo = { body: string; actuallySent: boolean }
+  const [onMyWaySmsInfo, setOnMyWaySmsInfo] = useState<OnMyWaySmsInfo | null>(
+    null,
+  )
   const [driveStartedAtMs, setDriveStartedAtMs] = useState<number | null>(null)
   const [driveElapsedMs, setDriveElapsedMs] = useState(0)
 
@@ -176,9 +179,34 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
   }, [appointment, driveStartedAtMs])
 
   useEffect(() => {
+    if (!appointment?.id || appointment.status !== 'on_my_way') return
+    const raw = sessionStorage.getItem(`ops_omw_sms_${appointment.id}`)
+    if (!raw) return
+    try {
+      const parsed = JSON.parse(raw) as Partial<OnMyWaySmsInfo>
+      if (typeof parsed.body === 'string') {
+        setOnMyWaySmsInfo(
+          (prev) =>
+            prev ?? {
+              body: parsed.body!,
+              actuallySent:
+                typeof parsed.actuallySent === 'boolean'
+                  ? parsed.actuallySent
+                  : true,
+            },
+        )
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [appointment])
+
+  useEffect(() => {
     if (appointment?.id && appointment.status === 'completed') {
       sessionStorage.removeItem(`ops_onmyway_${appointment.id}`)
+      sessionStorage.removeItem(`ops_omw_sms_${appointment.id}`)
       setDriveStartedAtMs(null)
+      setOnMyWaySmsInfo(null)
     }
   }, [appointment])
 
@@ -259,7 +287,11 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
       )
       const result = (await response.json()) as {
         error?: string
-        lifecycle_notifications?: Array<{ channel: string; body: string }>
+        lifecycle_notifications?: Array<{
+          channel: string
+          body: string
+          actually_sent?: boolean
+        }>
       }
       if (!response.ok) {
         throw new Error(result.error || 'Failed to update job status')
@@ -267,7 +299,15 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
       const sms = result.lifecycle_notifications?.find(
         (n) => n.channel === 'sms',
       )
-      if (sms?.body) setLastOnMyWaySms(sms.body)
+      if (sms && typeof sms.body === 'string') {
+        const actuallySent = sms.actually_sent !== false
+        const next: OnMyWaySmsInfo = { body: sms.body, actuallySent }
+        setOnMyWaySmsInfo(next)
+        sessionStorage.setItem(
+          `ops_omw_sms_${appointmentId}`,
+          JSON.stringify(next),
+        )
+      }
       if (updates.status === 'on_my_way') {
         const t = Date.now()
         setDriveStartedAtMs(t)
@@ -590,16 +630,40 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
               Drive time {formatDriveElapsed(driveElapsedMs)}
             </p>
           ) : null}
-          {lastOnMyWaySms ? (
-            <div className="border-border/60 bg-muted/40 mt-3 rounded-xl border p-3">
-              <p className="text-muted-foreground mb-1 text-xs font-medium uppercase">
-                SMS sent to customer
+          <div className="border-border/60 bg-muted/40 mt-3 min-h-[5rem] rounded-xl border p-3">
+            <p className="text-muted-foreground mb-2 flex items-center gap-2 text-xs font-medium uppercase">
+              <MessageSquare className="h-3.5 w-3.5 shrink-0" />
+              Customer text (On My Way)
+            </p>
+            {onMyWaySmsInfo ? (
+              <>
+                <p className="text-foreground text-sm whitespace-pre-wrap">
+                  {onMyWaySmsInfo.body || (
+                    <span className="text-muted-foreground italic">
+                      (Template is empty)
+                    </span>
+                  )}
+                </p>
+                <p
+                  className={
+                    onMyWaySmsInfo.actuallySent
+                      ? 'mt-2 text-xs text-green-700'
+                      : 'mt-2 text-xs text-amber-700'
+                  }
+                >
+                  {onMyWaySmsInfo.actuallySent
+                    ? 'Sent to the customer by SMS.'
+                    : 'Preview only — this was not sent (template off, missing phone, or SMS not configured).'}
+                </p>
+              </>
+            ) : (
+              <p className="text-muted-foreground text-sm leading-relaxed italic">
+                After you tap On My Way, the exact message text appears here so
+                you can confirm what customers receive (or review the preview if
+                texting is turned off).
               </p>
-              <p className="text-foreground text-sm whitespace-pre-wrap">
-                {lastOnMyWaySms}
-              </p>
-            </div>
-          ) : null}
+            )}
+          </div>
         </Card>
 
         <div className="space-y-6">
