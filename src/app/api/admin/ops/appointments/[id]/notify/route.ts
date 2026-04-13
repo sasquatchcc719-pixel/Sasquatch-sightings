@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
-import {
-  sendOpsLifecycleCommunications,
-  OpsLifecycleEvent,
-} from '@/lib/ops/communications'
+import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
 
 export async function POST(
   request: NextRequest,
@@ -12,18 +9,22 @@ export async function POST(
   try {
     await requireAnyRole(['admin', 'owner', 'dispatcher'])
     const { id } = await params
-    const body = (await request.json()) as { event: OpsLifecycleEvent }
-    const { event } = body
+    const body = await request.json()
+    const event = body.event as string
 
-    if (!event) {
-      return NextResponse.json({ error: 'Missing event' }, { status: 400 })
+    const allowedEvents = ['job_rescheduled', 'on_my_way', 'job_finished']
+    if (!event || !allowedEvents.includes(event)) {
+      return NextResponse.json({ error: 'Invalid event type' }, { status: 400 })
     }
 
-    await sendOpsLifecycleCommunications({ event, appointmentId: id })
+    await sendOpsLifecycleCommunications({
+      event: event as 'job_rescheduled' | 'on_my_way' | 'job_finished',
+      appointmentId: id,
+    })
 
     return NextResponse.json({ ok: true })
   } catch (error) {
-    console.error('[ops/appointments/:id/notify][POST] Error:', error)
+    console.error('[ops/appointments/:id/notify] Error:', error)
     return NextResponse.json(
       { error: 'Failed to send notification' },
       { status: 500 },

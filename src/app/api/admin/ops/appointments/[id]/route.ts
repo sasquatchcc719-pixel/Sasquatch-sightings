@@ -6,6 +6,8 @@ import {
   calculateLineItemDurationMinutes,
 } from '@/lib/ops/availability'
 import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
+import { sendCustomerSMS } from '@/lib/twilio'
+import { Resend } from 'resend'
 
 function addMinutesToTime(value: string, minutesToAdd: number): string {
   const [hours, minutes] = value.split(':').map(Number)
@@ -230,11 +232,89 @@ export async function DELETE(
 
     const { data: appointment, error: appointmentError } = await supabase
       .from('ops_appointments')
-      .select('id')
+      .select(
+        `
+        id,
+        appointment_date,
+        start_time,
+        ops_customers (
+          full_name,
+          first_name,
+          email,
+          phone
+        ),
+        ops_service_addresses (
+          street_1,
+          city,
+          state,
+          zip_code
+        )
+      `,
+      )
       .eq('id', id)
       .single()
 
     if (appointmentError) throw appointmentError
+
+    // Send cancellation notifications before deleting
+    const customer = Array.isArray(appointment.ops_customers)
+      ? appointment.ops_customers[0]
+      : appointment.ops_customers
+    const address = Array.isArray(appointment.ops_service_addresses)
+      ? appointment.ops_service_addresses[0]
+      : appointment.ops_service_addresses
+
+    if (customer) {
+      const firstName =
+        customer.first_name || customer.full_name?.split(' ')[0] || 'there'
+      const dateStr = appointment.appointment_date
+      const addressStr = address ? `${address.street_1}, ${address.city}` : ''
+
+      const smsBody = [
+        `Hi ${firstName} — your Sasquatch Carpet Cleaning appointment`,
+        dateStr ? ` on ${dateStr}` : '',
+        addressStr ? ` at ${addressStr}` : '',
+        ` has been cancelled.`,
+        `\n\nTo rebook, visit sasquatchcarpet.com or call/text us at (719) 249-8791.`,
+      ].join('')
+
+      const notifications: Promise<unknown>[] = []
+
+      if (customer.phone) {
+        notifications.push(
+          sendCustomerSMS(customer.phone, smsBody, undefined, 'job_cancelled'),
+        )
+      }
+
+      if (customer.email) {
+        const resendKey = process.env.RESEND_API_KEY
+        if (resendKey) {
+          const resend = new Resend(resendKey)
+          const fromEmail =
+            process.env.OPS_EMAIL_FROM ||
+            'Sasquatch Carpet Cleaning <onboarding@resend.dev>'
+          notifications.push(
+            resend.emails.send({
+              from: fromEmail,
+              to: customer.email,
+              subject:
+                'Your Sasquatch Carpet Cleaning appointment has been cancelled',
+              html: `
+<div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;">
+  <h2 style="color:#16a34a;">Appointment Cancelled</h2>
+  <p>Hi ${firstName},</p>
+  <p>Your appointment${dateStr ? ` on <strong>${dateStr}</strong>` : ''}${addressStr ? ` at ${addressStr}` : ''} has been cancelled.</p>
+  <p>We apologize for any inconvenience. To rebook, visit our website or give us a call.</p>
+  <a href="https://sasquatchcarpet.com" style="display:inline-block;margin-top:16px;padding:10px 24px;background:#16a34a;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">Rebook Now</a>
+  <p style="margin-top:20px;color:#6b7280;font-size:13px;">Questions? Call or text us at (719) 249-8791.</p>
+</div>`,
+            }),
+          )
+        }
+      }
+
+      await Promise.allSettled(notifications)
+    }
 
     const { data: invoices, error: invoicesError } = await supabase
       .from('ops_invoices')
