@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   CalendarClock,
   Camera,
+  CheckCircle2,
   CreditCard,
   Loader2,
   Mail,
@@ -12,6 +13,7 @@ import {
   MessageSquare,
   Phone,
   Send,
+  Sparkles,
   Trash2,
   X,
 } from 'lucide-react'
@@ -20,6 +22,7 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
+import { BeforeAfterCombiner } from '@/components/admin/before-after-combiner'
 
 type JobPhoto = {
   id: string
@@ -179,6 +182,13 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   const [photoUploading, setPhotoUploading] = useState(false)
   const [photoWatermark, setPhotoWatermark] = useState(false)
   const [photoError, setPhotoError] = useState<string | null>(null)
+  const [combinedImageDataUrl, setCombinedImageDataUrl] = useState<
+    string | null
+  >(null)
+  const [aiDescription, setAiDescription] = useState('')
+  const [aiDescLoading, setAiDescLoading] = useState(false)
+  const [publishLoading, setPublishLoading] = useState(false)
+  const [publishSuccess, setPublishSuccess] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [lineItems, setLineItems] = useState<
     Array<{
@@ -579,60 +589,83 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     }
   }
 
-  const handleFinishJob = async () => {
-    const appt = unwrapRelation(invoice?.ops_appointments)
-    if (!appt?.id) return
-    setActionLoading('Complete')
+  const handleGenerateDescription = async () => {
+    const addr = unwrapRelation(
+      unwrapRelation(invoice?.ops_appointments)?.ops_service_addresses,
+    )
+    const serviceType = lineItems[0]?.description || 'Carpet Cleaning'
+    const city = addr?.city || 'Colorado Springs'
+    const notes = lineItems
+      .map((li) => li.description)
+      .filter(Boolean)
+      .join(', ')
+
+    setAiDescLoading(true)
+    try {
+      const res = await fetch('/api/generate-description', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          serviceType,
+          city,
+          neighborhood: '',
+          notes,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to generate')
+      setAiDescription(data.description || '')
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Failed to generate description',
+      )
+    } finally {
+      setAiDescLoading(false)
+    }
+  }
+
+  const handleFinishAndPublish = async () => {
+    if (!combinedImageDataUrl) {
+      setError('Please combine before/after photos first.')
+      return
+    }
+    if (!aiDescription.trim()) {
+      setError('Please generate or write an AI description first.')
+      return
+    }
+
+    setPublishLoading(true)
     setError(null)
     try {
-      const response = await fetch(`/api/admin/ops/appointments/${appt.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'completed' }),
+      const res = await fetch(combinedImageDataUrl)
+      const blob = await res.blob()
+      const imageFile = new File([blob], 'combined.jpg', {
+        type: 'image/jpeg',
       })
+
+      const fd = new FormData()
+      fd.append('image', imageFile)
+      fd.append('description', aiDescription)
+
+      const response = await fetch(
+        `/api/admin/ops/invoices/${invoiceId}/publish`,
+        { method: 'POST', body: fd },
+      )
       const result = await response.json()
-      if (!response.ok) throw new Error(result.error || 'Failed to update job')
-
-      // Compute hours worked from start/end times
-      let hoursWorked = ''
-      if (appt.start_time && appt.end_time) {
-        const [sh, sm] = appt.start_time.split(':').map(Number)
-        const [eh, em] = appt.end_time.split(':').map(Number)
-        const mins = eh * 60 + em - (sh * 60 + sm)
-        if (mins > 0) hoursWorked = (mins / 60).toFixed(2)
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to publish')
       }
 
-      // Compute invoice total from current line items
-      const subtotal = lineItems.reduce(
-        (sum, item) => sum + item.quantity * Number(item.unit_price || 0),
-        0,
-      )
-      const invoiceTotal = Math.max(
-        0,
-        subtotal - Math.max(0, Number(discount || 0)),
-      )
-
-      // Pass invoice data to the jobs upload form via sessionStorage
-      const preloadData = {
-        invoiceAmount: invoiceTotal.toFixed(2),
-        hoursWorked,
-        description: lineItems
-          .map((li) => li.description)
-          .filter(Boolean)
-          .join(', '),
-      }
-      sessionStorage.setItem(
-        'preloadedInvoiceData',
-        JSON.stringify(preloadData),
-      )
-      router.push('/admin?fromInvoice=1')
-    } catch (actionError) {
+      setPublishSuccess(true)
+      router.refresh()
+    } catch (publishError) {
       setError(
-        actionError instanceof Error
-          ? actionError.message
-          : 'Failed to update job',
+        publishError instanceof Error
+          ? publishError.message
+          : 'Failed to publish job',
       )
-      setActionLoading(null)
+    } finally {
+      setPublishLoading(false)
     }
   }
 
@@ -1093,7 +1126,12 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
               <Button
                 className="h-14 text-base font-semibold"
                 disabled={Boolean(actionLoading)}
-                onClick={() => void handleFinishJob()}
+                onClick={() =>
+                  void runAppointmentAction({
+                    label: 'Complete',
+                    status: 'completed',
+                  })
+                }
               >
                 {actionLoading === 'Complete' ? (
                   <Loader2 className="mr-2 h-5 w-5 animate-spin" />
@@ -1441,6 +1479,78 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
           ) : null}
         </div>
       </Card>
+
+      {/* ── Before / After Combiner ──────────────────────── */}
+      <BeforeAfterCombiner
+        onCombined={(dataUrl) => setCombinedImageDataUrl(dataUrl)}
+      />
+
+      {/* ── AI Description ────────────────────────────────── */}
+      <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-lg font-semibold">AI Description</h3>
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1.5"
+            disabled={aiDescLoading}
+            onClick={() => void handleGenerateDescription()}
+          >
+            {aiDescLoading ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Sparkles className="h-3.5 w-3.5" />
+            )}
+            {aiDescLoading ? 'Generating…' : 'Generate'}
+          </Button>
+        </div>
+        <textarea
+          className="border-border/60 bg-background/70 mt-3 w-full rounded-xl border p-3 text-sm"
+          rows={4}
+          placeholder="Generated description will appear here. You can also type your own."
+          value={aiDescription}
+          onChange={(e) => setAiDescription(e.target.value)}
+        />
+      </Card>
+
+      {/* ── Finish & Publish ──────────────────────────────── */}
+      {!publishSuccess ? (
+        <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
+          <Button
+            className="h-14 w-full gap-2 bg-green-600 text-lg font-bold text-white hover:bg-green-700"
+            disabled={
+              publishLoading || !combinedImageDataUrl || !aiDescription.trim()
+            }
+            onClick={() => void handleFinishAndPublish()}
+          >
+            {publishLoading ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : (
+              <CheckCircle2 className="h-5 w-5" />
+            )}
+            {publishLoading ? 'Publishing…' : 'Finish & Publish Job'}
+          </Button>
+          {!combinedImageDataUrl || !aiDescription.trim() ? (
+            <p className="text-muted-foreground mt-2 text-center text-xs">
+              {!combinedImageDataUrl && !aiDescription.trim()
+                ? 'Combine photos and generate a description to publish'
+                : !combinedImageDataUrl
+                  ? 'Combine before/after photos to continue'
+                  : 'Generate or write a description to continue'}
+            </p>
+          ) : null}
+        </Card>
+      ) : (
+        <Card className="border-border/60 bg-green-50 p-5 text-center shadow-sm">
+          <CheckCircle2 className="mx-auto h-10 w-10 text-green-600" />
+          <p className="mt-2 text-lg font-bold text-green-800">
+            Job Published!
+          </p>
+          <p className="text-muted-foreground mt-1 text-sm">
+            Stats have been updated and the post was sent to social media.
+          </p>
+        </Card>
+      )}
 
       {/* In-person payment modal */}
       {showPaymentModal ? (
