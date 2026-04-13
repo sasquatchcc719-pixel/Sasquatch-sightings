@@ -327,6 +327,33 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
   {
     type: 'function',
     function: {
+      name: 'update_job_line_items',
+      description:
+        'Replace the services/line items on an existing appointment. Use when the customer corrects job details after booking (wrong rooms, wrong services, wrong quantities). Recalculates price and duration.',
+      parameters: {
+        type: 'object',
+        properties: {
+          appointment_id: { type: 'string' },
+          line_items: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                service_id: { type: 'string' },
+                quantity: { type: 'number' },
+              },
+              required: ['service_id', 'quantity'],
+            },
+          },
+        },
+        required: ['appointment_id', 'line_items'],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'book_new_job',
       description:
         'Create a new Ops appointment for this SMS customer. Requires name, email, full address, catalog service IDs, and a slot time that appears in get_calendar_slots for that date. Phone is always taken from SMS automatically.',
@@ -705,6 +732,162 @@ export async function executeHarrySmsTool(
         })
       }
 
+      case 'update_job_line_items': {
+        const appointmentId = String(args.appointment_id || '').trim()
+        const newLineItems = Array.isArray(args.line_items)
+          ? args.line_items
+          : []
+
+        if (!appointmentId) {
+          return JSON.stringify({ error: 'appointment_id is required' })
+        }
+        if (!newLineItems.length) {
+          return JSON.stringify({ error: 'line_items required' })
+        }
+
+        const owned = await customerOwnsAppointment(
+          supabase,
+          appointmentId,
+          ctx.customerPhoneE164,
+        )
+        if (!owned.ok) return JSON.stringify({ error: owned.error })
+
+        const parsedItems = newLineItems.map((row: unknown) => {
+          const r = row as { service_id?: string; quantity?: number }
+          return {
+            service_id: String(r.service_id || '').trim(),
+            quantity: Math.max(1, Number(r.quantity) || 1),
+          }
+        })
+
+        const catalogIds = parsedItems.map((l) => l.service_id)
+        const { data: catalogRows, error: catErr } = await supabase
+          .from('service_catalog_items')
+          .select('id, name, base_price, default_duration_minutes')
+          .in('id', catalogIds)
+          .eq('is_active', true)
+
+        if (catErr || !catalogRows?.length) {
+          return JSON.stringify({
+            error: 'Could not find the requested services in the catalog.',
+          })
+        }
+
+        const builtLines = parsedItems
+          .map((req) => {
+            const cat = catalogRows.find((c) => c.id === req.service_id)
+            if (!cat) return null
+            return {
+              appointment_id: appointmentId,
+              name_snapshot: cat.name,
+              quantity: req.quantity,
+              unit_price: Number(cat.base_price || 0),
+              duration_minutes: cat.default_duration_minutes || 60,
+              line_total: Number(cat.base_price || 0) * req.quantity,
+            }
+          })
+          .filter(Boolean) as Array<{
+          appointment_id: string
+          name_snapshot: string
+          quantity: number
+          unit_price: number
+          duration_minutes: number
+          line_total: number
+        }>
+
+        if (!builtLines.length) {
+          return JSON.stringify({
+            error:
+              'None of the requested services matched active catalog items.',
+          })
+        }
+
+        // Delete old line items and insert new ones
+        await supabase
+          .from('ops_appointment_line_items')
+          .delete()
+          .eq('appointment_id', appointmentId)
+
+        await supabase.from('ops_appointment_line_items').insert(builtLines)
+
+        // Recalculate total and end_time
+        const newTotal = builtLines.reduce((s, l) => s + l.line_total, 0)
+        const totalMinutes = builtLines.reduce(
+          (s, l) =>
+            s +
+            calculateLineItemDurationMinutes({
+              durationMinutes: l.duration_minutes,
+              quantity: l.quantity,
+            }),
+          0,
+        )
+        const buffered = applyAppointmentBuffer(totalMinutes || 120)
+        const newEndTime = addMinutesToTime(
+          owned.appointment.start_time.slice(0, 5),
+          buffered,
+        )
+
+        await supabase
+          .from('ops_appointments')
+          .update({
+            quoted_total: newTotal,
+            end_time: newEndTime,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', appointmentId)
+
+        // Also update the invoice if one exists
+        const { data: invoice } = await supabase
+          .from('ops_invoices')
+          .select('id')
+          .eq('appointment_id', appointmentId)
+          .maybeSingle()
+
+        if (invoice) {
+          await supabase
+            .from('ops_invoice_line_items')
+            .delete()
+            .eq('invoice_id', invoice.id)
+
+          await supabase.from('ops_invoice_line_items').insert(
+            builtLines.map((l) => ({
+              invoice_id: invoice.id,
+              description: l.name_snapshot,
+              quantity: l.quantity,
+              unit_price: l.unit_price,
+              line_total: l.line_total,
+            })),
+          )
+
+          await supabase
+            .from('ops_invoices')
+            .update({
+              subtotal: newTotal,
+              total: newTotal,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', invoice.id)
+        }
+
+        await supabase.from('ops_appointment_status_events').insert({
+          appointment_id: appointmentId,
+          from_status: owned.appointment.status,
+          to_status: owned.appointment.status,
+          notes: `Line items updated via Harry SMS. New total: $${newTotal.toFixed(2)}`,
+        })
+
+        return JSON.stringify({
+          success: true,
+          appointment_id: appointmentId,
+          new_total: newTotal,
+          services: builtLines.map((l) => ({
+            name: l.name_snapshot,
+            qty: l.quantity,
+            price: l.unit_price * l.quantity,
+          })),
+        })
+      }
+
       case 'book_new_job': {
         const firstName = String(args.first_name || '').trim()
         const lastName = String(args.last_name || '').trim()
@@ -734,6 +917,36 @@ export async function executeHarrySmsTool(
         }
         if (!lineItems.length) {
           return JSON.stringify({ error: 'line_items required' })
+        }
+
+        // Guard: prevent duplicate booking for same customer on same date
+        const { data: existingCusts } = await supabase
+          .from('ops_customers')
+          .select('id')
+          .in('phone', phoneVariants)
+
+        if (existingCusts && existingCusts.length > 0) {
+          const custIds = existingCusts.map((c) => c.id)
+          const { data: existingAppts } = await supabase
+            .from('ops_appointments')
+            .select('id, start_time, status')
+            .in('customer_id', custIds)
+            .eq('appointment_date', appointmentDate)
+            .in('status', [
+              'booked',
+              'confirmed',
+              'on_my_way',
+              'in_progress',
+              'pending_approval',
+            ])
+            .limit(1)
+
+          if (existingAppts && existingAppts.length > 0) {
+            const dup = existingAppts[0]
+            return JSON.stringify({
+              error: `This customer already has a booking on ${appointmentDate} (appointment_id: ${dup.id}). Use update_job_line_items to fix the services or reschedule_job to change the time. Do NOT create a duplicate.`,
+            })
+          }
         }
 
         const parsedLineItems = lineItems.map((row: unknown) => {
