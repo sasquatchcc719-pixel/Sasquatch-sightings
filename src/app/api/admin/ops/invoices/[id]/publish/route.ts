@@ -272,20 +272,12 @@ export async function POST(request: NextRequest, { params }: Params) {
       )
     }
 
-    // Insert revenue entry
-    const { data: userData } = await supabase.auth.admin.listUsers()
-    const ownerUser = userData?.users?.[0]
-    if (ownerUser && invoiceTotal > 0) {
-      await supabase.from('revenue_entries').insert({
-        user_id: ownerUser.id,
-        entry_date:
-          appointment.appointment_date ||
-          new Date().toISOString().split('T')[0],
-        description: lineItemNames.filter(Boolean).join(', ') || service.name,
-        invoice_amount: invoiceTotal,
-        hours_worked: hoursWorked ?? 0,
-      })
-    }
+    // Stats: published jobs contribute via `jobs` (invoice_amount + hours_worked).
+    // If this invoice had a prior "stats only" revenue_entries row, remove it so the dashboard does not double-count.
+    await supabase
+      .from('revenue_entries')
+      .delete()
+      .eq('ops_invoice_id', invoiceId)
 
     // Trigger Zapier webhook
     if (process.env.ZAPIER_WEBHOOK_URL) {

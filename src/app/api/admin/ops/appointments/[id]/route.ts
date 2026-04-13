@@ -254,21 +254,32 @@ export async function PATCH(
       })
     }
 
+    let lifecycleNotifications: {
+      template_key: string
+      channel: 'sms' | 'email'
+      body: string
+    }[] = []
+
     if (current.status !== nextStatus) {
       if (nextStatus === 'on_my_way') {
-        await sendOpsLifecycleCommunications({
+        const { sent } = await sendOpsLifecycleCommunications({
           event: 'on_my_way',
           appointmentId: id,
         })
+        lifecycleNotifications = sent
       } else if (nextStatus === 'completed') {
-        await sendOpsLifecycleCommunications({
+        const { sent } = await sendOpsLifecycleCommunications({
           event: 'job_finished',
           appointmentId: id,
         })
+        lifecycleNotifications = sent
       }
     }
 
-    return NextResponse.json({ appointment: updated })
+    return NextResponse.json({
+      appointment: updated,
+      lifecycle_notifications: lifecycleNotifications,
+    })
   } catch (error) {
     console.error('[ops/appointments/:id][PATCH] Error:', error)
     return NextResponse.json(

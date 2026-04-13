@@ -62,11 +62,12 @@ export async function GET(request: Request) {
       invoice_amount: number
       hours_worked: number
       entry_date: string
+      drive_minutes?: number | null
     }[] = []
     if (userId) {
       const { data: rev } = await supabase
         .from('revenue_entries')
-        .select('invoice_amount, hours_worked, entry_date')
+        .select('invoice_amount, hours_worked, entry_date, drive_minutes')
         .eq('user_id', userId)
         .order('entry_date', { ascending: false })
       entries = rev ?? []
@@ -80,7 +81,7 @@ export async function GET(request: Request) {
       })),
       ...entries.map((e) => ({
         invoice_amount: e.invoice_amount,
-        hours_worked: e.hours_worked,
+        hours_worked: (e.hours_worked || 0) + (e.drive_minutes || 0) / 60,
         date: e.entry_date,
       })),
     ]

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   CalendarClock,
@@ -135,6 +135,13 @@ function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
   return Array.isArray(value) ? value[0] || null : value
 }
 
+function formatDriveElapsed(elapsedMs: number): string {
+  const totalSec = Math.max(0, Math.floor(elapsedMs / 1000))
+  const m = Math.floor(totalSec / 60)
+  const s = totalSec % 60
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
 export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
@@ -189,6 +196,10 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   const [aiDescLoading, setAiDescLoading] = useState(false)
   const [publishLoading, setPublishLoading] = useState(false)
   const [publishSuccess, setPublishSuccess] = useState(false)
+  const [statsRecordLoading, setStatsRecordLoading] = useState(false)
+  const [statsRecordMessage, setStatsRecordMessage] = useState<string | null>(
+    null,
+  )
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [lineItems, setLineItems] = useState<
     Array<{
@@ -199,68 +210,105 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
       unit_price: string
     }>
   >([])
+  const [lastOnMyWaySms, setLastOnMyWaySms] = useState<string | null>(null)
+  const [driveStartedAtMs, setDriveStartedAtMs] = useState<number | null>(null)
+  const [driveElapsedMs, setDriveElapsedMs] = useState(0)
+
+  const loadInvoice = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const response = await fetch(`/api/admin/ops/invoices/${invoiceId}`, {
+        cache: 'no-store',
+      })
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to load invoice')
+      }
+      setInvoice(result.invoice)
+      setStatus(result.invoice.status)
+      setDiscount(String(result.invoice.discount_amount || 0))
+      setPaymentMethod(result.invoice.payment_method ?? null)
+
+      const appt = Array.isArray(result.invoice.ops_appointments)
+        ? result.invoice.ops_appointments[0]
+        : result.invoice.ops_appointments
+      if (appt?.id) {
+        const photosRes = await fetch(
+          `/api/admin/ops/appointments/${appt.id}/photos`,
+          { cache: 'no-store' },
+        )
+        if (photosRes.ok) {
+          const photosData = await photosRes.json()
+          setPhotos(photosData.photos ?? [])
+        }
+      }
+      setLineItems(
+        (result.invoice.ops_invoice_line_items || []).map(
+          (item: {
+            id: string
+            appointment_line_item_id: string | null
+            description: string
+            quantity: number
+            unit_price: number
+          }) => ({
+            id: item.id,
+            appointment_line_item_id: item.appointment_line_item_id,
+            description: item.description,
+            quantity: Number(item.quantity),
+            unit_price: String(item.unit_price),
+          }),
+        ),
+      )
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : 'Failed to load invoice',
+      )
+    } finally {
+      setLoading(false)
+    }
+  }, [invoiceId])
 
   useEffect(() => {
-    async function loadInvoice() {
-      setLoading(true)
-      setError(null)
-      try {
-        const response = await fetch(`/api/admin/ops/invoices/${invoiceId}`, {
-          cache: 'no-store',
-        })
-        const result = await response.json()
-        if (!response.ok) {
-          throw new Error(result.error || 'Failed to load invoice')
-        }
-        setInvoice(result.invoice)
-        setStatus(result.invoice.status)
-        setDiscount(String(result.invoice.discount_amount || 0))
-        setPaymentMethod(result.invoice.payment_method ?? null)
-
-        // Load photos for this appointment
-        const appt = Array.isArray(result.invoice.ops_appointments)
-          ? result.invoice.ops_appointments[0]
-          : result.invoice.ops_appointments
-        if (appt?.id) {
-          const photosRes = await fetch(
-            `/api/admin/ops/appointments/${appt.id}/photos`,
-            { cache: 'no-store' },
-          )
-          if (photosRes.ok) {
-            const photosData = await photosRes.json()
-            setPhotos(photosData.photos ?? [])
-          }
-        }
-        setLineItems(
-          (result.invoice.ops_invoice_line_items || []).map(
-            (item: {
-              id: string
-              appointment_line_item_id: string | null
-              description: string
-              quantity: number
-              unit_price: number
-            }) => ({
-              id: item.id,
-              appointment_line_item_id: item.appointment_line_item_id,
-              description: item.description,
-              quantity: Number(item.quantity),
-              unit_price: String(item.unit_price),
-            }),
-          ),
-        )
-      } catch (loadError) {
-        setError(
-          loadError instanceof Error
-            ? loadError.message
-            : 'Failed to load invoice',
-        )
-      } finally {
-        setLoading(false)
-      }
-    }
-
     void loadInvoice()
-  }, [invoiceId])
+  }, [loadInvoice])
+
+  useEffect(() => {
+    const ap = invoice ? unwrapRelation(invoice.ops_appointments) : null
+    if (!ap?.id || ap.status !== 'on_my_way') return
+    const raw = sessionStorage.getItem(`ops_onmyway_${ap.id}`)
+    if (raw && driveStartedAtMs === null) {
+      const ms = Number(raw)
+      if (Number.isFinite(ms)) setDriveStartedAtMs(ms)
+    }
+  }, [invoice, driveStartedAtMs])
+
+  useEffect(() => {
+    const ap = invoice ? unwrapRelation(invoice.ops_appointments) : null
+    if (ap?.id && ap.status === 'completed') {
+      const rawStart = sessionStorage.getItem(`ops_onmyway_${ap.id}`)
+      if (rawStart) {
+        const mins = Math.round((Date.now() - Number(rawStart)) / 60000)
+        sessionStorage.setItem(
+          `ops_drive_saved_min_${ap.id}`,
+          String(Math.max(0, mins)),
+        )
+      }
+      sessionStorage.removeItem(`ops_onmyway_${ap.id}`)
+      setDriveStartedAtMs(null)
+    }
+  }, [invoice])
+
+  useEffect(() => {
+    const ap = invoice ? unwrapRelation(invoice.ops_appointments) : null
+    if (ap?.status !== 'on_my_way' || driveStartedAtMs == null) return
+    const tick = () => setDriveElapsedMs(Date.now() - driveStartedAtMs)
+    tick()
+    const id = window.setInterval(tick, 1000)
+    return () => window.clearInterval(id)
+  }, [invoice, driveStartedAtMs])
 
   useEffect(() => {
     fetch('/api/admin/ops/services', { cache: 'no-store' })
@@ -332,10 +380,23 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
           }),
         },
       )
-      const result = await response.json()
+      const result = (await response.json()) as {
+        error?: string
+        lifecycle_notifications?: Array<{ channel: string; body: string }>
+      }
       if (!response.ok) {
         throw new Error(result.error || 'Failed to update job')
       }
+      const sms = result.lifecycle_notifications?.find(
+        (n) => n.channel === 'sms',
+      )
+      if (sms?.body) setLastOnMyWaySms(sms.body)
+      if (updates.status === 'on_my_way') {
+        const t = Date.now()
+        setDriveStartedAtMs(t)
+        sessionStorage.setItem(`ops_onmyway_${appointment.id}`, String(t))
+      }
+      await loadInvoice()
       router.refresh()
     } catch (actionError) {
       setError(
@@ -624,6 +685,64 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     }
   }
 
+  const resolveDriveMinutesForStats = (): number | null => {
+    const ap = unwrapRelation(invoice?.ops_appointments)
+    if (!ap?.id) return null
+    const saved = sessionStorage.getItem(`ops_drive_saved_min_${ap.id}`)
+    if (saved != null && Number.isFinite(Number(saved))) {
+      return Math.max(0, Math.round(Number(saved)))
+    }
+    if (ap.status === 'on_my_way' && driveStartedAtMs != null) {
+      return Math.max(0, Math.round((Date.now() - driveStartedAtMs) / 60000))
+    }
+    return null
+  }
+
+  const handleFinishJobStatsOnly = async () => {
+    setStatsRecordLoading(true)
+    setStatsRecordMessage(null)
+    setError(null)
+    try {
+      const driveMinutes = resolveDriveMinutesForStats()
+      const response = await fetch(
+        `/api/admin/ops/invoices/${invoiceId}/record-stats`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...(driveMinutes != null ? { drive_minutes: driveMinutes } : {}),
+            mark_completed: true,
+          }),
+        },
+      )
+      const result = (await response.json()) as {
+        error?: string
+        ok?: boolean
+        already_recorded?: boolean
+        message?: string
+      }
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to record stats')
+      }
+      if (result.already_recorded) {
+        setStatsRecordMessage(
+          result.message ||
+            'Stats were already recorded for this job (no duplicate).',
+        )
+      } else {
+        setStatsRecordMessage(
+          'Job closed and stats updated. You can still combine photos below if you want a post later.',
+        )
+      }
+      await loadInvoice()
+      router.refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to record stats')
+    } finally {
+      setStatsRecordLoading(false)
+    }
+  }
+
   const handleFinishAndPublish = async () => {
     if (!combinedImageDataUrl) {
       setError('Please combine before/after photos first.')
@@ -693,6 +812,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   )
   const discountAmount = Math.max(0, Number(discount || 0))
   const total = Math.max(0, subtotalCalc - discountAmount)
+  const billableTotal = total > 0.005 ? total : Number(invoice?.total || 0)
 
   return (
     <div className="space-y-6">
@@ -750,7 +870,9 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
               {appointment?.end_time.slice(0, 5)}
             </p>
           </div>
-          <p className="text-3xl font-bold tabular-nums">${total.toFixed(2)}</p>
+          <p className="text-3xl font-bold tabular-nums">
+            ${billableTotal.toFixed(2)}
+          </p>
         </div>
 
         {/* Contact info */}
@@ -944,7 +1066,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
             {showCardForm ? (
               <div className="border-border/60 mt-4 rounded-xl border p-4">
                 <p className="mb-3 text-sm font-semibold">
-                  Charge Card — ${total.toFixed(2)}
+                  Charge Card — ${billableTotal.toFixed(2)}
                 </p>
                 {chargeError ? (
                   <p className="mb-3 text-sm text-red-500">{chargeError}</p>
@@ -1043,7 +1165,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                       )}
                       {chargeLoading
                         ? 'Charging…'
-                        : `Charge $${total.toFixed(2)}`}
+                        : `Charge $${billableTotal.toFixed(2)}`}
                     </Button>
                     <Button
                       variant="ghost"
@@ -1109,7 +1231,11 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
             <div className="grid grid-cols-2 gap-3">
               <Button
                 variant="outline"
-                className="h-14 text-base font-semibold"
+                className={`h-14 text-base font-semibold ${
+                  appointment.status === 'on_my_way'
+                    ? 'border-green-600 bg-green-600 text-white hover:bg-green-700'
+                    : ''
+                }`}
                 disabled={Boolean(actionLoading)}
                 onClick={() =>
                   void runAppointmentAction({
@@ -1139,6 +1265,21 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                 Finished
               </Button>
             </div>
+            {appointment.status === 'on_my_way' && driveStartedAtMs != null ? (
+              <p className="mt-3 font-mono text-sm font-semibold text-green-700">
+                Drive time {formatDriveElapsed(driveElapsedMs)}
+              </p>
+            ) : null}
+            {lastOnMyWaySms ? (
+              <div className="border-border/60 bg-muted/40 mt-3 rounded-xl border p-3">
+                <p className="text-muted-foreground mb-1 text-xs font-medium uppercase">
+                  SMS sent to customer
+                </p>
+                <p className="text-foreground text-sm whitespace-pre-wrap">
+                  {lastOnMyWaySms}
+                </p>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </Card>
@@ -1387,7 +1528,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
             </Button>
             <div className="flex items-center gap-6 text-lg font-bold">
               <span>Total</span>
-              <span className="tabular-nums">${total.toFixed(2)}</span>
+              <span className="tabular-nums">${billableTotal.toFixed(2)}</span>
             </div>
           </div>
         </div>
@@ -1480,6 +1621,34 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
         </div>
       </Card>
 
+      {/* Close job for stats without a social post (e.g. sensitive sites) */}
+      <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
+        <h3 className="text-lg font-semibold">Finish job (stats only)</h3>
+        <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
+          Use this when the job is done but you are not posting to social media.
+          It records revenue and time in your stats (including drive time from
+          On My Way when available) and marks the job completed. You can still
+          use the before/after tool below afterward if you change your mind.
+        </p>
+        <Button
+          type="button"
+          className="mt-4 h-12 w-full text-base font-semibold"
+          variant="secondary"
+          disabled={statsRecordLoading}
+          onClick={() => void handleFinishJobStatsOnly()}
+        >
+          {statsRecordLoading ? (
+            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+          ) : null}
+          {statsRecordLoading ? 'Saving…' : 'Finish job & update stats'}
+        </Button>
+        {statsRecordMessage ? (
+          <p className="text-muted-foreground mt-3 text-center text-sm">
+            {statsRecordMessage}
+          </p>
+        ) : null}
+      </Card>
+
       {/* ── Before / After Combiner ──────────────────────── */}
       <BeforeAfterCombiner
         onCombined={(dataUrl) => setCombinedImageDataUrl(dataUrl)}
@@ -1513,9 +1682,14 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
         />
       </Card>
 
-      {/* ── Finish & Publish ──────────────────────────────── */}
+      {/* ── Social publish (optional) ───────────────────── */}
       {!publishSuccess ? (
         <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
+          <p className="text-muted-foreground mb-3 text-sm leading-relaxed">
+            Optional: create a public before/after post. Your utilization stats
+            already count from the job record when you publish; use &quot;Finish
+            job &amp; update stats&quot; above if you are skipping social media.
+          </p>
           <Button
             className="h-14 w-full gap-2 bg-green-600 text-lg font-bold text-white hover:bg-green-700"
             disabled={
@@ -1528,7 +1702,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
             ) : (
               <CheckCircle2 className="h-5 w-5" />
             )}
-            {publishLoading ? 'Publishing…' : 'Finish & Publish Job'}
+            {publishLoading ? 'Publishing…' : 'Publish to social & create post'}
           </Button>
           {!combinedImageDataUrl || !aiDescription.trim() ? (
             <p className="text-muted-foreground mt-2 text-center text-xs">
@@ -1544,10 +1718,11 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
         <Card className="border-border/60 bg-green-50 p-5 text-center shadow-sm">
           <CheckCircle2 className="mx-auto h-10 w-10 text-green-600" />
           <p className="mt-2 text-lg font-bold text-green-800">
-            Job Published!
+            Post published!
           </p>
           <p className="text-muted-foreground mt-1 text-sm">
-            Stats have been updated and the post was sent to social media.
+            The before/after is live and stats include this job from the
+            published record.
           </p>
         </Card>
       )}
@@ -1575,7 +1750,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
               Amount Due
             </p>
             <p className="mt-1 text-5xl font-bold text-slate-900">
-              ${total.toFixed(2)}
+              ${billableTotal.toFixed(2)}
             </p>
             {customer?.business_name || customer?.full_name ? (
               <p className="mt-1 text-sm text-slate-500">
@@ -1614,7 +1789,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                 <div className="mt-5 flex justify-center">
                   <img
                     src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(
-                      `https://venmo.com/SasquatchCarpet?txn=pay&amount=${total.toFixed(2)}&note=${encodeURIComponent(`Sasquatch Carpet Cleaning - ${customer?.business_name || customer?.full_name || 'Service'}`)}`,
+                      `https://venmo.com/SasquatchCarpet?txn=pay&amount=${billableTotal.toFixed(2)}&note=${encodeURIComponent(`Sasquatch Carpet Cleaning - ${customer?.business_name || customer?.full_name || 'Service'}`)}`,
                     )}`}
                     alt="Venmo QR code"
                     width={220}
@@ -1629,7 +1804,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                   They scan the QR code or tap the button below
                 </p>
                 <a
-                  href={`https://venmo.com/SasquatchCarpet?txn=pay&amount=${total.toFixed(2)}&note=${encodeURIComponent(`Sasquatch Carpet Cleaning - ${customer?.business_name || customer?.full_name || 'Service'}`)}`}
+                  href={`https://venmo.com/SasquatchCarpet?txn=pay&amount=${billableTotal.toFixed(2)}&note=${encodeURIComponent(`Sasquatch Carpet Cleaning - ${customer?.business_name || customer?.full_name || 'Service'}`)}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#008CFF] py-3 text-sm font-semibold text-white hover:bg-blue-600"
@@ -1650,8 +1825,8 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                   <p className="text-sm leading-relaxed text-slate-500">
                     Open Venmo → tap <strong>⊕</strong> →{' '}
                     <strong>Accept money</strong> → enter{' '}
-                    <strong>${total.toFixed(2)}</strong> → have the customer tap
-                    their card
+                    <strong>${billableTotal.toFixed(2)}</strong> → have the
+                    customer tap their card
                   </p>
                 </div>
                 <a

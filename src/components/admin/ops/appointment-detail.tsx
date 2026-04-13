@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Loader2, Receipt } from 'lucide-react'
@@ -94,6 +94,13 @@ function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
   return Array.isArray(value) ? value[0] || null : value
 }
 
+function formatDriveElapsed(elapsedMs: number): string {
+  const totalSec = Math.max(0, Math.floor(elapsedMs / 1000))
+  const m = Math.floor(totalSec / 60)
+  const s = totalSec % 60
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
 function timeToMinutes(value: string): number {
   const [h, m] = String(value).slice(0, 5).split(':').map(Number)
   return (h || 0) * 60 + (m || 0)
@@ -114,10 +121,13 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
     payment_status: 'unpaid',
     internal_notes: '',
   })
+  const [lastOnMyWaySms, setLastOnMyWaySms] = useState<string | null>(null)
+  const [driveStartedAtMs, setDriveStartedAtMs] = useState<number | null>(null)
+  const [driveElapsedMs, setDriveElapsedMs] = useState(0)
 
-  useEffect(() => {
-    async function loadAppointment() {
-      setLoading(true)
+  const loadAppointment = useCallback(
+    async (mode: 'initial' | 'refresh' = 'initial') => {
+      if (mode === 'initial') setLoading(true)
       setError(null)
       try {
         const response = await fetch(
@@ -146,12 +156,39 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
             : 'Failed to load appointment',
         )
       } finally {
-        setLoading(false)
+        if (mode === 'initial') setLoading(false)
       }
-    }
+    },
+    [appointmentId],
+  )
 
-    void loadAppointment()
-  }, [appointmentId])
+  useEffect(() => {
+    void loadAppointment('initial')
+  }, [loadAppointment])
+
+  useEffect(() => {
+    if (!appointment?.id || appointment.status !== 'on_my_way') return
+    const raw = sessionStorage.getItem(`ops_onmyway_${appointment.id}`)
+    if (raw && driveStartedAtMs === null) {
+      const ms = Number(raw)
+      if (Number.isFinite(ms)) setDriveStartedAtMs(ms)
+    }
+  }, [appointment, driveStartedAtMs])
+
+  useEffect(() => {
+    if (appointment?.id && appointment.status === 'completed') {
+      sessionStorage.removeItem(`ops_onmyway_${appointment.id}`)
+      setDriveStartedAtMs(null)
+    }
+  }, [appointment])
+
+  useEffect(() => {
+    if (appointment?.status !== 'on_my_way' || driveStartedAtMs == null) return
+    const tick = () => setDriveElapsedMs(Date.now() - driveStartedAtMs)
+    tick()
+    const id = window.setInterval(tick, 1000)
+    return () => window.clearInterval(id)
+  }, [appointment, driveStartedAtMs])
 
   const handleSave = async () => {
     setSaving(true)
@@ -220,15 +257,23 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
           }),
         },
       )
-      const result = await response.json()
+      const result = (await response.json()) as {
+        error?: string
+        lifecycle_notifications?: Array<{ channel: string; body: string }>
+      }
       if (!response.ok) {
         throw new Error(result.error || 'Failed to update job status')
       }
-      setForm((current) => ({
-        ...current,
-        status: updates.status || current.status,
-        payment_status: updates.payment_status || current.payment_status,
-      }))
+      const sms = result.lifecycle_notifications?.find(
+        (n) => n.channel === 'sms',
+      )
+      if (sms?.body) setLastOnMyWaySms(sms.body)
+      if (updates.status === 'on_my_way') {
+        const t = Date.now()
+        setDriveStartedAtMs(t)
+        sessionStorage.setItem(`ops_onmyway_${appointmentId}`, String(t))
+      }
+      await loadAppointment('refresh')
       router.refresh()
     } catch (actionError) {
       setError(
@@ -466,6 +511,11 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
             </Button>
             <Button
               variant="outline"
+              className={
+                appointment.status === 'on_my_way'
+                  ? 'border-green-600 bg-green-600 text-white hover:bg-green-700'
+                  : ''
+              }
               disabled={Boolean(actionLoading)}
               onClick={() =>
                 void runQuickAction({
@@ -535,6 +585,21 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
               Delete Job
             </Button>
           </div>
+          {appointment.status === 'on_my_way' && driveStartedAtMs != null ? (
+            <p className="mt-3 font-mono text-sm font-semibold text-green-700">
+              Drive time {formatDriveElapsed(driveElapsedMs)}
+            </p>
+          ) : null}
+          {lastOnMyWaySms ? (
+            <div className="border-border/60 bg-muted/40 mt-3 rounded-xl border p-3">
+              <p className="text-muted-foreground mb-1 text-xs font-medium uppercase">
+                SMS sent to customer
+              </p>
+              <p className="text-foreground text-sm whitespace-pre-wrap">
+                {lastOnMyWaySms}
+              </p>
+            </div>
+          ) : null}
         </Card>
 
         <div className="space-y-6">

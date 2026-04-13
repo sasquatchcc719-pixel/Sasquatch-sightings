@@ -65,10 +65,14 @@ type Appointment = {
     | {
         id: string
         status: string
+        total?: number
+        payment_status?: string
       }
     | {
         id: string
         status: string
+        total?: number
+        payment_status?: string
       }[]
     | null
 }
@@ -122,6 +126,18 @@ const DEFAULT_BUSINESS_HOURS_ROWS: BusinessHoursRow[] = [
 function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
   if (!value) return null
   return Array.isArray(value) ? value[0] || null : value
+}
+
+/** Prefer appointment quote; fall back to invoice total when quote was cleared. */
+function calendarDisplayAmount(appointment: Appointment): string {
+  const inv = unwrapRelation(appointment.ops_invoices)
+  const quoted = Number(appointment.quoted_total || 0)
+  const invTotal =
+    inv && typeof inv === 'object' && 'total' in inv
+      ? Number((inv as { total?: number }).total || 0)
+      : 0
+  const n = quoted > 0 ? quoted : invTotal
+  return Number.isFinite(n) ? n.toFixed(2) : '0.00'
 }
 
 function formatDateKey(date: Date): string {
@@ -262,9 +278,9 @@ function getStatusTone(status: string): string {
     case 'on_my_way':
       return 'border-emerald-400 bg-emerald-100'
     case 'completed':
-      return 'border-emerald-400 bg-emerald-100'
+      return 'border-slate-400 bg-slate-200/95 text-slate-700'
     case 'cancelled':
-      return 'border-emerald-400 bg-emerald-100'
+      return 'border-slate-300 bg-slate-100 text-slate-500'
     default:
       return 'border-emerald-400 bg-emerald-100'
   }
@@ -1581,8 +1597,14 @@ export function OperationsSchedule() {
                                   .map((item) => item.name_snapshot)
                                   .join(', ')}
                               </div>
-                              <div className="mt-auto pt-2 text-right font-semibold text-slate-800">
-                                ${Number(appointment.quoted_total).toFixed(2)}
+                              <div
+                                className={`mt-auto pt-2 text-right font-semibold tabular-nums ${
+                                  appointment.status === 'completed'
+                                    ? 'text-slate-600'
+                                    : 'text-slate-800'
+                                }`}
+                              >
+                                ${calendarDisplayAmount(appointment)}
                               </div>
                             </Link>
                             <button

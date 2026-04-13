@@ -278,10 +278,10 @@ export default function StatsPage() {
 
       if (jobsError) throw jobsError
 
-      // Fetch revenue entries
+      // Fetch revenue entries (drive_minutes adds to utilization hours from on-my-way)
       const { data: entries, error: entriesError } = await supabase
         .from('revenue_entries')
-        .select('invoice_amount, hours_worked, entry_date')
+        .select('invoice_amount, hours_worked, entry_date, drive_minutes')
         .eq('user_id', user.id)
         .order('entry_date', { ascending: false })
 
@@ -290,7 +290,11 @@ export default function StatsPage() {
       // Combine jobs and entries for calculations
       const allRevenue = [
         ...(jobs || []).map((j) => ({ ...j, date: j.created_at })),
-        ...(entries || []).map((e) => ({ ...e, date: e.entry_date })),
+        ...(entries || []).map((e) => ({
+          ...e,
+          date: e.entry_date,
+          hours_worked: (e.hours_worked || 0) + (e.drive_minutes || 0) / 60,
+        })),
       ]
 
       // Calculate stats

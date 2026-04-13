@@ -279,19 +279,26 @@ async function queueFollowupEmail(params: {
   }
 }
 
+export type LifecycleNotificationSent = {
+  template_key: string
+  channel: 'sms' | 'email'
+  body: string
+}
+
 export async function sendOpsLifecycleCommunications(params: {
   event: OpsLifecycleEvent
   appointmentId: string
-}) {
+}): Promise<{ sent: LifecycleNotificationSent[] }> {
+  const sent: LifecycleNotificationSent[] = []
   const supabase = createAdminClient()
   const { appointment, context } = await getAppointmentContext(
     supabase,
     params.appointmentId,
   )
-  if (!appointment || !context) return
+  if (!appointment || !context) return { sent: [] }
 
   const templates = await getTemplatesForEvent(supabase, params.event)
-  if (templates.length === 0) return
+  if (templates.length === 0) return { sent: [] }
 
   const customer = unwrapRelation(appointment.ops_customers)
   const customerPhone = customer?.phone || ''
@@ -336,16 +343,26 @@ export async function sendOpsLifecycleCommunications(params: {
         `ops_${template.template_key}`,
         twilioFrom,
       )
+      sent.push({
+        template_key: template.template_key,
+        channel: 'sms',
+        body,
+      })
       continue
     }
 
     if (!resend || !customerEmail) continue
     try {
-      const sent = await resend.emails.send({
+      const emailResult = await resend.emails.send({
         from: fromEmail,
         to: customerEmail,
         subject: subject || 'Update from Sasquatch Carpet Cleaning',
         html: `<div style="font-family:Arial,sans-serif;white-space:pre-wrap;line-height:1.5;">${body}</div>`,
+      })
+      sent.push({
+        template_key: template.template_key,
+        channel: 'email',
+        body,
       })
       await supabase.from('ops_email_log').insert({
         appointment_id: appointment.id,
@@ -353,7 +370,7 @@ export async function sendOpsLifecycleCommunications(params: {
         template_key: template.template_key,
         to_email: customerEmail,
         subject: subject || 'Update from Sasquatch Carpet Cleaning',
-        resend_id: sent.data?.id || null,
+        resend_id: emailResult.data?.id || null,
         status: 'sent',
       })
     } catch (error) {
@@ -369,6 +386,8 @@ export async function sendOpsLifecycleCommunications(params: {
       })
     }
   }
+
+  return { sent }
 }
 
 export async function getOpsCommunicationQueueStats() {
