@@ -142,9 +142,16 @@ export function getAvailableSlots(params: {
   const effectiveTemplates =
     templates.length > 0 ? templates : DEFAULT_FALLBACK_AVAILABILITY_TEMPLATES
   const dayOfWeek = new Date(`${date}T12:00:00`).getDay()
-  const dayTemplates = effectiveTemplates.filter(
+  let dayTemplates = effectiveTemplates.filter(
     (template) => template.is_active && template.day_of_week === dayOfWeek,
   )
+  // If admin saved partial/broken templates (rows exist but none for this weekday),
+  // fall back to default hours so public booking still returns slots.
+  if (dayTemplates.length === 0 && templates.length > 0) {
+    dayTemplates = DEFAULT_FALLBACK_AVAILABILITY_TEMPLATES.filter(
+      (template) => template.is_active && template.day_of_week === dayOfWeek,
+    )
+  }
 
   const dayOverrides = overrides.filter(
     (override) => override.override_date === date,
