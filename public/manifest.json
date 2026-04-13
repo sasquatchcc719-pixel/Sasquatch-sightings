@@ -1,0 +1,17 @@
+{
+  "name": "Sasquatch Sightings",
+  "short_name": "Sightings",
+  "description": "Sasquatch Carpet Cleaning — Operations & Booking",
+  "start_url": "/admin",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#16a34a",
+  "icons": [
+    {
+      "src": "/sasquatch-logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
