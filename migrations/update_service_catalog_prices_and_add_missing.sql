@@ -35,7 +35,7 @@ ON CONFLICT (slug) DO UPDATE SET
 INSERT INTO service_catalog_items (name, slug, category, base_price, pricing_unit, default_duration_minutes, buffer_minutes, online_booking_enabled, is_active, sort_order)
 VALUES
   ('Carpet Protector', 'carpet-protector', 'Carpet Cleaning', 25, 'per room', 5, 0, true, true, 50),
-  ('Pre-Vacuuming',    'pre-vacuuming',    'Carpet Cleaning', 0,  'per room', 10, 0, true, true, 51)
+  ('Pre-Vacuuming',    'pre-vacuuming',    'Carpet Cleaning', 10, 'per room', 5, 0, true, true, 51)
 ON CONFLICT (slug) DO UPDATE SET
   base_price = EXCLUDED.base_price,
   updated_at = now();
