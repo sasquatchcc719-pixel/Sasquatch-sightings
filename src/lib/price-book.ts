@@ -5,39 +5,33 @@
  */
 
 export const PRICE_BOOK = {
-  // Carpet Cleaning
+  // Standard Carpet Cleaning
   carpetCleaning: {
     category: 'Carpet Cleaning',
     services: [
       {
-        name: 'Maintenance Carpet Cleaning',
-        price: 50,
-        unit: 'per room',
-        description: 'Pre Spray, Wand Hot Water Extraction',
+        name: 'Step/Landing',
+        price: 6,
+        unit: 'per step',
+        description: 'Stairway steps and landings',
       },
       {
-        name: 'Hall/Bathroom Maintenance',
+        name: 'Small Area Hall/Closet (50-100 sqft)',
         price: 25,
         unit: 'per area',
-        description: 'Small Area Carpet Cleaning',
+        description: 'Small hallway or closet carpet cleaning',
       },
       {
-        name: 'Small Hallway/Closet',
-        price: 20,
-        unit: 'per area',
-        description: 'Hallway carpet cleaning',
-      },
-      {
-        name: 'Deep Restoration Cleaning',
-        price: 75,
+        name: 'Regular Room (100-200 sqft)',
+        price: 46,
         unit: 'per room',
-        description: 'Pre Spray, Rotary Extraction, Sanitize, Grooming',
+        description: 'Standard bedroom or living room',
       },
       {
         name: 'Sasquatch Size Room (200-400 sqft)',
         price: 90,
         unit: 'per room',
-        description: 'Standard clean for medium rooms',
+        description: 'Medium-large room cleaning',
       },
       {
         name: 'Monster Size Room (400-600 sqft)',
@@ -46,7 +40,7 @@ export const PRICE_BOOK = {
         description: 'Large room cleaning',
       },
       {
-        name: 'Jumbo Humungous Room (600-800 sqft)',
+        name: 'Jumbo Humongous Room (600-800 sqft)',
         price: 175,
         unit: 'per room',
         description: 'Extra-large room cleaning',
@@ -64,12 +58,6 @@ export const PRICE_BOOK = {
         description: 'Per foot pricing',
       },
       {
-        name: 'Step Carpet Cleaning',
-        price: 4,
-        unit: 'per step',
-        description: 'Stairway steps',
-      },
-      {
         name: 'VLM/Encapsulation Cleaning',
         price: 0.28,
         unit: 'per sqft',
@@ -80,6 +68,49 @@ export const PRICE_BOOK = {
         price: 65,
         unit: 'flat',
         description: 'Power brush dryer vent line',
+      },
+    ],
+  },
+
+  // Legendary Restoration Clean
+  legendaryRestoration: {
+    category: 'Legendary Restoration Clean',
+    services: [
+      {
+        name: 'Step/Landing',
+        price: 6,
+        unit: 'per step',
+        description: 'Stairway steps and landings',
+      },
+      {
+        name: 'Small Area Hall/Closet (50-100 sqft)',
+        price: 50,
+        unit: 'per area',
+        description: 'Deep restoration for small hallway or closet',
+      },
+      {
+        name: 'Regular Room (100-200 sqft)',
+        price: 75,
+        unit: 'per room',
+        description: 'Deep restoration for standard bedroom or living room',
+      },
+      {
+        name: 'Sasquatch Size Room (200-400 sqft)',
+        price: 145,
+        unit: 'per room',
+        description: 'Deep restoration for medium-large room',
+      },
+      {
+        name: 'Monster Size Room (400-600 sqft)',
+        price: 210,
+        unit: 'per room',
+        description: 'Deep restoration for large room',
+      },
+      {
+        name: 'Jumbo Humongous Room (600-800 sqft)',
+        price: 265,
+        unit: 'per room',
+        description: 'Deep restoration for extra-large room',
       },
     ],
   },
@@ -224,7 +255,7 @@ export const PRICE_BOOK = {
       },
       {
         name: 'Tile & Grout Cleaning',
-        price: 0.65,
+        price: 0.75,
         unit: 'per sqft',
         description: 'Pre-scrub and Hydroforce clean',
       },
@@ -296,16 +327,10 @@ export const PRICE_BOOK = {
         description: 'Commercial carpet deodorant',
       },
       {
-        name: 'Bio Release Urine Treatment',
+        name: 'Urine Eliminator Treatment',
         price: 25,
         unit: 'per room',
-        description: 'UV inspection and injection',
-      },
-      {
-        name: 'Pet Urine Injection Treatment',
-        price: 25,
-        unit: 'per area',
-        description: 'UV inspection, Bio Release, Pre Spray',
+        description: 'UV inspection, Bio Release injection, Pre Spray',
       },
       {
         name: 'Scotchgard Protection',

@@ -1,6 +1,7 @@
 import { createClient } from '@/supabase/server'
 import { MapView } from '@/components/public/MapView'
 import { DarkHero } from '@/components/public/DarkHero'
+import { ServicesSection } from '@/components/public/ServicesSection'
 import { Button } from '@/components/ui/button'
 import { Suspense } from 'react'
 import { AdminLink } from '@/components/admin-link'
@@ -84,6 +85,9 @@ export default async function Home() {
 
       {/* Dark Hero Section */}
       <DarkHero />
+
+      {/* Services Section */}
+      <ServicesSection />
 
       {/* Map Section */}
       <section id="map" className="relative h-screen bg-[#0a0a0a]">
