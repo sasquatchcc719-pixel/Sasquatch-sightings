@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { Suspense } from 'react'
 import { AdminNavigation } from '@/components/admin-navigation'
 import { OneSignalInit } from '@/components/onesignal-init'
+import { PushNotificationBanner } from '@/components/push-notification-banner'
 import { VideoBackground } from '@/components/public/VideoBackground'
 
 type AdminLayoutProps = {
@@ -69,6 +70,7 @@ export default async function AdminLayout({ children }: AdminLayoutProps) {
           </div>
         </nav>
         <div className="flex w-full max-w-[1440px] flex-1 flex-col gap-6 p-4 sm:p-5">
+          <PushNotificationBanner />
           <div className="glass-panel glass-accent-ring relative z-[200] rounded-2xl border p-4">
             <AdminNavigation />
           </div>
