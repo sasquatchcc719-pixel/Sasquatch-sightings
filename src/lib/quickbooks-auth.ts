@@ -22,7 +22,7 @@ export function getQBRedirectUri(): string {
 export function buildQBAuthUrl(state: string): string {
   const params = new URLSearchParams({
     client_id: getQBClientId(),
-    scope: 'com.intuit.quickbooks.accounting',
+    scope: 'com.intuit.quickbooks.accounting com.intuit.quickbooks.payment',
     redirect_uri: getQBRedirectUri(),
     response_type: 'code',
     state,

@@ -6,7 +6,11 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
-import { createQBCustomer, createQBInvoice } from '@/lib/quickbooks-api'
+import {
+  createQBCustomer,
+  createQBInvoice,
+  queryRecentQBPayments,
+} from '@/lib/quickbooks-api'
 import { getQBConnectionStatus } from '@/lib/quickbooks-auth'
 
 const BATCH_SIZE = 20
@@ -174,8 +178,48 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    console.log('[cron/quickbooks-sync]', results)
-    return NextResponse.json(results)
+    // --- Payment polling: sync QB payments back to local invoices ---
+    let paymentsUpdated = 0
+    try {
+      const sinceDate = new Date(Date.now() - 25 * 60 * 60 * 1000)
+        .toISOString()
+        .slice(0, 19)
+
+      const qbPayments = await queryRecentQBPayments(sinceDate)
+
+      for (const payment of qbPayments) {
+        for (const line of payment.Line || []) {
+          for (const txn of line.LinkedTxn || []) {
+            if (txn.TxnType !== 'Invoice') continue
+
+            const qbInvoiceId = txn.TxnId
+
+            const { data: localInvoice } = await supabase
+              .from('ops_invoices')
+              .select('id, status')
+              .eq('quickbooks_invoice_id', qbInvoiceId)
+              .maybeSingle()
+
+            if (localInvoice && localInvoice.status !== 'paid') {
+              await supabase
+                .from('ops_invoices')
+                .update({
+                  status: 'paid',
+                  payment_method: 'quickbooks',
+                  updated_at: new Date().toISOString(),
+                })
+                .eq('id', localInvoice.id)
+              paymentsUpdated++
+            }
+          }
+        }
+      }
+    } catch (paymentErr) {
+      console.error('[cron/quickbooks-sync] Payment polling error:', paymentErr)
+    }
+
+    console.log('[cron/quickbooks-sync]', { ...results, paymentsUpdated })
+    return NextResponse.json({ ...results, paymentsUpdated })
   } catch (error) {
     console.error('[cron/quickbooks-sync] Fatal error:', error)
     return NextResponse.json(

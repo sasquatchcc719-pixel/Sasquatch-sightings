@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
-import { voidQBInvoice } from '@/lib/quickbooks-api'
+import { voidQBInvoice, createQBPayment } from '@/lib/quickbooks-api'
 
 const INVOICE_SELECT = `
   *,
@@ -222,6 +222,49 @@ export async function PATCH(
       .single()
 
     if (invoiceError) throw invoiceError
+
+    const isBeingMarkedPaid =
+      body.status === 'paid' && current.status !== 'paid'
+    const method = body.payment_method || current.payment_method
+    const isNonCardPayment = method && method !== 'card'
+
+    if (
+      isBeingMarkedPaid &&
+      isNonCardPayment &&
+      current.quickbooks_invoice_id
+    ) {
+      try {
+        const { data: apptData } = await supabase
+          .from('ops_appointments')
+          .select('customer_id')
+          .eq('id', current.appointment_id)
+          .single()
+
+        let qbCustId: string | null = null
+        if (apptData?.customer_id) {
+          const { data: custData } = await supabase
+            .from('ops_customers')
+            .select('quickbooks_customer_id')
+            .eq('id', apptData.customer_id)
+            .single()
+          qbCustId = custData?.quickbooks_customer_id ?? null
+        }
+
+        if (qbCustId) {
+          await createQBPayment({
+            qbCustomerId: qbCustId,
+            qbInvoiceId: current.quickbooks_invoice_id,
+            amount: total,
+            paymentMethod: method,
+          })
+        }
+      } catch (qbErr) {
+        console.error(
+          '[ops/invoices/:id][PATCH] QB payment record failed:',
+          qbErr,
+        )
+      }
+    }
 
     if (current.appointment_id) {
       const { error: appointmentError } = await supabase

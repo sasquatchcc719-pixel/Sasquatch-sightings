@@ -5,6 +5,10 @@ import {
 import { createAdminClient } from '@/supabase/server'
 
 const QB_BASE_URL = 'https://quickbooks.api.intuit.com/v3/company'
+const QB_PAYMENTS_BASE_URL =
+  process.env.QUICKBOOKS_SANDBOX === 'true'
+    ? 'https://sandbox.api.intuit.com/quickbooks/v4/payments'
+    : 'https://api.intuit.com/quickbooks/v4/payments'
 
 async function qbFetch(
   realmId: string,
@@ -188,6 +192,152 @@ export async function createQBInvoice(params: {
 
   const data = await res.json()
   return data.Invoice.Id
+}
+
+export async function chargeCardViaQB(params: {
+  token: string
+  amount: number
+  currency?: string
+}): Promise<{
+  chargeId: string
+  status: string
+}> {
+  const auth = await getValidQBAccessToken()
+  if (!auth) throw new Error('QuickBooks not connected')
+
+  const requestId = crypto.randomUUID()
+
+  const res = await fetch(`${QB_PAYMENTS_BASE_URL}/charges`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${auth.accessToken}`,
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'Request-Id': requestId,
+    },
+    body: JSON.stringify({
+      amount: params.amount.toFixed(2),
+      token: params.token,
+      currency: params.currency || 'USD',
+      context: {
+        mobile: false,
+        isEcommerce: true,
+      },
+    }),
+  })
+
+  if (!res.ok) {
+    const tid = res.headers.get('intuit_tid') || 'unknown'
+    const status = res.status
+    throw new Error(`QB charge failed: ${status} (tid: ${tid})`)
+  }
+
+  const data = await res.json()
+  return {
+    chargeId: data.id,
+    status: data.status,
+  }
+}
+
+export async function createQBPayment(params: {
+  qbCustomerId: string
+  qbInvoiceId: string
+  amount: number
+  paymentMethod: string
+}): Promise<string> {
+  const auth = await getValidQBAccessToken()
+  if (!auth) throw new Error('QuickBooks not connected')
+
+  const paymentMethodMap: Record<string, string> = {
+    cash: 'Cash',
+    check: 'Check',
+    venmo: 'Other',
+    card: 'CreditCard',
+  }
+
+  const body: Record<string, unknown> = {
+    TotalAmt: params.amount,
+    CustomerRef: { value: params.qbCustomerId },
+    Line: [
+      {
+        Amount: params.amount,
+        LinkedTxn: [
+          {
+            TxnId: params.qbInvoiceId,
+            TxnType: 'Invoice',
+          },
+        ],
+      },
+    ],
+  }
+
+  const mappedMethod = paymentMethodMap[params.paymentMethod]
+  if (mappedMethod) {
+    body.PaymentMethodRef = { value: mappedMethod }
+  }
+
+  const res = await qbFetch(
+    auth.realmId,
+    auth.accessToken,
+    '/payment?minorversion=65',
+    { method: 'POST', body: JSON.stringify(body) },
+  )
+
+  if (!res.ok) {
+    const tid = res.headers.get('intuit_tid') || 'unknown'
+    throw new Error(`QB create payment failed: ${res.status} (tid: ${tid})`)
+  }
+
+  const data = await res.json()
+  return data.Payment.Id
+}
+
+export async function getQBInvoicePaymentLink(
+  qbInvoiceId: string,
+): Promise<string | null> {
+  const auth = await getValidQBAccessToken()
+  if (!auth) return null
+
+  const res = await qbFetch(
+    auth.realmId,
+    auth.accessToken,
+    `/invoice/${qbInvoiceId}?minorversion=65`,
+  )
+
+  if (!res.ok) return null
+
+  const data = await res.json()
+  const invoiceLink = data?.Invoice?.InvoiceLink
+  return invoiceLink || null
+}
+
+export async function queryRecentQBPayments(sinceDate: string): Promise<
+  Array<{
+    Id: string
+    TotalAmt: number
+    TxnDate: string
+    Line: Array<{
+      Amount: number
+      LinkedTxn: Array<{ TxnId: string; TxnType: string }>
+    }>
+  }>
+> {
+  const auth = await getValidQBAccessToken()
+  if (!auth) return []
+
+  const query = encodeURIComponent(
+    `SELECT * FROM Payment WHERE MetaData.LastUpdatedTime >= '${sinceDate}' MAXRESULTS 100`,
+  )
+  const res = await qbFetch(
+    auth.realmId,
+    auth.accessToken,
+    `/query?query=${query}&minorversion=65`,
+  )
+
+  if (!res.ok) return []
+
+  const data = await res.json()
+  return data?.QueryResponse?.Payment || []
 }
 
 export async function syncAppointmentToQuickBooks(appointmentId: string) {

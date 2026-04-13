@@ -3,6 +3,7 @@ import { Resend } from 'resend'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { sendCustomerSMS } from '@/lib/twilio'
+import { getQBInvoicePaymentLink } from '@/lib/quickbooks-api'
 
 const VENMO_USERNAME = process.env.VENMO_BUSINESS_USERNAME ?? 'SasquatchCarpet'
 
@@ -131,8 +132,11 @@ export async function POST(
     await requireAnyRole(['admin', 'owner', 'dispatcher'])
     const supabase = createAdminClient()
     const { id } = await params
-    const body = (await request.json()) as { channel: 'sms' | 'email' | 'both' }
-    const { channel } = body
+    const body = (await request.json()) as {
+      channel: 'sms' | 'email' | 'both'
+      type?: 'invoice' | 'payment_link'
+    }
+    const { channel, type } = body
 
     if (!channel || !['sms', 'email', 'both'].includes(channel)) {
       return NextResponse.json({ error: 'Invalid channel' }, { status: 400 })
@@ -145,6 +149,7 @@ export async function POST(
         `
         id,
         total,
+        quickbooks_invoice_id,
         ops_appointments (
           id,
           appointment_date,
@@ -231,6 +236,40 @@ export async function POST(
     }
 
     const errors: string[] = []
+
+    // Payment link SMS — fetch QB invoice pay link and text it
+    if (type === 'payment_link') {
+      if (!customerPhone) {
+        return NextResponse.json(
+          { error: 'No phone number on file for this customer.' },
+          { status: 422 },
+        )
+      }
+
+      let paymentUrl: string | null = null
+
+      if (invoice.quickbooks_invoice_id) {
+        paymentUrl = await getQBInvoicePaymentLink(
+          invoice.quickbooks_invoice_id,
+        )
+      }
+
+      if (!paymentUrl) {
+        paymentUrl = venmoUrl
+      }
+
+      const linkBody = [
+        `Hi ${customerName} — here's your invoice from Sasquatch Carpet Cleaning.`,
+        ``,
+        `Total due: $${total.toFixed(2)}`,
+        `Pay securely online: ${paymentUrl}`,
+        ``,
+        `Questions? Call or text us anytime. Thank you!`,
+      ].join('\n')
+
+      await sendCustomerSMS(customerPhone, linkBody, id, 'payment_link')
+      return NextResponse.json({ ok: true })
+    }
 
     // Send SMS
     if (channel === 'sms' || channel === 'both') {

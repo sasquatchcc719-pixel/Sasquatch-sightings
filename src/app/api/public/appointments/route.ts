@@ -130,44 +130,84 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // --- Upsert customer ---
+    // --- Find or create customer ---
     const fullName = `${firstName} ${lastName}`.trim()
-    const { data: customer, error: customerError } = await supabase
+    let customerId: string
+    let quickbooksCustomerId: string | null = null
+
+    const { data: existingCustomer } = await supabase
       .from('ops_customers')
-      .upsert(
-        {
+      .select('id, quickbooks_customer_id')
+      .eq('email', email)
+      .maybeSingle()
+
+    if (existingCustomer) {
+      customerId = existingCustomer.id
+      quickbooksCustomerId = existingCustomer.quickbooks_customer_id
+      const { error: updateErr } = await supabase
+        .from('ops_customers')
+        .update({
+          full_name: fullName,
+          first_name: firstName,
+          last_name: lastName,
+          phone,
+          notes,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', customerId)
+      if (updateErr) throw updateErr
+    } else {
+      const { data: newCustomer, error: insertErr } = await supabase
+        .from('ops_customers')
+        .insert({
           full_name: fullName,
           first_name: firstName,
           last_name: lastName,
           email,
           phone,
           notes,
-        },
-        { onConflict: 'email' },
-      )
-      .select('id, quickbooks_customer_id')
-      .single()
+        })
+        .select('id, quickbooks_customer_id')
+        .single()
+      if (insertErr) throw insertErr
+      customerId = newCustomer.id
+      quickbooksCustomerId = newCustomer.quickbooks_customer_id
+    }
 
-    if (customerError) throw customerError
-
-    // --- Upsert service address ---
-    const { data: address, error: addressError } = await supabase
+    // --- Find or create service address ---
+    const { data: existingAddress } = await supabase
       .from('ops_service_addresses')
-      .upsert(
-        {
-          customer_id: customer.id,
+      .select('id')
+      .eq('customer_id', customerId)
+      .eq('street_1', street1)
+      .eq('zip_code', zipCode)
+      .maybeSingle()
+
+    let addressId: string
+
+    if (existingAddress) {
+      addressId = existingAddress.id
+      const { error: addrUpdateErr } = await supabase
+        .from('ops_service_addresses')
+        .update({ city, state, updated_at: new Date().toISOString() })
+        .eq('id', addressId)
+      if (addrUpdateErr) throw addrUpdateErr
+    } else {
+      const { data: newAddress, error: addrInsertErr } = await supabase
+        .from('ops_service_addresses')
+        .insert({
+          customer_id: customerId,
           street_1: street1,
           city,
           state,
           zip_code: zipCode,
           label: 'Service Address',
-        },
-        { onConflict: 'customer_id,street_1,zip_code' },
-      )
-      .select('id')
-      .single()
-
-    if (addressError) throw addressError
+        })
+        .select('id')
+        .single()
+      if (addrInsertErr) throw addrInsertErr
+      addressId = newAddress.id
+    }
 
     // --- Calculate totals ---
     const subtotal = lineItems.reduce(
@@ -195,8 +235,8 @@ export async function POST(request: NextRequest) {
     const { data: appointment, error: appointmentError } = await supabase
       .from('ops_appointments')
       .insert({
-        customer_id: customer.id,
-        service_address_id: address.id,
+        customer_id: customerId,
+        service_address_id: addressId,
         appointment_date: appointmentDate,
         start_time: startTime,
         end_time: endTime,
@@ -216,7 +256,6 @@ export async function POST(request: NextRequest) {
       .from('ops_invoices')
       .insert({
         appointment_id: appointment.id,
-        customer_id: customer.id,
         subtotal,
         discount_amount: discountAmount,
         total,
@@ -235,10 +274,21 @@ export async function POST(request: NextRequest) {
       quantity: item.quantity,
       unit_price: item.unit_price,
       line_total: item.unit_price * item.quantity,
-      service_catalog_item_id: item.service_catalog_item_id || null,
     }))
 
     await supabase.from('ops_invoice_line_items').insert(invoiceLines)
+
+    // --- Insert appointment line items ---
+    const appointmentLines = lineItems.map((item) => ({
+      appointment_id: appointment.id,
+      name_snapshot: item.name_snapshot,
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+      duration_minutes: item.duration_minutes || 0,
+      line_total: item.unit_price * item.quantity,
+    }))
+
+    await supabase.from('ops_appointment_line_items').insert(appointmentLines)
 
     // --- Status events ---
     const syncStatus = getQuickBooksSyncStatus()
@@ -258,10 +308,10 @@ export async function POST(request: NextRequest) {
       supabase.from('ops_quickbooks_sync_jobs').insert([
         {
           entity_type: 'customer',
-          entity_id: customer.id,
+          entity_id: customerId,
           status: syncStatus,
           payload: buildQuickBooksCustomerPayload({
-            customerId: customer.id,
+            customerId,
             fullName,
             email,
             phone,
@@ -274,7 +324,7 @@ export async function POST(request: NextRequest) {
           status: syncStatus,
           payload: buildQuickBooksInvoicePayload({
             invoiceId: invoice.id,
-            customerId: customer.id,
+            customerId,
             serviceDate: appointmentDate,
             subtotal,
             total,

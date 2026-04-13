@@ -13,14 +13,6 @@ export async function GET(request: NextRequest) {
     const state = crypto.randomBytes(16).toString('hex')
     const authUrl = buildQBAuthUrl(state)
 
-    const url = new URL(request.url)
-    if (url.searchParams.get('debug') === '1') {
-      return NextResponse.json({
-        authUrl,
-        parsed: Object.fromEntries(new URL(authUrl).searchParams),
-      })
-    }
-
     const response = NextResponse.redirect(authUrl)
     response.cookies.set('qb_oauth_state', state, {
       httpOnly: true,

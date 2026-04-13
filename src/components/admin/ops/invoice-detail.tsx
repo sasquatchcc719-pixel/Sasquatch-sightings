@@ -151,6 +151,20 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [paymentTab, setPaymentTab] = useState<'qr' | 'tap'>('qr')
   const [streetViewFailed, setStreetViewFailed] = useState(false)
+  const [showCardForm, setShowCardForm] = useState(false)
+  const [cardNumber, setCardNumber] = useState('')
+  const [cardExpMonth, setCardExpMonth] = useState('')
+  const [cardExpYear, setCardExpYear] = useState('')
+  const [cardCvc, setCardCvc] = useState('')
+  const [cardName, setCardName] = useState('')
+  const [chargeLoading, setChargeLoading] = useState(false)
+  const [chargeError, setChargeError] = useState<string | null>(null)
+  const [chargeSuccess, setChargeSuccess] = useState(false)
+  const [paymentLinkLoading, setPaymentLinkLoading] = useState(false)
+  const [paymentLinkFeedback, setPaymentLinkFeedback] = useState<{
+    ok: boolean
+    message: string
+  } | null>(null)
   const [serviceCatalog, setServiceCatalog] = useState<
     Array<{
       id: string
@@ -453,6 +467,115 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
       setPhotos((prev) => prev.filter((p) => p.id !== photoId))
     } catch (err) {
       setPhotoError(err instanceof Error ? err.message : 'Delete failed')
+    }
+  }
+
+  const handleChargeCard = async () => {
+    if (!cardNumber || !cardExpMonth || !cardExpYear || !cardCvc) {
+      setChargeError('Please fill in all card fields.')
+      return
+    }
+
+    setChargeLoading(true)
+    setChargeError(null)
+    setChargeSuccess(false)
+
+    try {
+      const QB_TOKEN_URL =
+        process.env.NEXT_PUBLIC_QB_SANDBOX === 'true'
+          ? 'https://sandbox.api.intuit.com/quickbooks/v4/payments/tokens'
+          : 'https://api.intuit.com/quickbooks/v4/payments/tokens'
+
+      const tokenRes = await fetch(QB_TOKEN_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          card: {
+            number: cardNumber.replace(/\s/g, ''),
+            expMonth: cardExpMonth.padStart(2, '0'),
+            expYear:
+              cardExpYear.length === 2 ? `20${cardExpYear}` : cardExpYear,
+            cvc: cardCvc,
+            name: cardName || undefined,
+          },
+        }),
+      })
+
+      if (!tokenRes.ok) {
+        throw new Error('Card tokenization failed. Please check card details.')
+      }
+
+      const tokenData = await tokenRes.json()
+      const cardToken = tokenData.value
+
+      if (!cardToken) {
+        throw new Error('No token returned from card processor.')
+      }
+
+      const chargeRes = await fetch(
+        `/api/admin/ops/invoices/${invoiceId}/charge`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: cardToken }),
+        },
+      )
+      const chargeResult = await chargeRes.json()
+
+      if (!chargeRes.ok) {
+        throw new Error(chargeResult.error || 'Charge failed')
+      }
+
+      setChargeSuccess(true)
+      setStatus('paid')
+      setPaymentMethod('card')
+      setShowCardForm(false)
+      setCardNumber('')
+      setCardExpMonth('')
+      setCardExpYear('')
+      setCardCvc('')
+      setCardName('')
+    } catch (err) {
+      setChargeError(
+        err instanceof Error ? err.message : 'Failed to charge card',
+      )
+    } finally {
+      setChargeLoading(false)
+    }
+  }
+
+  const handleSendPaymentLink = async () => {
+    setPaymentLinkLoading(true)
+    setPaymentLinkFeedback(null)
+    try {
+      const response = await fetch(
+        `/api/admin/ops/invoices/${invoiceId}/send`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ channel: 'sms', type: 'payment_link' }),
+        },
+      )
+      const result = await response.json()
+      if (!response.ok) {
+        setPaymentLinkFeedback({
+          ok: false,
+          message: result.error || 'Failed to send payment link',
+        })
+      } else {
+        setPaymentLinkFeedback({
+          ok: true,
+          message: 'Payment link sent via text!',
+        })
+        setTimeout(() => setPaymentLinkFeedback(null), 4000)
+      }
+    } catch {
+      setPaymentLinkFeedback({
+        ok: false,
+        message: 'Failed to send payment link',
+      })
+    } finally {
+      setPaymentLinkLoading(false)
     }
   }
 
@@ -761,7 +884,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
               Mark as Paid
             </p>
             <div className="flex flex-wrap gap-2">
-              {['Cash', 'Venmo', 'Check', 'Card'].map((method) => (
+              {['Cash', 'Venmo', 'Check'].map((method) => (
                 <Button
                   key={method}
                   size="sm"
@@ -772,6 +895,159 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                   {method}
                 </Button>
               ))}
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 border-blue-300 text-blue-700 hover:bg-blue-50"
+                onClick={() => setShowCardForm(!showCardForm)}
+              >
+                <CreditCard className="h-3.5 w-3.5" />
+                Charge Card
+              </Button>
+            </div>
+
+            {/* Card charge form */}
+            {showCardForm ? (
+              <div className="border-border/60 mt-4 rounded-xl border p-4">
+                <p className="mb-3 text-sm font-semibold">
+                  Charge Card — ${total.toFixed(2)}
+                </p>
+                {chargeError ? (
+                  <p className="mb-3 text-sm text-red-500">{chargeError}</p>
+                ) : null}
+                {chargeSuccess ? (
+                  <p className="mb-3 text-sm text-green-600">
+                    Card charged successfully!
+                  </p>
+                ) : null}
+                <div className="space-y-3">
+                  <div>
+                    <Label htmlFor="card-name" className="text-xs">
+                      Name on Card
+                    </Label>
+                    <Input
+                      id="card-name"
+                      placeholder="John Doe"
+                      value={cardName}
+                      onChange={(e) => setCardName(e.target.value)}
+                      className="h-9"
+                      autoComplete="cc-name"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="card-number" className="text-xs">
+                      Card Number
+                    </Label>
+                    <Input
+                      id="card-number"
+                      placeholder="4111 1111 1111 1111"
+                      value={cardNumber}
+                      onChange={(e) => setCardNumber(e.target.value)}
+                      className="h-9 tabular-nums"
+                      inputMode="numeric"
+                      maxLength={19}
+                      autoComplete="cc-number"
+                    />
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <Label htmlFor="card-exp-month" className="text-xs">
+                        Month
+                      </Label>
+                      <Input
+                        id="card-exp-month"
+                        placeholder="MM"
+                        value={cardExpMonth}
+                        onChange={(e) => setCardExpMonth(e.target.value)}
+                        className="h-9 tabular-nums"
+                        inputMode="numeric"
+                        maxLength={2}
+                        autoComplete="cc-exp-month"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="card-exp-year" className="text-xs">
+                        Year
+                      </Label>
+                      <Input
+                        id="card-exp-year"
+                        placeholder="YY"
+                        value={cardExpYear}
+                        onChange={(e) => setCardExpYear(e.target.value)}
+                        className="h-9 tabular-nums"
+                        inputMode="numeric"
+                        maxLength={4}
+                        autoComplete="cc-exp-year"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="card-cvc" className="text-xs">
+                        CVV
+                      </Label>
+                      <Input
+                        id="card-cvc"
+                        placeholder="123"
+                        value={cardCvc}
+                        onChange={(e) => setCardCvc(e.target.value)}
+                        className="h-9 tabular-nums"
+                        inputMode="numeric"
+                        maxLength={4}
+                        autoComplete="cc-csc"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    <Button
+                      className="flex-1 gap-2 bg-green-600 text-white hover:bg-green-700"
+                      disabled={chargeLoading}
+                      onClick={() => void handleChargeCard()}
+                    >
+                      {chargeLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <CreditCard className="h-4 w-4" />
+                      )}
+                      {chargeLoading
+                        ? 'Charging…'
+                        : `Charge $${total.toFixed(2)}`}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        setShowCardForm(false)
+                        setChargeError(null)
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            {/* Send Payment Link */}
+            <div className="mt-4">
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                disabled={paymentLinkLoading}
+                onClick={() => void handleSendPaymentLink()}
+              >
+                {paymentLinkLoading ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Send className="h-3.5 w-3.5" />
+                )}
+                Send Payment Link via Text
+              </Button>
+              {paymentLinkFeedback ? (
+                <p
+                  className={`mt-2 text-sm ${paymentLinkFeedback.ok ? 'text-green-600' : 'text-red-500'}`}
+                >
+                  {paymentLinkFeedback.message}
+                </p>
+              ) : null}
             </div>
           </div>
         ) : (
