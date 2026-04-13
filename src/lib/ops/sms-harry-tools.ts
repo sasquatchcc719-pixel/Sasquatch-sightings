@@ -498,16 +498,32 @@ export async function executeHarrySmsTool(
           .slice(0, 80)
         if (!q) return JSON.stringify({ services: [], error: 'Empty query' })
 
+        const EXCLUDED_SERVICE_NAMES = [
+          'Card fee',
+          'Custom amount',
+          'Discount',
+          'Gratuity',
+          'Mileage/ Travel',
+          'Commercial carpet cleaning',
+          'Low Moisture Encapsulation Cleaning LVM/Bonnet',
+          'Commercial Deodorizer (Per Sqft)',
+          'Auto scrubbing Floors (Lvt/Vinyl/Epoxy)',
+          'Seal coat Vinyl/LVT flooring (per foot charge)',
+        ]
+
         const { data: services, error } = await supabase
           .from('service_catalog_items')
           .select('id, name, category, base_price, default_duration_minutes')
           .eq('is_active', true)
           .ilike('name', `%${q}%`)
-          .limit(15)
+          .limit(25)
 
         if (error) throw error
+        const filtered = (services || []).filter(
+          (s) => !EXCLUDED_SERVICE_NAMES.includes(s.name),
+        )
         return JSON.stringify({
-          services: (services || []).map((s) => ({
+          services: filtered.map((s) => ({
             id: s.id,
             name: s.name,
             category: s.category,
@@ -802,6 +818,14 @@ export async function executeHarrySmsTool(
           })
         }
 
+        const MIN_JOB_TOTAL = 150
+        const preCheckTotal = builtLines.reduce((s, l) => s + l.line_total, 0)
+        if (preCheckTotal < MIN_JOB_TOTAL) {
+          return JSON.stringify({
+            error: `Job total of $${preCheckTotal.toFixed(2)} is below the $${MIN_JOB_TOTAL} minimum. Please add more services or increase quantities.`,
+          })
+        }
+
         // Delete old line items and insert new ones
         await supabase
           .from('ops_appointment_line_items')
@@ -960,9 +984,21 @@ export async function executeHarrySmsTool(
         const catalogIds = parsedLineItems.map((l) => l.service_id)
         const { data: catalogRows } = await supabase
           .from('service_catalog_items')
-          .select('id, default_duration_minutes')
+          .select('id, default_duration_minutes, base_price')
           .in('id', catalogIds)
           .eq('is_active', true)
+
+        const BOOK_MIN_TOTAL = 150
+        const preTotal = (catalogRows || []).reduce((sum, row) => {
+          const qty =
+            parsedLineItems.find((p) => p.service_id === row.id)?.quantity ?? 1
+          return sum + Number(row.base_price || 0) * qty
+        }, 0)
+        if (preTotal < BOOK_MIN_TOTAL) {
+          return JSON.stringify({
+            error: `Job total of $${preTotal.toFixed(2)} is below the $${BOOK_MIN_TOTAL} minimum. Please add more services or increase quantities.`,
+          })
+        }
 
         const totalMinutes = (catalogRows || []).reduce((sum, row) => {
           const qty =
