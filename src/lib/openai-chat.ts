@@ -418,8 +418,22 @@ CHANNEL LOGIC PROFILE:
       )
     }
 
+    // Inject today's date so Harry can resolve "tomorrow", "next Monday", etc.
+    const todayMT = new Date().toLocaleDateString('en-US', {
+      timeZone: 'America/Denver',
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    })
+    const todayISO = new Date().toLocaleDateString('en-CA', {
+      timeZone: 'America/Denver',
+    })
+    const dateContext = `\n\nTODAY'S DATE: ${todayMT} (${todayISO}). Use this to resolve relative dates like "tomorrow", "next week", "this Monday", etc. Pass dates to tools in YYYY-MM-DD format.\n`
+
     // Build system prompt with partner context if available
-    let systemPrompt = SYSTEM_PROMPT + knowledgeContext + profileContext
+    let systemPrompt =
+      SYSTEM_PROMPT + knowledgeContext + profileContext + dateContext
     if (context?.couponCode) {
       const partnerContext = `
 

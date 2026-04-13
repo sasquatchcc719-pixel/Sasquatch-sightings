@@ -9,6 +9,11 @@ import {
 } from '@/lib/ops/availability'
 import { createAiStyleBooking } from '@/lib/ops/create-ai-style-booking'
 
+/** Today's date in Mountain Time (YYYY-MM-DD). Avoids UTC rollover at 6 PM MDT. */
+function todayMountain(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Denver' })
+}
+
 const UPCOMING_STATUSES = [
   'booked',
   'confirmed',
@@ -415,7 +420,7 @@ export async function executeHarrySmsTool(
         }
 
         const customerIds = customers.map((c) => c.id)
-        const today = new Date().toISOString().slice(0, 10)
+        const today = todayMountain()
 
         const { data: rows, error: aErr } = await supabase
           .from('ops_appointments')
@@ -490,7 +495,7 @@ export async function executeHarrySmsTool(
         if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
           return JSON.stringify({ error: 'date must be YYYY-MM-DD' })
         }
-        const today = new Date().toISOString().slice(0, 10)
+        const today = todayMountain()
         if (date < today) {
           return JSON.stringify({
             date,

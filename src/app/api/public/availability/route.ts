@@ -33,8 +33,11 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Don't allow booking in the past
-    if (date < new Date().toISOString().split('T')[0]) {
+    // Don't allow booking in the past (use Mountain Time to avoid UTC rollover)
+    const todayMT = new Date().toLocaleDateString('en-CA', {
+      timeZone: 'America/Denver',
+    })
+    if (date < todayMT) {
       return NextResponse.json({ slots: [] }, { headers: CORS })
     }
 
