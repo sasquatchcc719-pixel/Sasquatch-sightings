@@ -25,7 +25,7 @@ export type SlotOption = {
   end_time: string
 }
 
-export const DEFAULT_APPOINTMENT_BUFFER_MINUTES = 30
+export const DEFAULT_APPOINTMENT_BUFFER_MINUTES = 0
 export const DEFAULT_FALLBACK_AVAILABILITY_TEMPLATES: AvailabilityTemplate[] = [
   {
     day_of_week: 1,
