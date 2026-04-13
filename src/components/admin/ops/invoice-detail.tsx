@@ -698,7 +698,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     return null
   }
 
-  const handleFinishJobStatsOnly = async () => {
+  const handleFinishAndCloseJob = async () => {
     setStatsRecordLoading(true)
     setStatsRecordMessage(null)
     setError(null)
@@ -722,22 +722,22 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
         message?: string
       }
       if (!response.ok) {
-        throw new Error(result.error || 'Failed to record stats')
+        throw new Error(result.error || 'Failed to close out job')
       }
       if (result.already_recorded) {
         setStatsRecordMessage(
           result.message ||
-            'Stats were already recorded for this job (no duplicate).',
+            'This job was already closed out in stats (no duplicate revenue). QuickBooks sync was retried if applicable.',
         )
       } else {
         setStatsRecordMessage(
-          'Job closed and stats updated. You can still combine photos below if you want a post later.',
+          'Job closed: revenue, stats, and QuickBooks updated. You can still combine photos below if you want a post later.',
         )
       }
       await loadInvoice()
       router.refresh()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to record stats')
+      setError(err instanceof Error ? err.message : 'Failed to close out job')
     } finally {
       setStatsRecordLoading(false)
     }
@@ -1228,43 +1228,26 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
             <p className="text-muted-foreground mb-3 text-xs font-semibold tracking-widest uppercase">
               Job Actions
             </p>
-            <div className="grid grid-cols-2 gap-3">
-              <Button
-                variant="outline"
-                className={`h-14 text-base font-semibold ${
-                  appointment.status === 'on_my_way'
-                    ? 'border-green-600 bg-green-600 text-white hover:bg-green-700'
-                    : ''
-                }`}
-                disabled={Boolean(actionLoading)}
-                onClick={() =>
-                  void runAppointmentAction({
-                    label: 'On My Way',
-                    status: 'on_my_way',
-                  })
-                }
-              >
-                {actionLoading === 'On My Way' ? (
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                ) : null}
-                On My Way
-              </Button>
-              <Button
-                className="h-14 text-base font-semibold"
-                disabled={Boolean(actionLoading)}
-                onClick={() =>
-                  void runAppointmentAction({
-                    label: 'Complete',
-                    status: 'completed',
-                  })
-                }
-              >
-                {actionLoading === 'Complete' ? (
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                ) : null}
-                Finished
-              </Button>
-            </div>
+            <Button
+              variant="outline"
+              className={`h-14 w-full text-base font-semibold ${
+                appointment.status === 'on_my_way'
+                  ? 'border-green-600 bg-green-600 text-white hover:bg-green-700'
+                  : ''
+              }`}
+              disabled={Boolean(actionLoading)}
+              onClick={() =>
+                void runAppointmentAction({
+                  label: 'On My Way',
+                  status: 'on_my_way',
+                })
+              }
+            >
+              {actionLoading === 'On My Way' ? (
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+              ) : null}
+              On My Way
+            </Button>
             {appointment.status === 'on_my_way' && driveStartedAtMs != null ? (
               <p className="mt-3 font-mono text-sm font-semibold text-green-700">
                 Drive time {formatDriveElapsed(driveElapsedMs)}
@@ -1621,26 +1604,26 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
         </div>
       </Card>
 
-      {/* Close job for stats without a social post (e.g. sensitive sites) */}
+      {/* Close out job: revenue, stats, QuickBooks; social post is optional below */}
       <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
-        <h3 className="text-lg font-semibold">Finish job (stats only)</h3>
+        <h3 className="text-lg font-semibold">Finish &amp; close job</h3>
         <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
-          Use this when the job is done but you are not posting to social media.
-          It records revenue and time in your stats (including drive time from
-          On My Way when available) and marks the job completed. You can still
-          use the before/after tool below afterward if you change your mind.
+          Use this when the work is done. It records revenue and hours in your
+          stats (including drive time from <strong>On My Way</strong> when
+          available), marks the job completed, and sends the invoice to{' '}
+          <strong>QuickBooks</strong> when connected. You do not need a social
+          post—use the section below only if you want a before/after post.
         </p>
         <Button
           type="button"
-          className="mt-4 h-12 w-full text-base font-semibold"
-          variant="secondary"
+          className="mt-4 h-14 w-full border-green-600 bg-green-600 text-base font-semibold text-white hover:bg-green-700"
           disabled={statsRecordLoading}
-          onClick={() => void handleFinishJobStatsOnly()}
+          onClick={() => void handleFinishAndCloseJob()}
         >
           {statsRecordLoading ? (
             <Loader2 className="mr-2 h-5 w-5 animate-spin" />
           ) : null}
-          {statsRecordLoading ? 'Saving…' : 'Finish job & update stats'}
+          {statsRecordLoading ? 'Closing out…' : 'Finish & close job'}
         </Button>
         {statsRecordMessage ? (
           <p className="text-muted-foreground mt-3 text-center text-sm">
@@ -1687,8 +1670,9 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
         <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
           <p className="text-muted-foreground mb-3 text-sm leading-relaxed">
             Optional: create a public before/after post. Your utilization stats
-            already count from the job record when you publish; use &quot;Finish
-            job &amp; update stats&quot; above if you are skipping social media.
+            already count from the job record when you publish; use{' '}
+            <strong>Finish &amp; close job</strong> above if you are skipping
+            social media.
           </p>
           <Button
             className="h-14 w-full gap-2 bg-green-600 text-lg font-bold text-white hover:bg-green-700"

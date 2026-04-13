@@ -946,12 +946,13 @@ export default function StatsPage() {
         <h2 className="mb-1 text-xl font-semibold">This Week</h2>
         <p className="text-muted-foreground mb-4 max-w-3xl text-sm leading-relaxed">
           Revenue and hours here include published posts, manual entries,{' '}
-          <strong>Finish job &amp; update stats</strong>, and completed
+          <strong>Finish &amp; close job</strong> on the invoice, and completed
           Operations jobs (same week as Live Jobs, Mon–Sun). You do{' '}
           <strong>not</strong> need photos or a social post for these numbers to
           update. <strong>Hours</strong> use the real duration from{' '}
-          <strong>On My Way</strong> through <strong>Finished</strong> when both
-          are recorded; otherwise the scheduled time window is used.
+          <strong>On My Way</strong> through{' '}
+          <strong>Finish &amp; close job</strong> when both are recorded;
+          otherwise the scheduled time window is used.
         </p>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-5">
           <Card className="p-4">
