@@ -100,6 +100,38 @@ export async function createQBCustomer(params: {
   return data.Customer.Id
 }
 
+export async function voidQBInvoice(qbInvoiceId: string): Promise<void> {
+  const auth = await getValidQBAccessToken()
+  if (!auth) throw new Error('QuickBooks not connected')
+
+  // QB requires a sparse update with SyncToken to void — fetch it first
+  const getRes = await qbFetch(
+    auth.realmId,
+    auth.accessToken,
+    `/invoice/${qbInvoiceId}?minorversion=65`,
+  )
+  if (!getRes.ok) {
+    const text = await getRes.text()
+    throw new Error(`QB get invoice failed: ${getRes.status} ${text}`)
+  }
+  const getData = await getRes.json()
+  const syncToken = getData.Invoice.SyncToken
+
+  const voidRes = await qbFetch(
+    auth.realmId,
+    auth.accessToken,
+    `/invoice?operation=void&minorversion=65`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ Id: qbInvoiceId, SyncToken: syncToken }),
+    },
+  )
+  if (!voidRes.ok) {
+    const text = await voidRes.text()
+    throw new Error(`QB void invoice failed: ${voidRes.status} ${text}`)
+  }
+}
+
 export async function createQBInvoice(params: {
   qbCustomerId: string
   serviceDate: string

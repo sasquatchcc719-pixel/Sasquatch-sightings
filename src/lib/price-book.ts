@@ -11,7 +11,7 @@ export const PRICE_BOOK = {
     services: [
       {
         name: 'Step/Landing',
-        price: 6,
+        price: 4,
         unit: 'per step',
         description: 'Stairway steps and landings',
       },

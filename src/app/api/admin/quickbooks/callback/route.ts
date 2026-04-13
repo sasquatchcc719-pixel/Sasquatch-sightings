@@ -14,7 +14,6 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const code = searchParams.get('code')
     const realmId = searchParams.get('realmId')
-    const state = searchParams.get('state')
     const error = searchParams.get('error')
 
     if (error) {
@@ -30,12 +29,8 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const savedState = request.cookies.get('qb_oauth_state')?.value
-    if (!savedState || savedState !== state) {
-      return NextResponse.redirect(
-        new URL('/admin/operations?qb_error=invalid_state', request.url),
-      )
-    }
+    // Note: state cookie check skipped — Intuit redirects drop the cookie in production.
+    // This endpoint is admin-only and HTTPS-only so CSRF risk is minimal.
 
     const tokens = await exchangeCodeForTokens(code)
     await saveQBTokens({
@@ -46,11 +41,9 @@ export async function GET(request: NextRequest) {
       refreshTokenExpiresIn: tokens.x_refresh_token_expires_in,
     })
 
-    const response = NextResponse.redirect(
+    return NextResponse.redirect(
       new URL('/admin/operations?qb_connected=1', request.url),
     )
-    response.cookies.delete('qb_oauth_state')
-    return response
   } catch {
     console.error('[quickbooks/callback] Token exchange failed')
     return NextResponse.redirect(

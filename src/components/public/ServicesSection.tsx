@@ -99,7 +99,7 @@ export function ServicesSection() {
           <div className="flex flex-col rounded-2xl border border-white/10 bg-white/5 p-8 transition-all duration-300 hover:-translate-y-1 hover:border-white/20">
             <div className="mb-4 text-4xl">🧹</div>
             <h3 className="mb-1 text-xl font-semibold tracking-wide text-white">
-              Carpet Cleaning
+              Standard Carpet Cleaning
             </h3>
             <p className="mb-5 text-sm tracking-wider text-cyan-400/60 uppercase">
               Hot water extraction. Fresh results.

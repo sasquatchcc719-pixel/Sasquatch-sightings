@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
+import { voidQBInvoice } from '@/lib/quickbooks-api'
 
 const INVOICE_SELECT = `
   *,
@@ -255,11 +256,21 @@ export async function DELETE(
 
     const { data: current, error: currentError } = await supabase
       .from('ops_invoices')
-      .select('id, appointment_id')
+      .select('id, appointment_id, quickbooks_invoice_id')
       .eq('id', id)
       .single()
 
     if (currentError) throw currentError
+
+    // Void the invoice in QuickBooks if it was synced
+    if (current?.quickbooks_invoice_id) {
+      try {
+        await voidQBInvoice(current.quickbooks_invoice_id)
+      } catch (qbErr) {
+        console.error('[ops/invoices/:id][DELETE] QB void failed:', qbErr)
+        // Don't block the delete if QB void fails
+      }
+    }
 
     const { error: deleteError } = await supabase
       .from('ops_invoices')
