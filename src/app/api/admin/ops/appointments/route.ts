@@ -634,21 +634,9 @@ export async function PATCH(request: NextRequest) {
         if (invoiceEventError) throw invoiceEventError
       }
 
-      const { error: syncJobError } = await supabase
-        .from('ops_quickbooks_sync_jobs')
-        .insert({
-          entity_type: 'invoice',
-          entity_id: invoice.id,
-          status: getQuickBooksSyncStatus(),
-          payload: {
-            trigger: 'appointment_status_update',
-            appointment_id: appointmentId,
-            next_status: nextStatus,
-            payment_status: paymentStatus,
-          },
-        })
-
-      if (syncJobError) throw syncJobError
+      void syncAppointmentToQuickBooks(appointmentId).catch((qbErr) =>
+        console.error('[ops/appointments][PATCH] QB sync:', qbErr),
+      )
     }
 
     if (nextStatus === 'completed') {

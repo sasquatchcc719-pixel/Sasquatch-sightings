@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
-import { voidQBInvoice, createQBPayment } from '@/lib/quickbooks-api'
+import {
+  voidQBInvoice,
+  createQBPayment,
+  syncAppointmentToQuickBooks,
+} from '@/lib/quickbooks-api'
 
 const INVOICE_SELECT = `
   *,
@@ -292,6 +296,12 @@ export async function PATCH(
         .eq('id', current.appointment_id)
 
       if (appointmentError) throw appointmentError
+    }
+
+    if (current.appointment_id && !invoice.quickbooks_invoice_id) {
+      void syncAppointmentToQuickBooks(current.appointment_id).catch((qbErr) =>
+        console.error('[ops/invoices/:id][PATCH] QB sync:', qbErr),
+      )
     }
 
     return NextResponse.json({ invoice })

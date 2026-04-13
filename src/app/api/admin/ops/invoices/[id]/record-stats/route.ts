@@ -3,6 +3,8 @@ import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { recordRevenueFromOpsInvoice } from '@/lib/ops/revenue-from-invoice'
 import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
+import { getQuickBooksSyncStatus } from '@/lib/quickbooks'
+import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -85,6 +87,28 @@ export async function POST(request: NextRequest, { params }: Params) {
           })
           .eq('id', inv.appointment_id)
       }
+
+      const { data: invRow } = await supabase
+        .from('ops_invoices')
+        .select('id, status')
+        .eq('id', invoiceId)
+        .single()
+
+      if (invRow?.status === 'draft') {
+        const ts = new Date().toISOString()
+        await supabase
+          .from('ops_invoices')
+          .update({
+            status: 'ready',
+            sync_status: getQuickBooksSyncStatus(),
+            updated_at: ts,
+          })
+          .eq('id', invoiceId)
+      }
+
+      void syncAppointmentToQuickBooks(inv.appointment_id).catch((qbErr) =>
+        console.error('[record-stats] QB sync:', qbErr),
+      )
     }
 
     if (result.skipped) {

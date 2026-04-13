@@ -6,6 +6,8 @@ import {
   calculateLineItemDurationMinutes,
 } from '@/lib/ops/availability'
 import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
+import { getQuickBooksSyncStatus } from '@/lib/quickbooks'
+import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
 import { sendCustomerSMS } from '@/lib/twilio'
 import { Resend } from 'resend'
 
@@ -289,6 +291,36 @@ export async function PATCH(
         })
         lifecycleNotifications = sent
       }
+    }
+
+    if (nextStatus === 'completed') {
+      const { data: inv } = await supabase
+        .from('ops_invoices')
+        .select('id, status')
+        .eq('appointment_id', id)
+        .maybeSingle()
+
+      if (inv?.status === 'draft') {
+        await supabase
+          .from('ops_invoices')
+          .update({
+            status: 'ready',
+            sync_status: getQuickBooksSyncStatus(),
+            updated_at: nowIso,
+          })
+          .eq('id', inv.id)
+        await supabase.from('ops_invoice_status_events').insert({
+          invoice_id: inv.id,
+          from_status: 'draft',
+          to_status: 'ready',
+          changed_by: access.id,
+          notes: 'Job completed from operations',
+        })
+      }
+
+      void syncAppointmentToQuickBooks(id).catch((qbErr) =>
+        console.error('[ops/appointments/:id][PATCH] QB sync:', qbErr),
+      )
     }
 
     return NextResponse.json({
