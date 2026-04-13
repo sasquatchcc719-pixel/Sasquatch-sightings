@@ -48,12 +48,23 @@ export function OneSignalInit() {
               init: (config: {
                 appId: string
                 allowLocalhostAsSecureOrigin: boolean
+                serviceWorkerPath: string
+                notifyButton: { enable: boolean }
               }) => Promise<void>
+              Notifications?: {
+                requestPermission: () => Promise<void>
+                permission: boolean
+              }
             }
             await os.init({
               appId: '2279fd62-e36d-494b-b354-af67f233973b',
               allowLocalhostAsSecureOrigin: true,
+              serviceWorkerPath: '/OneSignalSDKWorker.js',
+              notifyButton: { enable: true },
             })
+            if (os.Notifications && !os.Notifications.permission) {
+              await os.Notifications.requestPermission()
+            }
           } catch {
             // Silently fail - OneSignal errors shouldn't break the app
           }
