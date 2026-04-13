@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 import { Resend } from 'resend'
+import { sendOneSignalNotification } from '@/lib/onesignal'
 import twilio from 'twilio'
 import {
   generateAIResponse,
@@ -592,6 +593,46 @@ export async function POST(request: NextRequest) {
     const supabase = createAdminClient()
 
     // First, determine the source type from this message
+    // ── Nextdoor notification intercept ──────────────────────────────────────
+    // Nextdoor texts us when someone messages us on their platform.
+    // We want to log it and get a push notification, but Harry should never
+    // try to reply to an automated Nextdoor number.
+    const nextdoorLinkMatch = messageBody.match(
+      /nextdoor\.com\/inbox\/chat\/([^\s?]+)/,
+    )
+    if (
+      nextdoorLinkMatch ||
+      messageBody.toLowerCase().includes('nextdoor.com')
+    ) {
+      console.log(
+        '📍 Nextdoor notification intercepted — routing away from Harry',
+      )
+
+      // Store in DB
+      await supabase.from('nextdoor_notifications').insert({
+        raw_message: messageBody,
+        chat_url: nextdoorLinkMatch
+          ? `https://nextdoor.com/inbox/chat/${nextdoorLinkMatch[1]}`
+          : null,
+        received_at: new Date().toISOString(),
+      })
+
+      // Fire push notification to admin
+      await sendOneSignalNotification({
+        heading: '📍 New Nextdoor Message',
+        content: 'Someone messaged you on Nextdoor. Tap to open.',
+        data: {
+          type: 'nextdoor_notification',
+          chat_url: nextdoorLinkMatch
+            ? `https://nextdoor.com/inbox/chat/${nextdoorLinkMatch[1]}`
+            : 'https://nextdoor.com/messaging/',
+        },
+      })
+
+      return emptyTwiml
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     const { sourceType, matchedPartner } = await determineSourceType(
       messageBody,
       supabase,
