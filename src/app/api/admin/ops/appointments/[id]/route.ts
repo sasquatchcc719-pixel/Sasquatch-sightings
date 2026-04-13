@@ -217,6 +217,19 @@ export async function PATCH(
       ? String(body.payment_status)
       : current.payment_status
 
+    const nowIso = new Date().toISOString()
+    const firstOnMyWayAt =
+      (current as { on_my_way_at?: string | null }).on_my_way_at ?? null
+    const completedAtExisting =
+      (current as { completed_at?: string | null }).completed_at ?? null
+
+    const nextOnMyWayAt =
+      nextStatus === 'on_my_way' && !firstOnMyWayAt ? nowIso : firstOnMyWayAt
+    const nextCompletedAt =
+      nextStatus === 'completed' && !completedAtExisting
+        ? nowIso
+        : completedAtExisting
+
     const { data: updated, error: updateError } = await supabase
       .from('ops_appointments')
       .update({
@@ -233,7 +246,9 @@ export async function PATCH(
           body.assigned_staff_user_id !== undefined
             ? body.assigned_staff_user_id || null
             : current.assigned_staff_user_id,
-        updated_at: new Date().toISOString(),
+        on_my_way_at: nextOnMyWayAt,
+        completed_at: nextCompletedAt,
+        updated_at: nowIso,
       })
       .eq('id', id)
       .select()

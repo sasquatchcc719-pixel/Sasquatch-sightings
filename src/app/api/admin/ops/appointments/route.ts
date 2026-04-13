@@ -548,10 +548,15 @@ export async function PATCH(request: NextRequest) {
     const paymentStatus = body.payment_status
       ? String(body.payment_status)
       : appointment.payment_status
+    const nowIso = new Date().toISOString()
+    const firstOnMyWayAt =
+      (appointment as { on_my_way_at?: string | null }).on_my_way_at ?? null
     const completedAt =
       nextStatus === 'completed' && !appointment.completed_at
-        ? new Date().toISOString()
+        ? nowIso
         : appointment.completed_at
+    const onMyWayAt =
+      nextStatus === 'on_my_way' && !firstOnMyWayAt ? nowIso : firstOnMyWayAt
 
     const { error: updateError } = await supabase
       .from('ops_appointments')
@@ -562,7 +567,8 @@ export async function PATCH(request: NextRequest) {
           ? String(body.internal_notes)
           : appointment.internal_notes,
         completed_at: completedAt,
-        updated_at: new Date().toISOString(),
+        on_my_way_at: onMyWayAt,
+        updated_at: nowIso,
       })
       .eq('id', appointmentId)
 

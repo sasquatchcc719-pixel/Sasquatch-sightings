@@ -3,6 +3,10 @@ import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { generateJobSlug } from '@/lib/slug'
 import { generateSEOFilename } from '@/lib/seo-filename'
+import {
+  effectiveInvoiceAmount,
+  utilizationHoursFromAppointment,
+} from '@/lib/ops/utilization-metrics'
 import sharp from 'sharp'
 
 type Params = { params: Promise<{ id: string }> }
@@ -114,11 +118,17 @@ export async function POST(request: NextRequest, { params }: Params) {
         `
         id,
         total,
+        ops_invoice_line_items (
+          line_total
+        ),
         ops_appointments (
           id,
           appointment_date,
           start_time,
           end_time,
+          quoted_total,
+          on_my_way_at,
+          completed_at,
           ops_service_addresses (
             street_1, city, state, zip_code
           ),
@@ -153,22 +163,44 @@ export async function POST(request: NextRequest, { params }: Params) {
       )
     }
 
-    // Mark appointment as completed
+    const publishNowIso = new Date().toISOString()
+    const completedAtExisting = (
+      appointment as { completed_at?: string | null }
+    ).completed_at
+    const completedAtForStats = completedAtExisting ?? publishNowIso
+
+    // Mark appointment completed; stamp completed_at once so utilization hours can use OMW → done.
     await supabase
       .from('ops_appointments')
-      .update({ status: 'completed' })
+      .update({
+        status: 'completed',
+        completed_at: completedAtForStats,
+        updated_at: publishNowIso,
+      })
       .eq('id', appointment.id)
 
-    // Compute hours worked from appointment window
-    let hoursWorked: number | null = null
-    if (appointment.start_time && appointment.end_time) {
-      const [sh, sm] = appointment.start_time.split(':').map(Number)
-      const [eh, em] = appointment.end_time.split(':').map(Number)
-      const mins = eh * 60 + em - (sh * 60 + sm)
-      if (mins > 0) hoursWorked = parseFloat((mins / 60).toFixed(2))
-    }
+    const invLines = Array.isArray(invoice.ops_invoice_line_items)
+      ? invoice.ops_invoice_line_items
+      : invoice.ops_invoice_line_items
+        ? [invoice.ops_invoice_line_items]
+        : []
 
-    const invoiceTotal = Number(invoice.total || 0)
+    let hoursWorked: number | null = utilizationHoursFromAppointment({
+      on_my_way_at: (appointment as { on_my_way_at?: string | null })
+        .on_my_way_at,
+      completed_at: completedAtForStats,
+      start_time: appointment.start_time,
+      end_time: appointment.end_time,
+    })
+    if (hoursWorked <= 0) hoursWorked = null
+
+    const invoiceTotal = effectiveInvoiceAmount({
+      invoiceTotal: Number(invoice.total || 0),
+      invoiceLineItems: invLines,
+      quotedTotal: Number(
+        (appointment as { quoted_total?: number }).quoted_total || 0,
+      ),
+    })
 
     // Geocode
     const geo = await geocodeAddress(

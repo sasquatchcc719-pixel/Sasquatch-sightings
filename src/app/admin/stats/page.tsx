@@ -949,7 +949,9 @@ export default function StatsPage() {
           <strong>Finish job &amp; update stats</strong>, and completed
           Operations jobs (same week as Live Jobs, Mon–Sun). You do{' '}
           <strong>not</strong> need photos or a social post for these numbers to
-          update.
+          update. <strong>Hours</strong> use the real duration from{' '}
+          <strong>On My Way</strong> through <strong>Finished</strong> when both
+          are recorded; otherwise the scheduled time window is used.
         </p>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-5">
           <Card className="p-4">

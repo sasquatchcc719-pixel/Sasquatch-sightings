@@ -1,16 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-
-function computeOnsiteHoursFromTimes(
-  startTime: string | null | undefined,
-  endTime: string | null | undefined,
-): number {
-  if (!startTime || !endTime) return 0
-  const [sh, sm] = String(startTime).split(':').map(Number)
-  const [eh, em] = String(endTime).split(':').map(Number)
-  const mins = eh * 60 + em - (sh * 60 + sm)
-  if (mins <= 0) return 0
-  return parseFloat((mins / 60).toFixed(2))
-}
+import {
+  effectiveInvoiceAmount,
+  utilizationHoursFromAppointment,
+} from '@/lib/ops/utilization-metrics'
 
 export type RecordRevenueFromOpsInvoiceResult =
   | { ok: true; skipped: true; reason: 'already_recorded' }
@@ -51,11 +43,17 @@ export async function recordRevenueFromOpsInvoice(
       `
       id,
       total,
+      ops_invoice_line_items (
+        line_total
+      ),
       ops_appointments (
         id,
         appointment_date,
         start_time,
         end_time,
+        quoted_total,
+        on_my_way_at,
+        completed_at,
         ops_appointment_line_items ( name_snapshot )
       )
     `,
@@ -83,13 +81,35 @@ export async function recordRevenueFromOpsInvoice(
     String(li.name_snapshot ?? ''),
   )
 
-  const invoiceTotal = Number(invoice.total || 0)
-  const hoursWorked = computeOnsiteHoursFromTimes(
-    appointment.start_time,
-    appointment.end_time,
-  )
+  const invLines = Array.isArray(invoice.ops_invoice_line_items)
+    ? invoice.ops_invoice_line_items
+    : invoice.ops_invoice_line_items
+      ? [invoice.ops_invoice_line_items]
+      : []
+
+  const invoiceTotal = effectiveInvoiceAmount({
+    invoiceTotal: Number(invoice.total || 0),
+    invoiceLineItems: invLines,
+    quotedTotal: Number(
+      (appointment as { quoted_total?: number }).quoted_total || 0,
+    ),
+  })
+
+  const hoursWorked = utilizationHoursFromAppointment({
+    on_my_way_at: (appointment as { on_my_way_at?: string | null })
+      .on_my_way_at,
+    completed_at: (appointment as { completed_at?: string | null })
+      .completed_at,
+    start_time: appointment.start_time,
+    end_time: appointment.end_time,
+  })
 
   const description = lineItemNames.filter(Boolean).join(', ') || 'Ops job'
+
+  const usedWallClock = Boolean(
+    (appointment as { on_my_way_at?: string | null }).on_my_way_at &&
+    (appointment as { completed_at?: string | null }).completed_at,
+  )
 
   const { data: inserted, error: insertError } = await supabase
     .from('revenue_entries')
@@ -100,7 +120,7 @@ export async function recordRevenueFromOpsInvoice(
       description,
       invoice_amount: invoiceTotal,
       hours_worked: hoursWorked,
-      drive_minutes: driveMinutes,
+      drive_minutes: usedWallClock ? null : driveMinutes,
       ops_invoice_id: invoiceId,
     })
     .select('id')

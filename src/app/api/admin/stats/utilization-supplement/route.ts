@@ -1,17 +1,10 @@
 import { NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
-
-function hoursBetween(
-  start: string | null | undefined,
-  end: string | null | undefined,
-): number {
-  if (!start || !end) return 0
-  const [sh, sm] = String(start).slice(0, 5).split(':').map(Number)
-  const [eh, em] = String(end).slice(0, 5).split(':').map(Number)
-  const mins = eh * 60 + em - (sh * 60 + sm)
-  return mins > 0 ? Number((mins / 60).toFixed(2)) : 0
-}
+import {
+  effectiveInvoiceAmount,
+  utilizationHoursFromAppointment,
+} from '@/lib/ops/utilization-metrics'
 
 /**
  * Completed ops jobs whose revenue/hours are not already represented by
@@ -55,9 +48,15 @@ export async function GET() {
         appointment_date,
         start_time,
         end_time,
+        quoted_total,
+        on_my_way_at,
+        completed_at,
         ops_invoices (
           id,
-          total
+          total,
+          ops_invoice_line_items (
+            line_total
+          )
         )
       `,
       )
@@ -78,8 +77,27 @@ export async function GET() {
       if (!inv?.id || !appt.appointment_date) continue
       if (covered.has(inv.id)) continue
 
-      const amt = Number(inv.total || 0)
-      const hw = hoursBetween(appt.start_time, appt.end_time)
+      const lineItems = Array.isArray(inv.ops_invoice_line_items)
+        ? inv.ops_invoice_line_items
+        : inv.ops_invoice_line_items
+          ? [inv.ops_invoice_line_items]
+          : []
+
+      const amt = effectiveInvoiceAmount({
+        invoiceTotal: Number(inv.total || 0),
+        invoiceLineItems: lineItems,
+        quotedTotal: Number(
+          (appt as { quoted_total?: number }).quoted_total || 0,
+        ),
+      })
+
+      const hw = utilizationHoursFromAppointment({
+        on_my_way_at: (appt as { on_my_way_at?: string | null }).on_my_way_at,
+        completed_at: (appt as { completed_at?: string | null }).completed_at,
+        start_time: appt.start_time,
+        end_time: appt.end_time,
+      })
+
       if (amt <= 0 && hw <= 0) continue
 
       rows.push({
