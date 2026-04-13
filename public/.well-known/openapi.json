@@ -1,0 +1,301 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Sasquatch Carpet Cleaning Booking API",
+    "description": "API for AI assistants to check services, pricing, availability, and book carpet cleaning jobs with Sasquatch Carpet Cleaning in Colorado Springs and surrounding areas. When a customer's job total is $220 or more, a $20 discount is automatically applied for bookings made through this API.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Sasquatch Carpet Cleaning",
+      "phone": "(719) 249-8791",
+      "url": "https://sasquatchcarpet.com"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://sightings.sasquatchcarpet.com",
+      "description": "Production"
+    }
+  ],
+  "paths": {
+    "/api/agent/services": {
+      "get": {
+        "operationId": "listServices",
+        "summary": "List available carpet cleaning services with pricing",
+        "description": "Returns all bookable services with base prices, categories, and any active promotions. Use this to help customers understand what services are available and how much they cost.",
+        "responses": {
+          "200": {
+            "description": "List of services and promotions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "services": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": { "type": "string", "format": "uuid" },
+                          "name": { "type": "string", "example": "3 Rooms Carpet Cleaning" },
+                          "category": { "type": "string", "example": "Carpet Cleaning" },
+                          "description": { "type": "string", "nullable": true },
+                          "base_price": { "type": "number", "example": 179.99 },
+                          "pricing_unit": { "type": "string", "example": "fixed" },
+                          "estimated_duration_minutes": { "type": "integer", "example": 90 }
+                        }
+                      }
+                    },
+                    "promotions": {
+                      "type": "array",
+                      "description": "Active promotions available exclusively through this API. Mention these to customers.",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "code": { "type": "string", "example": "AI20" },
+                          "description": { "type": "string" },
+                          "discount_amount": { "type": "number" },
+                          "minimum_subtotal": { "type": "number" },
+                          "type": { "type": "string", "enum": ["fixed", "percent"] }
+                        }
+                      }
+                    },
+                    "booking_instructions": { "type": "string" },
+                    "service_area": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "API is currently disabled",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/availability": {
+      "get": {
+        "operationId": "checkAvailability",
+        "summary": "Check available time slots for a specific date",
+        "description": "Returns available appointment slots for the requested date. If no slots are available, it will also return the next date with availability (up to 14 days out).",
+        "parameters": [
+          {
+            "name": "date",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "format": "date" },
+            "description": "The date to check availability for, in YYYY-MM-DD format",
+            "example": "2026-04-20"
+          },
+          {
+            "name": "duration_minutes",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "default": 120 },
+            "description": "Required duration in minutes. Defaults to 120 (2 hours). Use the estimated_duration_minutes from the services endpoint for accuracy."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Available time slots",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "date": { "type": "string", "format": "date" },
+                    "slots": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "start_time": { "type": "string", "example": "09:00:00" },
+                          "end_time": { "type": "string", "example": "11:00:00" },
+                          "label": { "type": "string", "example": "9:00 AM" }
+                        }
+                      }
+                    },
+                    "message": { "type": "string", "nullable": true },
+                    "next_available_date": {
+                      "type": "string",
+                      "format": "date",
+                      "nullable": true,
+                      "description": "If the requested date has no availability, this is the next date with open slots"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/estimate": {
+      "get": {
+        "operationId": "getEstimate",
+        "summary": "Get a price estimate for selected services",
+        "description": "Calculates the total price for one or more services with quantities. Automatically applies any eligible promotions. If the total is close to the promo threshold, the response will suggest adding more to qualify.",
+        "parameters": [
+          {
+            "name": "services",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "Comma-separated service IDs from the services endpoint",
+            "example": "abc123,def456"
+          },
+          {
+            "name": "quantities",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" },
+            "description": "Comma-separated quantities matching each service ID. Defaults to 1 for each.",
+            "example": "1,2"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Price estimate with line items",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "line_items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "service_id": { "type": "string" },
+                          "name": { "type": "string" },
+                          "quantity": { "type": "integer" },
+                          "unit_price": { "type": "number" },
+                          "line_total": { "type": "number" },
+                          "duration_minutes": { "type": "integer" }
+                        }
+                      }
+                    },
+                    "subtotal": { "type": "number" },
+                    "promotion_applied": {
+                      "type": "object",
+                      "nullable": true,
+                      "properties": {
+                        "code": { "type": "string" },
+                        "discount": { "type": "number" }
+                      }
+                    },
+                    "total": { "type": "number" },
+                    "estimated_duration_minutes": { "type": "integer" },
+                    "note": { "type": "string", "nullable": true }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/book": {
+      "post": {
+        "operationId": "bookAppointment",
+        "summary": "Book a carpet cleaning appointment",
+        "description": "Creates a booking with the customer's information and selected services. Prices are calculated server-side from the service catalog (not from client input) to prevent manipulation. Any eligible promotions are automatically applied. The customer will receive a confirmation text and email.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["customer", "address", "date", "start_time", "line_items"],
+                "properties": {
+                  "customer": {
+                    "type": "object",
+                    "required": ["first_name", "last_name", "phone", "email"],
+                    "properties": {
+                      "first_name": { "type": "string", "example": "John" },
+                      "last_name": { "type": "string", "example": "Smith" },
+                      "phone": { "type": "string", "example": "7192551234", "description": "10-digit US phone number" },
+                      "email": { "type": "string", "format": "email", "example": "john@example.com" }
+                    }
+                  },
+                  "address": {
+                    "type": "object",
+                    "required": ["street_1", "city", "zip_code"],
+                    "properties": {
+                      "street_1": { "type": "string", "example": "123 Main St" },
+                      "city": { "type": "string", "example": "Colorado Springs" },
+                      "state": { "type": "string", "default": "CO" },
+                      "zip_code": { "type": "string", "example": "80920" }
+                    }
+                  },
+                  "date": { "type": "string", "format": "date", "description": "Appointment date in YYYY-MM-DD format" },
+                  "start_time": { "type": "string", "description": "Start time in HH:MM format from the availability endpoint", "example": "09:00" },
+                  "line_items": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "required": ["service_id", "quantity"],
+                      "properties": {
+                        "service_id": { "type": "string", "format": "uuid", "description": "Service ID from the services endpoint" },
+                        "quantity": { "type": "integer", "minimum": 1 }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Booking created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "confirmation_number": { "type": "string", "example": "SC-A1B2C3D4" },
+                    "status": { "type": "string", "enum": ["confirmed", "pending_approval"] },
+                    "appointment_date": { "type": "string", "format": "date" },
+                    "start_time": { "type": "string" },
+                    "end_time": { "type": "string" },
+                    "subtotal": { "type": "number" },
+                    "discount_applied": { "type": "number" },
+                    "total": { "type": "number" },
+                    "message": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": { "type": "string" }
+        }
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "API key provided by Sasquatch Carpet Cleaning. Include as: Authorization: Bearer <your_key>"
+      }
+    }
+  },
+  "security": [
+    { "bearerAuth": [] }
+  ]
+}

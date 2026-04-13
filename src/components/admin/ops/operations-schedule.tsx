@@ -251,6 +251,8 @@ function getRangeForView(view: ScheduleView, anchorDate: Date) {
 
 function getStatusTone(status: string): string {
   switch (status) {
+    case 'pending_approval':
+      return 'border-amber-400 bg-amber-100'
     case 'confirmed':
       return 'border-emerald-400 bg-emerald-100'
     case 'on_my_way':

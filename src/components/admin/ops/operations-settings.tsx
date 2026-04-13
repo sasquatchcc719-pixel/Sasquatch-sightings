@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { QuickBooksStatus } from '@/components/admin/ops/quickbooks-status'
+import { AgentApiSettings } from '@/components/admin/ops/agent-api-settings'
 
 type QueueStats = {
   pending: number
@@ -146,6 +147,17 @@ export function OperationsSettings() {
         </p>
         <div className="mt-4">
           <QuickBooksStatus />
+        </div>
+      </Card>
+
+      <Card className="border-border/60 bg-card/80 p-6 shadow-sm backdrop-blur">
+        <h3 className="text-lg font-semibold">AI Agent Booking API</h3>
+        <p className="text-muted-foreground mt-1 text-sm">
+          Allow AI assistants like ChatGPT, Gemini, and Grok to check
+          availability, view pricing, and book jobs on your behalf.
+        </p>
+        <div className="mt-4">
+          <AgentApiSettings />
         </div>
       </Card>
 
