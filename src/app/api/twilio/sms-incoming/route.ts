@@ -14,14 +14,10 @@ import {
   isAIEnabled,
 } from '@/lib/openai-chat'
 import {
-  containsKnownBookingLink,
   getHarryControlSnapshot,
-  getHarryActiveBookingUrl,
   isHarryChannelEnabled,
   isHarryFunctionEnabled,
-  rewriteBookingLinks,
 } from '@/lib/harry/control'
-import { buildSmsSlotOffer } from '@/lib/ops/sms-booking'
 import { sendCustomerSMS, sendAdminSMS } from '@/lib/twilio'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
@@ -281,11 +277,45 @@ type ConversationMessageRecord = {
   sent_by?: string
 }
 
+function detectCancelIntent(text: string): boolean {
+  const cancelPhrases = [
+    'cancel my appointment',
+    'cancel my job',
+    'cancel my booking',
+    'cancel the appointment',
+    'cancel the job',
+    'cancel the booking',
+    'cancel the cleaning',
+    'cancel my cleaning',
+    'need to cancel',
+    'want to cancel',
+    'like to cancel',
+    "i'm canceling",
+    "i'm cancelling",
+    'i am canceling',
+    'i am cancelling',
+    'please cancel',
+    'go ahead and cancel',
+    "don't come",
+    'do not come',
+    "don't need you",
+    'do not need you',
+    'no longer need',
+    'not going to need',
+  ]
+  const lower = text.toLowerCase()
+  return cancelPhrases.some((p) => lower.includes(p))
+}
+
 function shouldHoldForHuman(params: {
   latestUserMessage: string
   messages: ConversationMessageRecord[]
 }): { hold: boolean; reason: string } {
   const text = params.latestUserMessage.toLowerCase()
+
+  if (detectCancelIntent(text)) {
+    return { hold: true, reason: 'cancel_request' }
+  }
 
   const hasRecentManualOutbound = params.messages.some((m) => {
     if (m.role !== 'assistant' || m.sent_by !== 'admin_external') return false
@@ -654,11 +684,6 @@ export async function POST(request: NextRequest) {
       controlSnapshot,
       'auto_reply_enabled',
     )
-    const canSendBookingOffers = isHarryFunctionEnabled(
-      controlSnapshot,
-      'booking_offers_enabled',
-    )
-    const activeBookingUrl = getHarryActiveBookingUrl(controlSnapshot)
     const canCreateLeads = isHarryFunctionEnabled(
       controlSnapshot,
       'auto_create_leads_enabled',
@@ -815,14 +840,72 @@ export async function POST(request: NextRequest) {
         })
         .eq('id', conversation.id)
 
-      if (canSendEscalationAlerts) {
-        await sendAdminSMS(
-          `🚧 Harry held reply (${holdDecision.reason})\nPhone: ${normalizedPhone}\nMessage: "${messageBody}"\n\nThread marked escalated for manual handling.`,
-          'ai_dispatcher_escalation',
+      if (holdDecision.reason === 'cancel_request') {
+        const customerName = conversation.customer_name || normalizedPhone
+
+        await Promise.allSettled([
+          canSendEscalationAlerts
+            ? sendAdminSMS(
+                `🚨 CANCELLATION REQUEST\nCustomer: ${customerName}\nPhone: ${normalizedPhone}\nMessage: "${messageBody}"\n\nHarry did NOT cancel — needs your manual review.`,
+                'ai_dispatcher_escalation',
+              )
+            : Promise.resolve(),
+          sendOneSignalNotification({
+            heading: '🚨 Job Cancellation Request',
+            content: `${customerName} wants to cancel. Review needed.`,
+            data: {
+              type: 'cancel_request',
+              phone: normalizedPhone,
+              conversation_id: conversation.id,
+            },
+          }),
+          resend.emails.send({
+            from: 'Sasquatch SMS <onboarding@resend.dev>',
+            to: 'sasquatchcc719@gmail.com',
+            subject: `🚨 Cancellation Request — ${customerName}`,
+            html: `
+              <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+                <h2 style="color: #dc2626;">Job Cancellation Request</h2>
+                <div style="background: #fef2f2; border-radius: 8px; padding: 16px; margin: 16px 0;">
+                  <p style="margin: 0 0 8px 0;"><strong>Customer:</strong> ${customerName}</p>
+                  <p style="margin: 0 0 8px 0;"><strong>Phone:</strong> <a href="tel:${normalizedPhone}">${normalizedPhone}</a></p>
+                  <p style="margin: 0;"><strong>Time:</strong> ${new Date().toLocaleString('en-US', { timeZone: 'America/Denver' })}</p>
+                </div>
+                <h3 style="color: #dc2626;">Customer said</h3>
+                <div style="background: #f3f4f6; border-radius: 8px; padding: 16px; margin: 16px 0;">
+                  <p style="margin: 0; white-space: pre-wrap;">${messageBody.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
+                </div>
+                <p style="color: #6b7280; font-size: 14px;">
+                  Harry did <strong>not</strong> cancel the job. Please review and handle manually.<br/>
+                  <a href="https://sightings.sasquatchcarpet.com/admin/conversations?source=inbound">View Conversations</a> ·
+                  <a href="https://sightings.sasquatchcarpet.com/admin/ops">View Jobs</a>
+                </p>
+              </div>
+            `,
+          }),
+        ])
+
+        await sendCustomerSMS(
+          normalizedPhone,
+          "I understand you'd like to cancel. I've flagged this for Charles and he'll follow up with you shortly to take care of it.",
+          conversation.lead_id || undefined,
+          'ai_dispatcher',
+          toNumber || undefined,
         )
+
+        console.log(
+          `[SMS] Cancel request detected — triple-alert sent, customer notified`,
+        )
+      } else {
+        if (canSendEscalationAlerts) {
+          await sendAdminSMS(
+            `🚧 Harry held reply (${holdDecision.reason})\nPhone: ${normalizedPhone}\nMessage: "${messageBody}"\n\nThread marked escalated for manual handling.`,
+            'ai_dispatcher_escalation',
+          )
+        }
+        await maybeSendInboundEmail(null)
       }
 
-      await maybeSendInboundEmail(null)
       console.log(
         `[SMS] Auto-reply suppressed, escalated for human: ${holdDecision.reason}`,
       )
@@ -878,11 +961,11 @@ export async function POST(request: NextRequest) {
         messages,
         partnerContext,
         channelKey,
-        activeBookingUrl,
+        undefined,
+        { customerPhoneE164: normalizedPhone },
       )
 
       if (!aiResponse) {
-        // AI returned empty (shouldn't happen, but handle gracefully)
         console.log('⚠️  AI returned empty response')
         await supabase
           .from('conversations')
@@ -890,73 +973,6 @@ export async function POST(request: NextRequest) {
           .eq('id', conversation.id)
         await maybeSendInboundEmail(null)
         return emptyTwiml
-      }
-
-      // HARD GATE: Never send the booking link without first+last name, email, and full address (street + zip).
-      // Extraction uses only USER messages (not the bot's), so "name given early" is from their own texts.
-      const extractedInfo = extractCustomerInfo(messages)
-      const hasFullName =
-        extractedInfo.name && extractedInfo.name.trim().split(/\s+/).length >= 2
-      const hasFullAddress = extractedInfo.address && extractedInfo.zipCode
-      const hasRequiredInfo =
-        hasFullName && hasFullAddress && extractedInfo.email
-      if (containsKnownBookingLink(aiResponse) && !canSendBookingOffers) {
-        aiResponse =
-          'I can still help with your quote here. Our team will follow up directly to handle booking options.'
-      }
-      if (
-        containsKnownBookingLink(aiResponse) &&
-        !hasRequiredInfo &&
-        canSendBookingOffers
-      ) {
-        const missing: string[] = []
-        if (!hasFullName)
-          missing.push(extractedInfo.name ? 'last name' : 'first and last name')
-        if (!extractedInfo.email) missing.push('email')
-        if (!hasFullAddress)
-          missing.push(
-            extractedInfo.address
-              ? 'city and zip'
-              : 'full address including city and zip',
-          )
-        // Ask only for what's missing so we don't repeat "give me everything" when we already have most of it
-        if (!hasFullName && !extractedInfo.name) {
-          aiResponse =
-            "To get you on the calendar I need your first and last name, email, and full address (street, city, and zip). What's your full name?"
-        } else if (!hasFullName && extractedInfo.name) {
-          aiResponse = "What's your last name?"
-        } else if (!extractedInfo.email) {
-          aiResponse = "What's your email so we can send confirmation?"
-        } else if (!extractedInfo.address) {
-          aiResponse = "What's your full address (street, city, and zip)?"
-        } else if (!extractedInfo.zipCode) {
-          aiResponse = "What's your zip code?"
-        } else {
-          aiResponse =
-            "To get you on the calendar I need your first and last name, email, and full address (street, city, and zip). What's your full name?"
-        }
-        console.log(
-          `[SMS] Booking link blocked: missing ${missing.join(', ')}. Extracted: name=${extractedInfo.name ?? 'null'}, email=${extractedInfo.email ? '***' : 'null'}, address=${extractedInfo.address ?? 'null'}, zip=${extractedInfo.zipCode ?? 'null'}. Sent info request instead.`,
-        )
-      }
-
-      if (
-        containsKnownBookingLink(aiResponse) &&
-        hasRequiredInfo &&
-        canSendBookingOffers
-      ) {
-        const slotOffer = await buildSmsSlotOffer({
-          supabase,
-          serviceNeeded: extractedInfo.serviceNeeded,
-        })
-
-        if (slotOffer) {
-          aiResponse = slotOffer
-        }
-      }
-
-      if (canSendBookingOffers && containsKnownBookingLink(aiResponse)) {
-        aiResponse = rewriteBookingLinks(aiResponse, activeBookingUrl)
       }
 
       // Add AI response to conversation
@@ -980,7 +996,7 @@ export async function POST(request: NextRequest) {
         .eq('id', conversation.id)
 
       // Check if we should create a lead (has enough info and no lead exists yet)
-      // Required: first+last name, full address (street + zip), email (same as booking-link gate)
+      const extractedInfo = extractCustomerInfo(messages)
       if (!conversation.lead_id && canCreateLeads) {
         const hasFullNameForLead =
           extractedInfo.name &&

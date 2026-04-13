@@ -63,12 +63,13 @@ export type GeorgeActionPayload =
       args: {
         appointment_id: string
         status:
-          | 'pending'
+          | 'booked'
           | 'confirmed'
+          | 'on_my_way'
           | 'in_progress'
           | 'completed'
           | 'cancelled'
-          | 'no_show'
+          | 'pending_approval'
       }
       reason: string
     }

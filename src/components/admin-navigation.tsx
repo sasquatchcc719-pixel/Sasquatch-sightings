@@ -26,6 +26,7 @@ import {
   Megaphone,
   ImagePlay,
   Mail,
+  ClipboardList,
 } from 'lucide-react'
 
 interface NavTab {
@@ -113,7 +114,7 @@ export function AdminNavigation() {
   const [operationsOpen, setOperationsOpen] = useState(false)
   const [marketingOpen, setMarketingOpen] = useState(false)
   const [callsOpen, setCallsOpen] = useState(false)
-  const [harryOpen, setHarryOpen] = useState(false)
+  const [aiOpen, setAiOpen] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
 
   // Close all dropdowns
@@ -121,7 +122,7 @@ export function AdminNavigation() {
     setOperationsOpen(false)
     setMarketingOpen(false)
     setCallsOpen(false)
-    setHarryOpen(false)
+    setAiOpen(false)
     setPreviewOpen(false)
   }
 
@@ -210,8 +211,8 @@ export function AdminNavigation() {
     },
   ]
 
-  // Harry controls (ops-safe control center)
-  const harryTabs: NavTab[] = [
+  // AI controls (Harry + George + AI Chats)
+  const aiTabs: NavTab[] = [
     {
       name: 'Control',
       href: '/admin/harry/control',
@@ -232,6 +233,13 @@ export function AdminNavigation() {
       icon: MessageSquare,
       active: pathname === '/admin/conversations' && isAIChatsSource,
       description: 'All AI-initiated chats (vendor, card, contest)',
+    },
+    {
+      name: 'Capabilities',
+      href: '/admin/harry/capabilities',
+      icon: ClipboardList,
+      active: pathname === '/admin/harry/capabilities',
+      description: 'What Harry and George can and cannot do',
     },
   ]
 
@@ -280,7 +288,7 @@ export function AdminNavigation() {
   const operationsActive = operationsTabs.some((tab) => tab.active)
   const marketingActive = marketingTabs.some((tab) => tab.active)
   const callsActive = callsTabs.some((tab) => tab.active)
-  const harryActive = harryTabs.some((tab) => tab.active)
+  const aiActive = aiTabs.some((tab) => tab.active)
 
   return (
     <div>
@@ -329,18 +337,18 @@ export function AdminNavigation() {
             tabs={callsTabs}
           />
 
-          {/* Harry Controls Dropdown */}
+          {/* AI Controls Dropdown */}
           <NavDropdown
-            label="Harry"
+            label="AI"
             icon={Bot}
-            isOpen={harryOpen}
+            isOpen={aiOpen}
             onToggle={() => {
               closeAll()
-              setHarryOpen(!harryOpen)
+              setAiOpen(!aiOpen)
             }}
             onClose={closeAll}
-            isActive={harryActive}
-            tabs={harryTabs}
+            isActive={aiActive}
+            tabs={aiTabs}
           />
 
           {/* Preview Pages dropdown */}

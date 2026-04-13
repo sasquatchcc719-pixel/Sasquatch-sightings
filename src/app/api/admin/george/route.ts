@@ -372,12 +372,13 @@ function parseAction(input: unknown): GeorgeActionPayload | null {
     const appointmentId = String(args.appointment_id || '')
     const status = String(args.status || '')
     const validStatuses = [
-      'pending',
+      'booked',
       'confirmed',
+      'on_my_way',
       'in_progress',
       'completed',
       'cancelled',
-      'no_show',
+      'pending_approval',
     ]
     if (!appointmentId || !validStatuses.includes(status)) return null
     return {
@@ -385,12 +386,13 @@ function parseAction(input: unknown): GeorgeActionPayload | null {
       args: {
         appointment_id: appointmentId,
         status: status as
-          | 'pending'
+          | 'booked'
           | 'confirmed'
+          | 'on_my_way'
           | 'in_progress'
           | 'completed'
           | 'cancelled'
-          | 'no_show',
+          | 'pending_approval',
       },
       reason,
     }
@@ -830,7 +832,7 @@ Return ONLY strict JSON with this shape:
 DATABASE SCHEMA (read via query_database)
 ═══════════════════════════════════════
 ops_customers: id, full_name, first_name, last_name, business_name, email, phone, created_at
-ops_appointments: id, customer_id→ops_customers, appointment_date, start_time, end_time, status(pending/confirmed/in_progress/completed/cancelled/no_show), payment_status, quoted_total, internal_notes, lead_source, created_at
+ops_appointments: id, customer_id→ops_customers, appointment_date, start_time, end_time, status(booked/confirmed/on_my_way/in_progress/completed/cancelled/pending_approval), payment_status, quoted_total, internal_notes, lead_source, created_at
 ops_service_addresses: id, customer_id, label, street_1, street_2, city, state, zip_code, gate_code, notes
 ops_invoices: id, appointment_id→ops_appointments, status(pending/paid/void), payment_method(cash/venmo/check/card), subtotal, tax_amount, total, created_at
 ops_invoice_line_items: id, invoice_id, description, quantity, unit_price, line_total
@@ -870,7 +872,7 @@ WRITE (all require confirmation — set mode "propose_action"):
 • set_failover_target: args { target: "primary"|"failover", phone: "+1XXXXXXXXXX" }
 • update_harry_profile: args { profile_key, prompt_overrides, booking_mode?, is_enabled? }
 • update_harry_knowledge_block: args { category_key, content, title?, is_enabled? }
-• update_appointment_status: args { appointment_id: "uuid", status: "pending"|"confirmed"|"in_progress"|"completed"|"cancelled"|"no_show" }
+• update_appointment_status: args { appointment_id: "uuid", status: "booked"|"confirmed"|"on_my_way"|"in_progress"|"completed"|"cancelled"|"pending_approval" }
 • send_customer_sms: args { phone: "+1XXXXXXXXXX", message: "text" }
 
 RULES:
