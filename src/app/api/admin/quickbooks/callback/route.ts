@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getUserWithRole } from '@/lib/auth'
+import { getUserWithRole, hasRoleAccess } from '@/lib/auth'
 import { exchangeCodeForTokens, saveQBTokens } from '@/lib/quickbooks-auth'
 
 export async function GET(request: NextRequest) {
   try {
     const { user, role } = await getUserWithRole()
-    if (!user || role !== 'admin') {
+    if (!user || !hasRoleAccess(role, ['admin', 'owner'])) {
       return NextResponse.redirect(
-        new URL('/admin?error=unauthorized', request.url),
+        new URL('/admin/operations?qb_error=unauthorized', request.url),
       )
     }
 
@@ -44,8 +44,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(
       new URL('/admin/operations?qb_connected=1', request.url),
     )
-  } catch {
-    console.error('[quickbooks/callback] Token exchange failed')
+  } catch (err) {
+    console.error(
+      '[quickbooks/callback] Token exchange or save failed:',
+      err instanceof Error ? err.message : err,
+    )
     return NextResponse.redirect(
       new URL('/admin/operations?qb_error=token_exchange_failed', request.url),
     )

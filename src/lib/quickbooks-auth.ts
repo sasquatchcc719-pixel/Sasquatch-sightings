@@ -103,23 +103,37 @@ export async function saveQBTokens(params: {
   const supabase = createAdminClient()
   const now = Date.now()
 
-  const { error } = await supabase.from('quickbooks_oauth_tokens').upsert(
-    {
-      realm_id: encrypt(params.realmId),
-      access_token: encrypt(params.accessToken),
-      refresh_token: encrypt(params.refreshToken),
-      access_token_expires_at: new Date(
-        now + params.accessTokenExpiresIn * 1000,
-      ).toISOString(),
-      refresh_token_expires_at: new Date(
-        now + params.refreshTokenExpiresIn * 1000,
-      ).toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'id' },
-  )
+  const payload = {
+    realm_id: encrypt(params.realmId),
+    access_token: encrypt(params.accessToken),
+    refresh_token: encrypt(params.refreshToken),
+    access_token_expires_at: new Date(
+      now + params.accessTokenExpiresIn * 1000,
+    ).toISOString(),
+    refresh_token_expires_at: new Date(
+      now + params.refreshTokenExpiresIn * 1000,
+    ).toISOString(),
+    updated_at: new Date().toISOString(),
+  }
 
-  if (error) throw error
+  const { data: existing } = await supabase
+    .from('quickbooks_oauth_tokens')
+    .select('id')
+    .limit(1)
+    .maybeSingle()
+
+  if (existing?.id) {
+    const { error } = await supabase
+      .from('quickbooks_oauth_tokens')
+      .update(payload)
+      .eq('id', existing.id)
+    if (error) throw error
+  } else {
+    const { error } = await supabase
+      .from('quickbooks_oauth_tokens')
+      .insert(payload)
+    if (error) throw error
+  }
 }
 
 export async function getValidQBAccessToken(): Promise<{

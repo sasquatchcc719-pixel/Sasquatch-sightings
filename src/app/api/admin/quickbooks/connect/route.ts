@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getUserWithRole } from '@/lib/auth'
+import { getUserWithRole, hasRoleAccess } from '@/lib/auth'
 import { buildQBAuthUrl } from '@/lib/quickbooks-auth'
 import crypto from 'crypto'
 
 export async function GET(request: NextRequest) {
   try {
     const { user, role } = await getUserWithRole()
-    if (!user || role !== 'admin') {
+    if (!user || !hasRoleAccess(role, ['admin', 'owner'])) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
