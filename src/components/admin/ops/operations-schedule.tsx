@@ -7,6 +7,7 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  GripVertical,
   Loader2,
   Plus,
   RefreshCw,
@@ -18,11 +19,6 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import {
-  applyAppointmentBuffer,
-  calculateLineItemDurationMinutes,
-  DEFAULT_APPOINTMENT_BUFFER_MINUTES,
-} from '@/lib/ops/availability'
 
 type ScheduleView = 'week' | 'day' | 'month'
 
@@ -146,6 +142,14 @@ function minutesToTimeLabel(totalMinutes: number): string {
   const hours = Math.floor(safe / 60) % 24
   const minutes = safe % 60
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+}
+
+/** Total minutes since midnight → `HH:MM:00` for ops PATCH bodies. */
+function minutesToDbTime(totalMinutes: number): string {
+  const safe = Math.max(0, Math.min(totalMinutes, 24 * 60 - 1))
+  const hours = Math.floor(safe / 60) % 24
+  const minutes = safe % 60
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`
 }
 
 function startOfWeek(date: Date): Date {
@@ -290,45 +294,20 @@ function getBlockPlacement(event: CalendarEvent) {
   return { top, height }
 }
 
-function getAppointmentPlacement(appointment: Appointment) {
+function getAppointmentPlacement(
+  appointment: Appointment,
+  endMinutesOverride?: number | null,
+) {
   const workdayStart = HOURS[0] * 60
-  const serviceMinutes = appointment.ops_appointment_line_items.reduce(
-    (sum, lineItem) => {
-      const durationMinutes = Number(lineItem.duration_minutes || 0)
-      const quantity = Number(lineItem.quantity || 0)
-      if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return sum
-      if (!Number.isFinite(quantity) || quantity <= 0) return sum
-      return (
-        sum +
-        calculateLineItemDurationMinutes({
-          durationMinutes,
-          quantity,
-        })
-      )
-    },
-    0,
-  )
-  const appointmentMinutesFromLineItems =
-    serviceMinutes > 0
-      ? applyAppointmentBuffer(
-          serviceMinutes,
-          DEFAULT_APPOINTMENT_BUFFER_MINUTES,
-        )
-      : 0
-
   const startMinutes = Math.max(
     parseMinutes(appointment.start_time),
     workdayStart,
   )
-  const fallbackMinutes = Math.max(
-    parseMinutes(appointment.end_time) - parseMinutes(appointment.start_time),
-    30,
-  )
-  const totalMinutes = Math.max(
-    appointmentMinutesFromLineItems,
-    fallbackMinutes,
-  )
-  const endMinutes = Math.max(startMinutes + totalMinutes, startMinutes + 30)
+  const rawEnd =
+    endMinutesOverride != null
+      ? endMinutesOverride
+      : parseMinutes(appointment.end_time)
+  const endMinutes = Math.max(rawEnd, startMinutes + 15)
   const top = ((startMinutes - workdayStart) / 60) * HOUR_HEIGHT
   const height = Math.max(((endMinutes - startMinutes) / 60) * HOUR_HEIGHT, 56)
   return {
@@ -705,6 +684,89 @@ export function OperationsSchedule() {
     const m = minutes % 60
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`
   }
+
+  type ResizeSession = {
+    appointmentId: string
+    originEndMinutes: number
+    startMinutes: number
+    grabClientY: number
+  }
+  const [resizeSession, setResizeSession] = useState<ResizeSession | null>(null)
+  const [resizeLiveEndMinutes, setResizeLiveEndMinutes] = useState<
+    number | null
+  >(null)
+  const resizeLiveEndRef = useRef<number | null>(null)
+
+  const beginResize = useCallback(
+    (e: React.MouseEvent, appointment: Appointment) => {
+      e.preventDefault()
+      e.stopPropagation()
+      setError(null)
+      const startM = parseMinutes(appointment.start_time)
+      const endM = parseMinutes(appointment.end_time)
+      setResizeSession({
+        appointmentId: appointment.id,
+        originEndMinutes: endM,
+        startMinutes: startM,
+        grabClientY: e.clientY,
+      })
+      resizeLiveEndRef.current = endM
+      setResizeLiveEndMinutes(endM)
+    },
+    [],
+  )
+
+  useEffect(() => {
+    if (!resizeSession) return
+
+    const onMove = (e: MouseEvent) => {
+      const dy = e.clientY - resizeSession.grabClientY
+      const delta = Math.round(dy / PX_PER_MINUTE / 15) * 15
+      const next = Math.max(
+        resizeSession.startMinutes + 15,
+        resizeSession.originEndMinutes + delta,
+      )
+      resizeLiveEndRef.current = next
+      setResizeLiveEndMinutes(next)
+    }
+
+    const onUp = () => {
+      const session = resizeSession
+      const finalEnd = resizeLiveEndRef.current ?? session.originEndMinutes
+      void (async () => {
+        if (finalEnd !== session.originEndMinutes) {
+          try {
+            const response = await fetch(
+              `/api/admin/ops/appointments/${session.appointmentId}`,
+              {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ end_time: minutesToDbTime(finalEnd) }),
+              },
+            )
+            const result = await response.json()
+            if (!response.ok) {
+              setError(result.error || 'Failed to update end time')
+            } else {
+              await loadSchedule()
+            }
+          } catch {
+            setError('Failed to update end time')
+          }
+        }
+        setResizeSession(null)
+        setResizeLiveEndMinutes(null)
+        resizeLiveEndRef.current = null
+      })()
+    }
+
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [resizeSession, loadSchedule, PX_PER_MINUTE])
 
   const handleDragOver = (
     e: React.DragEvent<HTMLDivElement>,
@@ -1428,7 +1490,15 @@ export function OperationsSchedule() {
                           appointment.ops_customers,
                         )
                         const invoice = unwrapRelation(appointment.ops_invoices)
-                        const placement = getAppointmentPlacement(appointment)
+                        const endOverride =
+                          resizeSession?.appointmentId === appointment.id &&
+                          resizeLiveEndMinutes != null
+                            ? resizeLiveEndMinutes
+                            : null
+                        const placement = getAppointmentPlacement(
+                          appointment,
+                          endOverride,
+                        )
                         const href = invoice?.id
                           ? `/admin/operations/invoices/${invoice.id}`
                           : `/admin/operations/appointments/${appointment.id}`
@@ -1437,33 +1507,55 @@ export function OperationsSchedule() {
                         return (
                           <div
                             key={appointment.id}
-                            draggable
-                            onDragStart={(e) => {
-                              e.dataTransfer.setData(
-                                'appointmentId',
-                                appointment.id,
-                              )
-                              e.dataTransfer.effectAllowed = 'move'
-                              draggingYOffsetRef.current = e.nativeEvent.offsetY
-                              didDragRef.current = false
-                              setDraggingAppointment(appointment)
-                              setTimeout(() => {
-                                didDragRef.current = true
-                              }, 50)
-                            }}
-                            onDragEnd={() => {
-                              setDraggingAppointment(null)
-                              setDragPreview(null)
-                            }}
-                            className={`absolute right-2 left-2 cursor-grab overflow-hidden rounded-2xl border p-3 text-xs text-slate-900 shadow-sm transition active:cursor-grabbing ${getStatusTone(appointment.status)} ${isDragging ? 'opacity-40' : 'hover:shadow-md'}`}
+                            data-appointment-block
+                            className={`absolute right-2 left-2 flex flex-col overflow-hidden rounded-2xl border text-xs text-slate-900 shadow-sm transition ${getStatusTone(appointment.status)} ${isDragging ? 'opacity-40' : 'hover:shadow-md'}`}
                             style={{
                               top: placement.top + 6,
                               height: placement.height - 8,
                             }}
                           >
+                            <div
+                              draggable
+                              onDragStart={(e) => {
+                                e.dataTransfer.setData(
+                                  'appointmentId',
+                                  appointment.id,
+                                )
+                                e.dataTransfer.effectAllowed = 'move'
+                                const block = (
+                                  e.currentTarget as HTMLElement
+                                ).closest(
+                                  '[data-appointment-block]',
+                                ) as HTMLElement | null
+                                if (block) {
+                                  draggingYOffsetRef.current =
+                                    e.clientY -
+                                    block.getBoundingClientRect().top
+                                } else {
+                                  draggingYOffsetRef.current =
+                                    e.nativeEvent.offsetY
+                                }
+                                didDragRef.current = false
+                                setDraggingAppointment(appointment)
+                                setTimeout(() => {
+                                  didDragRef.current = true
+                                }, 50)
+                              }}
+                              onDragEnd={() => {
+                                setDraggingAppointment(null)
+                                setDragPreview(null)
+                              }}
+                              className="flex shrink-0 cursor-grab items-center gap-1 border-b border-black/5 bg-black/[0.03] px-2 py-1 active:cursor-grabbing"
+                              title="Drag to move start time"
+                            >
+                              <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                              <span className="text-[10px] font-medium tracking-tight text-slate-600">
+                                Move
+                              </span>
+                            </div>
                             <Link
                               href={href}
-                              className="flex h-full flex-col overflow-hidden"
+                              className="flex min-h-0 flex-1 flex-col overflow-hidden p-2 pt-1"
                               onClick={(e) => {
                                 if (didDragRef.current) e.preventDefault()
                               }}
@@ -1484,7 +1576,7 @@ export function OperationsSchedule() {
                               <div className="mt-1 text-slate-700">
                                 {placement.startLabel} - {placement.endLabel}
                               </div>
-                              <div className="mt-2 line-clamp-1 text-slate-800">
+                              <div className="mt-2 line-clamp-2 text-slate-800">
                                 {appointment.ops_appointment_line_items
                                   .map((item) => item.name_snapshot)
                                   .join(', ')}
@@ -1493,6 +1585,13 @@ export function OperationsSchedule() {
                                 ${Number(appointment.quoted_total).toFixed(2)}
                               </div>
                             </Link>
+                            <button
+                              type="button"
+                              aria-label="Drag to change end time"
+                              title="Drag to extend or shorten"
+                              className="h-2.5 shrink-0 cursor-ns-resize rounded-b-[13px] border-t border-black/10 bg-black/[0.06] hover:bg-black/12"
+                              onMouseDown={(e) => beginResize(e, appointment)}
+                            />
                           </div>
                         )
                       })}

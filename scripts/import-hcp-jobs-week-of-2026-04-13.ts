@@ -66,6 +66,12 @@ type JobIn = {
   lines: LineIn[]
   discount_amount?: number
   internal_notes: string
+  /**
+   * Real on-site window for calendar end_time. Use when line items are lump-sum (qty 1)
+   * or placeholder durations that must not drive length — otherwise huge commercial lines
+   * were stored as 120m and everything looked like a 2-hour block.
+   */
+  scheduled_duration_minutes?: number
 }
 
 const JOBS: JobIn[] = [
@@ -120,6 +126,7 @@ const JOBS: JobIn[] = [
     ],
     internal_notes:
       'HCP commercial import. Recurring monthly on HCP — not modeled in Sightings yet. Subtotal $923.85. Notifications off in HCP.',
+    scheduled_duration_minutes: 270,
   },
   {
     first_name: 'Stephanie',
@@ -301,6 +308,7 @@ const JOBS: JobIn[] = [
     ],
     internal_notes:
       'HCP import wk 4/19–25. Commercial line only $1,372.70. Recurring billing on HCP — not modeled in Sightings.',
+    scheduled_duration_minutes: 300,
   },
   {
     first_name: 'Matt',
@@ -368,6 +376,7 @@ const JOBS: JobIn[] = [
     ],
     internal_notes:
       'HCP import wk 4/26–5/2. Sun 4/26 5pm. Subtotal $1,101.80 per estimate screenshot. Recurring — not modeled as series in Sightings.',
+    scheduled_duration_minutes: 240,
   },
   {
     first_name: 'Recovery',
@@ -392,6 +401,7 @@ const JOBS: JobIn[] = [
     ],
     internal_notes:
       'HCP import wk 4/26–5/2. Wed 4/29 5pm. $771.75 per estimate screenshot. Recurring.',
+    scheduled_duration_minutes: 300,
   },
   {
     first_name: 'Keri',
@@ -452,6 +462,7 @@ const JOBS: JobIn[] = [
     ],
     internal_notes:
       'HCP import wk 5/3–9. Tue 5/5 9–11am. D building scope per HCP estimate.',
+    scheduled_duration_minutes: 300,
   },
 
   // Week of May 10–16, 2026
@@ -536,6 +547,7 @@ const JOBS: JobIn[] = [
     ],
     internal_notes:
       'HCP import wk 5/10–16. Wed 5/13 5:30–7:30pm. Same scope pattern as prior A-building job. Subtotal $923.85.',
+    scheduled_duration_minutes: 240,
   },
   {
     first_name: 'Recovery',
@@ -559,6 +571,7 @@ const JOBS: JobIn[] = [
       },
     ],
     internal_notes: 'HCP import wk 5/10–16. Thu 5/14 5:30–7:30pm.',
+    scheduled_duration_minutes: 270,
   },
 
   // Week of May 24–30, 2026
@@ -585,6 +598,7 @@ const JOBS: JobIn[] = [
     ],
     internal_notes:
       'HCP import wk 5/24–30. Memorial Day Mon 5/25 10am–12pm. $1,500.',
+    scheduled_duration_minutes: 300,
   },
   {
     first_name: 'Recovery',
@@ -616,6 +630,7 @@ const JOBS: JobIn[] = [
     ],
     internal_notes:
       'HCP import wk 5/24–30. Tue 5/26 5:30–7:30pm. Subtotal $1,101.80. If this estimate belongs to Fri instead, swap in ops.',
+    scheduled_duration_minutes: 240,
   },
   {
     first_name: 'Recovery',
@@ -640,6 +655,7 @@ const JOBS: JobIn[] = [
     ],
     internal_notes:
       'HCP import wk 5/24–30. Fri 5/29 5:30–7:30pm. If estimate #12443 belongs here, swap line items with Tue in ops.',
+    scheduled_duration_minutes: 300,
   },
 
   // Week of May 31 – June 6, 2026
@@ -666,6 +682,7 @@ const JOBS: JobIn[] = [
     ],
     internal_notes:
       'HCP import wk 5/31–6/6. Thu 6/4 9–11am. Commercial line per HCP.',
+    scheduled_duration_minutes: 300,
   },
 ]
 
@@ -737,7 +754,7 @@ async function insertAppointmentForJob(
     }
   })
 
-  const totalMinutes = normalizedLines.reduce(
+  const minutesFromLines = normalizedLines.reduce(
     (sum, item) =>
       sum +
       calculateLineItemDurationMinutes({
@@ -746,11 +763,21 @@ async function insertAppointmentForJob(
       }),
     0,
   )
-  if (totalMinutes <= 0) {
+  if (minutesFromLines <= 0) {
     throw new Error(`No duration for job ${job.first_name} ${job.last_name}`)
   }
 
-  const totalMinutesWithBuffer = applyAppointmentBuffer(totalMinutes)
+  const scheduledMinutes =
+    job.scheduled_duration_minutes != null
+      ? Math.max(0, job.scheduled_duration_minutes)
+      : minutesFromLines
+  if (scheduledMinutes <= 0) {
+    throw new Error(
+      `Invalid scheduled_duration_minutes for ${job.first_name} ${job.last_name}`,
+    )
+  }
+
+  const totalMinutesWithBuffer = applyAppointmentBuffer(scheduledMinutes)
   const startRaw = job.start_time
   const normalizedStart = `${startRaw}:00`.slice(0, 8)
   const quotedSubtotal = normalizedLines.reduce((s, l) => s + l.line_total, 0)

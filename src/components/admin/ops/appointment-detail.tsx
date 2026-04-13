@@ -94,6 +94,11 @@ function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
   return Array.isArray(value) ? value[0] || null : value
 }
 
+function timeToMinutes(value: string): number {
+  const [h, m] = String(value).slice(0, 5).split(':').map(Number)
+  return (h || 0) * 60 + (m || 0)
+}
+
 export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
@@ -104,6 +109,7 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
   const [form, setForm] = useState({
     appointment_date: '',
     start_time: '',
+    end_time: '',
     status: 'booked',
     payment_status: 'unpaid',
     internal_notes: '',
@@ -128,6 +134,7 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
         setForm({
           appointment_date: result.appointment.appointment_date,
           start_time: String(result.appointment.start_time).slice(0, 5),
+          end_time: String(result.appointment.end_time).slice(0, 5),
           status: result.appointment.status,
           payment_status: result.appointment.payment_status,
           internal_notes: result.appointment.internal_notes || '',
@@ -150,6 +157,13 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
     setSaving(true)
     setError(null)
     try {
+      const startM = timeToMinutes(form.start_time)
+      const endM = timeToMinutes(form.end_time)
+      if (endM <= startM) {
+        setError('End time must be after start time.')
+        setSaving(false)
+        return
+      }
       const response = await fetch(
         `/api/admin/ops/appointments/${appointmentId}`,
         {
@@ -161,6 +175,17 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
       const result = await response.json()
       if (!response.ok) {
         throw new Error(result.error || 'Failed to update appointment')
+      }
+      if (result.appointment) {
+        setAppointment(result.appointment)
+        setForm({
+          appointment_date: result.appointment.appointment_date,
+          start_time: String(result.appointment.start_time).slice(0, 5),
+          end_time: String(result.appointment.end_time).slice(0, 5),
+          status: result.appointment.status,
+          payment_status: result.appointment.payment_status,
+          internal_notes: result.appointment.internal_notes || '',
+        })
       }
       router.refresh()
     } catch (saveError) {
@@ -338,6 +363,20 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
                   setForm((current) => ({
                     ...current,
                     start_time: event.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="job-end-time">End Time</Label>
+              <Input
+                id="job-end-time"
+                type="time"
+                value={form.end_time}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    end_time: event.target.value,
                   }))
                 }
               />

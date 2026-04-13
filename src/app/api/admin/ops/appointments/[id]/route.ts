@@ -18,6 +18,21 @@ function addMinutesToTime(value: string, minutesToAdd: number): string {
   return `${String(nextHours).padStart(2, '0')}:${String(nextMinutes).padStart(2, '0')}:00`
 }
 
+/** Normalize any "HH:MM" or "HH:MM:SS" input for Postgres time columns. */
+function toDbTime(value: string): string {
+  const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?/.exec(String(value).trim())
+  if (!m) return '09:00:00'
+  const h = Math.min(23, Math.max(0, parseInt(m[1], 10)))
+  const min = Math.min(59, Math.max(0, parseInt(m[2], 10)))
+  const sec = m[3] != null ? Math.min(59, Math.max(0, parseInt(m[3], 10))) : 0
+  return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+}
+
+function parseClockMinutes(value: string): number {
+  const [h, m] = toDbTime(value).split(':').map(Number)
+  return (h || 0) * 60 + (m || 0)
+}
+
 const APPOINTMENT_SELECT = `
   *,
   ops_customers (
@@ -133,11 +148,25 @@ export async function PATCH(
     const appointmentDate = body.appointment_date
       ? String(body.appointment_date).trim()
       : current.appointment_date
-    const startTime = body.start_time
-      ? String(body.start_time).trim()
-      : String(current.start_time).slice(0, 5)
 
-    const totalMinutes = (current.ops_appointment_line_items || []).reduce(
+    const normStartStr = (t: string) => toDbTime(t).slice(0, 5)
+    const nextStartDb = toDbTime(
+      body.start_time != null
+        ? String(body.start_time)
+        : String(current.start_time),
+    )
+
+    const startChanged =
+      body.start_time != null &&
+      normStartStr(String(body.start_time)) !==
+        normStartStr(String(current.start_time))
+    const dateChanged =
+      body.appointment_date != null &&
+      String(body.appointment_date).trim() !== String(current.appointment_date)
+
+    const totalMinutesFromLines = (
+      current.ops_appointment_line_items || []
+    ).reduce(
       (
         sum: number,
         item: {
@@ -153,7 +182,35 @@ export async function PATCH(
         }),
       0,
     )
-    const totalMinutesWithBuffer = applyAppointmentBuffer(totalMinutes)
+    const totalMinutesWithBuffer = applyAppointmentBuffer(totalMinutesFromLines)
+
+    const explicitEndInput =
+      typeof body.end_time === 'string' && String(body.end_time).trim() !== ''
+    const recalcFromLines = body.recalculate_end_from_line_items === true
+
+    let nextEndDb: string
+    if (recalcFromLines && totalMinutesFromLines > 0) {
+      nextEndDb = addMinutesToTime(
+        nextStartDb.slice(0, 5),
+        totalMinutesWithBuffer,
+      )
+    } else if (explicitEndInput) {
+      nextEndDb = toDbTime(String(body.end_time))
+      if (parseClockMinutes(nextEndDb) <= parseClockMinutes(nextStartDb)) {
+        return NextResponse.json(
+          { error: 'End time must be after start time' },
+          { status: 400 },
+        )
+      }
+    } else if (startChanged || dateChanged) {
+      const delta =
+        parseClockMinutes(String(current.end_time)) -
+        parseClockMinutes(String(current.start_time))
+      const safeDelta = Math.max(delta, 15)
+      nextEndDb = addMinutesToTime(nextStartDb.slice(0, 5), safeDelta)
+    } else {
+      nextEndDb = toDbTime(String(current.end_time))
+    }
 
     const nextStatus = body.status ? String(body.status) : current.status
     const nextPaymentStatus = body.payment_status
@@ -164,8 +221,8 @@ export async function PATCH(
       .from('ops_appointments')
       .update({
         appointment_date: appointmentDate,
-        start_time: `${startTime}:00`.slice(0, 8),
-        end_time: addMinutesToTime(startTime, totalMinutesWithBuffer),
+        start_time: nextStartDb,
+        end_time: nextEndDb,
         status: nextStatus,
         payment_status: nextPaymentStatus,
         internal_notes:
