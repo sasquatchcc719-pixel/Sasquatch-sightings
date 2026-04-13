@@ -751,16 +751,17 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
             </div>
           ) : null}
           {address ? (
-            <div className="flex items-center gap-2">
-              <MapPin className="text-muted-foreground h-4 w-4 shrink-0" />
-              <span className="text-muted-foreground flex-1">
-                {address.street_1}, {address.city}, {address.state}{' '}
-                {address.zip_code}
-              </span>
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <MapPin className="text-muted-foreground h-4 w-4 shrink-0" />
+                <span className="text-muted-foreground flex-1">
+                  {address.street_1}, {address.city}, {address.state}{' '}
+                  {address.zip_code}
+                </span>
+              </div>
               <Button
-                size="sm"
-                variant="outline"
-                className="shrink-0 gap-1.5"
+                size="default"
+                className="w-full gap-2 bg-green-600 font-bold tracking-widest text-white uppercase hover:bg-green-500"
                 asChild
               >
                 <a
@@ -768,8 +769,8 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  <MapPin className="h-3.5 w-3.5" />
-                  Route
+                  <MapPin className="h-4 w-4" />
+                  Get Directions
                 </a>
               </Button>
             </div>
