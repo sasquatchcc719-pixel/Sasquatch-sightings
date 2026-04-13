@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getUserWithRole, hasRoleAccess } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 
+/** Outbound Operations / lifecycle SMS (Twilio), stored in sms_logs with message_type ops_* */
 export async function GET(request: NextRequest) {
   try {
     const { user, role } = await getUserWithRole()
@@ -16,30 +17,28 @@ export async function GET(request: NextRequest) {
     const supabase = createAdminClient()
 
     const { data, error, count } = await supabase
-      .from('ops_email_log')
+      .from('sms_logs')
       .select(
         `
         id,
-        template_key,
-        to_email,
-        subject,
+        recipient_phone,
+        message_type,
+        message_content,
         status,
-        error_message,
-        resend_id,
-        sent_at,
-        ops_customers ( full_name ),
-        ops_appointments ( appointment_date )
+        twilio_sid,
+        sent_at
       `,
         { count: 'exact' },
       )
+      .like('message_type', 'ops_%')
       .order('sent_at', { ascending: false })
       .range(offset, offset + limit - 1)
 
     if (error) throw error
 
-    return NextResponse.json({ emails: data || [], total: count || 0 })
+    return NextResponse.json({ messages: data || [], total: count || 0 })
   } catch (error) {
-    console.error('[comms/email-log] Error:', error)
+    console.error('[comms/sms-log] Error:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 },

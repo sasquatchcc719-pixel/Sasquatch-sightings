@@ -247,6 +247,13 @@ export function AdminNavigation() {
       description: 'Texts from people who contacted your number directly',
     },
     {
+      name: 'SMS Outbox',
+      href: '/admin/sms-outbox',
+      icon: MessageSquare,
+      active: pathname === '/admin/sms-outbox',
+      description: 'Outbound Operations texts (booking, on my way, job done)',
+    },
+    {
       name: 'Email Outbox',
       href: '/admin/email-outbox',
       icon: Mail,
