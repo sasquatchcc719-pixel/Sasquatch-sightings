@@ -1,7 +1,7 @@
 /**
  * QuickBooks Sync Cron
  * Reads pending sync jobs and pushes customers + invoices to QBO.
- * Runs every 5 minutes via Vercel Cron.
+ * Runs every 15 minutes via Vercel Cron.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -40,6 +40,23 @@ export async function GET(request: NextRequest) {
     }
 
     const supabase = createAdminClient()
+
+    // Auto-promote held rows now that we've confirmed QB is connected and enabled.
+    // Rows are created as 'held' when the QUICKBOOKS_SYNC_ENABLED env var was false
+    // at booking time. This ensures they get picked up on the next cron run.
+    const { data: promotedRows } = await supabase
+      .from('ops_quickbooks_sync_jobs')
+      .update({ status: 'pending', updated_at: new Date().toISOString() })
+      .eq('status', 'held')
+      .select('id')
+
+    const promotedCount = promotedRows?.length ?? 0
+
+    if (promotedCount && promotedCount > 0) {
+      console.log(
+        `[cron/quickbooks-sync] Promoted ${promotedCount} held rows to pending`,
+      )
+    }
 
     // Fetch customer jobs first — invoices depend on customers being synced
     const { data: customerJobs, error: customerJobsError } = await supabase

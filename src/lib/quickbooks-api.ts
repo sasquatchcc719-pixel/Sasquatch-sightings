@@ -342,7 +342,12 @@ export async function queryRecentQBPayments(sinceDate: string): Promise<
 
 export async function syncAppointmentToQuickBooks(appointmentId: string) {
   const status = await getQBConnectionStatus()
-  if (!status.connected || !status.sync_enabled) return
+  if (!status.connected || !status.sync_enabled) {
+    console.warn(
+      `[QB sync] Skipped appointment ${appointmentId}: connected=${status.connected}, sync_enabled=${status.sync_enabled}`,
+    )
+    return
+  }
 
   const supabase = createAdminClient()
 
@@ -380,44 +385,85 @@ export async function syncAppointmentToQuickBooks(appointmentId: string) {
     ? customer.ops_service_addresses[0]
     : customer.ops_service_addresses
 
-  // Sync customer if not already in QB
-  let qbCustomerId = customer.quickbooks_customer_id
-  if (!qbCustomerId) {
-    qbCustomerId = await createQBCustomer({
-      customerId: customer.id,
-      displayName: customer.full_name,
-      email: customer.email,
-      phone: customer.phone || '',
-      address: {
-        street_1: address?.street_1 || '',
-        street_2: address?.street_2,
-        city: address?.city || '',
-        state: address?.state || 'CO',
-        zip_code: address?.zip_code || '',
-      },
-    })
+  try {
+    // Sync customer if not already in QB
+    let qbCustomerId = customer.quickbooks_customer_id
+    if (!qbCustomerId) {
+      qbCustomerId = await createQBCustomer({
+        customerId: customer.id,
+        displayName: customer.full_name,
+        email: customer.email,
+        phone: customer.phone || '',
+        address: {
+          street_1: address?.street_1 || '',
+          street_2: address?.street_2,
+          city: address?.city || '',
+          state: address?.state || 'CO',
+          zip_code: address?.zip_code || '',
+        },
+      })
+      await supabase
+        .from('ops_customers')
+        .update({ quickbooks_customer_id: qbCustomerId })
+        .eq('id', customer.id)
+
+      // Mark customer queue row synced
+      await supabase
+        .from('ops_quickbooks_sync_jobs')
+        .update({ status: 'synced', error_message: null })
+        .eq('entity_type', 'customer')
+        .eq('entity_id', customer.id)
+        .in('status', ['pending', 'failed', 'held'])
+    }
+
+    // Sync invoice if not already in QB
+    if (!invoice.quickbooks_invoice_id) {
+      const lineItems = Array.isArray(invoice.ops_invoice_line_items)
+        ? invoice.ops_invoice_line_items
+        : []
+
+      const qbInvoiceId = await createQBInvoice({
+        qbCustomerId,
+        serviceDate: appointment.appointment_date,
+        lineItems,
+        discountAmount: Number(invoice.discount_amount || 0),
+      })
+
+      await supabase
+        .from('ops_invoices')
+        .update({ quickbooks_invoice_id: qbInvoiceId, sync_status: 'synced' })
+        .eq('id', invoice.id)
+
+      // Mark invoice queue row synced
+      await supabase
+        .from('ops_quickbooks_sync_jobs')
+        .update({ status: 'synced', error_message: null })
+        .eq('entity_type', 'invoice')
+        .eq('entity_id', invoice.id)
+        .in('status', ['pending', 'failed', 'held'])
+    }
+  } catch (err) {
+    const errorMsg =
+      err instanceof Error ? err.message : 'Unknown QB sync error'
+    console.error(`[QB sync] Failed for appointment ${appointmentId}:`, err)
+
+    // Mark queue rows as failed so they're visible in the admin UI and eligible for retry
     await supabase
-      .from('ops_customers')
-      .update({ quickbooks_customer_id: qbCustomerId })
-      .eq('id', customer.id)
-  }
+      .from('ops_quickbooks_sync_jobs')
+      .update({ status: 'failed', error_message: errorMsg })
+      .eq('entity_id', customer.id)
+      .eq('entity_type', 'customer')
+      .in('status', ['pending', 'held'])
 
-  // Sync invoice if not already in QB
-  if (!invoice.quickbooks_invoice_id) {
-    const lineItems = Array.isArray(invoice.ops_invoice_line_items)
-      ? invoice.ops_invoice_line_items
-      : []
+    if (invoice) {
+      await supabase
+        .from('ops_quickbooks_sync_jobs')
+        .update({ status: 'failed', error_message: errorMsg })
+        .eq('entity_id', invoice.id)
+        .eq('entity_type', 'invoice')
+        .in('status', ['pending', 'held'])
+    }
 
-    const qbInvoiceId = await createQBInvoice({
-      qbCustomerId,
-      serviceDate: appointment.appointment_date,
-      lineItems,
-      discountAmount: Number(invoice.discount_amount || 0),
-    })
-
-    await supabase
-      .from('ops_invoices')
-      .update({ quickbooks_invoice_id: qbInvoiceId, sync_status: 'synced' })
-      .eq('id', invoice.id)
+    throw err
   }
 }

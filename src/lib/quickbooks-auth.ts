@@ -113,6 +113,7 @@ export async function saveQBTokens(params: {
     refresh_token_expires_at: new Date(
       now + params.refreshTokenExpiresIn * 1000,
     ).toISOString(),
+    sync_enabled: true,
     updated_at: new Date().toISOString(),
   }
 
