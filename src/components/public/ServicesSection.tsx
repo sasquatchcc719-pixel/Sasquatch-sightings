@@ -7,7 +7,7 @@ function scrollToContact() {
 }
 
 const STANDARD_PRICING = [
-  { label: 'Step / Landing', price: '$6', unit: 'per step' },
+  { label: 'Step / Landing', price: '$4', unit: 'per step' },
   {
     label: 'Small Area / Hall / Closet',
     sublabel: '50–100 sqft',

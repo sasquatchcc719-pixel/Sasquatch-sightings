@@ -825,6 +825,14 @@ export async function POST(request: NextRequest) {
       twilio_sid: twilioSid,
     })
 
+    // Persist the user message immediately so that Twilio webhook retries
+    // (which arrive while the AI is still generating) see the twilio_sid in
+    // the conversation and hit the dedup check above.
+    await supabase
+      .from('conversations')
+      .update({ messages, updated_at: new Date().toISOString() })
+      .eq('id', conversation.id)
+
     // Check if this thread should be held for human handling.
     const holdDecision = shouldHoldForHuman({
       latestUserMessage: messageBody,

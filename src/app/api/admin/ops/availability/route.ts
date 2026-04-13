@@ -124,6 +124,20 @@ export async function PUT(request: NextRequest) {
       }),
     )
 
+    // Safety: require at least one weekday (Mon-Fri) to prevent accidental wipe
+    const hasWeekday = normalizedTemplates.some(
+      (t: { day_of_week: number }) => t.day_of_week >= 1 && t.day_of_week <= 5,
+    )
+    if (!hasWeekday) {
+      return NextResponse.json(
+        {
+          error:
+            'At least one weekday (Mon–Fri) must be active. Cannot save an empty or weekend-only schedule.',
+        },
+        { status: 400 },
+      )
+    }
+
     const { error: deleteError } = await supabase
       .from('availability_templates')
       .delete()

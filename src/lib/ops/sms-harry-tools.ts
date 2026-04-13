@@ -3,6 +3,7 @@ import type OpenAI from 'openai'
 import {
   applyAppointmentBuffer,
   calculateLineItemDurationMinutes,
+  DEFAULT_FALLBACK_AVAILABILITY_TEMPLATES,
   getAvailableSlots,
   type ExistingAppointmentWindow,
 } from '@/lib/ops/availability'
@@ -110,6 +111,28 @@ async function loadAvailabilityBundle(
         .eq('appointment_date', date),
     ])
 
+  // Self-heal: if no active templates exist, re-seed defaults so booking
+  // keeps working and the issue is logged for investigation.
+  let templates = templatesResult.data || []
+  if (templates.length === 0) {
+    console.warn(
+      '⚠️  No active availability_templates found — auto-seeding defaults',
+    )
+    const defaults = DEFAULT_FALLBACK_AVAILABILITY_TEMPLATES.map((t) => ({
+      day_of_week: t.day_of_week,
+      start_time: t.start_time,
+      end_time: t.end_time,
+      slot_interval_minutes: t.slot_interval_minutes,
+      is_active: true,
+    }))
+    const { data: seeded } = await supabase
+      .from('availability_templates')
+      .upsert(defaults, { onConflict: 'day_of_week' })
+      .select('*')
+    if (seeded && seeded.length > 0) templates = seeded
+    else templates = DEFAULT_FALLBACK_AVAILABILITY_TEMPLATES as typeof templates
+  }
+
   let rows = (appointmentsResult.data || []) as Array<
     ExistingAppointmentWindow & { id: string }
   >
@@ -117,7 +140,7 @@ async function loadAvailabilityBundle(
     rows = rows.filter((a) => a.id !== excludeAppointmentId)
   }
   return {
-    templates: templatesResult.data || [],
+    templates,
     overrides: overridesResult.data || [],
     appointments: rows.map(
       ({ appointment_date, start_time, end_time, status }) => ({

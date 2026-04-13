@@ -20,8 +20,10 @@ import {
   Send,
   X,
   Trash2,
+  Plus,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import { CallButton } from '@/components/admin/softphone'
 
 type Message = {
   role: 'user' | 'assistant' | 'system'
@@ -68,6 +70,10 @@ export function ConversationsView({
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [composeOpen, setComposeOpen] = useState(false)
+  const [composePhone, setComposePhone] = useState('')
+  const [composeMessage, setComposeMessage] = useState('')
+  const [composeSending, setComposeSending] = useState(false)
 
   // Filter conversations based on selected status
   const filteredConversations =
@@ -224,6 +230,37 @@ export function ConversationsView({
     }
   }
 
+  const handleComposeSend = async () => {
+    if (!composePhone.trim() || !composeMessage.trim()) return
+
+    setComposeSending(true)
+    try {
+      const response = await fetch('/api/conversations/new', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phoneNumber: composePhone.trim(),
+          message: composeMessage.trim(),
+        }),
+      })
+
+      if (response.ok) {
+        setComposeOpen(false)
+        setComposePhone('')
+        setComposeMessage('')
+        router.refresh()
+      } else {
+        const data = await response.json()
+        alert(data.error || 'Failed to send message')
+      }
+    } catch (error) {
+      console.error('Compose send error:', error)
+      alert('Failed to send message')
+    } finally {
+      setComposeSending(false)
+    }
+  }
+
   const getSourceLabel = (source: string | null) => {
     if (!source) return null
     const labels: Record<string, string> = {
@@ -232,6 +269,7 @@ export function ConversationsView({
       nfc_card: 'Vendor',
       'Business Card': 'Your Card',
       Contest: 'Contest',
+      admin_outbound: 'Outbound',
     }
     return labels[source] || source
   }
@@ -360,7 +398,13 @@ export function ConversationsView({
       {/* Conversations List */}
       <Card>
         <CardHeader>
-          <CardTitle>Conversations</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle>Conversations</CardTitle>
+            <Button size="sm" onClick={() => setComposeOpen(true)}>
+              <Plus className="mr-1 h-4 w-4" />
+              New Message
+            </Button>
+          </div>
           <CardDescription>
             {filteredConversations.length === 0
               ? filterStatus === 'all'
@@ -478,6 +522,83 @@ export function ConversationsView({
         </CardContent>
       </Card>
 
+      {/* Compose New Message Modal */}
+      {composeOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setComposeOpen(false)}
+        >
+          <div
+            className="bg-background w-full max-w-md rounded-xl p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold">New Message</h3>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setComposeOpen(false)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium">Phone Number</label>
+                <input
+                  type="tel"
+                  value={composePhone}
+                  onChange={(e) => setComposePhone(e.target.value)}
+                  placeholder="(719) 555-1234"
+                  className="border-input bg-background mt-1 w-full rounded-md border px-3 py-2 text-sm"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Message</label>
+                <Textarea
+                  value={composeMessage}
+                  onChange={(e) => setComposeMessage(e.target.value)}
+                  placeholder="Type your message..."
+                  className="mt-1 min-h-[100px]"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                      handleComposeSend()
+                    }
+                  }}
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setComposeOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleComposeSend}
+                  disabled={
+                    !composePhone.trim() ||
+                    !composeMessage.trim() ||
+                    composeSending
+                  }
+                >
+                  {composeSending ? (
+                    'Sending...'
+                  ) : (
+                    <>
+                      <Send className="mr-1 h-4 w-4" />
+                      Send
+                    </>
+                  )}
+                </Button>
+              </div>
+              <p className="text-muted-foreground text-xs">
+                Sends from the Sasquatch business line. Press Cmd/Ctrl + Enter
+                to send.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Conversation Detail Modal */}
       {selectedConvo && (
         <div
@@ -495,12 +616,10 @@ export function ConversationsView({
             <div className="border-b p-4">
               <div className="mb-2 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <a
-                    href={`tel:${selectedConvo.phone_number}`}
-                    className="text-lg font-semibold text-blue-400 hover:underline"
-                  >
+                  <span className="text-lg font-semibold text-blue-400">
                     {selectedConvo.phone_number}
-                  </a>
+                  </span>
+                  <CallButton phoneNumber={selectedConvo.phone_number} />
                   {getStatusBadge(selectedConvo.status)}
                 </div>
                 <Button
