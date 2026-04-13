@@ -12,6 +12,8 @@ import {
 } from '@/lib/ops/availability'
 import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
 import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
+import { sendAdminSMS } from '@/lib/twilio'
+import { sendOneSignalNotification } from '@/lib/onesignal'
 import {
   buildQuickBooksCustomerPayload,
   buildQuickBooksInvoicePayload,
@@ -346,6 +348,60 @@ export async function POST(request: NextRequest) {
       console.error('[public/appointments] Comms error:', commsResult.reason)
     if (qbResult.status === 'rejected')
       console.error('[public/appointments] QB sync error:', qbResult.reason)
+
+    // --- Notify admin (SMS + push + email) ---
+    const serviceNames = lineItems
+      .map((item) => item.name_snapshot)
+      .filter(Boolean)
+      .join(', ')
+    const adminMsg = [
+      `New job booked!`,
+      `${fullName} — $${total.toFixed(2)}`,
+      `${serviceNames}`,
+      `${street1}, ${city}, ${state} ${zipCode}`,
+      `${appointmentDate} at ${startTime.slice(0, 5)}`,
+    ].join('\n')
+
+    await Promise.allSettled([
+      sendAdminSMS(adminMsg, 'new_booking'),
+      sendOneSignalNotification({
+        heading: 'New Job Booked',
+        content: `${fullName} — $${total.toFixed(2)} · ${appointmentDate}`,
+        data: {
+          type: 'new_booking',
+          appointment_id: appointment.id,
+        },
+      }),
+      (async () => {
+        const adminEmail = process.env.ADMIN_EMAIL
+        const resendKey = process.env.RESEND_API_KEY
+        if (!adminEmail || !resendKey) return
+        const { Resend } = await import('resend')
+        const resend = new Resend(resendKey)
+        const fromEmail =
+          process.env.OPS_EMAIL_FROM ||
+          'Sasquatch Carpet Cleaning <onboarding@resend.dev>'
+        await resend.emails.send({
+          from: fromEmail,
+          to: adminEmail,
+          subject: `New Job Booked — ${fullName} · $${total.toFixed(2)}`,
+          html: `
+<div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;">
+  <h2 style="color:#16a34a;margin:0 0 16px;">New Job Booked</h2>
+  <table style="font-size:14px;line-height:1.6;">
+    <tr><td style="color:#6b7280;padding-right:12px;">Customer</td><td><strong>${fullName}</strong></td></tr>
+    <tr><td style="color:#6b7280;padding-right:12px;">Phone</td><td>${phone}</td></tr>
+    <tr><td style="color:#6b7280;padding-right:12px;">Email</td><td>${email}</td></tr>
+    <tr><td style="color:#6b7280;padding-right:12px;">Address</td><td>${street1}, ${city}, ${state} ${zipCode}</td></tr>
+    <tr><td style="color:#6b7280;padding-right:12px;">Date</td><td>${appointmentDate} at ${startTime.slice(0, 5)}</td></tr>
+    <tr><td style="color:#6b7280;padding-right:12px;">Services</td><td>${serviceNames}</td></tr>
+    <tr><td style="color:#6b7280;padding-right:12px;">Total</td><td><strong>$${total.toFixed(2)}</strong></td></tr>
+  </table>
+  <a href="https://sightings.sasquatchcarpet.com/admin/operations" style="display:inline-block;margin-top:20px;padding:10px 24px;background:#16a34a;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">View in Sightings</a>
+</div>`,
+        })
+      })(),
+    ])
 
     // --- Generate confirmation number ---
     const confirmationNumber = `SC-${appointment.id.slice(0, 8).toUpperCase()}`
