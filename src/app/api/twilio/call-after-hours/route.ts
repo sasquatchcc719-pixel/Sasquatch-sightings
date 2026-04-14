@@ -143,6 +143,7 @@ export async function POST(request: NextRequest) {
         content: harryMessage,
         timestamp: new Date().toISOString(),
         twilio_sid: sms.sid,
+        metadata: { type: 'missed_call_sms' },
       })
 
       await supabase

@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getCallRoutingConfig } from '@/lib/twilio/call-routing-config'
-
 function getBaseUrl(): string {
   const url =
     process.env.VERCEL_URL ||
@@ -32,30 +30,22 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // If no answer, busy, or failed, proceed to dial Chuck
+    // Legacy TwiML may still post here; IVR now dials primary directly. Go to voicemail flow.
     console.log(
-      `[Dial Failover] Primary leg failed/unanswered. Dialing Chuck...`,
+      `[Dial Failover] Dial did not complete — redirecting to voicemail handler`,
     )
-    const routingConfig = await getCallRoutingConfig()
-
     const baseUrl = getBaseUrl()
     const afterHoursUrl = `${baseUrl}/api/twilio/call-after-hours`
 
-    // Dial Chuck + browser simultaneously
-    const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Dial timeout="${routingConfig.ivrTechnicalTimeoutSeconds}" action="${afterHoursUrl}" callerId="${callerPhone}" answerOnBridge="true">
-    <Number>${routingConfig.primaryForwardNumber}</Number>
-    <Client>admin_charles</Client>
-  </Dial>
-</Response>`
-
-    return new NextResponse(twimlResponse, {
-      status: 200,
-      headers: {
-        'Content-Type': 'text/xml',
+    return new NextResponse(
+      `<?xml version="1.0" encoding="UTF-8"?><Response><Redirect method="POST">${afterHoursUrl}</Redirect></Response>`,
+      {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/xml',
+        },
       },
-    })
+    )
   } catch (error) {
     console.error('[Dial Failover] Error:', error)
 

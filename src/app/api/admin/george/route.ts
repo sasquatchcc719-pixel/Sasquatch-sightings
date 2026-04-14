@@ -322,7 +322,7 @@ function parseAction(input: unknown): GeorgeActionPayload | null {
     const target = String(args.target || '')
     const seconds = Number(args.seconds)
     if (target !== 'schedule' && target !== 'technical') return null
-    if (seconds < 10 || seconds > 120) return null
+    if (seconds < 10 || seconds > 180) return null
     return { name, args: { target, seconds }, reason }
   }
 
@@ -868,7 +868,7 @@ WRITE (all require confirmation — set mode "propose_action"):
 • set_harry_toggle: args { setting_key: "auto_reply_enabled"|"escalation_alerts_enabled", enabled: bool }
 • hold_conversation: args { phone: "+1XXXXXXXXXX" } — escalate, disable AI
 • resume_conversation: args { phone: "+1XXXXXXXXXX" } — restore AI
-• set_ivr_timeout: args { target: "schedule"|"technical", seconds: 10-120 }
+• set_ivr_timeout: args { target: "schedule"|"technical", seconds: 10-180 }
 • set_failover_target: args { target: "primary"|"failover", phone: "+1XXXXXXXXXX" }
 • update_harry_profile: args { profile_key, prompt_overrides, booking_mode?, is_enabled? }
 • update_harry_knowledge_block: args { category_key, content, title?, is_enabled? }

@@ -19,28 +19,22 @@ export async function POST(request: NextRequest) {
     console.log(`[IVR Menu] Selection: ${digits} from ${callerPhone}`)
 
     const baseUrl = getBaseUrl()
-    const failoverUrl = `${baseUrl}/api/twilio/dial-failover`
     const afterHoursUrl = `${baseUrl}/api/twilio/call-after-hours` // Voicemail
 
     let twimlResponse
 
     if (digits === '1') {
-      // Option 1: Schedule -> Dial failover target + browser simultaneously
-      console.log(
-        `[IVR Menu] Option 1 (Schedule) -> Dialing first target + browser`,
-      )
+      // Same destination as 2: primary PSTN + softphone (IVR is anti-bot; different timeout knob only)
+      console.log(`[IVR Menu] Option 1 -> Dialing primary + browser`)
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial timeout="${routingConfig.ivrScheduleTimeoutSeconds}" action="${failoverUrl}" callerId="${callerPhone}" answerOnBridge="true">
-    <Number>${routingConfig.failoverForwardNumber}</Number>
+  <Dial timeout="${routingConfig.ivrScheduleTimeoutSeconds}" action="${afterHoursUrl}" callerId="${callerPhone}" answerOnBridge="true">
+    <Number>${routingConfig.primaryForwardNumber}</Number>
     <Client>admin_charles</Client>
   </Dial>
 </Response>`
     } else if (digits === '2') {
-      // Option 2: Technical -> Dial primary target + browser simultaneously
-      console.log(
-        `[IVR Menu] Option 2 (Technical) -> Dialing primary target + browser`,
-      )
+      console.log(`[IVR Menu] Option 2 -> Dialing primary + browser`)
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Dial timeout="${routingConfig.ivrTechnicalTimeoutSeconds}" action="${afterHoursUrl}" callerId="${callerPhone}" answerOnBridge="true">

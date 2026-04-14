@@ -373,7 +373,7 @@ export default function PhoneSettingsPage() {
                 id="dial_timeout"
                 type="number"
                 min="5"
-                max="60"
+                max="180"
                 value={settings.dial_timeout}
                 onChange={(e) =>
                   setSettings({
@@ -384,7 +384,8 @@ export default function PhoneSettingsPage() {
                 className="mt-1 w-32"
               />
               <p className="text-muted-foreground mt-1 text-sm">
-                How long phones ring before going to voicemail
+                Open-line mode: seconds PSTN + browser ring before voicemail
+                (~30s is typical carrier-style ring time)
               </p>
             </div>
           </div>

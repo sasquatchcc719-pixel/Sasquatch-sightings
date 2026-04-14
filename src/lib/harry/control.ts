@@ -129,7 +129,7 @@ const HARRY_CONTROL_DEFAULTS: HarryControlDefault[] = [
     group_key: 'calls',
     label: 'Missed Call Auto SMS',
     description:
-      'Controls after-hours/missed-call Harry SMS initiation from call webhook flow.',
+      'Controls the short “you just called” SMS from the dial/call webhook. Voicemail follow-up SMS uses Auto Reply + Inbound instead.',
     is_enabled: true,
   },
   {

@@ -87,7 +87,7 @@ export async function PUT(request: NextRequest) {
     if (
       ivr_schedule_timeout_seconds !== undefined &&
       (Number(ivr_schedule_timeout_seconds) < 10 ||
-        Number(ivr_schedule_timeout_seconds) > 120)
+        Number(ivr_schedule_timeout_seconds) > 180)
     ) {
       return NextResponse.json(
         { error: 'Invalid schedule timeout' },
@@ -97,7 +97,7 @@ export async function PUT(request: NextRequest) {
     if (
       ivr_technical_timeout_seconds !== undefined &&
       (Number(ivr_technical_timeout_seconds) < 10 ||
-        Number(ivr_technical_timeout_seconds) > 120)
+        Number(ivr_technical_timeout_seconds) > 180)
     ) {
       return NextResponse.json(
         { error: 'Invalid technical timeout' },

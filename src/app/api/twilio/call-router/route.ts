@@ -110,17 +110,13 @@ export async function POST(request: NextRequest) {
   </Dial>
 </Response>`
     } else if (isBusinessHours) {
-      // IVR Menu Implementation
-      // Press 1 -> Schedule (Wife -> Chuck)
-      // Press 2 -> Technical (Chuck)
-      // No Input -> Voicemail (Spam Filter)
-
+      // IVR: two keys are the same routing (primary + softphone) — human/bot gate; no key -> voicemail
       const ivrMenuUrl = `${baseUrl}/api/twilio/ivr-menu`
 
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather action="${ivrMenuUrl}" numDigits="1" timeout="10">
-    <Say>Thank you for calling Sasquatch Carpet Cleaning. Press 1 to schedule an appointment. Press 2 for technical questions.</Say>
+    <Say>Thank you for calling Sasquatch Carpet Cleaning. To connect your call, press 1 or press 2.</Say>
   </Gather>
   <Redirect method="POST">${afterHoursUrl}</Redirect>
 </Response>`

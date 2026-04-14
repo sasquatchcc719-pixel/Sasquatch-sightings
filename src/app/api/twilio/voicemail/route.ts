@@ -8,6 +8,9 @@ import {
   isHarryFunctionEnabled,
 } from '@/lib/harry/control'
 
+/** Twilio may run 120s+; default Vercel timeout would kill Harry before SMS. */
+export const maxDuration = 300
+
 const resend = new Resend(process.env.RESEND_API_KEY)
 
 const supabase = createClient(
@@ -30,6 +33,7 @@ type ConversationMessage = {
     recording_url?: string | null
     recording_sid?: string | null
     duration?: string | null
+    voicemail_harry_reply_for?: string | null
   } | null
 }
 
@@ -178,21 +182,38 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Add voicemail to conversation messages
+    // Add or merge voicemail (Twilio may POST recording first, transcription later — same RecordingSid)
     let messages = (existingConvo?.messages || []) as ConversationMessage[]
-    if (conversationId) {
-      messages.push({
-        role: 'user',
-        content: `[VOICEMAIL - ${recordingDuration}s] ${transcriptionText || '(No transcription available)'}`,
-        timestamp: new Date().toISOString(),
-        metadata: {
-          type: 'voicemail',
-          recording_url: audioUrl,
-          recording_sid: recordingSid,
-          duration: recordingDuration,
-          transcription: transcriptionText,
-        },
-      })
+    const voicemailMeta = {
+      type: 'voicemail' as const,
+      recording_url: audioUrl,
+      recording_sid: recordingSid,
+      duration: recordingDuration,
+      transcription: transcriptionText,
+    }
+    if (conversationId && recordingSid) {
+      const idx = messages.findIndex(
+        (m) =>
+          m?.role === 'user' &&
+          m?.metadata?.type === 'voicemail' &&
+          m?.metadata?.recording_sid === recordingSid,
+      )
+      const line = `[VOICEMAIL - ${recordingDuration}s] ${transcriptionText || '(No transcription available)'}`
+      if (idx >= 0) {
+        const prev = messages[idx]
+        messages[idx] = {
+          ...prev,
+          content: line,
+          metadata: { ...prev.metadata, ...voicemailMeta },
+        }
+      } else {
+        messages.push({
+          role: 'user',
+          content: line,
+          timestamp: new Date().toISOString(),
+          metadata: voicemailMeta,
+        })
+      }
 
       await supabase
         .from('conversations')
@@ -209,13 +230,15 @@ export async function POST(request: NextRequest) {
     // what the caller said. We skip if transcription isn't meaningful.
     try {
       const controlSnapshot = await getHarryControlSnapshot()
+      // Same bar as SMS Harry: inbound intake + main channel + auto-reply.
+      // Not tied to "missed call SMS" — that toggle only affects call-after-hours dial callbacks.
       const canRunVoicemailAutoReply =
         isHarryFunctionEnabled(controlSnapshot, 'global_enabled') &&
-        isHarryFunctionEnabled(controlSnapshot, 'auto_reply_enabled') &&
         isHarryFunctionEnabled(
           controlSnapshot,
-          'call_missed_auto_sms_enabled',
+          'inbound_channel_intake_enabled',
         ) &&
+        isHarryFunctionEnabled(controlSnapshot, 'auto_reply_enabled') &&
         isHarryChannelEnabled(controlSnapshot, 'inbound')
 
       if (canRunVoicemailAutoReply && conversationId) {
