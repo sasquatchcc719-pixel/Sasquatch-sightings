@@ -9,6 +9,7 @@ import {
   getOnMyWaySmsRenderedBody,
   sendOpsLifecycleCommunications,
 } from '@/lib/ops/communications'
+import { enrollCustomerInDrip } from '@/lib/ops/drip-campaign'
 import { getQuickBooksSyncStatus } from '@/lib/quickbooks'
 import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
 import { sendCustomerSMS } from '@/lib/twilio'
@@ -310,6 +311,18 @@ export async function PATCH(
           appointmentId: id,
         })
         lifecycleNotifications = sent
+
+        // Enroll in drip campaign (skip recurring/batch jobs like Recovery Village)
+        const { data: apptMeta } = await supabase
+          .from('ops_appointments')
+          .select('recurring_template_id')
+          .eq('id', id)
+          .single()
+        if (!apptMeta?.recurring_template_id) {
+          enrollCustomerInDrip(id).catch((err) =>
+            console.error('[drip] enrollment error:', err),
+          )
+        }
       }
     }
 
