@@ -13,7 +13,7 @@ function toE164(phone: string): string {
 export async function POST(request: NextRequest) {
   try {
     const { user, role } = await getUserWithRole()
-    if (!user || role !== 'admin') {
+    if (!user || !role || !['admin', 'owner', 'dispatcher'].includes(role)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 

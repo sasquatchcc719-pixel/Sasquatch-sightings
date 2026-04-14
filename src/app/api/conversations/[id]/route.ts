@@ -13,7 +13,7 @@ export async function PATCH(
 ) {
   try {
     const { user, role } = await getUserWithRole()
-    if (!user || role !== 'admin') {
+    if (!user || !role || !['admin', 'owner', 'dispatcher'].includes(role)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -55,7 +55,7 @@ export async function DELETE(
 ) {
   try {
     const { user, role } = await getUserWithRole()
-    if (!user || role !== 'admin') {
+    if (!user || !role || !['admin', 'owner', 'dispatcher'].includes(role)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
