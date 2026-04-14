@@ -183,16 +183,38 @@ export default function GoogleLandingPage() {
 
             {/* Primary CTAs */}
             <div className="space-y-2">
-              <button
-                onClick={handleText}
-                className="group relative w-full overflow-hidden rounded-xl shadow-xl transition-all hover:scale-[1.02] active:scale-[0.98]"
+              {/* Book Online CTA */}
+              <a
+                href="/book"
+                className="group relative block w-full overflow-hidden rounded-xl shadow-xl transition-all hover:scale-[1.02] active:scale-[0.98]"
               >
                 <div className="relative bg-gradient-to-b from-green-400 to-green-600 px-6 py-5 text-center transition-all group-hover:from-green-500 group-hover:to-green-700">
                   <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-b from-white/30 to-transparent" />
                   <p className="text-xs font-semibold tracking-wide text-white/80 uppercase">
-                    Fastest way to book
+                    Pick your services &amp; schedule online
                   </p>
                   <p className="text-2xl font-black text-white drop-shadow">
+                    📅 BOOK ONLINE
+                  </p>
+                  <p className="text-sm font-semibold text-white/80">
+                    See real-time availability · Instant confirmation
+                  </p>
+                  <div className="absolute inset-x-0 bottom-0 h-2 bg-gradient-to-t from-black/20 to-transparent" />
+                </div>
+                <div className="absolute inset-0 translate-x-[-100%] bg-gradient-to-r from-transparent via-white/10 to-transparent transition-transform duration-700 group-hover:translate-x-[100%]" />
+              </a>
+
+              {/* Text to book */}
+              <button
+                onClick={handleText}
+                className="group relative w-full overflow-hidden rounded-xl shadow-xl transition-all hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <div className="relative bg-gradient-to-b from-cyan-500 to-cyan-700 px-6 py-4 text-center transition-all group-hover:from-cyan-400 group-hover:to-cyan-600">
+                  <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-b from-white/30 to-transparent" />
+                  <p className="text-xs font-semibold tracking-wide text-white/80 uppercase">
+                    Fastest way to get a quote
+                  </p>
+                  <p className="text-xl font-black text-white drop-shadow">
                     📱 TEXT TO BOOK
                   </p>
                   <p className="text-sm font-semibold text-white/80">
