@@ -14,7 +14,6 @@ const PUBLIC_CATEGORIES = [
   'rug cleaning',
   'Hard Surface',
   'Legendary Restoration Clean',
-  'Carpet Deodorizer',
 ]
 
 // Internal-only items excluded from the public widget

@@ -144,13 +144,37 @@ function toLocalISO(d: Date): string {
   return `${y}-${m}-${day}`
 }
 
-/** Group services by category */
-function groupByCategory(items: ServiceItem[]): Record<string, ServiceItem[]> {
-  return items.reduce<Record<string, ServiceItem[]>>((acc, item) => {
-    if (!acc[item.category]) acc[item.category] = []
-    acc[item.category].push(item)
-    return acc
-  }, {})
+const CATEGORY_ORDER = [
+  'Carpet Cleaning',
+  'Upholstery Cleaning',
+  'Hard Surface',
+  'rug cleaning',
+  'Legendary Restoration Clean',
+]
+
+const CATEGORY_DISPLAY_NAMES: Record<string, string> = {
+  'Carpet Cleaning': 'Standard Carpet Cleaning',
+  'Upholstery Cleaning': 'Upholstery Cleaning',
+  'Hard Surface': 'Hard Surface',
+  'rug cleaning': 'Rug Cleaning',
+  'Legendary Restoration Clean': 'Legendary Restoration Clean',
+}
+
+/** Group services by category, ordered by CATEGORY_ORDER */
+function groupByCategory(items: ServiceItem[]): [string, ServiceItem[]][] {
+  const map: Record<string, ServiceItem[]> = {}
+  for (const item of items) {
+    if (!map[item.category]) map[item.category] = []
+    map[item.category].push(item)
+  }
+  const ordered: [string, ServiceItem[]][] = []
+  for (const cat of CATEGORY_ORDER) {
+    if (map[cat]) ordered.push([cat, map[cat]])
+  }
+  for (const cat of Object.keys(map)) {
+    if (!CATEGORY_ORDER.includes(cat)) ordered.push([cat, map[cat]])
+  }
+  return ordered
 }
 
 // ─────────────────────────────────────────────
@@ -528,7 +552,7 @@ export default function BookPage() {
   // ── Derived totals ──
   const subtotal = cartTotal(cart)
   const meetsMinimum = subtotal >= MIN_TOTAL
-  const grouped = useMemo(() => groupByCategory(services), [services])
+  const orderedGroups = useMemo(() => groupByCategory(services), [services])
 
   // ── Form helpers ──
   function setField<K extends keyof CustomerForm>(
@@ -748,10 +772,10 @@ export default function BookPage() {
                     ))}
                   </div>
                 ) : (
-                  Object.entries(grouped).map(([category, items]) => (
+                  orderedGroups.map(([category, items]) => (
                     <CategorySection
                       key={category}
-                      category={category}
+                      category={CATEGORY_DISPLAY_NAMES[category] || category}
                       items={items}
                       cart={cart}
                       onAdd={addToCart}
