@@ -26,47 +26,55 @@ export type SlotOption = {
 }
 
 export const DEFAULT_APPOINTMENT_BUFFER_MINUTES = 0
+
+/**
+ * Fixed 2-hour arrival-window block boundaries (minutes since midnight).
+ * 09:00, 11:00, 13:00, 15:00
+ */
+export const BLOCK_STARTS_MINUTES = [540, 660, 780, 900] as const
+export const BLOCK_DURATION_MINUTES = 120
+
 export const DEFAULT_FALLBACK_AVAILABILITY_TEMPLATES: AvailabilityTemplate[] = [
   {
     day_of_week: 1,
     start_time: '09:00',
     end_time: '17:00',
-    slot_interval_minutes: 30,
+    slot_interval_minutes: 120,
     is_active: true,
   },
   {
     day_of_week: 2,
     start_time: '09:00',
     end_time: '17:00',
-    slot_interval_minutes: 30,
+    slot_interval_minutes: 120,
     is_active: true,
   },
   {
     day_of_week: 3,
     start_time: '09:00',
     end_time: '17:00',
-    slot_interval_minutes: 30,
+    slot_interval_minutes: 120,
     is_active: true,
   },
   {
     day_of_week: 4,
     start_time: '09:00',
     end_time: '17:00',
-    slot_interval_minutes: 30,
+    slot_interval_minutes: 120,
     is_active: true,
   },
   {
     day_of_week: 5,
     start_time: '09:00',
     end_time: '17:00',
-    slot_interval_minutes: 30,
+    slot_interval_minutes: 120,
     is_active: true,
   },
   {
     day_of_week: 6,
     start_time: '09:00',
     end_time: '17:00',
-    slot_interval_minutes: 30,
+    slot_interval_minutes: 120,
     is_active: true,
   },
 ]
@@ -115,7 +123,7 @@ export function applyAppointmentBuffer(
     : 0
   const normalizedBuffer = Number.isFinite(bufferMinutes) ? bufferMinutes : 0
   const total = Math.max(0, normalizedServiceMinutes + normalizedBuffer)
-  return Math.ceil(total / 60) * 60
+  return Math.ceil(total / BLOCK_DURATION_MINUTES) * BLOCK_DURATION_MINUTES
 }
 
 export function getAvailableSlots(params: {
@@ -169,17 +177,19 @@ export function getAvailableSlots(params: {
     }))
 
   const slots: SlotOption[] = []
+  const seen = new Set<number>()
 
   for (const template of dayTemplates) {
     const windowStart = timeToMinutes(template.start_time)
     const windowEnd = timeToMinutes(template.end_time)
 
-    for (
-      let current = windowStart;
-      current + requiredMinutes <= windowEnd;
-      current += template.slot_interval_minutes
-    ) {
-      const slotEnd = current + requiredMinutes
+    for (const blockStart of BLOCK_STARTS_MINUTES) {
+      if (blockStart < windowStart) continue
+      if (blockStart + requiredMinutes > windowEnd) continue
+      if (seen.has(blockStart)) continue
+      seen.add(blockStart)
+
+      const slotEnd = blockStart + requiredMinutes
 
       const blockedByOverride = dayOverrides.some((override) => {
         if (!override.is_available) {
@@ -188,7 +198,7 @@ export function getAvailableSlots(params: {
           }
 
           return overlaps(
-            current,
+            blockStart,
             slotEnd,
             timeToMinutes(override.start_time),
             timeToMinutes(override.end_time),
@@ -203,7 +213,7 @@ export function getAvailableSlots(params: {
       }
 
       const clashesWithAppointment = blockedWindows.some((busy) =>
-        overlaps(current, slotEnd, busy.start, busy.end),
+        overlaps(blockStart, slotEnd, busy.start, busy.end),
       )
 
       if (clashesWithAppointment) {
@@ -211,7 +221,7 @@ export function getAvailableSlots(params: {
       }
 
       slots.push({
-        start_time: minutesToTime(current),
+        start_time: minutesToTime(blockStart),
         end_time: minutesToTime(slotEnd),
       })
 
