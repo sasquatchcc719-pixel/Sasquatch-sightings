@@ -98,7 +98,7 @@ Write in a warm, professional tone. NOT salesy. Sound like a real local business
 Return JSON with these exact fields:
 {
   "title": "short punchy offer title (max 58 chars)",
-  "body": "2-3 sentences. Specific, local, seasonal. End with: Serving Monument, Palmer Lake, and the Tri-Lakes area — book at SasquatchCarpet.com",
+  "body": "2-3 sentences. Specific, local, seasonal. End with: Serving Monument, Palmer Lake, and the Tri-Lakes area — book online or call (719) 249-8791",
   "coupon_code": "optional short code like SPRING25 or leave empty string"
 }`,
       },
@@ -143,7 +143,7 @@ Write in a warm, professional tone. Sound like a real local business owner.
 Return JSON with these exact fields:
 {
   "title": "event name, max 58 chars",
-  "body": "2-3 sentences about why this season matters for carpet cleaning in Colorado. Specific and local. End with: Book at SasquatchCarpet.com or call us — we serve the entire Tri-Lakes area and Colorado Springs."
+  "body": "2-3 sentences about why this season matters for carpet cleaning in Colorado. Specific and local. End with: Book online or call (719) 249-8791 — we serve the entire Tri-Lakes area and Colorado Springs."
 }`,
       },
       {
