@@ -25,11 +25,5 @@
       "schedule": "0 5 * * *"
     }
   ],
-  "redirects": [
-    {
-      "source": "/book",
-      "destination": "/g",
-      "permanent": false
-    }
-  ]
+  "redirects": []
 }
