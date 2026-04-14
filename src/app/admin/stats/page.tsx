@@ -839,15 +839,16 @@ export default function StatsPage() {
 
       {/* ── Calendar Pipeline ─────────────────────────────────────────── */}
       <div className="mb-8">
-        <div className="mb-4 flex items-center gap-2">
+        <div className="mb-1 flex items-center gap-2">
           <CalendarDays className="h-5 w-5 text-blue-600" />
           <h2 className="text-xl font-semibold">
             {pipeline ? pipeline.year : new Date().getFullYear()} Calendar Value
           </h2>
-          <span className="text-muted-foreground text-xs">
-            — everything booked on the schedule
-          </span>
         </div>
+        <p className="text-muted-foreground mb-4 text-xs">
+          Jobs booked through Sasquatch Sightings only. Jan–Mar reflect partial
+          data while the scheduling system was being set up.
+        </p>
 
         {pipelineLoading ? (
           <div className="text-muted-foreground flex items-center gap-2 text-sm">
@@ -857,7 +858,7 @@ export default function StatsPage() {
         ) : pipeline ? (
           <div className="space-y-4">
             {/* Top summary cards */}
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <Card className="border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/40">
                 <p className="text-muted-foreground mb-1 text-sm font-medium">
                   Total on Calendar
@@ -866,41 +867,31 @@ export default function StatsPage() {
                   {formatCurrency(pipeline.total)}
                 </p>
                 <p className="text-muted-foreground mt-1 text-xs">
-                  {pipeline.jobCount} jobs
+                  {pipeline.jobCount} jobs · done + coming up
                 </p>
               </Card>
 
               <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
                 <p className="text-muted-foreground mb-1 text-sm font-medium">
-                  Completed
+                  Already Done
                 </p>
                 <p className="text-2xl font-bold">
                   {formatCurrency(pipeline.completedTotal)}
                 </p>
-                <p className="text-muted-foreground mt-1 text-xs">work done</p>
+                <p className="text-muted-foreground mt-1 text-xs">
+                  completed jobs this year
+                </p>
               </Card>
 
               <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
                 <p className="text-muted-foreground mb-1 text-sm font-medium">
-                  Upcoming
+                  Coming Up
                 </p>
-                <p className="text-2xl font-bold">
+                <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
                   {formatCurrency(pipeline.upcomingTotal)}
                 </p>
                 <p className="text-muted-foreground mt-1 text-xs">
-                  already scheduled
-                </p>
-              </Card>
-
-              <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
-                <p className="text-muted-foreground mb-1 text-sm font-medium">
-                  Collected
-                </p>
-                <p className="text-2xl font-bold text-green-600">
-                  {formatCurrency(pipeline.paidTotal)}
-                </p>
-                <p className="text-muted-foreground mt-1 text-xs">
-                  paid invoices
+                  scheduled ahead
                 </p>
               </Card>
             </div>
@@ -914,7 +905,7 @@ export default function StatsPage() {
                   1,
                 )
                 const today = new Date()
-                const currentMonth = today.getMonth() + 1 // 1-indexed
+                const currentMonth = today.getMonth() + 1
                 return (
                   <div className="space-y-2">
                     {pipeline.months.map((m) => {
@@ -937,27 +928,21 @@ export default function StatsPage() {
                           {/* Bar */}
                           <div className="relative h-6 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                             {m.total > 0 && (
-                              <>
-                                {/* Paid portion */}
-                                {m.paidTotal > 0 && (
-                                  <div
-                                    className="absolute inset-y-0 left-0 rounded-full bg-green-500/70"
-                                    style={{
-                                      width: `${Math.round((m.paidTotal / maxTotal) * 100)}%`,
-                                    }}
-                                  />
-                                )}
-                                {/* Total bar behind */}
-                                <div
-                                  className={`absolute inset-y-0 left-0 rounded-full ${isPast ? 'bg-slate-400/40' : isCurrent ? 'bg-blue-400/50' : 'bg-blue-300/40'}`}
-                                  style={{ width: `${pct}%` }}
-                                />
-                              </>
+                              <div
+                                className={`absolute inset-y-0 left-0 rounded-full ${
+                                  isPast
+                                    ? 'bg-slate-400/50'
+                                    : isCurrent
+                                      ? 'bg-blue-500/60'
+                                      : 'bg-blue-400/40'
+                                }`}
+                                style={{ width: `${pct}%` }}
+                              />
                             )}
                           </div>
 
                           {/* Amount + job count */}
-                          <div className="w-32 shrink-0 text-right">
+                          <div className="w-36 shrink-0 text-right">
                             {m.total > 0 ? (
                               <>
                                 <span
@@ -982,8 +967,8 @@ export default function StatsPage() {
                 )
               })()}
               <p className="text-muted-foreground mt-4 text-xs">
-                Green fill = collected (paid). Blue fill = booked but unpaid.
-                Grey = past months.
+                Blue = upcoming scheduled work. Grey = past months. Future
+                months include all recurring jobs already on the calendar.
               </p>
             </Card>
           </div>
