@@ -323,10 +323,13 @@ function buildEmailHtml(body: string, templateKey: OpsTemplateKey): string {
 
         <!-- Header -->
         <tr>
-          <td style="background:${accentColor};padding:28px 32px;text-align:center;">
-            <p style="margin:0;font-size:22px;font-weight:bold;color:#ffffff;letter-spacing:0.5px;">
-              🐾 Sasquatch Carpet Cleaning
-            </p>
+          <td style="background:${accentColor};padding:24px 32px;text-align:center;">
+            <img
+              src="https://sightings.sasquatchcarpet.com/sasquatch-logo.png"
+              alt="Sasquatch Carpet Cleaning"
+              width="160"
+              style="display:block;margin:0 auto;max-width:160px;height:auto;"
+            />
           </td>
         </tr>
 
