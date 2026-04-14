@@ -40,12 +40,20 @@ type CustomerResult = {
   ops_service_addresses: CustomerAddress[]
 }
 
+type ServiceCatalogItem = {
+  id: string
+  name: string
+  category: string
+  base_price: number | null
+  default_duration_minutes: number | null
+}
+
 type LineItemForm = {
+  service_catalog_item_id: string
   name_snapshot: string
   quantity: string
   unit_price: string
   duration_minutes: string
-  service_catalog_item_id?: string
 }
 
 type RuleForm = {
@@ -326,6 +334,10 @@ function CreateTemplateForm({ onBack }: { onBack: () => void }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const [catalog, setCatalog] = useState<ServiceCatalogItem[]>([])
+  const [catalogCategories, setCatalogCategories] = useState<string[]>([])
+  const [selectedCategory, setSelectedCategory] = useState<string>('')
+
   const [customerQuery, setCustomerQuery] = useState('')
   const [customerResults, setCustomerResults] = useState<CustomerResult[]>([])
   const [searching, setSearching] = useState(false)
@@ -344,6 +356,7 @@ function CreateTemplateForm({ onBack }: { onBack: () => void }) {
 
   const [lineItems, setLineItems] = useState<LineItemForm[]>([
     {
+      service_catalog_item_id: '',
       name_snapshot: '',
       quantity: '1',
       unit_price: '',
@@ -366,6 +379,25 @@ function CreateTemplateForm({ onBack }: { onBack: () => void }) {
 
   const [previewDates, setPreviewDates] = useState<string[]>([])
   const [loadingPreview, setLoadingPreview] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/admin/ops/services')
+      .then((r) => r.json())
+      .then((data) => {
+        const items: ServiceCatalogItem[] = data.services || []
+        setCatalog(items)
+        const cats = [...new Set(items.map((s) => s.category).filter(Boolean))]
+        setCatalogCategories(cats)
+        if (cats.length > 0) setSelectedCategory(cats[0])
+      })
+      .catch(() => {
+        /* silent */
+      })
+  }, [])
+
+  const filteredCatalog = selectedCategory
+    ? catalog.filter((s) => s.category === selectedCategory)
+    : catalog
 
   useEffect(() => {
     if (!customerQuery.trim() || customerQuery.length < 2) {
@@ -408,6 +440,29 @@ function CreateTemplateForm({ onBack }: { onBack: () => void }) {
   ) => {
     setLineItems((prev) =>
       prev.map((item, i) => (i === idx ? { ...item, [field]: value } : item)),
+    )
+  }
+
+  const handleServiceSelect = (idx: number, serviceId: string) => {
+    const service = catalog.find((s) => s.id === serviceId)
+    setLineItems((prev) =>
+      prev.map((item, i) =>
+        i !== idx
+          ? item
+          : {
+              ...item,
+              service_catalog_item_id: serviceId,
+              name_snapshot: service?.name || item.name_snapshot,
+              unit_price:
+                service?.base_price != null
+                  ? String(service.base_price)
+                  : item.unit_price,
+              duration_minutes:
+                service?.default_duration_minutes != null
+                  ? String(service.default_duration_minutes)
+                  : item.duration_minutes,
+            },
+      ),
     )
   }
 
@@ -711,7 +766,13 @@ function CreateTemplateForm({ onBack }: { onBack: () => void }) {
       {/* Line Items */}
       <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="text-lg font-semibold">Line Items</h3>
+          <div>
+            <h3 className="text-lg font-semibold">Line Items</h3>
+            <p className="text-muted-foreground mt-0.5 text-sm">
+              Pick from your service catalog. Price and duration auto-fill;
+              override as needed.
+            </p>
+          </div>
           <Button
             variant="outline"
             size="sm"
@@ -719,6 +780,7 @@ function CreateTemplateForm({ onBack }: { onBack: () => void }) {
               setLineItems((prev) => [
                 ...prev,
                 {
+                  service_catalog_item_id: '',
                   name_snapshot: '',
                   quantity: '1',
                   unit_price: '',
@@ -732,23 +794,80 @@ function CreateTemplateForm({ onBack }: { onBack: () => void }) {
           </Button>
         </div>
 
+        {/* Category filter */}
+        {catalogCategories.length > 0 && (
+          <div className="mt-3">
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedCategory('')}
+                className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                  selectedCategory === ''
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'border-border hover:bg-accent'
+                }`}
+              >
+                All
+              </button>
+              {catalogCategories.map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                    selectedCategory === cat
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'border-border hover:bg-accent'
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="mt-4 space-y-3">
           {lineItems.map((item, idx) => (
             <div key={idx} className="rounded-xl border p-4">
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {/* Service picker */}
+              <div className="grid gap-3 sm:grid-cols-2">
                 <div className="sm:col-span-2">
-                  <Label>Service Name *</Label>
+                  <Label>Service</Label>
+                  <select
+                    className="border-input bg-background mt-1 h-10 w-full rounded-md border px-3 text-sm"
+                    value={item.service_catalog_item_id}
+                    onChange={(e) => handleServiceSelect(idx, e.target.value)}
+                  >
+                    <option value="">— Pick from catalog —</option>
+                    {filteredCatalog.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                        {s.base_price != null ? ` — $${s.base_price}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Editable fields (pre-filled from catalog, overridable) */}
+              <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="sm:col-span-2">
+                  <Label className="text-xs">
+                    Display Name{' '}
+                    <span className="text-muted-foreground">(override)</span>
+                  </Label>
                   <Input
                     value={item.name_snapshot}
                     onChange={(e) =>
                       handleLineItemChange(idx, 'name_snapshot', e.target.value)
                     }
-                    placeholder="e.g., LVM/Bonnet - A Building (2,251 sf @ $0.35)"
-                    className="mt-1"
+                    placeholder="Auto-filled from service — edit to add detail"
+                    className="mt-1 text-sm"
                   />
                 </div>
                 <div>
-                  <Label>Quantity</Label>
+                  <Label className="text-xs">Qty</Label>
                   <Input
                     type="number"
                     value={item.quantity}
@@ -759,7 +878,7 @@ function CreateTemplateForm({ onBack }: { onBack: () => void }) {
                   />
                 </div>
                 <div>
-                  <Label>Unit Price ($)</Label>
+                  <Label className="text-xs">Unit Price ($)</Label>
                   <Input
                     type="number"
                     step="0.01"
@@ -771,6 +890,7 @@ function CreateTemplateForm({ onBack }: { onBack: () => void }) {
                   />
                 </div>
               </div>
+
               <div className="mt-2 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <Label className="text-muted-foreground text-xs">
@@ -788,6 +908,17 @@ function CreateTemplateForm({ onBack }: { onBack: () => void }) {
                     }
                     className="h-7 w-20 text-xs"
                   />
+                  {item.unit_price && item.quantity && (
+                    <span className="text-muted-foreground text-xs">
+                      Line total:{' '}
+                      <span className="text-foreground font-semibold">
+                        {formatCurrency(
+                          (Number(item.unit_price) || 0) *
+                            (Number(item.quantity) || 0),
+                        )}
+                      </span>
+                    </span>
+                  )}
                 </div>
                 {lineItems.length > 1 && (
                   <Button
