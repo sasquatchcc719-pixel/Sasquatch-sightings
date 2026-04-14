@@ -246,6 +246,13 @@ export function AdminNavigation() {
   // Comms group (Phone system + email)
   const callsTabs: NavTab[] = [
     {
+      name: 'Phone',
+      href: '/admin/phone',
+      icon: Phone,
+      active: pathname === '/admin/phone',
+      description: 'Make outbound calls from your browser',
+    },
+    {
       name: 'Direct Texts',
       href: '/admin/conversations?source=phone',
       icon: MessageSquare,

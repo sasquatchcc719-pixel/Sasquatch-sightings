@@ -5,9 +5,9 @@ const twilioPhone = process.env.TWILIO_PHONE_NUMBER || '+17192498791'
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
-    const to = formData.get('To') as string
+    const rawTo = formData.get('To') as string
 
-    if (!to) {
+    if (!rawTo) {
       const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say>No phone number provided. Goodbye.</Say>
@@ -18,13 +18,26 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    // Normalize: strip whitespace, ensure E.164 format
+    let to = rawTo.trim()
+    const digits = to.replace(/\D/g, '')
+    if (!to.startsWith('+') && digits.length === 10) {
+      to = `+1${digits}`
+    } else if (
+      !to.startsWith('+') &&
+      digits.length === 11 &&
+      digits.startsWith('1')
+    ) {
+      to = `+${digits}`
+    }
+
     console.log(
-      `[voice-twiml] Outbound call to ${to} with callerId ${twilioPhone}`,
+      `[voice-twiml] Outbound call to ${to} (raw: ${rawTo}) with callerId ${twilioPhone}`,
     )
 
     const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial callerId="${twilioPhone}">
+  <Dial callerId="${twilioPhone}" answerOnBridge="true">
     <Number>${to}</Number>
   </Dial>
 </Response>`

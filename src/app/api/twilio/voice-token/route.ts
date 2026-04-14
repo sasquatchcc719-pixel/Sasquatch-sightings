@@ -26,7 +26,7 @@ export async function POST() {
       )
     }
 
-    const identity = `admin_${user.id.slice(0, 8)}`
+    const identity = 'admin_charles'
 
     const token = new AccessToken(accountSid, apiKeySid, apiKeySecret, {
       identity,
@@ -35,7 +35,7 @@ export async function POST() {
 
     const voiceGrant = new AccessToken.VoiceGrant({
       outgoingApplicationSid: twimlAppSid,
-      incomingAllow: false,
+      incomingAllow: true,
     })
     token.addGrant(voiceGrant)
 

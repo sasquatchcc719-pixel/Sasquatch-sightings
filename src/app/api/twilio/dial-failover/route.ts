@@ -41,12 +41,12 @@ export async function POST(request: NextRequest) {
     const baseUrl = getBaseUrl()
     const afterHoursUrl = `${baseUrl}/api/twilio/call-after-hours`
 
-    // Dial Chuck
-    // Maintaining callerId of the original caller
+    // Dial Chuck + browser simultaneously
     const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Dial timeout="${routingConfig.ivrTechnicalTimeoutSeconds}" action="${afterHoursUrl}" callerId="${callerPhone}" answerOnBridge="true">
     <Number>${routingConfig.primaryForwardNumber}</Number>
+    <Client>admin_charles</Client>
   </Dial>
 </Response>`
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCallRoutingConfig } from '@/lib/twilio/call-routing-config'
+import { sendOneSignalNotification } from '@/lib/onesignal'
 
 // Robust Hardcoded Business Hours Logic (Fallback Plan)
 // This removes the dependency on the database for the critical path of answering a call.
@@ -29,6 +30,19 @@ export async function POST(request: NextRequest) {
     const routingConfig = await getCallRoutingConfig()
 
     console.log(`[Call Router] Incoming call from: ${callerPhone}`)
+
+    // Fire push notification immediately (don't await — must not delay TwiML)
+    const displayPhone = callerPhone.replace(
+      /^\+1(\d{3})(\d{3})(\d{4})$/,
+      '($1) $2-$3',
+    )
+    sendOneSignalNotification({
+      heading: 'Incoming Call',
+      content: `${displayPhone || callerPhone} is calling`,
+      data: { type: 'incoming_call', phone: callerPhone, url: '/admin/phone' },
+    }).catch((err) =>
+      console.error('[Call Router] Push notification error:', err),
+    )
 
     // Get current time in Mountain Time
     const now = new Date()
@@ -92,6 +106,7 @@ export async function POST(request: NextRequest) {
 <Response>
   <Dial timeout="${routingConfig.openLineTimeoutSeconds}" action="${afterHoursUrl}" callerId="${callerPhone}" answerOnBridge="true">
     <Number>${routingConfig.primaryForwardNumber}</Number>
+    <Client>admin_charles</Client>
   </Dial>
 </Response>`
     } else if (isBusinessHours) {

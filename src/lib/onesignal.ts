@@ -115,6 +115,81 @@ export async function sendOneSignalToAudience(
   }
 }
 
+/**
+ * Schedule a push notification 30 minutes before a job starts.
+ * Uses OneSignal's `send_after` for fire-and-forget scheduled delivery.
+ */
+export async function scheduleJobReminder(params: {
+  appointmentId: string
+  appointmentDate: string
+  startTime: string
+  customerName: string
+  address: string
+}): Promise<{ id: string } | null> {
+  const appId = process.env.ONESIGNAL_APP_ID
+  const apiKey = process.env.ONESIGNAL_API_KEY
+  if (!appId || !apiKey) return null
+
+  const { appointmentDate, startTime, customerName, address, appointmentId } =
+    params
+
+  const [hours, minutes] = startTime.split(':').map(Number)
+  const jobTime = new Date(
+    `${appointmentDate}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`,
+  )
+  const reminderTime = new Date(jobTime.getTime() - 30 * 60 * 1000)
+
+  if (reminderTime <= new Date()) return null
+
+  const sendAfter = reminderTime.toISOString()
+  const timeLabel = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+
+  try {
+    const response = await fetch(`${ONESIGNAL_BASE}/notifications`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Basic ${apiKey}`,
+      },
+      body: JSON.stringify({
+        app_id: appId,
+        included_segments: ['Subscribed Users'],
+        headings: { en: 'Job in 30 min' },
+        contents: { en: `${customerName} at ${address} · ${timeLabel}` },
+        send_after: sendAfter,
+        data: {
+          type: 'job_reminder',
+          appointment_id: appointmentId,
+          url: `/admin/operations/appointments/${appointmentId}`,
+        },
+      }),
+    })
+
+    if (!response.ok) {
+      console.error(
+        '[scheduleJobReminder] OneSignal error:',
+        await response.text(),
+      )
+      return null
+    }
+
+    const result = (await response.json()) as { id?: string }
+    if (result.id) {
+      console.log(
+        '[scheduleJobReminder] Scheduled:',
+        result.id,
+        'for',
+        sendAfter,
+      )
+      return { id: result.id }
+    }
+    return null
+  } catch (error) {
+    console.error('[scheduleJobReminder] Error:', error)
+    return null
+  }
+}
+
 export interface OneSignalMessageStats {
   successful: number
   received: number

@@ -13,6 +13,7 @@ import {
 } from '@/lib/ops/availability'
 import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
 import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
+import { scheduleJobReminder } from '@/lib/onesignal'
 
 type IncomingLineItem = {
   service_catalog_item_id?: string | null
@@ -471,6 +472,13 @@ export async function POST(request: NextRequest) {
         appointmentId: appointment.id,
       }),
       syncAppointmentToQuickBooks(appointment.id),
+      scheduleJobReminder({
+        appointmentId: appointment.id,
+        appointmentDate: appointmentDate,
+        startTime: `${startTime}:00`.slice(0, 8),
+        customerName: fullName,
+        address: `${address.street_1}, ${address.city}`,
+      }),
     ])
     if (commsResult.status === 'rejected') {
       console.error('[ops/appointments][POST] Comms error:', commsResult.reason)

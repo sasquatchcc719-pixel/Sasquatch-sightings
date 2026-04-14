@@ -52,8 +52,8 @@ const NAV_ITEMS: NavItem[] = [
   },
   {
     href: '/admin/operations/recurring',
-    label: 'Recurring Job',
-    description: 'Placeholder for future recurring scheduling',
+    label: 'Recurring Jobs',
+    description: 'Manage recurring templates and schedules',
     icon: Repeat,
   },
   {

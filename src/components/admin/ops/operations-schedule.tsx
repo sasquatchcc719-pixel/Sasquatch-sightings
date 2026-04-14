@@ -11,6 +11,7 @@ import {
   Loader2,
   Plus,
   RefreshCw,
+  Repeat,
   ShieldBan,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -55,6 +56,7 @@ type Appointment = {
         zip_code: string
       }[]
     | null
+  recurring_template_id?: string | null
   ops_appointment_line_items: Array<{
     id: string
     name_snapshot: string
@@ -1343,7 +1345,10 @@ export function OperationsSchedule() {
                           href={href}
                           className={`text-foreground block rounded-xl border px-2 py-2 text-xs transition hover:shadow-sm ${getStatusTone(appointment.status)}`}
                         >
-                          <div className="font-medium">
+                          <div className="flex items-center gap-1 font-medium">
+                            {appointment.recurring_template_id && (
+                              <Repeat className="h-3 w-3 shrink-0 text-blue-500" />
+                            )}
                             {appointment.start_time.slice(0, 5)}{' '}
                             {customer?.full_name}
                           </div>
@@ -1582,7 +1587,10 @@ export function OperationsSchedule() {
                               }}
                             >
                               <div className="flex items-start justify-between gap-2">
-                                <div className="line-clamp-1 leading-tight font-semibold">
+                                <div className="line-clamp-1 flex items-center gap-1.5 leading-tight font-semibold">
+                                  {appointment.recurring_template_id && (
+                                    <Repeat className="h-3 w-3 shrink-0 text-blue-500" />
+                                  )}
                                   {customer?.business_name ||
                                     customer?.full_name ||
                                     'Customer'}
