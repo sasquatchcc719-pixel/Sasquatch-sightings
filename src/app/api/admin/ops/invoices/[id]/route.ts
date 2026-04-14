@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { Resend } from 'resend'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import {
@@ -6,6 +7,7 @@ import {
   createQBPayment,
   syncAppointmentToQuickBooks,
 } from '@/lib/quickbooks-api'
+import { generateInvoicePDF } from '@/lib/ops/pdf/generate'
 
 const INVOICE_SELECT = `
   *,
@@ -302,6 +304,115 @@ export async function PATCH(
       void syncAppointmentToQuickBooks(current.appointment_id).catch((qbErr) =>
         console.error('[ops/invoices/:id][PATCH] QB sync:', qbErr),
       )
+    }
+
+    // Auto-send PDF receipt when a job is marked paid (skip batch-invoice clients)
+    if (isBeingMarkedPaid && current.appointment_id) {
+      void (async () => {
+        try {
+          // Check if this appointment belongs to a batch-invoiced recurring template
+          const { data: apptRow } = await supabase
+            .from('ops_appointments')
+            .select(
+              `
+              appointment_date,
+              recurring_template_id,
+              ops_recurring_templates ( invoice_mode ),
+              ops_customers ( full_name, business_name, email ),
+              ops_service_addresses ( street_1, city, state, zip_code )
+            `,
+            )
+            .eq('id', current.appointment_id)
+            .single()
+
+          const templateMode = (
+            apptRow?.ops_recurring_templates as { invoice_mode?: string } | null
+          )?.invoice_mode
+          const isBatchClient = templateMode === 'batch_monthly'
+          if (isBatchClient) return
+
+          const rawCustomer = apptRow?.ops_customers
+          const customer = Array.isArray(rawCustomer)
+            ? rawCustomer[0]
+            : rawCustomer
+          const customerEmail = customer?.email ?? null
+          if (!customerEmail) return
+
+          const customerName =
+            customer?.business_name || customer?.full_name || 'Valued Customer'
+
+          const rawAddress = apptRow?.ops_service_addresses
+          const address = Array.isArray(rawAddress) ? rawAddress[0] : rawAddress
+          const serviceAddress = address
+            ? `${address.street_1}, ${address.city}, ${address.state} ${address.zip_code}`
+            : ''
+
+          // Fetch refreshed line items for the receipt PDF
+          const { data: receiptLines } = await supabase
+            .from('ops_invoice_line_items')
+            .select('description, quantity, unit_price, line_total')
+            .eq('invoice_id', id)
+
+          const lineItems = (receiptLines || []) as Array<{
+            description: string
+            quantity: number
+            unit_price: number
+            line_total: number
+          }>
+
+          const pdfBuffer = await generateInvoicePDF({
+            invoiceId: id,
+            isPaid: true,
+            paymentMethod: method,
+            customerName,
+            serviceAddress,
+            serviceDate: apptRow?.appointment_date ?? '',
+            lineItems,
+            discountAmount,
+            subtotal: Number(subtotal.toFixed(2)),
+            total,
+          })
+
+          const resendKey = process.env.RESEND_API_KEY
+          if (!resendKey) return
+
+          const resend = new Resend(resendKey)
+          const fromEmail =
+            process.env.OPS_EMAIL_FROM ||
+            'Sasquatch Carpet Cleaning <onboarding@resend.dev>'
+          const shortRef = `INV-${id.replace(/-/g, '').slice(-6).toUpperCase()}`
+
+          await resend.emails.send({
+            from: fromEmail,
+            to: customerEmail,
+            subject: `Payment received — thank you, ${customerName.split(' ')[0]}!`,
+            html: `
+              <div style="font-family:Arial,sans-serif;max-width:520px;margin:32px auto;color:#111827;">
+                <div style="background:#16a34a;padding:20px 28px;border-radius:8px 8px 0 0;">
+                  <h1 style="margin:0;color:#fff;font-size:20px;">Sasquatch Carpet Cleaning</h1>
+                  <p style="margin:4px 0 0;color:#bbf7d0;font-size:13px;">Payment Confirmed</p>
+                </div>
+                <div style="border:1px solid #e5e7eb;border-top:none;padding:24px 28px;border-radius:0 0 8px 8px;">
+                  <p style="margin:0 0 12px;font-size:15px;">Hi ${customerName.split(' ')[0]},</p>
+                  <p style="margin:0 0 20px;font-size:14px;color:#374151;">
+                    We've received your payment of <strong>$${total.toFixed(2)}</strong>. Your receipt is attached to this email as a PDF for your records.
+                  </p>
+                  <p style="margin:0;font-size:13px;color:#6b7280;">
+                    Thank you for choosing Sasquatch Carpet Cleaning! We hope to see you again.
+                  </p>
+                </div>
+              </div>`,
+            attachments: pdfBuffer
+              ? [{ filename: `${shortRef}-receipt.pdf`, content: pdfBuffer }]
+              : undefined,
+          })
+        } catch (receiptErr) {
+          console.error(
+            '[ops/invoices/:id][PATCH] Receipt email failed:',
+            receiptErr,
+          )
+        }
+      })()
     }
 
     return NextResponse.json({ invoice })

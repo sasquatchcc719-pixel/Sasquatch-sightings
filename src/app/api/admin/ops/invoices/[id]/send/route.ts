@@ -4,6 +4,7 @@ import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { sendCustomerSMS } from '@/lib/twilio'
 import { getQBInvoicePaymentLink } from '@/lib/quickbooks-api'
+import { generateInvoicePDF } from '@/lib/ops/pdf/generate'
 
 const VENMO_USERNAME = process.env.VENMO_BUSINESS_USERNAME ?? 'SasquatchCarpet'
 
@@ -149,6 +150,8 @@ export async function POST(
         `
         id,
         total,
+        subtotal,
+        discount_amount,
         quickbooks_invoice_id,
         ops_appointments (
           id,
@@ -294,6 +297,29 @@ export async function POST(
           const fromEmail =
             process.env.OPS_EMAIL_FROM ||
             'Sasquatch Carpet Cleaning <onboarding@resend.dev>'
+
+          const discountAmount = Number(
+            (invoice as { discount_amount?: number }).discount_amount || 0,
+          )
+          const subtotal = Number(
+            (invoice as { subtotal?: number }).subtotal || total,
+          )
+
+          const pdfBuffer = await generateInvoicePDF({
+            invoiceId: id,
+            isPaid: false,
+            customerName,
+            serviceAddress: addressText,
+            serviceDate,
+            lineItems,
+            discountAmount,
+            subtotal,
+            total,
+            venmoUrl,
+          })
+
+          const shortRef = `INV-${id.replace(/-/g, '').slice(-6).toUpperCase()}`
+
           await resend.emails.send({
             from: fromEmail,
             to: customerEmail,
@@ -307,6 +333,14 @@ export async function POST(
               venmoUrl,
               photoUrls,
             ),
+            attachments: pdfBuffer
+              ? [
+                  {
+                    filename: `${shortRef}.pdf`,
+                    content: pdfBuffer,
+                  },
+                ]
+              : undefined,
           })
         }
       }
