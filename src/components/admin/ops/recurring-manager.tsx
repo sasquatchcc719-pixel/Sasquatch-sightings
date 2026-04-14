@@ -51,6 +51,7 @@ type ServiceCatalogItem = {
 type LineItemForm = {
   service_catalog_item_id: string
   name_snapshot: string
+  notes: string
   quantity: string
   unit_price: string
   duration_minutes: string
@@ -358,6 +359,7 @@ function CreateTemplateForm({ onBack }: { onBack: () => void }) {
     {
       service_catalog_item_id: '',
       name_snapshot: '',
+      notes: '',
       quantity: '1',
       unit_price: '',
       duration_minutes: '60',
@@ -538,6 +540,7 @@ function CreateTemplateForm({ onBack }: { onBack: () => void }) {
             label: label.trim(),
             line_items: lineItems.map((l) => ({
               name_snapshot: l.name_snapshot,
+              notes: l.notes || null,
               quantity: Number(l.quantity) || 1,
               unit_price: Number(l.unit_price) || 0,
               duration_minutes: Number(l.duration_minutes) || 60,
@@ -782,6 +785,7 @@ function CreateTemplateForm({ onBack }: { onBack: () => void }) {
                 {
                   service_catalog_item_id: '',
                   name_snapshot: '',
+                  notes: '',
                   quantity: '1',
                   unit_price: '',
                   duration_minutes: '60',
@@ -864,6 +868,15 @@ function CreateTemplateForm({ onBack }: { onBack: () => void }) {
                     }
                     placeholder="Auto-filled from service — edit to add detail"
                     className="mt-1 text-sm"
+                  />
+                  <textarea
+                    value={item.notes}
+                    onChange={(e) =>
+                      handleLineItemChange(idx, 'notes', e.target.value)
+                    }
+                    placeholder="Location / description notes (e.g. Building A, 2nd floor hallway)"
+                    rows={2}
+                    className="border-input bg-background placeholder:text-muted-foreground focus:ring-ring mt-1.5 w-full resize-none rounded-md border px-3 py-2 text-sm leading-snug focus:ring-2 focus:outline-none"
                   />
                 </div>
                 <div>
