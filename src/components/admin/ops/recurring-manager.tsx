@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   Loader2,
   Pause,
+  Pencil,
   Play,
   Plus,
   RefreshCw,
@@ -77,12 +78,14 @@ type Template = {
   scheduled_duration_minutes: number
   discount_amount: number
   internal_notes: string | null
+  service_address_id: string | null
   line_items: Array<{
     name_snapshot: string
     quantity: number
     unit_price: number
     duration_minutes: number
     service_catalog_item_id?: string | null
+    notes?: string | null
   }>
   generated_count: number
   next_date: string | null
@@ -163,7 +166,9 @@ function ordinal(n: number): string {
 // ─── Component ──────────────────────────────────────────────────────────
 
 export function RecurringManager() {
-  const [view, setView] = useState<'list' | 'create' | 'detail'>('list')
+  const [view, setView] = useState<'list' | 'create' | 'edit' | 'detail'>(
+    'list',
+  )
   const [templates, setTemplates] = useState<Template[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -217,12 +222,25 @@ export function RecurringManager() {
     return <CreateTemplateForm onBack={handleBackToList} />
   }
 
+  if (view === 'edit' && detail) {
+    return (
+      <CreateTemplateForm
+        initialData={detail}
+        onBack={() => {
+          setView('detail')
+          if (selectedId) loadDetail(selectedId)
+        }}
+      />
+    )
+  }
+
   if (view === 'detail' && detail) {
     return (
       <TemplateDetailView
         template={detail}
         onBack={handleBackToList}
         onRefresh={() => selectedId && loadDetail(selectedId)}
+        onEdit={() => setView('edit')}
       />
     )
   }
@@ -329,9 +347,17 @@ export function RecurringManager() {
   )
 }
 
-// ─── Create Form ────────────────────────────────────────────────────────
+// ─── Create / Edit Form ─────────────────────────────────────────────────
 
-function CreateTemplateForm({ onBack }: { onBack: () => void }) {
+function CreateTemplateForm({
+  onBack,
+  initialData,
+}: {
+  onBack: () => void
+  initialData?: TemplateDetail
+}) {
+  const isEditing = !!initialData
+
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -342,42 +368,99 @@ function CreateTemplateForm({ onBack }: { onBack: () => void }) {
   const [customerQuery, setCustomerQuery] = useState('')
   const [customerResults, setCustomerResults] = useState<CustomerResult[]>([])
   const [searching, setSearching] = useState(false)
-  const [selectedCustomer, setSelectedCustomer] =
-    useState<CustomerResult | null>(null)
-  const [selectedAddressId, setSelectedAddressId] = useState<string>('')
 
-  const [label, setLabel] = useState('')
-  const [startTime, setStartTime] = useState('09:00')
-  const [scheduledDuration, setScheduledDuration] = useState('120')
-  const [discountAmount, setDiscountAmount] = useState('0')
-  const [internalNotes, setInternalNotes] = useState('')
-  const [invoiceMode, setInvoiceMode] = useState<'per_visit' | 'batch_monthly'>(
-    'per_visit',
+  // When editing, pre-populate the selected customer from initialData
+  const [selectedCustomer, setSelectedCustomer] =
+    useState<CustomerResult | null>(
+      initialData
+        ? (() => {
+            const c = unwrap(initialData.ops_customers)
+            return c
+              ? ({
+                  id: c.id,
+                  full_name: c.full_name,
+                  business_name: c.business_name ?? null,
+                  phone: c.phone ?? '',
+                  email: c.email ?? null,
+                  ops_service_addresses: initialData.ops_service_addresses
+                    ? Array.isArray(initialData.ops_service_addresses)
+                      ? (initialData.ops_service_addresses as CustomerAddress[])
+                      : [initialData.ops_service_addresses as CustomerAddress]
+                    : [],
+                } as CustomerResult)
+              : null
+          })()
+        : null,
+    )
+  const [selectedAddressId, setSelectedAddressId] = useState<string>(
+    initialData?.service_address_id ?? '',
   )
 
-  const [lineItems, setLineItems] = useState<LineItemForm[]>([
-    {
-      service_catalog_item_id: '',
-      name_snapshot: '',
-      notes: '',
-      quantity: '1',
-      unit_price: '',
-      duration_minutes: '60',
-    },
-  ])
+  const [label, setLabel] = useState(initialData?.label ?? '')
+  const [startTime, setStartTime] = useState(
+    initialData?.start_time?.slice(0, 5) ?? '09:00',
+  )
+  const [scheduledDuration, setScheduledDuration] = useState(
+    String(initialData?.scheduled_duration_minutes ?? 120),
+  )
+  const [discountAmount, setDiscountAmount] = useState(
+    String(initialData?.discount_amount ?? 0),
+  )
+  const [internalNotes, setInternalNotes] = useState(
+    initialData?.internal_notes ?? '',
+  )
+  const [invoiceMode, setInvoiceMode] = useState<'per_visit' | 'batch_monthly'>(
+    (initialData?.invoice_mode as 'per_visit' | 'batch_monthly') ?? 'per_visit',
+  )
 
-  const [rules, setRules] = useState<RuleForm[]>([
-    {
-      frequency: 'monthly',
-      day_of_week: '',
-      week_of_month: '',
-      day_of_month: '',
-      interval_days: '',
-      effective_from: new Date().toISOString().slice(0, 10),
-      effective_until: '',
-      override_start_time: '',
-    },
-  ])
+  const [lineItems, setLineItems] = useState<LineItemForm[]>(
+    initialData?.line_items?.length
+      ? initialData.line_items.map((l) => ({
+          service_catalog_item_id: l.service_catalog_item_id ?? '',
+          name_snapshot: l.name_snapshot,
+          notes: (l as { notes?: string }).notes ?? '',
+          quantity: String(l.quantity),
+          unit_price: String(l.unit_price),
+          duration_minutes: String(l.duration_minutes),
+        }))
+      : [
+          {
+            service_catalog_item_id: '',
+            name_snapshot: '',
+            notes: '',
+            quantity: '1',
+            unit_price: '',
+            duration_minutes: '60',
+          },
+        ],
+  )
+
+  const [rules, setRules] = useState<RuleForm[]>(
+    initialData?.ops_recurrence_rules?.length
+      ? initialData.ops_recurrence_rules.map((r) => ({
+          frequency: r.frequency as RuleForm['frequency'],
+          day_of_week: r.day_of_week != null ? String(r.day_of_week) : '',
+          week_of_month: r.week_of_month != null ? String(r.week_of_month) : '',
+          day_of_month: r.day_of_month != null ? String(r.day_of_month) : '',
+          interval_days: r.interval_days != null ? String(r.interval_days) : '',
+          effective_from:
+            r.effective_from ?? new Date().toISOString().slice(0, 10),
+          effective_until: r.effective_until ?? '',
+          override_start_time: r.override_start_time ?? '',
+        }))
+      : [
+          {
+            frequency: 'monthly',
+            day_of_week: '',
+            week_of_month: '',
+            day_of_month: '',
+            interval_days: '',
+            effective_from: new Date().toISOString().slice(0, 10),
+            effective_until: '',
+            override_start_time: '',
+          },
+        ],
+  )
 
   const [previewDates, setPreviewDates] = useState<string[]>([])
   const [loadingPreview, setLoadingPreview] = useState(false)
@@ -529,58 +612,88 @@ function CreateTemplateForm({ onBack }: { onBack: () => void }) {
     setSaving(true)
     setError(null)
 
+    const templatePayload = {
+      label: label.trim(),
+      line_items: lineItems.map((l) => ({
+        name_snapshot: l.name_snapshot,
+        notes: l.notes || null,
+        quantity: Number(l.quantity) || 1,
+        unit_price: Number(l.unit_price) || 0,
+        duration_minutes: Number(l.duration_minutes) || 60,
+        service_catalog_item_id: l.service_catalog_item_id || null,
+      })),
+      start_time: startTime,
+      scheduled_duration_minutes: Number(scheduledDuration) || 120,
+      discount_amount: Number(discountAmount) || 0,
+      internal_notes: internalNotes || null,
+      invoice_mode: invoiceMode,
+    }
+
+    const rulesPayload = rules.map((r) => ({
+      frequency: r.frequency,
+      day_of_week: r.day_of_week ? Number(r.day_of_week) : null,
+      week_of_month: r.week_of_month ? Number(r.week_of_month) : null,
+      day_of_month: r.day_of_month ? Number(r.day_of_month) : null,
+      interval_days: r.interval_days ? Number(r.interval_days) : null,
+      effective_from: r.effective_from || new Date().toISOString().slice(0, 10),
+      effective_until: r.effective_until || null,
+      override_start_time: r.override_start_time || null,
+    }))
+
     try {
-      const res = await fetch('/api/admin/ops/recurring', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          template: {
-            customer_id: selectedCustomer.id,
-            service_address_id: selectedAddressId,
-            label: label.trim(),
-            line_items: lineItems.map((l) => ({
-              name_snapshot: l.name_snapshot,
-              notes: l.notes || null,
-              quantity: Number(l.quantity) || 1,
-              unit_price: Number(l.unit_price) || 0,
-              duration_minutes: Number(l.duration_minutes) || 60,
-              service_catalog_item_id: l.service_catalog_item_id || null,
-            })),
-            start_time: startTime,
-            scheduled_duration_minutes: Number(scheduledDuration) || 120,
-            discount_amount: Number(discountAmount) || 0,
-            internal_notes: internalNotes || null,
-            invoice_mode: invoiceMode,
-          },
-          rules: rules.map((r) => ({
-            frequency: r.frequency,
-            day_of_week: r.day_of_week ? Number(r.day_of_week) : null,
-            week_of_month: r.week_of_month ? Number(r.week_of_month) : null,
-            day_of_month: r.day_of_month ? Number(r.day_of_month) : null,
-            interval_days: r.interval_days ? Number(r.interval_days) : null,
-            effective_from:
-              r.effective_from || new Date().toISOString().slice(0, 10),
-            effective_until: r.effective_until || null,
-            override_start_time: r.override_start_time || null,
-          })),
-          generate: true,
-        }),
-      })
-
-      if (!res.ok) {
-        const data = await res.json()
-        setError(data.error || 'Failed to create')
-        return
-      }
-
-      const data = await res.json()
-      if (data.generation) {
-        alert(
-          `Template created! Generated ${data.generation.created} appointments (${data.generation.skipped} skipped).`,
+      if (isEditing && initialData) {
+        // Ask whether to cascade changes to existing future jobs
+        const updateFuture = confirm(
+          'Update all future unstarted jobs with the new schedule and pricing? Click OK to update them, Cancel to save the template only.',
         )
-      }
 
-      onBack()
+        const res = await fetch(`/api/admin/ops/recurring/${initialData.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            template: templatePayload,
+            rules: rulesPayload,
+            update_future: updateFuture,
+          }),
+        })
+
+        if (!res.ok) {
+          const data = await res.json()
+          setError(data.error || 'Failed to save')
+          return
+        }
+
+        onBack()
+      } else {
+        const res = await fetch('/api/admin/ops/recurring', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            template: {
+              customer_id: selectedCustomer.id,
+              service_address_id: selectedAddressId,
+              ...templatePayload,
+            },
+            rules: rulesPayload,
+            generate: true,
+          }),
+        })
+
+        if (!res.ok) {
+          const data = await res.json()
+          setError(data.error || 'Failed to create')
+          return
+        }
+
+        const data = await res.json()
+        if (data.generation) {
+          alert(
+            `Template created! Generated ${data.generation.created} appointments (${data.generation.skipped} skipped).`,
+          )
+        }
+
+        onBack()
+      }
     } catch {
       setError('Network error')
     } finally {
@@ -596,10 +709,13 @@ function CreateTemplateForm({ onBack }: { onBack: () => void }) {
             <ChevronLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h2 className="text-2xl font-semibold">New Recurring Job</h2>
+            <h2 className="text-2xl font-semibold">
+              {isEditing ? 'Edit Recurring Job' : 'New Recurring Job'}
+            </h2>
             <p className="text-muted-foreground mt-1 text-sm">
-              Define the template, set the schedule, and generate the full year
-              of appointments.
+              {isEditing
+                ? 'Update the template, schedule, and pricing. You can choose whether to apply changes to existing future jobs.'
+                : 'Define the template, set the schedule, and generate the full year of appointments.'}
             </p>
           </div>
         </div>
@@ -1220,7 +1336,7 @@ function CreateTemplateForm({ onBack }: { onBack: () => void }) {
         </Button>
         <Button onClick={handleSave} disabled={saving}>
           {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Create & Generate Jobs
+          {isEditing ? 'Save Changes' : 'Create & Generate Jobs'}
         </Button>
       </div>
     </div>
@@ -1233,10 +1349,12 @@ function TemplateDetailView({
   template,
   onBack,
   onRefresh,
+  onEdit,
 }: {
   template: TemplateDetail
   onBack: () => void
   onRefresh: () => void
+  onEdit: () => void
 }) {
   const [acting, setActing] = useState(false)
   const [batchMonth, setBatchMonth] = useState(
@@ -1399,6 +1517,10 @@ function TemplateDetailView({
       <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
         <h3 className="font-semibold">Actions</h3>
         <div className="mt-3 flex flex-wrap gap-3">
+          <Button onClick={onEdit} disabled={acting}>
+            <Pencil className="mr-2 h-4 w-4" />
+            Edit Template
+          </Button>
           <Button variant="outline" onClick={handleToggle} disabled={acting}>
             {template.is_active ? (
               <Pause className="mr-2 h-4 w-4" />
