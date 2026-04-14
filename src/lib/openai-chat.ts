@@ -98,7 +98,7 @@ CANCELLATIONS — NEVER CANCEL A JOB:
 - The system automatically escalates cancel requests to Charles via text, email, and push notification. You do not need to do anything else — just give the response above and stop.
 
 ACTIVE PROMOTIONS:
-- Nextdoor Spring Special (April 2026): $40 off any job over $300. If a customer mentions Nextdoor, the Spring Special, or any Nextdoor coupon/promo, apply this discount. Mention it when giving the final quote. This overrides the standard $20 NFC card discount if the customer came through Nextdoor.
+- Nextdoor Spring Special (April 2026): $40 off any job over $300. ONLY apply this discount if the conversation source is confirmed Nextdoor (i.e. the CHANNEL shown below is "nextdoor"). Do NOT offer this discount to Google LSA leads, inbound SMS, NFC card customers, or any other source — even if the customer mentions Nextdoor in passing. This overrides the standard $20 NFC card discount if the customer genuinely came through Nextdoor.
 
 HONESTY GUARDRAIL — NEVER CLAIM AN ACTION YOU DIDN'T COMPLETE:
 - ONLY tell the customer something was done (booked, rescheduled, address changed, etc.) if a tool call returned a result containing "success": true or a confirmation_number.
@@ -394,9 +394,15 @@ export async function generateAIResponse(
   customerMessage: string,
   conversationHistory: Message[] = [],
   context?: { partnerName?: string; couponCode?: string },
-  channelKey: 'inbound' | 'contest' | 'vendor' | 'business_card' = 'inbound',
+  channelKey:
+    | 'inbound'
+    | 'contest'
+    | 'vendor'
+    | 'business_card'
+    | 'nextdoor'
+    | 'lsa' = 'inbound',
   _bookingUrlOverride?: string,
-  smsOpsContext?: { customerPhoneE164: string },
+  smsOpsContext?: { customerPhoneE164: string; isLsaRelay?: boolean },
 ): Promise<string> {
   if (!openai) {
     throw new Error('OpenAI not configured')
@@ -469,9 +475,28 @@ CHANNEL LOGIC PROFILE:
     })
     const dateContext = `\n\nTODAY'S DATE: ${todayMT} (${todayISO}). Use this to resolve relative dates like "tomorrow", "next week", "this Monday", etc. Pass dates to tools in YYYY-MM-DD format.\n`
 
+    // Inject the channel so Harry knows which promotions are eligible
+    const channelLabel: Record<string, string> = {
+      inbound: 'inbound',
+      contest: 'contest',
+      vendor: 'vendor',
+      business_card: 'business_card',
+      nextdoor: 'nextdoor',
+      lsa: 'Google LSA',
+    }
+    const isLsa = channelKey === 'lsa'
+    const lsaExtra = isLsa
+      ? ' This conversation is via a Google LSA relay number — the relay cannot receive confirmation texts. You MUST ask the customer for their real callback phone number (e.g. "What\'s the best number to reach you for confirmations?") before calling book_new_job, and pass it as customer_phone.'
+      : ''
+    const channelContext = `\n\nCHANNEL: ${channelLabel[channelKey] ?? channelKey}. Only apply promotions and discounts that are explicitly allowed for this channel.${lsaExtra}\n`
+
     // Build system prompt with partner context if available
     let systemPrompt =
-      SYSTEM_PROMPT + knowledgeContext + profileContext + dateContext
+      SYSTEM_PROMPT +
+      knowledgeContext +
+      profileContext +
+      dateContext +
+      channelContext
     if (context?.couponCode) {
       const partnerContext = `
 
@@ -524,6 +549,7 @@ CURRENT CUSTOMER CONTEXT:
               {
                 supabase,
                 customerPhoneE164: smsOpsContext.customerPhoneE164,
+                isLsaRelay: smsOpsContext.isLsaRelay ?? false,
               },
             )
             messages.push({

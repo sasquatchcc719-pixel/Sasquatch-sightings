@@ -17,7 +17,13 @@ export const HARRY_CONTROL_KEYS = [
 ] as const
 
 export type HarryControlKey = (typeof HARRY_CONTROL_KEYS)[number]
-export type HarryChannelKey = 'inbound' | 'contest' | 'vendor' | 'business_card'
+export type HarryChannelKey =
+  | 'inbound'
+  | 'contest'
+  | 'vendor'
+  | 'business_card'
+  | 'nextdoor'
+  | 'lsa'
 
 type HarryControlDefault = {
   setting_key: HarryControlKey
@@ -368,6 +374,8 @@ export function isHarryChannelEnabled(
     contest: 'channel_contest_enabled',
     vendor: 'channel_vendor_enabled',
     business_card: 'channel_business_card_enabled',
+    nextdoor: 'channel_main_enabled',
+    lsa: 'channel_main_enabled',
   }
   return isHarryFunctionEnabled(snapshot, channelMap[channel])
 }

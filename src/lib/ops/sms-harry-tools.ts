@@ -227,6 +227,7 @@ async function customerOwnsAppointment(
 export type HarrySmsToolContext = {
   supabase: SupabaseClient
   customerPhoneE164: string
+  isLsaRelay?: boolean
 }
 
 export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
@@ -356,13 +357,18 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
     function: {
       name: 'book_new_job',
       description:
-        'Create a new Ops appointment for this SMS customer. Requires name, email, full address, catalog service IDs, and a slot time that appears in get_calendar_slots for that date. Phone is always taken from SMS automatically.',
+        "Create a new Ops appointment for this SMS customer. Requires name, email, full address, catalog service IDs, and a slot time that appears in get_calendar_slots for that date. Phone is normally taken from SMS automatically. For Google LSA relay conversations, you MUST collect the customer's real callback number and pass it as customer_phone.",
       parameters: {
         type: 'object',
         properties: {
           first_name: { type: 'string' },
           last_name: { type: 'string' },
           email: { type: 'string' },
+          customer_phone: {
+            type: 'string',
+            description:
+              "Customer's real callback phone number. Required for Google LSA leads since the relay number cannot receive confirmations. Format: 10-digit US number.",
+          },
           street_1: { type: 'string' },
           city: { type: 'string' },
           state: { type: 'string' },
@@ -924,6 +930,22 @@ export async function executeHarrySmsTool(
         const startTime = String(args.start_time || '').trim()
         const lineItems = Array.isArray(args.line_items) ? args.line_items : []
 
+        // For LSA relay conversations, Harry must collect the real customer phone
+        const rawCustomerPhone = String(args.customer_phone || '').trim()
+        const normalizedCustomerPhone = rawCustomerPhone
+          ? '+1' + rawCustomerPhone.replace(/\D/g, '').slice(-10)
+          : ''
+        const bookingPhone = ctx.isLsaRelay
+          ? normalizedCustomerPhone
+          : ctx.customerPhoneE164
+
+        if (ctx.isLsaRelay && !bookingPhone) {
+          return JSON.stringify({
+            error:
+              'customer_phone is required for Google LSA leads. Ask the customer: "What\'s the best phone number to reach you for confirmations?"',
+          })
+        }
+
         if (!firstName || !lastName || !email) {
           return JSON.stringify({
             error: 'first_name, last_name, and email are required',
@@ -1039,24 +1061,25 @@ export async function executeHarrySmsTool(
             ? 'request'
             : 'direct'
 
+        const isLsa = ctx.isLsaRelay === true
         const result = await createAiStyleBooking({
           supabase,
           customer: {
             first_name: firstName,
             last_name: lastName,
             email,
-            phone: ctx.customerPhoneE164,
+            phone: bookingPhone ?? ctx.customerPhoneE164,
           },
           address: { street_1: street1, city, state, zip_code: zipCode },
           appointment_date: appointmentDate,
           start_time: startTime,
           line_items: parsedLineItems,
           booking_mode: bookingMode,
-          booking_channel: 'sms_harry',
-          source_label: 'Harry SMS',
-          lead_source: 'Harry SMS Assistant',
-          actor_label: 'Harry SMS',
-          admin_heading: 'Harry SMS booking',
+          booking_channel: isLsa ? 'lsa_sms' : 'sms_harry',
+          source_label: isLsa ? 'Google LSA' : 'Harry SMS',
+          lead_source: isLsa ? 'Google LSA' : 'Harry SMS Assistant',
+          actor_label: isLsa ? 'Harry LSA' : 'Harry SMS',
+          admin_heading: isLsa ? 'Google LSA booking' : 'Harry SMS booking',
         })
 
         if (!result.ok) {

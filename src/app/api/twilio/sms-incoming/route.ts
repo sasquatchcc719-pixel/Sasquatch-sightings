@@ -261,11 +261,16 @@ function detectContestMention(message: string): boolean {
 }
 
 // Determine conversation source type from message content
-type ConversationSource = 'vendor' | 'business_card' | 'contest' | 'inbound'
+type ConversationSource =
+  | 'vendor'
+  | 'business_card'
+  | 'contest'
+  | 'inbound'
+  | 'lsa'
 
 function sourceTypeToChannelKey(
   sourceType: ConversationSource,
-): 'vendor' | 'business_card' | 'contest' | 'inbound' {
+): 'vendor' | 'business_card' | 'contest' | 'inbound' | 'lsa' {
   return sourceType
 }
 
@@ -710,6 +715,7 @@ export async function POST(request: NextRequest) {
       business_card: 'Business Card',
       contest: 'Contest',
       inbound: 'inbound',
+      lsa: 'Google LSA',
     }
     const dbSource = sourceMap[sourceType]
 
@@ -970,7 +976,10 @@ export async function POST(request: NextRequest) {
         partnerContext,
         channelKey,
         undefined,
-        { customerPhoneE164: normalizedPhone },
+        {
+          customerPhoneE164: normalizedPhone,
+          isLsaRelay: channelKey === 'lsa',
+        },
       )
 
       if (!aiResponse) {
