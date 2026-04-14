@@ -208,8 +208,8 @@ export function NewJobWorkspace() {
   const [leadSource, setLeadSource] = useState('')
   const [useCustomTime, setUseCustomTime] = useState(false)
 
-  // Address autocomplete
-  const [addrQuery, setAddrQuery] = useState('')
+  // Address lookup (Photon) — separate from manual fields below
+  const [addrSearchQuery, setAddrSearchQuery] = useState('')
   const [addrSuggestions, setAddrSuggestions] = useState<
     Array<{
       label: string
@@ -221,8 +221,40 @@ export function NewJobWorkspace() {
   >([])
   const [addrLoading, setAddrLoading] = useState(false)
   const addrDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const addrBlurDismissRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [selectedCustomer, setSelectedCustomer] =
     useState<CustomerSearchResult | null>(null)
+
+  const dismissAddrSuggestions = useCallback(() => {
+    if (addrBlurDismissRef.current) {
+      clearTimeout(addrBlurDismissRef.current)
+      addrBlurDismissRef.current = null
+    }
+    setAddrSuggestions([])
+    setAddrSearchQuery('')
+  }, [])
+
+  const scheduleDismissAddrSuggestions = useCallback(() => {
+    if (addrBlurDismissRef.current) clearTimeout(addrBlurDismissRef.current)
+    addrBlurDismissRef.current = setTimeout(() => {
+      addrBlurDismissRef.current = null
+      setAddrSuggestions([])
+      setAddrSearchQuery('')
+    }, 200)
+  }, [])
+
+  const cancelAddrSuggestionDismiss = useCallback(() => {
+    if (addrBlurDismissRef.current) {
+      clearTimeout(addrBlurDismissRef.current)
+      addrBlurDismissRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (addrBlurDismissRef.current) clearTimeout(addrBlurDismissRef.current)
+    }
+  }, [])
 
   useEffect(() => {
     if (hasAppliedPrefillRef.current) return
@@ -433,6 +465,8 @@ export function NewJobWorkspace() {
   ).length
 
   const handleSelectCustomer = (customer: CustomerSearchResult) => {
+    setAddrSearchQuery('')
+    setAddrSuggestions([])
     const derivedName = splitFullName(customer.full_name)
     setSelectedCustomer(customer)
     setCustomerForm({
@@ -461,7 +495,11 @@ export function NewJobWorkspace() {
 
   const handleAddressSelectionChange = (value: string) => {
     setAddressSelection(value)
-    if (value === 'new') return
+    if (value === 'new') {
+      setAddrSearchQuery('')
+      setAddrSuggestions([])
+      return
+    }
     const selectedAddress = selectedCustomer?.ops_service_addresses?.find(
       (address) => address.id === value,
     )
@@ -1119,7 +1157,7 @@ export function NewJobWorkspace() {
                     type="button"
                     size="sm"
                     variant="outline"
-                    onClick={() => setAddressSelection('new')}
+                    onClick={() => handleAddressSelectionChange('new')}
                   >
                     Use New Address Instead
                   </Button>
@@ -1128,35 +1166,26 @@ export function NewJobWorkspace() {
             ) : null}
 
             {addressSelection === 'new' ? (
-              <div className="mt-4 grid gap-3 md:grid-cols-2">
-                <div>
-                  <Label htmlFor="address-label">Label</Label>
-                  <Input
-                    id="address-label"
-                    value={addressForm.label}
-                    onChange={(event) =>
-                      setAddressForm((current) => ({
-                        ...current,
-                        label: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <Label htmlFor="street-1">Street *</Label>
-                  <div className="relative">
+              <div className="mt-4 space-y-4">
+                <Card className="p-4">
+                  <h4 className="text-sm font-semibold">Search address</h4>
+                  <p className="text-muted-foreground mt-1 text-xs">
+                    Optional. Type and pick a match to autofill the manual entry
+                    fields below. Skip this entirely if you already know the
+                    address.
+                  </p>
+                  <div className="relative mt-3">
+                    <Label htmlFor="address-lookup" className="sr-only">
+                      Search address
+                    </Label>
                     <Input
-                      id="street-1"
+                      id="address-lookup"
                       autoComplete="off"
-                      value={addrQuery || addressForm.street_1}
-                      placeholder="Start typing an address…"
+                      value={addrSearchQuery}
+                      placeholder="Search street, city, or full address…"
                       onChange={(event) => {
                         const q = event.target.value
-                        setAddrQuery(q)
-                        setAddressForm((current) => ({
-                          ...current,
-                          street_1: q,
-                        }))
+                        setAddrSearchQuery(q)
                         if (addrDebounceRef.current)
                           clearTimeout(addrDebounceRef.current)
                         if (q.length < 3) {
@@ -1166,7 +1195,6 @@ export function NewJobWorkspace() {
                         addrDebounceRef.current = setTimeout(async () => {
                           setAddrLoading(true)
                           try {
-                            // Biased toward Colorado Springs
                             const res = await fetch(
                               `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=6&lang=en&lat=38.8339&lon=-104.8214&layer=house`,
                             )
@@ -1219,18 +1247,30 @@ export function NewJobWorkspace() {
                           }
                         }, 320)
                       }}
+                      onFocus={cancelAddrSuggestionDismiss}
+                      onBlur={scheduleDismissAddrSuggestions}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Escape') {
+                          event.preventDefault()
+                          dismissAddrSuggestions()
+                        }
+                      }}
                     />
                     {addrLoading ? (
                       <Loader2 className="text-muted-foreground absolute top-2.5 right-3 h-4 w-4 animate-spin" />
                     ) : null}
                     {addrSuggestions.length > 0 ? (
-                      <ul className="border-border bg-card absolute z-50 mt-1 w-full overflow-hidden rounded-xl border shadow-lg">
+                      <ul
+                        className="border-border bg-card absolute z-50 mt-1 w-full overflow-hidden rounded-xl border shadow-lg"
+                        role="listbox"
+                      >
                         {addrSuggestions.map((s, i) => (
                           <li key={i}>
                             <button
                               type="button"
                               className="hover:bg-accent w-full px-4 py-2.5 text-left text-sm"
-                              onClick={() => {
+                              onMouseDown={(event) => {
+                                event.preventDefault()
                                 setAddressForm((current) => ({
                                   ...current,
                                   street_1: s.street,
@@ -1242,8 +1282,7 @@ export function NewJobWorkspace() {
                                     : current.state,
                                   zip_code: s.zip || current.zip_code,
                                 }))
-                                setAddrQuery('')
-                                setAddrSuggestions([])
+                                dismissAddrSuggestions()
                               }}
                             >
                               {s.label}
@@ -1253,86 +1292,124 @@ export function NewJobWorkspace() {
                       </ul>
                     ) : null}
                   </div>
-                </div>
-                <div>
-                  <Label htmlFor="street-2">Unit / Street 2</Label>
-                  <Input
-                    id="street-2"
-                    value={addressForm.street_2}
-                    onChange={(event) =>
-                      setAddressForm((current) => ({
-                        ...current,
-                        street_2: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="gate-code">Gate Code</Label>
-                  <Input
-                    id="gate-code"
-                    value={addressForm.gate_code}
-                    onChange={(event) =>
-                      setAddressForm((current) => ({
-                        ...current,
-                        gate_code: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="city">City *</Label>
-                  <Input
-                    id="city"
-                    value={addressForm.city}
-                    onChange={(event) =>
-                      setAddressForm((current) => ({
-                        ...current,
-                        city: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="state">State *</Label>
-                  <Input
-                    id="state"
-                    value={addressForm.state}
-                    onChange={(event) =>
-                      setAddressForm((current) => ({
-                        ...current,
-                        state: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="zip-code">Zip *</Label>
-                  <Input
-                    id="zip-code"
-                    value={addressForm.zip_code}
-                    onChange={(event) =>
-                      setAddressForm((current) => ({
-                        ...current,
-                        zip_code: event.target.value,
-                      }))
-                    }
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <Label htmlFor="address-notes">Access Notes</Label>
-                  <Textarea
-                    id="address-notes"
-                    value={addressForm.notes}
-                    onChange={(event) =>
-                      setAddressForm((current) => ({
-                        ...current,
-                        notes: event.target.value,
-                      }))
-                    }
-                    placeholder="Gate codes, parking, lockbox, property manager instructions"
-                  />
-                </div>
+                </Card>
+
+                <Card className="p-4">
+                  <h4 className="text-sm font-semibold">Manual entry</h4>
+                  <p className="text-muted-foreground mt-1 text-xs">
+                    This is what gets saved on the job. No autocomplete here —
+                    type the service address directly.
+                  </p>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <div>
+                      <Label htmlFor="address-label">Label</Label>
+                      <Input
+                        id="address-label"
+                        value={addressForm.label}
+                        onChange={(event) =>
+                          setAddressForm((current) => ({
+                            ...current,
+                            label: event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <Label htmlFor="street-1">Street *</Label>
+                      <Input
+                        id="street-1"
+                        autoComplete="street-address"
+                        value={addressForm.street_1}
+                        placeholder="e.g. 15778 Long Valley Dr"
+                        onChange={(event) =>
+                          setAddressForm((current) => ({
+                            ...current,
+                            street_1: event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="street-2">Unit / Street 2</Label>
+                      <Input
+                        id="street-2"
+                        value={addressForm.street_2}
+                        onChange={(event) =>
+                          setAddressForm((current) => ({
+                            ...current,
+                            street_2: event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="gate-code">Gate Code</Label>
+                      <Input
+                        id="gate-code"
+                        value={addressForm.gate_code}
+                        onChange={(event) =>
+                          setAddressForm((current) => ({
+                            ...current,
+                            gate_code: event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="city">City *</Label>
+                      <Input
+                        id="city"
+                        value={addressForm.city}
+                        onChange={(event) =>
+                          setAddressForm((current) => ({
+                            ...current,
+                            city: event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="state">State *</Label>
+                      <Input
+                        id="state"
+                        value={addressForm.state}
+                        onChange={(event) =>
+                          setAddressForm((current) => ({
+                            ...current,
+                            state: event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="zip-code">Zip *</Label>
+                      <Input
+                        id="zip-code"
+                        value={addressForm.zip_code}
+                        onChange={(event) =>
+                          setAddressForm((current) => ({
+                            ...current,
+                            zip_code: event.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <Label htmlFor="address-notes">Access Notes</Label>
+                      <Textarea
+                        id="address-notes"
+                        value={addressForm.notes}
+                        onChange={(event) =>
+                          setAddressForm((current) => ({
+                            ...current,
+                            notes: event.target.value,
+                          }))
+                        }
+                        placeholder="Gate codes, parking, lockbox, property manager instructions"
+                      />
+                    </div>
+                  </div>
+                </Card>
               </div>
             ) : null}
           </Card>
