@@ -335,7 +335,10 @@ export default function StatsPage() {
         ...(jobs || []).map((j) => ({ ...j, date: j.created_at })),
         ...(entries || []).map((e) => ({
           ...e,
-          date: e.entry_date,
+          // Append T00:00:00 (no Z) so bare date strings are parsed as local
+          // time rather than UTC midnight, which would shift them to the prior
+          // day in US timezones and break week/YTD bucketing.
+          date: e.entry_date + 'T00:00:00',
           hours_worked: (e.hours_worked || 0) + (e.drive_minutes || 0) / 60,
         })),
         ...supplementRows.map((r) => ({
