@@ -609,11 +609,10 @@ export default function StatsPage() {
         {/* Mobile: buttons first, title below. Desktop: side by side */}
         <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div className="order-2 md:order-1">
-            <h1 className="text-2xl font-bold md:text-3xl">
-              Utilization Tracker
-            </h1>
+            <h1 className="text-2xl font-bold md:text-3xl">Statistics</h1>
             <p className="text-muted-foreground mt-1 text-sm md:mt-2 md:text-base">
-              Track revenue, efficiency, and progress toward your annual goal
+              Revenue, efficiency, pipeline, and progress toward your annual
+              goal
             </p>
           </div>
           <div className="order-1 flex shrink-0 gap-2 md:order-2">
