@@ -122,8 +122,10 @@ export function CommunicationsCenter() {
         </Card>
       ) : null}
 
-      <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
-        <h2 className="text-2xl font-semibold">Communications Center</h2>
+      <Card className="animate-slide-up border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
+        <h2 className="text-gradient-purple text-2xl font-bold tracking-tight">
+          Communications Center
+        </h2>
         <p className="text-muted-foreground mt-2 text-sm">
           Edit the automatic job lifecycle messages and toggle each one on when
           you are ready. All templates start disabled by default.
@@ -134,11 +136,13 @@ export function CommunicationsCenter() {
         <div key={channel} className="space-y-4">
           <div className="flex items-center gap-2">
             {channel === 'sms' ? (
-              <MessageSquare className="h-5 w-5" />
+              <MessageSquare className="h-5 w-5 text-cyan-400" />
             ) : (
-              <Mail className="h-5 w-5" />
+              <Mail className="h-5 w-5 text-purple-400" />
             )}
-            <h3 className="text-xl font-semibold">{groupTitle(channel)}</h3>
+            <h3 className="text-xl font-semibold tracking-tight">
+              {groupTitle(channel)}
+            </h3>
           </div>
 
           <div className="grid gap-4">
@@ -147,7 +151,7 @@ export function CommunicationsCenter() {
               return (
                 <Card
                   key={template.template_key}
-                  className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur"
+                  className={`accent-border-left border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur ${channel === 'sms' ? 'border-l-cyan-500/60' : 'border-l-purple-500/60'}`}
                 >
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>

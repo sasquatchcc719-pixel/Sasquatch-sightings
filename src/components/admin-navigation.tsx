@@ -74,7 +74,7 @@ function NavDropdown({
       {isOpen && (
         <>
           <div className="fixed inset-0 z-[100]" onClick={onClose} />
-          <div className="border-border bg-popover text-popover-foreground absolute top-full left-0 z-[110] mt-2 w-64 rounded-xl border shadow-2xl">
+          <div className="animate-dropdown-in border-border bg-popover text-popover-foreground absolute top-full left-0 z-[110] mt-2 w-64 rounded-xl border shadow-2xl">
             <div className="p-2">
               {tabs.map((tab) => {
                 const TabIcon = tab.icon
@@ -83,13 +83,15 @@ function NavDropdown({
                     key={tab.name}
                     href={tab.href}
                     onClick={onClose}
-                    className={`flex items-start gap-3 rounded-lg px-3 py-2 transition-colors ${
+                    className={`flex items-start gap-3 rounded-lg px-3 py-2 transition-all ${
                       tab.active
-                        ? 'bg-primary/10 text-primary'
-                        : 'text-foreground/80 hover:bg-accent hover:text-accent-foreground'
+                        ? 'border-l-2 border-l-emerald-400 bg-emerald-500/10 text-emerald-300'
+                        : 'text-foreground/80 hover:bg-accent hover:text-accent-foreground border-l-2 border-l-transparent hover:border-l-emerald-400/50'
                     }`}
                   >
-                    <TabIcon className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                    <TabIcon
+                      className={`mt-0.5 h-4 w-4 flex-shrink-0 ${tab.active ? 'text-emerald-400' : ''}`}
+                    />
                     <div>
                       <div className="text-sm font-medium">{tab.name}</div>
                       <div className="text-muted-foreground text-xs">

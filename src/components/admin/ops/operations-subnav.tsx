@@ -144,12 +144,10 @@ export function OperationsSubnav() {
         </DropdownMenu>
 
         <div>
-          <p className="text-muted-foreground text-xs font-medium tracking-[0.22em] uppercase">
+          <p className="text-gradient text-xs font-semibold tracking-[0.25em] uppercase">
             Operations
           </p>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {sectionLabel}
-          </h1>
+          <h1 className="text-2xl font-bold tracking-tight">{sectionLabel}</h1>
         </div>
       </div>
 

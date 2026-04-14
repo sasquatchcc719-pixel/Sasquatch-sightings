@@ -21,13 +21,16 @@ export default function OperationsCommunicationsPage() {
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
-            className={`px-4 py-2.5 text-sm font-medium transition-colors ${
+            className={`relative px-4 py-2.5 text-sm font-medium transition-colors ${
               activeTab === tab.key
-                ? 'border-primary text-primary border-b-2'
+                ? 'text-purple-300'
                 : 'text-muted-foreground hover:text-foreground'
             }`}
           >
             {tab.label}
+            {activeTab === tab.key && (
+              <span className="absolute bottom-0 left-0 h-0.5 w-full bg-gradient-to-r from-purple-500 to-blue-500" />
+            )}
           </button>
         ))}
       </div>

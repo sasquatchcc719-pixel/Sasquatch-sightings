@@ -629,7 +629,9 @@ export default function StatsPage() {
         {/* Mobile: buttons first, title below. Desktop: side by side */}
         <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div className="order-2 md:order-1">
-            <h1 className="text-2xl font-bold md:text-3xl">Statistics</h1>
+            <h1 className="text-gradient text-3xl font-bold tracking-tight md:text-4xl">
+              Statistics
+            </h1>
             <p className="text-muted-foreground mt-1 text-sm md:mt-2 md:text-base">
               Revenue, efficiency, pipeline, and progress toward your annual
               goal
@@ -859,8 +861,8 @@ export default function StatsPage() {
       {/* ── Calendar Pipeline ─────────────────────────────────────────── */}
       <div className="mb-8">
         <div className="mb-1 flex items-center gap-2">
-          <CalendarDays className="h-5 w-5 text-blue-600" />
-          <h2 className="text-xl font-semibold">
+          <CalendarDays className="h-5 w-5 text-blue-400" />
+          <h2 className="text-gradient-blue text-xl font-semibold tracking-tight">
             {new Date().getFullYear()} Calendar Value
           </h2>
         </div>
@@ -912,33 +914,33 @@ export default function StatsPage() {
               <div className="space-y-4">
                 {/* Summary cards */}
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                  <Card className="border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/40">
-                    <p className="text-muted-foreground mb-1 text-sm font-medium">
+                  <Card className="card-interactive animate-slide-up border-blue-500/30 bg-blue-950/30 p-4 backdrop-blur">
+                    <p className="mb-1 text-sm font-medium tracking-wide text-blue-300/80 uppercase">
                       Full Year Value
                     </p>
-                    <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">
+                    <p className="stat-value stat-glow-blue text-3xl font-bold text-blue-300">
                       {formatCurrency(totalOnCalendar)}
                     </p>
                     <p className="text-muted-foreground mt-1 text-xs">
                       earned + scheduled
                     </p>
                   </Card>
-                  <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
-                    <p className="text-muted-foreground mb-1 text-sm font-medium">
+                  <Card className="card-interactive animate-slide-up-delay-1 border-border/60 bg-card/80 p-4 backdrop-blur">
+                    <p className="mb-1 text-sm font-medium tracking-wide text-orange-300/80 uppercase">
                       Earned So Far
                     </p>
-                    <p className="text-2xl font-bold text-orange-500">
+                    <p className="stat-value stat-glow-amber text-3xl font-bold text-orange-400">
                       {formatCurrency(totalActual)}
                     </p>
                     <p className="text-muted-foreground mt-1 text-xs">
-                      matches YTD total above
+                      matches YTD total
                     </p>
                   </Card>
-                  <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
-                    <p className="text-muted-foreground mb-1 text-sm font-medium">
+                  <Card className="card-interactive animate-slide-up-delay-2 border-border/60 bg-card/80 p-4 backdrop-blur">
+                    <p className="mb-1 text-sm font-medium tracking-wide text-blue-300/80 uppercase">
                       Still Ahead
                     </p>
-                    <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                    <p className="stat-value stat-glow-blue text-3xl font-bold text-blue-400">
                       {formatCurrency(totalBooked)}
                     </p>
                     <p className="text-muted-foreground mt-1 text-xs">
@@ -1108,8 +1110,10 @@ export default function StatsPage() {
       {/* Live Ops Stats — from ops_appointments + ops_invoices */}
       <div className="mb-8">
         <div className="mb-4 flex items-center gap-2">
-          <CalendarCheck className="h-5 w-5 text-green-600" />
-          <h2 className="text-xl font-semibold">This Week — Live Jobs</h2>
+          <CalendarCheck className="h-5 w-5 text-emerald-400" />
+          <h2 className="text-gradient text-xl font-semibold tracking-tight">
+            This Week — Live Jobs
+          </h2>
           {opsStats ? (
             <span className="text-muted-foreground text-xs">
               ({opsStats.weekStart} – {opsStats.weekEnd})
@@ -1126,40 +1130,42 @@ export default function StatsPage() {
           <div className="space-y-4">
             {/* Top stat cards */}
             <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-              <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
-                <div className="text-muted-foreground mb-1 flex items-center gap-2">
+              <Card className="card-interactive animate-slide-up border-border/60 bg-card/80 p-4 backdrop-blur">
+                <div className="mb-1 flex items-center gap-2 text-emerald-400/80">
                   <Briefcase className="h-4 w-4" />
                   <p className="text-sm font-medium">Jobs Booked</p>
                 </div>
-                <p className="text-2xl font-bold">{opsStats.jobCount}</p>
+                <p className="stat-value text-2xl font-bold text-emerald-400">
+                  {opsStats.jobCount}
+                </p>
               </Card>
 
-              <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
-                <div className="text-muted-foreground mb-1 flex items-center gap-2">
+              <Card className="card-interactive animate-slide-up-delay-1 border-border/60 bg-card/80 p-4 backdrop-blur">
+                <div className="mb-1 flex items-center gap-2 text-cyan-400/80">
                   <DollarSign className="h-4 w-4" />
                   <p className="text-sm font-medium">Total Invoiced</p>
                 </div>
-                <p className="text-2xl font-bold">
+                <p className="stat-value stat-glow-emerald text-2xl font-bold text-cyan-300">
                   {formatCurrency(opsStats.totalRevenue)}
                 </p>
               </Card>
 
-              <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
-                <div className="text-muted-foreground mb-1 flex items-center gap-2">
+              <Card className="card-interactive animate-slide-up-delay-2 border-border/60 bg-card/80 p-4 backdrop-blur">
+                <div className="mb-1 flex items-center gap-2 text-purple-400/80">
                   <TrendingUp className="h-4 w-4" />
                   <p className="text-sm font-medium">Avg Ticket</p>
                 </div>
-                <p className="text-2xl font-bold">
+                <p className="stat-value text-2xl font-bold text-purple-300">
                   {formatCurrency(opsStats.averageTicket)}
                 </p>
               </Card>
 
-              <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
-                <div className="text-muted-foreground mb-1 flex items-center gap-2">
+              <Card className="card-interactive animate-slide-up-delay-3 border-border/60 bg-card/80 p-4 backdrop-blur">
+                <div className="mb-1 flex items-center gap-2 text-amber-400/80">
                   <Target className="h-4 w-4" />
                   <p className="text-sm font-medium">Unpaid</p>
                 </div>
-                <p className="text-2xl font-bold">
+                <p className="stat-value text-2xl font-bold text-amber-300">
                   {opsStats.paymentStatusCounts['unpaid'] ?? 0}
                 </p>
                 <p className="text-muted-foreground mt-0.5 text-xs">
@@ -1252,7 +1258,9 @@ export default function StatsPage() {
 
       {/* This Week */}
       <div className="mb-8">
-        <h2 className="mb-1 text-xl font-semibold">This Week</h2>
+        <h2 className="text-gradient-amber mb-1 text-xl font-semibold tracking-tight">
+          This Week
+        </h2>
         <p className="text-muted-foreground mb-4 max-w-3xl text-sm leading-relaxed">
           Revenue and hours here include published posts, manual entries,{' '}
           <strong>Finish &amp; close job</strong> on the invoice, and completed
@@ -1264,50 +1272,52 @@ export default function StatsPage() {
           otherwise the scheduled time window is used.
         </p>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-5">
-          <Card className="p-4">
-            <div className="text-muted-foreground mb-1 flex items-center gap-2">
+          <Card className="card-interactive animate-slide-up border-border/60 bg-card/80 p-4 backdrop-blur">
+            <div className="mb-1 flex items-center gap-2 text-amber-400/80">
               <Briefcase className="h-4 w-4" />
               <p className="text-sm font-medium">Jobs</p>
             </div>
-            <p className="text-2xl font-bold">{stats.thisWeek.jobs}</p>
+            <p className="stat-value text-2xl font-bold text-amber-300">
+              {stats.thisWeek.jobs}
+            </p>
           </Card>
 
-          <Card className="p-4">
-            <div className="text-muted-foreground mb-1 flex items-center gap-2">
+          <Card className="card-interactive animate-slide-up-delay-1 border-border/60 bg-card/80 p-4 backdrop-blur">
+            <div className="mb-1 flex items-center gap-2 text-emerald-400/80">
               <DollarSign className="h-4 w-4" />
               <p className="text-sm font-medium">Revenue</p>
             </div>
-            <p className="text-2xl font-bold">
+            <p className="stat-value stat-glow-emerald text-2xl font-bold text-emerald-300">
               {formatCurrency(stats.thisWeek.revenue)}
             </p>
           </Card>
 
-          <Card className="p-4">
-            <div className="text-muted-foreground mb-1 flex items-center gap-2">
+          <Card className="card-interactive animate-slide-up-delay-2 border-border/60 bg-card/80 p-4 backdrop-blur">
+            <div className="mb-1 flex items-center gap-2 text-cyan-400/80">
               <Clock className="h-4 w-4" />
               <p className="text-sm font-medium">Hours</p>
             </div>
-            <p className="text-2xl font-bold">
+            <p className="stat-value text-2xl font-bold text-cyan-300">
               {stats.thisWeek.hours.toFixed(1)}
             </p>
           </Card>
 
-          <Card className="p-4">
-            <div className="text-muted-foreground mb-1 flex items-center gap-2">
+          <Card className="card-interactive animate-slide-up-delay-3 border-border/60 bg-card/80 p-4 backdrop-blur">
+            <div className="mb-1 flex items-center gap-2 text-purple-400/80">
               <TrendingUp className="h-4 w-4" />
               <p className="text-sm font-medium">$/Hour</p>
             </div>
-            <p className="text-2xl font-bold">
+            <p className="stat-value text-2xl font-bold text-purple-300">
               {formatCurrency(stats.thisWeek.revenuePerHour)}
             </p>
           </Card>
 
-          <Card className="p-4">
-            <div className="text-muted-foreground mb-1 flex items-center gap-2">
+          <Card className="card-interactive animate-slide-up-delay-4 border-border/60 bg-card/80 p-4 backdrop-blur">
+            <div className="mb-1 flex items-center gap-2 text-rose-400/80">
               <DollarSign className="h-4 w-4" />
               <p className="text-sm font-medium">Avg Ticket</p>
             </div>
-            <p className="text-2xl font-bold">
+            <p className="stat-value text-2xl font-bold text-rose-300">
               {formatCurrency(stats.thisWeek.averageTicket)}
             </p>
           </Card>
@@ -1316,52 +1326,56 @@ export default function StatsPage() {
 
       {/* Year to Date */}
       <div className="mb-8">
-        <h2 className="mb-4 text-xl font-semibold">Year to Date</h2>
+        <h2 className="text-gradient mb-4 text-xl font-semibold tracking-tight">
+          Year to Date
+        </h2>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-5">
-          <Card className="p-4">
-            <div className="text-muted-foreground mb-1 flex items-center gap-2">
+          <Card className="card-interactive animate-slide-up border-border/60 bg-card/80 p-4 backdrop-blur">
+            <div className="mb-1 flex items-center gap-2 text-emerald-400/80">
               <Briefcase className="h-4 w-4" />
               <p className="text-sm font-medium">Total Jobs</p>
             </div>
-            <p className="text-2xl font-bold">{stats.yearToDate.jobs}</p>
+            <p className="stat-value text-2xl font-bold text-emerald-300">
+              {stats.yearToDate.jobs}
+            </p>
           </Card>
 
-          <Card className="p-4">
-            <div className="text-muted-foreground mb-1 flex items-center gap-2">
+          <Card className="card-interactive animate-slide-up-delay-1 border-border/60 bg-card/80 p-4 backdrop-blur">
+            <div className="mb-1 flex items-center gap-2 text-cyan-400/80">
               <DollarSign className="h-4 w-4" />
               <p className="text-sm font-medium">Total Revenue</p>
             </div>
-            <p className="text-2xl font-bold">
+            <p className="stat-value stat-glow-emerald text-3xl font-bold text-emerald-300">
               {formatCurrency(stats.yearToDate.revenue)}
             </p>
           </Card>
 
-          <Card className="p-4">
-            <div className="text-muted-foreground mb-1 flex items-center gap-2">
+          <Card className="card-interactive animate-slide-up-delay-2 border-border/60 bg-card/80 p-4 backdrop-blur">
+            <div className="mb-1 flex items-center gap-2 text-blue-400/80">
               <Clock className="h-4 w-4" />
               <p className="text-sm font-medium">Total Hours</p>
             </div>
-            <p className="text-2xl font-bold">
+            <p className="stat-value text-2xl font-bold text-blue-300">
               {stats.yearToDate.hours.toFixed(1)}
             </p>
           </Card>
 
-          <Card className="p-4">
-            <div className="text-muted-foreground mb-1 flex items-center gap-2">
+          <Card className="card-interactive animate-slide-up-delay-3 border-border/60 bg-card/80 p-4 backdrop-blur">
+            <div className="mb-1 flex items-center gap-2 text-purple-400/80">
               <TrendingUp className="h-4 w-4" />
               <p className="text-sm font-medium">Avg $/Hour</p>
             </div>
-            <p className="text-2xl font-bold">
+            <p className="stat-value text-2xl font-bold text-purple-300">
               {formatCurrency(stats.yearToDate.revenuePerHour)}
             </p>
           </Card>
 
-          <Card className="p-4">
-            <div className="text-muted-foreground mb-1 flex items-center gap-2">
+          <Card className="card-interactive animate-slide-up-delay-4 border-border/60 bg-card/80 p-4 backdrop-blur">
+            <div className="mb-1 flex items-center gap-2 text-amber-400/80">
               <Target className="h-4 w-4" />
               <p className="text-sm font-medium">Utilization</p>
             </div>
-            <p className="text-2xl font-bold">
+            <p className="stat-value text-2xl font-bold text-amber-300">
               {stats.yearToDate.utilization.toFixed(1)}%
             </p>
           </Card>
@@ -1370,7 +1384,7 @@ export default function StatsPage() {
 
       {/* Potential Revenue - Money Left on Table */}
       <div className="mb-8">
-        <h2 className="mb-4 text-xl font-semibold">
+        <h2 className="text-gradient-rose mb-4 text-xl font-semibold tracking-tight">
           Potential at 100% Utilization
         </h2>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -1431,7 +1445,9 @@ export default function StatsPage() {
 
       {/* Pace Tracking */}
       <div>
-        <h2 className="mb-4 text-xl font-semibold">Pace to Goal</h2>
+        <h2 className="text-gradient-purple mb-4 text-xl font-semibold tracking-tight">
+          Pace to Goal
+        </h2>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
           <Card className="p-4">
             <p className="text-muted-foreground mb-1 text-sm font-medium">
@@ -1518,9 +1534,9 @@ export default function StatsPage() {
       {/* Hiring Readiness */}
       {hiringReadiness && (
         <div className="mt-8">
-          <h2 className="mb-4 flex items-center gap-2 text-xl font-semibold">
-            <Rocket className="h-5 w-5" />
-            Hiring Readiness
+          <h2 className="mb-4 flex items-center gap-2 text-xl font-semibold tracking-tight">
+            <Rocket className="h-5 w-5 text-amber-400" />
+            <span className="text-gradient-amber">Hiring Readiness</span>
           </h2>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -1623,9 +1639,9 @@ export default function StatsPage() {
 
           {/* Status Card */}
           <Card
-            className={`mt-4 p-6 ${
+            className={`mt-4 p-6 transition-all ${
               hiringReadiness.status === 'START_RECRUITING'
-                ? 'bg-green-600 dark:bg-green-700'
+                ? 'animate-pulse-slow bg-green-600 shadow-[0_0_30px_rgba(34,197,94,0.3)] dark:bg-green-700'
                 : hiringReadiness.status === 'GETTING_CLOSE'
                   ? 'bg-amber-500 dark:bg-amber-600'
                   : 'bg-gray-600 dark:bg-gray-700'

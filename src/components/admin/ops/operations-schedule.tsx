@@ -1712,30 +1712,30 @@ export function OperationsSchedule() {
       )}
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="border-border/60 bg-card/80 p-4 shadow-sm backdrop-blur">
-          <div className="text-muted-foreground text-sm font-medium">
+        <Card className="card-interactive animate-slide-up border-border/60 bg-card/80 p-4 shadow-sm backdrop-blur">
+          <div className="mb-1 text-sm font-medium tracking-wide text-emerald-400/80 uppercase">
             Appointments
           </div>
-          <div className="mt-2 text-3xl font-semibold">
+          <div className="stat-value stat-glow-emerald mt-2 text-3xl font-bold text-emerald-300">
             {data.appointments.length}
           </div>
           <p className="text-muted-foreground mt-2 text-sm">
             Interactive jobs that open into their own detail screen.
           </p>
         </Card>
-        <Card className="border-border/60 bg-card/80 p-4 shadow-sm backdrop-blur">
-          <div className="text-muted-foreground text-sm font-medium">
+        <Card className="card-interactive animate-slide-up-delay-1 border-border/60 bg-card/80 p-4 shadow-sm backdrop-blur">
+          <div className="mb-1 text-sm font-medium tracking-wide text-amber-400/80 uppercase">
             Blocked Time
           </div>
-          <div className="mt-2 text-3xl font-semibold">
+          <div className="stat-value stat-glow-amber mt-2 text-3xl font-bold text-amber-300">
             {data.events.length}
           </div>
           <p className="text-muted-foreground mt-2 text-sm">
             Vacation, holds, personal events, and any custom schedule block.
           </p>
         </Card>
-        <Card className="border-border/60 bg-card/80 p-4 shadow-sm backdrop-blur">
-          <div className="text-muted-foreground flex items-center gap-2 text-sm font-medium">
+        <Card className="card-interactive animate-slide-up-delay-2 border-border/60 bg-card/80 p-4 shadow-sm backdrop-blur">
+          <div className="flex items-center gap-2 text-sm font-medium text-cyan-400/80">
             <CalendarDays className="h-4 w-4" />
             Schedule flow
           </div>

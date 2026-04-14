@@ -166,8 +166,10 @@ export function DripCampaignsTab() {
       )}
 
       {/* Overview card */}
-      <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
-        <h2 className="text-2xl font-semibold">Drip Email Campaigns</h2>
+      <Card className="animate-slide-up border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
+        <h2 className="text-gradient-purple text-2xl font-bold tracking-tight">
+          Drip Email Campaigns
+        </h2>
         <p className="text-muted-foreground mt-2 text-sm">
           Automated follow-up emails sent after jobs are completed. Edit the
           subject, body, delay, and toggle each step on or off. Use{' '}
@@ -178,29 +180,37 @@ export function DripCampaignsTab() {
         </p>
 
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div className="rounded-lg border p-3 text-center">
-            <div className="text-2xl font-bold text-blue-400">
+          <div className="animate-slide-up card-interactive rounded-lg border border-blue-500/20 bg-blue-950/20 p-3 text-center">
+            <div className="stat-value stat-glow-blue text-2xl font-bold text-blue-400">
               {stats.active}
             </div>
-            <div className="text-muted-foreground text-xs">Active</div>
+            <div className="text-xs font-medium tracking-wide text-blue-300/60 uppercase">
+              Active
+            </div>
           </div>
-          <div className="rounded-lg border p-3 text-center">
-            <div className="text-2xl font-bold text-green-400">
+          <div className="animate-slide-up-delay-1 card-interactive rounded-lg border border-emerald-500/20 bg-emerald-950/20 p-3 text-center">
+            <div className="stat-value stat-glow-emerald text-2xl font-bold text-emerald-400">
               {stats.completed}
             </div>
-            <div className="text-muted-foreground text-xs">Completed</div>
+            <div className="text-xs font-medium tracking-wide text-emerald-300/60 uppercase">
+              Completed
+            </div>
           </div>
-          <div className="rounded-lg border p-3 text-center">
-            <div className="text-2xl font-bold text-orange-400">
+          <div className="animate-slide-up-delay-2 card-interactive rounded-lg border border-amber-500/20 bg-amber-950/20 p-3 text-center">
+            <div className="stat-value stat-glow-amber text-2xl font-bold text-amber-400">
               {stats.unsubscribed}
             </div>
-            <div className="text-muted-foreground text-xs">Unsubscribed</div>
+            <div className="text-xs font-medium tracking-wide text-amber-300/60 uppercase">
+              Unsubscribed
+            </div>
           </div>
-          <div className="rounded-lg border p-3 text-center">
-            <div className="text-2xl font-bold text-purple-400">
+          <div className="animate-slide-up-delay-3 card-interactive rounded-lg border border-purple-500/20 bg-purple-950/20 p-3 text-center">
+            <div className="stat-value text-2xl font-bold text-purple-400">
               {stats.totalEmails}
             </div>
-            <div className="text-muted-foreground text-xs">Emails Sent</div>
+            <div className="text-xs font-medium tracking-wide text-purple-300/60 uppercase">
+              Emails Sent
+            </div>
           </div>
         </div>
       </Card>
@@ -218,11 +228,11 @@ export function DripCampaignsTab() {
             return (
               <Card
                 key={template.id}
-                className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur"
+                className="accent-border-left border-border/60 bg-card/80 border-l-purple-500/50 p-5 shadow-sm backdrop-blur transition-all hover:border-l-purple-400"
               >
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-500/20 text-sm font-bold text-blue-400">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-purple-500 to-blue-500 text-sm font-bold text-white shadow-lg shadow-purple-500/20">
                       {template.step_index + 1}
                     </div>
                     <div>

@@ -76,7 +76,7 @@ export default async function AdminLayout({ children }: AdminLayoutProps) {
             <div className="glass-panel glass-accent-ring relative z-[200] rounded-2xl border p-4">
               <AdminNavigation />
             </div>
-            <div className="glass-panel glass-accent-ring relative z-[10] rounded-2xl border p-4 sm:p-6">
+            <div className="glass-panel glass-accent-ring animate-slide-up relative z-[10] rounded-2xl border p-4 sm:p-6">
               {children}
             </div>
           </div>
