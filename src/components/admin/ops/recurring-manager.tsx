@@ -324,6 +324,31 @@ export function RecurringManager() {
                   ))}
                 </div>
 
+                {/* Line items preview */}
+                {(tpl.line_items || []).length > 0 && (
+                  <div className="mt-3 space-y-1 border-t pt-3">
+                    {(tpl.line_items || []).map((l, i) => (
+                      <div
+                        key={i}
+                        className="flex items-start justify-between gap-2 text-xs"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <span className="font-medium">{l.name_snapshot}</span>
+                          {l.notes && (
+                            <span className="text-muted-foreground ml-1">
+                              — {l.notes}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-muted-foreground shrink-0 tabular-nums">
+                          {l.quantity > 1 ? `${l.quantity} × ` : ''}
+                          {formatCurrency(l.unit_price)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
                   <span className="font-semibold">
                     {formatCurrency(subtotal)}
