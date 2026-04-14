@@ -369,6 +369,11 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
             description:
               "Customer's real callback phone number. Required for Google LSA leads since the relay number cannot receive confirmations. Format: 10-digit US number.",
           },
+          lead_source: {
+            type: 'string',
+            description:
+              'How the customer heard about Sasquatch Carpet Cleaning. Always required — ask before booking if not already known. Examples: Google, Nextdoor, Facebook, Yelp, Word of mouth / Referral, Repeat customer, Google LSA, NFC Card, Other.',
+          },
           street_1: { type: 'string' },
           city: { type: 'string' },
           state: { type: 'string' },
@@ -391,6 +396,7 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
           'first_name',
           'last_name',
           'email',
+          'lead_source',
           'street_1',
           'city',
           'zip_code',
@@ -1062,6 +1068,17 @@ export async function executeHarrySmsTool(
             : 'direct'
 
         const isLsa = ctx.isLsaRelay === true
+        const providedLeadSource = String(args.lead_source || '').trim()
+        const resolvedLeadSource =
+          providedLeadSource || (isLsa ? 'Google LSA' : 'Harry SMS Assistant')
+
+        if (!providedLeadSource) {
+          return JSON.stringify({
+            error:
+              'lead_source is required. Ask the customer: "How did you hear about us?" before booking.',
+          })
+        }
+
         const result = await createAiStyleBooking({
           supabase,
           customer: {
@@ -1077,7 +1094,7 @@ export async function executeHarrySmsTool(
           booking_mode: bookingMode,
           booking_channel: isLsa ? 'lsa_sms' : 'sms_harry',
           source_label: isLsa ? 'Google LSA' : 'Harry SMS',
-          lead_source: isLsa ? 'Google LSA' : 'Harry SMS Assistant',
+          lead_source: resolvedLeadSource,
           actor_label: isLsa ? 'Harry LSA' : 'Harry SMS',
           admin_heading: isLsa ? 'Google LSA booking' : 'Harry SMS booking',
         })

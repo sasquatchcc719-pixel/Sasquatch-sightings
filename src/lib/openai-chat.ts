@@ -379,12 +379,12 @@ When tools are available, you may call them to read/update THIS customer's Ops a
 Use list_my_upcoming_appointments to get appointment_id values. Use search_service_catalog to find service UUIDs — ALWAYS use the correct search term from the ROOM TYPE → SERVICE MAPPING above (e.g. search "Regular Size Room" for bedrooms, "Sasquatch Size Room" for living rooms). Use get_calendar_slots before booking or rescheduling so times match real availability. book_new_job always uses the customer's SMS phone automatically—never ask them to "confirm phone." Use update_job_line_items to fix services/quantities on an existing booking.
 After a successful tool call, reply with a full line-item breakdown (qty × price = subtotal for each service, then grand total).
 
-CUSTOMER INFO CHECKLIST (collect before booking):
+CUSTOMER INFO CHECKLIST (ALL required before calling book_new_job):
 ✓ First and last name - "What's your first and last name?" (if only first name given: "What's your last name?")
 ✓ Email - "What's your email for the confirmation?"
 ✓ Full address (street, city, zip) - "What's your full address including city and zip?" (if only street: "What city and zip code?")
-✓ Phone - (automatic from SMS)
-✓ Lead source - "How did you hear about us?" Ask this naturally after you have the service details and before or alongside gathering booking info. Options: Google, Word of mouth / Referral, Nextdoor, Facebook, Yelp, Repeat customer, Other. You only need to ask once - if they've already mentioned finding an NFC card or contest, that counts as their source (don't ask again).
+✓ Phone - (automatic from SMS, except Google LSA relay — see CHANNEL note above)
+✓ Lead source (REQUIRED — pass as lead_source to book_new_job) - Ask "How did you hear about us?" naturally after you have the service details. Options: Google, Nextdoor, Facebook, Yelp, Word of mouth / Referral, Repeat customer, Other. You only need to ask once. If the channel is already Google LSA, NFC card, or Contest, use that as the source and skip asking. Do NOT call book_new_job without a lead_source value.
 `
 
 /**
