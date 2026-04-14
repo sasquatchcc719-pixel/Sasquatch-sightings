@@ -38,11 +38,6 @@ type OpsStats = {
 type CalendarPipelineMonth = {
   month: number
   label: string
-  state: 'past' | 'current' | 'future'
-  actualRevenue: number
-  actualJobCount: number
-  collectedThisMonth: number
-  bookedThisMonth: number
   bookedRevenue: number
   bookedJobCount: number
 }
@@ -50,10 +45,13 @@ type CalendarPipelineMonth = {
 type CalendarPipeline = {
   year: number
   currentMonth: number
-  totalActual: number
   totalBooked: number
-  totalOnCalendar: number
   months: CalendarPipelineMonth[]
+}
+
+type MonthlyActual = {
+  revenue: number
+  count: number
 }
 
 type Settings = {
@@ -126,6 +124,9 @@ export default function StatsPage() {
   const [opsLoading, setOpsLoading] = useState(true)
   const [pipeline, setPipeline] = useState<CalendarPipeline | null>(null)
   const [pipelineLoading, setPipelineLoading] = useState(true)
+  const [monthlyRevenue, setMonthlyRevenue] = useState<MonthlyActual[]>(
+    Array.from({ length: 12 }, () => ({ revenue: 0, count: 0 })),
+  )
 
   // Quick entry form state
   const [showQuickEntry, setShowQuickEntry] = useState(false)
@@ -347,6 +348,22 @@ export default function StatsPage() {
           date: r.date,
         })),
       ]
+
+      // Bucket allRevenue by month for the Calendar Value section.
+      // This uses the SAME data as YTD so the numbers always match.
+      const currentYear = new Date().getFullYear()
+      const byMonth: MonthlyActual[] = Array.from({ length: 12 }, () => ({
+        revenue: 0,
+        count: 0,
+      }))
+      for (const item of allRevenue) {
+        const d = new Date(item.date)
+        if (d.getFullYear() !== currentYear) continue
+        const m = d.getMonth() // 0-indexed
+        byMonth[m].revenue += item.invoice_amount || 0
+        byMonth[m].count += 1
+      }
+      setMonthlyRevenue(byMonth)
 
       // Calculate stats
       const now = new Date()
@@ -844,99 +861,123 @@ export default function StatsPage() {
         <div className="mb-1 flex items-center gap-2">
           <CalendarDays className="h-5 w-5 text-blue-600" />
           <h2 className="text-xl font-semibold">
-            {pipeline ? pipeline.year : new Date().getFullYear()} Calendar Value
+            {new Date().getFullYear()} Calendar Value
           </h2>
         </div>
         <p className="text-muted-foreground mb-4 text-xs">
-          Past months show actual revenue collected. Current month shows work
-          done so far vs. still booked. Future months show what&apos;s already
-          scheduled.
+          Past months show actual revenue (same source as YTD). Current month
+          shows work done in orange + still booked in blue. Future months show
+          what&apos;s already on the calendar.
         </p>
 
-        {pipelineLoading ? (
+        {isLoading ? (
           <div className="text-muted-foreground flex items-center gap-2 text-sm">
             <Loader2 className="h-4 w-4 animate-spin" />
             Loading calendar data...
           </div>
-        ) : pipeline ? (
-          <div className="space-y-4">
-            {/* Top summary cards */}
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              <Card className="border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/40">
-                <p className="text-muted-foreground mb-1 text-sm font-medium">
-                  Full Year Value
-                </p>
-                <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">
-                  {formatCurrency(pipeline.totalOnCalendar)}
-                </p>
-                <p className="text-muted-foreground mt-1 text-xs">
-                  earned + scheduled
-                </p>
-              </Card>
+        ) : (
+          (() => {
+            const now = new Date()
+            const currentMonth = now.getMonth() + 1
+            const totalActual = monthlyRevenue.reduce(
+              (s, m) => s + m.revenue,
+              0,
+            )
+            const totalBooked = pipeline?.totalBooked ?? 0
+            const totalOnCalendar = totalActual + totalBooked
+            const LABELS = [
+              'Jan',
+              'Feb',
+              'Mar',
+              'Apr',
+              'May',
+              'Jun',
+              'Jul',
+              'Aug',
+              'Sep',
+              'Oct',
+              'Nov',
+              'Dec',
+            ]
+            const allMonthValues = monthlyRevenue.map((m, i) => {
+              const month = i + 1
+              const booked = pipeline?.months[i]?.bookedRevenue ?? 0
+              if (month < currentMonth) return m.revenue
+              if (month === currentMonth) return m.revenue + booked
+              return booked
+            })
+            const maxVal = Math.max(...allMonthValues, 1)
 
-              <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
-                <p className="text-muted-foreground mb-1 text-sm font-medium">
-                  Earned So Far
-                </p>
-                <p className="text-2xl font-bold text-orange-500">
-                  {formatCurrency(pipeline.totalActual)}
-                </p>
-                <p className="text-muted-foreground mt-1 text-xs">
-                  actual revenue collected YTD
-                </p>
-              </Card>
+            return (
+              <div className="space-y-4">
+                {/* Summary cards */}
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                  <Card className="border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/40">
+                    <p className="text-muted-foreground mb-1 text-sm font-medium">
+                      Full Year Value
+                    </p>
+                    <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">
+                      {formatCurrency(totalOnCalendar)}
+                    </p>
+                    <p className="text-muted-foreground mt-1 text-xs">
+                      earned + scheduled
+                    </p>
+                  </Card>
+                  <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
+                    <p className="text-muted-foreground mb-1 text-sm font-medium">
+                      Earned So Far
+                    </p>
+                    <p className="text-2xl font-bold text-orange-500">
+                      {formatCurrency(totalActual)}
+                    </p>
+                    <p className="text-muted-foreground mt-1 text-xs">
+                      matches YTD total above
+                    </p>
+                  </Card>
+                  <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
+                    <p className="text-muted-foreground mb-1 text-sm font-medium">
+                      Still Ahead
+                    </p>
+                    <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                      {formatCurrency(totalBooked)}
+                    </p>
+                    <p className="text-muted-foreground mt-1 text-xs">
+                      booked on the calendar
+                    </p>
+                  </Card>
+                </div>
 
-              <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
-                <p className="text-muted-foreground mb-1 text-sm font-medium">
-                  Still Ahead
-                </p>
-                <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                  {formatCurrency(pipeline.totalBooked)}
-                </p>
-                <p className="text-muted-foreground mt-1 text-xs">
-                  booked on the calendar
-                </p>
-              </Card>
-            </div>
-
-            {/* Monthly breakdown */}
-            <Card className="border-border/60 bg-card/80 p-5 backdrop-blur">
-              <h3 className="mb-1 text-sm font-semibold">Month by Month</h3>
-              <p className="text-muted-foreground mb-4 text-xs">
-                <span className="inline-block h-2 w-3 rounded-sm bg-slate-400/60 align-middle" />{' '}
-                Collected&nbsp;&nbsp;
-                <span className="inline-block h-2 w-3 rounded-sm bg-orange-400/80 align-middle" />{' '}
-                Done this month&nbsp;&nbsp;
-                <span className="inline-block h-2 w-3 rounded-sm bg-blue-400/70 align-middle" />{' '}
-                Booked ahead
-              </p>
-              {(() => {
-                // Max across all month values for scaling
-                const allValues = pipeline.months.map((m) => {
-                  if (m.state === 'past') return m.actualRevenue
-                  if (m.state === 'current')
-                    return m.collectedThisMonth + m.bookedThisMonth
-                  return m.bookedRevenue
-                })
-                const maxVal = Math.max(...allValues, 1)
-
-                return (
+                {/* Monthly chart */}
+                <Card className="border-border/60 bg-card/80 p-5 backdrop-blur">
+                  <h3 className="mb-1 text-sm font-semibold">Month by Month</h3>
+                  <p className="text-muted-foreground mb-4 text-xs">
+                    <span className="inline-block h-2 w-3 rounded-sm bg-slate-400/60 align-middle" />{' '}
+                    Collected&nbsp;&nbsp;
+                    <span className="inline-block h-2 w-3 rounded-sm bg-orange-400/80 align-middle" />{' '}
+                    Done this month&nbsp;&nbsp;
+                    <span className="inline-block h-2 w-3 rounded-sm bg-blue-400/60 align-middle" />{' '}
+                    Booked ahead
+                  </p>
                   <div className="space-y-2">
-                    {pipeline.months.map((m) => {
-                      const isCurrent = m.state === 'current'
+                    {monthlyRevenue.map((actual, i) => {
+                      const month = i + 1
+                      const label = LABELS[i]
+                      const booked = pipeline?.months[i]?.bookedRevenue ?? 0
+                      const bookedCount =
+                        pipeline?.months[i]?.bookedJobCount ?? 0
+                      const isPast = month < currentMonth
+                      const isCurrent = month === currentMonth
+                      const isFuture = month > currentMonth
 
-                      if (m.state === 'past') {
-                        const pct = Math.round((m.actualRevenue / maxVal) * 100)
+                      if (isPast) {
+                        const pct = Math.round((actual.revenue / maxVal) * 100)
                         return (
-                          <div
-                            key={m.month}
-                            className="flex items-center gap-3"
-                          >
+                          <div key={month} className="flex items-center gap-3">
                             <span className="text-muted-foreground w-9 shrink-0 text-right text-xs font-medium">
-                              {m.label.slice(0, 3)}
+                              {label}
                             </span>
                             <div className="relative h-5 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                              {m.actualRevenue > 0 && (
+                              {actual.revenue > 0 && (
                                 <div
                                   className="absolute inset-y-0 left-0 rounded-full bg-slate-400/60"
                                   style={{ width: `${pct}%` }}
@@ -944,9 +985,9 @@ export default function StatsPage() {
                               )}
                             </div>
                             <div className="w-28 shrink-0 text-right">
-                              {m.actualRevenue > 0 ? (
+                              {actual.revenue > 0 ? (
                                 <span className="text-muted-foreground text-sm font-medium">
-                                  {formatCurrency(m.actualRevenue)}
+                                  {formatCurrency(actual.revenue)}
                                 </span>
                               ) : (
                                 <span className="text-muted-foreground text-xs">
@@ -959,38 +1000,40 @@ export default function StatsPage() {
                       }
 
                       if (isCurrent) {
-                        const total = m.collectedThisMonth + m.bookedThisMonth
                         const collectedPct = Math.round(
-                          (m.collectedThisMonth / maxVal) * 100,
+                          (actual.revenue / maxVal) * 100,
                         )
-                        const bookedPct = Math.round(
-                          (m.bookedThisMonth / maxVal) * 100,
-                        )
+                        const bookedPct = Math.round((booked / maxVal) * 100)
+                        const total = actual.revenue + booked
                         return (
-                          <div
-                            key={m.month}
-                            className="flex items-center gap-3"
-                          >
+                          <div key={month} className="flex items-center gap-3">
                             <span className="w-9 shrink-0 text-right text-xs font-bold text-blue-600 dark:text-blue-400">
-                              {m.label.slice(0, 3)}
+                              {label}
                               <span className="ml-0.5 text-[9px]">▶</span>
                             </span>
-                            {/* Two-layer bar */}
                             <div className="relative h-5 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                              {/* Orange: collected */}
-                              {m.collectedThisMonth > 0 && (
+                              {actual.revenue > 0 && (
                                 <div
-                                  className="absolute inset-y-0 left-0 rounded-l-full bg-orange-400/80"
-                                  style={{ width: `${collectedPct}%` }}
+                                  className="absolute inset-y-0 left-0 bg-orange-400/80"
+                                  style={{
+                                    width: `${collectedPct}%`,
+                                    borderRadius:
+                                      booked > 0
+                                        ? '9999px 0 0 9999px'
+                                        : '9999px',
+                                  }}
                                 />
                               )}
-                              {/* Blue: still booked, offset right of orange */}
-                              {m.bookedThisMonth > 0 && (
+                              {booked > 0 && (
                                 <div
-                                  className="absolute inset-y-0 rounded-r-full bg-blue-400/70"
+                                  className="absolute inset-y-0 bg-blue-400/70"
                                   style={{
                                     left: `${collectedPct}%`,
                                     width: `${bookedPct}%`,
+                                    borderRadius:
+                                      actual.revenue > 0
+                                        ? '0 9999px 9999px 0'
+                                        : '9999px',
                                   }}
                                 />
                               )}
@@ -1001,12 +1044,11 @@ export default function StatsPage() {
                                   <span className="text-sm font-semibold">
                                     {formatCurrency(total)}
                                   </span>
-                                  {m.collectedThisMonth > 0 &&
-                                    m.bookedThisMonth > 0 && (
-                                      <span className="text-muted-foreground ml-1 text-[10px]">
-                                        +{formatCurrency(m.bookedThisMonth)}
-                                      </span>
-                                    )}
+                                  {actual.revenue > 0 && booked > 0 && (
+                                    <span className="text-muted-foreground ml-1 text-[10px]">
+                                      +{formatCurrency(booked)}
+                                    </span>
+                                  )}
                                 </>
                               ) : (
                                 <span className="text-muted-foreground text-xs">
@@ -1019,14 +1061,14 @@ export default function StatsPage() {
                       }
 
                       // future
-                      const pct = Math.round((m.bookedRevenue / maxVal) * 100)
+                      const pct = Math.round((booked / maxVal) * 100)
                       return (
-                        <div key={m.month} className="flex items-center gap-3">
+                        <div key={month} className="flex items-center gap-3">
                           <span className="text-muted-foreground w-9 shrink-0 text-right text-xs font-medium">
-                            {m.label.slice(0, 3)}
+                            {label}
                           </span>
                           <div className="relative h-5 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                            {m.bookedRevenue > 0 && (
+                            {booked > 0 && (
                               <div
                                 className="absolute inset-y-0 left-0 rounded-full bg-blue-400/50"
                                 style={{ width: `${pct}%` }}
@@ -1034,15 +1076,17 @@ export default function StatsPage() {
                             )}
                           </div>
                           <div className="w-28 shrink-0 text-right">
-                            {m.bookedRevenue > 0 ? (
+                            {booked > 0 ? (
                               <>
                                 <span className="text-sm font-semibold text-blue-600 dark:text-blue-400">
-                                  {formatCurrency(m.bookedRevenue)}
+                                  {formatCurrency(booked)}
                                 </span>
-                                <span className="text-muted-foreground ml-1.5 text-xs">
-                                  {m.bookedJobCount} job
-                                  {m.bookedJobCount !== 1 ? 's' : ''}
-                                </span>
+                                {isFuture && bookedCount > 0 && (
+                                  <span className="text-muted-foreground ml-1.5 text-xs">
+                                    {bookedCount} job
+                                    {bookedCount !== 1 ? 's' : ''}
+                                  </span>
+                                )}
                               </>
                             ) : (
                               <span className="text-muted-foreground text-xs">
@@ -1054,11 +1098,11 @@ export default function StatsPage() {
                       )
                     })}
                   </div>
-                )
-              })()}
-            </Card>
-          </div>
-        ) : null}
+                </Card>
+              </div>
+            )
+          })()
+        )}
       </div>
 
       {/* Live Ops Stats — from ops_appointments + ops_invoices */}
