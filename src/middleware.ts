@@ -13,6 +13,17 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/_next/') ||
     pathname.startsWith('/static/') ||
     pathname === '/' ||
+    pathname === '/book' ||
+    pathname.startsWith('/book') ||
+    pathname === '/g' ||
+    pathname.startsWith('/g/') ||
+    pathname.startsWith('/r/') ||
+    pathname.startsWith('/review/') ||
+    pathname.startsWith('/tap/') ||
+    pathname.startsWith('/location/') ||
+    pathname.startsWith('/links/') ||
+    pathname.startsWith('/privacy') ||
+    pathname.startsWith('/terms') ||
     pathname.endsWith('.svg') ||
     pathname.endsWith('.png') ||
     pathname.endsWith('.ico')
