@@ -23,6 +23,7 @@ export async function GET(request: NextRequest) {
         template_key,
         to_email,
         subject,
+        body_text,
         status,
         error_message,
         resend_id,

@@ -472,6 +472,7 @@ export async function sendOpsLifecycleCommunications(params: {
         subject: subject || 'Update from Sasquatch Carpet Cleaning',
         resend_id: emailResult.data?.id || null,
         status: 'sent',
+        body_text: body,
       })
     } catch (error) {
       console.error('[ops/communications] Failed to send email:', error)
@@ -483,6 +484,7 @@ export async function sendOpsLifecycleCommunications(params: {
         subject: subject || 'Update from Sasquatch Carpet Cleaning',
         status: 'failed',
         error_message: error instanceof Error ? error.message : 'Unknown error',
+        body_text: body,
       })
     }
   }
