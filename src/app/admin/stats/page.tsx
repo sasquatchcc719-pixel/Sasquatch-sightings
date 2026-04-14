@@ -20,6 +20,7 @@ import {
   Rocket,
   Users,
   CalendarCheck,
+  CalendarDays,
 } from 'lucide-react'
 
 type OpsStats = {
@@ -32,6 +33,27 @@ type OpsStats = {
   statusCounts: Record<string, number>
   paymentStatusCounts: Record<string, number>
   leadSourceCounts: Record<string, number>
+}
+
+type CalendarPipelineMonth = {
+  month: number
+  label: string
+  total: number
+  jobCount: number
+  completedTotal: number
+  upcomingTotal: number
+  paidTotal: number
+  paidCount: number
+}
+
+type CalendarPipeline = {
+  year: number
+  total: number
+  completedTotal: number
+  upcomingTotal: number
+  paidTotal: number
+  jobCount: number
+  months: CalendarPipelineMonth[]
 }
 
 type Settings = {
@@ -102,6 +124,8 @@ export default function StatsPage() {
   const [error, setError] = useState<string | null>(null)
   const [opsStats, setOpsStats] = useState<OpsStats | null>(null)
   const [opsLoading, setOpsLoading] = useState(true)
+  const [pipeline, setPipeline] = useState<CalendarPipeline | null>(null)
+  const [pipelineLoading, setPipelineLoading] = useState(true)
 
   // Quick entry form state
   const [showQuickEntry, setShowQuickEntry] = useState(false)
@@ -533,6 +557,23 @@ export default function StatsPage() {
     void fetchOpsStats()
   }, [])
 
+  useEffect(() => {
+    async function fetchPipeline() {
+      setPipelineLoading(true)
+      try {
+        const res = await fetch('/api/admin/ops/calendar-pipeline', {
+          cache: 'no-store',
+        })
+        if (res.ok) setPipeline(await res.json())
+      } catch {
+        // Non-fatal
+      } finally {
+        setPipelineLoading(false)
+      }
+    }
+    void fetchPipeline()
+  }, [])
+
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -794,6 +835,159 @@ export default function StatsPage() {
             </form>
           </Card>
         )}
+      </div>
+
+      {/* ── Calendar Pipeline ─────────────────────────────────────────── */}
+      <div className="mb-8">
+        <div className="mb-4 flex items-center gap-2">
+          <CalendarDays className="h-5 w-5 text-blue-600" />
+          <h2 className="text-xl font-semibold">
+            {pipeline ? pipeline.year : new Date().getFullYear()} Calendar Value
+          </h2>
+          <span className="text-muted-foreground text-xs">
+            — everything booked on the schedule
+          </span>
+        </div>
+
+        {pipelineLoading ? (
+          <div className="text-muted-foreground flex items-center gap-2 text-sm">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading calendar data...
+          </div>
+        ) : pipeline ? (
+          <div className="space-y-4">
+            {/* Top summary cards */}
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+              <Card className="border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/40">
+                <p className="text-muted-foreground mb-1 text-sm font-medium">
+                  Total on Calendar
+                </p>
+                <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">
+                  {formatCurrency(pipeline.total)}
+                </p>
+                <p className="text-muted-foreground mt-1 text-xs">
+                  {pipeline.jobCount} jobs
+                </p>
+              </Card>
+
+              <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
+                <p className="text-muted-foreground mb-1 text-sm font-medium">
+                  Completed
+                </p>
+                <p className="text-2xl font-bold">
+                  {formatCurrency(pipeline.completedTotal)}
+                </p>
+                <p className="text-muted-foreground mt-1 text-xs">work done</p>
+              </Card>
+
+              <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
+                <p className="text-muted-foreground mb-1 text-sm font-medium">
+                  Upcoming
+                </p>
+                <p className="text-2xl font-bold">
+                  {formatCurrency(pipeline.upcomingTotal)}
+                </p>
+                <p className="text-muted-foreground mt-1 text-xs">
+                  already scheduled
+                </p>
+              </Card>
+
+              <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
+                <p className="text-muted-foreground mb-1 text-sm font-medium">
+                  Collected
+                </p>
+                <p className="text-2xl font-bold text-green-600">
+                  {formatCurrency(pipeline.paidTotal)}
+                </p>
+                <p className="text-muted-foreground mt-1 text-xs">
+                  paid invoices
+                </p>
+              </Card>
+            </div>
+
+            {/* Monthly breakdown */}
+            <Card className="border-border/60 bg-card/80 p-5 backdrop-blur">
+              <h3 className="mb-4 text-sm font-semibold">Month by Month</h3>
+              {(() => {
+                const maxTotal = Math.max(
+                  ...pipeline.months.map((m) => m.total),
+                  1,
+                )
+                const today = new Date()
+                const currentMonth = today.getMonth() + 1 // 1-indexed
+                return (
+                  <div className="space-y-2">
+                    {pipeline.months.map((m) => {
+                      const pct = Math.round((m.total / maxTotal) * 100)
+                      const isPast = m.month < currentMonth
+                      const isCurrent = m.month === currentMonth
+                      const isFuture = m.month > currentMonth
+                      return (
+                        <div key={m.month} className="flex items-center gap-3">
+                          {/* Month label */}
+                          <span
+                            className={`w-24 shrink-0 text-right text-xs font-medium ${isCurrent ? 'text-blue-600 dark:text-blue-400' : 'text-muted-foreground'}`}
+                          >
+                            {m.label.slice(0, 3)}
+                            {isCurrent && (
+                              <span className="ml-1 text-[10px]">▶</span>
+                            )}
+                          </span>
+
+                          {/* Bar */}
+                          <div className="relative h-6 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                            {m.total > 0 && (
+                              <>
+                                {/* Paid portion */}
+                                {m.paidTotal > 0 && (
+                                  <div
+                                    className="absolute inset-y-0 left-0 rounded-full bg-green-500/70"
+                                    style={{
+                                      width: `${Math.round((m.paidTotal / maxTotal) * 100)}%`,
+                                    }}
+                                  />
+                                )}
+                                {/* Total bar behind */}
+                                <div
+                                  className={`absolute inset-y-0 left-0 rounded-full ${isPast ? 'bg-slate-400/40' : isCurrent ? 'bg-blue-400/50' : 'bg-blue-300/40'}`}
+                                  style={{ width: `${pct}%` }}
+                                />
+                              </>
+                            )}
+                          </div>
+
+                          {/* Amount + job count */}
+                          <div className="w-32 shrink-0 text-right">
+                            {m.total > 0 ? (
+                              <>
+                                <span
+                                  className={`text-sm font-semibold ${isFuture ? 'text-blue-600 dark:text-blue-400' : ''}`}
+                                >
+                                  {formatCurrency(m.total)}
+                                </span>
+                                <span className="text-muted-foreground ml-1.5 text-xs">
+                                  {m.jobCount} job{m.jobCount !== 1 ? 's' : ''}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="text-muted-foreground text-xs">
+                                —
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              })()}
+              <p className="text-muted-foreground mt-4 text-xs">
+                Green fill = collected (paid). Blue fill = booked but unpaid.
+                Grey = past months.
+              </p>
+            </Card>
+          </div>
+        ) : null}
       </div>
 
       {/* Live Ops Stats — from ops_appointments + ops_invoices */}
