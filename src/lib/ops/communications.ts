@@ -287,6 +287,81 @@ export type LifecycleNotificationSent = {
   actually_sent?: boolean
 }
 
+/**
+ * Converts plain-text template output into a clean, branded HTML email.
+ * Handles real newlines (\n) and literal "\n" sequences both safely.
+ */
+function buildEmailHtml(body: string, templateKey: OpsTemplateKey): string {
+  // Normalize literal \n sequences (stored in some templates) to real newlines
+  const normalized = body.replace(/\\n/g, '\n')
+
+  // Split on double newlines for paragraphs, single newlines become <br>
+  const paragraphs = normalized
+    .split(/\n{2,}/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((p) => {
+      const lines = p.split('\n').map((l) => escapeHtml(l.trim()))
+      return `<p style="margin:0 0 16px 0;line-height:1.6;">${lines.join('<br>')}</p>`
+    })
+    .join('')
+
+  const accentColor = '#2d6a4f'
+  const isScheduled =
+    templateKey === 'job_scheduled_email' ||
+    templateKey === 'job_finished_email' ||
+    templateKey === 'satisfaction_checkin_email'
+  void isScheduled
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f4f4f4;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f4;padding:24px 0;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+
+        <!-- Header -->
+        <tr>
+          <td style="background:${accentColor};padding:28px 32px;text-align:center;">
+            <p style="margin:0;font-size:22px;font-weight:bold;color:#ffffff;letter-spacing:0.5px;">
+              🐾 Sasquatch Carpet Cleaning
+            </p>
+          </td>
+        </tr>
+
+        <!-- Body -->
+        <tr>
+          <td style="padding:32px;color:#333333;font-size:15px;">
+            ${paragraphs}
+          </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+          <td style="background:#f9f9f9;padding:20px 32px;border-top:1px solid #eeeeee;text-align:center;color:#888888;font-size:12px;">
+            <p style="margin:0 0 6px 0;">
+              Questions or changes? <strong>Text us at (719) 358-6137</strong> — our scheduling assistant Harry responds 24/7.
+            </p>
+            <p style="margin:0;">Sasquatch Carpet Cleaning · Colorado Springs, CO</p>
+          </td>
+        </tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`
+}
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
 /** Rendered On My Way SMS from DB template (even if `is_enabled` is false). */
 export async function getOnMyWaySmsRenderedBody(
   appointmentId: string,
@@ -379,7 +454,7 @@ export async function sendOpsLifecycleCommunications(params: {
         from: fromEmail,
         to: customerEmail,
         subject: subject || 'Update from Sasquatch Carpet Cleaning',
-        html: `<div style="font-family:Arial,sans-serif;white-space:pre-wrap;line-height:1.5;">${body}</div>`,
+        html: buildEmailHtml(body, template.template_key),
       })
       sent.push({
         template_key: template.template_key,
@@ -531,7 +606,7 @@ export async function processOpsCommunicationQueue(params?: {
           from: fromEmail,
           to,
           subject,
-          html: `<div style="font-family:Arial,sans-serif;white-space:pre-wrap;line-height:1.5;">${body}</div>`,
+          html: buildEmailHtml(body, item.template_key as OpsTemplateKey),
         })
       } else {
         const toPhone = String(payload.to_phone || '').trim()
