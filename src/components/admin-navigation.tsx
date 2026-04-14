@@ -283,6 +283,13 @@ export function AdminNavigation() {
       description: 'Voicemail recordings',
     },
     {
+      name: 'Templates & Drip',
+      href: '/admin/operations/communications',
+      icon: Mail,
+      active: pathname === '/admin/operations/communications',
+      description: 'Lifecycle templates & drip email campaigns',
+    },
+    {
       name: 'Settings',
       href: '/admin/phone-settings',
       icon: Phone,
