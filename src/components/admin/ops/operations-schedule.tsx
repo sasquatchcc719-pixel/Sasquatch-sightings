@@ -341,6 +341,67 @@ function getAppointmentPlacement(
   }
 }
 
+/**
+ * Assigns a horizontal column to each appointment so that overlapping
+ * appointments sit side-by-side instead of stacking on top of each other.
+ * Returns a Map<appointmentId, {col, totalCols}>.
+ */
+function computeOverlapColumns(
+  appointments: Appointment[],
+): Map<string, { col: number; totalCols: number }> {
+  const sorted = [...appointments].sort(
+    (a, b) => parseMinutes(a.start_time) - parseMinutes(b.start_time),
+  )
+
+  const cols = new Map<string, number>()
+  const colEnds: number[] = [] // end minute of the last appointment placed in each column
+
+  for (const appt of sorted) {
+    const start = parseMinutes(appt.start_time)
+    const end = Math.max(parseMinutes(appt.end_time), start + 15)
+
+    // Find first column whose last appointment has already ended
+    let assigned = colEnds.findIndex((endMin) => endMin <= start)
+    if (assigned === -1) {
+      assigned = colEnds.length
+      colEnds.push(end)
+    } else {
+      colEnds[assigned] = end
+    }
+    cols.set(appt.id, assigned)
+  }
+
+  // For each appointment, totalCols = max col+1 among all appointments that
+  // directly overlap with it (including itself).
+  const result = new Map<string, { col: number; totalCols: number }>()
+  for (const appt of sorted) {
+    const start = parseMinutes(appt.start_time)
+    const end = Math.max(parseMinutes(appt.end_time), start + 15)
+    let maxCol = cols.get(appt.id) ?? 0
+    for (const other of sorted) {
+      if (other.id === appt.id) continue
+      const otherStart = parseMinutes(other.start_time)
+      const otherEnd = Math.max(parseMinutes(other.end_time), otherStart + 15)
+      if (otherStart < end && otherEnd > start) {
+        maxCol = Math.max(maxCol, cols.get(other.id) ?? 0)
+      }
+    }
+    result.set(appt.id, { col: cols.get(appt.id) ?? 0, totalCols: maxCol + 1 })
+  }
+
+  return result
+}
+
+/** Returns inline left/width styles for a column-slotted appointment card. */
+function overlapStyle(col: number, totalCols: number): React.CSSProperties {
+  const widthPct = 100 / totalCols
+  return {
+    left: `calc(${col * widthPct}% + 4px)`,
+    width: `calc(${widthPct}% - 8px)`,
+    right: 'auto',
+  }
+}
+
 function templatesToBusinessRows(
   templates: AvailabilityTemplate[],
 ): BusinessHoursRow[] {
@@ -1511,125 +1572,136 @@ export function OperationsSchedule() {
                         )
                       })}
 
-                      {dayAppointments.map((appointment) => {
-                        const customer = unwrapRelation(
-                          appointment.ops_customers,
-                        )
-                        const invoice = unwrapRelation(appointment.ops_invoices)
-                        const endOverride =
-                          resizeSession?.appointmentId === appointment.id &&
-                          resizeLiveEndMinutes != null
-                            ? resizeLiveEndMinutes
-                            : null
-                        const placement = getAppointmentPlacement(
-                          appointment,
-                          endOverride,
-                        )
-                        const href = invoice?.id
-                          ? `/admin/operations/invoices/${invoice.id}`
-                          : `/admin/operations/appointments/${appointment.id}`
-                        const isDragging =
-                          draggingAppointment?.id === appointment.id
-                        return (
-                          <div
-                            key={appointment.id}
-                            data-appointment-block
-                            className={`absolute right-2 left-2 flex flex-col overflow-hidden rounded-2xl border text-xs text-slate-900 shadow-sm transition ${getStatusTone(appointment.status)} ${isDragging ? 'opacity-40' : 'hover:shadow-md'}`}
-                            style={{
-                              top: placement.top + 6,
-                              height: placement.height - 8,
-                            }}
-                          >
+                      {(() => {
+                        const overlapCols =
+                          computeOverlapColumns(dayAppointments)
+                        return dayAppointments.map((appointment) => {
+                          const customer = unwrapRelation(
+                            appointment.ops_customers,
+                          )
+                          const invoice = unwrapRelation(
+                            appointment.ops_invoices,
+                          )
+                          const endOverride =
+                            resizeSession?.appointmentId === appointment.id &&
+                            resizeLiveEndMinutes != null
+                              ? resizeLiveEndMinutes
+                              : null
+                          const placement = getAppointmentPlacement(
+                            appointment,
+                            endOverride,
+                          )
+                          const href = invoice?.id
+                            ? `/admin/operations/invoices/${invoice.id}`
+                            : `/admin/operations/appointments/${appointment.id}`
+                          const isDragging =
+                            draggingAppointment?.id === appointment.id
+                          const oc = overlapCols.get(appointment.id) ?? {
+                            col: 0,
+                            totalCols: 1,
+                          }
+                          return (
                             <div
-                              draggable
-                              onDragStart={(e) => {
-                                e.dataTransfer.setData(
-                                  'appointmentId',
-                                  appointment.id,
-                                )
-                                e.dataTransfer.effectAllowed = 'move'
-                                const block = (
-                                  e.currentTarget as HTMLElement
-                                ).closest(
-                                  '[data-appointment-block]',
-                                ) as HTMLElement | null
-                                if (block) {
-                                  draggingYOffsetRef.current =
-                                    e.clientY -
-                                    block.getBoundingClientRect().top
-                                } else {
-                                  draggingYOffsetRef.current =
-                                    e.nativeEvent.offsetY
-                                }
-                                didDragRef.current = false
-                                setDraggingAppointment(appointment)
-                                setTimeout(() => {
-                                  didDragRef.current = true
-                                }, 50)
-                              }}
-                              onDragEnd={() => {
-                                setDraggingAppointment(null)
-                                setDragPreview(null)
-                              }}
-                              className="flex shrink-0 cursor-grab items-center gap-1 border-b border-black/5 bg-black/[0.03] px-2 py-1 active:cursor-grabbing"
-                              title="Drag to move start time"
-                            >
-                              <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-500" />
-                              <span className="text-[10px] font-medium tracking-tight text-slate-600">
-                                Move
-                              </span>
-                            </div>
-                            <Link
-                              href={href}
-                              className="flex min-h-0 flex-1 flex-col overflow-hidden p-2 pt-1"
-                              onClick={(e) => {
-                                if (didDragRef.current) e.preventDefault()
+                              key={appointment.id}
+                              data-appointment-block
+                              className={`absolute flex flex-col overflow-hidden rounded-2xl border text-xs text-slate-900 shadow-sm transition ${getStatusTone(appointment.status)} ${isDragging ? 'opacity-40' : 'hover:shadow-md'}`}
+                              style={{
+                                top: placement.top + 6,
+                                height: placement.height - 8,
+                                ...overlapStyle(oc.col, oc.totalCols),
                               }}
                             >
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="line-clamp-1 flex items-center gap-1.5 leading-tight font-semibold">
-                                  {appointment.recurring_template_id && (
-                                    <Repeat className="h-3 w-3 shrink-0 text-blue-500" />
-                                  )}
-                                  {customer?.business_name ||
-                                    customer?.full_name ||
-                                    'Customer'}
-                                </div>
-                                <Badge
-                                  variant="outline"
-                                  className="border-slate-300 bg-white/70 text-slate-700 capitalize"
-                                >
-                                  {appointment.status.replaceAll('_', ' ')}
-                                </Badge>
-                              </div>
-                              <div className="mt-1 text-slate-700">
-                                {placement.startLabel} - {placement.endLabel}
-                              </div>
-                              <div className="mt-2 line-clamp-2 text-slate-800">
-                                {appointment.ops_appointment_line_items
-                                  .map((item) => item.name_snapshot)
-                                  .join(', ')}
-                              </div>
                               <div
-                                className={`mt-auto pt-2 text-right font-semibold tabular-nums ${
-                                  appointment.status === 'completed'
-                                    ? 'text-slate-600'
-                                    : 'text-slate-800'
-                                }`}
+                                draggable
+                                onDragStart={(e) => {
+                                  e.dataTransfer.setData(
+                                    'appointmentId',
+                                    appointment.id,
+                                  )
+                                  e.dataTransfer.effectAllowed = 'move'
+                                  const block = (
+                                    e.currentTarget as HTMLElement
+                                  ).closest(
+                                    '[data-appointment-block]',
+                                  ) as HTMLElement | null
+                                  if (block) {
+                                    draggingYOffsetRef.current =
+                                      e.clientY -
+                                      block.getBoundingClientRect().top
+                                  } else {
+                                    draggingYOffsetRef.current =
+                                      e.nativeEvent.offsetY
+                                  }
+                                  didDragRef.current = false
+                                  setDraggingAppointment(appointment)
+                                  setTimeout(() => {
+                                    didDragRef.current = true
+                                  }, 50)
+                                }}
+                                onDragEnd={() => {
+                                  setDraggingAppointment(null)
+                                  setDragPreview(null)
+                                }}
+                                className="flex shrink-0 cursor-grab items-center gap-1 border-b border-black/5 bg-black/[0.03] px-2 py-1 active:cursor-grabbing"
+                                title="Drag to move start time"
                               >
-                                ${calendarDisplayAmount(appointment)}
+                                <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                                <span className="text-[10px] font-medium tracking-tight text-slate-600">
+                                  Move
+                                </span>
                               </div>
-                            </Link>
-                            <button
-                              type="button"
-                              aria-label="Drag to change end time"
-                              title="Drag to extend or shorten"
-                              className="h-2.5 shrink-0 cursor-ns-resize rounded-b-[13px] border-t border-black/10 bg-black/[0.06] hover:bg-black/12"
-                              onMouseDown={(e) => beginResize(e, appointment)}
-                            />
-                          </div>
-                        )
-                      })}
+                              <Link
+                                href={href}
+                                className="flex min-h-0 flex-1 flex-col overflow-hidden p-2 pt-1"
+                                onClick={(e) => {
+                                  if (didDragRef.current) e.preventDefault()
+                                }}
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="line-clamp-1 flex items-center gap-1.5 leading-tight font-semibold">
+                                    {appointment.recurring_template_id && (
+                                      <Repeat className="h-3 w-3 shrink-0 text-blue-500" />
+                                    )}
+                                    {customer?.business_name ||
+                                      customer?.full_name ||
+                                      'Customer'}
+                                  </div>
+                                  <Badge
+                                    variant="outline"
+                                    className="border-slate-300 bg-white/70 text-slate-700 capitalize"
+                                  >
+                                    {appointment.status.replaceAll('_', ' ')}
+                                  </Badge>
+                                </div>
+                                <div className="mt-1 text-slate-700">
+                                  {placement.startLabel} - {placement.endLabel}
+                                </div>
+                                <div className="mt-2 line-clamp-2 text-slate-800">
+                                  {appointment.ops_appointment_line_items
+                                    .map((item) => item.name_snapshot)
+                                    .join(', ')}
+                                </div>
+                                <div
+                                  className={`mt-auto pt-2 text-right font-semibold tabular-nums ${
+                                    appointment.status === 'completed'
+                                      ? 'text-slate-600'
+                                      : 'text-slate-800'
+                                  }`}
+                                >
+                                  ${calendarDisplayAmount(appointment)}
+                                </div>
+                              </Link>
+                              <button
+                                type="button"
+                                aria-label="Drag to change end time"
+                                title="Drag to extend or shorten"
+                                className="h-2.5 shrink-0 cursor-ns-resize rounded-b-[13px] border-t border-black/10 bg-black/[0.06] hover:bg-black/12"
+                                onMouseDown={(e) => beginResize(e, appointment)}
+                              />
+                            </div>
+                          )
+                        })
+                      })()}
                     </div>
                   )
                 })}
