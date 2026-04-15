@@ -392,7 +392,186 @@ export function RecurringManager() {
           })}
         </div>
       )}
+
+      <MonthEndBillingSection />
     </div>
+  )
+}
+
+// ─── Month-End Billing Section ──────────────────────────────────────────
+
+type BillingEntry = {
+  templateId: string
+  label: string
+  customer: {
+    id: string
+    full_name: string
+    business_name: string | null
+  } | null
+  totalVisits: number
+  completedVisits: number
+  runningTotal: number
+  existingInvoice: {
+    id: string
+    status: string
+    total: number
+  } | null
+}
+
+function MonthEndBillingSection() {
+  const now = new Date()
+  const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const [month, setMonth] = useState(defaultMonth)
+  const [entries, setEntries] = useState<BillingEntry[]>([])
+  const [loading, setLoading] = useState(true)
+  const [generating, setGenerating] = useState<string | null>(null)
+
+  const load = useCallback(async (m: string) => {
+    setLoading(true)
+    try {
+      const res = await fetch(
+        `/api/admin/ops/recurring/billing-summary?month=${m}`,
+      )
+      const data = await res.json()
+      setEntries(data.entries || [])
+    } catch {
+      console.error('Failed to load billing summary')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    load(month)
+  }, [load, month])
+
+  const handleGenerate = async (templateId: string) => {
+    setGenerating(templateId)
+    try {
+      const res = await fetch(`/api/admin/ops/recurring/${templateId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'batch-invoice',
+          month: `${month}-01`,
+        }),
+      })
+      const data = await res.json()
+      if (data.error) {
+        alert(data.error)
+      } else {
+        load(month)
+      }
+    } catch {
+      alert('Failed to generate invoice')
+    } finally {
+      setGenerating(null)
+    }
+  }
+
+  const monthLabel = new Date(`${month}-15`).toLocaleDateString('en-US', {
+    month: 'long',
+    year: 'numeric',
+  })
+
+  if (!loading && entries.length === 0) return null
+
+  return (
+    <Card className="border-border/60 bg-card/80 p-6 shadow-sm backdrop-blur">
+      <div className="mb-5 flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold">Month-End Billing</h2>
+          <p className="text-muted-foreground text-sm">
+            Batch monthly accounts — generate QB invoices when visits are
+            complete.
+          </p>
+        </div>
+        <input
+          type="month"
+          value={month}
+          onChange={(e) => setMonth(e.target.value)}
+          className="border-input bg-background h-9 rounded-md border px-3 text-sm"
+        />
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-6">
+          <Loader2 className="text-muted-foreground h-5 w-5 animate-spin" />
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {entries.map((entry) => {
+            const isGenerating = generating === entry.templateId
+            const hasInvoice = !!entry.existingInvoice
+            const canGenerate = entry.completedVisits > 0 && !hasInvoice
+
+            return (
+              <div
+                key={entry.templateId}
+                className="flex flex-wrap items-center gap-4 rounded-xl border px-4 py-3"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold">{entry.label}</p>
+                  {entry.customer && (
+                    <p className="text-muted-foreground text-sm">
+                      {entry.customer.business_name || entry.customer.full_name}
+                    </p>
+                  )}
+                </div>
+
+                <div className="text-center">
+                  <p className="text-sm font-semibold tabular-nums">
+                    {entry.completedVisits}/{entry.totalVisits}
+                  </p>
+                  <p className="text-muted-foreground text-xs">visits done</p>
+                </div>
+
+                <div className="text-right">
+                  <p className="text-lg font-bold tabular-nums">
+                    {formatCurrency(entry.runningTotal)}
+                  </p>
+                  <p className="text-muted-foreground text-xs">{monthLabel}</p>
+                </div>
+
+                {hasInvoice ? (
+                  <div className="flex items-center gap-2">
+                    <Badge
+                      variant={
+                        entry.existingInvoice!.status === 'paid'
+                          ? 'default'
+                          : 'outline'
+                      }
+                    >
+                      {entry.existingInvoice!.status}
+                    </Badge>
+                    <CheckCircle className="h-4 w-4 text-green-400" />
+                  </div>
+                ) : (
+                  <Button
+                    size="sm"
+                    onClick={() => handleGenerate(entry.templateId)}
+                    disabled={!canGenerate || isGenerating}
+                    className="shrink-0 gap-2"
+                    title={
+                      !canGenerate
+                        ? 'No completed visits to invoice yet'
+                        : undefined
+                    }
+                  >
+                    {isGenerating ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Receipt className="h-3.5 w-3.5" />
+                    )}
+                    Generate Invoice
+                  </Button>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </Card>
   )
 }
 
@@ -2014,12 +2193,9 @@ function ScheduleStrip({
 // ─── Month Holding Area ───────────────────────────────────────────────────
 
 function MonthHoldingArea({
-  templateId,
   appointments,
   batchInvoices,
-  onRefresh,
 }: {
-  templateId: string
   appointments: VisitAppointment[]
   batchInvoices: Array<{
     id: string
@@ -2027,12 +2203,10 @@ function MonthHoldingArea({
     status: string
     total: number
   }>
-  onRefresh: () => void
 }) {
   const now = new Date()
   const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   const [selectedMonth, setSelectedMonth] = useState(currentMonthStr)
-  const [generating, setGenerating] = useState(false)
 
   const monthAppts = appointments.filter((a) =>
     a.appointment_date.startsWith(selectedMonth),
@@ -2045,30 +2219,6 @@ function MonthHoldingArea({
   const existingInvoice = batchInvoices.find((bi) =>
     bi.month.startsWith(selectedMonth),
   )
-
-  const handleGenerate = async () => {
-    setGenerating(true)
-    try {
-      const res = await fetch(`/api/admin/ops/recurring/${templateId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'batch-invoice',
-          month: `${selectedMonth}-01`,
-        }),
-      })
-      const data = await res.json()
-      if (data.error) {
-        alert(data.error)
-      } else {
-        onRefresh()
-      }
-    } catch {
-      alert('Failed to generate invoice')
-    } finally {
-      setGenerating(false)
-    }
-  }
 
   const monthLabel = new Date(`${selectedMonth}-15`).toLocaleDateString(
     'en-US',
@@ -2152,18 +2302,11 @@ function MonthHoldingArea({
           </div>
         </div>
       ) : (
-        <Button
-          onClick={handleGenerate}
-          disabled={generating || completedAppts.length === 0}
-          className="w-full"
-        >
-          {generating ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <Receipt className="mr-2 h-4 w-4" />
-          )}
-          Generate QB Invoice for {monthLabel}
-        </Button>
+        <p className="text-muted-foreground text-center text-xs">
+          Generate the QB invoice from the{' '}
+          <span className="font-medium">Month-End Billing</span> section at the
+          bottom of the Recurring Jobs list.
+        </p>
       )}
 
       {/* Past invoices history */}
@@ -2410,10 +2553,8 @@ function TemplateDetailView({
       {/* Monthly Tally (batch_monthly only) */}
       {template.invoice_mode === 'batch_monthly' && (
         <MonthHoldingArea
-          templateId={template.id}
           appointments={localAppts}
           batchInvoices={template.batch_invoices}
-          onRefresh={onRefresh}
         />
       )}
 
