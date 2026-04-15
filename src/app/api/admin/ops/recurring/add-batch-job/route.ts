@@ -106,9 +106,24 @@ export async function POST(request: NextRequest) {
       .select('id')
       .single()
 
+    console.log('[add-batch-job] inserting appointment', {
+      customerId,
+      serviceAddressId,
+      appointmentDate,
+      start_time: normalizedStart,
+      end_time: endTime,
+      quotedTotal,
+    })
+
     if (apptErr || !appointment) {
+      console.error('[add-batch-job] appointment insert failed:', apptErr)
       return NextResponse.json(
-        { error: apptErr?.message || 'Failed to create appointment' },
+        {
+          error: apptErr?.message || 'Failed to create appointment',
+          detail: apptErr?.details || null,
+          hint: apptErr?.hint || null,
+          code: apptErr?.code || null,
+        },
         { status: 500 },
       )
     }
@@ -126,16 +141,39 @@ export async function POST(request: NextRequest) {
       notes: l.notes || null,
     }))
 
-    await supabase.from('ops_appointment_line_items').insert(linePayload)
+    const { error: lineErr } = await supabase
+      .from('ops_appointment_line_items')
+      .insert(linePayload)
+
+    if (lineErr) {
+      console.error('[add-batch-job] line item insert failed:', lineErr)
+      // Clean up the orphaned appointment
+      await supabase.from('ops_appointments').delete().eq('id', appointment.id)
+      return NextResponse.json(
+        {
+          error: `Line item error: ${lineErr.message}`,
+          detail: lineErr.details || null,
+          hint: lineErr.hint || null,
+          code: lineErr.code || null,
+        },
+        { status: 500 },
+      )
+    }
 
     // Status event
-    await supabase.from('ops_appointment_status_events').insert({
-      appointment_id: appointment.id,
-      from_status: null,
-      to_status: 'booked',
-      changed_by: null,
-      notes: 'One-off job added to batch billing',
-    })
+    const { error: eventErr } = await supabase
+      .from('ops_appointment_status_events')
+      .insert({
+        appointment_id: appointment.id,
+        from_status: null,
+        to_status: 'booked',
+        changed_by: null,
+        notes: 'One-off job added to batch billing',
+      })
+
+    if (eventErr) {
+      console.error('[add-batch-job] status event insert failed:', eventErr)
+    }
 
     return NextResponse.json({
       appointmentId: appointment.id,

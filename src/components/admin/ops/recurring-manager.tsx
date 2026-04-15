@@ -481,6 +481,7 @@ function MonthEndBillingSection() {
   const [addingFor, setAddingFor] = useState<string | null>(null)
   const [addForm, setAddForm] = useState<AddJobForm>(emptyAddJob)
   const [savingJob, setSavingJob] = useState(false)
+  const [addJobError, setAddJobError] = useState<string | null>(null)
 
   // Service catalog for one-off job form
   const [addJobCatalog, setAddJobCatalog] = useState<ServiceCatalogItem[]>([])
@@ -554,6 +555,7 @@ function MonthEndBillingSection() {
 
   const openAddForm = (entry: BillingCustomer) => {
     setAddingFor(entry.customerId)
+    setAddJobError(null)
     setAddForm({
       ...emptyAddJob,
       customerId: entry.customerId,
@@ -562,12 +564,15 @@ function MonthEndBillingSection() {
   }
 
   const handleSaveJob = async () => {
+    setAddJobError(null)
     if (
       !addForm.date ||
       (!addForm.serviceCatalogItemId && !addForm.description) ||
       !addForm.unitPrice
     ) {
-      alert('Please fill in date, a service (or description), and price.')
+      setAddJobError(
+        'Please fill in date, a service (or description), and price.',
+      )
       return
     }
     const selectedService = addJobCatalog.find(
@@ -576,36 +581,46 @@ function MonthEndBillingSection() {
     const nameSnapshot = selectedService?.name || addForm.description
     setSavingJob(true)
     try {
+      const payload = {
+        customerId: addForm.customerId,
+        serviceAddressId: addForm.addressId,
+        appointmentDate: addForm.date,
+        startTime: addForm.startTime,
+        lineItems: [
+          {
+            service_catalog_item_id: addForm.serviceCatalogItemId || null,
+            name_snapshot: nameSnapshot,
+            notes: addForm.description || null,
+            quantity: Number(addForm.quantity) || 1,
+            unit_price: Number(addForm.unitPrice) || 0,
+            duration_minutes: Number(addForm.durationMinutes) || 60,
+          },
+        ],
+      }
+      console.log('[add-job-form] submitting:', payload)
       const res = await fetch('/api/admin/ops/recurring/add-batch-job', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          customerId: addForm.customerId,
-          serviceAddressId: addForm.addressId,
-          appointmentDate: addForm.date,
-          startTime: addForm.startTime,
-          lineItems: [
-            {
-              service_catalog_item_id: addForm.serviceCatalogItemId || null,
-              name_snapshot: nameSnapshot,
-              notes: addForm.description || null,
-              quantity: Number(addForm.quantity) || 1,
-              unit_price: Number(addForm.unitPrice) || 0,
-              duration_minutes: Number(addForm.durationMinutes) || 60,
-            },
-          ],
-        }),
+        body: JSON.stringify(payload),
       })
       const data = await res.json()
       if (data.error) {
-        alert(data.error)
+        const parts = [data.error]
+        if (data.detail) parts.push(`Detail: ${data.detail}`)
+        if (data.hint) parts.push(`Hint: ${data.hint}`)
+        if (data.code) parts.push(`Code: ${data.code}`)
+        setAddJobError(parts.join(' — '))
+        console.error('[add-job-form] API error:', data)
       } else {
         setAddingFor(null)
         setAddForm(emptyAddJob)
+        setAddJobError(null)
         load(month)
       }
-    } catch {
-      alert('Failed to create job')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error'
+      setAddJobError(`Failed to create job: ${msg}`)
+      console.error('[add-job-form] fetch error:', err)
     } finally {
       setSavingJob(false)
     }
@@ -805,6 +820,16 @@ function MonthEndBillingSection() {
                       <p className="text-sm font-medium">
                         Add one-off job to {monthLabel} invoice
                       </p>
+
+                      {addJobError && (
+                        <div className="flex items-start gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
+                          <X
+                            className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer"
+                            onClick={() => setAddJobError(null)}
+                          />
+                          <span className="break-all">{addJobError}</span>
+                        </div>
+                      )}
 
                       {/* Date & Time */}
                       <div className="grid grid-cols-2 gap-3">
