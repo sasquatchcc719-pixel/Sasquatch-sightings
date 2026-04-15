@@ -78,7 +78,7 @@ export function expandRule(
 
   if (rule.frequency === 'weekly' || rule.frequency === 'biweekly') {
     if (rule.day_of_week == null) return dates
-    const cursor = new Date(start)
+    const cursor = new Date(effectiveFrom)
     while (cursor.getDay() !== rule.day_of_week) {
       cursor.setDate(cursor.getDate() + 1)
     }
@@ -125,9 +125,11 @@ export function expandRule(
       }
     }
   } else if (rule.frequency === 'custom' && rule.interval_days) {
-    const cursor = new Date(start)
+    const cursor = new Date(effectiveFrom)
     while (cursor <= end) {
-      dates.push(new Date(cursor))
+      if (cursor >= start) {
+        dates.push(new Date(cursor))
+      }
       cursor.setDate(cursor.getDate() + rule.interval_days)
     }
   }
