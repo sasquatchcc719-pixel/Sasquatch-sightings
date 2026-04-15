@@ -407,12 +407,23 @@ type BillingVisit = {
   total: number
   templateLabel: string
   description: string
+  isAdHoc?: boolean
+}
+
+type BillingAddress = {
+  id: string
+  label: string | null
+  street_1: string
+  city: string
+  state: string
+  zip_code: string
 }
 
 type BillingCustomer = {
   customerId: string
   customerName: string
   businessName: string | null
+  addresses: BillingAddress[]
   visits: BillingVisit[]
   totalVisits: number
   completedVisits: number
@@ -424,6 +435,28 @@ type BillingCustomer = {
   } | null
 }
 
+type AddJobForm = {
+  customerId: string
+  addressId: string
+  date: string
+  startTime: string
+  description: string
+  quantity: string
+  unitPrice: string
+  durationMinutes: string
+}
+
+const emptyAddJob: AddJobForm = {
+  customerId: '',
+  addressId: '',
+  date: '',
+  startTime: '08:00',
+  description: '',
+  quantity: '1',
+  unitPrice: '',
+  durationMinutes: '60',
+}
+
 function MonthEndBillingSection() {
   const now = new Date()
   const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
@@ -431,6 +464,9 @@ function MonthEndBillingSection() {
   const [customers, setCustomers] = useState<BillingCustomer[]>([])
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState<string | null>(null)
+  const [addingFor, setAddingFor] = useState<string | null>(null)
+  const [addForm, setAddForm] = useState<AddJobForm>(emptyAddJob)
+  const [savingJob, setSavingJob] = useState(false)
 
   const load = useCallback(async (m: string) => {
     setLoading(true)
@@ -475,6 +511,56 @@ function MonthEndBillingSection() {
     }
   }
 
+  const openAddForm = (entry: BillingCustomer) => {
+    setAddingFor(entry.customerId)
+    setAddForm({
+      ...emptyAddJob,
+      customerId: entry.customerId,
+      addressId: entry.addresses[0]?.id || '',
+    })
+  }
+
+  const handleSaveJob = async () => {
+    if (!addForm.date || !addForm.description || !addForm.unitPrice) {
+      alert('Please fill in date, description, and price.')
+      return
+    }
+    setSavingJob(true)
+    try {
+      const res = await fetch('/api/admin/ops/recurring/add-batch-job', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customerId: addForm.customerId,
+          serviceAddressId: addForm.addressId,
+          appointmentDate: addForm.date,
+          startTime: addForm.startTime,
+          lineItems: [
+            {
+              name_snapshot: addForm.description,
+              notes: addForm.description,
+              quantity: Number(addForm.quantity) || 1,
+              unit_price: Number(addForm.unitPrice) || 0,
+              duration_minutes: Number(addForm.durationMinutes) || 60,
+            },
+          ],
+        }),
+      })
+      const data = await res.json()
+      if (data.error) {
+        alert(data.error)
+      } else {
+        setAddingFor(null)
+        setAddForm(emptyAddJob)
+        load(month)
+      }
+    } catch {
+      alert('Failed to create job')
+    } finally {
+      setSavingJob(false)
+    }
+  }
+
   const monthLabel = new Date(`${month}-15`).toLocaleDateString('en-US', {
     month: 'long',
     year: 'numeric',
@@ -511,6 +597,7 @@ function MonthEndBillingSection() {
           const isGenerating = generating === entry.customerId
           const hasInvoice = !!entry.existingInvoice
           const canGenerate = entry.completedVisits > 0 && !hasInvoice
+          const isAdding = addingFor === entry.customerId
 
           return (
             <Card
@@ -529,23 +616,163 @@ function MonthEndBillingSection() {
                     </p>
                   )}
                 </div>
-                {hasInvoice && (
-                  <Badge
-                    variant={
-                      entry.existingInvoice!.status === 'paid'
-                        ? 'default'
-                        : 'outline'
-                    }
-                    className="text-sm"
-                  >
-                    {entry.existingInvoice!.status === 'paid'
-                      ? 'PAID'
-                      : entry.existingInvoice!.status === 'sent'
-                        ? 'SENT TO QB'
-                        : entry.existingInvoice!.status.toUpperCase()}
-                  </Badge>
-                )}
+                <div className="flex items-center gap-2">
+                  {hasInvoice && (
+                    <Badge
+                      variant={
+                        entry.existingInvoice!.status === 'paid'
+                          ? 'default'
+                          : 'outline'
+                      }
+                      className="text-sm"
+                    >
+                      {entry.existingInvoice!.status === 'paid'
+                        ? 'PAID'
+                        : entry.existingInvoice!.status === 'sent'
+                          ? 'SENT TO QB'
+                          : entry.existingInvoice!.status.toUpperCase()}
+                    </Badge>
+                  )}
+                  {!hasInvoice && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        isAdding ? setAddingFor(null) : openAddForm(entry)
+                      }
+                      className="gap-1.5"
+                    >
+                      {isAdding ? (
+                        <X className="h-3.5 w-3.5" />
+                      ) : (
+                        <Plus className="h-3.5 w-3.5" />
+                      )}
+                      {isAdding ? 'Cancel' : 'Add Job'}
+                    </Button>
+                  )}
+                </div>
               </div>
+
+              {/* Inline add-job form */}
+              {isAdding && (
+                <div className="space-y-3 border-b bg-blue-500/5 px-5 py-4">
+                  <p className="text-sm font-medium">
+                    Add one-off job to {monthLabel} invoice
+                  </p>
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    <div>
+                      <Label className="text-xs">Date</Label>
+                      <Input
+                        type="date"
+                        value={addForm.date}
+                        onChange={(e) =>
+                          setAddForm((f) => ({ ...f, date: e.target.value }))
+                        }
+                        className="mt-1"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Start Time</Label>
+                      <Input
+                        type="time"
+                        value={addForm.startTime}
+                        onChange={(e) =>
+                          setAddForm((f) => ({
+                            ...f,
+                            startTime: e.target.value,
+                          }))
+                        }
+                        className="mt-1"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Price</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        placeholder="0.00"
+                        value={addForm.unitPrice}
+                        onChange={(e) =>
+                          setAddForm((f) => ({
+                            ...f,
+                            unitPrice: e.target.value,
+                          }))
+                        }
+                        className="mt-1"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Duration (min)</Label>
+                      <Input
+                        type="number"
+                        value={addForm.durationMinutes}
+                        onChange={(e) =>
+                          setAddForm((f) => ({
+                            ...f,
+                            durationMinutes: e.target.value,
+                          }))
+                        }
+                        className="mt-1"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-xs">Service Description</Label>
+                    <Input
+                      placeholder="e.g. Emergency spot treatment — lobby"
+                      value={addForm.description}
+                      onChange={(e) =>
+                        setAddForm((f) => ({
+                          ...f,
+                          description: e.target.value,
+                        }))
+                      }
+                      className="mt-1"
+                    />
+                  </div>
+                  {entry.addresses.length > 1 && (
+                    <div>
+                      <Label className="text-xs">Address</Label>
+                      <select
+                        value={addForm.addressId}
+                        onChange={(e) =>
+                          setAddForm((f) => ({
+                            ...f,
+                            addressId: e.target.value,
+                          }))
+                        }
+                        className="border-input bg-background mt-1 h-9 w-full rounded-md border px-3 text-sm"
+                      >
+                        {entry.addresses.map((addr) => (
+                          <option key={addr.id} value={addr.id}>
+                            {addr.label || addr.street_1}, {addr.city}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setAddingFor(null)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleSaveJob}
+                      disabled={savingJob}
+                      className="gap-1.5"
+                    >
+                      {savingJob && (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      )}
+                      Add to Schedule & Invoice
+                    </Button>
+                  </div>
+                </div>
+              )}
 
               {/* Visit rows */}
               <div className="divide-y">
@@ -574,6 +801,11 @@ function MonthEndBillingSection() {
                         className={`min-w-0 flex-1 truncate text-sm ${isDone ? '' : 'text-muted-foreground'}`}
                       >
                         {visit.description || visit.templateLabel}
+                        {visit.isAdHoc && (
+                          <span className="text-muted-foreground ml-1.5 text-xs">
+                            (one-off)
+                          </span>
+                        )}
                       </span>
                       <span
                         className={`shrink-0 text-sm font-semibold tabular-nums ${isDone ? '' : 'text-muted-foreground'}`}

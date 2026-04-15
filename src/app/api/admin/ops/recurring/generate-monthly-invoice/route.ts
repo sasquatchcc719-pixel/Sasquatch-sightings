@@ -60,31 +60,49 @@ export async function POST(request: NextRequest) {
       .eq('invoice_mode', 'batch_monthly')
       .eq('is_active', true)
 
-    if (!templates || templates.length === 0) {
-      return NextResponse.json(
-        { error: 'No batch_monthly templates found for this customer' },
-        { status: 404 },
-      )
-    }
+    const templateIds = (templates || []).map((t) => t.id)
 
-    const templateIds = templates.map((t) => t.id)
-
-    // Load all completed appointments across those templates for the month
-    const { data: appointments } = await supabase
-      .from('ops_appointments')
-      .select(
-        `id, appointment_date, quoted_total,
+    const apptSelect = `id, appointment_date, quoted_total,
          ops_appointment_line_items (
            name_snapshot, notes, quantity, unit_price, line_total
-         )`,
-      )
-      .in('recurring_template_id', templateIds)
+         )`
+
+    // Load completed appointments from recurring templates
+    const { data: recurringAppts } =
+      templateIds.length > 0
+        ? await supabase
+            .from('ops_appointments')
+            .select(apptSelect)
+            .in('recurring_template_id', templateIds)
+            .eq('status', 'completed')
+            .gte('appointment_date', monthStart)
+            .lte('appointment_date', monthEndStr)
+            .order('appointment_date')
+        : { data: [] as never[] }
+
+    // Load completed one-off appointments tagged for batch billing
+    const { data: adHocAppts } = await supabase
+      .from('ops_appointments')
+      .select(apptSelect)
+      .eq('batch_billing_customer_id', customerId)
+      .is('recurring_template_id', null)
       .eq('status', 'completed')
       .gte('appointment_date', monthStart)
       .lte('appointment_date', monthEndStr)
       .order('appointment_date')
 
-    if (!appointments || appointments.length === 0) {
+    // Merge and deduplicate
+    const seenIds = new Set<string>()
+    const appointments = [
+      ...(recurringAppts || []),
+      ...(adHocAppts || []),
+    ].filter((a) => {
+      if (seenIds.has(a.id)) return false
+      seenIds.add(a.id)
+      return true
+    })
+
+    if (appointments.length === 0) {
       return NextResponse.json(
         { error: 'No completed appointments found for this month' },
         { status: 400 },

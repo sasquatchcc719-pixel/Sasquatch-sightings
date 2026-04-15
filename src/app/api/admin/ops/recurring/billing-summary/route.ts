@@ -30,7 +30,9 @@ export async function GET(request: NextRequest) {
       .from('ops_recurring_templates')
       .select(
         `id, label, customer_id,
-         ops_customers (id, full_name, business_name)`,
+         ops_customers (id, full_name, business_name,
+           ops_service_addresses (id, label, street_1, city, state, zip_code)
+         )`,
       )
       .eq('invoice_mode', 'batch_monthly')
       .eq('is_active', true)
@@ -46,10 +48,10 @@ export async function GET(request: NextRequest) {
     const templateIds = templates.map((t) => t.id)
 
     // 2. All appointments for these templates in the month, with line items
-    const { data: appointments } = await supabase
+    const { data: recurringAppts } = await supabase
       .from('ops_appointments')
       .select(
-        `id, recurring_template_id, status, quoted_total, appointment_date,
+        `id, recurring_template_id, batch_billing_customer_id, status, quoted_total, appointment_date,
          ops_appointment_line_items (name_snapshot, notes, quantity, unit_price, line_total)`,
       )
       .in('recurring_template_id', templateIds)
@@ -57,10 +59,33 @@ export async function GET(request: NextRequest) {
       .lt('appointment_date', nextMonth)
       .order('appointment_date')
 
-    // 3. Existing batch invoices for the month (check by customer_id)
+    // 2b. One-off appointments tagged for batch billing for these customers
     const customerIds = [
       ...new Set(templates.map((t) => t.customer_id as string)),
     ]
+
+    const { data: batchBillingAppts } = await supabase
+      .from('ops_appointments')
+      .select(
+        `id, recurring_template_id, batch_billing_customer_id, status, quoted_total, appointment_date,
+         ops_appointment_line_items (name_snapshot, notes, quantity, unit_price, line_total)`,
+      )
+      .in('batch_billing_customer_id', customerIds)
+      .is('recurring_template_id', null)
+      .gte('appointment_date', monthStart)
+      .lt('appointment_date', nextMonth)
+      .order('appointment_date')
+
+    // Merge and deduplicate by appointment ID
+    const seenIds = new Set<string>()
+    const allAppts = [
+      ...(recurringAppts || []),
+      ...(batchBillingAppts || []),
+    ].filter((a) => {
+      if (seenIds.has(a.id)) return false
+      seenIds.add(a.id)
+      return true
+    })
     const { data: batchInvoices } = await supabase
       .from('ops_batch_invoices')
       .select('id, customer_id, status, total')
@@ -84,7 +109,6 @@ export async function GET(request: NextRequest) {
       templateLabelMap.set(tpl.id, tpl.label)
     }
 
-    const appts = appointments || []
     const invoices = batchInvoices || []
 
     // 5. Build per-customer summary
@@ -98,9 +122,11 @@ export async function GET(request: NextRequest) {
           ? (rawCustomer[0] ?? null)
           : (rawCustomer ?? null)
 
-        // All appointments for this customer's templates
-        const customerAppts = appts.filter(
-          (a) => a.recurring_template_id && tplIds.has(a.recurring_template_id),
+        // All appointments for this customer: recurring template matches + batch_billing one-offs
+        const customerAppts = allAppts.filter(
+          (a) =>
+            (a.recurring_template_id && tplIds.has(a.recurring_template_id)) ||
+            a.batch_billing_customer_id === customerId,
         )
 
         const visits = customerAppts.map((appt) => {
@@ -121,9 +147,11 @@ export async function GET(request: NextRequest) {
             date: appt.appointment_date,
             status: appt.status,
             total: appt.quoted_total || 0,
-            templateLabel:
-              templateLabelMap.get(appt.recurring_template_id!) || '',
+            templateLabel: appt.recurring_template_id
+              ? templateLabelMap.get(appt.recurring_template_id) || ''
+              : 'One-off',
             description,
+            isAdHoc: !appt.recurring_template_id,
           }
         })
 
@@ -133,10 +161,18 @@ export async function GET(request: NextRequest) {
         const existingInvoice =
           invoices.find((bi) => bi.customer_id === customerId) || null
 
+        // Extract addresses from the customer object
+        const addresses = customer?.ops_service_addresses
+          ? Array.isArray(customer.ops_service_addresses)
+            ? customer.ops_service_addresses
+            : [customer.ops_service_addresses]
+          : []
+
         return {
           customerId,
           customerName: customer?.full_name || 'Unknown',
           businessName: customer?.business_name || null,
+          addresses,
           visits,
           totalVisits: visits.length,
           completedVisits: completedVisits.length,
