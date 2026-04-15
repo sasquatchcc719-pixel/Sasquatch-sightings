@@ -229,8 +229,13 @@ export async function PATCH(
     const completedAtExisting =
       (current as { completed_at?: string | null }).completed_at ?? null
 
+    // Allow admin to explicitly override on_my_way_at (e.g. duration correction from recurring manager)
     const nextOnMyWayAt =
-      nextStatus === 'on_my_way' && !firstOnMyWayAt ? nowIso : firstOnMyWayAt
+      body.on_my_way_at !== undefined
+        ? (body.on_my_way_at as string | null)
+        : nextStatus === 'on_my_way' && !firstOnMyWayAt
+          ? nowIso
+          : firstOnMyWayAt
     const nextCompletedAt =
       nextStatus === 'completed' && !completedAtExisting
         ? nowIso

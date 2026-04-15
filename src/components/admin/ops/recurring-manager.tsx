@@ -1428,6 +1428,21 @@ function RecurringVisitPanel({
   const [completedAt, setCompletedAt] = useState<string | null>(
     appointment.completed_at ?? null,
   )
+
+  // Admin-only duration adjustment (hours) — derived from on_my_way_at → completed_at
+  const calcDurationHours = (omw: string | null, done: string | null) => {
+    if (!omw || !done) return ''
+    const min = (new Date(done).getTime() - new Date(omw).getTime()) / 60000
+    return min > 0 ? parseFloat((min / 60).toFixed(2)).toString() : ''
+  }
+  const [durationHours, setDurationHours] = useState(() =>
+    calcDurationHours(
+      appointment.on_my_way_at ?? null,
+      appointment.completed_at ?? null,
+    ),
+  )
+  const [savingDuration, setSavingDuration] = useState(false)
+  const [durationSaved, setDurationSaved] = useState(false)
   const [lineItems, setLineItems] = useState<LocalLineItem[]>(
     (appointment.ops_appointment_line_items || []).map((l) => ({
       id: l.id,
@@ -1497,6 +1512,8 @@ function RecurringVisitPanel({
           const t = data.appointment?.completed_at ?? nowIso
           setStatus('completed')
           setCompletedAt(t)
+          // Pre-fill duration with whatever was recorded (on_my_way_at → now)
+          setDurationHours(calcDurationHours(onMyWayAt, t))
           onUpdated({ status: 'completed', completed_at: t })
         }
       }
@@ -1535,6 +1552,33 @@ function RecurringVisitPanel({
       body: JSON.stringify({ internal_notes: notes }),
     })
     onUpdated({ internal_notes: notes })
+  }
+
+  // Admin-only: adjust on_my_way_at backward from completed_at so stats are accurate
+  const handleSaveDuration = async () => {
+    if (!completedAt) return
+    const hours = parseFloat(durationHours)
+    if (!Number.isFinite(hours) || hours <= 0) return
+    setSavingDuration(true)
+    setDurationSaved(false)
+    try {
+      const newOnMyWayAt = new Date(
+        new Date(completedAt).getTime() - hours * 3600000,
+      ).toISOString()
+      const res = await fetch(`/api/admin/ops/appointments/${appointment.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ on_my_way_at: newOnMyWayAt }),
+      })
+      if (res.ok) {
+        setOnMyWayAt(newOnMyWayAt)
+        onUpdated({ on_my_way_at: newOnMyWayAt })
+        setDurationSaved(true)
+        setTimeout(() => setDurationSaved(false), 3000)
+      }
+    } finally {
+      setSavingDuration(false)
+    }
   }
 
   const dateStr = new Date(
@@ -1604,29 +1648,70 @@ function RecurringVisitPanel({
             <div className="rounded-xl border p-4">
               <h4 className="mb-3 text-sm font-semibold">Job Controls</h4>
               {status === 'completed' ? (
-                <div className="flex items-center gap-2 text-sm text-green-400">
-                  <CheckCircle className="h-4 w-4" />
-                  <span>Job closed out</span>
-                  {completedAt && (
-                    <span className="text-muted-foreground">
-                      ·{' '}
-                      {new Date(completedAt).toLocaleTimeString('en-US', {
-                        hour: 'numeric',
-                        minute: '2-digit',
-                      })}
-                    </span>
-                  )}
-                  {onMyWayAt && completedAt && (
-                    <span className="text-muted-foreground ml-auto text-xs">
-                      Drive:{' '}
-                      {Math.round(
-                        (new Date(completedAt).getTime() -
-                          new Date(onMyWayAt).getTime()) /
-                          60000,
-                      )}{' '}
-                      min
-                    </span>
-                  )}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-sm text-green-400">
+                    <CheckCircle className="h-4 w-4" />
+                    <span>Job closed out</span>
+                    {completedAt && (
+                      <span className="text-muted-foreground">
+                        ·{' '}
+                        {new Date(completedAt).toLocaleTimeString('en-US', {
+                          hour: 'numeric',
+                          minute: '2-digit',
+                        })}
+                      </span>
+                    )}
+                  </div>
+                  {/* Admin duration override */}
+                  <div className="rounded-lg border border-dashed p-3">
+                    <p className="text-muted-foreground mb-2 text-xs font-medium">
+                      Adjust time on site (admin only)
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        step="0.25"
+                        min="0.25"
+                        max="24"
+                        className="border-input bg-background h-8 w-24 rounded-md border px-2 text-sm tabular-nums"
+                        value={durationHours}
+                        onChange={(e) => {
+                          setDurationHours(e.target.value)
+                          setDurationSaved(false)
+                        }}
+                        placeholder="hrs"
+                      />
+                      <span className="text-muted-foreground text-xs">
+                        hours
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="ml-auto"
+                        onClick={() => void handleSaveDuration()}
+                        disabled={savingDuration || !durationHours}
+                      >
+                        {savingDuration ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : durationSaved ? (
+                          '✓ Saved'
+                        ) : (
+                          'Save'
+                        )}
+                      </Button>
+                    </div>
+                    {onMyWayAt && completedAt && (
+                      <p className="text-muted-foreground mt-1.5 text-xs">
+                        Recorded:{' '}
+                        {Math.round(
+                          (new Date(completedAt).getTime() -
+                            new Date(onMyWayAt).getTime()) /
+                            60000,
+                        )}{' '}
+                        min
+                      </p>
+                    )}
+                  </div>
                 </div>
               ) : status === 'on_my_way' ? (
                 <div className="space-y-3">
