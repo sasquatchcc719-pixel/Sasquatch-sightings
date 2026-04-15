@@ -12,6 +12,7 @@ import {
   Plus,
   Repeat,
   Save,
+  Trash2,
   Truck,
   User,
   X,
@@ -841,8 +842,8 @@ export default function RecurringVisitDetail({
         />
       </Card>
 
-      {/* ── Back link ─────────────────────────────────────── */}
-      <div className="flex gap-3">
+      {/* ── Back link + Cancel ────────────────────────────── */}
+      <div className="flex flex-wrap gap-3">
         <Button
           variant="outline"
           onClick={() => router.back()}
@@ -861,6 +862,35 @@ export default function RecurringVisitDetail({
           <Repeat className="h-4 w-4" />
           View Template
         </Button>
+        {appointment.status !== 'completed' && (
+          <Button
+            variant="destructive"
+            className="gap-2"
+            onClick={async () => {
+              if (
+                !confirm('Cancel and delete this visit? This cannot be undone.')
+              )
+                return
+              try {
+                const res = await fetch(
+                  `/api/admin/ops/appointments/${appointment.id}`,
+                  { method: 'DELETE' },
+                )
+                if (!res.ok) {
+                  const d = await res.json()
+                  alert(d.error || 'Failed to delete')
+                  return
+                }
+                router.push('/admin/operations')
+              } catch {
+                alert('Failed to delete visit')
+              }
+            }}
+          >
+            <Trash2 className="h-4 w-4" />
+            Cancel Visit
+          </Button>
+        )}
       </div>
     </div>
   )
