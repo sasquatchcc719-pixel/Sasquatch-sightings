@@ -272,20 +272,47 @@ export async function generateRecurringAppointments(
     return result
   }
 
-  const { data: existing } = await supabase
-    .from('ops_appointments')
-    .select('appointment_date')
-    .eq('recurring_template_id', templateId)
-    .in(
-      'appointment_date',
-      uniqueDates.map((d) => d.date),
-    )
+  const [{ data: existing }, { data: customerExisting }] = await Promise.all([
+    supabase
+      .from('ops_appointments')
+      .select('appointment_date')
+      .eq('recurring_template_id', templateId)
+      .in(
+        'appointment_date',
+        uniqueDates.map((d) => d.date),
+      ),
+    supabase
+      .from('ops_appointments')
+      .select('appointment_date, quoted_total')
+      .eq('customer_id', template.customer_id)
+      .is('recurring_template_id', null)
+      .in(
+        'appointment_date',
+        uniqueDates.map((d) => d.date),
+      ),
+  ])
 
   const existingSet = new Set(
     (existing || []).map(
       (a: { appointment_date: string }) => a.appointment_date,
     ),
   )
+
+  const quotedSubtotalPreCalc = (
+    template.line_items as TemplateLineItem[]
+  ).reduce(
+    (sum: number, item: TemplateLineItem) =>
+      sum + item.unit_price * item.quantity,
+    0,
+  )
+  const discountPreCalc = Math.max(0, Number(template.discount_amount || 0))
+  const expectedTotal = Math.max(0, quotedSubtotalPreCalc - discountPreCalc)
+
+  for (const appt of customerExisting || []) {
+    if (Math.abs(Number(appt.quoted_total) - expectedTotal) < 1) {
+      existingSet.add(appt.appointment_date)
+    }
+  }
 
   const { data: customer } = await supabase
     .from('ops_customers')
