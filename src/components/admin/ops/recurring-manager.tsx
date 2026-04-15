@@ -452,6 +452,7 @@ type AddJobForm = {
   addressId: string
   date: string
   startTime: string
+  serviceCatalogItemId: string
   description: string
   quantity: string
   unitPrice: string
@@ -463,6 +464,7 @@ const emptyAddJob: AddJobForm = {
   addressId: '',
   date: '',
   startTime: '08:00',
+  serviceCatalogItemId: '',
   description: '',
   quantity: '1',
   unitPrice: '',
@@ -479,6 +481,11 @@ function MonthEndBillingSection() {
   const [addingFor, setAddingFor] = useState<string | null>(null)
   const [addForm, setAddForm] = useState<AddJobForm>(emptyAddJob)
   const [savingJob, setSavingJob] = useState(false)
+
+  // Service catalog for one-off job form
+  const [addJobCatalog, setAddJobCatalog] = useState<ServiceCatalogItem[]>([])
+  const [addJobCategories, setAddJobCategories] = useState<string[]>([])
+  const [addJobCategory, setAddJobCategory] = useState<string>('')
 
   // Expandable visit editing state
   const [expandedVisit, setExpandedVisit] = useState<string | null>(null)
@@ -503,6 +510,23 @@ function MonthEndBillingSection() {
   useEffect(() => {
     load(month)
   }, [load, month])
+
+  useEffect(() => {
+    fetch('/api/admin/ops/services')
+      .then((r) => r.json())
+      .then((data) => {
+        const items: ServiceCatalogItem[] = data.services || []
+        setAddJobCatalog(items)
+        const cats = [
+          ...new Set(items.map((s) => s.category).filter(Boolean)),
+        ] as string[]
+        setAddJobCategories(cats)
+        if (cats.length > 0) setAddJobCategory(cats[0])
+      })
+      .catch(() => {
+        /* silent */
+      })
+  }, [])
 
   const handleGenerate = async (customerId: string) => {
     setGenerating(customerId)
@@ -538,10 +562,18 @@ function MonthEndBillingSection() {
   }
 
   const handleSaveJob = async () => {
-    if (!addForm.date || !addForm.description || !addForm.unitPrice) {
-      alert('Please fill in date, description, and price.')
+    if (
+      !addForm.date ||
+      (!addForm.serviceCatalogItemId && !addForm.description) ||
+      !addForm.unitPrice
+    ) {
+      alert('Please fill in date, a service (or description), and price.')
       return
     }
+    const selectedService = addJobCatalog.find(
+      (s) => s.id === addForm.serviceCatalogItemId,
+    )
+    const nameSnapshot = selectedService?.name || addForm.description
     setSavingJob(true)
     try {
       const res = await fetch('/api/admin/ops/recurring/add-batch-job', {
@@ -554,8 +586,9 @@ function MonthEndBillingSection() {
           startTime: addForm.startTime,
           lineItems: [
             {
-              name_snapshot: addForm.description,
-              notes: addForm.description,
+              service_catalog_item_id: addForm.serviceCatalogItemId || null,
+              name_snapshot: nameSnapshot,
+              notes: addForm.description || null,
               quantity: Number(addForm.quantity) || 1,
               unit_price: Number(addForm.unitPrice) || 0,
               duration_minutes: Number(addForm.durationMinutes) || 60,
@@ -759,125 +792,235 @@ function MonthEndBillingSection() {
               </div>
 
               {/* Inline add-job form */}
-              {isAdding && (
-                <div className="space-y-3 border-b bg-blue-500/5 px-5 py-4">
-                  <p className="text-sm font-medium">
-                    Add one-off job to {monthLabel} invoice
-                  </p>
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                    <div>
-                      <Label className="text-xs">Date</Label>
-                      <Input
-                        type="date"
-                        value={addForm.date}
-                        onChange={(e) =>
-                          setAddForm((f) => ({ ...f, date: e.target.value }))
-                        }
-                        className="mt-1"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-xs">Start Time</Label>
-                      <Input
-                        type="time"
-                        value={addForm.startTime}
-                        onChange={(e) =>
-                          setAddForm((f) => ({
-                            ...f,
-                            startTime: e.target.value,
-                          }))
-                        }
-                        className="mt-1"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-xs">Price</Label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        placeholder="0.00"
-                        value={addForm.unitPrice}
-                        onChange={(e) =>
-                          setAddForm((f) => ({
-                            ...f,
-                            unitPrice: e.target.value,
-                          }))
-                        }
-                        className="mt-1"
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-xs">Duration (min)</Label>
-                      <Input
-                        type="number"
-                        value={addForm.durationMinutes}
-                        onChange={(e) =>
-                          setAddForm((f) => ({
-                            ...f,
-                            durationMinutes: e.target.value,
-                          }))
-                        }
-                        className="mt-1"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <Label className="text-xs">Service Description</Label>
-                    <Input
-                      placeholder="e.g. Emergency spot treatment — lobby"
-                      value={addForm.description}
-                      onChange={(e) =>
-                        setAddForm((f) => ({
-                          ...f,
-                          description: e.target.value,
-                        }))
-                      }
-                      className="mt-1"
-                    />
-                  </div>
-                  {entry.addresses.length > 1 && (
-                    <div>
-                      <Label className="text-xs">Address</Label>
-                      <select
-                        value={addForm.addressId}
-                        onChange={(e) =>
-                          setAddForm((f) => ({
-                            ...f,
-                            addressId: e.target.value,
-                          }))
-                        }
-                        className="border-input bg-background mt-1 h-9 w-full rounded-md border px-3 text-sm"
-                      >
-                        {entry.addresses.map((addr) => (
-                          <option key={addr.id} value={addr.id}>
-                            {addr.label || addr.street_1}, {addr.city}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setAddingFor(null)}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={handleSaveJob}
-                      disabled={savingJob}
-                      className="gap-1.5"
-                    >
-                      {savingJob && (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              {isAdding &&
+                (() => {
+                  const filteredAddCatalog = addJobCategory
+                    ? addJobCatalog.filter((s) => s.category === addJobCategory)
+                    : addJobCatalog
+                  const addJobSubtotal =
+                    (Number(addForm.unitPrice) || 0) *
+                    (Number(addForm.quantity) || 1)
+                  return (
+                    <div className="space-y-3 border-b bg-blue-500/5 px-5 py-4">
+                      <p className="text-sm font-medium">
+                        Add one-off job to {monthLabel} invoice
+                      </p>
+
+                      {/* Date & Time */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <Label className="text-xs">Date</Label>
+                          <Input
+                            type="date"
+                            value={addForm.date}
+                            onChange={(e) =>
+                              setAddForm((f) => ({
+                                ...f,
+                                date: e.target.value,
+                              }))
+                            }
+                            className="mt-1"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Start Time</Label>
+                          <Input
+                            type="time"
+                            value={addForm.startTime}
+                            onChange={(e) =>
+                              setAddForm((f) => ({
+                                ...f,
+                                startTime: e.target.value,
+                              }))
+                            }
+                            className="mt-1"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Service catalog picker */}
+                      <div>
+                        <Label className="text-xs">Service</Label>
+                        {addJobCategories.length > 1 && (
+                          <div className="mt-1 mb-1 flex flex-wrap gap-1">
+                            {addJobCategories.map((cat) => (
+                              <button
+                                key={cat}
+                                type="button"
+                                onClick={() => setAddJobCategory(cat)}
+                                className={`rounded border px-2 py-0.5 text-xs capitalize transition ${
+                                  addJobCategory === cat
+                                    ? 'border-blue-500 bg-blue-500 text-white'
+                                    : 'border-input bg-background text-muted-foreground hover:border-blue-400'
+                                }`}
+                              >
+                                {cat}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        <select
+                          value={addForm.serviceCatalogItemId}
+                          onChange={(e) => {
+                            const serviceId = e.target.value
+                            const service = addJobCatalog.find(
+                              (s) => s.id === serviceId,
+                            )
+                            setAddForm((f) => ({
+                              ...f,
+                              serviceCatalogItemId: serviceId,
+                              unitPrice:
+                                service?.base_price != null
+                                  ? String(service.base_price)
+                                  : f.unitPrice,
+                              durationMinutes:
+                                service?.default_duration_minutes != null
+                                  ? String(service.default_duration_minutes)
+                                  : f.durationMinutes,
+                            }))
+                          }}
+                          className="border-input bg-background mt-1 h-9 w-full rounded-md border px-3 text-sm"
+                        >
+                          <option value="">— Pick from catalog —</option>
+                          {filteredAddCatalog.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name}
+                              {s.base_price != null
+                                ? ` — $${s.base_price}`
+                                : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Notes / custom description override */}
+                      <div>
+                        <Label className="text-xs">
+                          Notes / Custom Description
+                        </Label>
+                        <Input
+                          placeholder="e.g. Emergency spot treatment — lobby (optional)"
+                          value={addForm.description}
+                          onChange={(e) =>
+                            setAddForm((f) => ({
+                              ...f,
+                              description: e.target.value,
+                            }))
+                          }
+                          className="mt-1"
+                        />
+                      </div>
+
+                      {/* Qty + Price + Duration calculator */}
+                      <div className="grid grid-cols-3 gap-3">
+                        <div>
+                          <Label className="text-xs">Qty</Label>
+                          <Input
+                            type="number"
+                            min="1"
+                            value={addForm.quantity}
+                            onChange={(e) =>
+                              setAddForm((f) => ({
+                                ...f,
+                                quantity: e.target.value,
+                              }))
+                            }
+                            className="mt-1"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Unit Price ($)</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={addForm.unitPrice}
+                            onChange={(e) =>
+                              setAddForm((f) => ({
+                                ...f,
+                                unitPrice: e.target.value,
+                              }))
+                            }
+                            className="mt-1"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Duration (min)</Label>
+                          <Input
+                            type="number"
+                            value={addForm.durationMinutes}
+                            onChange={(e) =>
+                              setAddForm((f) => ({
+                                ...f,
+                                durationMinutes: e.target.value,
+                              }))
+                            }
+                            className="mt-1"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Running total */}
+                      {addJobSubtotal > 0 && (
+                        <div className="flex items-center justify-end gap-2 rounded-md border border-blue-500/20 bg-blue-500/5 px-3 py-2">
+                          <span className="text-muted-foreground text-xs">
+                            {addForm.quantity !== '1' &&
+                            Number(addForm.quantity) > 1
+                              ? `${addForm.quantity} × $${Number(addForm.unitPrice).toFixed(2)}`
+                              : null}
+                          </span>
+                          <span className="text-sm font-semibold">
+                            Total: ${addJobSubtotal.toFixed(2)}
+                          </span>
+                        </div>
                       )}
-                      Add to Schedule & Invoice
-                    </Button>
-                  </div>
-                </div>
-              )}
+
+                      {/* Address (if multiple) */}
+                      {entry.addresses.length > 1 && (
+                        <div>
+                          <Label className="text-xs">Address</Label>
+                          <select
+                            value={addForm.addressId}
+                            onChange={(e) =>
+                              setAddForm((f) => ({
+                                ...f,
+                                addressId: e.target.value,
+                              }))
+                            }
+                            className="border-input bg-background mt-1 h-9 w-full rounded-md border px-3 text-sm"
+                          >
+                            {entry.addresses.map((addr) => (
+                              <option key={addr.id} value={addr.id}>
+                                {addr.label || addr.street_1}, {addr.city}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setAddingFor(null)}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={handleSaveJob}
+                          disabled={savingJob}
+                          className="gap-1.5"
+                        >
+                          {savingJob && (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          )}
+                          Add to Schedule & Invoice
+                        </Button>
+                      </div>
+                    </div>
+                  )
+                })()}
 
               {/* Visit rows */}
               <div className="divide-y">
