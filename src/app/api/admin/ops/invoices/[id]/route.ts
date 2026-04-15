@@ -109,6 +109,61 @@ export async function PATCH(
 
     if (currentError) throw currentError
 
+    // ── Customer / address inline edits ──────────────────────
+    if (body.customer || body.address) {
+      const { data: appt } = await supabase
+        .from('ops_appointments')
+        .select('customer_id, service_address_id')
+        .eq('id', current.appointment_id)
+        .single()
+
+      if (appt) {
+        if (body.customer && typeof body.customer === 'object') {
+          const c = body.customer
+          const cu: Record<string, unknown> = {}
+          if (c.first_name !== undefined) cu.first_name = c.first_name
+          if (c.last_name !== undefined) cu.last_name = c.last_name
+          if (c.full_name !== undefined) {
+            cu.full_name = c.full_name
+          } else if (c.first_name !== undefined || c.last_name !== undefined) {
+            cu.full_name =
+              [c.first_name, c.last_name].filter(Boolean).join(' ') ||
+              'Customer'
+          }
+          if (c.business_name !== undefined) cu.business_name = c.business_name
+          if (c.email !== undefined) cu.email = c.email || null
+          if (c.phone !== undefined) cu.phone = c.phone
+          if (c.notes !== undefined) cu.notes = c.notes || null
+          if (Object.keys(cu).length > 0) {
+            cu.updated_at = new Date().toISOString()
+            await supabase
+              .from('ops_customers')
+              .update(cu)
+              .eq('id', appt.customer_id)
+          }
+        }
+
+        if (body.address && typeof body.address === 'object') {
+          const a = body.address
+          const au: Record<string, unknown> = {}
+          if (a.street_1 !== undefined) au.street_1 = a.street_1
+          if (a.street_2 !== undefined) au.street_2 = a.street_2 || null
+          if (a.city !== undefined) au.city = a.city
+          if (a.state !== undefined) au.state = a.state
+          if (a.zip_code !== undefined) au.zip_code = a.zip_code
+          if (a.gate_code !== undefined) au.gate_code = a.gate_code || null
+          if (a.notes !== undefined) au.notes = a.notes || null
+          if (Object.keys(au).length > 0) {
+            au.updated_at = new Date().toISOString()
+            await supabase
+              .from('ops_service_addresses')
+              .update(au)
+              .eq('id', appt.service_address_id)
+          }
+        }
+      }
+    }
+
     const existingInvoiceLines = current.ops_invoice_line_items || []
     const existingDbIds = existingInvoiceLines.map((l: { id: string }) => l.id)
     const lineItemsInBody = Object.prototype.hasOwnProperty.call(

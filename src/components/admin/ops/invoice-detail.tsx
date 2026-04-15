@@ -11,6 +11,7 @@ import {
   Mail,
   MapPin,
   MessageSquare,
+  Pencil,
   Phone,
   Send,
   Sparkles,
@@ -38,6 +39,38 @@ type InvoiceDetailProps = {
   invoiceId: string
 }
 
+type OpsCustomer = {
+  id: string
+  full_name: string
+  first_name: string | null
+  last_name: string | null
+  business_name: string | null
+  phone: string | null
+  email: string | null
+}
+
+type OpsAddress = {
+  id: string
+  street_1: string
+  street_2: string | null
+  city: string
+  state: string
+  zip_code: string
+  gate_code: string | null
+  notes: string | null
+}
+
+type OpsAppointment = {
+  id: string
+  appointment_date: string
+  start_time: string
+  end_time: string
+  status: string
+  lead_source: string | null
+  ops_customers: OpsCustomer | OpsCustomer[] | null
+  ops_service_addresses: OpsAddress | OpsAddress[] | null
+}
+
 type InvoiceDetail = {
   id: string
   status: string
@@ -46,80 +79,7 @@ type InvoiceDetail = {
   subtotal: number
   total: number
   discount_amount: number | null
-  ops_appointments:
-    | {
-        id: string
-        appointment_date: string
-        start_time: string
-        end_time: string
-        status: string
-        lead_source: string | null
-        ops_customers:
-          | {
-              full_name: string
-              business_name: string | null
-              phone: string | null
-              email: string | null
-            }
-          | {
-              full_name: string
-              business_name: string | null
-              phone: string | null
-              email: string | null
-            }[]
-          | null
-        ops_service_addresses:
-          | {
-              street_1: string
-              city: string
-              state: string
-              zip_code: string
-            }
-          | {
-              street_1: string
-              city: string
-              state: string
-              zip_code: string
-            }[]
-          | null
-      }
-    | null
-    | Array<{
-        id: string
-        appointment_date: string
-        start_time: string
-        end_time: string
-        status: string
-        lead_source: string | null
-        ops_customers:
-          | {
-              full_name: string
-              business_name: string | null
-              phone: string | null
-              email: string | null
-            }
-          | {
-              full_name: string
-              business_name: string | null
-              phone: string | null
-              email: string | null
-            }[]
-          | null
-        ops_service_addresses:
-          | {
-              street_1: string
-              city: string
-              state: string
-              zip_code: string
-            }
-          | {
-              street_1: string
-              city: string
-              state: string
-              zip_code: string
-            }[]
-          | null
-      }>
+  ops_appointments: OpsAppointment | OpsAppointment[] | null
   ops_invoice_line_items: Array<{
     id: string
     appointment_line_item_id: string | null
@@ -128,6 +88,24 @@ type InvoiceDetail = {
     unit_price: number
     line_total: number
   }>
+}
+
+type CustomerEditForm = {
+  first_name: string
+  last_name: string
+  business_name: string
+  phone: string
+  email: string
+}
+
+type AddressEditForm = {
+  street_1: string
+  street_2: string
+  city: string
+  state: string
+  zip_code: string
+  gate_code: string
+  notes: string
 }
 
 function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
@@ -216,6 +194,25 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   )
   const [driveStartedAtMs, setDriveStartedAtMs] = useState<number | null>(null)
   const [driveElapsedMs, setDriveElapsedMs] = useState(0)
+
+  const [editingCustomer, setEditingCustomer] = useState(false)
+  const [customerSaving, setCustomerSaving] = useState(false)
+  const [customerForm, setCustomerForm] = useState<CustomerEditForm>({
+    first_name: '',
+    last_name: '',
+    business_name: '',
+    phone: '',
+    email: '',
+  })
+  const [addressForm, setAddressForm] = useState<AddressEditForm>({
+    street_1: '',
+    street_2: '',
+    city: '',
+    state: '',
+    zip_code: '',
+    gate_code: '',
+    notes: '',
+  })
 
   const loadInvoice = useCallback(async () => {
     setLoading(true)
@@ -383,6 +380,72 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
       )
     } finally {
       setSaving(false)
+    }
+  }
+
+  const enterCustomerEdit = () => {
+    const appt = unwrapRelation(invoice?.ops_appointments)
+    const cust = unwrapRelation(appt?.ops_customers)
+    const addr = unwrapRelation(appt?.ops_service_addresses)
+    setCustomerForm({
+      first_name: cust?.first_name || '',
+      last_name: cust?.last_name || '',
+      business_name: cust?.business_name || '',
+      phone: cust?.phone || '',
+      email: cust?.email || '',
+    })
+    setAddressForm({
+      street_1: addr?.street_1 || '',
+      street_2: addr?.street_2 || '',
+      city: addr?.city || '',
+      state: addr?.state || '',
+      zip_code: addr?.zip_code || '',
+      gate_code: addr?.gate_code || '',
+      notes: addr?.notes || '',
+    })
+    setEditingCustomer(true)
+  }
+
+  const handleSaveCustomer = async () => {
+    setCustomerSaving(true)
+    setError(null)
+    try {
+      const response = await fetch(`/api/admin/ops/invoices/${invoiceId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer: {
+            first_name: customerForm.first_name,
+            last_name: customerForm.last_name,
+            business_name: customerForm.business_name || null,
+            phone: customerForm.phone,
+            email: customerForm.email || null,
+          },
+          address: {
+            street_1: addressForm.street_1,
+            street_2: addressForm.street_2 || null,
+            city: addressForm.city,
+            state: addressForm.state,
+            zip_code: addressForm.zip_code,
+            gate_code: addressForm.gate_code || null,
+            notes: addressForm.notes || null,
+          },
+        }),
+      })
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to update customer')
+      }
+      setEditingCustomer(false)
+      await loadInvoice()
+    } catch (saveError) {
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : 'Failed to update customer',
+      )
+    } finally {
+      setCustomerSaving(false)
     }
   }
 
@@ -867,6 +930,17 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
       <Card className="border-border/60 bg-card/80 p-6 shadow-sm backdrop-blur">
         {/* Top action row */}
         <div className="mb-4 flex items-center justify-end gap-2">
+          {!editingCustomer ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5"
+              onClick={enterCustomerEdit}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Edit
+            </Button>
+          ) : null}
           {appointment?.id ? (
             <Button
               size="sm"
@@ -896,87 +970,318 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
           </Button>
         </div>
 
-        {/* Name + total */}
-        <div className="flex items-start justify-between gap-4">
-          <div>
+        {editingCustomer ? (
+          /* ── Edit mode ─────────────────────────────────────── */
+          <div className="space-y-4">
             <p className="text-muted-foreground text-xs font-medium tracking-[0.2em] uppercase">
-              Invoice
+              Edit Customer &amp; Address
             </p>
-            <h2 className="mt-1 text-3xl font-bold">
-              {customer?.business_name || customer?.full_name || 'Customer'}
-            </h2>
-            <p className="text-muted-foreground mt-1 text-sm">
-              {appointment?.appointment_date} ·{' '}
-              {appointment?.start_time.slice(0, 5)} –{' '}
-              {appointment?.end_time.slice(0, 5)}
-            </p>
-          </div>
-          <p className="text-3xl font-bold tabular-nums">
-            ${billableTotal.toFixed(2)}
-          </p>
-        </div>
-
-        {/* Contact info */}
-        <div className="mt-5 space-y-2 text-sm">
-          {customer?.phone ? (
-            <div className="flex items-center gap-3">
-              <Phone className="text-muted-foreground h-4 w-4 shrink-0" />
-              <span className="flex-1 text-base tabular-nums">
-                {customer.phone}
-              </span>
-              <Button className="gap-2" asChild>
-                <a href={`tel:${customer.phone}`}>
-                  <Phone className="h-4 w-4" />
-                  Call
-                </a>
-              </Button>
-              <Button variant="outline" className="gap-2" asChild>
-                <a href={`sms:${customer.phone}`}>
-                  <MessageSquare className="h-4 w-4" />
-                  Text
-                </a>
-              </Button>
-            </div>
-          ) : (
-            <p className="text-muted-foreground">No phone on file</p>
-          )}
-          {customer?.email ? (
-            <div className="text-muted-foreground flex items-center gap-2">
-              <Mail className="h-4 w-4 shrink-0" />
-              <span>{customer.email}</span>
-            </div>
-          ) : null}
-          {address ? (
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center gap-2">
-                <MapPin className="text-muted-foreground h-4 w-4 shrink-0" />
-                <span className="text-muted-foreground flex-1">
-                  {address.street_1}, {address.city}, {address.state}{' '}
-                  {address.zip_code}
-                </span>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label htmlFor="edit-first-name" className="text-xs">
+                  First Name
+                </Label>
+                <Input
+                  id="edit-first-name"
+                  value={customerForm.first_name}
+                  onChange={(e) =>
+                    setCustomerForm((f) => ({
+                      ...f,
+                      first_name: e.target.value,
+                    }))
+                  }
+                  className="h-9"
+                />
               </div>
+              <div>
+                <Label htmlFor="edit-last-name" className="text-xs">
+                  Last Name
+                </Label>
+                <Input
+                  id="edit-last-name"
+                  value={customerForm.last_name}
+                  onChange={(e) =>
+                    setCustomerForm((f) => ({
+                      ...f,
+                      last_name: e.target.value,
+                    }))
+                  }
+                  className="h-9"
+                />
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="edit-business" className="text-xs">
+                Business Name
+              </Label>
+              <Input
+                id="edit-business"
+                value={customerForm.business_name}
+                onChange={(e) =>
+                  setCustomerForm((f) => ({
+                    ...f,
+                    business_name: e.target.value,
+                  }))
+                }
+                className="h-9"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label htmlFor="edit-phone" className="text-xs">
+                  Phone
+                </Label>
+                <Input
+                  id="edit-phone"
+                  value={customerForm.phone}
+                  onChange={(e) =>
+                    setCustomerForm((f) => ({ ...f, phone: e.target.value }))
+                  }
+                  className="h-9"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-email" className="text-xs">
+                  Email
+                </Label>
+                <Input
+                  id="edit-email"
+                  value={customerForm.email}
+                  onChange={(e) =>
+                    setCustomerForm((f) => ({ ...f, email: e.target.value }))
+                  }
+                  className="h-9"
+                />
+              </div>
+            </div>
+
+            <div className="border-border/60 border-t pt-4">
+              <p className="text-muted-foreground mb-3 text-xs font-medium tracking-[0.2em] uppercase">
+                Service Address
+              </p>
+              <div>
+                <Label htmlFor="edit-street1" className="text-xs">
+                  Street
+                </Label>
+                <Input
+                  id="edit-street1"
+                  value={addressForm.street_1}
+                  onChange={(e) =>
+                    setAddressForm((f) => ({ ...f, street_1: e.target.value }))
+                  }
+                  className="h-9"
+                />
+              </div>
+              <div className="mt-2">
+                <Label htmlFor="edit-street2" className="text-xs">
+                  Street 2
+                </Label>
+                <Input
+                  id="edit-street2"
+                  value={addressForm.street_2}
+                  onChange={(e) =>
+                    setAddressForm((f) => ({ ...f, street_2: e.target.value }))
+                  }
+                  className="h-9"
+                  placeholder="Apt, Suite, etc."
+                />
+              </div>
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                <div>
+                  <Label htmlFor="edit-city" className="text-xs">
+                    City
+                  </Label>
+                  <Input
+                    id="edit-city"
+                    value={addressForm.city}
+                    onChange={(e) =>
+                      setAddressForm((f) => ({ ...f, city: e.target.value }))
+                    }
+                    className="h-9"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit-state" className="text-xs">
+                    State
+                  </Label>
+                  <Input
+                    id="edit-state"
+                    value={addressForm.state}
+                    onChange={(e) =>
+                      setAddressForm((f) => ({ ...f, state: e.target.value }))
+                    }
+                    className="h-9"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit-zip" className="text-xs">
+                    Zip
+                  </Label>
+                  <Input
+                    id="edit-zip"
+                    value={addressForm.zip_code}
+                    onChange={(e) =>
+                      setAddressForm((f) => ({
+                        ...f,
+                        zip_code: e.target.value,
+                      }))
+                    }
+                    className="h-9"
+                  />
+                </div>
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <div>
+                  <Label htmlFor="edit-gate" className="text-xs">
+                    Gate Code
+                  </Label>
+                  <Input
+                    id="edit-gate"
+                    value={addressForm.gate_code}
+                    onChange={(e) =>
+                      setAddressForm((f) => ({
+                        ...f,
+                        gate_code: e.target.value,
+                      }))
+                    }
+                    className="h-9"
+                    placeholder="Optional"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit-addr-notes" className="text-xs">
+                    Access Notes
+                  </Label>
+                  <Input
+                    id="edit-addr-notes"
+                    value={addressForm.notes}
+                    onChange={(e) =>
+                      setAddressForm((f) => ({ ...f, notes: e.target.value }))
+                    }
+                    className="h-9"
+                    placeholder="Optional"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-1">
               <Button
-                size="default"
-                className="w-full gap-2 bg-green-600 font-bold tracking-widest text-white uppercase hover:bg-green-500"
-                asChild
+                className="flex-1 gap-2"
+                disabled={customerSaving}
+                onClick={() => void handleSaveCustomer()}
               >
-                <a
-                  href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${address.street_1}, ${address.city}, ${address.state} ${address.zip_code}`)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <MapPin className="h-4 w-4" />
-                  Get Directions
-                </a>
+                {customerSaving ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : null}
+                {customerSaving ? 'Saving…' : 'Save Changes'}
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => setEditingCustomer(false)}
+                disabled={customerSaving}
+              >
+                Cancel
               </Button>
             </div>
-          ) : null}
-          {appointment?.lead_source ? (
-            <p className="text-muted-foreground">
-              Source: {appointment.lead_source}
-            </p>
-          ) : null}
-        </div>
+          </div>
+        ) : (
+          /* ── View mode (existing display) ──────────────────── */
+          <>
+            {/* Name + total */}
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-muted-foreground text-xs font-medium tracking-[0.2em] uppercase">
+                  Invoice
+                </p>
+                <h2 className="mt-1 text-3xl font-bold">
+                  {customer?.business_name || customer?.full_name || 'Customer'}
+                </h2>
+                <p className="text-muted-foreground mt-1 text-sm">
+                  {appointment?.appointment_date} ·{' '}
+                  {appointment?.start_time.slice(0, 5)} –{' '}
+                  {appointment?.end_time.slice(0, 5)}
+                </p>
+              </div>
+              <p className="text-3xl font-bold tabular-nums">
+                ${billableTotal.toFixed(2)}
+              </p>
+            </div>
+
+            {/* Contact info */}
+            <div className="mt-5 space-y-2 text-sm">
+              {customer?.phone ? (
+                <div className="flex items-center gap-3">
+                  <Phone className="text-muted-foreground h-4 w-4 shrink-0" />
+                  <span className="flex-1 text-base tabular-nums">
+                    {customer.phone}
+                  </span>
+                  <Button className="gap-2" asChild>
+                    <a href={`tel:${customer.phone}`}>
+                      <Phone className="h-4 w-4" />
+                      Call
+                    </a>
+                  </Button>
+                  <Button variant="outline" className="gap-2" asChild>
+                    <a href={`sms:${customer.phone}`}>
+                      <MessageSquare className="h-4 w-4" />
+                      Text
+                    </a>
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-muted-foreground">No phone on file</p>
+              )}
+              {customer?.email ? (
+                <div className="text-muted-foreground flex items-center gap-2">
+                  <Mail className="h-4 w-4 shrink-0" />
+                  <span>{customer.email}</span>
+                </div>
+              ) : null}
+              {address ? (
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <MapPin className="text-muted-foreground h-4 w-4 shrink-0" />
+                    <span className="text-muted-foreground flex-1">
+                      {address.street_1}
+                      {address.street_2 ? `, ${address.street_2}` : ''},{' '}
+                      {address.city}, {address.state} {address.zip_code}
+                    </span>
+                  </div>
+                  {address.gate_code ? (
+                    <p className="text-muted-foreground ml-6 text-xs">
+                      Gate: {address.gate_code}
+                    </p>
+                  ) : null}
+                  {address.notes ? (
+                    <p className="text-muted-foreground ml-6 text-xs">
+                      Notes: {address.notes}
+                    </p>
+                  ) : null}
+                  <Button
+                    size="default"
+                    className="w-full gap-2 bg-green-600 font-bold tracking-widest text-white uppercase hover:bg-green-500"
+                    asChild
+                  >
+                    <a
+                      href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${address.street_1}, ${address.city}, ${address.state} ${address.zip_code}`)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <MapPin className="h-4 w-4" />
+                      Get Directions
+                    </a>
+                  </Button>
+                </div>
+              ) : null}
+              {appointment?.lead_source ? (
+                <p className="text-muted-foreground">
+                  Source: {appointment.lead_source}
+                </p>
+              ) : null}
+            </div>
+          </>
+        )}
 
         {/* Divider + invoice delivery actions */}
         <div className="border-border/60 mt-6 border-t pt-5">

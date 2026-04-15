@@ -1673,6 +1673,16 @@ export function OperationsSchedule() {
                                     {appointment.status.replaceAll('_', ' ')}
                                   </Badge>
                                 </div>
+                                {appointment.recurring_template_id && (
+                                  <a
+                                    href={`/admin/operations/recurring/${appointment.recurring_template_id}`}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 hover:bg-blue-100"
+                                  >
+                                    <Repeat className="h-2.5 w-2.5" />
+                                    Recurring
+                                  </a>
+                                )}
                                 <div className="mt-1 text-slate-700">
                                   {placement.startLabel} - {placement.endLabel}
                                 </div>

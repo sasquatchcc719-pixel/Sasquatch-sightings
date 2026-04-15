@@ -1,18 +1,23 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Calendar,
+  CheckCircle,
   ChevronLeft,
+  ChevronRight,
+  Clock,
   Loader2,
   Pause,
   Pencil,
   Play,
   Plus,
-  RefreshCw,
   Receipt,
+  RefreshCw,
+  Repeat,
   Search,
   Trash2,
+  Truck,
   X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -94,14 +99,33 @@ type Template = {
   ops_recurrence_rules: RuleForm[] | null
 }
 
+type VisitLineItem = {
+  id: string
+  service_catalog_item_id?: string | null
+  name_snapshot: string
+  quantity: number
+  unit_price: number
+  duration_minutes: number
+  line_total: number
+  notes?: string | null
+}
+
+type VisitAppointment = {
+  id: string
+  appointment_date: string
+  start_time: string
+  end_time: string
+  status: string
+  quoted_total: number
+  on_my_way_at?: string | null
+  completed_at?: string | null
+  internal_notes?: string | null
+  ops_appointment_line_items: VisitLineItem[]
+  ops_invoices?: { id: string }[] | null
+}
+
 type TemplateDetail = Template & {
-  appointments: Array<{
-    id: string
-    appointment_date: string
-    start_time: string
-    status: string
-    quoted_total: number
-  }>
+  appointments: VisitAppointment[]
   batch_invoices: Array<{
     id: string
     month: string
@@ -1368,6 +1392,728 @@ function CreateTemplateForm({
   )
 }
 
+// ─── Recurring Visit Panel ───────────────────────────────────────────────
+
+function RecurringVisitPanel({
+  appointment,
+  template,
+  onClose,
+  onUpdated,
+}: {
+  appointment: VisitAppointment
+  template: TemplateDetail
+  onClose: () => void
+  onUpdated: (updates: Partial<VisitAppointment>) => void
+}) {
+  const isBatch = template.invoice_mode === 'batch_monthly'
+  const address = unwrap(template.ops_service_addresses)
+  const invoiceId = Array.isArray(appointment.ops_invoices)
+    ? (appointment.ops_invoices[0]?.id ?? null)
+    : null
+
+  type LocalLineItem = {
+    id?: string
+    service_catalog_item_id?: string | null
+    name_snapshot: string
+    quantity: string
+    unit_price: string
+    duration_minutes: string
+    notes: string
+  }
+
+  const [status, setStatus] = useState(appointment.status)
+  const [onMyWayAt, setOnMyWayAt] = useState<string | null>(
+    appointment.on_my_way_at ?? null,
+  )
+  const [completedAt, setCompletedAt] = useState<string | null>(
+    appointment.completed_at ?? null,
+  )
+  const [lineItems, setLineItems] = useState<LocalLineItem[]>(
+    (appointment.ops_appointment_line_items || []).map((l) => ({
+      id: l.id,
+      service_catalog_item_id: l.service_catalog_item_id ?? null,
+      name_snapshot: l.name_snapshot,
+      quantity: String(l.quantity),
+      unit_price: String(l.unit_price),
+      duration_minutes: String(l.duration_minutes),
+      notes: l.notes ?? '',
+    })),
+  )
+  const [notes, setNotes] = useState(appointment.internal_notes ?? '')
+  const [saving, setSaving] = useState(false)
+  const [savingLines, setSavingLines] = useState(false)
+  const [elapsed, setElapsed] = useState('')
+  const [catalog, setCatalog] = useState<ServiceCatalogItem[]>([])
+
+  // Drive timer counts from on_my_way_at
+  useEffect(() => {
+    if (status !== 'on_my_way' || !onMyWayAt) {
+      setElapsed('')
+      return
+    }
+    const tick = () => {
+      const diff = Date.now() - new Date(onMyWayAt).getTime()
+      const h = Math.floor(diff / 3600000)
+      const m = Math.floor((diff % 3600000) / 60000)
+      const s = Math.floor((diff % 60000) / 1000)
+      setElapsed(
+        `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`,
+      )
+    }
+    tick()
+    const timer = setInterval(tick, 1000)
+    return () => clearInterval(timer)
+  }, [status, onMyWayAt])
+
+  useEffect(() => {
+    fetch('/api/admin/ops/services')
+      .then((r) => r.json())
+      .then((d) => setCatalog(d.services || []))
+      .catch(() => {})
+  }, [])
+
+  const subtotal = lineItems.reduce(
+    (s, l) => s + (Number(l.unit_price) || 0) * (Number(l.quantity) || 0),
+    0,
+  )
+
+  const handleStatusChange = async (newStatus: 'on_my_way' | 'completed') => {
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/admin/ops/appointments/${appointment.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        const nowIso = new Date().toISOString()
+        if (newStatus === 'on_my_way') {
+          const t = data.appointment?.on_my_way_at ?? nowIso
+          setStatus('on_my_way')
+          setOnMyWayAt(t)
+          onUpdated({ status: 'on_my_way', on_my_way_at: t })
+        } else {
+          const t = data.appointment?.completed_at ?? nowIso
+          setStatus('completed')
+          setCompletedAt(t)
+          onUpdated({ status: 'completed', completed_at: t })
+        }
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleSaveLines = async () => {
+    setSavingLines(true)
+    try {
+      await fetch(`/api/admin/ops/appointments/${appointment.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          line_items: lineItems.map((l) => ({
+            service_catalog_item_id: l.service_catalog_item_id || null,
+            name_snapshot: l.name_snapshot,
+            quantity: Number(l.quantity) || 1,
+            unit_price: Number(l.unit_price) || 0,
+            duration_minutes: Number(l.duration_minutes) || 60,
+            notes: l.notes || null,
+          })),
+        }),
+      })
+      onUpdated({ quoted_total: subtotal })
+    } finally {
+      setSavingLines(false)
+    }
+  }
+
+  const handleSaveNotes = async () => {
+    await fetch(`/api/admin/ops/appointments/${appointment.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ internal_notes: notes }),
+    })
+    onUpdated({ internal_notes: notes })
+  }
+
+  const dateStr = new Date(
+    appointment.appointment_date + 'T12:00:00',
+  ).toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  })
+  const timeStr = `${appointment.start_time?.slice(0, 5)} – ${appointment.end_time?.slice(0, 5)}`
+
+  const statusColors: Record<string, string> = {
+    completed: 'text-green-400',
+    on_my_way: 'text-blue-400',
+    booked: 'text-muted-foreground',
+    confirmed: 'text-muted-foreground',
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="bg-background absolute top-0 right-0 flex h-full w-full max-w-lg flex-col overflow-hidden shadow-2xl">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3 border-b p-5">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="secondary" className="gap-1">
+                <Repeat className="h-3 w-3" />
+                Recurring Job
+              </Badge>
+              {isBatch && (
+                <Badge variant="outline" className="text-xs">
+                  Batch Monthly
+                </Badge>
+              )}
+              <Badge
+                variant="outline"
+                className={`capitalize ${statusColors[status] ?? ''}`}
+              >
+                {status.replace(/_/g, ' ')}
+              </Badge>
+            </div>
+            <h3 className="mt-2 text-lg leading-tight font-semibold">
+              {template.label}
+            </h3>
+            <p className="text-muted-foreground text-sm">{dateStr}</p>
+            <p className="text-muted-foreground text-sm">{timeStr}</p>
+            {address && (
+              <p className="text-muted-foreground mt-0.5 text-xs">
+                {address.street_1}, {address.city}, {address.state}
+              </p>
+            )}
+          </div>
+          <button
+            onClick={onClose}
+            className="hover:bg-accent rounded-lg p-1.5 transition-colors"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Scrollable body */}
+        <div className="flex-1 space-y-4 overflow-y-auto p-5">
+          {/* Job Controls — batch_monthly only */}
+          {isBatch && (
+            <div className="rounded-xl border p-4">
+              <h4 className="mb-3 text-sm font-semibold">Job Controls</h4>
+              {status === 'completed' ? (
+                <div className="flex items-center gap-2 text-sm text-green-400">
+                  <CheckCircle className="h-4 w-4" />
+                  <span>Job closed out</span>
+                  {completedAt && (
+                    <span className="text-muted-foreground">
+                      ·{' '}
+                      {new Date(completedAt).toLocaleTimeString('en-US', {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      })}
+                    </span>
+                  )}
+                  {onMyWayAt && completedAt && (
+                    <span className="text-muted-foreground ml-auto text-xs">
+                      Drive:{' '}
+                      {Math.round(
+                        (new Date(completedAt).getTime() -
+                          new Date(onMyWayAt).getTime()) /
+                          60000,
+                      )}{' '}
+                      min
+                    </span>
+                  )}
+                </div>
+              ) : status === 'on_my_way' ? (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-sm text-blue-400">
+                    <Truck className="h-4 w-4" />
+                    <span>En route</span>
+                    {elapsed && (
+                      <span className="font-mono font-semibold">{elapsed}</span>
+                    )}
+                  </div>
+                  <Button
+                    onClick={() => handleStatusChange('completed')}
+                    disabled={saving}
+                    className="w-full"
+                  >
+                    {saving ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <CheckCircle className="mr-2 h-4 w-4" />
+                    )}
+                    Close Out Job
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  variant="outline"
+                  onClick={() => handleStatusChange('on_my_way')}
+                  disabled={saving}
+                  className="w-full"
+                >
+                  {saving ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Truck className="mr-2 h-4 w-4" />
+                  )}
+                  On My Way
+                </Button>
+              )}
+            </div>
+          )}
+
+          {/* Per-visit: link to full invoice */}
+          {!isBatch && invoiceId && (
+            <a
+              href={`/admin/operations/invoices/${invoiceId}`}
+              className="hover:bg-accent flex items-center justify-between rounded-xl border p-4 text-sm font-medium transition-colors"
+            >
+              View Full Invoice
+              <ChevronRight className="text-muted-foreground h-4 w-4" />
+            </a>
+          )}
+
+          {/* Line Items */}
+          <div className="rounded-xl border p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <h4 className="text-sm font-semibold">Line Items</h4>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setLineItems((prev) => [
+                    ...prev,
+                    {
+                      name_snapshot: '',
+                      quantity: '1',
+                      unit_price: '',
+                      duration_minutes: '60',
+                      notes: '',
+                      service_catalog_item_id: null,
+                    },
+                  ])
+                }
+              >
+                <Plus className="mr-1 h-3 w-3" />
+                Add
+              </Button>
+            </div>
+
+            <div className="space-y-3">
+              {lineItems.map((item, idx) => (
+                <div key={idx} className="space-y-1.5 rounded-lg border p-3">
+                  {catalog.length > 0 && (
+                    <select
+                      className="border-input bg-background h-8 w-full rounded-md border px-2 text-xs"
+                      value={item.service_catalog_item_id ?? ''}
+                      onChange={(e) => {
+                        const svc = catalog.find((s) => s.id === e.target.value)
+                        setLineItems((prev) =>
+                          prev.map((l, i) =>
+                            i !== idx
+                              ? l
+                              : {
+                                  ...l,
+                                  service_catalog_item_id:
+                                    e.target.value || null,
+                                  name_snapshot: svc?.name ?? l.name_snapshot,
+                                  unit_price:
+                                    svc?.base_price != null
+                                      ? String(svc.base_price)
+                                      : l.unit_price,
+                                  duration_minutes:
+                                    svc?.default_duration_minutes != null
+                                      ? String(svc.default_duration_minutes)
+                                      : l.duration_minutes,
+                                },
+                          ),
+                        )
+                      }}
+                    >
+                      <option value="">— Pick from catalog —</option>
+                      {catalog.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                          {s.base_price != null ? ` — $${s.base_price}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <input
+                    className="border-input bg-background h-8 w-full rounded-md border px-2 text-xs"
+                    placeholder="Service name"
+                    value={item.name_snapshot}
+                    onChange={(e) =>
+                      setLineItems((prev) =>
+                        prev.map((l, i) =>
+                          i !== idx
+                            ? l
+                            : { ...l, name_snapshot: e.target.value },
+                        ),
+                      )
+                    }
+                  />
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      className="border-input bg-background h-8 w-16 rounded-md border px-2 text-xs"
+                      placeholder="Qty"
+                      value={item.quantity}
+                      onChange={(e) =>
+                        setLineItems((prev) =>
+                          prev.map((l, i) =>
+                            i !== idx ? l : { ...l, quantity: e.target.value },
+                          ),
+                        )
+                      }
+                    />
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="border-input bg-background h-8 flex-1 rounded-md border px-2 text-xs"
+                      placeholder="Unit price"
+                      value={item.unit_price}
+                      onChange={(e) =>
+                        setLineItems((prev) =>
+                          prev.map((l, i) =>
+                            i !== idx
+                              ? l
+                              : { ...l, unit_price: e.target.value },
+                          ),
+                        )
+                      }
+                    />
+                    <span className="w-16 shrink-0 text-right text-xs font-semibold tabular-nums">
+                      {formatCurrency(
+                        (Number(item.quantity) || 0) *
+                          (Number(item.unit_price) || 0),
+                      )}
+                    </span>
+                    {lineItems.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setLineItems((prev) =>
+                            prev.filter((_, i) => i !== idx),
+                          )
+                        }
+                        className="hover:text-destructive"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    className="border-input bg-background text-muted-foreground h-7 w-full rounded-md border px-2 text-xs"
+                    placeholder="Notes (optional)"
+                    value={item.notes}
+                    onChange={(e) =>
+                      setLineItems((prev) =>
+                        prev.map((l, i) =>
+                          i !== idx ? l : { ...l, notes: e.target.value },
+                        ),
+                      )
+                    }
+                  />
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-3 flex items-center justify-between border-t pt-3">
+              <span className="text-sm font-semibold">
+                Subtotal: {formatCurrency(subtotal)}
+              </span>
+              <Button
+                size="sm"
+                onClick={handleSaveLines}
+                disabled={savingLines}
+              >
+                {savingLines && (
+                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                )}
+                Save Line Items
+              </Button>
+            </div>
+          </div>
+
+          {/* Internal Notes */}
+          <div className="rounded-xl border p-4">
+            <h4 className="mb-2 text-sm font-semibold">Internal Notes</h4>
+            <textarea
+              className="border-input bg-background min-h-[80px] w-full rounded-md border px-3 py-2 text-sm"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              onBlur={handleSaveNotes}
+              placeholder="Notes visible only to staff..."
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Schedule Strip ───────────────────────────────────────────────────────
+
+function ScheduleStrip({
+  appointments,
+  onSelectVisit,
+}: {
+  appointments: VisitAppointment[]
+  onSelectVisit: (appt: VisitAppointment) => void
+}) {
+  const today = new Date().toISOString().slice(0, 10)
+
+  return (
+    <div className="overflow-x-auto pb-1">
+      <div className="flex min-w-max gap-2 py-1">
+        {appointments.map((appt) => {
+          const isMissed =
+            appt.appointment_date < today && appt.status === 'booked'
+          const chipClass =
+            appt.status === 'completed'
+              ? 'border-green-500/40 bg-green-500/10 text-green-400'
+              : appt.status === 'on_my_way'
+                ? 'border-blue-500/40 bg-blue-500/10 text-blue-400'
+                : isMissed
+                  ? 'border-red-500/40 bg-red-500/10 text-red-400'
+                  : 'border-border bg-card text-muted-foreground'
+
+          const dateObj = new Date(appt.appointment_date + 'T12:00:00')
+          const dayLabel = dateObj.toLocaleDateString('en-US', {
+            weekday: 'short',
+          })
+          const dateLabel = dateObj.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+          })
+
+          return (
+            <button
+              key={appt.id}
+              type="button"
+              onClick={() => onSelectVisit(appt)}
+              className={`flex min-w-[76px] flex-col items-center rounded-xl border px-2.5 py-2 text-center transition-all hover:opacity-90 hover:shadow-sm ${chipClass}`}
+            >
+              <span className="text-[10px] font-medium tracking-wide uppercase opacity-70">
+                {dayLabel}
+              </span>
+              <span className="text-sm font-semibold">{dateLabel}</span>
+              <div className="mt-1 flex h-3.5 items-center justify-center">
+                {appt.status === 'completed' && (
+                  <CheckCircle className="h-3.5 w-3.5 text-green-400" />
+                )}
+                {appt.status === 'on_my_way' && (
+                  <Truck className="h-3.5 w-3.5 text-blue-400" />
+                )}
+                {isMissed && (
+                  <span className="text-[9px] font-medium text-red-400 uppercase">
+                    Missed
+                  </span>
+                )}
+              </div>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ─── Month Holding Area ───────────────────────────────────────────────────
+
+function MonthHoldingArea({
+  templateId,
+  appointments,
+  batchInvoices,
+  onRefresh,
+}: {
+  templateId: string
+  appointments: VisitAppointment[]
+  batchInvoices: Array<{
+    id: string
+    month: string
+    status: string
+    total: number
+  }>
+  onRefresh: () => void
+}) {
+  const now = new Date()
+  const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const [selectedMonth, setSelectedMonth] = useState(currentMonthStr)
+  const [generating, setGenerating] = useState(false)
+
+  const monthAppts = appointments.filter((a) =>
+    a.appointment_date.startsWith(selectedMonth),
+  )
+  const completedAppts = monthAppts.filter((a) => a.status === 'completed')
+  const runningTotal = completedAppts.reduce(
+    (s, a) => s + (a.quoted_total || 0),
+    0,
+  )
+  const existingInvoice = batchInvoices.find((bi) =>
+    bi.month.startsWith(selectedMonth),
+  )
+
+  const handleGenerate = async () => {
+    setGenerating(true)
+    try {
+      const res = await fetch(`/api/admin/ops/recurring/${templateId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'batch-invoice',
+          month: `${selectedMonth}-01`,
+        }),
+      })
+      const data = await res.json()
+      if (data.error) {
+        alert(data.error)
+      } else {
+        onRefresh()
+      }
+    } catch {
+      alert('Failed to generate invoice')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  const monthLabel = new Date(`${selectedMonth}-15`).toLocaleDateString(
+    'en-US',
+    { month: 'long', year: 'numeric' },
+  )
+
+  return (
+    <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h3 className="font-semibold">Monthly Tally</h3>
+        <input
+          type="month"
+          value={selectedMonth}
+          onChange={(e) => setSelectedMonth(e.target.value)}
+          className="border-input bg-background h-8 rounded-md border px-2 text-sm"
+        />
+      </div>
+
+      <p className="text-muted-foreground mb-2 text-xs font-medium tracking-wider uppercase">
+        {monthLabel}
+      </p>
+
+      {monthAppts.length === 0 ? (
+        <p className="text-muted-foreground text-sm">
+          No visits scheduled for this month.
+        </p>
+      ) : (
+        <div className="mb-4 space-y-1.5">
+          {monthAppts.map((appt) => {
+            const dateLabel = new Date(
+              appt.appointment_date + 'T12:00:00',
+            ).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+            const isDone = appt.status === 'completed'
+            return (
+              <div
+                key={appt.id}
+                className="flex items-center gap-3 rounded-lg border px-3 py-2 text-sm"
+              >
+                {isDone ? (
+                  <CheckCircle className="h-3.5 w-3.5 shrink-0 text-green-400" />
+                ) : (
+                  <Clock className="text-muted-foreground h-3.5 w-3.5 shrink-0" />
+                )}
+                <span className="w-14 shrink-0 font-medium">{dateLabel}</span>
+                <span className="text-muted-foreground capitalize">
+                  {appt.status.replace(/_/g, ' ')}
+                </span>
+                <span className="ml-auto font-semibold tabular-nums">
+                  {isDone ? formatCurrency(appt.quoted_total) : '—'}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      <div className="mb-4 flex items-center justify-between rounded-xl border p-3">
+        <div>
+          <p className="text-sm font-semibold">Completed this month</p>
+          <p className="text-muted-foreground text-xs">
+            {completedAppts.length} of {monthAppts.length} visits done
+          </p>
+        </div>
+        <p className="text-xl font-bold">{formatCurrency(runningTotal)}</p>
+      </div>
+
+      {existingInvoice ? (
+        <div className="flex items-center justify-between rounded-xl border p-3 text-sm">
+          <span className="text-muted-foreground">Invoice generated</span>
+          <div className="flex items-center gap-2">
+            <Badge
+              variant={
+                existingInvoice.status === 'paid' ? 'default' : 'outline'
+              }
+            >
+              {existingInvoice.status}
+            </Badge>
+            <span className="font-semibold">
+              {formatCurrency(existingInvoice.total)}
+            </span>
+          </div>
+        </div>
+      ) : (
+        <Button
+          onClick={handleGenerate}
+          disabled={generating || completedAppts.length === 0}
+          className="w-full"
+        >
+          {generating ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <Receipt className="mr-2 h-4 w-4" />
+          )}
+          Generate QB Invoice for {monthLabel}
+        </Button>
+      )}
+
+      {/* Past invoices history */}
+      {batchInvoices.length > 0 && (
+        <div className="mt-5 space-y-1.5">
+          <p className="text-muted-foreground mb-2 text-xs font-medium tracking-wider uppercase">
+            Invoice History
+          </p>
+          {batchInvoices.map((bi) => (
+            <div
+              key={bi.id}
+              className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm"
+            >
+              <span>
+                {new Date(bi.month + 'T12:00:00').toLocaleDateString('en-US', {
+                  month: 'long',
+                  year: 'numeric',
+                })}
+              </span>
+              <div className="flex items-center gap-2">
+                <Badge variant={bi.status === 'paid' ? 'default' : 'outline'}>
+                  {bi.status}
+                </Badge>
+                <span className="font-semibold">
+                  {formatCurrency(bi.total)}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  )
+}
+
 // ─── Detail View ────────────────────────────────────────────────────────
 
 function TemplateDetailView({
@@ -1382,8 +2128,17 @@ function TemplateDetailView({
   onEdit: () => void
 }) {
   const [acting, setActing] = useState(false)
-  const [batchMonth, setBatchMonth] = useState(
-    `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-01`,
+  const [selectedVisit, setSelectedVisit] = useState<VisitAppointment | null>(
+    null,
+  )
+  // Optimistic updates keyed by appointment ID; reset when template reloads via onRefresh
+  const [localUpdates, setLocalUpdates] = useState<
+    Record<string, Partial<VisitAppointment>>
+  >({})
+
+  const localAppts = useMemo(
+    () => template.appointments.map((a) => ({ ...a, ...localUpdates[a.id] })),
+    [template.appointments, localUpdates],
   )
 
   const customer = unwrap(template.ops_customers)
@@ -1435,40 +2190,29 @@ function TemplateDetailView({
     onBack()
   }
 
-  const handleBatchInvoice = async () => {
-    setActing(true)
-    try {
-      const res = await fetch(`/api/admin/ops/recurring/${template.id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'batch-invoice', month: batchMonth }),
-      })
-      const data = await res.json()
-      if (data.error) {
-        alert(data.error)
-      } else {
-        alert(
-          `Batch invoice created! ${data.result.appointmentCount} visits, total ${formatCurrency(data.result.total)}`,
-        )
-        onRefresh()
-      }
-    } catch {
-      alert('Failed to create batch invoice')
-    } finally {
-      setActing(false)
-    }
+  const handleVisitUpdated = (updates: Partial<VisitAppointment>) => {
+    if (!selectedVisit) return
+    const apptId = selectedVisit.id
+    setLocalUpdates((prev) => ({
+      ...prev,
+      [apptId]: { ...prev[apptId], ...updates },
+    }))
+    setSelectedVisit((prev) => (prev ? { ...prev, ...updates } : prev))
   }
-
-  const today = new Date().toISOString().slice(0, 10)
-  const pastAppts = template.appointments.filter(
-    (a) => a.appointment_date < today,
-  )
-  const futureAppts = template.appointments.filter(
-    (a) => a.appointment_date >= today,
-  )
 
   return (
     <div className="space-y-6">
+      {/* Visit detail panel overlay */}
+      {selectedVisit && (
+        <RecurringVisitPanel
+          appointment={selectedVisit}
+          template={template}
+          onClose={() => setSelectedVisit(null)}
+          onUpdated={handleVisitUpdated}
+        />
+      )}
+
+      {/* Header */}
       <Card className="border-border/60 bg-card/80 p-6 shadow-sm backdrop-blur">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={onBack}>
@@ -1494,7 +2238,7 @@ function TemplateDetailView({
         </div>
       </Card>
 
-      {/* Info */}
+      {/* Schedule + Pricing */}
       <div className="grid gap-4 md:grid-cols-2">
         <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
           <h3 className="font-semibold">Schedule</h3>
@@ -1508,7 +2252,7 @@ function TemplateDetailView({
         </Card>
 
         <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
-          <h3 className="font-semibold">Pricing</h3>
+          <h3 className="font-semibold">Default Pricing</h3>
           <div className="mt-2 space-y-1 text-sm">
             {(template.line_items || []).map((l, i) => (
               <div key={i} className="flex justify-between">
@@ -1516,7 +2260,7 @@ function TemplateDetailView({
                   {l.name_snapshot}
                 </span>
                 <span className="shrink-0 font-medium">
-                  {l.quantity} x {formatCurrency(l.unit_price)}
+                  {l.quantity} × {formatCurrency(l.unit_price)}
                 </span>
               </div>
             ))}
@@ -1571,132 +2315,35 @@ function TemplateDetailView({
             Delete Template
           </Button>
         </div>
-
-        {template.invoice_mode === 'batch_monthly' && (
-          <div className="mt-4 rounded-xl border p-4">
-            <h4 className="font-medium">Generate Monthly Invoice</h4>
-            <p className="text-muted-foreground mt-1 text-sm">
-              Consolidate all completed visits for a month into one invoice for
-              QuickBooks.
-            </p>
-            <div className="mt-3 flex items-end gap-3">
-              <div>
-                <Label>Month</Label>
-                <Input
-                  type="month"
-                  value={batchMonth.slice(0, 7)}
-                  onChange={(e) => setBatchMonth(e.target.value + '-01')}
-                  className="mt-1"
-                />
-              </div>
-              <Button onClick={handleBatchInvoice} disabled={acting}>
-                <Receipt className="mr-2 h-4 w-4" />
-                Generate Invoice
-              </Button>
-            </div>
-          </div>
-        )}
       </Card>
 
-      {/* Batch invoices */}
-      {template.batch_invoices.length > 0 && (
-        <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
-          <h3 className="font-semibold">Batch Invoices</h3>
-          <div className="mt-3 space-y-2">
-            {template.batch_invoices.map((bi) => (
-              <div
-                key={bi.id}
-                className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm"
-              >
-                <span>
-                  {new Date(bi.month + 'T12:00:00').toLocaleDateString(
-                    'en-US',
-                    { month: 'long', year: 'numeric' },
-                  )}
-                </span>
-                <div className="flex items-center gap-3">
-                  <Badge variant={bi.status === 'paid' ? 'default' : 'outline'}>
-                    {bi.status}
-                  </Badge>
-                  <span className="font-semibold">
-                    {formatCurrency(bi.total)}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
+      {/* Monthly Tally (batch_monthly only) */}
+      {template.invoice_mode === 'batch_monthly' && (
+        <MonthHoldingArea
+          templateId={template.id}
+          appointments={localAppts}
+          batchInvoices={template.batch_invoices}
+          onRefresh={onRefresh}
+        />
       )}
 
-      {/* Appointments timeline */}
+      {/* Schedule Strip — all appointments as clickable date chips */}
       <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
-        <h3 className="font-semibold">
-          Generated Appointments ({template.appointments.length})
-        </h3>
-
-        {futureAppts.length > 0 && (
-          <div className="mt-3">
-            <p className="text-muted-foreground mb-2 text-xs font-medium tracking-wider uppercase">
-              Upcoming
-            </p>
-            <div className="space-y-1">
-              {futureAppts.slice(0, 20).map((a) => (
-                <div
-                  key={a.id}
-                  className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm"
-                >
-                  <span>
-                    {new Date(
-                      a.appointment_date + 'T12:00:00',
-                    ).toLocaleDateString('en-US', {
-                      weekday: 'short',
-                      month: 'short',
-                      day: 'numeric',
-                    })}{' '}
-                    {a.start_time?.slice(0, 5)}
-                  </span>
-                  <div className="flex items-center gap-3">
-                    <Badge variant="outline">{a.status}</Badge>
-                    <span className="font-medium">
-                      {formatCurrency(a.quoted_total)}
-                    </span>
-                  </div>
-                </div>
-              ))}
-              {futureAppts.length > 20 && (
-                <p className="text-muted-foreground text-center text-xs">
-                  + {futureAppts.length - 20} more
-                </p>
-              )}
-            </div>
-          </div>
-        )}
-
-        {pastAppts.length > 0 && (
-          <div className="mt-4">
-            <p className="text-muted-foreground mb-2 text-xs font-medium tracking-wider uppercase">
-              Past ({pastAppts.length})
-            </p>
-            <div className="space-y-1">
-              {pastAppts.slice(-5).map((a) => (
-                <div
-                  key={a.id}
-                  className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm opacity-60"
-                >
-                  <span>
-                    {new Date(
-                      a.appointment_date + 'T12:00:00',
-                    ).toLocaleDateString('en-US', {
-                      weekday: 'short',
-                      month: 'short',
-                      day: 'numeric',
-                    })}
-                  </span>
-                  <Badge variant="secondary">{a.status}</Badge>
-                </div>
-              ))}
-            </div>
-          </div>
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="font-semibold">All Visits ({localAppts.length})</h3>
+          <p className="text-muted-foreground text-xs">
+            Click any date to open visit details
+          </p>
+        </div>
+        {localAppts.length === 0 ? (
+          <p className="text-muted-foreground text-sm">
+            No visits generated yet.
+          </p>
+        ) : (
+          <ScheduleStrip
+            appointments={localAppts}
+            onSelectVisit={(appt) => setSelectedVisit(appt)}
+          />
         )}
       </Card>
     </div>

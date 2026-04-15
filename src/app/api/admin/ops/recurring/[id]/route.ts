@@ -38,7 +38,13 @@ export async function GET(_request: NextRequest, { params }: Params) {
     const { data: appointments } = await supabase
       .from('ops_appointments')
       .select(
-        'id, appointment_date, start_time, end_time, status, payment_status, quoted_total',
+        `id, appointment_date, start_time, end_time, status, payment_status,
+         quoted_total, on_my_way_at, completed_at, internal_notes,
+         ops_appointment_line_items (
+           id, service_catalog_item_id, name_snapshot,
+           quantity, unit_price, duration_minutes, line_total, notes
+         ),
+         ops_invoices ( id )`,
       )
       .eq('recurring_template_id', id)
       .order('appointment_date')

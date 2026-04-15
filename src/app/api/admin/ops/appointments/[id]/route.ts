@@ -262,6 +262,63 @@ export async function PATCH(
 
     if (updateError) throw updateError
 
+    // Handle line item updates (for recurring batch visit editing)
+    if (Array.isArray(body.line_items)) {
+      await supabase
+        .from('ops_appointment_line_items')
+        .delete()
+        .eq('appointment_id', id)
+
+      if (body.line_items.length > 0) {
+        const lineItemsPayload = (
+          body.line_items as Array<{
+            service_catalog_item_id?: string | null
+            name_snapshot?: string
+            quantity?: number | string
+            unit_price?: number | string
+            duration_minutes?: number | string
+            notes?: string | null
+          }>
+        ).map((item) => {
+          const qty = Math.max(1, Number(item.quantity) || 1)
+          const price = Math.max(0, Number(item.unit_price) || 0)
+          return {
+            appointment_id: id,
+            service_catalog_item_id: item.service_catalog_item_id || null,
+            name_snapshot: String(item.name_snapshot || '').trim() || 'Service',
+            quantity: qty,
+            unit_price: price,
+            duration_minutes: Math.max(1, Number(item.duration_minutes) || 60),
+            buffer_minutes: 0,
+            line_total: qty * price,
+            notes: item.notes ? String(item.notes).trim() || null : null,
+          }
+        })
+
+        const { error: lineItemsErr } = await supabase
+          .from('ops_appointment_line_items')
+          .insert(lineItemsPayload)
+
+        if (lineItemsErr) throw lineItemsErr
+      }
+
+      const newTotal = (
+        body.line_items as Array<{
+          quantity?: number | string
+          unit_price?: number | string
+        }>
+      ).reduce(
+        (sum, l) =>
+          sum + (Number(l.quantity) || 1) * (Number(l.unit_price) || 0),
+        0,
+      )
+
+      await supabase
+        .from('ops_appointments')
+        .update({ quoted_total: newTotal, updated_at: nowIso })
+        .eq('id', id)
+    }
+
     if (
       current.status !== nextStatus ||
       current.payment_status !== nextPaymentStatus
@@ -275,6 +332,18 @@ export async function PATCH(
       })
     }
 
+    // Determine if this is a batch_monthly recurring appointment — skip
+    // lifecycle notifications and QB sync for commercial batch clients.
+    let isBatchMonthlyRecurring = false
+    if (current.recurring_template_id && current.status !== nextStatus) {
+      const { data: tplMeta } = await supabase
+        .from('ops_recurring_templates')
+        .select('invoice_mode')
+        .eq('id', current.recurring_template_id)
+        .maybeSingle()
+      isBatchMonthlyRecurring = tplMeta?.invoice_mode === 'batch_monthly'
+    }
+
     let lifecycleNotifications: {
       template_key: string
       channel: 'sms' | 'email'
@@ -282,7 +351,7 @@ export async function PATCH(
       actually_sent?: boolean
     }[] = []
 
-    if (current.status !== nextStatus) {
+    if (current.status !== nextStatus && !isBatchMonthlyRecurring) {
       if (nextStatus === 'on_my_way') {
         const { sent } = await sendOpsLifecycleCommunications({
           event: 'on_my_way',
@@ -312,13 +381,7 @@ export async function PATCH(
         })
         lifecycleNotifications = sent
 
-        // Enroll in drip campaign (skip recurring/batch jobs like Recovery Village)
-        const { data: apptMeta } = await supabase
-          .from('ops_appointments')
-          .select('recurring_template_id')
-          .eq('id', id)
-          .single()
-        if (!apptMeta?.recurring_template_id) {
+        if (!current.recurring_template_id) {
           enrollCustomerInDrip(id).catch((err) =>
             console.error('[drip] enrollment error:', err),
           )
@@ -326,7 +389,7 @@ export async function PATCH(
       }
     }
 
-    if (nextStatus === 'completed') {
+    if (nextStatus === 'completed' && !isBatchMonthlyRecurring) {
       const { data: inv } = await supabase
         .from('ops_invoices')
         .select('id, status')
