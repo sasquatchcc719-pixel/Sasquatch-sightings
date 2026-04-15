@@ -41,7 +41,7 @@ function parseClockMinutes(value: string): number {
 
 const APPOINTMENT_SELECT = `
   *,
-  ops_customers (
+  ops_customers!ops_appointments_customer_id_fkey (
     id,
     full_name,
     first_name,
@@ -453,7 +453,7 @@ export async function DELETE(
         id,
         appointment_date,
         start_time,
-        ops_customers (
+        ops_customers!ops_appointments_customer_id_fkey (
           full_name,
           first_name,
           email,

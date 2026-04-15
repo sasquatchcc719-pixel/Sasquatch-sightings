@@ -30,7 +30,7 @@ export async function POST(
         quickbooks_invoice_id,
         ops_appointments (
           id,
-          ops_customers (
+          ops_customers!ops_appointments_customer_id_fkey (
             id,
             quickbooks_customer_id
           )

@@ -40,7 +40,9 @@ export async function GET(request: NextRequest) {
   if (appointmentId) {
     const { data: appt } = await supabase
       .from('ops_appointments')
-      .select('id, ops_customers(full_name, email)')
+      .select(
+        'id, ops_customers!ops_appointments_customer_id_fkey(full_name, email)',
+      )
       .eq('id', appointmentId)
       .single()
     results.appointment = appt

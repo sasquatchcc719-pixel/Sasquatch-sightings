@@ -156,7 +156,7 @@ export async function POST(
         ops_appointments (
           id,
           appointment_date,
-          ops_customers (
+          ops_customers!ops_appointments_customer_id_fkey (
             full_name,
             business_name,
             email,

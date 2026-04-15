@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Calendar,
   CheckCircle,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -400,6 +401,16 @@ export function RecurringManager() {
 
 // ─── Month-End Billing Section ──────────────────────────────────────────
 
+type BillingLineItem = {
+  id?: string
+  name_snapshot: string
+  quantity: number
+  unit_price: number
+  duration_minutes: number
+  line_total: number
+  notes: string | null
+}
+
 type BillingVisit = {
   appointmentId: string
   date: string
@@ -408,6 +419,7 @@ type BillingVisit = {
   templateLabel: string
   description: string
   isAdHoc?: boolean
+  lineItems: BillingLineItem[]
 }
 
 type BillingAddress = {
@@ -467,6 +479,11 @@ function MonthEndBillingSection() {
   const [addingFor, setAddingFor] = useState<string | null>(null)
   const [addForm, setAddForm] = useState<AddJobForm>(emptyAddJob)
   const [savingJob, setSavingJob] = useState(false)
+
+  // Expandable visit editing state
+  const [expandedVisit, setExpandedVisit] = useState<string | null>(null)
+  const [editLines, setEditLines] = useState<BillingLineItem[]>([])
+  const [savingVisit, setSavingVisit] = useState(false)
 
   const load = useCallback(async (m: string) => {
     setLoading(true)
@@ -560,6 +577,94 @@ function MonthEndBillingSection() {
       setSavingJob(false)
     }
   }
+
+  const toggleVisit = (visit: BillingVisit) => {
+    if (expandedVisit === visit.appointmentId) {
+      setExpandedVisit(null)
+      setEditLines([])
+    } else {
+      setExpandedVisit(visit.appointmentId)
+      setEditLines(visit.lineItems.map((li) => ({ ...li })))
+    }
+  }
+
+  const updateLine = (
+    index: number,
+    field: keyof BillingLineItem,
+    raw: string,
+  ) => {
+    setEditLines((prev) => {
+      const next = [...prev]
+      const line = { ...next[index] }
+
+      if (field === 'name_snapshot' || field === 'notes') {
+        ;(line as Record<string, unknown>)[field] = raw
+      } else if (
+        field === 'quantity' ||
+        field === 'unit_price' ||
+        field === 'duration_minutes'
+      ) {
+        ;(line as Record<string, unknown>)[field] = Number(raw) || 0
+      }
+
+      line.line_total =
+        Math.round(Number(line.quantity) * Number(line.unit_price) * 100) / 100
+      next[index] = line
+      return next
+    })
+  }
+
+  const addLine = () => {
+    setEditLines((prev) => [
+      ...prev,
+      {
+        name_snapshot: '',
+        quantity: 1,
+        unit_price: 0,
+        duration_minutes: 0,
+        line_total: 0,
+        notes: null,
+      },
+    ])
+  }
+
+  const removeLine = (index: number) => {
+    setEditLines((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  const saveVisitLines = async (appointmentId: string) => {
+    setSavingVisit(true)
+    try {
+      const res = await fetch(`/api/admin/ops/appointments/${appointmentId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          line_items: editLines.map((li) => ({
+            name_snapshot: li.name_snapshot,
+            quantity: li.quantity,
+            unit_price: li.unit_price,
+            duration_minutes: li.duration_minutes,
+            notes: li.notes || null,
+          })),
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        alert(data.error || 'Failed to save line items')
+      } else {
+        setExpandedVisit(null)
+        setEditLines([])
+        load(month)
+      }
+    } catch {
+      alert('Failed to save line items')
+    } finally {
+      setSavingVisit(false)
+    }
+  }
+
+  const editLinesTotal =
+    Math.round(editLines.reduce((s, li) => s + li.line_total, 0) * 100) / 100
 
   const monthLabel = new Date(`${month}-15`).toLocaleDateString('en-US', {
     month: 'long',
@@ -783,35 +888,183 @@ function MonthEndBillingSection() {
                     month: 'short',
                     day: 'numeric',
                   })
+                  const isExpanded = expandedVisit === visit.appointmentId
+                  const canEdit = !hasInvoice
 
                   return (
-                    <div
-                      key={visit.appointmentId}
-                      className="flex items-center gap-4 px-5 py-3"
-                    >
-                      {isDone ? (
-                        <CheckCircle className="h-4 w-4 shrink-0 text-green-400" />
-                      ) : (
-                        <Clock className="text-muted-foreground h-4 w-4 shrink-0" />
-                      )}
-                      <span className="w-16 shrink-0 text-sm font-semibold tabular-nums">
-                        {dateLabel}
-                      </span>
-                      <span
-                        className={`min-w-0 flex-1 truncate text-sm ${isDone ? '' : 'text-muted-foreground'}`}
+                    <div key={visit.appointmentId}>
+                      {/* Collapsed summary row */}
+                      <button
+                        type="button"
+                        className={`flex w-full items-center gap-4 px-5 py-3 text-left transition ${canEdit ? 'hover:bg-muted/40 cursor-pointer' : 'cursor-default'}`}
+                        onClick={() => canEdit && toggleVisit(visit)}
                       >
-                        {visit.description || visit.templateLabel}
-                        {visit.isAdHoc && (
-                          <span className="text-muted-foreground ml-1.5 text-xs">
-                            (one-off)
-                          </span>
+                        {isDone ? (
+                          <CheckCircle className="h-4 w-4 shrink-0 text-green-400" />
+                        ) : (
+                          <Clock className="text-muted-foreground h-4 w-4 shrink-0" />
                         )}
-                      </span>
-                      <span
-                        className={`shrink-0 text-sm font-semibold tabular-nums ${isDone ? '' : 'text-muted-foreground'}`}
-                      >
-                        {isDone ? formatCurrency(visit.total) : '—'}
-                      </span>
+                        <span className="w-16 shrink-0 text-sm font-semibold tabular-nums">
+                          {dateLabel}
+                        </span>
+                        <span
+                          className={`min-w-0 flex-1 truncate text-sm ${isDone ? '' : 'text-muted-foreground'}`}
+                        >
+                          {visit.description || visit.templateLabel}
+                          {visit.isAdHoc && (
+                            <span className="text-muted-foreground ml-1.5 text-xs">
+                              (one-off)
+                            </span>
+                          )}
+                        </span>
+                        <span
+                          className={`shrink-0 text-sm font-semibold tabular-nums ${isDone ? '' : 'text-muted-foreground'}`}
+                        >
+                          {isDone ? formatCurrency(visit.total) : '—'}
+                        </span>
+                        {canEdit && (
+                          <ChevronDown
+                            className={`text-muted-foreground h-4 w-4 shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                          />
+                        )}
+                      </button>
+
+                      {/* Expanded line item editor */}
+                      {isExpanded && (
+                        <div className="border-t bg-blue-500/5 px-5 py-4">
+                          <div className="space-y-2">
+                            {/* Header row */}
+                            <div className="text-muted-foreground grid grid-cols-[1fr_60px_80px_70px_1fr_80px_32px] items-center gap-2 text-xs font-medium">
+                              <span>Service</span>
+                              <span>Qty</span>
+                              <span>Price</span>
+                              <span>Mins</span>
+                              <span>Notes</span>
+                              <span className="text-right">Total</span>
+                              <span />
+                            </div>
+
+                            {editLines.map((line, idx) => (
+                              <div
+                                key={idx}
+                                className="grid grid-cols-[1fr_60px_80px_70px_1fr_80px_32px] items-center gap-2"
+                              >
+                                <Input
+                                  value={line.name_snapshot}
+                                  onChange={(e) =>
+                                    updateLine(
+                                      idx,
+                                      'name_snapshot',
+                                      e.target.value,
+                                    )
+                                  }
+                                  placeholder="Service name"
+                                  className="h-8 text-sm"
+                                />
+                                <Input
+                                  type="number"
+                                  value={line.quantity}
+                                  onChange={(e) =>
+                                    updateLine(idx, 'quantity', e.target.value)
+                                  }
+                                  className="h-8 text-sm"
+                                  min={0}
+                                  step="0.01"
+                                />
+                                <Input
+                                  type="number"
+                                  value={line.unit_price}
+                                  onChange={(e) =>
+                                    updateLine(
+                                      idx,
+                                      'unit_price',
+                                      e.target.value,
+                                    )
+                                  }
+                                  className="h-8 text-sm"
+                                  min={0}
+                                  step="0.01"
+                                />
+                                <Input
+                                  type="number"
+                                  value={line.duration_minutes}
+                                  onChange={(e) =>
+                                    updateLine(
+                                      idx,
+                                      'duration_minutes',
+                                      e.target.value,
+                                    )
+                                  }
+                                  className="h-8 text-sm"
+                                  min={0}
+                                />
+                                <Input
+                                  value={line.notes || ''}
+                                  onChange={(e) =>
+                                    updateLine(idx, 'notes', e.target.value)
+                                  }
+                                  placeholder="Notes"
+                                  className="h-8 text-sm"
+                                />
+                                <span className="text-right text-sm font-semibold tabular-nums">
+                                  {formatCurrency(line.line_total)}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => removeLine(idx)}
+                                  className="text-muted-foreground hover:text-destructive flex h-8 w-8 items-center justify-center rounded-md transition"
+                                  title="Remove line"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Footer: add line, total, save/cancel */}
+                          <div className="mt-3 flex items-center justify-between gap-4">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={addLine}
+                              className="gap-1.5"
+                            >
+                              <Plus className="h-3.5 w-3.5" />
+                              Add Line
+                            </Button>
+
+                            <div className="flex items-center gap-4">
+                              <span className="text-sm font-semibold tabular-nums">
+                                Total: {formatCurrency(editLinesTotal)}
+                              </span>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  setExpandedVisit(null)
+                                  setEditLines([])
+                                }}
+                              >
+                                Cancel
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() =>
+                                  saveVisitLines(visit.appointmentId)
+                                }
+                                disabled={savingVisit || editLines.length === 0}
+                                className="gap-1.5"
+                              >
+                                {savingVisit && (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                )}
+                                Save
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )
                 })}

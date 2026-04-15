@@ -29,7 +29,7 @@ export async function GET(_request: NextRequest, { params }: Params) {
         completed_at,
         internal_notes,
         recurring_template_id,
-        ops_customers (
+        ops_customers!ops_appointments_customer_id_fkey (
           id,
           full_name,
           first_name,

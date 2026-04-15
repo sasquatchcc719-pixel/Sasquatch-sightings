@@ -106,7 +106,7 @@ export async function POST(_request: NextRequest, { params }: Params) {
         id,
         appointment_date,
         internal_notes,
-        ops_customers ( full_name ),
+        ops_customers!ops_appointments_customer_id_fkey ( full_name ),
         ops_service_addresses (
           street_1, city, state, zip_code
         ),

@@ -99,7 +99,7 @@ const APPOINTMENT_SELECT = `
   start_time,
   end_time,
   quoted_total,
-  ops_customers (
+  ops_customers!ops_appointments_customer_id_fkey (
     full_name,
     first_name,
     business_name,

@@ -47,12 +47,14 @@ export async function GET(request: NextRequest) {
 
     const templateIds = templates.map((t) => t.id)
 
+    const LINE_ITEM_SELECT = `id, name_snapshot, notes, quantity, unit_price, duration_minutes, line_total`
+
     // 2. All appointments for these templates in the month, with line items
     const { data: recurringAppts } = await supabase
       .from('ops_appointments')
       .select(
         `id, recurring_template_id, batch_billing_customer_id, status, quoted_total, appointment_date,
-         ops_appointment_line_items (name_snapshot, notes, quantity, unit_price, line_total)`,
+         ops_appointment_line_items (${LINE_ITEM_SELECT})`,
       )
       .in('recurring_template_id', templateIds)
       .gte('appointment_date', monthStart)
@@ -68,7 +70,7 @@ export async function GET(request: NextRequest) {
       .from('ops_appointments')
       .select(
         `id, recurring_template_id, batch_billing_customer_id, status, quoted_total, appointment_date,
-         ops_appointment_line_items (name_snapshot, notes, quantity, unit_price, line_total)`,
+         ops_appointment_line_items (${LINE_ITEM_SELECT})`,
       )
       .in('batch_billing_customer_id', customerIds)
       .is('recurring_template_id', null)
@@ -152,6 +154,25 @@ export async function GET(request: NextRequest) {
               : 'One-off',
             description,
             isAdHoc: !appt.recurring_template_id,
+            lineItems: lines.map(
+              (l: {
+                id: string
+                name_snapshot: string
+                quantity: number
+                unit_price: number
+                duration_minutes: number
+                line_total: number
+                notes: string | null
+              }) => ({
+                id: l.id,
+                name_snapshot: l.name_snapshot,
+                quantity: l.quantity,
+                unit_price: l.unit_price,
+                duration_minutes: l.duration_minutes,
+                line_total: l.line_total,
+                notes: l.notes,
+              }),
+            ),
           }
         })
 

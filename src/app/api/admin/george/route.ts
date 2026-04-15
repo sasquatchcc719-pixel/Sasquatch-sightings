@@ -96,7 +96,7 @@ async function getRecentAppointments(
   const { data } = await supabase
     .from('ops_appointments')
     .select(
-      'id, appointment_date, start_time, status, payment_status, quoted_total, internal_notes, lead_source, ops_customers(full_name, phone, email), ops_service_addresses(street_1, city, zip_code)',
+      'id, appointment_date, start_time, status, payment_status, quoted_total, internal_notes, lead_source, ops_customers!ops_appointments_customer_id_fkey(full_name, phone, email), ops_service_addresses(street_1, city, zip_code)',
     )
     .order('appointment_date', { ascending: false })
     .limit(15)
@@ -109,7 +109,7 @@ async function getRecentInvoices(
   const { data } = await supabase
     .from('ops_invoices')
     .select(
-      'id, status, payment_method, subtotal, tax_amount, total, created_at, ops_appointments(appointment_date, ops_customers(full_name, phone))',
+      'id, status, payment_method, subtotal, tax_amount, total, created_at, ops_appointments(appointment_date, ops_customers!ops_appointments_customer_id_fkey(full_name, phone))',
     )
     .order('created_at', { ascending: false })
     .limit(15)
@@ -233,7 +233,9 @@ async function getTodayStats(supabase: ReturnType<typeof createAdminClient>) {
   const today = new Date().toISOString().slice(0, 10)
   const { data: todayJobs } = await supabase
     .from('ops_appointments')
-    .select('id, status, quoted_total, ops_customers(full_name)')
+    .select(
+      'id, status, quoted_total, ops_customers!ops_appointments_customer_id_fkey(full_name)',
+    )
     .eq('appointment_date', today)
 
   const { data: recentRevenue } = await supabase
@@ -569,7 +571,9 @@ async function buildPreview(
   if (action.name === 'update_appointment_status') {
     const { data: appt } = await supabase
       .from('ops_appointments')
-      .select('id, status, ops_customers(full_name)')
+      .select(
+        'id, status, ops_customers!ops_appointments_customer_id_fkey(full_name)',
+      )
       .eq('id', action.args.appointment_id)
       .maybeSingle()
     return {

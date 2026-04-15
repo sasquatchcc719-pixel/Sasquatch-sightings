@@ -357,7 +357,7 @@ export async function syncAppointmentToQuickBooks(appointmentId: string) {
       `
       id,
       appointment_date,
-      ops_customers (
+      ops_customers!ops_appointments_customer_id_fkey (
         id, full_name, first_name, email, phone, quickbooks_customer_id,
         ops_service_addresses ( street_1, street_2, city, state, zip_code )
       ),

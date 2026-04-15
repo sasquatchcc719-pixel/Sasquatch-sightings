@@ -72,7 +72,7 @@ export async function GET() {
         .select(
           `
             *,
-            ops_customers (
+            ops_customers!ops_appointments_customer_id_fkey (
               id,
               full_name,
               email,

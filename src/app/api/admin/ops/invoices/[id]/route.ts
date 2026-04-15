@@ -21,7 +21,7 @@ const INVOICE_SELECT = `
     quoted_total,
     internal_notes,
     lead_source,
-    ops_customers (
+    ops_customers!ops_appointments_customer_id_fkey (
       id,
       full_name,
       first_name,
@@ -373,7 +373,7 @@ export async function PATCH(
               appointment_date,
               recurring_template_id,
               ops_recurring_templates ( invoice_mode ),
-              ops_customers ( full_name, business_name, email ),
+              ops_customers!ops_appointments_customer_id_fkey ( full_name, business_name, email ),
               ops_service_addresses ( street_1, city, state, zip_code )
             `,
             )

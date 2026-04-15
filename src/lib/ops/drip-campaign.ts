@@ -153,7 +153,9 @@ export async function enrollCustomerInDrip(
 
   const { data: appt } = await supabase
     .from('ops_appointments')
-    .select('id, customer_id, ops_customers(email, email_opt_out)')
+    .select(
+      'id, customer_id, ops_customers!ops_appointments_customer_id_fkey(email, email_opt_out)',
+    )
     .eq('id', appointmentId)
     .single()
 

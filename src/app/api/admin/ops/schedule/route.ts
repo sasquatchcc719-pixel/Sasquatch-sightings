@@ -4,7 +4,7 @@ import { createAdminClient } from '@/supabase/server'
 
 const APPOINTMENT_SELECT = `
   *,
-  ops_customers (
+  ops_customers!ops_appointments_customer_id_fkey (
     id,
     full_name,
     first_name,
@@ -87,9 +87,15 @@ export async function GET(request: NextRequest) {
       events: eventsResult.data || [],
     })
   } catch (error) {
-    console.error('[ops/schedule][GET] Error:', error)
+    const detail =
+      error instanceof Error
+        ? error.message
+        : typeof error === 'object' && error !== null
+          ? JSON.stringify(error)
+          : String(error)
+    console.error('[ops/schedule][GET] Error:', detail)
     return NextResponse.json(
-      { error: 'Failed to load schedule data' },
+      { error: 'Failed to load schedule data', detail },
       { status: 500 },
     )
   }

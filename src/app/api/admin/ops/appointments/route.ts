@@ -527,7 +527,7 @@ export async function PATCH(request: NextRequest) {
       .select(
         `
           *,
-          ops_customers (
+          ops_customers!ops_appointments_customer_id_fkey (
             full_name
           ),
           ops_service_addresses (

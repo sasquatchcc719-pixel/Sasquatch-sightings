@@ -189,7 +189,7 @@ async function customerOwnsAppointment(
       start_time,
       end_time,
       status,
-      ops_customers ( phone )
+      ops_customers!ops_appointments_customer_id_fkey ( phone )
     `,
     )
     .eq('id', appointmentId)

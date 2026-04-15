@@ -572,7 +572,11 @@ export function OperationsSchedule() {
       const scheduleResult = await scheduleResponse.json()
       const availabilityResult = await availabilityResponse.json()
       if (!scheduleResponse.ok) {
-        throw new Error(scheduleResult.error || 'Failed to load schedule')
+        throw new Error(
+          scheduleResult.detail ||
+            scheduleResult.error ||
+            'Failed to load schedule',
+        )
       }
       if (!availabilityResponse.ok) {
         throw new Error(
