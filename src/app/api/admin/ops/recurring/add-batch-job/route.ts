@@ -66,17 +66,17 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const totalMinutes = lineItems.reduce(
-      (s, l) => s + l.duration_minutes * l.quantity,
-      0,
-    )
+    // duration_minutes is the total service time, not per-unit; quantity is a
+    // pricing multiplier (e.g. sqft) so we sum durations without multiplying.
+    const totalMinutes = lineItems.reduce((s, l) => s + l.duration_minutes, 0)
     const bufferedMinutes = applyAppointmentBuffer(totalMinutes || 60)
 
     const normalizedStart = `${startTime}:00`.slice(0, 8)
     const startParts = startTime.split(':').map(Number)
-    const endTotal = startParts[0] * 60 + startParts[1] + bufferedMinutes
-    const endNorm = ((endTotal % 1440) + 1440) % 1440
-    const endTime = `${String(Math.floor(endNorm / 60)).padStart(2, '0')}:${String(endNorm % 60).padStart(2, '0')}:00`
+    const startTotal = startParts[0] * 60 + startParts[1]
+    // Cap so end_time never wraps past midnight (DB requires start < end)
+    const endTotal = Math.min(startTotal + bufferedMinutes, 23 * 60 + 59)
+    const endTime = `${String(Math.floor(endTotal / 60)).padStart(2, '0')}:${String(endTotal % 60).padStart(2, '0')}:00`
 
     const subtotal = lineItems.reduce(
       (s, l) => s + l.unit_price * l.quantity,
