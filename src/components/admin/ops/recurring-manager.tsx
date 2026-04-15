@@ -400,14 +400,20 @@ export function RecurringManager() {
 
 // ─── Month-End Billing Section ──────────────────────────────────────────
 
-type BillingEntry = {
-  templateId: string
-  label: string
-  customer: {
-    id: string
-    full_name: string
-    business_name: string | null
-  } | null
+type BillingVisit = {
+  appointmentId: string
+  date: string
+  status: string
+  total: number
+  templateLabel: string
+  description: string
+}
+
+type BillingCustomer = {
+  customerId: string
+  customerName: string
+  businessName: string | null
+  visits: BillingVisit[]
   totalVisits: number
   completedVisits: number
   runningTotal: number
@@ -422,7 +428,7 @@ function MonthEndBillingSection() {
   const now = new Date()
   const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   const [month, setMonth] = useState(defaultMonth)
-  const [entries, setEntries] = useState<BillingEntry[]>([])
+  const [customers, setCustomers] = useState<BillingCustomer[]>([])
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState<string | null>(null)
 
@@ -433,7 +439,7 @@ function MonthEndBillingSection() {
         `/api/admin/ops/recurring/billing-summary?month=${m}`,
       )
       const data = await res.json()
-      setEntries(data.entries || [])
+      setCustomers(data.customers || [])
     } catch {
       console.error('Failed to load billing summary')
     } finally {
@@ -445,17 +451,17 @@ function MonthEndBillingSection() {
     load(month)
   }, [load, month])
 
-  const handleGenerate = async (templateId: string) => {
-    setGenerating(templateId)
+  const handleGenerate = async (customerId: string) => {
+    setGenerating(customerId)
     try {
-      const res = await fetch(`/api/admin/ops/recurring/${templateId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'batch-invoice',
-          month: `${month}-01`,
-        }),
-      })
+      const res = await fetch(
+        '/api/admin/ops/recurring/generate-monthly-invoice',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ customerId, month: `${month}-01` }),
+        },
+      )
       const data = await res.json()
       if (data.error) {
         alert(data.error)
@@ -474,84 +480,136 @@ function MonthEndBillingSection() {
     year: 'numeric',
   })
 
-  if (!loading && entries.length === 0) return null
+  if (!loading && customers.length === 0) return null
 
   return (
-    <Card className="border-border/60 bg-card/80 p-6 shadow-sm backdrop-blur">
-      <div className="mb-5 flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold">Month-End Billing</h2>
-          <p className="text-muted-foreground text-sm">
-            Batch monthly accounts — generate QB invoices when visits are
-            complete.
-          </p>
+    <div className="space-y-4">
+      <Card className="border-border/60 bg-card/80 p-6 shadow-sm backdrop-blur">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-2xl font-semibold">Month-End Billing</h2>
+            <p className="text-muted-foreground mt-1 text-sm">
+              Completed visits gather here. Generate one invoice per customer to
+              send to QuickBooks.
+            </p>
+          </div>
+          <input
+            type="month"
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+            className="border-input bg-background h-9 rounded-md border px-3 text-sm"
+          />
         </div>
-        <input
-          type="month"
-          value={month}
-          onChange={(e) => setMonth(e.target.value)}
-          className="border-input bg-background h-9 rounded-md border px-3 text-sm"
-        />
-      </div>
+      </Card>
 
       {loading ? (
-        <div className="flex justify-center py-6">
-          <Loader2 className="text-muted-foreground h-5 w-5 animate-spin" />
-        </div>
+        <Card className="border-border/60 bg-card/80 flex items-center justify-center p-12 shadow-sm backdrop-blur">
+          <Loader2 className="text-muted-foreground h-6 w-6 animate-spin" />
+        </Card>
       ) : (
-        <div className="space-y-3">
-          {entries.map((entry) => {
-            const isGenerating = generating === entry.templateId
-            const hasInvoice = !!entry.existingInvoice
-            const canGenerate = entry.completedVisits > 0 && !hasInvoice
+        customers.map((entry) => {
+          const isGenerating = generating === entry.customerId
+          const hasInvoice = !!entry.existingInvoice
+          const canGenerate = entry.completedVisits > 0 && !hasInvoice
 
-            return (
-              <div
-                key={entry.templateId}
-                className="flex flex-wrap items-center gap-4 rounded-xl border px-4 py-3"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="font-semibold">{entry.label}</p>
-                  {entry.customer && (
+          return (
+            <Card
+              key={entry.customerId}
+              className="border-border/60 bg-card/80 overflow-hidden shadow-sm backdrop-blur"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between border-b px-5 py-4">
+                <div>
+                  <h3 className="text-lg font-semibold">
+                    {monthLabel} — {entry.businessName || entry.customerName}
+                  </h3>
+                  {entry.businessName && (
                     <p className="text-muted-foreground text-sm">
-                      {entry.customer.business_name || entry.customer.full_name}
+                      {entry.customerName}
                     </p>
                   )}
                 </div>
+                {hasInvoice && (
+                  <Badge
+                    variant={
+                      entry.existingInvoice!.status === 'paid'
+                        ? 'default'
+                        : 'outline'
+                    }
+                    className="text-sm"
+                  >
+                    {entry.existingInvoice!.status === 'paid'
+                      ? 'PAID'
+                      : entry.existingInvoice!.status === 'sent'
+                        ? 'SENT TO QB'
+                        : entry.existingInvoice!.status.toUpperCase()}
+                  </Badge>
+                )}
+              </div>
 
-                <div className="text-center">
-                  <p className="text-sm font-semibold tabular-nums">
-                    {entry.completedVisits}/{entry.totalVisits}
-                  </p>
-                  <p className="text-muted-foreground text-xs">visits done</p>
-                </div>
+              {/* Visit rows */}
+              <div className="divide-y">
+                {entry.visits.map((visit) => {
+                  const isDone = visit.status === 'completed'
+                  const dateObj = new Date(visit.date + 'T12:00:00')
+                  const dateLabel = dateObj.toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                  })
 
-                <div className="text-right">
-                  <p className="text-lg font-bold tabular-nums">
+                  return (
+                    <div
+                      key={visit.appointmentId}
+                      className="flex items-center gap-4 px-5 py-3"
+                    >
+                      {isDone ? (
+                        <CheckCircle className="h-4 w-4 shrink-0 text-green-400" />
+                      ) : (
+                        <Clock className="text-muted-foreground h-4 w-4 shrink-0" />
+                      )}
+                      <span className="w-16 shrink-0 text-sm font-semibold tabular-nums">
+                        {dateLabel}
+                      </span>
+                      <span
+                        className={`min-w-0 flex-1 truncate text-sm ${isDone ? '' : 'text-muted-foreground'}`}
+                      >
+                        {visit.description || visit.templateLabel}
+                      </span>
+                      <span
+                        className={`shrink-0 text-sm font-semibold tabular-nums ${isDone ? '' : 'text-muted-foreground'}`}
+                      >
+                        {isDone ? formatCurrency(visit.total) : '—'}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Footer — total + generate button */}
+              <div className="flex flex-wrap items-center justify-between gap-4 border-t px-5 py-4">
+                <div>
+                  <p className="text-2xl font-bold tabular-nums">
                     {formatCurrency(entry.runningTotal)}
                   </p>
-                  <p className="text-muted-foreground text-xs">{monthLabel}</p>
+                  <p className="text-muted-foreground text-sm">
+                    {entry.completedVisits} of {entry.totalVisits} visits
+                    completed
+                  </p>
                 </div>
 
                 {hasInvoice ? (
-                  <div className="flex items-center gap-2">
-                    <Badge
-                      variant={
-                        entry.existingInvoice!.status === 'paid'
-                          ? 'default'
-                          : 'outline'
-                      }
-                    >
-                      {entry.existingInvoice!.status}
-                    </Badge>
-                    <CheckCircle className="h-4 w-4 text-green-400" />
+                  <div className="flex items-center gap-2 text-sm">
+                    <CheckCircle className="h-5 w-5 text-green-400" />
+                    <span className="font-medium">
+                      Invoice generated —{' '}
+                      {formatCurrency(entry.existingInvoice!.total)}
+                    </span>
                   </div>
                 ) : (
                   <Button
-                    size="sm"
-                    onClick={() => handleGenerate(entry.templateId)}
+                    onClick={() => handleGenerate(entry.customerId)}
                     disabled={!canGenerate || isGenerating}
-                    className="shrink-0 gap-2"
+                    className="gap-2"
                     title={
                       !canGenerate
                         ? 'No completed visits to invoice yet'
@@ -559,19 +617,19 @@ function MonthEndBillingSection() {
                     }
                   >
                     {isGenerating ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
-                      <Receipt className="h-3.5 w-3.5" />
+                      <Receipt className="h-4 w-4" />
                     )}
                     Generate Invoice
                   </Button>
                 )}
               </div>
-            )
-          })}
-        </div>
+            </Card>
+          )
+        })
       )}
-    </Card>
+    </div>
   )
 }
 
@@ -2192,155 +2250,7 @@ function ScheduleStrip({
 
 // ─── Month Holding Area ───────────────────────────────────────────────────
 
-function MonthHoldingArea({
-  appointments,
-  batchInvoices,
-}: {
-  appointments: VisitAppointment[]
-  batchInvoices: Array<{
-    id: string
-    month: string
-    status: string
-    total: number
-  }>
-}) {
-  const now = new Date()
-  const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-  const [selectedMonth, setSelectedMonth] = useState(currentMonthStr)
-
-  const monthAppts = appointments.filter((a) =>
-    a.appointment_date.startsWith(selectedMonth),
-  )
-  const completedAppts = monthAppts.filter((a) => a.status === 'completed')
-  const runningTotal = completedAppts.reduce(
-    (s, a) => s + (a.quoted_total || 0),
-    0,
-  )
-  const existingInvoice = batchInvoices.find((bi) =>
-    bi.month.startsWith(selectedMonth),
-  )
-
-  const monthLabel = new Date(`${selectedMonth}-15`).toLocaleDateString(
-    'en-US',
-    { month: 'long', year: 'numeric' },
-  )
-
-  return (
-    <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <h3 className="font-semibold">Monthly Tally</h3>
-        <input
-          type="month"
-          value={selectedMonth}
-          onChange={(e) => setSelectedMonth(e.target.value)}
-          className="border-input bg-background h-8 rounded-md border px-2 text-sm"
-        />
-      </div>
-
-      <p className="text-muted-foreground mb-2 text-xs font-medium tracking-wider uppercase">
-        {monthLabel}
-      </p>
-
-      {monthAppts.length === 0 ? (
-        <p className="text-muted-foreground text-sm">
-          No visits scheduled for this month.
-        </p>
-      ) : (
-        <div className="mb-4 space-y-1.5">
-          {monthAppts.map((appt) => {
-            const dateLabel = new Date(
-              appt.appointment_date + 'T12:00:00',
-            ).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-            const isDone = appt.status === 'completed'
-            return (
-              <div
-                key={appt.id}
-                className="flex items-center gap-3 rounded-lg border px-3 py-2 text-sm"
-              >
-                {isDone ? (
-                  <CheckCircle className="h-3.5 w-3.5 shrink-0 text-green-400" />
-                ) : (
-                  <Clock className="text-muted-foreground h-3.5 w-3.5 shrink-0" />
-                )}
-                <span className="w-14 shrink-0 font-medium">{dateLabel}</span>
-                <span className="text-muted-foreground capitalize">
-                  {appt.status.replace(/_/g, ' ')}
-                </span>
-                <span className="ml-auto font-semibold tabular-nums">
-                  {isDone ? formatCurrency(appt.quoted_total) : '—'}
-                </span>
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      <div className="mb-4 flex items-center justify-between rounded-xl border p-3">
-        <div>
-          <p className="text-sm font-semibold">Completed this month</p>
-          <p className="text-muted-foreground text-xs">
-            {completedAppts.length} of {monthAppts.length} visits done
-          </p>
-        </div>
-        <p className="text-xl font-bold">{formatCurrency(runningTotal)}</p>
-      </div>
-
-      {existingInvoice ? (
-        <div className="flex items-center justify-between rounded-xl border p-3 text-sm">
-          <span className="text-muted-foreground">Invoice generated</span>
-          <div className="flex items-center gap-2">
-            <Badge
-              variant={
-                existingInvoice.status === 'paid' ? 'default' : 'outline'
-              }
-            >
-              {existingInvoice.status}
-            </Badge>
-            <span className="font-semibold">
-              {formatCurrency(existingInvoice.total)}
-            </span>
-          </div>
-        </div>
-      ) : (
-        <p className="text-muted-foreground text-center text-xs">
-          Generate the QB invoice from the{' '}
-          <span className="font-medium">Month-End Billing</span> section at the
-          bottom of the Recurring Jobs list.
-        </p>
-      )}
-
-      {/* Past invoices history */}
-      {batchInvoices.length > 0 && (
-        <div className="mt-5 space-y-1.5">
-          <p className="text-muted-foreground mb-2 text-xs font-medium tracking-wider uppercase">
-            Invoice History
-          </p>
-          {batchInvoices.map((bi) => (
-            <div
-              key={bi.id}
-              className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm"
-            >
-              <span>
-                {new Date(bi.month + 'T12:00:00').toLocaleDateString('en-US', {
-                  month: 'long',
-                  year: 'numeric',
-                })}
-              </span>
-              <div className="flex items-center gap-2">
-                <Badge variant={bi.status === 'paid' ? 'default' : 'outline'}>
-                  {bi.status}
-                </Badge>
-                <span className="font-semibold">
-                  {formatCurrency(bi.total)}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </Card>
-  )
-}
+// MonthHoldingArea removed — monthly billing now lives in MonthEndBillingSection on the list view
 
 // ─── Detail View ────────────────────────────────────────────────────────
 
@@ -2550,12 +2460,22 @@ function TemplateDetailView({
         </div>
       </Card>
 
-      {/* Monthly Tally (batch_monthly only) */}
+      {/* Monthly tally note — invoice generation lives in Month-End Billing on the main list */}
       {template.invoice_mode === 'batch_monthly' && (
-        <MonthHoldingArea
-          appointments={localAppts}
-          batchInvoices={template.batch_invoices}
-        />
+        <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
+          <div className="flex items-center gap-3">
+            <Receipt className="text-muted-foreground h-5 w-5 shrink-0" />
+            <div>
+              <p className="text-sm font-medium">Batch Monthly Invoicing</p>
+              <p className="text-muted-foreground text-sm">
+                Completed visits from this template gather in the{' '}
+                <span className="font-semibold">Month-End Billing</span> section
+                at the bottom of the Recurring Jobs list. Generate the
+                consolidated invoice from there.
+              </p>
+            </div>
+          </div>
+        </Card>
       )}
 
       {/* Schedule Strip — all appointments as clickable date chips */}

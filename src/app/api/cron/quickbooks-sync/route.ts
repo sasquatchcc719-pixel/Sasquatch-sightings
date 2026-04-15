@@ -17,7 +17,7 @@ const BATCH_SIZE = 20
 
 type SyncJob = {
   id: string
-  entity_type: 'customer' | 'invoice'
+  entity_type: 'customer' | 'invoice' | 'batch_invoice'
   entity_id: string
   payload: Record<string, unknown>
 }
@@ -79,7 +79,21 @@ export async function GET(request: NextRequest) {
 
     if (invoiceJobsError) throw invoiceJobsError
 
-    const jobs = [...(customerJobs || []), ...(invoiceJobs || [])]
+    const { data: batchInvoiceJobs, error: batchJobsError } = await supabase
+      .from('ops_quickbooks_sync_jobs')
+      .select('id, entity_type, entity_id, payload')
+      .eq('status', 'pending')
+      .eq('entity_type', 'batch_invoice')
+      .order('created_at', { ascending: true })
+      .limit(BATCH_SIZE)
+
+    if (batchJobsError) throw batchJobsError
+
+    const jobs = [
+      ...(customerJobs || []),
+      ...(invoiceJobs || []),
+      ...(batchInvoiceJobs || []),
+    ]
 
     if (jobs.length === 0) {
       return NextResponse.json({ processed: 0, synced: 0, failed: 0 })
@@ -128,7 +142,10 @@ export async function GET(request: NextRequest) {
             .from('ops_customers')
             .update({ quickbooks_customer_id: qbCustomerId })
             .eq('id', payload.customer_id)
-        } else if (job.entity_type === 'invoice') {
+        } else if (
+          job.entity_type === 'invoice' ||
+          job.entity_type === 'batch_invoice'
+        ) {
           const payload = job.payload as {
             invoice_id: string
             customer_id: string
@@ -162,14 +179,25 @@ export async function GET(request: NextRequest) {
             lineItems: payload.lines,
           })
 
-          // Save QB invoice ID back to ops_invoices
-          await supabase
-            .from('ops_invoices')
-            .update({
-              quickbooks_invoice_id: qbInvoiceId,
-              sync_status: 'synced',
-            })
-            .eq('id', payload.invoice_id)
+          if (job.entity_type === 'batch_invoice') {
+            await supabase
+              .from('ops_batch_invoices')
+              .update({
+                quickbooks_invoice_id: qbInvoiceId,
+                sync_status: 'synced',
+                status: 'sent',
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', payload.invoice_id)
+          } else {
+            await supabase
+              .from('ops_invoices')
+              .update({
+                quickbooks_invoice_id: qbInvoiceId,
+                sync_status: 'synced',
+              })
+              .eq('id', payload.invoice_id)
+          }
         }
 
         // Mark job synced
@@ -227,6 +255,26 @@ export async function GET(request: NextRequest) {
                 })
                 .eq('id', localInvoice.id)
               paymentsUpdated++
+            }
+
+            // Also check batch invoices
+            if (!localInvoice) {
+              const { data: batchInvoice } = await supabase
+                .from('ops_batch_invoices')
+                .select('id, status')
+                .eq('quickbooks_invoice_id', qbInvoiceId)
+                .maybeSingle()
+
+              if (batchInvoice && batchInvoice.status !== 'paid') {
+                await supabase
+                  .from('ops_batch_invoices')
+                  .update({
+                    status: 'paid',
+                    updated_at: new Date().toISOString(),
+                  })
+                  .eq('id', batchInvoice.id)
+                paymentsUpdated++
+              }
             }
           }
         }
