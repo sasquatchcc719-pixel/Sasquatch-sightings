@@ -532,6 +532,8 @@ export function OperationsSchedule() {
   const [pendingNotify, setPendingNotify] = useState<{
     appointmentId: string
     customerName: string
+    x: number
+    y: number
   } | null>(null)
   const draggingYOffsetRef = useRef<number>(0)
   const didDragRef = useRef<boolean>(false)
@@ -907,7 +909,12 @@ export function OperationsSchedule() {
         const customer = unwrapRelation(moved.ops_customers)
         const customerName =
           customer?.business_name || customer?.full_name || 'Customer'
-        setPendingNotify({ appointmentId, customerName })
+        setPendingNotify({
+          appointmentId,
+          customerName,
+          x: e.clientX,
+          y: e.clientY,
+        })
       }
     } catch {
       setError('Failed to reschedule job')
@@ -963,9 +970,15 @@ export function OperationsSchedule() {
 
   return (
     <div className="space-y-6">
-      {/* Notify customer popup after reschedule */}
+      {/* Notify customer popup — anchored near the drop point */}
       {pendingNotify ? (
-        <div className="pointer-events-none fixed inset-x-0 top-4 z-50 flex items-start justify-center px-4">
+        <div
+          className="pointer-events-none fixed z-50"
+          style={{
+            left: Math.min(pendingNotify.x, window.innerWidth - 340),
+            top: pendingNotify.y + 12,
+          }}
+        >
           <Card className="border-border/60 bg-card/95 pointer-events-auto flex items-center gap-4 rounded-2xl border p-4 shadow-xl backdrop-blur">
             <p className="text-sm font-medium">
               Notify{' '}
