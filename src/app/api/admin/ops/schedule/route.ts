@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const [appointmentsResult, eventsResult] = await Promise.all([
+    const [appointmentsResult, eventsResult, rulesResult] = await Promise.all([
       supabase
         .from('ops_appointments')
         .select(APPOINTMENT_SELECT)
@@ -77,14 +77,31 @@ export async function GET(request: NextRequest) {
         .gte('end_date', startDate)
         .order('start_date')
         .order('start_time'),
+      supabase
+        .from('ops_recurrence_rules')
+        .select('template_id, frequency, interval_days'),
     ])
 
     if (appointmentsResult.error) throw appointmentsResult.error
     if (eventsResult.error) throw eventsResult.error
 
+    const recurringFrequencyMap: Record<
+      string,
+      { frequency: string; interval_days: number | null }
+    > = {}
+    if (rulesResult.data) {
+      for (const rule of rulesResult.data) {
+        recurringFrequencyMap[rule.template_id] = {
+          frequency: rule.frequency,
+          interval_days: rule.interval_days,
+        }
+      }
+    }
+
     return NextResponse.json({
       appointments: appointmentsResult.data || [],
       events: eventsResult.data || [],
+      recurringFrequencyMap,
     })
   } catch (error) {
     const detail =

@@ -91,9 +91,15 @@ type CalendarEvent = {
   is_all_day: boolean
 }
 
+type RecurringFrequencyInfo = {
+  frequency: string
+  interval_days: number | null
+}
+
 type ScheduleResponse = {
   appointments: Appointment[]
   events: CalendarEvent[]
+  recurringFrequencyMap?: Record<string, RecurringFrequencyInfo>
 }
 
 type AvailabilityTemplate = {
@@ -291,6 +297,29 @@ function getStatusTone(status: string): string {
     default:
       return 'border-emerald-400 bg-emerald-100'
   }
+}
+
+function getRecurringTone(
+  info: RecurringFrequencyInfo | undefined,
+): string | null {
+  if (!info) return null
+  const days = info.interval_days
+  if (info.frequency === 'weekly' || (days && days <= 14)) {
+    return 'border-violet-400 bg-violet-100'
+  }
+  if (info.frequency === 'biweekly' || (days && days <= 30)) {
+    return 'border-sky-400 bg-sky-100'
+  }
+  if (info.frequency === 'monthly' || (days && days <= 60)) {
+    return 'border-teal-400 bg-teal-100'
+  }
+  if (days && days <= 90) {
+    return 'border-orange-400 bg-orange-100'
+  }
+  if (days && days <= 180) {
+    return 'border-rose-400 bg-rose-100'
+  }
+  return 'border-fuchsia-400 bg-fuchsia-100'
 }
 
 function getEventTone(event: CalendarEvent): string {
@@ -513,6 +542,9 @@ export function OperationsSchedule() {
     appointments: [],
     events: [],
   })
+  const [recurringFreqMap, setRecurringFreqMap] = useState<
+    Record<string, RecurringFrequencyInfo>
+  >({})
   const [availabilityTemplates, setAvailabilityTemplates] = useState<
     AvailabilityTemplate[]
   >([])
@@ -587,6 +619,7 @@ export function OperationsSchedule() {
         appointments: scheduleResult.appointments || [],
         events: scheduleResult.events || [],
       })
+      setRecurringFreqMap(scheduleResult.recurringFrequencyMap || {})
       const templates = (availabilityResult.templates ||
         []) as AvailabilityTemplate[]
       const effectiveTemplates =
@@ -1091,6 +1124,36 @@ export function OperationsSchedule() {
           </div>
         </div>
 
+        {Object.keys(recurringFreqMap).length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500">
+            <span className="font-medium">Recurring:</span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-2.5 w-2.5 rounded-sm border border-violet-400 bg-violet-100" />
+              Weekly
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-2.5 w-2.5 rounded-sm border border-sky-400 bg-sky-100" />
+              Biweekly
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-2.5 w-2.5 rounded-sm border border-teal-400 bg-teal-100" />
+              Monthly
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-2.5 w-2.5 rounded-sm border border-orange-400 bg-orange-100" />
+              90-day
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-2.5 w-2.5 rounded-sm border border-rose-400 bg-rose-100" />
+              180-day
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-2.5 w-2.5 rounded-sm border border-fuchsia-400 bg-fuchsia-100" />
+              Other
+            </span>
+          </div>
+        )}
+
         {showBlockForm ? (
           <form
             className="border-border/60 bg-background/70 mt-4 grid gap-3 rounded-2xl border p-4 md:grid-cols-3"
@@ -1419,11 +1482,16 @@ export function OperationsSchedule() {
                         : appointment.recurring_template_id
                           ? `/admin/operations/recurring/visit/${appointment.id}`
                           : `/admin/operations/appointments/${appointment.id}`
+                      const tone = appointment.recurring_template_id
+                        ? (getRecurringTone(
+                            recurringFreqMap[appointment.recurring_template_id],
+                          ) ?? getStatusTone(appointment.status))
+                        : getStatusTone(appointment.status)
                       return (
                         <Link
                           key={appointment.id}
                           href={href}
-                          className={`text-foreground block rounded-xl border px-2 py-2 text-xs transition hover:shadow-sm ${getStatusTone(appointment.status)}`}
+                          className={`text-foreground block rounded-xl border px-2 py-2 text-xs transition hover:shadow-sm ${tone}`}
                         >
                           <div className="flex items-center gap-1 font-medium">
                             {appointment.recurring_template_id && (
@@ -1621,11 +1689,18 @@ export function OperationsSchedule() {
                             col: 0,
                             totalCols: 1,
                           }
+                          const blockTone = appointment.recurring_template_id
+                            ? (getRecurringTone(
+                                recurringFreqMap[
+                                  appointment.recurring_template_id
+                                ],
+                              ) ?? getStatusTone(appointment.status))
+                            : getStatusTone(appointment.status)
                           return (
                             <div
                               key={appointment.id}
                               data-appointment-block
-                              className={`absolute flex flex-col overflow-hidden rounded-2xl border text-xs text-slate-900 shadow-sm transition ${getStatusTone(appointment.status)} ${isDragging ? 'opacity-40' : 'hover:shadow-md'}`}
+                              className={`absolute flex flex-col overflow-hidden rounded-2xl border text-xs text-slate-900 shadow-sm transition ${blockTone} ${isDragging ? 'opacity-40' : 'hover:shadow-md'}`}
                               style={{
                                 top: placement.top + 6,
                                 height: placement.height - 8,
