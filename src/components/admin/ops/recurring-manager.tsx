@@ -2253,15 +2253,20 @@ function TemplateDetailView({
 
         <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
           <h3 className="font-semibold">Default Pricing</h3>
-          <div className="mt-2 space-y-1 text-sm">
+          <div className="mt-2 space-y-2 text-sm">
             {(template.line_items || []).map((l, i) => (
-              <div key={i} className="flex justify-between">
-                <span className="text-muted-foreground truncate">
-                  {l.name_snapshot}
-                </span>
-                <span className="shrink-0 font-medium">
-                  {l.quantity} × {formatCurrency(l.unit_price)}
-                </span>
+              <div key={i} className="rounded-lg border bg-black/20 px-3 py-2">
+                <div className="flex justify-between gap-2">
+                  <span className="font-medium">{l.name_snapshot}</span>
+                  <span className="shrink-0 font-medium tabular-nums">
+                    {l.quantity} × {formatCurrency(l.unit_price)}
+                  </span>
+                </div>
+                {(l as { notes?: string }).notes && (
+                  <p className="mt-1 rounded bg-amber-500/10 px-2 py-1 text-xs text-amber-300">
+                    {(l as { notes?: string }).notes}
+                  </p>
+                )}
               </div>
             ))}
             <div className="flex justify-between border-t pt-1 font-semibold">

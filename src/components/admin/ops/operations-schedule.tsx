@@ -1399,7 +1399,9 @@ export function OperationsSchedule() {
                       const invoice = unwrapRelation(appointment.ops_invoices)
                       const href = invoice?.id
                         ? `/admin/operations/invoices/${invoice.id}`
-                        : `/admin/operations/appointments/${appointment.id}`
+                        : appointment.recurring_template_id
+                          ? `/admin/operations/recurring/visit/${appointment.id}`
+                          : `/admin/operations/appointments/${appointment.id}`
                       return (
                         <Link
                           key={appointment.id}
@@ -1593,7 +1595,9 @@ export function OperationsSchedule() {
                           )
                           const href = invoice?.id
                             ? `/admin/operations/invoices/${invoice.id}`
-                            : `/admin/operations/appointments/${appointment.id}`
+                            : appointment.recurring_template_id
+                              ? `/admin/operations/recurring/visit/${appointment.id}`
+                              : `/admin/operations/appointments/${appointment.id}`
                           const isDragging =
                             draggingAppointment?.id === appointment.id
                           const oc = overlapCols.get(appointment.id) ?? {
