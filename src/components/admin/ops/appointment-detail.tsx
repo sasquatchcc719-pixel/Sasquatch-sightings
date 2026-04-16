@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Loader2, MessageSquare, Receipt } from 'lucide-react'
+import { Loader2, MessageSquare, Receipt, MessageCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -678,8 +678,23 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
                   {customer.business_name}
                 </div>
               ) : null}
-              <div className="text-muted-foreground">
-                {customer?.phone || 'No phone'}
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-muted-foreground">
+                  {customer?.phone || 'No phone'}
+                </div>
+                {customer?.phone ? (
+                  <Button
+                    asChild
+                    size="sm"
+                    variant="default"
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    <a href={`sms:${customer.phone}`}>
+                      <MessageCircle className="mr-2 h-4 w-4" />
+                      Text Customer
+                    </a>
+                  </Button>
+                ) : null}
               </div>
               <div className="text-muted-foreground">
                 {customer?.email || 'No email'}
