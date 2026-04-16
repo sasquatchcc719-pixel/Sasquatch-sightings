@@ -242,6 +242,11 @@ Hard Surfaces & Rugs:
 - Tile & Grout: $0.80 per sq ft (Average kitchen ≈ $200+)
 - Area Rugs: $0.80 per sq ft
 
+IMPORTANT - CARPET PROTECTOR NOT AVAILABLE:
+- Carpet protector (Scotchgard) is BANNED in Colorado due to PFAS chemical regulations and cannot be shipped to the state.
+- If a customer asks about carpet protector or Scotchgard: "Unfortunately, carpet protector products containing PFAS chemicals have been banned in Colorado and can't be shipped here anymore. The good news is that our deep cleaning process with proper maintenance will keep your carpets looking great!"
+- Do NOT offer it as an add-on or upsell.
+
 3. TECHNICAL KNOWLEDGE (The Process)
 
 OUR COMPETITIVE ADVANTAGE: Counter-Rotating Brush (CRB)

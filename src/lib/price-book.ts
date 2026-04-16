@@ -333,12 +333,6 @@ export const PRICE_BOOK = {
         description: 'UV inspection, Bio Release injection, Pre Spray',
       },
       {
-        name: 'Scotchgard Protection',
-        price: 25,
-        unit: 'per room',
-        description: 'Carpet protection',
-      },
-      {
         name: 'Heat Transfer Stain Removal',
         price: 35,
         unit: 'per stain',
