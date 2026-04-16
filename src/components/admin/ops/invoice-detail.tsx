@@ -1789,55 +1789,101 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <Label
-                      htmlFor={`line-quantity-${index}`}
-                      className="text-xs"
-                    >
-                      Qty
-                    </Label>
-                    <Input
-                      id={`line-quantity-${index}`}
-                      type="number"
-                      min="1"
-                      step="1"
-                      value={String(item.quantity)}
-                      className="h-8 text-sm"
-                      onChange={(event) =>
-                        setLineItems((current) =>
-                          current.map((line, lineIndex) =>
-                            lineIndex === index
-                              ? {
-                                  ...line,
-                                  quantity: Math.max(
-                                    1,
-                                    Number(event.target.value) || 1,
-                                  ),
-                                }
-                              : line,
-                          ),
-                        )
-                      }
-                    />
+                    <Label className="text-xs">Qty</Label>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-8 w-8 p-0"
+                        onClick={() =>
+                          setLineItems((current) =>
+                            current.map((line, lineIndex) =>
+                              lineIndex === index
+                                ? {
+                                    ...line,
+                                    quantity: Math.max(1, line.quantity - 1),
+                                  }
+                                : line,
+                            ),
+                          )
+                        }
+                      >
+                        −
+                      </Button>
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        value={String(item.quantity)}
+                        className="h-8 text-center text-sm tabular-nums"
+                        readOnly
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-8 w-8 p-0"
+                        onClick={() =>
+                          setLineItems((current) =>
+                            current.map((line, lineIndex) =>
+                              lineIndex === index
+                                ? { ...line, quantity: line.quantity + 1 }
+                                : line,
+                            ),
+                          )
+                        }
+                      >
+                        +
+                      </Button>
+                    </div>
                   </div>
                   <div>
-                    <Label htmlFor={`line-price-${index}`} className="text-xs">
-                      Unit Price
-                    </Label>
+                    <Label className="text-xs">Unit Price</Label>
                     <Input
-                      id={`line-price-${index}`}
-                      type="number"
-                      step="0.01"
-                      value={item.unit_price}
-                      className="h-8 text-sm"
-                      onChange={(event) =>
-                        setLineItems((current) =>
-                          current.map((line, lineIndex) =>
-                            lineIndex === index
-                              ? { ...line, unit_price: event.target.value }
-                              : line,
-                          ),
-                        )
-                      }
+                      type="text"
+                      inputMode="decimal"
+                      value={item.unit_price || ''}
+                      onChange={(e) => {
+                        const value = e.target.value
+                        // Allow empty, digits, and one decimal point
+                        if (value === '' || /^\d*\.?\d{0,2}$/.test(value)) {
+                          setLineItems((current) =>
+                            current.map((line, lineIndex) =>
+                              lineIndex === index
+                                ? { ...line, unit_price: value }
+                                : line,
+                            ),
+                          )
+                        }
+                      }}
+                      onBlur={(e) => {
+                        // Format on blur to ensure proper decimal places
+                        const value = e.target.value
+                        const numValue = parseFloat(value)
+                        if (!isNaN(numValue) && numValue >= 0) {
+                          setLineItems((current) =>
+                            current.map((line, lineIndex) =>
+                              lineIndex === index
+                                ? {
+                                    ...line,
+                                    unit_price: numValue.toFixed(2),
+                                  }
+                                : line,
+                            ),
+                          )
+                        } else {
+                          // Reset to 0 if invalid
+                          setLineItems((current) =>
+                            current.map((line, lineIndex) =>
+                              lineIndex === index
+                                ? { ...line, unit_price: '0.00' }
+                                : line,
+                            ),
+                          )
+                        }
+                      }}
+                      className="h-8 text-sm tabular-nums"
+                      placeholder="0.00"
                     />
                   </div>
                 </div>
