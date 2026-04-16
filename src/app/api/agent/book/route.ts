@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 import { validateAgentRequest, checkRateLimit } from '@/lib/agent-auth'
 import { createAiStyleBooking } from '@/lib/ops/create-ai-style-booking'
+import { checkServiceArea } from '@/lib/service-area'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -80,6 +81,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Validate service area
+    const serviceAreaCheck = checkServiceArea(zipCode)
+    if (!serviceAreaCheck.allowed) {
+      return NextResponse.json(
+        { error: serviceAreaCheck.message },
+        { status: 400, headers: CORS },
+      )
+    }
+
     const appointmentDate = String(body.date || '').trim()
     const startTime = String(body.start_time || '').trim()
 
@@ -103,6 +113,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // If service area requires approval, force request mode even for direct booking agents
+    const effectiveBookingMode = serviceAreaCheck.requiresApproval
+      ? 'request'
+      : auth.key.booking_mode === 'direct'
+        ? 'direct'
+        : 'request'
+
     const result = await createAiStyleBooking({
       supabase,
       customer: {
@@ -120,7 +137,7 @@ export async function POST(request: NextRequest) {
       appointment_date: appointmentDate,
       start_time: startTime,
       line_items: requestedItems,
-      booking_mode: auth.key.booking_mode === 'direct' ? 'direct' : 'request',
+      booking_mode: effectiveBookingMode,
       booking_channel: 'ai_agent',
       source_label: auth.key.label,
       lead_source: `AI Agent (${auth.key.label})`,

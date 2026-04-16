@@ -19,6 +19,7 @@ import {
   buildQuickBooksInvoicePayload,
   getQuickBooksSyncStatus,
 } from '@/lib/quickbooks'
+import { checkServiceArea } from '@/lib/service-area'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -75,6 +76,15 @@ export async function POST(request: NextRequest) {
     if (!street1 || !city || !zipCode) {
       return NextResponse.json(
         { error: 'Service address is required' },
+        { status: 400, headers: CORS },
+      )
+    }
+
+    // Validate service area
+    const serviceAreaCheck = checkServiceArea(zipCode)
+    if (!serviceAreaCheck.allowed) {
+      return NextResponse.json(
+        { error: serviceAreaCheck.message },
         { status: 400, headers: CORS },
       )
     }
@@ -233,6 +243,12 @@ export async function POST(request: NextRequest) {
     const endTotal = sh * 60 + sm + buffered
     const endTime = `${String(Math.floor(endTotal / 60) % 24).padStart(2, '0')}:${String(endTotal % 60).padStart(2, '0')}:00`
 
+    // --- Determine appointment status ---
+    // If location requires travel approval, set to pending_approval instead of booked
+    const appointmentStatus = serviceAreaCheck.requiresApproval
+      ? 'pending_approval'
+      : 'booked'
+
     // --- Create appointment ---
     const { data: appointment, error: appointmentError } = await supabase
       .from('ops_appointments')
@@ -242,7 +258,7 @@ export async function POST(request: NextRequest) {
         appointment_date: appointmentDate,
         start_time: startTime,
         end_time: endTime,
-        status: 'booked',
+        status: appointmentStatus,
         payment_status: 'unpaid',
         quoted_total: total,
         booking_channel: 'website',
@@ -294,12 +310,16 @@ export async function POST(request: NextRequest) {
 
     // --- Status events ---
     const syncStatus = getQuickBooksSyncStatus()
+    const statusNotes = serviceAreaCheck.requiresApproval
+      ? 'Appointment created via sasquatch.com booking widget (pending approval for extended service area)'
+      : 'Appointment created via sasquatch.com booking widget'
+
     await Promise.all([
       supabase.from('ops_appointment_status_events').insert({
         appointment_id: appointment.id,
         from_status: null,
-        to_status: 'booked',
-        notes: 'Appointment created via sasquatch.com booking widget',
+        to_status: appointmentStatus,
+        notes: statusNotes,
       }),
       supabase.from('ops_invoice_status_events').insert({
         invoice_id: invoice.id,
@@ -337,35 +357,44 @@ export async function POST(request: NextRequest) {
     ])
 
     // --- Fire comms + QB sync (non-blocking) ---
-    const [commsResult, qbResult] = await Promise.allSettled([
-      sendOpsLifecycleCommunications({
-        event: 'job_scheduled',
-        appointmentId: appointment.id,
-      }),
-      syncAppointmentToQuickBooks(appointment.id),
-    ])
-    if (commsResult.status === 'rejected')
-      console.error('[public/appointments] Comms error:', commsResult.reason)
-    if (qbResult.status === 'rejected')
-      console.error('[public/appointments] QB sync error:', qbResult.reason)
+    // Only send confirmation comms if fully booked (not pending approval)
+    if (appointmentStatus === 'booked') {
+      const [commsResult, qbResult] = await Promise.allSettled([
+        sendOpsLifecycleCommunications({
+          event: 'job_scheduled',
+          appointmentId: appointment.id,
+        }),
+        syncAppointmentToQuickBooks(appointment.id),
+      ])
+      if (commsResult.status === 'rejected')
+        console.error('[public/appointments] Comms error:', commsResult.reason)
+      if (qbResult.status === 'rejected')
+        console.error('[public/appointments] QB sync error:', qbResult.reason)
+    }
 
     // --- Notify admin (SMS + push + email) ---
     const serviceNames = lineItems
       .map((item) => item.name_snapshot)
       .filter(Boolean)
       .join(', ')
+    const statusLabel =
+      appointmentStatus === 'pending_approval' ? ' (NEEDS APPROVAL)' : ''
+    const adminHeading = `New job booked${statusLabel}!`
     const adminMsg = [
-      `New job booked!`,
+      adminHeading,
       `${fullName} — $${total.toFixed(2)}`,
       `${serviceNames}`,
       `${street1}, ${city}, ${state} ${zipCode}`,
       `${appointmentDate} at ${startTime.slice(0, 5)}`,
+      ...(serviceAreaCheck.requiresApproval
+        ? ['⚠️ Extended service area - confirm travel fee']
+        : []),
     ].join('\n')
 
     await Promise.allSettled([
       sendAdminSMS(adminMsg, 'new_booking'),
       sendOneSignalNotification({
-        heading: 'New Job Booked',
+        heading: adminHeading,
         content: `${fullName} — $${total.toFixed(2)} · ${appointmentDate}`,
         data: {
           type: 'new_booking',
@@ -384,10 +413,11 @@ export async function POST(request: NextRequest) {
         await resend.emails.send({
           from: fromEmail,
           to: adminEmail,
-          subject: `New Job Booked — ${fullName} · $${total.toFixed(2)}`,
+          subject: `New Job Booked${statusLabel} — ${fullName} · $${total.toFixed(2)}`,
           html: `
 <div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;">
-  <h2 style="color:#16a34a;margin:0 0 16px;">New Job Booked</h2>
+  <h2 style="color:${appointmentStatus === 'pending_approval' ? '#f59e0b' : '#16a34a'};margin:0 0 16px;">New Job Booked${statusLabel}</h2>
+  ${serviceAreaCheck.requiresApproval ? '<p style="color:#f59e0b;font-weight:600;margin:0 0 12px;">⚠️ Extended service area - confirm travel fee with customer</p>' : ''}
   <table style="font-size:14px;line-height:1.6;">
     <tr><td style="color:#6b7280;padding-right:12px;">Customer</td><td><strong>${fullName}</strong></td></tr>
     <tr><td style="color:#6b7280;padding-right:12px;">Phone</td><td>${phone}</td></tr>

@@ -5,6 +5,7 @@ import {
   getAgentPromoSettings,
   checkRateLimit,
 } from '@/lib/agent-auth'
+import { getServiceAreaDescription } from '@/lib/service-area'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -106,8 +107,7 @@ export async function GET(request: Request) {
         promotions,
         booking_instructions:
           'To book a job: 1) Use GET /api/agent/availability to find open time slots. 2) Use GET /api/agent/estimate to get a price quote. 3) Use POST /api/agent/book with the customer details and selected services.',
-        service_area:
-          'Colorado Springs, Monument, Fountain, Falcon, Peyton, Black Forest, Woodland Park, and surrounding areas in Colorado.',
+        service_area: getServiceAreaDescription(),
       },
       { headers: CORS },
     )
