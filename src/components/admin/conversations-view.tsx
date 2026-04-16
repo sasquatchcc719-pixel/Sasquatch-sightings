@@ -21,6 +21,7 @@ import {
   X,
   Trash2,
   Plus,
+  MessageCircle,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { CallButton } from '@/components/admin/softphone'
@@ -752,6 +753,19 @@ export function ConversationsView({
 
             {/* Reply Box */}
             <div className="border-t p-4">
+              <div className="mb-3 flex justify-end">
+                <Button
+                  asChild
+                  variant="outline"
+                  size="sm"
+                  className="bg-green-600 text-white hover:bg-green-700 hover:text-white"
+                >
+                  <a href={`sms:${selectedConvo.phone_number}`}>
+                    <MessageCircle className="mr-2 h-4 w-4" />
+                    Open in Messages
+                  </a>
+                </Button>
+              </div>
               <div className="flex gap-2">
                 <Textarea
                   value={replyText}
@@ -780,7 +794,8 @@ export function ConversationsView({
                 </Button>
               </div>
               <p className="text-muted-foreground mt-2 text-xs">
-                Press Cmd/Ctrl + Enter to send
+                Press Cmd/Ctrl + Enter to send via web, or use &ldquo;Open in
+                Messages&rdquo; for full-screen texting
               </p>
             </div>
           </div>
