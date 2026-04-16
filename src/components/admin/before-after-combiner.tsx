@@ -47,8 +47,8 @@ export function BeforeAfterCombiner({ onCombined }: BeforeAfterCombinerProps) {
   }
 
   const handleCombine = async () => {
-    if (!beforeImage || !afterImage) {
-      setError('Please select both before and after images')
+    if (!beforeImage && !afterImage) {
+      setError('Please select at least one image')
       return
     }
 
@@ -63,14 +63,24 @@ export function BeforeAfterCombiner({ onCombined }: BeforeAfterCombinerProps) {
         fileType: 'image/jpeg' as const,
       }
 
-      const [compressedBefore, compressedAfter] = await Promise.all([
-        imageCompression(beforeImage, compressionOptions),
-        imageCompression(afterImage, compressionOptions),
-      ])
-
       const formData = new FormData()
-      formData.append('before', compressedBefore)
-      formData.append('after', compressedAfter)
+
+      if (beforeImage) {
+        const compressedBefore = await imageCompression(
+          beforeImage,
+          compressionOptions,
+        )
+        formData.append('before', compressedBefore)
+      }
+
+      if (afterImage) {
+        const compressedAfter = await imageCompression(
+          afterImage,
+          compressionOptions,
+        )
+        formData.append('after', compressedAfter)
+      }
+
       formData.append('watermark', addWatermark.toString())
 
       const response = await fetch('/api/tools/combine', {
@@ -98,6 +108,10 @@ export function BeforeAfterCombiner({ onCombined }: BeforeAfterCombinerProps) {
         <ImageIcon className="h-5 w-5" />
         Before / After Combiner
       </h2>
+      <p className="text-muted-foreground text-sm">
+        Upload both images to create a before/after comparison, or just one
+        image to add a watermark.
+      </p>
 
       <div className="grid grid-cols-2 gap-4">
         {/* Before */}
@@ -154,7 +168,7 @@ export function BeforeAfterCombiner({ onCombined }: BeforeAfterCombinerProps) {
 
       <Button
         onClick={handleCombine}
-        disabled={!beforeImage || !afterImage || isProcessing}
+        disabled={(!beforeImage && !afterImage) || isProcessing}
         className="w-full"
         size="lg"
         variant={done ? 'outline' : 'default'}
@@ -162,17 +176,17 @@ export function BeforeAfterCombiner({ onCombined }: BeforeAfterCombinerProps) {
         {isProcessing ? (
           <>
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Combining...
+            Processing...
           </>
         ) : done ? (
           <>
             <CheckCircle2 className="mr-2 h-4 w-4 text-green-500" />
-            Combined — ready to upload below
+            Ready to upload below
           </>
         ) : (
           <>
             <Upload className="mr-2 h-4 w-4" />
-            Combine Images
+            {beforeImage && afterImage ? 'Combine Images' : 'Process Image'}
           </>
         )}
       </Button>

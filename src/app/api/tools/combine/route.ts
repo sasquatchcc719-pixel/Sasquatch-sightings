@@ -24,63 +24,81 @@ export async function POST(request: NextRequest) {
 
     // Parse form data
     const formData = await request.formData()
-    const beforeImage = formData.get('before') as File
-    const afterImage = formData.get('after') as File
+    const beforeImage = formData.get('before') as File | null
+    const afterImage = formData.get('after') as File | null
     const addWatermark = formData.get('watermark') === 'true'
 
-    // Validate required fields
-    if (!beforeImage || !afterImage) {
+    // Validate at least one image
+    if (!beforeImage && !afterImage) {
       return NextResponse.json(
-        { error: 'Both before and after images are required' },
-        { status: 400 }
+        { error: 'At least one image is required' },
+        { status: 400 },
       )
     }
 
     // Convert Files to Buffers
-    const beforeBuffer = Buffer.from(await beforeImage.arrayBuffer())
-    const afterBuffer = Buffer.from(await afterImage.arrayBuffer())
+    const beforeBuffer = beforeImage
+      ? Buffer.from(await beforeImage.arrayBuffer())
+      : null
+    const afterBuffer = afterImage
+      ? Buffer.from(await afterImage.arrayBuffer())
+      : null
 
     // Use fixed reasonable dimensions for web/social media
-    // Each image will be 600px wide, total combined width = 1200px
     const targetWidth = 600
     const targetHeight = 800 // 4:3 aspect ratio per image
-
-    // Resize both images to same dimensions (keep as raw for compositing)
-    const beforeResized = await sharp(beforeBuffer)
-      .resize(targetWidth, targetHeight, { fit: 'cover', position: 'center' })
-      .toBuffer()
-
-    const afterResized = await sharp(afterBuffer)
-      .resize(targetWidth, targetHeight, { fit: 'cover', position: 'center' })
-      .toBuffer()
-
     const padding = 20
 
-    // Combine images side by side (1200px total width)
-    // Start with the before image as the base, extend it to fit both images
-    let combinedImage = await sharp(beforeResized)
-      .extend({
-        right: targetWidth,
-        background: { r: 255, g: 255, b: 255 },
-      })
-      .composite([
-        { input: afterResized, left: targetWidth, top: 0 },
-      ])
-      .toBuffer()
+    let combinedImage: Buffer
+    let imageWidth: number
 
-    // Now work with the combined image for watermark
+    // Handle single image vs before/after combination
+    if (beforeBuffer && afterBuffer) {
+      // Both images: combine side by side (1200px total width)
+      const beforeResized = await sharp(beforeBuffer)
+        .resize(targetWidth, targetHeight, { fit: 'cover', position: 'center' })
+        .toBuffer()
+
+      const afterResized = await sharp(afterBuffer)
+        .resize(targetWidth, targetHeight, { fit: 'cover', position: 'center' })
+        .toBuffer()
+
+      combinedImage = await sharp(beforeResized)
+        .extend({
+          right: targetWidth,
+          background: { r: 255, g: 255, b: 255 },
+        })
+        .composite([{ input: afterResized, left: targetWidth, top: 0 }])
+        .toBuffer()
+
+      imageWidth = targetWidth * 2
+    } else {
+      // Single image: just resize it
+      const singleBuffer = beforeBuffer || afterBuffer!
+      combinedImage = await sharp(singleBuffer)
+        .resize(targetWidth, targetHeight, { fit: 'cover', position: 'center' })
+        .toBuffer()
+
+      imageWidth = targetWidth
+    }
+
+    // Now work with the combined/single image for watermark
     let finalImage = sharp(combinedImage)
 
     // Add watermark if requested (centered at bottom)
     if (addWatermark) {
       try {
         // Use the actual Sasquatch logo from public folder (SVG for perfect scaling)
-        const logoPath = path.join(process.cwd(), 'public', 'sasquatch-logo.svg')
+        const logoPath = path.join(
+          process.cwd(),
+          'public',
+          'sasquatch-logo.svg',
+        )
         const logoBuffer = fs.readFileSync(logoPath)
 
         // Resize logo for bottom watermark (wider logo works better centered at bottom)
-        // Set width to 30% of combined image width
-        const logoWidth = Math.round((targetWidth * 2) * 0.30)
+        // Set width to 30% of image width
+        const logoWidth = Math.round(imageWidth * 0.3)
         const resizedLogo = await sharp(logoBuffer)
           .resize({ width: logoWidth, fit: 'contain' })
           .toBuffer()
@@ -115,7 +133,7 @@ export async function POST(request: NextRequest) {
     console.error('Image combine error:', error)
     return NextResponse.json(
       { error: 'Failed to combine images' },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }
