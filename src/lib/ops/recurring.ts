@@ -449,38 +449,26 @@ export async function generateRecurringAppointments(
             await supabase.from('ops_invoice_line_items').insert(invLinePayload)
           }
 
-          await supabase.from('ops_quickbooks_sync_jobs').insert([
-            {
-              entity_type: 'customer',
-              entity_id: template.customer_id,
-              status: syncStatus,
-              payload: buildQuickBooksCustomerPayload({
-                customerId: template.customer_id,
-                fullName: customer.full_name,
-                email: customer.email,
-                phone: customer.phone,
-                address: {
-                  street_1: address.street_1,
-                  city: address.city,
-                  state: address.state,
-                  zip_code: address.zip_code,
-                },
-              }),
-            },
-            {
-              entity_type: 'invoice',
-              entity_id: invoice.id,
-              status: syncStatus,
-              payload: buildQuickBooksInvoicePayload({
-                invoiceId: invoice.id,
-                customerId: template.customer_id,
-                serviceDate: date,
-                subtotal: quotedSubtotal,
-                total: quotedTotal,
-                lineItems: invLinePayload,
-              }),
-            },
-          ])
+          // Only queue the customer for QB. The invoice stays local until the
+          // job is actually completed — same deferred-sync rule used by every
+          // other booking path; prevents QB from holding stale quote amounts.
+          await supabase.from('ops_quickbooks_sync_jobs').insert({
+            entity_type: 'customer',
+            entity_id: template.customer_id,
+            status: syncStatus,
+            payload: buildQuickBooksCustomerPayload({
+              customerId: template.customer_id,
+              fullName: customer.full_name,
+              email: customer.email,
+              phone: customer.phone,
+              address: {
+                street_1: address.street_1,
+                city: address.city,
+                state: address.state,
+                zip_code: address.zip_code,
+              },
+            }),
+          })
         }
       }
 
@@ -608,11 +596,17 @@ export async function generateBatchInvoice(
   let subtotal = 0
   const entries: {
     appointmentId: string
+    appointmentDate: string
     lineItemsSnapshot: unknown[]
     apptSubtotal: number
   }[] = []
 
-  for (const appt of appointments) {
+  // Keep appointments in chronological order so the invoice lists dates top-to-bottom
+  const sortedAppts = [...appointments].sort((a, b) =>
+    String(a.appointment_date).localeCompare(String(b.appointment_date)),
+  )
+
+  for (const appt of sortedAppts) {
     const lines = Array.isArray(appt.ops_appointment_line_items)
       ? appt.ops_appointment_line_items
       : []
@@ -623,6 +617,7 @@ export async function generateBatchInvoice(
     subtotal += apptSubtotal
     entries.push({
       appointmentId: appt.id,
+      appointmentDate: appt.appointment_date,
       lineItemsSnapshot: lines,
       apptSubtotal,
     })
@@ -662,6 +657,8 @@ export async function generateBatchInvoice(
     ? template.ops_customers[0]
     : template.ops_customers
 
+  // Each visit's line items get prefixed with the service date so QB shows
+  // exactly what was done on which day of the month.
   const allLineItems = entries.flatMap((e) =>
     (
       e.lineItemsSnapshot as Array<{
@@ -671,7 +668,7 @@ export async function generateBatchInvoice(
         line_total: number
       }>
     ).map((l) => ({
-      description: l.name_snapshot,
+      description: `${e.appointmentDate} — ${l.name_snapshot}`,
       quantity: l.quantity,
       unit_price: l.unit_price,
       line_total: l.line_total,
@@ -679,17 +676,17 @@ export async function generateBatchInvoice(
   )
 
   await supabase.from('ops_quickbooks_sync_jobs').insert({
-    entity_type: 'invoice',
+    entity_type: 'batch_invoice',
     entity_id: batchInvoice.id,
     status: syncStatus,
-    payload: buildQuickBooksInvoicePayload({
-      invoiceId: batchInvoice.id,
-      customerId: template.customer_id,
-      serviceDate: monthStart,
+    payload: {
+      invoice_id: batchInvoice.id,
+      customer_id: template.customer_id,
+      service_date: monthStart,
       subtotal,
       total,
-      lineItems: allLineItems,
-    }),
+      lines: allLineItems,
+    },
   })
 
   return {
