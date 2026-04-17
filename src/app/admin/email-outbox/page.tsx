@@ -9,6 +9,9 @@ import {
   ChevronDown,
   ChevronUp,
   Mail,
+  Eye,
+  EyeOff,
+  Loader2,
 } from 'lucide-react'
 
 type EmailLogEntry = {
@@ -33,6 +36,26 @@ const TEMPLATE_LABELS: Record<string, string> = {
 
 function EmailRow({ email }: { email: EmailLogEntry }) {
   const [expanded, setExpanded] = useState(false)
+  const [showPreview, setShowPreview] = useState(false)
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+
+  const loadPreview = async () => {
+    if (previewHtml) {
+      setShowPreview((v) => !v)
+      return
+    }
+    setPreviewLoading(true)
+    try {
+      const res = await fetch(`/api/admin/comms/email-log/${email.id}/preview`)
+      if (res.ok) {
+        setPreviewHtml(await res.text())
+        setShowPreview(true)
+      }
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
 
   return (
     <Card
@@ -80,15 +103,51 @@ function EmailRow({ email }: { email: EmailLogEntry }) {
           {/* Expanded body */}
           {expanded && (
             <div
-              className="mt-3 rounded-lg border border-white/10 bg-white/5 p-4 text-sm whitespace-pre-wrap text-white/80"
+              className="mt-3 space-y-2"
               onClick={(e) => e.stopPropagation()}
             >
-              {email.body_text ? (
-                email.body_text
-              ) : (
-                <span className="text-white/30 italic">
-                  No body stored — only emails sent after this update are saved.
-                </span>
+              {/* Plain-text body */}
+              <div className="rounded-lg border border-white/10 bg-white/5 p-4 text-sm whitespace-pre-wrap text-white/80">
+                {email.body_text ? (
+                  email.body_text.replace(/\\n/g, '\n')
+                ) : (
+                  <span className="text-white/30 italic">
+                    No body stored — only emails sent after this update are
+                    saved.
+                  </span>
+                )}
+              </div>
+
+              {/* Preview toggle */}
+              {email.body_text && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={loadPreview}
+                    disabled={previewLoading}
+                    className="flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/60 transition-colors hover:bg-white/10 hover:text-white/90 disabled:opacity-50"
+                  >
+                    {previewLoading ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : showPreview ? (
+                      <EyeOff className="h-3 w-3" />
+                    ) : (
+                      <Eye className="h-3 w-3" />
+                    )}
+                    {showPreview ? 'Hide email preview' : 'View as email'}
+                  </button>
+                </div>
+              )}
+
+              {/* HTML preview iframe */}
+              {showPreview && previewHtml && (
+                <div className="overflow-hidden rounded-lg border border-white/10">
+                  <iframe
+                    srcDoc={previewHtml}
+                    sandbox="allow-same-origin"
+                    className="h-[520px] w-full bg-white"
+                    title="Email preview"
+                  />
+                </div>
               )}
             </div>
           )}

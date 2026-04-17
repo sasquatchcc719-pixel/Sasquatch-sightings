@@ -287,31 +287,94 @@ export type LifecycleNotificationSent = {
   actually_sent?: boolean
 }
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+/**
+ * Escapes HTML and wraps bare URLs in anchor tags.
+ */
+function linkifyAndEscape(str: string): string {
+  return str
+    .split(/(https?:\/\/[^\s]+)/)
+    .map((part, i) => {
+      if (i % 2 === 1) {
+        const safeUrl = part.replace(/"/g, '%22')
+        return `<a href="${safeUrl}" style="color:#2d6a4f;font-weight:600;text-decoration:underline;">${escapeHtml(part)}</a>`
+      }
+      return escapeHtml(part)
+    })
+    .join('')
+}
+
+/**
+ * Converts a single block of plain text into HTML.
+ * Lines starting with "- " are rendered as a <ul>/<li> list.
+ * Bare URLs become clickable links.
+ */
+function buildBlockHtml(block: string): string {
+  const lines = block
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+  if (lines.length === 0) return ''
+
+  const hasBullets = lines.some((l) => l.startsWith('- '))
+  if (!hasBullets) {
+    return `<p style="margin:0 0 16px 0;line-height:1.6;">${lines.map(linkifyAndEscape).join('<br>')}</p>`
+  }
+
+  let html = ''
+  let bulletBuffer: string[] = []
+
+  const flushBullets = () => {
+    if (bulletBuffer.length === 0) return
+    const items = bulletBuffer
+      .map(
+        (b) =>
+          `<li style="margin-bottom:5px;line-height:1.5;">${linkifyAndEscape(b)}</li>`,
+      )
+      .join('')
+    html += `<ul style="margin:0 0 12px 0;padding-left:22px;">${items}</ul>`
+    bulletBuffer = []
+  }
+
+  for (const line of lines) {
+    if (line.startsWith('- ')) {
+      bulletBuffer.push(line.slice(2))
+    } else {
+      flushBullets()
+      html += `<p style="margin:0 0 10px 0;line-height:1.6;">${linkifyAndEscape(line)}</p>`
+    }
+  }
+  flushBullets()
+
+  return html
+}
+
 /**
  * Converts plain-text template output into a clean, branded HTML email.
  * Handles real newlines (\n) and literal "\n" sequences both safely.
+ * Bullet point lines ("- …") are rendered as proper lists; URLs become links.
+ *
+ * Exported so the admin email preview API can render a stored body_text.
  */
-function buildEmailHtml(body: string, templateKey: OpsTemplateKey): string {
+export function buildEmailHtml(body: string, _templateKey: string): string {
   // Normalize literal \n sequences (stored in some templates) to real newlines
   const normalized = body.replace(/\\n/g, '\n')
 
-  // Split on double newlines for paragraphs, single newlines become <br>
   const paragraphs = normalized
     .split(/\n{2,}/)
     .map((p) => p.trim())
     .filter(Boolean)
-    .map((p) => {
-      const lines = p.split('\n').map((l) => escapeHtml(l.trim()))
-      return `<p style="margin:0 0 16px 0;line-height:1.6;">${lines.join('<br>')}</p>`
-    })
+    .map(buildBlockHtml)
     .join('')
 
   const accentColor = '#2d6a4f'
-  const isScheduled =
-    templateKey === 'job_scheduled_email' ||
-    templateKey === 'job_finished_email' ||
-    templateKey === 'satisfaction_checkin_email'
-  void isScheduled
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -355,14 +418,6 @@ function buildEmailHtml(body: string, templateKey: OpsTemplateKey): string {
   </table>
 </body>
 </html>`
-}
-
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
 }
 
 /** Rendered On My Way SMS from DB template (even if `is_enabled` is false). */
@@ -452,10 +507,12 @@ export async function sendOpsLifecycleCommunications(params: {
     }
 
     if (!resend || !customerEmail) continue
+    const bcc = process.env.OPS_EMAIL_BCC || undefined
     try {
       const emailResult = await resend.emails.send({
         from: fromEmail,
         to: customerEmail,
+        bcc,
         subject: subject || 'Update from Sasquatch Carpet Cleaning',
         html: buildEmailHtml(body, template.template_key),
       })
@@ -607,9 +664,11 @@ export async function processOpsCommunicationQueue(params?: {
         if (!to) {
           throw new Error('Missing recipient email')
         }
+        const bcc = process.env.OPS_EMAIL_BCC || undefined
         await resend.emails.send({
           from: fromEmail,
           to,
+          bcc,
           subject,
           html: buildEmailHtml(body, item.template_key as OpsTemplateKey),
         })
