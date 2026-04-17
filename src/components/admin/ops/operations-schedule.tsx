@@ -21,6 +21,7 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { appointmentDisplayRevenue } from '@/lib/ops/utilization-metrics'
 
 type ScheduleView = 'week' | 'day' | 'month'
 
@@ -140,19 +141,13 @@ function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
   return Array.isArray(value) ? value[0] || null : value
 }
 
-/** Prefer max of quote, invoice total, or sum of line items (HCP/import may zero one field). */
+/** Align with stats/utilization: invoice + line math first, then quote. */
 function calendarDisplayAmount(appointment: Appointment): string {
-  const inv = unwrapRelation(appointment.ops_invoices)
-  const quoted = Number(appointment.quoted_total || 0)
-  const invTotal =
-    inv && typeof inv === 'object' && 'total' in inv
-      ? Number((inv as { total?: number }).total || 0)
-      : 0
-  const lineSum = (appointment.ops_appointment_line_items || []).reduce(
-    (sum, li) => sum + Number(li.line_total || 0),
-    0,
-  )
-  const n = Math.max(quoted, invTotal, lineSum, 0)
+  const n = appointmentDisplayRevenue({
+    quoted_total: appointment.quoted_total,
+    ops_invoices: appointment.ops_invoices,
+    ops_appointment_line_items: appointment.ops_appointment_line_items,
+  })
   return Number.isFinite(n) ? n.toFixed(2) : '0.00'
 }
 

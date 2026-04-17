@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
+import { effectiveInvoiceAmount } from '@/lib/ops/utilization-metrics'
 
 const MONTH_NAMES = [
   'January',
@@ -20,7 +21,7 @@ const MONTH_NAMES = [
 export type CalendarPipelineMonth = {
   month: number // 1-12
   label: string
-  // Upcoming booked value from ops_appointments (quoted_total)
+  // Upcoming booked value (invoice + lines when present, else quoted_total)
   // Covers: current month's not-yet-completed jobs + all future months
   bookedRevenue: number
   bookedJobCount: number
@@ -48,7 +49,17 @@ export async function GET() {
     // Only fetch appointments that are not yet done — current month upcoming + all future
     const { data: appointments, error } = await supabase
       .from('ops_appointments')
-      .select('appointment_date, status, quoted_total')
+      .select(
+        `
+        appointment_date,
+        status,
+        quoted_total,
+        ops_invoices (
+          total,
+          ops_invoice_line_items ( line_total )
+        )
+      `,
+      )
       .gte('appointment_date', yearStart)
       .lte('appointment_date', yearEnd)
       .not('status', 'eq', 'cancelled')
@@ -78,7 +89,27 @@ export async function GET() {
       if (!isCurrentMonthUpcoming && !isFuture) continue
 
       const bucket = buckets[apptMonth - 1]
-      bucket.bookedRevenue += Number(appt.quoted_total ?? 0)
+      const inv = Array.isArray(
+        (appt as { ops_invoices?: unknown }).ops_invoices,
+      )
+        ? (appt as { ops_invoices: unknown[] }).ops_invoices[0]
+        : (appt as { ops_invoices?: unknown }).ops_invoices
+      const lineItems = inv
+        ? Array.isArray(
+            (inv as { ops_invoice_line_items?: unknown })
+              .ops_invoice_line_items,
+          )
+          ? (inv as { ops_invoice_line_items: { line_total?: number }[] })
+              .ops_invoice_line_items
+          : []
+        : []
+      bucket.bookedRevenue += effectiveInvoiceAmount({
+        invoiceTotal: Number((inv as { total?: number })?.total || 0),
+        invoiceLineItems: lineItems,
+        quotedTotal: Number(
+          (appt as { quoted_total?: number }).quoted_total ?? 0,
+        ),
+      })
       bucket.bookedJobCount += 1
     }
 

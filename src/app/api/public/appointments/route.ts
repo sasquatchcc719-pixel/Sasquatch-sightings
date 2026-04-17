@@ -16,7 +16,6 @@ import { sendAdminSMS } from '@/lib/twilio'
 import { sendOneSignalNotification } from '@/lib/onesignal'
 import {
   buildQuickBooksCustomerPayload,
-  buildQuickBooksInvoicePayload,
   getQuickBooksSyncStatus,
 } from '@/lib/quickbooks'
 import { checkServiceArea } from '@/lib/service-area'
@@ -230,7 +229,6 @@ export async function POST(request: NextRequest) {
 
     const addressId = resolved.id
 
-
     // --- Calculate totals ---
     const subtotal = lineItems.reduce(
       (sum, item) => sum + item.unit_price * item.quantity,
@@ -344,33 +342,18 @@ export async function POST(request: NextRequest) {
         to_status: 'draft',
         notes: 'Invoice created via website booking',
       }),
-      supabase.from('ops_quickbooks_sync_jobs').insert([
-        {
-          entity_type: 'customer',
-          entity_id: customerId,
-          status: syncStatus,
-          payload: buildQuickBooksCustomerPayload({
-            customerId,
-            fullName,
-            email,
-            phone,
-            address: { street_1: street1, city, state, zip_code: zipCode },
-          }),
-        },
-        {
-          entity_type: 'invoice',
-          entity_id: invoice.id,
-          status: syncStatus,
-          payload: buildQuickBooksInvoicePayload({
-            invoiceId: invoice.id,
-            customerId,
-            serviceDate: appointmentDate,
-            subtotal,
-            total,
-            lineItems: invoiceLines,
-          }),
-        },
-      ]),
+      supabase.from('ops_quickbooks_sync_jobs').insert({
+        entity_type: 'customer',
+        entity_id: customerId,
+        status: syncStatus,
+        payload: buildQuickBooksCustomerPayload({
+          customerId,
+          fullName,
+          email,
+          phone,
+          address: { street_1: street1, city, state, zip_code: zipCode },
+        }),
+      }),
     ])
 
     // --- Fire comms + QB sync (non-blocking) ---

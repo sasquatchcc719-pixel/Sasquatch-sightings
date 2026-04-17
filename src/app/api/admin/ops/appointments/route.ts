@@ -3,7 +3,6 @@ import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import {
   buildQuickBooksCustomerPayload,
-  buildQuickBooksInvoicePayload,
   getQuickBooksSyncStatus,
 } from '@/lib/quickbooks'
 import {
@@ -14,10 +13,7 @@ import {
 import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
 import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
 import { scheduleJobReminder } from '@/lib/onesignal'
-import {
-  normalizeOpsPhone,
-  opsPhoneLookupVariants,
-} from '@/lib/ops/phone'
+import { normalizeOpsPhone, opsPhoneLookupVariants } from '@/lib/ops/phone'
 import { resolveServiceAddress } from '@/lib/ops/addresses'
 
 type IncomingLineItem = {
@@ -296,7 +292,9 @@ export async function POST(request: NextRequest) {
       customerId = byId.id
       await applyCustomerUpdate(customerId)
     } else {
-      const variants = opsPhoneLookupVariants(String(body.customer?.phone || ''))
+      const variants = opsPhoneLookupVariants(
+        String(body.customer?.phone || ''),
+      )
       const { data: matches, error: matchError } = await supabase
         .from('ops_customers')
         .select('id')
@@ -351,13 +349,17 @@ export async function POST(request: NextRequest) {
       address = existingAddress
     } else {
       const inlineAddress = {
-        label: body.address?.label ? String(body.address.label) : 'Service Address',
+        label: body.address?.label
+          ? String(body.address.label)
+          : 'Service Address',
         street_1: street1,
         street_2: body.address?.street_2 ? String(body.address.street_2) : null,
         city,
         state,
         zip_code: zipCode,
-        gate_code: body.address?.gate_code ? String(body.address.gate_code) : null,
+        gate_code: body.address?.gate_code
+          ? String(body.address.gate_code)
+          : null,
         notes: body.address?.notes ? String(body.address.notes) : null,
       }
       address = await resolveServiceAddress(supabase, customerId, inlineAddress)
@@ -473,39 +475,24 @@ export async function POST(request: NextRequest) {
           changed_by: access.id,
           notes: 'Invoice draft created at booking time',
         }),
-        supabase.from('ops_quickbooks_sync_jobs').insert([
-          {
-            entity_type: 'customer',
-            entity_id: customerId,
-            status: syncStatus,
-            payload: buildQuickBooksCustomerPayload({
-              customerId,
-              fullName,
-              email,
-              phone,
-              address: {
-                street_1: address.street_1,
-                street_2: address.street_2,
-                city: address.city,
-                state: address.state,
-                zip_code: address.zip_code,
-              },
-            }),
-          },
-          {
-            entity_type: 'invoice',
-            entity_id: invoice!.id,
-            status: syncStatus,
-            payload: buildQuickBooksInvoicePayload({
-              invoiceId: invoice!.id,
-              customerId,
-              serviceDate: appointmentDate,
-              subtotal: Number(invoice!.subtotal),
-              total: Number(invoice!.total),
-              lineItems: invoiceLinesPayload,
-            }),
-          },
-        ]),
+        supabase.from('ops_quickbooks_sync_jobs').insert({
+          entity_type: 'customer',
+          entity_id: customerId,
+          status: syncStatus,
+          payload: buildQuickBooksCustomerPayload({
+            customerId,
+            fullName,
+            email,
+            phone,
+            address: {
+              street_1: address.street_1,
+              street_2: address.street_2,
+              city: address.city,
+              state: address.state,
+              zip_code: address.zip_code,
+            },
+          }),
+        }),
       ])
 
       const [commsResult, qbResult] = await Promise.allSettled([

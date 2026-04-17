@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
+import { effectiveInvoiceAmount } from '@/lib/ops/utilization-metrics'
 
 function getWeekBounds(): { weekStart: string; weekEnd: string } {
   const now = new Date()
@@ -32,9 +33,11 @@ export async function GET() {
         appointment_date,
         status,
         lead_source,
+        quoted_total,
         ops_invoices (
           total,
-          payment_status
+          payment_status,
+          ops_invoice_line_items ( line_total )
         )
       `,
       )
@@ -58,7 +61,19 @@ export async function GET() {
           ? [appt.ops_invoices]
           : []
       for (const inv of invoices) {
-        totalRevenue += Number(inv.total || 0)
+        const lineItems = Array.isArray(
+          (inv as { ops_invoice_line_items?: unknown }).ops_invoice_line_items,
+        )
+          ? (inv as { ops_invoice_line_items: { line_total?: number }[] })
+              .ops_invoice_line_items
+          : []
+        totalRevenue += effectiveInvoiceAmount({
+          invoiceTotal: Number((inv as { total?: number }).total || 0),
+          invoiceLineItems: lineItems,
+          quotedTotal: Number(
+            (appt as { quoted_total?: number }).quoted_total || 0,
+          ),
+        })
         invoicedJobCount++
         const ps = String(inv.payment_status || 'unpaid')
         paymentStatusCounts[ps] = (paymentStatusCounts[ps] ?? 0) + 1

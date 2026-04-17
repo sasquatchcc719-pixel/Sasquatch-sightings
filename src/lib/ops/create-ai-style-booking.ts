@@ -10,7 +10,6 @@ import { sendAdminSMS } from '@/lib/twilio'
 import { sendOneSignalNotification } from '@/lib/onesignal'
 import {
   buildQuickBooksCustomerPayload,
-  buildQuickBooksInvoicePayload,
   getQuickBooksSyncStatus,
 } from '@/lib/quickbooks'
 
@@ -349,33 +348,18 @@ export async function createAiStyleBooking(
       to_status: 'draft',
       notes: `Invoice created via ${actorLabel}`,
     }),
-    supabase.from('ops_quickbooks_sync_jobs').insert([
-      {
-        entity_type: 'customer',
-        entity_id: customerId,
-        status: syncStatus,
-        payload: buildQuickBooksCustomerPayload({
-          customerId,
-          fullName,
-          email,
-          phone,
-          address: { street_1: street1, city, state, zip_code: zipCode },
-        }),
-      },
-      {
-        entity_type: 'invoice',
-        entity_id: invoice.id,
-        status: syncStatus,
-        payload: buildQuickBooksInvoicePayload({
-          invoiceId: invoice.id,
-          customerId,
-          serviceDate: appointmentDate,
-          subtotal,
-          total,
-          lineItems: invoiceLines,
-        }),
-      },
-    ]),
+    supabase.from('ops_quickbooks_sync_jobs').insert({
+      entity_type: 'customer',
+      entity_id: customerId,
+      status: syncStatus,
+      payload: buildQuickBooksCustomerPayload({
+        customerId,
+        fullName,
+        email,
+        phone,
+        address: { street_1: street1, city, state, zip_code: zipCode },
+      }),
+    }),
   ])
 
   if (appointmentStatus === 'booked') {

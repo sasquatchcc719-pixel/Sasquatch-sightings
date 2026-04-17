@@ -8,6 +8,7 @@ import {
   type ExistingAppointmentWindow,
 } from '@/lib/ops/availability'
 import { createAiStyleBooking } from '@/lib/ops/create-ai-style-booking'
+import { resyncInvoiceToQuickBooks } from '@/lib/quickbooks-api'
 
 /** Today's date in Mountain Time (YYYY-MM-DD). Avoids UTC rollover at 6 PM MDT. */
 function todayMountain(): string {
@@ -883,7 +884,7 @@ export async function executeHarrySmsTool(
         // Also update the invoice if one exists
         const { data: invoice } = await supabase
           .from('ops_invoices')
-          .select('id')
+          .select('id, quickbooks_invoice_id')
           .eq('appointment_id', appointmentId)
           .maybeSingle()
 
@@ -911,6 +912,15 @@ export async function executeHarrySmsTool(
               updated_at: new Date().toISOString(),
             })
             .eq('id', invoice.id)
+
+          if (invoice.quickbooks_invoice_id) {
+            void resyncInvoiceToQuickBooks(invoice.id).catch((qbErr) =>
+              console.error(
+                '[sms-harry-tools] QB invoice resync after line update:',
+                qbErr,
+              ),
+            )
+          }
         }
 
         await supabase.from('ops_appointment_status_events').insert({

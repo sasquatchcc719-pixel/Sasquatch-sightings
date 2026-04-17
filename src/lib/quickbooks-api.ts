@@ -136,6 +136,57 @@ export async function voidQBInvoice(qbInvoiceId: string): Promise<void> {
   }
 }
 
+/**
+ * If QuickBooks no longer has this invoice (deleted in QBO), clear our stored
+ * quickbooks_invoice_id so the next sync can create a replacement.
+ */
+export async function reconcileStaleQuickBooksInvoiceLink(
+  supabase: ReturnType<typeof createAdminClient>,
+  invoiceId: string,
+  qbInvoiceId: string,
+): Promise<boolean> {
+  const auth = await getValidQBAccessToken()
+  if (!auth) return false
+
+  const res = await qbFetch(
+    auth.realmId,
+    auth.accessToken,
+    `/invoice/${encodeURIComponent(qbInvoiceId)}?minorversion=65`,
+  )
+
+  if (res.ok) return false
+
+  let bodyText = ''
+  try {
+    bodyText = await res.text()
+  } catch {
+    bodyText = ''
+  }
+
+  const missing =
+    res.status === 404 ||
+    (res.status === 400 &&
+      /Object Not Found|not found|could not be found|Invalid ID/i.test(
+        bodyText,
+      ))
+
+  if (!missing) return false
+
+  await supabase
+    .from('ops_invoices')
+    .update({
+      quickbooks_invoice_id: null,
+      sync_status: 'pending',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', invoiceId)
+
+  console.warn(
+    `[QB] Cleared stale quickbooks_invoice_id for invoice ${invoiceId} — not in QuickBooks (HTTP ${res.status})`,
+  )
+  return true
+}
+
 export async function createQBInvoice(params: {
   qbCustomerId: string
   serviceDate: string
@@ -146,6 +197,11 @@ export async function createQBInvoice(params: {
     line_total: number
   }>
   discountAmount?: number
+  /**
+   * Invoice number to set as QuickBooks DocNumber. Required when the QBO
+   * account has "Custom transaction numbers" enabled. Coerced to string.
+   */
+  docNumber?: string | number | null
 }): Promise<string> {
   const auth = await getValidQBAccessToken()
   if (!auth) throw new Error('QuickBooks not connected')
@@ -172,10 +228,15 @@ export async function createQBInvoice(params: {
     })
   }
 
-  const body = {
+  const body: Record<string, unknown> = {
     CustomerRef: { value: params.qbCustomerId },
     TxnDate: params.serviceDate,
     Line: lines,
+  }
+
+  if (params.docNumber !== undefined && params.docNumber !== null) {
+    const doc = String(params.docNumber).trim()
+    if (doc) body.DocNumber = doc
   }
 
   const res = await qbFetch(
@@ -362,7 +423,7 @@ export async function syncAppointmentToQuickBooks(appointmentId: string) {
         ops_service_addresses ( street_1, street_2, city, state, zip_code )
       ),
       ops_invoices (
-        id, subtotal, total, discount_amount, quickbooks_invoice_id,
+        id, status, payment_method, subtotal, total, discount_amount, invoice_number, quickbooks_invoice_id,
         ops_invoice_line_items ( description, quantity, unit_price, line_total )
       )
     `,
@@ -416,31 +477,58 @@ export async function syncAppointmentToQuickBooks(appointmentId: string) {
         .in('status', ['pending', 'failed', 'held'])
     }
 
-    // Sync invoice if not already in QB
-    if (!invoice.quickbooks_invoice_id) {
-      const lineItems = Array.isArray(invoice.ops_invoice_line_items)
-        ? invoice.ops_invoice_line_items
-        : []
+    // Sync invoice only after it leaves draft (final amount at job completion).
+    // Creating in QuickBooks at booking time caused invoices to freeze at the
+    // original quote while the calendar/invoice were updated later.
+    // Cash-settled jobs stay out of QuickBooks entirely.
+    const invPm = (invoice as { payment_method?: string | null }).payment_method
+    let invQbId: string | null = invoice.quickbooks_invoice_id
+    if (invQbId) {
+      const cleared = await reconcileStaleQuickBooksInvoiceLink(
+        supabase,
+        invoice.id,
+        invQbId,
+      )
+      if (cleared) invQbId = null
+    }
 
-      const qbInvoiceId = await createQBInvoice({
-        qbCustomerId,
-        serviceDate: appointment.appointment_date,
-        lineItems,
-        discountAmount: Number(invoice.discount_amount || 0),
-      })
+    if (!invQbId) {
+      if (invoice.status === 'draft') {
+        console.log(
+          `[QB sync] Deferred invoice ${invoice.id} — draft until job completed`,
+        )
+      } else if (invPm === 'cash') {
+        console.log(
+          `[QB sync] Skipped invoice ${invoice.id} — cash (not sent to QuickBooks)`,
+        )
+      } else {
+        const lineItems = Array.isArray(invoice.ops_invoice_line_items)
+          ? invoice.ops_invoice_line_items
+          : []
 
-      await supabase
-        .from('ops_invoices')
-        .update({ quickbooks_invoice_id: qbInvoiceId, sync_status: 'synced' })
-        .eq('id', invoice.id)
+        const qbInvoiceId = await createQBInvoice({
+          qbCustomerId,
+          serviceDate: appointment.appointment_date,
+          lineItems,
+          discountAmount: Number(invoice.discount_amount || 0),
+          docNumber:
+            (invoice as { invoice_number?: number | string | null })
+              .invoice_number ?? null,
+        })
 
-      // Mark invoice queue row synced
-      await supabase
-        .from('ops_quickbooks_sync_jobs')
-        .update({ status: 'synced', error_message: null })
-        .eq('entity_type', 'invoice')
-        .eq('entity_id', invoice.id)
-        .in('status', ['pending', 'failed', 'held'])
+        await supabase
+          .from('ops_invoices')
+          .update({ quickbooks_invoice_id: qbInvoiceId, sync_status: 'synced' })
+          .eq('id', invoice.id)
+
+        // Mark invoice queue row synced
+        await supabase
+          .from('ops_quickbooks_sync_jobs')
+          .update({ status: 'synced', error_message: null })
+          .eq('entity_type', 'invoice')
+          .eq('entity_id', invoice.id)
+          .in('status', ['pending', 'failed', 'held'])
+      }
     }
   } catch (err) {
     const errorMsg =
@@ -466,4 +554,111 @@ export async function syncAppointmentToQuickBooks(appointmentId: string) {
 
     throw err
   }
+}
+
+/**
+ * After line items or totals change locally, replace the QuickBooks invoice so
+ * it matches. Skips paid invoices (payments are already applied in QBO).
+ */
+export async function resyncInvoiceToQuickBooks(invoiceId: string) {
+  const conn = await getQBConnectionStatus()
+  if (!conn.connected || !conn.sync_enabled) return
+
+  const supabase = createAdminClient()
+
+  const { data: inv } = await supabase
+    .from('ops_invoices')
+    .select(
+      `
+      id,
+      status,
+      payment_method,
+      discount_amount,
+      invoice_number,
+      quickbooks_invoice_id,
+      appointment_id,
+      ops_invoice_line_items ( description, quantity, unit_price, line_total )
+    `,
+    )
+    .eq('id', invoiceId)
+    .single()
+
+  if (!inv?.quickbooks_invoice_id) return
+  if (inv.status === 'draft') return
+  if ((inv as { payment_method?: string | null }).payment_method === 'cash') {
+    return
+  }
+
+  const clearedStale = await reconcileStaleQuickBooksInvoiceLink(
+    supabase,
+    inv.id,
+    inv.quickbooks_invoice_id,
+  )
+  if (clearedStale) return
+
+  const { data: invAfter } = await supabase
+    .from('ops_invoices')
+    .select('quickbooks_invoice_id')
+    .eq('id', invoiceId)
+    .single()
+  if (!invAfter?.quickbooks_invoice_id) return
+
+  if (inv.status === 'paid') {
+    console.warn(
+      `[QB resync] Skip invoice ${invoiceId} — already paid in app; fix in QuickBooks manually if needed`,
+    )
+    return
+  }
+
+  const { data: appt } = await supabase
+    .from('ops_appointments')
+    .select('appointment_date, customer_id')
+    .eq('id', inv.appointment_id)
+    .single()
+
+  if (!appt) return
+
+  const { data: cust } = await supabase
+    .from('ops_customers')
+    .select('quickbooks_customer_id')
+    .eq('id', appt.customer_id)
+    .single()
+
+  const qbCustomerId = cust?.quickbooks_customer_id
+  if (!qbCustomerId) {
+    console.warn(`[QB resync] No QuickBooks customer for invoice ${invoiceId}`)
+    return
+  }
+
+  const lineItems = Array.isArray(inv.ops_invoice_line_items)
+    ? inv.ops_invoice_line_items
+    : []
+
+  const qbIdToReplace = invAfter.quickbooks_invoice_id
+
+  try {
+    await voidQBInvoice(qbIdToReplace)
+  } catch (err) {
+    console.error(`[QB resync] Could not void invoice ${qbIdToReplace}:`, err)
+    return
+  }
+
+  const qbInvoiceId = await createQBInvoice({
+    qbCustomerId,
+    serviceDate: appt.appointment_date,
+    lineItems,
+    discountAmount: Number(inv.discount_amount || 0),
+    docNumber:
+      (inv as { invoice_number?: number | string | null }).invoice_number ??
+      null,
+  })
+
+  await supabase
+    .from('ops_invoices')
+    .update({
+      quickbooks_invoice_id: qbInvoiceId,
+      sync_status: 'synced',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', invoiceId)
 }

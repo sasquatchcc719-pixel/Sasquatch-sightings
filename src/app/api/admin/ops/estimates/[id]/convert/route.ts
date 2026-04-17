@@ -7,7 +7,6 @@ import {
 } from '@/lib/ops/availability'
 import {
   buildQuickBooksCustomerPayload,
-  buildQuickBooksInvoicePayload,
   getQuickBooksSyncStatus,
 } from '@/lib/quickbooks'
 import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
@@ -275,39 +274,24 @@ export async function POST(
         changed_by: access.id,
         notes: 'Invoice created from converted estimate',
       }),
-      supabase.from('ops_quickbooks_sync_jobs').insert([
-        {
-          entity_type: 'customer',
-          entity_id: estimate.customer_id,
-          status: syncStatus,
-          payload: buildQuickBooksCustomerPayload({
-            customerId: estimate.customer_id,
-            fullName: customer.full_name || 'Customer',
-            email: customer.email || null,
-            phone: customer.phone || null,
-            address: {
-              street_1: address.street_1,
-              street_2: address.street_2,
-              city: address.city,
-              state: address.state,
-              zip_code: address.zip_code,
-            },
-          }),
-        },
-        {
-          entity_type: 'invoice',
-          entity_id: invoice.id,
-          status: syncStatus,
-          payload: buildQuickBooksInvoicePayload({
-            invoiceId: invoice.id,
-            customerId: estimate.customer_id,
-            serviceDate: appointmentDate,
-            subtotal: Number(invoice.subtotal),
-            total: Number(invoice.total),
-            lineItems: invoiceLinesPayload,
-          }),
-        },
-      ]),
+      supabase.from('ops_quickbooks_sync_jobs').insert({
+        entity_type: 'customer',
+        entity_id: estimate.customer_id,
+        status: syncStatus,
+        payload: buildQuickBooksCustomerPayload({
+          customerId: estimate.customer_id,
+          fullName: customer.full_name || 'Customer',
+          email: customer.email || null,
+          phone: customer.phone || null,
+          address: {
+            street_1: address.street_1,
+            street_2: address.street_2,
+            city: address.city,
+            state: address.state,
+            zip_code: address.zip_code,
+          },
+        }),
+      }),
     ])
 
     // --- Mark the estimate as converted ---

@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
+import { appointmentDisplayRevenue } from '@/lib/ops/utilization-metrics'
 import {
   Calendar,
   Clock,
@@ -1091,9 +1092,7 @@ export function OperationsDashboard({
                       </div>
                       <div className="mt-2 text-xs text-white/50">
                         Invoice: {invoice?.status || 'draft'} | Total: $
-                        {Number(
-                          invoice?.total || appointment.quoted_total,
-                        ).toFixed(2)}
+                        {appointmentDisplayRevenue(appointment).toFixed(2)}
                       </div>
                     </div>
                   )
@@ -2063,9 +2062,7 @@ export function OperationsDashboard({
                         </Button>
                         <span className="ml-auto text-sm text-white/70">
                           Total: $
-                          {Number(
-                            invoice?.total || appointment.quoted_total,
-                          ).toFixed(2)}
+                          {appointmentDisplayRevenue(appointment).toFixed(2)}
                         </span>
                       </div>
                     </div>

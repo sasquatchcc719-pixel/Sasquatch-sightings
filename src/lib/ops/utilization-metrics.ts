@@ -36,19 +36,59 @@ export function utilizationHoursFromAppointment(appt: {
 
 type LineRow = { line_total?: number | null }
 
+/**
+ * Single source of truth for job value in reporting.
+ *
+ * Priority (first match wins — no max-with-stale-fields):
+ *   1. Invoice header total (ops_invoices.total) — the real source of truth once
+ *      an invoice exists; this is what the customer was charged.
+ *   2. Invoice line item sum — only if invoice total is 0/missing.
+ *   3. Quote total — only if neither invoice nor lines exist (pre-invoice jobs).
+ */
 export function effectiveInvoiceAmount(params: {
   invoiceTotal: number
   invoiceLineItems?: LineRow[] | null
   quotedTotal?: number | null
 }): number {
+  const inv = Number(params.invoiceTotal || 0)
+  if (inv > 0) return inv
+
   const lineSum = (params.invoiceLineItems || []).reduce(
     (s, li) => s + Number(li.line_total || 0),
     0,
   )
-  return Math.max(
-    Number(params.invoiceTotal || 0),
-    lineSum,
-    Number(params.quotedTotal || 0),
-    0,
-  )
+  if (lineSum > 0) return lineSum
+
+  return Math.max(Number(params.quotedTotal || 0), 0)
+}
+
+/** Calendar / dashboard: same priority as stats/utilization. */
+export function appointmentDisplayRevenue(appt: {
+  quoted_total?: number | null
+  ops_invoices?:
+    | {
+        total?: number | null
+        ops_invoice_line_items?: LineRow[] | null
+      }
+    | Array<{
+        total?: number | null
+        ops_invoice_line_items?: LineRow[] | null
+      }>
+    | null
+  ops_appointment_line_items?: LineRow[] | null
+}): number {
+  const inv = Array.isArray(appt.ops_invoices)
+    ? appt.ops_invoices[0]
+    : appt.ops_invoices
+  // Prefer invoice line items (the real invoice); fall back to appointment
+  // line items only if invoice line items aren't present.
+  const invoiceLineItems =
+    (inv?.ops_invoice_line_items && inv.ops_invoice_line_items.length
+      ? inv.ops_invoice_line_items
+      : appt.ops_appointment_line_items) || null
+  return effectiveInvoiceAmount({
+    invoiceTotal: Number(inv?.total || 0),
+    invoiceLineItems,
+    quotedTotal: appt.quoted_total,
+  })
 }

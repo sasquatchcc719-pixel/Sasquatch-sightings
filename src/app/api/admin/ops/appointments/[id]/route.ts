@@ -11,7 +11,10 @@ import {
 } from '@/lib/ops/communications'
 import { enrollCustomerInDrip } from '@/lib/ops/drip-campaign'
 import { getQuickBooksSyncStatus } from '@/lib/quickbooks'
-import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
+import {
+  resyncInvoiceToQuickBooks,
+  syncAppointmentToQuickBooks,
+} from '@/lib/quickbooks-api'
 import { sendCustomerSMS } from '@/lib/twilio'
 import { Resend } from 'resend'
 
@@ -287,6 +290,14 @@ export async function PATCH(
         .delete()
         .eq('appointment_id', id)
 
+      let insertedApptLines: Array<{
+        id: string
+        name_snapshot: string
+        quantity: number
+        unit_price: number
+        line_total: number
+      }> = []
+
       if (body.line_items.length > 0) {
         const lineItemsPayload = (
           body.line_items as Array<{
@@ -313,11 +324,13 @@ export async function PATCH(
           }
         })
 
-        const { error: lineItemsErr } = await supabase
+        const { data: apptLines, error: lineItemsErr } = await supabase
           .from('ops_appointment_line_items')
           .insert(lineItemsPayload)
+          .select('id, name_snapshot, quantity, unit_price, line_total')
 
         if (lineItemsErr) throw lineItemsErr
+        insertedApptLines = apptLines || []
       }
 
       const newTotal = (
@@ -335,6 +348,68 @@ export async function PATCH(
         .from('ops_appointments')
         .update({ quoted_total: newTotal, updated_at: nowIso })
         .eq('id', id)
+
+      // Keep ops_invoices in sync with the calendar (previously only
+      // quoted_total changed, so QuickBooks kept the old amount).
+      const { data: invRow } = await supabase
+        .from('ops_invoices')
+        .select(
+          'id, discount_amount, tax_amount, minimum_charge_adjustment, quickbooks_invoice_id, status',
+        )
+        .eq('appointment_id', id)
+        .maybeSingle()
+
+      if (invRow) {
+        await supabase
+          .from('ops_invoice_line_items')
+          .delete()
+          .eq('invoice_id', invRow.id)
+
+        if (insertedApptLines.length > 0) {
+          const { error: invLinesErr } = await supabase
+            .from('ops_invoice_line_items')
+            .insert(
+              insertedApptLines.map((line) => ({
+                invoice_id: invRow.id,
+                appointment_line_item_id: line.id,
+                description: line.name_snapshot,
+                quantity: line.quantity,
+                unit_price: line.unit_price,
+                line_total: line.line_total,
+              })),
+            )
+          if (invLinesErr) throw invLinesErr
+        }
+
+        const discountAmount = Number(invRow.discount_amount || 0)
+        const subtotal = Number(newTotal.toFixed(2))
+        const total = Number(
+          (
+            subtotal -
+            discountAmount +
+            Number(invRow.minimum_charge_adjustment || 0) +
+            Number(invRow.tax_amount || 0)
+          ).toFixed(2),
+        )
+
+        await supabase
+          .from('ops_invoices')
+          .update({
+            subtotal,
+            total,
+            updated_at: nowIso,
+          })
+          .eq('id', invRow.id)
+
+        if (invRow.quickbooks_invoice_id) {
+          void resyncInvoiceToQuickBooks(invRow.id).catch((qbErr) =>
+            console.error(
+              '[ops/appointments/:id][PATCH] QB invoice resync:',
+              qbErr,
+            ),
+          )
+        }
+      }
     }
 
     if (
@@ -429,6 +504,13 @@ export async function PATCH(
           to_status: 'ready',
           changed_by: access.id,
           notes: 'Job completed from operations',
+        })
+
+        await supabase.from('ops_quickbooks_sync_jobs').insert({
+          entity_type: 'invoice',
+          entity_id: inv.id,
+          status: getQuickBooksSyncStatus(),
+          payload: { invoice_id: inv.id },
         })
       }
 

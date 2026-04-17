@@ -5,6 +5,7 @@ import { createAdminClient } from '@/supabase/server'
 import {
   voidQBInvoice,
   createQBPayment,
+  resyncInvoiceToQuickBooks,
   syncAppointmentToQuickBooks,
 } from '@/lib/quickbooks-api'
 import { generateInvoicePDF } from '@/lib/ops/pdf/generate'
@@ -312,12 +313,13 @@ export async function PATCH(
       body.status === 'paid' && current.status !== 'paid'
     const method = body.payment_method || current.payment_method
     const isNonCardPayment = method && method !== 'card'
-
-    if (
+    const shouldRecordQbPayment =
       isBeingMarkedPaid &&
       isNonCardPayment &&
-      current.quickbooks_invoice_id
-    ) {
+      current.quickbooks_invoice_id &&
+      method !== 'cash'
+
+    if (shouldRecordQbPayment) {
       try {
         const { data: apptData } = await supabase
           .from('ops_appointments')
@@ -340,12 +342,41 @@ export async function PATCH(
             qbCustomerId: qbCustId,
             qbInvoiceId: current.quickbooks_invoice_id,
             amount: total,
-            paymentMethod: method,
+            paymentMethod: method as string,
           })
         }
       } catch (qbErr) {
         console.error(
           '[ops/invoices/:id][PATCH] QB payment record failed:',
+          qbErr,
+        )
+      }
+    }
+
+    // Cash stays in-app only: remove any QuickBooks invoice/payment linkage.
+    if (
+      isBeingMarkedPaid &&
+      method === 'cash' &&
+      current.quickbooks_invoice_id
+    ) {
+      try {
+        await voidQBInvoice(current.quickbooks_invoice_id)
+        await supabase
+          .from('ops_invoices')
+          .update({
+            quickbooks_invoice_id: null,
+            sync_status: 'held',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', id)
+        await supabase
+          .from('ops_quickbooks_sync_jobs')
+          .delete()
+          .eq('entity_type', 'invoice')
+          .eq('entity_id', id)
+      } catch (qbErr) {
+        console.error(
+          '[ops/invoices/:id][PATCH] QB void for cash payment failed:',
           qbErr,
         )
       }
@@ -366,6 +397,19 @@ export async function PATCH(
     if (current.appointment_id && !invoice.quickbooks_invoice_id) {
       void syncAppointmentToQuickBooks(current.appointment_id).catch((qbErr) =>
         console.error('[ops/invoices/:id][PATCH] QB sync:', qbErr),
+      )
+    }
+
+    const lineOrDiscountChanged =
+      (lineItemsInBody && !dangerousEmpty) || body.discount_amount !== undefined
+    if (
+      current.quickbooks_invoice_id &&
+      lineOrDiscountChanged &&
+      !isBeingMarkedPaid &&
+      invoice.status !== 'paid'
+    ) {
+      void resyncInvoiceToQuickBooks(id).catch((qbErr) =>
+        console.error('[ops/invoices/:id][PATCH] QB invoice resync:', qbErr),
       )
     }
 
