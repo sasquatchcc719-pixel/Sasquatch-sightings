@@ -46,6 +46,13 @@ export const PRICE_BOOK = {
         description: 'Extra-large room cleaning',
       },
       {
+        name: 'Oversized Room Carpet Cleaning (800+ sqft)',
+        price: 0.25,
+        unit: 'per sqft',
+        description:
+          'Residential rooms over 800 sqft (great rooms, open basements). Billed per measured sqft.',
+      },
+      {
         name: 'Commercial Carpet Cleaning',
         price: 0.35,
         unit: 'per sqft',

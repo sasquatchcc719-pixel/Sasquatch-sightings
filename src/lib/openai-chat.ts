@@ -73,6 +73,7 @@ SQUARE FOOTAGE → SERVICE MAPPING (use these EXACT search terms with search_ser
 - 200–400 sqft → search "Sasquatch Size Room" ($90)
 - 400–600 sqft → search "Monster Size Room" ($138)
 - 600–800 sqft → search "Jumbo Humungous Room" ($175)
+- Over 800 sqft → search "Oversized Room Carpet Cleaning" ($0.25/sqft — quantity = measured sqft, e.g. a 1,000 sqft great room = 1000 × $0.25 = $250)
 - Stairs → search "Step Carpet Cleaning" ($4/step)
 - Pet urine treatment → search "Urine Eliminator" ($25)
 
