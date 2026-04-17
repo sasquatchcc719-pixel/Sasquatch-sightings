@@ -577,6 +577,22 @@ export function OperationsSchedule() {
   const calendarRef = useRef<HTMLDivElement>(null)
   const dayStripRef = useRef<HTMLDivElement>(null)
 
+  // Current-time indicator — updates every minute so the line moves live
+  const [nowMinutes, setNowMinutes] = useState(() => {
+    const n = new Date()
+    return n.getHours() * 60 + n.getMinutes()
+  })
+  const todayKey = formatDateKey(new Date())
+
+  useEffect(() => {
+    const tick = () => {
+      const n = new Date()
+      setNowMinutes(n.getHours() * 60 + n.getMinutes())
+    }
+    const id = setInterval(tick, 60_000)
+    return () => clearInterval(id)
+  }, [])
+
   const [blockForm, setBlockForm] = useState({
     title: '',
     description: '',
@@ -1398,7 +1414,6 @@ export function OperationsSchedule() {
           ).map((day) => {
             const dk = formatDateKey(day)
             const anchorKey = formatDateKey(anchorDate)
-            const todayKey = formatDateKey(new Date())
             const isSelected = dk === anchorKey
             const isToday = dk === todayKey
             return (
@@ -1658,6 +1673,26 @@ export function OperationsSchedule() {
                           </div>
                         )
                       })}
+
+                      {/* Current-time indicator — only on today's column,
+                          only while the clock is within the visible hour range */}
+                      {dateKey === todayKey &&
+                      nowMinutes >= GRID_START_MINUTES &&
+                      nowMinutes <= (HOURS[HOURS.length - 1] + 1) * 60 ? (
+                        <div
+                          className="pointer-events-none absolute right-0 left-0 z-20 flex items-center"
+                          style={{
+                            top:
+                              ((nowMinutes - GRID_START_MINUTES) / 60) *
+                              HOUR_HEIGHT,
+                          }}
+                        >
+                          {/* Dot on the left edge */}
+                          <span className="ml-0.5 h-2.5 w-2.5 shrink-0 rounded-full bg-red-500 shadow-sm" />
+                          {/* Line spanning the rest of the column */}
+                          <span className="h-px flex-1 bg-red-500/80" />
+                        </div>
+                      ) : null}
 
                       {(() => {
                         const overlapCols =
