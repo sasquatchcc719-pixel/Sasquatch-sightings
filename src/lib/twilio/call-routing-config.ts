@@ -12,8 +12,8 @@ export type CallRoutingConfig = {
 /** Primary PSTN ring target (Chuck). Failover matches so owner-detect & DB rows stay valid; IVR no longer rings wife first. */
 const DEFAULT_CONFIG: CallRoutingConfig = {
   temporaryOpenLineMode: false,
-  primaryForwardNumber: '+17197498807',
-  failoverForwardNumber: '+17197498807',
+  primaryForwardNumber: '+17192498791',
+  failoverForwardNumber: '+17192498791',
   openLineTimeoutSeconds: 30,
   ivrScheduleTimeoutSeconds: 30,
   ivrTechnicalTimeoutSeconds: 30,
