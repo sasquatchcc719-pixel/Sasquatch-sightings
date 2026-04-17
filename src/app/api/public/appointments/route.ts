@@ -107,6 +107,7 @@ export async function POST(request: NextRequest) {
       quantity: number
       unit_price: number
       duration_minutes?: number
+      pricing_unit?: string
     }> = Array.isArray(body.line_items) ? body.line_items : []
 
     if (lineItems.length === 0) {
@@ -114,6 +115,30 @@ export async function POST(request: NextRequest) {
         { error: 'At least one service is required' },
         { status: 400, headers: CORS },
       )
+    }
+
+    // Hydrate pricing_unit from the catalog for any items that provided a
+    // service_catalog_item_id. This ensures duration is not multiplied by
+    // quantity for measurement-based services (per_linear_foot, per_sqft, etc.)
+    const catalogIds = lineItems
+      .map((i) => i.service_catalog_item_id)
+      .filter(Boolean) as string[]
+    if (catalogIds.length > 0) {
+      const { data: catalogRows } = await supabase
+        .from('service_catalog_items')
+        .select('id, pricing_unit')
+        .in('id', catalogIds)
+      if (catalogRows) {
+        const catalogMap = new Map(
+          catalogRows.map((r) => [r.id, r.pricing_unit]),
+        )
+        for (const item of lineItems) {
+          if (item.service_catalog_item_id && !item.pricing_unit) {
+            item.pricing_unit =
+              catalogMap.get(item.service_catalog_item_id) ?? 'fixed'
+          }
+        }
+      }
     }
 
     // --- Validate & apply promo code ---
@@ -235,6 +260,7 @@ export async function POST(request: NextRequest) {
         calculateLineItemDurationMinutes({
           durationMinutes: item.duration_minutes || 60,
           quantity: item.quantity,
+          pricingUnit: item.pricing_unit,
         })
       )
     }, 0)

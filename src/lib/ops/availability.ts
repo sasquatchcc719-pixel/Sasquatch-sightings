@@ -34,6 +34,13 @@ export const DEFAULT_APPOINTMENT_BUFFER_MINUTES = 0
 export const BLOCK_STARTS_MINUTES = [540, 660, 780, 900] as const
 export const BLOCK_DURATION_MINUTES = 120
 
+/**
+ * Hard ceiling on any single appointment's scheduled window.
+ * No job should ever block more than 4 hours of calendar time regardless
+ * of how many services or how the duration math works out.
+ */
+export const MAX_APPOINTMENT_MINUTES = 240 // 4 hours
+
 export const DEFAULT_FALLBACK_AVAILABILITY_TEMPLATES: AvailabilityTemplate[] = [
   {
     day_of_week: 1,
@@ -106,12 +113,31 @@ function overlaps(
   return startMinutes < busyEnd && endMinutes > busyStart
 }
 
+/**
+ * Calculate how many minutes a line item contributes to the appointment window.
+ *
+ * For FIXED-price services (rooms, stairs, etc.) duration scales with quantity:
+ *   3 rooms × 60 min = 180 min
+ *
+ * For MEASUREMENT-based services (per_linear_foot, per_sqft, per_unit) the
+ * quantity is a dimension, not a count of service instances. Duration is flat:
+ *   15.5 linear feet of sectional = 120 min (not 15.5 × 120 = 1,860 min)
+ *
+ * Pass pricingUnit from service_catalog_items.pricing_unit. Anything other
+ * than 'fixed' is treated as a measurement and does NOT scale with quantity.
+ */
 export function calculateLineItemDurationMinutes(params: {
   durationMinutes: number
   quantity: number
+  pricingUnit?: string | null
 }): number {
-  const quantity = Number.isFinite(params.quantity) ? params.quantity : 1
-  return Math.max(0, Math.round(params.durationMinutes * quantity))
+  const raw = Number.isFinite(params.durationMinutes)
+    ? params.durationMinutes
+    : 0
+  const qty = Number.isFinite(params.quantity) ? params.quantity : 1
+  // Only multiply when pricing is truly per-unit (fixed price per room/step/piece)
+  const scalesWithQty = !params.pricingUnit || params.pricingUnit === 'fixed'
+  return Math.max(0, Math.round(scalesWithQty ? raw * qty : raw))
 }
 
 export function applyAppointmentBuffer(
@@ -122,8 +148,13 @@ export function applyAppointmentBuffer(
     ? serviceMinutes
     : 0
   const normalizedBuffer = Number.isFinite(bufferMinutes) ? bufferMinutes : 0
-  const total = Math.max(0, normalizedServiceMinutes + normalizedBuffer)
-  return Math.ceil(total / BLOCK_DURATION_MINUTES) * BLOCK_DURATION_MINUTES
+  // Cap at hard maximum BEFORE rounding up to block boundaries so the ceiling
+  // is never exceeded due to rounding.
+  const capped = Math.min(
+    Math.max(0, normalizedServiceMinutes + normalizedBuffer),
+    MAX_APPOINTMENT_MINUTES,
+  )
+  return Math.ceil(capped / BLOCK_DURATION_MINUTES) * BLOCK_DURATION_MINUTES
 }
 
 export function getAvailableSlots(params: {
