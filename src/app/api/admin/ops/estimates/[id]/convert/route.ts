@@ -153,6 +153,8 @@ export async function POST(
           durationMinutes: Number(item.duration_minutes || 0),
           quantity: Number(item.quantity || 1),
           pricingUnit: item.pricing_unit_snapshot,
+          unitPrice: Number(item.unit_price || 0),
+          nameSnapshot: String(item.name_snapshot || ''),
         }),
       0,
     )

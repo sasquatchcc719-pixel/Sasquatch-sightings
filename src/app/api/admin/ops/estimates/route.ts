@@ -328,6 +328,9 @@ export async function POST(request: NextRequest) {
               durationMinutes: item.duration_minutes,
               quantity: item.quantity,
               pricingUnit: item.pricing_unit_snapshot,
+              unitPrice: item.unit_price,
+              nameSnapshot: item.name_snapshot,
+              applyOversizedResidentialDollarDuration: false,
             }),
           0,
         )

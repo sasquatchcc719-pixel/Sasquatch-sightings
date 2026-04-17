@@ -115,7 +115,9 @@ export async function createAiStyleBooking(
   const serviceIds = requestedItems.map((item) => item.service_id)
   const { data: catalogItems, error: catalogError } = await supabase
     .from('service_catalog_items')
-    .select('id, name, base_price, default_duration_minutes, pricing_unit')
+    .select(
+      'id, name, slug, base_price, default_duration_minutes, pricing_unit',
+    )
     .in('id', serviceIds)
     .eq('is_active', true)
 
@@ -139,6 +141,7 @@ export async function createAiStyleBooking(
       return {
         service_catalog_item_id: catalog.id,
         name_snapshot: catalog.name,
+        catalog_slug: String(catalog.slug || ''),
         quantity: qty,
         unit_price: Number(catalog.base_price || 0),
         duration_minutes: catalog.default_duration_minutes || 60,
@@ -148,6 +151,7 @@ export async function createAiStyleBooking(
     .filter(Boolean) as Array<{
     service_catalog_item_id: string
     name_snapshot: string
+    catalog_slug: string
     quantity: number
     unit_price: number
     duration_minutes: number
@@ -177,6 +181,9 @@ export async function createAiStyleBooking(
         durationMinutes: item.duration_minutes,
         quantity: item.quantity,
         pricingUnit: item.pricing_unit,
+        unitPrice: item.unit_price,
+        catalogSlug: item.catalog_slug || null,
+        nameSnapshot: item.name_snapshot,
       }),
     0,
   )

@@ -18,8 +18,10 @@ import {
 type ServiceItem = {
   id: string
   name: string
+  slug?: string | null
   category: string
   base_price: number | null
+  pricing_unit?: string | null
   default_duration_minutes?: number | null
   buffer_minutes?: number | null
 }
@@ -443,11 +445,16 @@ export function NewJobWorkspace() {
     const quantity = Number(item.quantity || 0)
     if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return sum
     if (!Number.isFinite(quantity) || quantity <= 0) return sum
+    const unitPrice = Number(item.unit_price || service?.base_price || 0)
     return (
       sum +
       calculateLineItemDurationMinutes({
         durationMinutes,
         quantity,
+        pricingUnit: service?.pricing_unit ?? null,
+        unitPrice,
+        catalogSlug: service?.slug ?? null,
+        nameSnapshot: service?.name ?? '',
       })
     )
   }, 0)

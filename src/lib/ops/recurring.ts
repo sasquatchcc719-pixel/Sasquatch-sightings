@@ -340,6 +340,8 @@ export async function generateRecurringAppointments(
       calculateLineItemDurationMinutes({
         durationMinutes: item.duration_minutes,
         quantity: item.quantity,
+        unitPrice: item.unit_price,
+        nameSnapshot: item.name_snapshot,
       }),
     0,
   )

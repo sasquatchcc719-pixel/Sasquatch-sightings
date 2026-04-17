@@ -681,7 +681,7 @@ export async function executeHarrySmsTool(
 
         const { data: lineRows, error: liErr } = await supabase
           .from('ops_appointment_line_items')
-          .select('duration_minutes, quantity')
+          .select('duration_minutes, quantity, unit_price, name_snapshot')
           .eq('appointment_id', appointmentId)
 
         if (liErr) throw liErr
@@ -692,6 +692,8 @@ export async function executeHarrySmsTool(
             calculateLineItemDurationMinutes({
               durationMinutes: Number(item.duration_minutes),
               quantity: Number(item.quantity),
+              unitPrice: Number(item.unit_price),
+              nameSnapshot: String(item.name_snapshot || ''),
             }),
           0,
         )
@@ -791,7 +793,9 @@ export async function executeHarrySmsTool(
         const catalogIds = parsedItems.map((l) => l.service_id)
         const { data: catalogRows, error: catErr } = await supabase
           .from('service_catalog_items')
-          .select('id, name, base_price, default_duration_minutes')
+          .select(
+            'id, name, slug, base_price, default_duration_minutes, pricing_unit',
+          )
           .in('id', catalogIds)
           .eq('is_active', true)
 
@@ -801,17 +805,29 @@ export async function executeHarrySmsTool(
           })
         }
 
+        let updateLineItemsTotalMinutes = 0
         const builtLines = parsedItems
           .map((req) => {
             const cat = catalogRows.find((c) => c.id === req.service_id)
             if (!cat) return null
+            const unitPrice = Number(cat.base_price || 0)
+            const quantity = req.quantity
+            const durationMinutes = cat.default_duration_minutes || 60
+            updateLineItemsTotalMinutes += calculateLineItemDurationMinutes({
+              durationMinutes,
+              quantity,
+              pricingUnit: cat.pricing_unit ?? null,
+              unitPrice,
+              catalogSlug: cat.slug ?? null,
+              nameSnapshot: cat.name,
+            })
             return {
               appointment_id: appointmentId,
               name_snapshot: cat.name,
-              quantity: req.quantity,
-              unit_price: Number(cat.base_price || 0),
-              duration_minutes: cat.default_duration_minutes || 60,
-              line_total: Number(cat.base_price || 0) * req.quantity,
+              quantity,
+              unit_price: unitPrice,
+              duration_minutes: durationMinutes,
+              line_total: unitPrice * quantity,
             }
           })
           .filter(Boolean) as Array<{
@@ -848,15 +864,7 @@ export async function executeHarrySmsTool(
 
         // Recalculate total and end_time
         const newTotal = builtLines.reduce((s, l) => s + l.line_total, 0)
-        const totalMinutes = builtLines.reduce(
-          (s, l) =>
-            s +
-            calculateLineItemDurationMinutes({
-              durationMinutes: l.duration_minutes,
-              quantity: l.quantity,
-            }),
-          0,
-        )
+        const totalMinutes = updateLineItemsTotalMinutes
         const buffered = applyAppointmentBuffer(totalMinutes || 120)
         const newEndTime = addMinutesToTime(
           owned.appointment.start_time.slice(0, 5),
@@ -1012,7 +1020,9 @@ export async function executeHarrySmsTool(
         const catalogIds = parsedLineItems.map((l) => l.service_id)
         const { data: catalogRows } = await supabase
           .from('service_catalog_items')
-          .select('id, default_duration_minutes, base_price')
+          .select(
+            'id, slug, default_duration_minutes, base_price, pricing_unit',
+          )
           .in('id', catalogIds)
           .eq('is_active', true)
 
@@ -1031,11 +1041,16 @@ export async function executeHarrySmsTool(
         const totalMinutes = (catalogRows || []).reduce((sum, row) => {
           const qty =
             parsedLineItems.find((p) => p.service_id === row.id)?.quantity ?? 1
+          const unitPrice = Number(row.base_price || 0)
           return (
             sum +
             calculateLineItemDurationMinutes({
               durationMinutes: Number(row.default_duration_minutes || 60),
               quantity: qty,
+              pricingUnit: row.pricing_unit ?? null,
+              unitPrice,
+              catalogSlug: row.slug ?? null,
+              nameSnapshot: null,
             })
           )
         }, 0)

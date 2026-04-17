@@ -165,12 +165,22 @@ export async function POST(request: NextRequest) {
     }
 
     const totalMinutes = normalizedLineItems.reduce(
-      (sum: number, item: NormalizedLineItem) =>
-        sum +
-        calculateLineItemDurationMinutes({
-          durationMinutes: item.duration_minutes,
-          quantity: item.quantity,
-        }),
+      (sum: number, item: NormalizedLineItem) => {
+        const service = item.service_catalog_item_id
+          ? serviceMap.get(String(item.service_catalog_item_id))
+          : null
+        return (
+          sum +
+          calculateLineItemDurationMinutes({
+            durationMinutes: item.duration_minutes,
+            quantity: item.quantity,
+            pricingUnit: service?.pricing_unit ?? null,
+            unitPrice: item.unit_price,
+            catalogSlug: service?.slug ?? null,
+            nameSnapshot: item.name_snapshot,
+          })
+        )
+      },
       0,
     )
 

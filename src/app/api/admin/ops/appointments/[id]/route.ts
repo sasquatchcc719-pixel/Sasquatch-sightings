@@ -71,7 +71,8 @@ const APPOINTMENT_SELECT = `
     duration_minutes,
     buffer_minutes,
     line_total,
-    notes
+    notes,
+    pricing_unit_snapshot
   ),
   ops_invoices (
     id,
@@ -179,12 +180,18 @@ export async function PATCH(
           duration_minutes: number
           buffer_minutes: number
           quantity: number
+          unit_price: number
+          name_snapshot: string
+          pricing_unit_snapshot?: string | null
         },
       ) =>
         sum +
         calculateLineItemDurationMinutes({
           durationMinutes: Number(item.duration_minutes),
           quantity: Number(item.quantity),
+          pricingUnit: item.pricing_unit_snapshot ?? null,
+          unitPrice: Number(item.unit_price),
+          nameSnapshot: String(item.name_snapshot || ''),
         }),
       0,
     )

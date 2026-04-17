@@ -261,6 +261,8 @@ export async function POST(request: NextRequest) {
           durationMinutes: item.duration_minutes || 60,
           quantity: item.quantity,
           pricingUnit: item.pricing_unit,
+          unitPrice: item.unit_price,
+          nameSnapshot: item.name_snapshot,
         })
       )
     }, 0)

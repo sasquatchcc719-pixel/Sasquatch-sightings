@@ -113,6 +113,26 @@ function overlaps(
   return startMinutes < busyEnd && endMinutes > busyStart
 }
 
+/** Residential800+ sqft carpet tier in service_catalog_items (per_sqft @ $0.25). */
+export const OVERSIZED_RESIDENTIAL_CARPET_SLUG =
+  'oversized-room-carpet-cleaning-800-plus-sqft'
+
+const OVERSIZED_RESIDENTIAL_CARPET_NAME =
+  'Oversized Room Carpet Cleaning (800+ sqft)'
+
+/** Billable dollars on this line that map to one hour of scheduled time. */
+const OVERSIZED_RESIDENTIAL_MINUTES_PER_DOLLAR_BLOCK = 250
+
+function isOversizedResidentialCarpetLine(params: {
+  catalogSlug?: string | null
+  nameSnapshot?: string | null
+}): boolean {
+  const slug = params.catalogSlug?.trim()
+  if (slug === OVERSIZED_RESIDENTIAL_CARPET_SLUG) return true
+  const n = (params.nameSnapshot || '').trim()
+  return n === OVERSIZED_RESIDENTIAL_CARPET_NAME
+}
+
 /**
  * Calculate how many minutes a line item contributes to the appointment window.
  *
@@ -123,18 +143,55 @@ function overlaps(
  * quantity is a dimension, not a count of service instances. Duration is flat:
  *   15.5 linear feet of sectional = 120 min (not 15.5 × 120 = 1,860 min)
  *
+ * **Exception — oversized residential carpet (800+ sqft, $0.25/sqft):**
+ *   Scheduled time = 1 hour per $250 of line total (quantity × unit_price),
+ *   e.g. 1,000 sqft × $0.25 = $250 → 60 min; $500 → 120 min.
+ *   Pass unitPrice, and catalogSlug or nameSnapshot so this branch can run.
+ *   Set applyOversizedResidentialDollarDuration: false for estimate *measuring*
+ *   visits so line-item sqft does not blow up the measure slot.
+ *
  * Pass pricingUnit from service_catalog_items.pricing_unit. Anything other
- * than 'fixed' is treated as a measurement and does NOT scale with quantity.
+ * than 'fixed' is treated as a measurement and does NOT scale with quantity
+ * (except the oversized carpet rule above).
  */
 export function calculateLineItemDurationMinutes(params: {
   durationMinutes: number
   quantity: number
   pricingUnit?: string | null
+  unitPrice?: number | null
+  catalogSlug?: string | null
+  nameSnapshot?: string | null
+  /** When false, skip the oversized $250/hour rule (e.g. estimate measuring visits). Default true. */
+  applyOversizedResidentialDollarDuration?: boolean
 }): number {
+  const qty = Number.isFinite(params.quantity) ? params.quantity : 1
+  const applyOversized =
+    params.applyOversizedResidentialDollarDuration !== false
+  const unit =
+    params.unitPrice != null && Number.isFinite(Number(params.unitPrice))
+      ? Number(params.unitPrice)
+      : NaN
+
+  if (
+    applyOversized &&
+    isOversizedResidentialCarpetLine({
+      catalogSlug: params.catalogSlug,
+      nameSnapshot: params.nameSnapshot,
+    }) &&
+    Number.isFinite(unit)
+  ) {
+    const lineTotal = unit * qty
+    return Math.max(
+      0,
+      Math.round(
+        (lineTotal / OVERSIZED_RESIDENTIAL_MINUTES_PER_DOLLAR_BLOCK) * 60,
+      ),
+    )
+  }
+
   const raw = Number.isFinite(params.durationMinutes)
     ? params.durationMinutes
     : 0
-  const qty = Number.isFinite(params.quantity) ? params.quantity : 1
   // Only multiply when pricing is truly per-unit (fixed price per room/step/piece)
   const scalesWithQty = !params.pricingUnit || params.pricingUnit === 'fixed'
   return Math.max(0, Math.round(scalesWithQty ? raw * qty : raw))

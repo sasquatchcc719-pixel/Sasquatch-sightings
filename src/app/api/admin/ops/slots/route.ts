@@ -44,7 +44,9 @@ export async function GET(request: NextRequest) {
 
       const { data: service, error: serviceError } = await supabase
         .from('service_catalog_items')
-        .select('default_duration_minutes, buffer_minutes')
+        .select(
+          'default_duration_minutes, buffer_minutes, base_price, pricing_unit, slug, name',
+        )
         .eq('id', serviceId)
         .single()
 
@@ -66,6 +68,10 @@ export async function GET(request: NextRequest) {
       const requiredMinutes = calculateLineItemDurationMinutes({
         durationMinutes: service.default_duration_minutes,
         quantity,
+        pricingUnit: service.pricing_unit ?? null,
+        unitPrice: Number(service.base_price || 0),
+        catalogSlug: service.slug ?? null,
+        nameSnapshot: service.name ?? null,
       })
       requiredMinutesWithBuffer = applyAppointmentBuffer(requiredMinutes)
     }
