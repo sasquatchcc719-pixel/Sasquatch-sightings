@@ -14,7 +14,7 @@ export async function GET(_request: NextRequest, { params }: Params) {
     const { id } = await params
     const supabase = createAdminClient()
 
-    // Fetch the appointment with full detail
+    // Single query — join template via FK so we only need one DB round trip
     const { data: appointment, error: apptError } = await supabase
       .from('ops_appointments')
       .select(
@@ -59,6 +59,13 @@ export async function GET(_request: NextRequest, { params }: Params) {
           duration_minutes,
           line_total,
           notes
+        ),
+        ops_recurring_templates (
+          id,
+          label,
+          invoice_mode,
+          internal_notes,
+          line_items
         )
       `,
       )
@@ -79,18 +86,17 @@ export async function GET(_request: NextRequest, { params }: Params) {
       )
     }
 
-    // Fetch the parent template for label, invoice_mode, and standing instructions
-    const { data: template, error: tplError } = await supabase
-      .from('ops_recurring_templates')
-      .select('id, label, invoice_mode, internal_notes, line_items')
-      .eq('id', appointment.recurring_template_id)
-      .single()
+    const template = Array.isArray(appointment.ops_recurring_templates)
+      ? appointment.ops_recurring_templates[0]
+      : appointment.ops_recurring_templates
 
-    if (tplError || !template) {
+    if (!template) {
       return NextResponse.json({ error: 'Template not found' }, { status: 404 })
     }
 
-    return NextResponse.json({ appointment, template })
+    // Return in the same shape the client expects
+    const { ops_recurring_templates: _tpl, ...apptWithoutTpl } = appointment
+    return NextResponse.json({ appointment: apptWithoutTpl, template })
   } catch (error) {
     console.error('[recurring/visit/:id][GET]', error)
     return NextResponse.json({ error: 'Failed to load visit' }, { status: 500 })

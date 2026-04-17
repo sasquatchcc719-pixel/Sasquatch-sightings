@@ -40,6 +40,14 @@ const INVOICE_SELECT = `
       zip_code,
       gate_code,
       notes
+    ),
+    ops_job_photos (
+      id,
+      storage_path,
+      public_url,
+      photo_type,
+      caption,
+      created_at
     )
   ),
   ops_invoice_line_items (

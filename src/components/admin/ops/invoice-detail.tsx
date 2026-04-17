@@ -230,10 +230,15 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
       setDiscount(String(result.invoice.discount_amount || 0))
       setPaymentMethod(result.invoice.payment_method ?? null)
 
+      // Photos are now embedded in the invoice response via the appointment join
       const appt = Array.isArray(result.invoice.ops_appointments)
         ? result.invoice.ops_appointments[0]
         : result.invoice.ops_appointments
-      if (appt?.id) {
+      const embeddedPhotos = appt?.ops_job_photos ?? null
+      if (Array.isArray(embeddedPhotos)) {
+        setPhotos(embeddedPhotos)
+      } else if (appt?.id) {
+        // Fallback: fetch separately if the join didn't return photos
         const photosRes = await fetch(
           `/api/admin/ops/appointments/${appt.id}/photos`,
           { cache: 'no-store' },
