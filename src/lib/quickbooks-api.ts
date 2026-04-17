@@ -248,7 +248,15 @@ export async function createQBInvoice(params: {
 
   if (!res.ok) {
     const tid = res.headers.get('intuit_tid') || 'unknown'
-    throw new Error(`QB create invoice failed: ${res.status} (tid: ${tid})`)
+    let bodyText = ''
+    try {
+      bodyText = await res.text()
+    } catch {
+      bodyText = ''
+    }
+    throw new Error(
+      `QB create invoice failed: ${res.status} (tid: ${tid}) ${bodyText.slice(0, 500)}`,
+    )
   }
 
   const data = await res.json()
