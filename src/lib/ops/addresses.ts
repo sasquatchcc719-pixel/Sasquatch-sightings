@@ -59,8 +59,7 @@ export async function resolveServiceAddress(
       notes: inlineAddress.notes || null,
     })
     .select('*')
-    .single()
 
   if (insertError) throw insertError
-  return inserted
+  return inserted?.[0] || null
 }

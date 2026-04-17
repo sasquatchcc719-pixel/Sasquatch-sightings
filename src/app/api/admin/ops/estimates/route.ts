@@ -202,9 +202,13 @@ export async function POST(request: NextRequest) {
             notes: inlineCustomer.notes || null,
           })
           .select('id')
-          .single()
+        
         if (insertError) throw insertError
-        customerId = inserted.id
+        if (inserted && inserted.length > 0) {
+          customerId = inserted[0].id
+        } else {
+          throw new Error('Failed to insert or retrieve new customer')
+        }
       }
     }
     if (!customerId) {
@@ -375,7 +379,7 @@ export async function POST(request: NextRequest) {
     const subtotal = normalized.reduce((sum, item) => sum + item.line_total, 0)
 
     // --- Insert appointment (kind=estimate) ---
-    const { data: appointment, error: appointmentError } = await supabase
+    const { data: appointmentData, error: appointmentError } = await supabase
       .from('ops_appointments')
       .insert({
         customer_id: customerId,
@@ -396,9 +400,10 @@ export async function POST(request: NextRequest) {
           : null,
       })
       .select('id')
-      .single()
 
     if (appointmentError) throw appointmentError
+    const appointment = appointmentData?.[0]
+    if (!appointment) throw new Error('Failed to insert appointment')
 
     // --- Line items ---
     if (normalized.length > 0) {
