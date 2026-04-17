@@ -45,9 +45,9 @@ const NAV_ITEMS: NavItem[] = [
     icon: FilePlus2,
   },
   {
-    href: '/admin/operations/estimate',
-    label: 'Estimate',
-    description: 'Placeholder for future estimate flow',
+    href: '/admin/operations/estimates',
+    label: 'Estimates',
+    description: 'Measuring visits, quotes, and conversions to jobs',
     icon: FileText,
   },
   {
