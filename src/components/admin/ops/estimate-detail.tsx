@@ -5,16 +5,16 @@ import { useRouter } from 'next/navigation'
 import {
   ArrowRight,
   CalendarClock,
+  CalendarCheck,
   CheckCircle2,
   Loader2,
   Mail,
   MapPin,
   MessageSquare,
-  Pencil,
   Phone,
   Plus,
   Ruler,
-  Search,
+  Send,
   Trash2,
   User,
   X,
@@ -166,8 +166,7 @@ function segmentsFromApiRow(row: {
       const o = s as Record<string, unknown>
       return {
         clientId: `seg-${row.id}-${i}`,
-        length:
-          o.length != null && o.length !== '' ? String(o.length) : '',
+        length: o.length != null && o.length !== '' ? String(o.length) : '',
         width: o.width != null && o.width !== '' ? String(o.width) : '',
       }
     })
@@ -176,8 +175,7 @@ function segmentsFromApiRow(row: {
     return [
       {
         clientId: `legacy-${row.id}`,
-        length:
-          row.length_value != null ? String(row.length_value) : '',
+        length: row.length_value != null ? String(row.length_value) : '',
         width: row.width_value != null ? String(row.width_value) : '',
       },
     ]
@@ -288,6 +286,12 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
   const [convertStart, setConvertStart] = useState('09:00')
   const [convertSubmitting, setConvertSubmitting] = useState(false)
   const [convertError, setConvertError] = useState<string | null>(null)
+
+  const [scheduleEmailSending, setScheduleEmailSending] = useState(false)
+  const [scheduleEmailSent, setScheduleEmailSent] = useState(false)
+  const [quoteEmailSending, setQuoteEmailSending] = useState(false)
+  const [quoteEmailSent, setQuoteEmailSent] = useState(false)
+  const [emailError, setEmailError] = useState<string | null>(null)
 
   const loadEstimate = useCallback(async () => {
     setLoading(true)
@@ -492,26 +496,29 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
     [catalog],
   )
 
-  const handleAddServiceFromCatalog = useCallback((item: ServiceCatalogItem) => {
-    const dim = supportsDimensions(item.pricing_unit || 'fixed')
-    const newRow: LineItem = {
-      id: makeRowKey(),
-      service_catalog_item_id: item.id,
-      name_snapshot: item.name,
-      notes: null,
-      quantity: dim ? 0 : 1,
-      unit_price: item.base_price ?? 0,
-      duration_minutes: item.default_duration_minutes ?? 30,
-      buffer_minutes: 0,
-      line_total: 0,
-      length_value: null,
-      width_value: null,
-      pricing_unit_snapshot: item.pricing_unit || 'fixed',
-      area_segments: [],
-      _isNew: true,
-    }
-    setLineItems((prev) => [...prev, newRow])
-  }, [])
+  const handleAddServiceFromCatalog = useCallback(
+    (item: ServiceCatalogItem) => {
+      const dim = supportsDimensions(item.pricing_unit || 'fixed')
+      const newRow: LineItem = {
+        id: makeRowKey(),
+        service_catalog_item_id: item.id,
+        name_snapshot: item.name,
+        notes: null,
+        quantity: dim ? 0 : 1,
+        unit_price: item.base_price ?? 0,
+        duration_minutes: item.default_duration_minutes ?? 30,
+        buffer_minutes: 0,
+        line_total: 0,
+        length_value: null,
+        width_value: null,
+        pricing_unit_snapshot: item.pricing_unit || 'fixed',
+        area_segments: [],
+        _isNew: true,
+      }
+      setLineItems((prev) => [...prev, newRow])
+    },
+    [],
+  )
 
   const handleAddCustomLine = useCallback(() => {
     const newRow: LineItem = {
@@ -579,7 +586,9 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
             service_catalog_item_id: line.service_catalog_item_id,
             name_snapshot: line.name_snapshot,
             notes: line.notes,
-            quantity: supportsDimensions(unit) ? qtyMeasured : toNumber(line.quantity, 1),
+            quantity: supportsDimensions(unit)
+              ? qtyMeasured
+              : toNumber(line.quantity, 1),
             unit_price: toNumber(line.unit_price, 0),
             duration_minutes: toNumber(line.duration_minutes, 0),
             buffer_minutes: toNumber(line.buffer_minutes, 0),
@@ -705,6 +714,48 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
     }
   }, [convertDate, convertStart, estimateId, handleSave, loadEstimate, router])
 
+  const handleSendEmail = useCallback(
+    async (type: 'booking_confirmation' | 'quote') => {
+      const setSending =
+        type === 'booking_confirmation'
+          ? setScheduleEmailSending
+          : setQuoteEmailSending
+      const setSent =
+        type === 'booking_confirmation'
+          ? setScheduleEmailSent
+          : setQuoteEmailSent
+      setSending(true)
+      setEmailError(null)
+      try {
+        // Save current edits first so the email reflects the latest details
+        await handleSave()
+        const res = await fetch(
+          `/api/admin/ops/estimates/${estimateId}/send-email`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type }),
+          },
+        )
+        const payload = await res.json().catch(() => null)
+        if (!res.ok) {
+          throw new Error(payload?.error || 'Failed to send email')
+        }
+        setSent(true)
+        // After quote is sent, reload to reflect the new 'sent' status badge
+        if (type === 'quote') await loadEstimate()
+        setTimeout(() => setSent(false), 4000)
+      } catch (err) {
+        setEmailError(
+          err instanceof Error ? err.message : 'Failed to send email',
+        )
+      } finally {
+        setSending(false)
+      }
+    },
+    [estimateId, handleSave, loadEstimate],
+  )
+
   // ── Render ──────────────────────────────────────────────────────────────
 
   if (loading && !estimate) {
@@ -736,9 +787,10 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
   const statusKey = estimate.estimate_status || 'draft'
   const badge = STATUS_BADGE[statusKey] || STATUS_BADGE.draft
   const isConverted = !!estimate.converted_appointment_id
-  const mapsHref = addrStreet1 && addrCity
-    ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${addrStreet1}, ${addrCity}, ${addrState} ${addrZip}`)}`
-    : null
+  const mapsHref =
+    addrStreet1 && addrCity
+      ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${addrStreet1}, ${addrCity}, ${addrState} ${addrZip}`)}`
+      : null
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-4 md:p-6">
@@ -750,7 +802,9 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
               Estimate · {formatDate(estimate.appointment_date)}
             </p>
             <h1 className="mt-1 text-3xl font-bold">
-              {contactBusiness || [contactFirstName, contactLastName].filter(Boolean).join(' ') || 'New Estimate'}
+              {contactBusiness ||
+                [contactFirstName, contactLastName].filter(Boolean).join(' ') ||
+                'New Estimate'}
             </h1>
             <p className="text-muted-foreground mt-1 text-sm">
               Measuring visit · {estimate.start_time.slice(0, 5)}–
@@ -986,6 +1040,40 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
             placeholder="Anything you want to remember before the measuring visit…"
           />
         </div>
+
+        {/* Schedule Estimate — saves + sends booking confirmation to customer */}
+        {!isConverted ? (
+          <div className="border-border/60 border-t border-dashed pt-4">
+            <Button
+              className="w-full gap-2 bg-sky-600 text-white hover:bg-sky-700"
+              disabled={scheduleEmailSending || !contactEmail}
+              onClick={() => void handleSendEmail('booking_confirmation')}
+            >
+              {scheduleEmailSending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : scheduleEmailSent ? (
+                <CheckCircle2 className="h-4 w-4" />
+              ) : (
+                <CalendarCheck className="h-4 w-4" />
+              )}
+              {scheduleEmailSending
+                ? 'Saving & sending…'
+                : scheduleEmailSent
+                  ? 'Confirmation sent!'
+                  : 'Schedule Estimate'}
+            </Button>
+            {!contactEmail ? (
+              <p className="mt-1.5 text-center text-xs text-amber-600">
+                Add a customer email above to send the booking confirmation.
+              </p>
+            ) : (
+              <p className="text-muted-foreground mt-1.5 text-center text-xs">
+                Saves your changes and emails the customer their appointment
+                details.
+              </p>
+            )}
+          </div>
+        ) : null}
       </Card>
 
       {/* ── Line items ──────────────────────────────────────────────── */}
@@ -1046,7 +1134,7 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
                           onClick={() => handleAddServiceFromCatalog(item)}
                         >
                           <span className="line-clamp-2">{item.name}</span>
-                          <span className="text-muted-foreground shrink-0 tabular-nums text-xs">
+                          <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
                             {item.base_price != null
                               ? `$${Number(item.base_price).toFixed(2)}`
                               : '—'}
@@ -1089,9 +1177,7 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
                 <div className="flex items-start justify-between gap-2">
                   <p className="text-muted-foreground text-xs font-medium">
                     Line {idx + 1}
-                    {line.service_catalog_item_id
-                      ? ' · catalog'
-                      : ' · custom'}
+                    {line.service_catalog_item_id ? ' · catalog' : ' · custom'}
                   </p>
                   <Button
                     size="sm"
@@ -1115,7 +1201,9 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
                           handleSelectCatalogItem(line.id, e.target.value)
                         }
                       >
-                        <option value="">— Custom (manual name &amp; price) —</option>
+                        <option value="">
+                          — Custom (manual name &amp; price) —
+                        </option>
                         {catalog.map((item) => (
                           <option key={item.id} value={item.id}>
                             {item.name}
@@ -1385,6 +1473,29 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
 
         {!isConverted ? (
           <>
+            {/* Send Quote — appears when there are line items and a customer email */}
+            {lineItems.length > 0 && contactEmail ? (
+              <Button
+                variant="outline"
+                className="gap-2 border-sky-300 text-sky-700 hover:bg-sky-50 hover:text-sky-800"
+                disabled={quoteEmailSending}
+                onClick={() => void handleSendEmail('quote')}
+              >
+                {quoteEmailSending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : quoteEmailSent ? (
+                  <CheckCircle2 className="h-4 w-4" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+                {quoteEmailSending
+                  ? 'Sending quote…'
+                  : quoteEmailSent
+                    ? 'Quote sent!'
+                    : 'Send Quote'}
+              </Button>
+            ) : null}
+
             {statusKey !== 'sent' ? (
               <Button
                 variant="outline"
@@ -1459,6 +1570,12 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
           </Button>
         )}
       </Card>
+
+      {emailError ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          Email error: {emailError}
+        </div>
+      ) : null}
 
       {error ? (
         <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
