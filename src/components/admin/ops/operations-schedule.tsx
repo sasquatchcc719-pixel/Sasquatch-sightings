@@ -1718,14 +1718,11 @@ export function OperationsSchedule() {
                           className="focus-visible:ring-ring relative z-0 block w-full border-b border-slate-200 text-left transition hover:bg-emerald-50/60 focus-visible:ring-2 focus-visible:outline-none"
                           style={{ height: HOUR_HEIGHT }}
                           onClick={(e) => {
-                            const rect = (
-                              e.currentTarget as HTMLElement
-                            ).getBoundingClientRect()
                             setCellMenu({
                               dateKey,
                               hour,
-                              x: rect.left + 12,
-                              y: rect.top + 12,
+                              x: e.clientX,
+                              y: e.clientY,
                             })
                           }}
                           title={`Create at ${String(hour).padStart(2, '0')}:00`}

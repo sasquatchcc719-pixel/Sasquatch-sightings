@@ -20,6 +20,7 @@ import {
   getQuickBooksSyncStatus,
 } from '@/lib/quickbooks'
 import { checkServiceArea } from '@/lib/service-area'
+import { resolveServiceAddress } from '@/lib/ops/addresses'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -212,39 +213,23 @@ export async function POST(request: NextRequest) {
     }
 
     // --- Find or create service address ---
-    const { data: existingAddress } = await supabase
-      .from('ops_service_addresses')
-      .select('id')
-      .eq('customer_id', customerId)
-      .eq('street_1', street1)
-      .eq('zip_code', zipCode)
-      .maybeSingle()
+    const resolved = await resolveServiceAddress(supabase, customerId, {
+      label: 'Service Address',
+      street_1: street1,
+      city,
+      state,
+      zip_code: zipCode,
+    })
 
-    let addressId: string
-
-    if (existingAddress) {
-      addressId = existingAddress.id
-      const { error: addrUpdateErr } = await supabase
-        .from('ops_service_addresses')
-        .update({ city, state, updated_at: new Date().toISOString() })
-        .eq('id', addressId)
-      if (addrUpdateErr) throw addrUpdateErr
-    } else {
-      const { data: newAddress, error: addrInsertErr } = await supabase
-        .from('ops_service_addresses')
-        .insert({
-          customer_id: customerId,
-          street_1: street1,
-          city,
-          state,
-          zip_code: zipCode,
-          label: 'Service Address',
-        })
-        .select('id')
-        .single()
-      if (addrInsertErr) throw addrInsertErr
-      addressId = newAddress.id
+    if (!resolved) {
+      return NextResponse.json(
+        { error: 'Failed to save service address' },
+        { status: 500, headers: CORS },
+      )
     }
+
+    const addressId = resolved.id
+
 
     // --- Calculate totals ---
     const subtotal = lineItems.reduce(

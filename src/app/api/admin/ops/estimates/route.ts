@@ -12,6 +12,7 @@ import {
   supportsDimensions,
 } from '@/lib/ops/estimates'
 import { normalizeOpsPhone, opsPhoneLookupVariants } from '@/lib/ops/phone'
+import { resolveServiceAddress } from '@/lib/ops/addresses'
 
 type IncomingLineItem = {
   service_catalog_item_id?: string | null
@@ -219,23 +220,12 @@ export async function POST(request: NextRequest) {
       : null
     const inlineAddress = body.address
     if (!addressId && inlineAddress) {
-      const { data: inserted, error: insertError } = await supabase
-        .from('ops_service_addresses')
-        .insert({
-          customer_id: customerId,
-          label: inlineAddress.label || 'Service Address',
-          street_1: String(inlineAddress.street_1 || '').trim(),
-          street_2: inlineAddress.street_2 || null,
-          city: String(inlineAddress.city || '').trim(),
-          state: String(inlineAddress.state || '').trim(),
-          zip_code: String(inlineAddress.zip_code || '').trim(),
-          gate_code: inlineAddress.gate_code || null,
-          notes: inlineAddress.notes || null,
-        })
-        .select('id')
-        .single()
-      if (insertError) throw insertError
-      addressId = inserted.id
+      const resolved = await resolveServiceAddress(
+        supabase,
+        customerId,
+        inlineAddress,
+      )
+      addressId = resolved?.id || null
     }
     if (!addressId) {
       return NextResponse.json(
@@ -393,7 +383,7 @@ export async function POST(request: NextRequest) {
         appointment_date: appointmentDate,
         start_time: `${startTime}:00`.slice(0, 8),
         end_time: endTime,
-        status: 'booked',
+        status: 'confirmed',
         payment_status: 'unpaid',
         booking_channel: 'admin',
         source: 'internal',
@@ -426,9 +416,9 @@ export async function POST(request: NextRequest) {
     await supabase.from('ops_appointment_status_events').insert({
       appointment_id: appointment.id,
       from_status: null,
-      to_status: 'booked',
+      to_status: 'confirmed',
       changed_by: access.id,
-      notes: 'Estimate created',
+      notes: 'Estimate created manually',
     })
 
     return NextResponse.json({ estimate_id: appointment.id }, { status: 201 })

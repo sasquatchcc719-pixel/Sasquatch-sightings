@@ -18,6 +18,7 @@ import {
   normalizeOpsPhone,
   opsPhoneLookupVariants,
 } from '@/lib/ops/phone'
+import { resolveServiceAddress } from '@/lib/ops/addresses'
 
 type IncomingLineItem = {
   service_catalog_item_id?: string | null
@@ -349,30 +350,17 @@ export async function POST(request: NextRequest) {
       if (existingAddressError) throw existingAddressError
       address = existingAddress
     } else {
-      const { data: insertedAddress, error: addressError } = await supabase
-        .from('ops_service_addresses')
-        .insert({
-          customer_id: customerId,
-          label: body.address?.label
-            ? String(body.address.label)
-            : 'Service Address',
-          street_1: street1,
-          street_2: body.address?.street_2
-            ? String(body.address.street_2)
-            : null,
-          city,
-          state,
-          zip_code: zipCode,
-          gate_code: body.address?.gate_code
-            ? String(body.address.gate_code)
-            : null,
-          notes: body.address?.notes ? String(body.address.notes) : null,
-        })
-        .select()
-        .single()
-
-      if (addressError) throw addressError
-      address = insertedAddress
+      const inlineAddress = {
+        label: body.address?.label ? String(body.address.label) : 'Service Address',
+        street_1: street1,
+        street_2: body.address?.street_2 ? String(body.address.street_2) : null,
+        city,
+        state,
+        zip_code: zipCode,
+        gate_code: body.address?.gate_code ? String(body.address.gate_code) : null,
+        notes: body.address?.notes ? String(body.address.notes) : null,
+      }
+      address = await resolveServiceAddress(supabase, customerId, inlineAddress)
     }
 
     if (!address) {
