@@ -202,7 +202,7 @@ export async function POST(request: NextRequest) {
             notes: inlineCustomer.notes || null,
           })
           .select('id')
-        
+
         if (insertError) throw insertError
         if (inserted && inserted.length > 0) {
           customerId = inserted[0].id
@@ -301,8 +301,7 @@ export async function POST(request: NextRequest) {
               ? computedQty
               : 1
       } else {
-        quantity =
-          providedQty != null && providedQty > 0 ? providedQty : 1
+        quantity = providedQty != null && providedQty > 0 ? providedQty : 1
       }
 
       const unitPrice = Number(
@@ -393,7 +392,11 @@ export async function POST(request: NextRequest) {
         source: 'internal',
         kind: 'estimate',
         estimate_status: 'draft',
-        quickbooks_sync_status: 'not_synced',
+        // Estimates never sync to QuickBooks on their own — they become a
+        // real appointment via the convert route, which sets a proper
+        // sync status at that point. 'held' is the only allowed DB value
+        // for "do not sync yet" per the ops_appointments CHECK constraint.
+        quickbooks_sync_status: 'held',
         quoted_total: Number(subtotal.toFixed(2)),
         internal_notes: body.internal_notes
           ? String(body.internal_notes)
@@ -429,8 +432,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ estimate_id: appointment.id }, { status: 201 })
   } catch (error) {
     console.error('[ops/estimates][POST] Error:', error)
+    const message =
+      error instanceof Error
+        ? error.message
+        : typeof error === 'object' && error && 'message' in error
+          ? String((error as { message: unknown }).message)
+          : 'Failed to create estimate'
     return NextResponse.json(
-      { error: 'Failed to create estimate' },
+      { error: message || 'Failed to create estimate' },
       { status: 500 },
     )
   }

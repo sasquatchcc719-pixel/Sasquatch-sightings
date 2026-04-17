@@ -389,7 +389,9 @@ export async function POST(request: NextRequest) {
         payment_status: 'unpaid',
         kind: appointmentKind,
         estimate_status: isEstimate ? 'draft' : null,
-        quickbooks_sync_status: isEstimate ? 'not_synced' : syncStatus,
+        // Estimates never sync to QuickBooks; 'held' is the allowed
+        // "do not sync" value on the ops_appointments CHECK constraint.
+        quickbooks_sync_status: isEstimate ? 'held' : syncStatus,
         appointment_date: appointmentDate,
         start_time: `${startTime}:00`.slice(0, 8),
         end_time: addMinutesToTime(startTime, totalMinutesWithBuffer),

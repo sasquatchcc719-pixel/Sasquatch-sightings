@@ -426,6 +426,7 @@ export async function syncAppointmentToQuickBooks(appointmentId: string) {
       `
       id,
       appointment_date,
+      kind,
       ops_customers!ops_appointments_customer_id_fkey (
         id, full_name, first_name, email, phone, quickbooks_customer_id,
         ops_service_addresses ( street_1, street_2, city, state, zip_code )
@@ -440,6 +441,16 @@ export async function syncAppointmentToQuickBooks(appointmentId: string) {
     .single()
 
   if (!appointment) throw new Error(`Appointment ${appointmentId} not found`)
+
+  // Hard guard: estimates never go to QuickBooks, regardless of who called us.
+  // Charles' rule: no estimates in QB, ever. Only the real service appointment
+  // that comes out of the convert flow is eligible.
+  if ((appointment as { kind?: string | null }).kind === 'estimate') {
+    console.log(
+      `[QB sync] Skipped appointment ${appointmentId}: kind=estimate (estimates never sync)`,
+    )
+    return
+  }
 
   const customer = Array.isArray(appointment.ops_customers)
     ? appointment.ops_customers[0]
