@@ -45,8 +45,8 @@ const INVOICE_SELECT = `
       id,
       storage_path,
       public_url,
-      photo_type,
-      caption,
+      label,
+      watermarked,
       created_at
     )
   ),
