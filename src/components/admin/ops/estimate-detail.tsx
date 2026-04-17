@@ -10,10 +10,13 @@ import {
   Mail,
   MapPin,
   MessageSquare,
+  Pencil,
   Phone,
   Plus,
   Ruler,
+  Search,
   Trash2,
+  User,
   X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -264,6 +267,19 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
   const [scheduleStart, setScheduleStart] = useState('')
   const [scheduleEnd, setScheduleEnd] = useState('')
 
+  // ── Editable contact / address state ──────────────────────────────────
+  const [contactFirstName, setContactFirstName] = useState('')
+  const [contactLastName, setContactLastName] = useState('')
+  const [contactBusiness, setContactBusiness] = useState('')
+  const [contactPhone, setContactPhone] = useState('')
+  const [contactEmail, setContactEmail] = useState('')
+  const [addrStreet1, setAddrStreet1] = useState('')
+  const [addrStreet2, setAddrStreet2] = useState('')
+  const [addrCity, setAddrCity] = useState('')
+  const [addrState, setAddrState] = useState('CO')
+  const [addrZip, setAddrZip] = useState('')
+  const [addrGateCode, setAddrGateCode] = useState('')
+
   const [catalog, setCatalog] = useState<ServiceCatalogItem[]>([])
   const [linePickerCategory, setLinePickerCategory] = useState<string>('')
 
@@ -306,6 +322,29 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
         })),
       )
       setConvertDate(nextBusinessDay(data.estimate.appointment_date))
+
+      // Populate editable contact fields
+      const cust = Array.isArray(data.estimate.ops_customers)
+        ? data.estimate.ops_customers[0]
+        : data.estimate.ops_customers
+      if (cust) {
+        setContactFirstName(cust.first_name || '')
+        setContactLastName(cust.last_name || '')
+        setContactBusiness(cust.business_name || '')
+        setContactPhone(cust.phone || '')
+        setContactEmail(cust.email || '')
+      }
+      const addr = Array.isArray(data.estimate.ops_service_addresses)
+        ? data.estimate.ops_service_addresses[0]
+        : data.estimate.ops_service_addresses
+      if (addr) {
+        setAddrStreet1(addr.street_1 || '')
+        setAddrStreet2(addr.street_2 || '')
+        setAddrCity(addr.city || '')
+        setAddrState(addr.state || 'CO')
+        setAddrZip(addr.zip_code || '')
+        setAddrGateCode(addr.gate_code || '')
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load estimate')
     } finally {
@@ -504,11 +543,30 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
     setSaving(true)
     setError(null)
     try {
-      const body = {
+      const body: Record<string, unknown> = {
         appointment_date: scheduleDate,
         start_time: scheduleStart,
         end_time: scheduleEnd || undefined,
         internal_notes: internalNotes,
+        customer: {
+          first_name: contactFirstName || null,
+          last_name: contactLastName || null,
+          full_name:
+            [contactFirstName, contactLastName].filter(Boolean).join(' ') ||
+            contactBusiness ||
+            'Customer',
+          business_name: contactBusiness || null,
+          phone: contactPhone || null,
+          email: contactEmail || null,
+        },
+        address: {
+          street_1: addrStreet1 || null,
+          street_2: addrStreet2 || null,
+          city: addrCity || null,
+          state: addrState || 'CO',
+          zip_code: addrZip || null,
+          gate_code: addrGateCode || null,
+        },
         line_items: lineItems.map((line) => {
           const unit = line.pricing_unit_snapshot
           const segs = segmentRowsToAreaSegments(line.area_segments)
@@ -555,6 +613,17 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
     scheduleDate,
     scheduleEnd,
     scheduleStart,
+    contactFirstName,
+    contactLastName,
+    contactBusiness,
+    contactPhone,
+    contactEmail,
+    addrStreet1,
+    addrStreet2,
+    addrCity,
+    addrState,
+    addrZip,
+    addrGateCode,
   ])
 
   const handleStatusChange = useCallback(
@@ -667,11 +736,8 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
   const statusKey = estimate.estimate_status || 'draft'
   const badge = STATUS_BADGE[statusKey] || STATUS_BADGE.draft
   const isConverted = !!estimate.converted_appointment_id
-  const fullAddress = address
-    ? `${address.street_1}${address.street_2 ? `, ${address.street_2}` : ''}, ${address.city}, ${address.state} ${address.zip_code}`
-    : null
-  const mapsHref = address
-    ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${address.street_1}, ${address.city}, ${address.state} ${address.zip_code}`)}`
+  const mapsHref = addrStreet1 && addrCity
+    ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${addrStreet1}, ${addrCity}, ${addrState} ${addrZip}`)}`
     : null
 
   return (
@@ -684,7 +750,7 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
               Estimate · {formatDate(estimate.appointment_date)}
             </p>
             <h1 className="mt-1 text-3xl font-bold">
-              {customer?.business_name || customer?.full_name || 'Customer'}
+              {contactBusiness || [contactFirstName, contactLastName].filter(Boolean).join(' ') || 'New Estimate'}
             </h1>
             <p className="text-muted-foreground mt-1 text-sm">
               Measuring visit · {estimate.start_time.slice(0, 5)}–
@@ -699,61 +765,6 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
             </p>
             <p className="text-muted-foreground text-xs">Est. job total</p>
           </div>
-        </div>
-
-        {/* Contact + address */}
-        <div className="mt-6 space-y-3 text-sm">
-          {customer?.phone ? (
-            <div className="flex items-center gap-3">
-              <Phone className="text-muted-foreground h-4 w-4 shrink-0" />
-              <span className="flex-1 text-base tabular-nums">
-                {customer.phone}
-              </span>
-              <Button className="gap-2" asChild>
-                <a href={`tel:${customer.phone}`}>
-                  <Phone className="h-4 w-4" />
-                  Call
-                </a>
-              </Button>
-              <Button variant="outline" className="gap-2" asChild>
-                <a href={`sms:${customer.phone}`}>
-                  <MessageSquare className="h-4 w-4" />
-                  Text
-                </a>
-              </Button>
-            </div>
-          ) : null}
-          {customer?.email ? (
-            <div className="text-muted-foreground flex items-center gap-2">
-              <Mail className="h-4 w-4 shrink-0" />
-              <span>{customer.email}</span>
-            </div>
-          ) : null}
-          {fullAddress && mapsHref ? (
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center gap-2">
-                <MapPin className="text-muted-foreground h-4 w-4 shrink-0" />
-                <span className="text-muted-foreground flex-1">
-                  {fullAddress}
-                </span>
-              </div>
-              {address?.gate_code ? (
-                <p className="text-muted-foreground ml-6 text-xs">
-                  Gate: {address.gate_code}
-                </p>
-              ) : null}
-              <Button
-                size="default"
-                className="w-full gap-2 bg-green-600 font-bold tracking-widest text-white uppercase hover:bg-green-500"
-                asChild
-              >
-                <a href={mapsHref} target="_blank" rel="noopener noreferrer">
-                  <MapPin className="h-4 w-4" />
-                  Get Directions
-                </a>
-              </Button>
-            </div>
-          ) : null}
         </div>
 
         {isConverted ? (
@@ -771,6 +782,154 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
               Open the service job <ArrowRight className="ml-1 h-3 w-3" />
             </Button>
           </div>
+        ) : null}
+      </Card>
+
+      {/* ── Contact Information ───────────────────────────────────── */}
+      <Card className="space-y-4 p-6">
+        <div className="flex items-center gap-2">
+          <User className="text-muted-foreground h-4 w-4" />
+          <h2 className="text-base font-semibold">Contact information</h2>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <Label className="text-xs">First name</Label>
+            <Input
+              value={contactFirstName}
+              onChange={(e) => setContactFirstName(e.target.value)}
+              placeholder="First name"
+            />
+          </div>
+          <div>
+            <Label className="text-xs">Last name</Label>
+            <Input
+              value={contactLastName}
+              onChange={(e) => setContactLastName(e.target.value)}
+              placeholder="Last name"
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <Label className="text-xs">Business name (optional)</Label>
+            <Input
+              value={contactBusiness}
+              onChange={(e) => setContactBusiness(e.target.value)}
+              placeholder="Business name"
+            />
+          </div>
+          <div>
+            <Label className="text-xs">Phone</Label>
+            <Input
+              value={contactPhone}
+              onChange={(e) => setContactPhone(e.target.value)}
+              placeholder="+1XXXXXXXXXX"
+            />
+          </div>
+          <div>
+            <Label className="text-xs">Email</Label>
+            <Input
+              type="email"
+              value={contactEmail}
+              onChange={(e) => setContactEmail(e.target.value)}
+              placeholder="customer@example.com"
+            />
+          </div>
+        </div>
+
+        {/* Quick action buttons when contact info exists */}
+        {contactPhone ? (
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" className="gap-2" asChild>
+              <a href={`tel:${contactPhone}`}>
+                <Phone className="h-4 w-4" />
+                Call
+              </a>
+            </Button>
+            <Button size="sm" variant="outline" className="gap-2" asChild>
+              <a href={`sms:${contactPhone}`}>
+                <MessageSquare className="h-4 w-4" />
+                Text
+              </a>
+            </Button>
+            {contactEmail ? (
+              <Button size="sm" variant="outline" className="gap-2" asChild>
+                <a href={`mailto:${contactEmail}`}>
+                  <Mail className="h-4 w-4" />
+                  Email
+                </a>
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+      </Card>
+
+      {/* ── Service Address ───────────────────────────────────────── */}
+      <Card className="space-y-4 p-6">
+        <div className="flex items-center gap-2">
+          <MapPin className="text-muted-foreground h-4 w-4" />
+          <h2 className="text-base font-semibold">Service address</h2>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <Label className="text-xs">Street</Label>
+            <Input
+              value={addrStreet1}
+              onChange={(e) => setAddrStreet1(e.target.value)}
+              placeholder="123 Main St"
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <Label className="text-xs">Street 2 (apt, suite, etc.)</Label>
+            <Input
+              value={addrStreet2}
+              onChange={(e) => setAddrStreet2(e.target.value)}
+              placeholder="Apt, Suite, Unit"
+            />
+          </div>
+          <div>
+            <Label className="text-xs">City</Label>
+            <Input
+              value={addrCity}
+              onChange={(e) => setAddrCity(e.target.value)}
+              placeholder="City"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label className="text-xs">State</Label>
+              <Input
+                value={addrState}
+                onChange={(e) => setAddrState(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Zip</Label>
+              <Input
+                value={addrZip}
+                onChange={(e) => setAddrZip(e.target.value)}
+                placeholder="80xxx"
+              />
+            </div>
+          </div>
+          <div>
+            <Label className="text-xs">Gate code</Label>
+            <Input
+              value={addrGateCode}
+              onChange={(e) => setAddrGateCode(e.target.value)}
+              placeholder="Gate / access code"
+            />
+          </div>
+        </div>
+        {mapsHref ? (
+          <Button
+            size="default"
+            className="w-full gap-2 bg-green-600 font-bold tracking-widest text-white uppercase hover:bg-green-500"
+            asChild
+          >
+            <a href={mapsHref} target="_blank" rel="noopener noreferrer">
+              <MapPin className="h-4 w-4" />
+              Get Directions
+            </a>
+          </Button>
         ) : null}
       </Card>
 
