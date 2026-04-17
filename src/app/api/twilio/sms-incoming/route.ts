@@ -19,6 +19,7 @@ import {
   isHarryFunctionEnabled,
 } from '@/lib/harry/control'
 import { sendCustomerSMS, sendAdminSMS } from '@/lib/twilio'
+import { logChatMessage } from '@/lib/ai/logging'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -823,6 +824,17 @@ export async function POST(request: NextRequest) {
       return emptyTwiml
     }
 
+    // LSA disclaimer filter: Google Local Services Ads sends every inbound as
+    // TWO SMS — the customer's actual message, then a "Replies to this number
+    // will be sent to the customer..." boilerplate. If we let Harry reply to
+    // both, the customer sees two Harry messages at the same timestamp (one
+    // answering their real question, one answering the boilerplate). We save
+    // the boilerplate for context but skip AI generation.
+    const isLsaDisclaimer =
+      /^\s*Replies to this number will be sent to the customer\b/i.test(
+        messageBody,
+      )
+
     // Add customer message to conversation history
     messages.push({
       role: 'user',
@@ -830,6 +842,33 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString(),
       twilio_sid: twilioSid,
     })
+
+    // Unified observability: mirror to ai_chat_logs (Harry + Scout + anything we add)
+    await logChatMessage({
+      agent: 'harry',
+      channel: 'sms',
+      sessionId: conversation.id,
+      fromIdentity: normalizedPhone,
+      role: 'user',
+      content: messageBody,
+      metadata: {
+        twilio_sid: twilioSid,
+        to_number: toNumber || null,
+        channel_key: channelKey,
+        is_lsa_disclaimer: isLsaDisclaimer,
+      },
+    })
+
+    if (isLsaDisclaimer) {
+      console.log(
+        `[SMS] LSA disclaimer detected — saving to history but skipping AI response`,
+      )
+      await supabase
+        .from('conversations')
+        .update({ messages, updated_at: new Date().toISOString() })
+        .eq('id', conversation.id)
+      return emptyTwiml
+    }
 
     // Persist the user message immediately so that Twilio webhook retries
     // (which arrive while the AI is still generating) see the twilio_sid in
@@ -997,6 +1036,19 @@ export async function POST(request: NextRequest) {
         role: 'assistant',
         content: aiResponse,
         timestamp: new Date().toISOString(),
+      })
+
+      await logChatMessage({
+        agent: 'harry',
+        channel: 'sms',
+        sessionId: conversation.id,
+        fromIdentity: normalizedPhone,
+        role: 'assistant',
+        content: aiResponse,
+        metadata: {
+          to_number: toNumber || null,
+          channel_key: channelKey,
+        },
       })
 
       // Check if conversation should be escalated
