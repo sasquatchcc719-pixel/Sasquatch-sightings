@@ -83,12 +83,6 @@ export function NewEstimateWorkspace({
     notes: '',
   })
 
-  const [appointmentDate, setAppointmentDate] = useState(
-    initialDate || todayIso(),
-  )
-  const [startTime, setStartTime] = useState(initialTime || '09:00')
-  const [internalNotes, setInternalNotes] = useState('')
-
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -142,7 +136,6 @@ export function NewEstimateWorkspace({
 
   const canSubmit = useMemo(() => {
     if (submitting) return false
-    if (!appointmentDate || !startTime) return false
     if (useNewCustomer) {
       const ok = newCustomer.phone.trim().length >= 7
       if (!ok) return false
@@ -159,8 +152,6 @@ export function NewEstimateWorkspace({
     return !!selectedAddressId
   }, [
     submitting,
-    appointmentDate,
-    startTime,
     useNewCustomer,
     newCustomer.phone,
     selectedCustomer,
@@ -176,9 +167,9 @@ export function NewEstimateWorkspace({
     setError(null)
     try {
       const body: Record<string, unknown> = {
-        appointment_date: appointmentDate,
-        start_time: startTime,
-        internal_notes: internalNotes || null,
+        appointment_date: initialDate || todayIso(),
+        start_time: initialTime || '09:00',
+        internal_notes: null,
       }
 
       if (useNewCustomer) {
@@ -229,9 +220,8 @@ export function NewEstimateWorkspace({
       setSubmitting(false)
     }
   }, [
-    appointmentDate,
-    startTime,
-    internalNotes,
+    initialDate,
+    initialTime,
     useNewCustomer,
     newCustomer,
     selectedCustomer,
@@ -258,8 +248,7 @@ export function NewEstimateWorkspace({
           <h1 className="text-2xl font-bold">New estimate</h1>
         </div>
         <p className="text-muted-foreground text-sm">
-          Book a measuring visit. You can add line items, lengths, widths, and
-          detailed notes after the estimate is created.
+          Select or create a customer below. You will be immediately directed to the detailed estimate where you can add line items and select length × width to calculate areas.
         </p>
       </div>
 
@@ -522,41 +511,6 @@ export function NewEstimateWorkspace({
         </Card>
       )}
 
-      {/* ── Schedule ─────────────────────────────────────────────────── */}
-      <Card className="space-y-3 p-5">
-        <h2 className="text-base font-semibold">When to measure</h2>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <Label className="text-xs">Date</Label>
-            <Input
-              type="date"
-              value={appointmentDate}
-              onChange={(e) => setAppointmentDate(e.target.value)}
-            />
-          </div>
-          <div>
-            <Label className="text-xs">Start time</Label>
-            <Input
-              type="time"
-              value={startTime}
-              onChange={(e) => setStartTime(e.target.value)}
-            />
-          </div>
-        </div>
-        <div>
-          <Label className="text-xs">Internal notes (private)</Label>
-          <Textarea
-            rows={2}
-            value={internalNotes}
-            onChange={(e) => setInternalNotes(e.target.value)}
-            placeholder="Anything you want to remember before the measure…"
-          />
-        </div>
-        <p className="text-muted-foreground text-xs">
-          30-minute block. You can adjust duration and add line items with
-          length × width after creating the estimate.
-        </p>
-      </Card>
 
       {error ? (
         <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">

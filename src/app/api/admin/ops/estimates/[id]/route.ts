@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
-import { computeAreaQuantity, supportsDimensions } from '@/lib/ops/estimates'
+import {
+  computeAreaQuantity,
+  parseAreaSegmentsInput,
+  quantityFromSegments,
+  supportsDimensions,
+} from '@/lib/ops/estimates'
 
 const ESTIMATE_DETAIL_SELECT = `
   *,
@@ -39,6 +44,7 @@ const ESTIMATE_DETAIL_SELECT = `
     length_value,
     width_value,
     pricing_unit_snapshot,
+    area_segments,
     created_at
   ),
   ops_job_photos (
@@ -63,6 +69,7 @@ type IncomingLineItem = {
   length_value?: number | string | null
   width_value?: number | string | null
   pricing_unit_snapshot?: string | null
+  area_segments?: unknown
 }
 
 function toNumberOrNull(value: unknown): number | null {
@@ -257,19 +264,42 @@ export async function PATCH(
                 ?.pricing_unit ?? null)
             : null)
 
-        const lengthValue = toNumberOrNull(item.length_value)
-        const widthValue = toNumberOrNull(item.width_value)
-
+        let lengthValue = toNumberOrNull(item.length_value)
+        let widthValue = toNumberOrNull(item.width_value)
         const providedQty = toNumberOrNull(item.quantity)
-        const computedQty = supportsDimensions(pricingUnit)
-          ? computeAreaQuantity(lengthValue, widthValue, pricingUnit)
-          : null
-        const quantity =
-          providedQty != null && providedQty > 0
-            ? providedQty
-            : computedQty != null && computedQty > 0
-              ? computedQty
-              : 1
+        const segments = parseAreaSegmentsInput(item.area_segments)
+
+        let quantity: number
+        let areaSegmentsToStore: unknown = null
+
+        if (supportsDimensions(pricingUnit) && segments?.length) {
+          const q = quantityFromSegments(segments, pricingUnit)
+          areaSegmentsToStore = segments
+          lengthValue = segments[0]?.length ?? null
+          widthValue = segments[0]?.width ?? null
+          quantity =
+            q != null && q > 0
+              ? q
+              : providedQty != null && providedQty > 0
+                ? providedQty
+                : 1
+        } else if (supportsDimensions(pricingUnit)) {
+          const computedQty = computeAreaQuantity(
+            lengthValue,
+            widthValue,
+            pricingUnit,
+          )
+          quantity =
+            providedQty != null && providedQty > 0
+              ? providedQty
+              : computedQty != null && computedQty > 0
+                ? computedQty
+                : 1
+        } else {
+          quantity =
+            providedQty != null && providedQty > 0 ? providedQty : 1
+        }
+
         const unitPrice = Number(item.unit_price ?? 0)
         const durationMinutes = Number(item.duration_minutes ?? 0)
         const bufferMinutes = Number(item.buffer_minutes ?? 0)
@@ -289,6 +319,7 @@ export async function PATCH(
           length_value: lengthValue,
           width_value: widthValue,
           pricing_unit_snapshot: pricingUnit ? String(pricingUnit) : null,
+          area_segments: areaSegmentsToStore,
         }
 
         if (isNew) {

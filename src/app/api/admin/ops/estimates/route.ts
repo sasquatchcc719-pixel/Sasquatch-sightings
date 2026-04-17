@@ -5,7 +5,13 @@ import {
   applyAppointmentBuffer,
   calculateLineItemDurationMinutes,
 } from '@/lib/ops/availability'
-import { computeAreaQuantity, supportsDimensions } from '@/lib/ops/estimates'
+import {
+  computeAreaQuantity,
+  parseAreaSegmentsInput,
+  quantityFromSegments,
+  supportsDimensions,
+} from '@/lib/ops/estimates'
+import { normalizeOpsPhone, opsPhoneLookupVariants } from '@/lib/ops/phone'
 
 type IncomingLineItem = {
   service_catalog_item_id?: string | null
@@ -18,6 +24,7 @@ type IncomingLineItem = {
   length_value?: number | string | null
   width_value?: number | string | null
   pricing_unit_snapshot?: string | null
+  area_segments?: unknown
 }
 
 type NormalizedEstimateLine = {
@@ -32,6 +39,7 @@ type NormalizedEstimateLine = {
   length_value: number | null
   width_value: number | null
   pricing_unit_snapshot: string | null
+  area_segments: unknown
 }
 
 function toNumberOrNull(value: unknown): number | null {
@@ -161,18 +169,23 @@ export async function POST(request: NextRequest) {
           .trim() ||
         inlineCustomer.business_name ||
         'Customer'
-      const phone = String(inlineCustomer.phone || '').trim()
-      if (!phone) {
+      const phoneRaw = String(inlineCustomer.phone || '').trim()
+      if (!phoneRaw) {
         return NextResponse.json(
           { error: 'Customer phone is required when creating inline' },
           { status: 400 },
         )
       }
-      const { data: existing } = await supabase
+      const phone = normalizeOpsPhone(phoneRaw)
+      const variants = opsPhoneLookupVariants(phoneRaw)
+      const { data: matches, error: matchError } = await supabase
         .from('ops_customers')
         .select('id')
-        .eq('phone', phone)
-        .maybeSingle()
+        .in('phone', variants)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+      if (matchError) throw matchError
+      const existing = matches?.[0]
       if (existing) {
         customerId = existing.id
       } else {
@@ -262,19 +275,41 @@ export async function POST(request: NextRequest) {
           ? (service.pricing_unit as string | null)
           : null)
 
-      const lengthValue = toNumberOrNull(line.length_value)
-      const widthValue = toNumberOrNull(line.width_value)
-
+      let lengthValue = toNumberOrNull(line.length_value)
+      let widthValue = toNumberOrNull(line.width_value)
       const providedQty = toNumberOrNull(line.quantity)
-      const computedQty = supportsDimensions(pricingUnit)
-        ? computeAreaQuantity(lengthValue, widthValue, pricingUnit)
-        : null
-      const quantity =
-        providedQty != null && providedQty > 0
-          ? providedQty
-          : computedQty != null && computedQty > 0
-            ? computedQty
-            : 1
+      const segments = parseAreaSegmentsInput(line.area_segments)
+
+      let quantity: number
+      let areaSegmentsToStore: unknown = null
+
+      if (supportsDimensions(pricingUnit) && segments?.length) {
+        const q = quantityFromSegments(segments, pricingUnit)
+        areaSegmentsToStore = segments
+        lengthValue = segments[0]?.length ?? null
+        widthValue = segments[0]?.width ?? null
+        quantity =
+          q != null && q > 0
+            ? q
+            : providedQty != null && providedQty > 0
+              ? providedQty
+              : 1
+      } else if (supportsDimensions(pricingUnit)) {
+        const computedQty = computeAreaQuantity(
+          lengthValue,
+          widthValue,
+          pricingUnit,
+        )
+        quantity =
+          providedQty != null && providedQty > 0
+            ? providedQty
+            : computedQty != null && computedQty > 0
+              ? computedQty
+              : 1
+      } else {
+        quantity =
+          providedQty != null && providedQty > 0 ? providedQty : 1
+      }
 
       const unitPrice = Number(
         line.unit_price ??
@@ -313,6 +348,7 @@ export async function POST(request: NextRequest) {
         length_value: lengthValue,
         width_value: widthValue,
         pricing_unit_snapshot: pricingUnit ? String(pricingUnit) : null,
+        area_segments: areaSegmentsToStore,
       }
     })
 

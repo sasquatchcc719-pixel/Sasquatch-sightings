@@ -14,6 +14,10 @@ import {
 import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
 import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
 import { scheduleJobReminder } from '@/lib/onesignal'
+import {
+  normalizeOpsPhone,
+  opsPhoneLookupVariants,
+} from '@/lib/ops/phone'
 
 type IncomingLineItem = {
   service_catalog_item_id?: string | null
@@ -34,13 +38,6 @@ type NormalizedLineItem = {
   buffer_minutes: number
   line_total: number
   notes: string | null
-}
-
-function normalizePhone(phone: string): string {
-  const digits = phone.replace(/\D/g, '')
-  if (digits.length === 10) return `+1${digits}`
-  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`
-  return phone.startsWith('+') ? phone : `+${digits}`
 }
 
 function addMinutesToTime(value: string, minutesToAdd: number): string {
@@ -66,7 +63,7 @@ export async function POST(request: NextRequest) {
     const fullName =
       String(body.customer?.full_name || '').trim() ||
       [firstName, lastName].filter(Boolean).join(' ').trim()
-    const phone = normalizePhone(String(body.customer?.phone || '').trim())
+    const phone = normalizeOpsPhone(String(body.customer?.phone || '').trim())
     const email = body.customer?.email
       ? String(body.customer.email).trim()
       : null
@@ -258,14 +255,11 @@ export async function POST(request: NextRequest) {
     }
 
     let customerId: string
-    const { data: existingCustomer } = await supabase
-      .from('ops_customers')
-      .select('id')
-      .eq('phone', phone)
-      .maybeSingle()
+    const bodyCustomerId = body.customer_id
+      ? String(body.customer_id).trim()
+      : null
 
-    if (existingCustomer) {
-      customerId = existingCustomer.id
+    const applyCustomerUpdate = async (id: string) => {
       const { error: updateCustomerError } = await supabase
         .from('ops_customers')
         .update({
@@ -274,29 +268,64 @@ export async function POST(request: NextRequest) {
           last_name: lastName,
           business_name: businessName,
           email,
+          phone,
           notes: body.customer?.notes ? String(body.customer.notes) : null,
           updated_at: new Date().toISOString(),
         })
-        .eq('id', customerId)
-
+        .eq('id', id)
       if (updateCustomerError) throw updateCustomerError
-    } else {
-      const { data: customer, error: customerError } = await supabase
-        .from('ops_customers')
-        .insert({
-          full_name: fullName,
-          first_name: firstName,
-          last_name: lastName,
-          business_name: businessName,
-          email,
-          phone,
-          notes: body.customer?.notes ? String(body.customer.notes) : null,
-        })
-        .select()
-        .single()
+    }
 
-      if (customerError) throw customerError
-      customerId = customer.id
+    if (bodyCustomerId) {
+      const { data: byId, error: byIdError } = await supabase
+        .from('ops_customers')
+        .select('id')
+        .eq('id', bodyCustomerId)
+        .maybeSingle()
+      if (byIdError) throw byIdError
+      if (!byId) {
+        return NextResponse.json(
+          {
+            error:
+              'That customer record was not found. Search again or clear the selection.',
+          },
+          { status: 400 },
+        )
+      }
+      customerId = byId.id
+      await applyCustomerUpdate(customerId)
+    } else {
+      const variants = opsPhoneLookupVariants(String(body.customer?.phone || ''))
+      const { data: matches, error: matchError } = await supabase
+        .from('ops_customers')
+        .select('id')
+        .in('phone', variants)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+      if (matchError) throw matchError
+      const existingCustomer = matches?.[0]
+
+      if (existingCustomer) {
+        customerId = existingCustomer.id
+        await applyCustomerUpdate(customerId)
+      } else {
+        const { data: customer, error: customerError } = await supabase
+          .from('ops_customers')
+          .insert({
+            full_name: fullName,
+            first_name: firstName,
+            last_name: lastName,
+            business_name: businessName,
+            email,
+            phone,
+            notes: body.customer?.notes ? String(body.customer.notes) : null,
+          })
+          .select()
+          .single()
+
+        if (customerError) throw customerError
+        customerId = customer.id
+      }
     }
 
     let address: {

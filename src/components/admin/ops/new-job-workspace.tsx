@@ -135,6 +135,21 @@ function pickDefaultCategory(categories: string[]): string {
   return normalized[0]
 }
 
+function last10Digits(phone: string): string {
+  const d = String(phone || '').replace(/\D/g, '')
+  return d.length >= 10 ? d.slice(-10) : d
+}
+
+/** Keep booking on the selected row unless the phone number clearly changed. */
+function customerFormStillMatchesSelection(
+  form: { phone: string },
+  selected: CustomerSearchResult,
+): boolean {
+  const a = last10Digits(form.phone)
+  const b = last10Digits(selected.phone || '')
+  return Boolean(a && b && a === b)
+}
+
 function splitFullName(fullName: string): {
   firstName: string
   lastName: string
@@ -604,6 +619,11 @@ export function NewJobWorkspace() {
 
     try {
       const payload = {
+        customer_id:
+          selectedCustomer &&
+          customerFormStillMatchesSelection(customerForm, selectedCustomer)
+            ? selectedCustomer.id
+            : null,
         customer: customerForm,
         address:
           addressSelection !== 'new'

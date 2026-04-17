@@ -23,11 +23,12 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import {
-  computeAreaQuantity,
-  describeAreaCalc,
+  describeSegmentsSummary,
   isAreaUnit,
   isLinearUnit,
+  quantityFromSegments,
   supportsDimensions,
+  type AreaSegment,
 } from '@/lib/ops/estimates'
 
 type ServiceCatalogItem = {
@@ -62,6 +63,9 @@ type OpsAddress = {
   notes: string | null
 }
 
+/** One L×W pair (or linear run) in the UI; clientId is React-only. */
+type SegmentRow = { clientId: string; length: string; width: string }
+
 type LineItem = {
   id: string
   service_catalog_item_id: string | null
@@ -72,9 +76,11 @@ type LineItem = {
   duration_minutes: number | string
   buffer_minutes: number | string
   line_total: number
+  /** Legacy single rectangle; kept in sync with first segment when saving. */
   length_value: number | string | null
   width_value: number | string | null
   pricing_unit_snapshot: string | null
+  area_segments: SegmentRow[]
   // Marker for newly added rows that have no DB id yet.
   _isNew?: boolean
 }
@@ -105,6 +111,7 @@ type EstimateDetail = {
     length_value: number | null
     width_value: number | null
     pricing_unit_snapshot: string | null
+    area_segments: unknown
   }>
 }
 
@@ -142,6 +149,71 @@ function nextBusinessDay(iso: string, offsetDays = 7): string {
 
 function makeRowKey(): string {
   return `new-${Math.random().toString(36).slice(2, 10)}`
+}
+
+function segmentsFromApiRow(row: {
+  id: string
+  area_segments?: unknown
+  length_value: number | null
+  width_value: number | null
+}): SegmentRow[] {
+  const raw = row.area_segments
+  if (Array.isArray(raw) && raw.length > 0) {
+    return raw.map((s: unknown, i: number) => {
+      const o = s as Record<string, unknown>
+      return {
+        clientId: `seg-${row.id}-${i}`,
+        length:
+          o.length != null && o.length !== '' ? String(o.length) : '',
+        width: o.width != null && o.width !== '' ? String(o.width) : '',
+      }
+    })
+  }
+  if (row.length_value != null || row.width_value != null) {
+    return [
+      {
+        clientId: `legacy-${row.id}`,
+        length:
+          row.length_value != null ? String(row.length_value) : '',
+        width: row.width_value != null ? String(row.width_value) : '',
+      },
+    ]
+  }
+  return []
+}
+
+function segmentRowsToAreaSegments(rows: SegmentRow[]): AreaSegment[] {
+  const out: AreaSegment[] = []
+  for (const r of rows) {
+    const l = toNumber(r.length, NaN)
+    const w = toNumber(r.width, NaN)
+    if (!Number.isFinite(l) && !Number.isFinite(w)) continue
+    out.push({
+      length: Number.isFinite(l) ? l : 0,
+      width: Number.isFinite(w) ? w : 0,
+    })
+  }
+  return out
+}
+
+function derivedQuantityFromSegments(
+  rows: SegmentRow[],
+  unit: string | null,
+): number {
+  if (!supportsDimensions(unit)) return 0
+  const segs = segmentRowsToAreaSegments(rows)
+  if (!segs.length) return 0
+  const q = quantityFromSegments(segs, unit)
+  return q != null && q > 0 ? q : 0
+}
+
+function firstSegmentLegacyDims(segs: SegmentRow[]): {
+  length_value: number | null
+  width_value: number | null
+} {
+  const n = segmentRowsToAreaSegments(segs)
+  if (!n.length) return { length_value: null, width_value: null }
+  return { length_value: n[0].length, width_value: n[0].width }
 }
 
 function toNumber(
@@ -193,6 +265,7 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
   const [scheduleEnd, setScheduleEnd] = useState('')
 
   const [catalog, setCatalog] = useState<ServiceCatalogItem[]>([])
+  const [linePickerCategory, setLinePickerCategory] = useState<string>('')
 
   const [showConvertDialog, setShowConvertDialog] = useState(false)
   const [convertDate, setConvertDate] = useState('')
@@ -229,6 +302,7 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
           length_value: row.length_value,
           width_value: row.width_value,
           pricing_unit_snapshot: row.pricing_unit_snapshot,
+          area_segments: segmentsFromApiRow(row),
         })),
       )
       setConvertDate(nextBusinessDay(data.estimate.appointment_date))
@@ -265,9 +339,31 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
     [estimate?.ops_service_addresses],
   )
 
+  const catalogCategories = useMemo(() => {
+    const labels = new Set<string>()
+    for (const s of catalog) {
+      labels.add((s.category || 'Other').trim() || 'Other')
+    }
+    return Array.from(labels).sort((a, b) => a.localeCompare(b))
+  }, [catalog])
+
+  const servicesInPickerCategory = useMemo(() => {
+    const cat = (linePickerCategory || catalogCategories[0] || 'Other').trim()
+    return catalog.filter((s) => (s.category || 'Other').trim() === cat)
+  }, [catalog, linePickerCategory, catalogCategories])
+
+  useEffect(() => {
+    if (catalogCategories.length > 0 && !linePickerCategory) {
+      setLinePickerCategory(catalogCategories[0])
+    }
+  }, [catalogCategories, linePickerCategory])
+
   const subtotal = useMemo(() => {
     return lineItems.reduce((sum, line) => {
-      const qty = toNumber(line.quantity, 1)
+      const unit = line.pricing_unit_snapshot
+      const qty = supportsDimensions(unit)
+        ? derivedQuantityFromSegments(line.area_segments, unit)
+        : toNumber(line.quantity, 1)
       const price = toNumber(line.unit_price, 0)
       return sum + qty * price
     }, 0)
@@ -287,32 +383,32 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
         if (line.id !== id) return line
         const next = { ...line, ...patch }
 
-        // If L or W is touched and we know the unit, recompute quantity.
-        const touchedDimension =
-          'length_value' in patch || 'width_value' in patch
-        if (
-          touchedDimension &&
-          supportsDimensions(next.pricing_unit_snapshot)
-        ) {
-          const l = toNumber(next.length_value, NaN)
-          const w = toNumber(next.width_value, NaN)
-          const computed = computeAreaQuantity(
-            Number.isFinite(l) ? l : null,
-            Number.isFinite(w) ? w : null,
+        if ('area_segments' in patch) {
+          const q = derivedQuantityFromSegments(
+            next.area_segments,
             next.pricing_unit_snapshot,
           )
-          if (computed != null) {
-            next.quantity = computed
-          }
+          next.quantity = q
+          const leg = firstSegmentLegacyDims(next.area_segments)
+          next.length_value = leg.length_value
+          next.width_value = leg.width_value
         }
 
-        // If quantity is manually edited, clear L/W to avoid drift between
-        // the stored quantity and what the dimensions would imply.
-        if ('quantity' in patch && !touchedDimension) {
-          // Only clear if user actually typed a new quantity (not a derived
-          // one coming from the L/W block above).
-          next.length_value = null
-          next.width_value = null
+        if (
+          'quantity' in patch &&
+          !('area_segments' in patch) &&
+          !supportsDimensions(next.pricing_unit_snapshot)
+        ) {
+          // fixed-price: keep patched quantity
+        } else if (
+          'quantity' in patch &&
+          !('area_segments' in patch) &&
+          supportsDimensions(next.pricing_unit_snapshot)
+        ) {
+          next.quantity = derivedQuantityFromSegments(
+            next.area_segments,
+            next.pricing_unit_snapshot,
+          )
         }
 
         return next
@@ -322,27 +418,63 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
 
   const handleSelectCatalogItem = useCallback(
     (rowId: string, catalogId: string) => {
-      if (!catalogId) {
-        updateLine(rowId, {
-          service_catalog_item_id: null,
-          pricing_unit_snapshot: null,
-        })
-        return
-      }
-      const item = catalog.find((c) => c.id === catalogId)
-      if (!item) return
-      updateLine(rowId, {
-        service_catalog_item_id: item.id,
-        name_snapshot: item.name,
-        unit_price: item.base_price ?? 0,
-        duration_minutes: item.default_duration_minutes ?? 30,
-        pricing_unit_snapshot: item.pricing_unit || 'fixed',
-      })
+      setLineItems((prev) =>
+        prev.map((line) => {
+          if (line.id !== rowId) return line
+          if (!catalogId) {
+            return {
+              ...line,
+              service_catalog_item_id: null,
+              pricing_unit_snapshot: 'fixed',
+              area_segments: [],
+              length_value: null,
+              width_value: null,
+              quantity: toNumber(line.quantity, 1),
+            }
+          }
+          const item = catalog.find((c) => c.id === catalogId)
+          if (!item) return line
+          const dim = supportsDimensions(item.pricing_unit || 'fixed')
+          return {
+            ...line,
+            service_catalog_item_id: item.id,
+            name_snapshot: item.name,
+            unit_price: item.base_price ?? 0,
+            duration_minutes: item.default_duration_minutes ?? 30,
+            pricing_unit_snapshot: item.pricing_unit || 'fixed',
+            area_segments: dim ? [] : [],
+            length_value: null,
+            width_value: null,
+            quantity: dim ? 0 : toNumber(line.quantity, 1),
+          }
+        }),
+      )
     },
-    [catalog, updateLine],
+    [catalog],
   )
 
-  const handleAddLine = useCallback(() => {
+  const handleAddServiceFromCatalog = useCallback((item: ServiceCatalogItem) => {
+    const dim = supportsDimensions(item.pricing_unit || 'fixed')
+    const newRow: LineItem = {
+      id: makeRowKey(),
+      service_catalog_item_id: item.id,
+      name_snapshot: item.name,
+      notes: null,
+      quantity: dim ? 0 : 1,
+      unit_price: item.base_price ?? 0,
+      duration_minutes: item.default_duration_minutes ?? 30,
+      buffer_minutes: 0,
+      line_total: 0,
+      length_value: null,
+      width_value: null,
+      pricing_unit_snapshot: item.pricing_unit || 'fixed',
+      area_segments: [],
+      _isNew: true,
+    }
+    setLineItems((prev) => [...prev, newRow])
+  }, [])
+
+  const handleAddCustomLine = useCallback(() => {
     const newRow: LineItem = {
       id: makeRowKey(),
       service_catalog_item_id: null,
@@ -356,6 +488,7 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
       length_value: null,
       width_value: null,
       pricing_unit_snapshot: 'fixed',
+      area_segments: [],
       _isNew: true,
     }
     setLineItems((prev) => [...prev, newRow])
@@ -376,25 +509,28 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
         start_time: scheduleStart,
         end_time: scheduleEnd || undefined,
         internal_notes: internalNotes,
-        line_items: lineItems.map((line) => ({
-          id: line.id,
-          service_catalog_item_id: line.service_catalog_item_id,
-          name_snapshot: line.name_snapshot,
-          notes: line.notes,
-          quantity: toNumber(line.quantity, 1),
-          unit_price: toNumber(line.unit_price, 0),
-          duration_minutes: toNumber(line.duration_minutes, 0),
-          buffer_minutes: toNumber(line.buffer_minutes, 0),
-          length_value:
-            line.length_value === '' || line.length_value == null
-              ? null
-              : Number(line.length_value),
-          width_value:
-            line.width_value === '' || line.width_value == null
-              ? null
-              : Number(line.width_value),
-          pricing_unit_snapshot: line.pricing_unit_snapshot,
-        })),
+        line_items: lineItems.map((line) => {
+          const unit = line.pricing_unit_snapshot
+          const segs = segmentRowsToAreaSegments(line.area_segments)
+          const qtyMeasured = supportsDimensions(unit)
+            ? derivedQuantityFromSegments(line.area_segments, unit)
+            : toNumber(line.quantity, 1)
+          const leg = firstSegmentLegacyDims(line.area_segments)
+          return {
+            id: line.id,
+            service_catalog_item_id: line.service_catalog_item_id,
+            name_snapshot: line.name_snapshot,
+            notes: line.notes,
+            quantity: supportsDimensions(unit) ? qtyMeasured : toNumber(line.quantity, 1),
+            unit_price: toNumber(line.unit_price, 0),
+            duration_minutes: toNumber(line.duration_minutes, 0),
+            buffer_minutes: toNumber(line.buffer_minutes, 0),
+            length_value: leg.length_value,
+            width_value: leg.width_value,
+            pricing_unit_snapshot: line.pricing_unit_snapshot,
+            area_segments: segs.length > 0 ? segs : null,
+          }
+        }),
       }
       const res = await fetch(`/api/admin/ops/estimates/${estimateId}`, {
         method: 'PATCH',
@@ -695,20 +831,81 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
 
       {/* ── Line items ──────────────────────────────────────────────── */}
       <Card className="p-4 md:p-6">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-center gap-2">
             <Ruler className="text-muted-foreground h-4 w-4" />
-            <h2 className="text-base font-semibold">Line items</h2>
+            <div>
+              <h2 className="text-base font-semibold">Line items</h2>
+              <p className="text-muted-foreground text-xs">
+                Pick a category, tap a service to add a line, then use{' '}
+                <span className="font-medium">+ Add L×W</span> to stack floor
+                areas on that line. Totals add automatically.
+              </p>
+            </div>
           </div>
-          <Button size="sm" className="gap-1" onClick={handleAddLine}>
+          <Button
+            size="sm"
+            variant="outline"
+            className="shrink-0 gap-1"
+            onClick={handleAddCustomLine}
+          >
             <Plus className="h-4 w-4" />
-            Add line
+            Custom line (no catalog)
           </Button>
+        </div>
+
+        <div className="border-border/60 mt-4 rounded-lg border bg-slate-50/80 p-3 dark:bg-slate-900/40">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,200px),1fr]">
+            <div>
+              <Label className="text-xs">Category</Label>
+              <select
+                className="border-input bg-background focus-visible:ring-ring mt-1 h-9 w-full rounded-md border px-2 text-sm shadow-sm focus-visible:ring-1 focus-visible:outline-none"
+                value={linePickerCategory || catalogCategories[0] || ''}
+                onChange={(e) => setLinePickerCategory(e.target.value)}
+              >
+                {catalogCategories.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label className="text-xs">Add from catalog (tap to add)</Label>
+              <div className="mt-1 max-h-40 overflow-y-auto rounded-md border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-950">
+                {servicesInPickerCategory.length === 0 ? (
+                  <p className="text-muted-foreground p-3 text-xs">
+                    No services in this category.
+                  </p>
+                ) : (
+                  <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {servicesInPickerCategory.map((item) => (
+                      <li key={item.id}>
+                        <button
+                          type="button"
+                          className="hover:bg-muted flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm"
+                          onClick={() => handleAddServiceFromCatalog(item)}
+                        >
+                          <span className="line-clamp-2">{item.name}</span>
+                          <span className="text-muted-foreground shrink-0 tabular-nums text-xs">
+                            {item.base_price != null
+                              ? `$${Number(item.base_price).toFixed(2)}`
+                              : '—'}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
 
         {lineItems.length === 0 ? (
           <p className="text-muted-foreground mt-4 text-sm">
-            No line items yet. Add one to start capturing measurements.
+            No lines yet. Choose a category above and tap a service, or add a
+            custom line.
           </p>
         ) : null}
 
@@ -716,15 +913,14 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
           {lineItems.map((line, idx) => {
             const unit = line.pricing_unit_snapshot
             const showDimensions = supportsDimensions(unit)
-            const lengthN = toNumber(line.length_value, NaN)
-            const widthN = toNumber(line.width_value, NaN)
-            const areaCalc = showDimensions
-              ? describeAreaCalc(
-                  Number.isFinite(lengthN) ? lengthN : null,
-                  Number.isFinite(widthN) ? widthN : null,
-                  unit,
-                )
-              : null
+            const lineQty = showDimensions
+              ? derivedQuantityFromSegments(line.area_segments, unit)
+              : toNumber(line.quantity, 1)
+            const segNumeric = segmentRowsToAreaSegments(line.area_segments)
+            const segmentsSummary =
+              showDimensions && segNumeric.length > 0
+                ? describeSegmentsSummary(segNumeric, unit)
+                : null
 
             return (
               <div
@@ -734,6 +930,9 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
                 <div className="flex items-start justify-between gap-2">
                   <p className="text-muted-foreground text-xs font-medium">
                     Line {idx + 1}
+                    {line.service_catalog_item_id
+                      ? ' · catalog'
+                      : ' · custom'}
                   </p>
                   <Button
                     size="sm"
@@ -746,150 +945,234 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
                   </Button>
                 </div>
 
-                <div className="mt-2 grid grid-cols-1 gap-3 md:grid-cols-6">
-                  <div className="md:col-span-3">
-                    <Label className="text-xs">Service from catalog</Label>
-                    <select
-                      className="border-input bg-background focus-visible:ring-ring mt-1 h-9 w-full rounded-md border px-2 text-sm shadow-sm focus-visible:ring-1 focus-visible:outline-none"
-                      value={line.service_catalog_item_id || ''}
-                      onChange={(e) =>
-                        handleSelectCatalogItem(line.id, e.target.value)
-                      }
-                    >
-                      <option value="">— Custom / none —</option>
-                      {catalog.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.name}
-                          {item.base_price != null
-                            ? ` — $${Number(item.base_price).toFixed(2)}`
-                            : ''}
-                          {item.pricing_unit && item.pricing_unit !== 'fixed'
-                            ? ` (${item.pricing_unit})`
-                            : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="md:col-span-3">
-                    <Label className="text-xs">
-                      Description shown to customer
-                    </Label>
-                    <Input
-                      value={line.name_snapshot}
-                      onChange={(e) =>
-                        updateLine(line.id, { name_snapshot: e.target.value })
-                      }
-                      placeholder="e.g. Commercial carpet — main hallway"
-                    />
+                <div className="mt-3 space-y-3">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div>
+                      <Label className="text-xs">Service</Label>
+                      <select
+                        className="border-input bg-background focus-visible:ring-ring mt-1 h-9 w-full rounded-md border px-2 text-sm shadow-sm focus-visible:ring-1 focus-visible:outline-none"
+                        value={line.service_catalog_item_id || ''}
+                        onChange={(e) =>
+                          handleSelectCatalogItem(line.id, e.target.value)
+                        }
+                      >
+                        <option value="">— Custom (manual name &amp; price) —</option>
+                        {catalog.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <Label className="text-xs">Name on proposal</Label>
+                      <Input
+                        className="mt-1"
+                        value={line.name_snapshot}
+                        onChange={(e) =>
+                          updateLine(line.id, {
+                            name_snapshot: e.target.value,
+                          })
+                        }
+                        placeholder="Defaults from catalog; edit if needed"
+                      />
+                    </div>
                   </div>
 
                   {showDimensions ? (
-                    <>
-                      <div className="md:col-span-1">
-                        <Label className="text-xs">
-                          {isLinearUnit(unit) ? 'Length (ft)' : 'Length (ft)'}
-                        </Label>
-                        <Input
-                          type="number"
-                          inputMode="decimal"
-                          step="0.5"
-                          value={line.length_value ?? ''}
-                          onChange={(e) =>
+                    <div className="rounded-md border border-amber-200/80 bg-amber-50/50 p-3 dark:border-amber-900/50 dark:bg-amber-950/20">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-xs font-medium text-amber-900 dark:text-amber-100">
+                          {isAreaUnit(unit)
+                            ? 'Floor areas (ft × ft → sqft)'
+                            : 'Runs (ft; add rows for each run)'}
+                        </p>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8 gap-1 border-amber-300 bg-white text-amber-900 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100"
+                          onClick={() =>
                             updateLine(line.id, {
-                              length_value:
-                                e.target.value === '' ? null : e.target.value,
+                              area_segments: [
+                                ...line.area_segments,
+                                {
+                                  clientId: makeRowKey(),
+                                  length: '',
+                                  width: '',
+                                },
+                              ],
                             })
                           }
-                          placeholder="0"
-                        />
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          Add L×W
+                        </Button>
                       </div>
-                      <div className="md:col-span-1">
-                        <Label className="text-xs">
-                          {isLinearUnit(unit) ? 'Width (unused)' : 'Width (ft)'}
-                        </Label>
+                      {line.area_segments.length === 0 ? (
+                        <p className="text-muted-foreground mt-2 text-xs">
+                          Tap <strong>+ Add L×W</strong> to enter length and
+                          width for the first area. Use the same button to add
+                          more rectangles; square footage adds up for this
+                          service.
+                        </p>
+                      ) : (
+                        <ul className="mt-3 space-y-2">
+                          {line.area_segments.map((seg, sidx) => (
+                            <li
+                              key={seg.clientId}
+                              className="flex flex-wrap items-end gap-2 rounded-md border border-slate-200 bg-white p-2 dark:border-slate-700 dark:bg-slate-950"
+                            >
+                              <span className="text-muted-foreground w-8 pb-2 text-xs">
+                                #{sidx + 1}
+                              </span>
+                              <div className="grid flex-1 grid-cols-2 gap-2 sm:max-w-xs">
+                                <div>
+                                  <Label className="text-[10px]">
+                                    Length (ft)
+                                  </Label>
+                                  <Input
+                                    type="number"
+                                    inputMode="decimal"
+                                    step="0.5"
+                                    value={seg.length}
+                                    onChange={(e) => {
+                                      const next = line.area_segments.map(
+                                        (s) =>
+                                          s.clientId === seg.clientId
+                                            ? {
+                                                ...s,
+                                                length: e.target.value,
+                                              }
+                                            : s,
+                                      )
+                                      updateLine(line.id, {
+                                        area_segments: next,
+                                      })
+                                    }}
+                                    placeholder="0"
+                                  />
+                                </div>
+                                <div>
+                                  <Label className="text-[10px]">
+                                    {isLinearUnit(unit)
+                                      ? 'Width (optional)'
+                                      : 'Width (ft)'}
+                                  </Label>
+                                  <Input
+                                    type="number"
+                                    inputMode="decimal"
+                                    step="0.5"
+                                    value={seg.width}
+                                    onChange={(e) => {
+                                      const next = line.area_segments.map(
+                                        (s) =>
+                                          s.clientId === seg.clientId
+                                            ? {
+                                                ...s,
+                                                width: e.target.value,
+                                              }
+                                            : s,
+                                      )
+                                      updateLine(line.id, {
+                                        area_segments: next,
+                                      })
+                                    }}
+                                    placeholder="0"
+                                  />
+                                </div>
+                              </div>
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="ghost"
+                                className="h-9 w-9 shrink-0 text-rose-600"
+                                title="Remove this area"
+                                onClick={() =>
+                                  updateLine(line.id, {
+                                    area_segments: line.area_segments.filter(
+                                      (s) => s.clientId !== seg.clientId,
+                                    ),
+                                  })
+                                }
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {segmentsSummary ? (
+                        <p className="text-muted-foreground mt-2 text-xs font-medium">
+                          {segmentsSummary}
+                        </p>
+                      ) : null}
+                      <p className="text-muted-foreground mt-1 text-xs">
+                        Billable{' '}
+                        {isAreaUnit(unit)
+                          ? 'sqft'
+                          : isLinearUnit(unit)
+                            ? 'linear ft'
+                            : 'qty'}
+                        :{' '}
+                        <span className="text-foreground font-semibold tabular-nums">
+                          {lineQty.toFixed(2)}
+                        </span>{' '}
+                        × ${toNumber(line.unit_price, 0).toFixed(2)} = $
+                        {(lineQty * toNumber(line.unit_price, 0)).toFixed(2)}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <div>
+                        <Label className="text-xs">Quantity</Label>
                         <Input
+                          className="mt-1"
                           type="number"
                           inputMode="decimal"
-                          step="0.5"
-                          value={line.width_value ?? ''}
+                          step="0.01"
+                          value={line.quantity}
                           onChange={(e) =>
                             updateLine(line.id, {
-                              width_value:
-                                e.target.value === '' ? null : e.target.value,
+                              quantity: e.target.value,
                             })
                           }
-                          placeholder="0"
-                          disabled={isLinearUnit(unit)}
                         />
                       </div>
-                    </>
-                  ) : null}
+                    </div>
+                  )}
 
-                  <div className="md:col-span-1">
-                    <Label className="text-xs">
-                      Quantity{' '}
-                      {isAreaUnit(unit)
-                        ? '(sqft)'
-                        : isLinearUnit(unit)
-                          ? '(linear ft)'
-                          : ''}
-                    </Label>
-                    <Input
-                      type="number"
-                      inputMode="decimal"
-                      step="0.01"
-                      value={line.quantity}
-                      onChange={(e) =>
-                        updateLine(line.id, {
-                          quantity: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-
-                  <div
-                    className={
-                      showDimensions ? 'md:col-span-2' : 'md:col-span-2'
-                    }
-                  >
-                    <Label className="text-xs">Unit price</Label>
-                    <Input
-                      type="number"
-                      inputMode="decimal"
-                      step="0.01"
-                      value={line.unit_price}
-                      onChange={(e) =>
-                        updateLine(line.id, { unit_price: e.target.value })
-                      }
-                    />
-                  </div>
-
-                  <div
-                    className={
-                      showDimensions ? 'md:col-span-2' : 'md:col-span-3'
-                    }
-                  >
-                    <Label className="text-xs">Duration (min)</Label>
-                    <Input
-                      type="number"
-                      inputMode="numeric"
-                      step="5"
-                      value={line.duration_minutes}
-                      onChange={(e) =>
-                        updateLine(line.id, {
-                          duration_minutes: e.target.value,
-                        })
-                      }
-                    />
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div>
+                      <Label className="text-xs">Unit price</Label>
+                      <Input
+                        className="mt-1"
+                        type="number"
+                        inputMode="decimal"
+                        step="0.01"
+                        value={line.unit_price}
+                        onChange={(e) =>
+                          updateLine(line.id, { unit_price: e.target.value })
+                        }
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Duration (min)</Label>
+                      <Input
+                        className="mt-1"
+                        type="number"
+                        inputMode="numeric"
+                        step="5"
+                        value={line.duration_minutes}
+                        onChange={(e) =>
+                          updateLine(line.id, {
+                            duration_minutes: e.target.value,
+                          })
+                        }
+                      />
+                    </div>
                   </div>
                 </div>
-
-                {areaCalc ? (
-                  <p className="text-muted-foreground mt-2 text-xs">
-                    {areaCalc}
-                  </p>
-                ) : null}
 
                 <div className="mt-3">
                   <Label className="text-xs">
@@ -901,16 +1184,14 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
                       updateLine(line.id, { notes: e.target.value })
                     }
                     rows={3}
-                    placeholder="Explain in detail what you're doing and why. Example: Running CRB pre-scrub to lift matted fibers in the traffic lane, then hot water extraction with enzyme pre-spray for the pet area by the front door. Stairs need to be protected with plastic corner guards — customer has antique banister."
+                    placeholder="Explain in detail what you're doing and why. Example: Running CRB pre-scrub to lift matted fibers in the traffic lane, then hot water extraction with enzyme pre-spray for the pet area by the front door."
                     className="min-h-[80px]"
                   />
                 </div>
 
                 <div className="text-muted-foreground mt-2 flex justify-end text-xs tabular-nums">
                   Line total: $
-                  {(
-                    toNumber(line.quantity, 1) * toNumber(line.unit_price, 0)
-                  ).toFixed(2)}
+                  {(lineQty * toNumber(line.unit_price, 0)).toFixed(2)}
                 </div>
               </div>
             )

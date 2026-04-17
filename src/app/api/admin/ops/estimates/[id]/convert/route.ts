@@ -100,7 +100,8 @@ export async function POST(
             line_total,
             length_value,
             width_value,
-            pricing_unit_snapshot
+            pricing_unit_snapshot,
+            area_segments
           )
         `,
       )
@@ -214,6 +215,7 @@ export async function POST(
       length_value: item.length_value,
       width_value: item.width_value,
       pricing_unit_snapshot: item.pricing_unit_snapshot,
+      area_segments: item.area_segments ?? null,
     }))
 
     const { data: appointmentLines, error: appointmentLinesError } =
