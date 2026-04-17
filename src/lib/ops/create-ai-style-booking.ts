@@ -277,6 +277,9 @@ export async function createAiStyleBooking(
       booking_channel: bookingChannel,
       source: sourceLabel,
       lead_source: leadSource,
+      // Harry / AI flows are always service appointments. Estimates are an
+      // admin-only workflow today.
+      kind: 'service',
     })
     .select('id')
     .single()

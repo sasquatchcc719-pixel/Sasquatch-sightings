@@ -276,6 +276,9 @@ export async function POST(request: NextRequest) {
       : 'booked'
 
     // --- Create appointment ---
+    // Public website bookings are always service appointments. Estimate
+    // requests from visitors are out of scope; Charles creates estimates
+    // manually from the admin UI.
     const { data: appointment, error: appointmentError } = await supabase
       .from('ops_appointments')
       .insert({
@@ -289,6 +292,7 @@ export async function POST(request: NextRequest) {
         quoted_total: total,
         booking_channel: 'website',
         source: 'website',
+        kind: 'service',
       })
       .select('id')
       .single()

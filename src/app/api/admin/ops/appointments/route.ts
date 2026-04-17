@@ -341,6 +341,9 @@ export async function POST(request: NextRequest) {
     }
 
     const syncStatus = getQuickBooksSyncStatus()
+    const appointmentKind =
+      body.appointment?.kind === 'estimate' ? 'estimate' : 'service'
+    const isEstimate = appointmentKind === 'estimate'
     const { data: appointment, error: appointmentError } = await supabase
       .from('ops_appointments')
       .insert({
@@ -355,7 +358,9 @@ export async function POST(request: NextRequest) {
         lead_source: body.lead_source ? String(body.lead_source) : null,
         status: 'booked',
         payment_status: 'unpaid',
-        quickbooks_sync_status: syncStatus,
+        kind: appointmentKind,
+        estimate_status: isEstimate ? 'draft' : null,
+        quickbooks_sync_status: isEstimate ? 'not_synced' : syncStatus,
         appointment_date: appointmentDate,
         start_time: `${startTime}:00`.slice(0, 8),
         end_time: addMinutesToTime(startTime, totalMinutesWithBuffer),
@@ -383,108 +388,135 @@ export async function POST(request: NextRequest) {
 
     if (lineError) throw lineError
 
-    const { data: invoice, error: invoiceError } = await supabase
-      .from('ops_invoices')
-      .insert({
-        appointment_id: appointment.id,
-        status: 'draft',
-        payment_status: 'unpaid',
-        subtotal: Number(quotedSubtotal.toFixed(2)),
-        discount_amount: Number(discountAmount.toFixed(2)),
-        total: Number(quotedTotal.toFixed(2)),
-        sync_status: syncStatus,
-      })
-      .select()
-      .single()
+    // Estimates skip invoice generation entirely. They still get an appointment
+    // status event so the calendar audit trail is intact.
+    let invoice: {
+      id: string
+      subtotal: number
+      total: number
+    } | null = null
 
-    if (invoiceError) throw invoiceError
+    if (!isEstimate) {
+      const { data: insertedInvoice, error: invoiceError } = await supabase
+        .from('ops_invoices')
+        .insert({
+          appointment_id: appointment.id,
+          status: 'draft',
+          payment_status: 'unpaid',
+          subtotal: Number(quotedSubtotal.toFixed(2)),
+          discount_amount: Number(discountAmount.toFixed(2)),
+          total: Number(quotedTotal.toFixed(2)),
+          sync_status: syncStatus,
+        })
+        .select()
+        .single()
 
-    const invoiceLinesPayload = (appointmentLines || []).map((item) => ({
-      invoice_id: invoice.id,
-      appointment_line_item_id: item.id,
-      description: item.name_snapshot,
-      quantity: item.quantity,
-      unit_price: item.unit_price,
-      line_total: item.line_total,
-    }))
+      if (invoiceError) throw invoiceError
+      invoice = insertedInvoice
 
-    if (invoiceLinesPayload.length > 0) {
-      const { error: invoiceLinesError } = await supabase
-        .from('ops_invoice_line_items')
-        .insert(invoiceLinesPayload)
+      const invoiceLinesPayload = (appointmentLines || []).map((item) => ({
+        invoice_id: invoice!.id,
+        appointment_line_item_id: item.id,
+        description: item.name_snapshot,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        line_total: item.line_total,
+      }))
 
-      if (invoiceLinesError) throw invoiceLinesError
-    }
+      if (invoiceLinesPayload.length > 0) {
+        const { error: invoiceLinesError } = await supabase
+          .from('ops_invoice_line_items')
+          .insert(invoiceLinesPayload)
 
-    await Promise.all([
-      supabase.from('ops_appointment_status_events').insert({
+        if (invoiceLinesError) throw invoiceLinesError
+      }
+
+      await Promise.all([
+        supabase.from('ops_appointment_status_events').insert({
+          appointment_id: appointment.id,
+          from_status: null,
+          to_status: 'booked',
+          changed_by: access.id,
+          notes: 'Appointment created from internal operations dashboard',
+        }),
+        supabase.from('ops_invoice_status_events').insert({
+          invoice_id: invoice!.id,
+          from_status: null,
+          to_status: 'draft',
+          changed_by: access.id,
+          notes: 'Invoice draft created at booking time',
+        }),
+        supabase.from('ops_quickbooks_sync_jobs').insert([
+          {
+            entity_type: 'customer',
+            entity_id: customerId,
+            status: syncStatus,
+            payload: buildQuickBooksCustomerPayload({
+              customerId,
+              fullName,
+              email,
+              phone,
+              address: {
+                street_1: address.street_1,
+                street_2: address.street_2,
+                city: address.city,
+                state: address.state,
+                zip_code: address.zip_code,
+              },
+            }),
+          },
+          {
+            entity_type: 'invoice',
+            entity_id: invoice!.id,
+            status: syncStatus,
+            payload: buildQuickBooksInvoicePayload({
+              invoiceId: invoice!.id,
+              customerId,
+              serviceDate: appointmentDate,
+              subtotal: Number(invoice!.subtotal),
+              total: Number(invoice!.total),
+              lineItems: invoiceLinesPayload,
+            }),
+          },
+        ]),
+      ])
+
+      const [commsResult, qbResult] = await Promise.allSettled([
+        sendOpsLifecycleCommunications({
+          event: 'job_scheduled',
+          appointmentId: appointment.id,
+        }),
+        syncAppointmentToQuickBooks(appointment.id),
+        scheduleJobReminder({
+          appointmentId: appointment.id,
+          appointmentDate: appointmentDate,
+          startTime: `${startTime}:00`.slice(0, 8),
+          customerName: fullName,
+          address: `${address.street_1}, ${address.city}`,
+        }),
+      ])
+      if (commsResult.status === 'rejected') {
+        console.error(
+          '[ops/appointments][POST] Comms error:',
+          commsResult.reason,
+        )
+      }
+      if (qbResult.status === 'rejected') {
+        console.error(
+          '[ops/appointments][POST] QB sync error:',
+          qbResult.reason,
+        )
+      }
+    } else {
+      // Estimate path: still log a status event so the timeline shows creation,
+      // but no invoice, QB sync, lifecycle comms, or reminder.
+      await supabase.from('ops_appointment_status_events').insert({
         appointment_id: appointment.id,
         from_status: null,
         to_status: 'booked',
         changed_by: access.id,
-        notes: 'Appointment created from internal operations dashboard',
-      }),
-      supabase.from('ops_invoice_status_events').insert({
-        invoice_id: invoice.id,
-        from_status: null,
-        to_status: 'draft',
-        changed_by: access.id,
-        notes: 'Invoice draft created at booking time',
-      }),
-      supabase.from('ops_quickbooks_sync_jobs').insert([
-        {
-          entity_type: 'customer',
-          entity_id: customerId,
-          status: syncStatus,
-          payload: buildQuickBooksCustomerPayload({
-            customerId,
-            fullName,
-            email,
-            phone,
-            address: {
-              street_1: address.street_1,
-              street_2: address.street_2,
-              city: address.city,
-              state: address.state,
-              zip_code: address.zip_code,
-            },
-          }),
-        },
-        {
-          entity_type: 'invoice',
-          entity_id: invoice.id,
-          status: syncStatus,
-          payload: buildQuickBooksInvoicePayload({
-            invoiceId: invoice.id,
-            customerId,
-            serviceDate: appointmentDate,
-            subtotal: Number(invoice.subtotal),
-            total: Number(invoice.total),
-            lineItems: invoiceLinesPayload,
-          }),
-        },
-      ]),
-    ])
-
-    const [commsResult, qbResult] = await Promise.allSettled([
-      sendOpsLifecycleCommunications({
-        event: 'job_scheduled',
-        appointmentId: appointment.id,
-      }),
-      syncAppointmentToQuickBooks(appointment.id),
-      scheduleJobReminder({
-        appointmentId: appointment.id,
-        appointmentDate: appointmentDate,
-        startTime: `${startTime}:00`.slice(0, 8),
-        customerName: fullName,
-        address: `${address.street_1}, ${address.city}`,
-      }),
-    ])
-    if (commsResult.status === 'rejected') {
-      console.error('[ops/appointments][POST] Comms error:', commsResult.reason)
-    }
-    if (qbResult.status === 'rejected') {
-      console.error('[ops/appointments][POST] QB sync error:', qbResult.reason)
+        notes: 'Estimate (measuring visit) created',
+      })
     }
 
     return NextResponse.json(

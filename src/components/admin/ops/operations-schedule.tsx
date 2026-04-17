@@ -12,6 +12,7 @@ import {
   Plus,
   RefreshCw,
   Repeat,
+  Ruler,
   ShieldBan,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -57,6 +58,8 @@ type Appointment = {
       }[]
     | null
   recurring_template_id?: string | null
+  kind?: 'service' | 'estimate' | null
+  estimate_status?: string | null
   ops_appointment_line_items: Array<{
     id: string
     name_snapshot: string
@@ -328,6 +331,19 @@ function getEventTone(event: CalendarEvent): string {
     : 'border-slate-500/40 bg-slate-500/10'
 }
 
+// Estimates are measuring visits — tentative work that hasn't been priced yet.
+// Render them in amber so they read as "hold-this-slot" and don't get confused
+// with real service appointments.
+function getEstimateTone(appointment: Appointment): string {
+  if (appointment.estimate_status === 'converted') {
+    return 'border-violet-400 bg-violet-100 text-slate-700'
+  }
+  if (appointment.estimate_status === 'declined') {
+    return 'border-slate-300 bg-slate-100 text-slate-500'
+  }
+  return 'border-amber-400 bg-amber-100 text-slate-800'
+}
+
 function intersectsDay(event: CalendarEvent, dateKey: string): boolean {
   return event.start_date <= dateKey && event.end_date >= dateKey
 }
@@ -564,6 +580,12 @@ export function OperationsSchedule() {
   const [pendingNotify, setPendingNotify] = useState<{
     appointmentId: string
     customerName: string
+    x: number
+    y: number
+  } | null>(null)
+  const [cellMenu, setCellMenu] = useState<{
+    dateKey: string
+    hour: number
     x: number
     y: number
   } | null>(null)
@@ -808,6 +830,11 @@ export function OperationsSchedule() {
   const openNewJobAt = (dateKey: string, hour: number) => {
     const hh = String(hour).padStart(2, '0')
     router.push(`/admin/operations/new-job?date=${dateKey}&time=${hh}:00`)
+  }
+
+  const openNewEstimateAt = (dateKey: string, hour: number) => {
+    const hh = String(hour).padStart(2, '0')
+    router.push(`/admin/operations/estimates/new?date=${dateKey}&time=${hh}:00`)
   }
 
   const PX_PER_MINUTE = HOUR_HEIGHT / 60
@@ -1059,6 +1086,54 @@ export function OperationsSchedule() {
             </div>
           </Card>
         </div>
+      ) : null}
+
+      {cellMenu ? (
+        <>
+          <button
+            type="button"
+            aria-label="Close menu"
+            className="fixed inset-0 z-40 cursor-default bg-transparent"
+            onClick={() => setCellMenu(null)}
+          />
+          <div
+            className="fixed z-50"
+            style={{
+              left: Math.min(cellMenu.x, window.innerWidth - 260),
+              top: Math.min(cellMenu.y, window.innerHeight - 160),
+            }}
+          >
+            <Card className="border-border/60 bg-card/95 flex w-56 flex-col gap-1 rounded-xl border p-2 shadow-xl backdrop-blur">
+              <p className="text-muted-foreground px-2 pt-1 pb-0.5 text-[11px] font-medium tracking-wide uppercase">
+                {cellMenu.dateKey} · {String(cellMenu.hour).padStart(2, '0')}:00
+              </p>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="justify-start gap-2"
+                onClick={() => {
+                  openNewJobAt(cellMenu.dateKey, cellMenu.hour)
+                  setCellMenu(null)
+                }}
+              >
+                <Plus className="h-3.5 w-3.5" />
+                New job at this time
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="justify-start gap-2 text-amber-700 hover:bg-amber-50 hover:text-amber-800"
+                onClick={() => {
+                  openNewEstimateAt(cellMenu.dateKey, cellMenu.hour)
+                  setCellMenu(null)
+                }}
+              >
+                <Ruler className="h-3.5 w-3.5" />
+                New estimate at this time
+              </Button>
+            </Card>
+          </div>
+        </>
       ) : null}
 
       <Card className="border-border/60 bg-card/80 p-4 shadow-sm backdrop-blur">
@@ -1492,16 +1567,23 @@ export function OperationsSchedule() {
                     {dayAppointments.slice(0, 3).map((appointment) => {
                       const customer = unwrapRelation(appointment.ops_customers)
                       const invoice = unwrapRelation(appointment.ops_invoices)
-                      const href = invoice?.id
-                        ? `/admin/operations/invoices/${invoice.id}`
+                      const isEstimate = appointment.kind === 'estimate'
+                      const href = isEstimate
+                        ? `/admin/operations/estimates/${appointment.id}`
+                        : invoice?.id
+                          ? `/admin/operations/invoices/${invoice.id}`
+                          : appointment.recurring_template_id
+                            ? `/admin/operations/recurring/visit/${appointment.id}`
+                            : `/admin/operations/appointments/${appointment.id}`
+                      const tone = isEstimate
+                        ? getEstimateTone(appointment)
                         : appointment.recurring_template_id
-                          ? `/admin/operations/recurring/visit/${appointment.id}`
-                          : `/admin/operations/appointments/${appointment.id}`
-                      const tone = appointment.recurring_template_id
-                        ? (getRecurringTone(
-                            recurringFreqMap[appointment.recurring_template_id],
-                          ) ?? getStatusTone(appointment.status))
-                        : getStatusTone(appointment.status)
+                          ? (getRecurringTone(
+                              recurringFreqMap[
+                                appointment.recurring_template_id
+                              ],
+                            ) ?? getStatusTone(appointment.status))
+                          : getStatusTone(appointment.status)
                       return (
                         <Link
                           key={appointment.id}
@@ -1509,9 +1591,13 @@ export function OperationsSchedule() {
                           className={`text-foreground block rounded-xl border px-2 py-2 text-xs transition hover:shadow-sm ${tone}`}
                         >
                           <div className="flex items-center gap-1 font-medium">
-                            {appointment.recurring_template_id && (
-                              <Repeat className="h-3 w-3 shrink-0 text-blue-500" />
+                            {isEstimate && (
+                              <Ruler className="h-3 w-3 shrink-0 text-amber-600" />
                             )}
+                            {!isEstimate &&
+                              appointment.recurring_template_id && (
+                                <Repeat className="h-3 w-3 shrink-0 text-blue-500" />
+                              )}
                             {appointment.start_time.slice(0, 5)}{' '}
                             {customer?.full_name}
                           </div>
@@ -1631,9 +1717,19 @@ export function OperationsSchedule() {
                           type="button"
                           className="focus-visible:ring-ring relative z-0 block w-full border-b border-slate-200 text-left transition hover:bg-emerald-50/60 focus-visible:ring-2 focus-visible:outline-none"
                           style={{ height: HOUR_HEIGHT }}
-                          onClick={() => openNewJobAt(dateKey, hour)}
-                          title={`Create job at ${String(hour).padStart(2, '0')}:00`}
-                          aria-label={`Create job on ${dateKey} at ${String(hour).padStart(2, '0')}:00`}
+                          onClick={(e) => {
+                            const rect = (
+                              e.currentTarget as HTMLElement
+                            ).getBoundingClientRect()
+                            setCellMenu({
+                              dateKey,
+                              hour,
+                              x: rect.left + 12,
+                              y: rect.top + 12,
+                            })
+                          }}
+                          title={`Create at ${String(hour).padStart(2, '0')}:00`}
+                          aria-label={`Create on ${dateKey} at ${String(hour).padStart(2, '0')}:00`}
                         />
                       ))}
 
@@ -1713,24 +1809,29 @@ export function OperationsSchedule() {
                             appointment,
                             endOverride,
                           )
-                          const href = invoice?.id
-                            ? `/admin/operations/invoices/${invoice.id}`
-                            : appointment.recurring_template_id
-                              ? `/admin/operations/recurring/visit/${appointment.id}`
-                              : `/admin/operations/appointments/${appointment.id}`
+                          const isEstimate = appointment.kind === 'estimate'
+                          const href = isEstimate
+                            ? `/admin/operations/estimates/${appointment.id}`
+                            : invoice?.id
+                              ? `/admin/operations/invoices/${invoice.id}`
+                              : appointment.recurring_template_id
+                                ? `/admin/operations/recurring/visit/${appointment.id}`
+                                : `/admin/operations/appointments/${appointment.id}`
                           const isDragging =
                             draggingAppointment?.id === appointment.id
                           const oc = overlapCols.get(appointment.id) ?? {
                             col: 0,
                             totalCols: 1,
                           }
-                          const blockTone = appointment.recurring_template_id
-                            ? (getRecurringTone(
-                                recurringFreqMap[
-                                  appointment.recurring_template_id
-                                ],
-                              ) ?? getStatusTone(appointment.status))
-                            : getStatusTone(appointment.status)
+                          const blockTone = isEstimate
+                            ? getEstimateTone(appointment)
+                            : appointment.recurring_template_id
+                              ? (getRecurringTone(
+                                  recurringFreqMap[
+                                    appointment.recurring_template_id
+                                  ],
+                                ) ?? getStatusTone(appointment.status))
+                              : getStatusTone(appointment.status)
                           return (
                             <div
                               key={appointment.id}
@@ -1790,9 +1891,13 @@ export function OperationsSchedule() {
                               >
                                 <div className="flex items-start justify-between gap-2">
                                   <div className="line-clamp-1 flex items-center gap-1.5 leading-tight font-semibold">
-                                    {appointment.recurring_template_id && (
-                                      <Repeat className="h-3 w-3 shrink-0 text-blue-500" />
+                                    {isEstimate && (
+                                      <Ruler className="h-3 w-3 shrink-0 text-amber-600" />
                                     )}
+                                    {!isEstimate &&
+                                      appointment.recurring_template_id && (
+                                        <Repeat className="h-3 w-3 shrink-0 text-blue-500" />
+                                      )}
                                     {customer?.business_name ||
                                       customer?.full_name ||
                                       'Customer'}
@@ -1801,19 +1906,28 @@ export function OperationsSchedule() {
                                     variant="outline"
                                     className="border-slate-300 bg-white/70 text-slate-700 capitalize"
                                   >
-                                    {appointment.status.replaceAll('_', ' ')}
+                                    {isEstimate
+                                      ? 'Estimate'
+                                      : appointment.status.replaceAll('_', ' ')}
                                   </Badge>
                                 </div>
-                                {appointment.recurring_template_id && (
-                                  <a
-                                    href={`/admin/operations/recurring/${appointment.recurring_template_id}`}
-                                    onClick={(e) => e.stopPropagation()}
-                                    className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 hover:bg-blue-100"
-                                  >
-                                    <Repeat className="h-2.5 w-2.5" />
-                                    Recurring
-                                  </a>
+                                {isEstimate && (
+                                  <span className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                                    <Ruler className="h-2.5 w-2.5" />
+                                    Measure visit
+                                  </span>
                                 )}
+                                {!isEstimate &&
+                                  appointment.recurring_template_id && (
+                                    <a
+                                      href={`/admin/operations/recurring/${appointment.recurring_template_id}`}
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 hover:bg-blue-100"
+                                    >
+                                      <Repeat className="h-2.5 w-2.5" />
+                                      Recurring
+                                    </a>
+                                  )}
                                 <div className="mt-1 text-slate-700">
                                   {placement.startLabel} - {placement.endLabel}
                                 </div>
