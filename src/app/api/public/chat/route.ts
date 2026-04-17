@@ -383,20 +383,45 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('[scout] generation error:', error)
 
-    // Log the failure so we know it happened
+    const errorMessage = error instanceof Error ? error.message : 'unknown'
+
     await logChatMessage({
       agent: 'scout',
       channel: 'web',
       sessionId,
       fromIdentity: clientIp,
       role: 'system',
-      content: `ERROR: ${error instanceof Error ? error.message : 'unknown'}`,
+      content: `ERROR: ${errorMessage}`,
       metadata: { origin, failed: true },
     })
 
+    // Return a graceful 200 instead of a naked 500 so the widget has a real
+    // message to show the visitor. The widget's own error branch should be
+    // reserved for network failures (no connectivity, CORS rejection, etc.)
+    // where we never reached the handler at all.
+    const fallback =
+      "Sorry — I'm having a quick brain hiccup. You can text (719) 249-8791 or use the booking widget above, or try me again in a minute."
+
+    await logChatMessage({
+      agent: 'scout',
+      channel: 'web',
+      sessionId,
+      fromIdentity: clientIp,
+      role: 'assistant',
+      content: fallback,
+      model: 'fallback',
+      latencyMs: Date.now() - started,
+      metadata: { origin, fallback_reason: errorMessage },
+    })
+
     return NextResponse.json(
-      { error: 'Failed to process message' },
-      { status: 500, headers },
+      {
+        success: true,
+        response: fallback,
+        sessionId,
+        fallback: true,
+      },
+      { headers },
     )
   }
 }
