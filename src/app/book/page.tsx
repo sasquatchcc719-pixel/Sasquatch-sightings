@@ -786,29 +786,30 @@ export default function BookPage() {
 
                 {/* Sticky cart bar */}
                 {cart.length > 0 && (
-                  <div className="fixed right-0 bottom-0 left-0 z-20 border-t border-gray-200 bg-white p-4 shadow-2xl">
-                    <div className="mx-auto flex max-w-xl items-center justify-between gap-4">
-                      <div>
-                        <p className="text-xs text-gray-500">
-                          {cart.reduce((s, c) => s + c.quantity, 0)} service
-                          {cart.reduce((s, c) => s + c.quantity, 0) !== 1
-                            ? 's'
-                            : ''}
-                        </p>
-                        <p className="font-bold text-gray-900">
-                          {formatPrice(subtotal)}
-                        </p>
+                  <div className="fixed right-0 bottom-0 left-0 z-20 border-t border-gray-200 bg-white px-4 py-2 shadow-lg">
+                    <div className="mx-auto flex max-w-xl items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div>
+                          <p className="text-xs leading-tight text-gray-500">
+                            {cart.reduce((s, c) => s + c.quantity, 0)} service
+                            {cart.reduce((s, c) => s + c.quantity, 0) !== 1
+                              ? 's'
+                              : ''}
+                          </p>
+                          <p className="text-sm leading-tight font-bold text-gray-900">
+                            {formatPrice(subtotal)}
+                          </p>
+                        </div>
                         {!meetsMinimum && (
-                          <p className="text-xs text-red-500">
-                            {formatPrice(MIN_TOTAL - subtotal)} more to meet the
-                            minimum
+                          <p className="text-xs leading-tight text-red-500">
+                            {formatPrice(MIN_TOTAL - subtotal)} more
                           </p>
                         )}
                       </div>
                       <button
                         disabled={!meetsMinimum}
                         onClick={() => setStep(2)}
-                        className="rounded-xl bg-green-600 px-6 py-3 text-sm font-semibold whitespace-nowrap text-white transition-colors hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-40"
+                        className="rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold whitespace-nowrap text-white transition-colors hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         Select Date →
                       </button>
@@ -816,7 +817,7 @@ export default function BookPage() {
                   </div>
                 )}
                 {/* Bottom padding to clear sticky bar */}
-                <div className="h-24" />
+                <div className="h-16" />
               </div>
             )}
 
