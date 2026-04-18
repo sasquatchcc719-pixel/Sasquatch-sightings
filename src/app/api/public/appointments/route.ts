@@ -93,10 +93,18 @@ export async function POST(request: NextRequest) {
       body.appointment?.appointment_date || '',
     ).trim()
     const startTime = String(body.appointment?.start_time || '').trim()
+    const leadSource = String(body.appointment?.lead_source || '').trim()
 
     if (!appointmentDate || !startTime) {
       return NextResponse.json(
         { error: 'Appointment date and time are required' },
+        { status: 400, headers: CORS },
+      )
+    }
+
+    if (!leadSource) {
+      return NextResponse.json(
+        { error: 'Please let us know how you heard about us' },
         { status: 400, headers: CORS },
       )
     }
@@ -277,6 +285,7 @@ export async function POST(request: NextRequest) {
         quoted_total: total,
         booking_channel: 'website',
         source: 'website',
+        lead_source: leadSource,
         kind: 'service',
       })
       .select('id')

@@ -31,6 +31,7 @@ interface CustomerForm {
   last_name: string
   email: string
   phone: string
+  lead_source: string
   street_1: string
   city: string
   state: string
@@ -479,6 +480,7 @@ export default function BookPage() {
     last_name: '',
     email: '',
     phone: '',
+    lead_source: '',
     street_1: '',
     city: '',
     state: 'CO',
@@ -569,6 +571,8 @@ export default function BookPage() {
       return 'Please enter a valid email address.'
     if (!form.phone.trim() || form.phone.replace(/\D/g, '').length < 10)
       return 'Please enter a valid 10-digit phone number.'
+    if (!form.lead_source.trim())
+      return 'Please let us know how you heard about us.'
     if (!form.street_1.trim()) return 'Please enter your service address.'
     if (!form.city.trim()) return 'Please enter your city.'
     if (!form.zip_code.trim() || !/^\d{5}/.test(form.zip_code))
@@ -606,6 +610,7 @@ export default function BookPage() {
       appointment: {
         appointment_date: selectedDate,
         start_time: selectedSlot!.start_time,
+        lead_source: form.lead_source.trim(),
       },
       line_items: lineItems,
       promo_code: promoCode.trim() || undefined,
@@ -962,6 +967,28 @@ export default function BookPage() {
                       className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-200 focus:outline-none"
                       placeholder="(719) 555-0123"
                     />
+                  </div>
+
+                  <div>
+                    <label className="mb-1.5 block text-xs font-semibold text-gray-600">
+                      How did you hear about us? *
+                    </label>
+                    <select
+                      value={form.lead_source}
+                      onChange={(e) => setField('lead_source', e.target.value)}
+                      className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-200 focus:outline-none"
+                    >
+                      <option value="">Select one...</option>
+                      <option value="Google">Google</option>
+                      <option value="Nextdoor">Nextdoor</option>
+                      <option value="Facebook">Facebook</option>
+                      <option value="Yelp">Yelp</option>
+                      <option value="Word of mouth / Referral">
+                        Word of mouth / Referral
+                      </option>
+                      <option value="Repeat customer">Repeat customer</option>
+                      <option value="Other">Other</option>
+                    </select>
                   </div>
 
                   <div className="border-t border-gray-100 pt-4">
