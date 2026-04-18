@@ -48,7 +48,11 @@ if (!openai) {
 const DEFAULT_ALLOWED_ORIGINS = [
   'https://sasquatchcarpet.com',
   'https://www.sasquatchcarpet.com',
+  'https://sasquatchcommercial.com',
+  'https://www.sasquatchcommercial.com',
+  'https://sasquatch-commercial-landing.vercel.app',
   'http://localhost:4200', // Angular dev server
+  'http://localhost:3000', // Static landing dev server
 ]
 
 function getAllowedOrigins(): string[] {
