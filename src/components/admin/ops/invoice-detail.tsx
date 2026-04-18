@@ -1213,6 +1213,71 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
               </p>
             </div>
 
+            {/* On My Way button */}
+            {appointment?.id ? (
+              <div className="border-border/60 bg-muted/30 mt-5 rounded-xl border p-4">
+                <Button
+                  variant="outline"
+                  className={`h-14 w-full text-base font-semibold ${
+                    appointment.status === 'on_my_way'
+                      ? 'border-green-600 bg-green-600 text-white hover:bg-green-700'
+                      : ''
+                  }`}
+                  disabled={Boolean(actionLoading)}
+                  onClick={() =>
+                    void runAppointmentAction({
+                      label: 'On My Way',
+                      status: 'on_my_way',
+                    })
+                  }
+                >
+                  {actionLoading === 'On My Way' ? (
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  ) : null}
+                  On My Way
+                </Button>
+                {appointment.status === 'on_my_way' &&
+                driveStartedAtMs != null ? (
+                  <p className="mt-3 text-center font-mono text-sm font-semibold text-green-700">
+                    Drive time {formatDriveElapsed(driveElapsedMs)}
+                  </p>
+                ) : null}
+                <div className="border-border/60 bg-background/70 mt-3 min-h-[4rem] rounded-lg border p-3">
+                  <p className="text-muted-foreground mb-2 flex items-center gap-2 text-xs font-medium uppercase">
+                    <MessageSquare className="h-3.5 w-3.5 shrink-0" />
+                    Customer text (On My Way)
+                  </p>
+                  {onMyWaySmsInfo ? (
+                    <>
+                      <p className="text-foreground text-sm whitespace-pre-wrap">
+                        {onMyWaySmsInfo.body || (
+                          <span className="text-muted-foreground italic">
+                            (Template is empty)
+                          </span>
+                        )}
+                      </p>
+                      <p
+                        className={
+                          onMyWaySmsInfo.actuallySent
+                            ? 'mt-2 text-xs text-green-700'
+                            : 'mt-2 text-xs text-amber-700'
+                        }
+                      >
+                        {onMyWaySmsInfo.actuallySent
+                          ? 'Sent to the customer by SMS.'
+                          : 'Preview only — this was not sent (template off, missing phone, or SMS not configured).'}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-muted-foreground text-sm leading-relaxed italic">
+                      After you tap On My Way, the exact message text appears
+                      here so you can confirm what customers receive.
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : null}
+
             {/* Contact info */}
             <div className="mt-5 space-y-2 text-sm">
               {customer?.phone ? (
@@ -1572,74 +1637,6 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
             </Button>
           </div>
         )}
-
-        {/* Job actions */}
-        {appointment?.id ? (
-          <div className="border-border/60 border-t pt-4">
-            <p className="text-muted-foreground mb-3 text-xs font-semibold tracking-widest uppercase">
-              Job Actions
-            </p>
-            <Button
-              variant="outline"
-              className={`h-14 w-full text-base font-semibold ${
-                appointment.status === 'on_my_way'
-                  ? 'border-green-600 bg-green-600 text-white hover:bg-green-700'
-                  : ''
-              }`}
-              disabled={Boolean(actionLoading)}
-              onClick={() =>
-                void runAppointmentAction({
-                  label: 'On My Way',
-                  status: 'on_my_way',
-                })
-              }
-            >
-              {actionLoading === 'On My Way' ? (
-                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-              ) : null}
-              On My Way
-            </Button>
-            {appointment.status === 'on_my_way' && driveStartedAtMs != null ? (
-              <p className="mt-3 font-mono text-sm font-semibold text-green-700">
-                Drive time {formatDriveElapsed(driveElapsedMs)}
-              </p>
-            ) : null}
-            <div className="border-border/60 bg-muted/40 mt-3 min-h-[5rem] rounded-xl border p-3">
-              <p className="text-muted-foreground mb-2 flex items-center gap-2 text-xs font-medium uppercase">
-                <MessageSquare className="h-3.5 w-3.5 shrink-0" />
-                Customer text (On My Way)
-              </p>
-              {onMyWaySmsInfo ? (
-                <>
-                  <p className="text-foreground text-sm whitespace-pre-wrap">
-                    {onMyWaySmsInfo.body || (
-                      <span className="text-muted-foreground italic">
-                        (Template is empty)
-                      </span>
-                    )}
-                  </p>
-                  <p
-                    className={
-                      onMyWaySmsInfo.actuallySent
-                        ? 'mt-2 text-xs text-green-700'
-                        : 'mt-2 text-xs text-amber-700'
-                    }
-                  >
-                    {onMyWaySmsInfo.actuallySent
-                      ? 'Sent to the customer by SMS.'
-                      : 'Preview only — this was not sent (template off, missing phone, or SMS not configured).'}
-                  </p>
-                </>
-              ) : (
-                <p className="text-muted-foreground text-sm leading-relaxed italic">
-                  After you tap On My Way, the exact message text appears here
-                  so you can confirm what customers receive (or review the
-                  preview if texting is turned off).
-                </p>
-              )}
-            </div>
-          </div>
-        ) : null}
       </Card>
 
       <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
