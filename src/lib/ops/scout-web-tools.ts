@@ -1,0 +1,660 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type OpenAI from 'openai'
+import {
+  applyAppointmentBuffer,
+  calculateLineItemDurationMinutes,
+  DEFAULT_FALLBACK_AVAILABILITY_TEMPLATES,
+  getAvailableSlots,
+  type ExistingAppointmentWindow,
+} from '@/lib/ops/availability'
+import { createAiStyleBooking } from '@/lib/ops/create-ai-style-booking'
+import { createAiStyleEstimate } from '@/lib/ops/create-ai-style-estimate'
+
+/**
+ * Scout Web Tools
+ *
+ * Tool definitions + executor for Scout (the website chat agent).
+ * Mirrors Harry's SMS tool shape so the LLM logic is familiar, but adapts to
+ * the web context:
+ *   - There is no authenticated inbound phone like SMS gives us. Scout has to
+ *     collect the customer's phone in the chat, and we pass it to
+ *     createAiStyleBooking directly.
+ *   - No reschedule / update / address tools. Those require phone-based
+ *     authentication and belong with Harry via SMS. If a web visitor asks to
+ *     change an existing booking, Scout should redirect them to text Harry.
+ *   - Per-IP (session) rate limit so one browser can't hammer the DB.
+ *
+ * Today's date in Mountain Time (YYYY-MM-DD). Avoids UTC rollover at 6 PM MDT.
+ */
+function todayMountain(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Denver' })
+}
+
+const TOOL_RATE_WINDOW_MS = 60_000
+const TOOL_RATE_MAX = 15
+const toolCallTimestamps = new Map<string, number[]>()
+
+function checkToolRate(
+  key: string,
+): { ok: true } | { ok: false; error: string } {
+  const now = Date.now()
+  const windowStart = now - TOOL_RATE_WINDOW_MS
+  let stamps = toolCallTimestamps.get(key) ?? []
+  stamps = stamps.filter((t) => t > windowStart)
+  if (stamps.length >= TOOL_RATE_MAX) {
+    return {
+      ok: false,
+      error: 'Too many actions in a short time. Try again in a minute.',
+    }
+  }
+  stamps.push(now)
+  toolCallTimestamps.set(key, stamps)
+  return { ok: true }
+}
+
+function toDbTime(value: string): string {
+  const m = /^(\d{1,2}):(\d{2})(?::(\d{2}))?/.exec(String(value).trim())
+  if (!m) return '09:00:00'
+  const h = Math.min(23, Math.max(0, parseInt(m[1], 10)))
+  const min = Math.min(59, Math.max(0, parseInt(m[2], 10)))
+  const sec = m[3] != null ? Math.min(59, Math.max(0, parseInt(m[3], 10))) : 0
+  return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+}
+
+function normClock5(t: string): string {
+  return toDbTime(t).slice(0, 5)
+}
+
+function normalizePhone(raw: string): string {
+  const digits = String(raw || '').replace(/\D/g, '')
+  if (digits.length < 10) return ''
+  return '+1' + digits.slice(-10)
+}
+
+async function loadAvailabilityBundle(
+  supabase: SupabaseClient,
+  date: string,
+): Promise<{
+  templates: Parameters<typeof getAvailableSlots>[0]['templates']
+  overrides: Parameters<typeof getAvailableSlots>[0]['overrides']
+  appointments: ExistingAppointmentWindow[]
+}> {
+  const [templatesResult, overridesResult, appointmentsResult] =
+    await Promise.all([
+      supabase.from('availability_templates').select('*').eq('is_active', true),
+      supabase
+        .from('availability_overrides')
+        .select('*')
+        .eq('override_date', date),
+      supabase
+        .from('ops_appointments')
+        .select('id, appointment_date, start_time, end_time, status')
+        .eq('appointment_date', date),
+    ])
+
+  let templates = templatesResult.data || []
+  if (templates.length === 0) {
+    console.warn(
+      '[scout] No active availability_templates — using fallback defaults',
+    )
+    templates = DEFAULT_FALLBACK_AVAILABILITY_TEMPLATES as typeof templates
+  }
+
+  const rows = (appointmentsResult.data || []) as Array<
+    ExistingAppointmentWindow & { id: string }
+  >
+  return {
+    templates,
+    overrides: overridesResult.data || [],
+    appointments: rows.map(
+      ({ appointment_date, start_time, end_time, status }) => ({
+        appointment_date,
+        start_time,
+        end_time,
+        status,
+      }),
+    ),
+  }
+}
+
+export type ScoutWebToolContext = {
+  supabase: SupabaseClient
+  /** Identifier used for per-session rate limiting (IP or session id). */
+  rateLimitKey: string
+}
+
+export const SCOUT_WEB_TOOLS: OpenAI.ChatCompletionTool[] = [
+  {
+    type: 'function',
+    function: {
+      name: 'search_service_catalog',
+      description:
+        'Search active services by name to get service UUIDs for booking. Use the exact terms from the SQUARE FOOTAGE → SERVICE MAPPING table.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'Search text (e.g. "Regular Size Room", "Step")',
+          },
+        },
+        required: ['query'],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_calendar_slots',
+      description:
+        'Get available start times for a calendar date (YYYY-MM-DD) in America/Denver. Call this before offering times to the customer.',
+      parameters: {
+        type: 'object',
+        properties: {
+          date: { type: 'string', description: 'YYYY-MM-DD' },
+          duration_minutes: {
+            type: 'number',
+            description:
+              'Total job duration in minutes before buffer (default 120)',
+          },
+        },
+        required: ['date'],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'book_new_job',
+      description:
+        'Create a new appointment for this website visitor. Requires full name, email, phone, full address, catalog service IDs, and a start_time that appears in get_calendar_slots for that date. NEVER call without confirming services AND letting the customer pick the time.',
+      parameters: {
+        type: 'object',
+        properties: {
+          first_name: { type: 'string' },
+          last_name: { type: 'string' },
+          email: { type: 'string' },
+          customer_phone: {
+            type: 'string',
+            description:
+              "Customer's 10-digit US callback phone number. Required.",
+          },
+          lead_source: {
+            type: 'string',
+            description:
+              'How the customer heard about Sasquatch. Options: Google, Nextdoor, Facebook, Yelp, Word of mouth / Referral, Repeat customer, Other.',
+          },
+          street_1: { type: 'string' },
+          city: { type: 'string' },
+          state: {
+            type: 'string',
+            description: 'Two-letter state, defaults to CO',
+          },
+          zip_code: { type: 'string' },
+          appointment_date: { type: 'string', description: 'YYYY-MM-DD' },
+          start_time: { type: 'string', description: 'HH:MM (24h)' },
+          line_items: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                service_id: { type: 'string' },
+                quantity: { type: 'number' },
+              },
+              required: ['service_id', 'quantity'],
+            },
+          },
+        },
+        required: [
+          'first_name',
+          'last_name',
+          'email',
+          'customer_phone',
+          'lead_source',
+          'street_1',
+          'city',
+          'zip_code',
+          'appointment_date',
+          'start_time',
+          'line_items',
+        ],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'book_commercial_estimate',
+      description:
+        "COMMERCIAL WORK ONLY. Book a 1-hour time slot on Charles's calendar for an on-site walkthrough / measurement visit of a commercial property (office, restaurant, HOA, church, apartment complex, school, medical office, gym, store, etc.). You are NOT generating the estimate — you are only reserving the slot for Charles to come out, measure, and build the quote himself. Requires a start_time that appears in get_calendar_slots for that date (use duration_minutes=60 when checking). DO NOT use this for any residential job — residential ALWAYS books directly via book_new_job, no matter how big or complex the house is.",
+      parameters: {
+        type: 'object',
+        properties: {
+          first_name: { type: 'string' },
+          last_name: { type: 'string' },
+          business_name: {
+            type: 'string',
+            description:
+              'Company / business name (strongly preferred for commercial leads). Leave empty if the contact is an individual.',
+          },
+          email: { type: 'string' },
+          customer_phone: {
+            type: 'string',
+            description: "Customer's 10-digit US callback phone. Required.",
+          },
+          street_1: { type: 'string' },
+          city: { type: 'string' },
+          state: {
+            type: 'string',
+            description: 'Two-letter state, defaults to CO',
+          },
+          zip_code: { type: 'string' },
+          appointment_date: { type: 'string', description: 'YYYY-MM-DD' },
+          start_time: { type: 'string', description: 'HH:MM (24h)' },
+          job_description: {
+            type: 'string',
+            description:
+              'Short summary of what they want quoted — square footage if known, floor types, occupancy, urgency, etc.',
+          },
+        },
+        required: [
+          'first_name',
+          'last_name',
+          'email',
+          'customer_phone',
+          'street_1',
+          'city',
+          'zip_code',
+          'appointment_date',
+          'start_time',
+        ],
+        additionalProperties: false,
+      },
+    },
+  },
+]
+
+export async function executeScoutWebTool(
+  name: string,
+  argsJson: string,
+  ctx: ScoutWebToolContext,
+): Promise<string> {
+  const rl = checkToolRate(ctx.rateLimitKey)
+  if (!rl.ok) return JSON.stringify({ error: rl.error })
+
+  let args: Record<string, unknown>
+  try {
+    args = JSON.parse(argsJson || '{}') as Record<string, unknown>
+  } catch {
+    return JSON.stringify({ error: 'Invalid tool arguments' })
+  }
+
+  const { supabase } = ctx
+
+  try {
+    switch (name) {
+      case 'search_service_catalog': {
+        const q = String(args.query || '')
+          .trim()
+          .replace(/[%_\\]/g, ' ')
+          .slice(0, 80)
+        if (!q) return JSON.stringify({ services: [], error: 'Empty query' })
+
+        // Commercial services are not available for web self-service booking.
+        const EXCLUDED_SERVICE_NAMES = [
+          'Card fee',
+          'Custom amount',
+          'Discount',
+          'Gratuity',
+          'Mileage/ Travel',
+          'Commercial carpet cleaning',
+          'Commercial Carpet Cleaning',
+          'Commercial Hard Floor Cleaning',
+          'Low Moisture Encapsulation Cleaning LVM/Bonnet',
+          'Commercial Deodorizer (Per Sqft)',
+          'Auto scrubbing Floors (Lvt/Vinyl/Epoxy)',
+          'Seal coat Vinyl/LVT flooring (per foot charge)',
+        ]
+
+        const { data: services, error } = await supabase
+          .from('service_catalog_items')
+          .select('id, name, category, base_price, default_duration_minutes')
+          .eq('is_active', true)
+          .ilike('name', `%${q}%`)
+          .limit(25)
+
+        if (error) throw error
+        const filtered = (services || []).filter(
+          (s) => !EXCLUDED_SERVICE_NAMES.includes(s.name),
+        )
+        return JSON.stringify({
+          services: filtered.map((s) => ({
+            id: s.id,
+            name: s.name,
+            category: s.category,
+            base_price: s.base_price,
+            default_duration_minutes: s.default_duration_minutes,
+          })),
+        })
+      }
+
+      case 'get_calendar_slots': {
+        const date = String(args.date || '').trim()
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+          return JSON.stringify({ error: 'date must be YYYY-MM-DD' })
+        }
+        const today = todayMountain()
+        if (date < today) {
+          return JSON.stringify({
+            date,
+            slots: [],
+            message: 'Cannot book in the past',
+          })
+        }
+
+        const durationParam = Number(args.duration_minutes || 120)
+        const requiredMinutes = applyAppointmentBuffer(
+          durationParam > 0 ? durationParam : 120,
+        )
+
+        const bundle = await loadAvailabilityBundle(supabase, date)
+        const slots = getAvailableSlots({
+          date,
+          requiredMinutes,
+          templates: bundle.templates,
+          overrides: bundle.overrides,
+          appointments: bundle.appointments,
+          maxResults: 12,
+        })
+
+        return JSON.stringify({
+          date,
+          slots: slots.map((s) => ({
+            start_time: s.start_time.slice(0, 5),
+            end_time: s.end_time.slice(0, 5),
+          })),
+        })
+      }
+
+      case 'book_new_job': {
+        const firstName = String(args.first_name || '').trim()
+        const lastName = String(args.last_name || '').trim()
+        const email = String(args.email || '').trim()
+        const phone = normalizePhone(String(args.customer_phone || ''))
+        const street1 = String(args.street_1 || '').trim()
+        const city = String(args.city || '').trim()
+        const state = String(args.state || 'CO').trim() || 'CO'
+        const zipCode = String(args.zip_code || '').trim()
+        const appointmentDate = String(args.appointment_date || '').trim()
+        const startTime = String(args.start_time || '').trim()
+        const providedLeadSource = String(args.lead_source || '').trim()
+        const lineItems = Array.isArray(args.line_items) ? args.line_items : []
+
+        if (!firstName || !lastName || !email) {
+          return JSON.stringify({
+            error: 'first_name, last_name, and email are required',
+          })
+        }
+        if (!phone) {
+          return JSON.stringify({
+            error:
+              'customer_phone is required. Ask the customer for a 10-digit callback number.',
+          })
+        }
+        if (!street1 || !city || !zipCode) {
+          return JSON.stringify({
+            error: 'street_1, city, and zip_code are required',
+          })
+        }
+        if (!appointmentDate || !startTime) {
+          return JSON.stringify({
+            error: 'appointment_date and start_time are required',
+          })
+        }
+        if (!lineItems.length) {
+          return JSON.stringify({ error: 'line_items required' })
+        }
+        if (!providedLeadSource) {
+          return JSON.stringify({
+            error:
+              'lead_source is required. Ask the customer how they heard about us first.',
+          })
+        }
+
+        // Duplicate-booking guard: if this phone already has an active job on
+        // the same date, ask them to text Harry instead of creating a second.
+        const { data: existingCusts } = await supabase
+          .from('ops_customers')
+          .select('id')
+          .eq('phone', phone)
+
+        if (existingCusts && existingCusts.length > 0) {
+          const custIds = existingCusts.map((c) => c.id)
+          const { data: existingAppts } = await supabase
+            .from('ops_appointments')
+            .select('id')
+            .in('customer_id', custIds)
+            .eq('appointment_date', appointmentDate)
+            .in('status', [
+              'booked',
+              'confirmed',
+              'on_my_way',
+              'in_progress',
+              'pending_approval',
+            ])
+            .limit(1)
+
+          if (existingAppts && existingAppts.length > 0) {
+            return JSON.stringify({
+              error: `This customer already has a booking on ${appointmentDate}. To change an existing booking, text Harry at (719) 249-8791. Do NOT create a duplicate.`,
+            })
+          }
+        }
+
+        const parsedLineItems = lineItems.map((row: unknown) => {
+          const r = row as { service_id?: string; quantity?: number }
+          return {
+            service_id: String(r.service_id || '').trim(),
+            quantity: Math.max(1, Number(r.quantity) || 1),
+          }
+        })
+
+        const catalogIds = parsedLineItems.map((l) => l.service_id)
+        const { data: catalogRows } = await supabase
+          .from('service_catalog_items')
+          .select(
+            'id, slug, default_duration_minutes, base_price, pricing_unit',
+          )
+          .in('id', catalogIds)
+          .eq('is_active', true)
+
+        if (!catalogRows || catalogRows.length === 0) {
+          return JSON.stringify({
+            error:
+              'None of the requested services matched active catalog items.',
+          })
+        }
+
+        const MIN_JOB_TOTAL = 150
+        const preTotal = catalogRows.reduce((sum, row) => {
+          const qty =
+            parsedLineItems.find((p) => p.service_id === row.id)?.quantity ?? 1
+          return sum + Number(row.base_price || 0) * qty
+        }, 0)
+        if (preTotal < MIN_JOB_TOTAL) {
+          return JSON.stringify({
+            error: `Job total of $${preTotal.toFixed(2)} is below the $${MIN_JOB_TOTAL} minimum. Please add more services or increase quantities.`,
+          })
+        }
+
+        const totalMinutes = catalogRows.reduce((sum, row) => {
+          const qty =
+            parsedLineItems.find((p) => p.service_id === row.id)?.quantity ?? 1
+          const unitPrice = Number(row.base_price || 0)
+          return (
+            sum +
+            calculateLineItemDurationMinutes({
+              durationMinutes: Number(row.default_duration_minutes || 60),
+              quantity: qty,
+              pricingUnit: row.pricing_unit ?? null,
+              unitPrice,
+              catalogSlug: row.slug ?? null,
+              nameSnapshot: null,
+            })
+          )
+        }, 0)
+
+        const requiredMinutes = applyAppointmentBuffer(totalMinutes || 120)
+        const bundle = await loadAvailabilityBundle(supabase, appointmentDate)
+        const slots = getAvailableSlots({
+          date: appointmentDate,
+          requiredMinutes,
+          templates: bundle.templates,
+          overrides: bundle.overrides,
+          appointments: bundle.appointments,
+          maxResults: 48,
+        })
+
+        const wantStart = normClock5(startTime)
+        const slotOk = slots.some((s) => normClock5(s.start_time) === wantStart)
+        if (!slotOk) {
+          return JSON.stringify({
+            error: `That start time is not available on ${appointmentDate}. Call get_calendar_slots first and offer a listed time.`,
+            suggested_slots: slots
+              .slice(0, 8)
+              .map((s) => s.start_time.slice(0, 5)),
+          })
+        }
+
+        const bookingMode =
+          process.env.SCOUT_WEB_BOOKING_MODE === 'request'
+            ? 'request'
+            : 'direct'
+
+        const result = await createAiStyleBooking({
+          supabase,
+          customer: {
+            first_name: firstName,
+            last_name: lastName,
+            email,
+            phone,
+          },
+          address: { street_1: street1, city, state, zip_code: zipCode },
+          appointment_date: appointmentDate,
+          start_time: startTime,
+          line_items: parsedLineItems,
+          booking_mode: bookingMode,
+          booking_channel: 'ai_agent',
+          source_label: 'Scout Website Chat',
+          lead_source: providedLeadSource,
+          actor_label: 'Scout Web',
+          admin_heading: 'Scout website booking',
+        })
+
+        if (!result.ok) {
+          return JSON.stringify({ error: result.error })
+        }
+
+        return JSON.stringify({
+          success: true,
+          confirmation_number: result.confirmation_number,
+          status: result.appointment_status,
+          appointment_date: result.appointment_date,
+          start_time: result.start_time.slice(0, 5),
+          total: result.total,
+          message: result.message,
+        })
+      }
+
+      case 'book_commercial_estimate': {
+        const firstName = String(args.first_name || '').trim()
+        const lastName = String(args.last_name || '').trim()
+        const businessName = String(args.business_name || '').trim() || null
+        const email = String(args.email || '').trim()
+        const phone = normalizePhone(String(args.customer_phone || ''))
+        const street1 = String(args.street_1 || '').trim()
+        const city = String(args.city || '').trim()
+        const state = String(args.state || 'CO').trim() || 'CO'
+        const zipCode = String(args.zip_code || '').trim()
+        const appointmentDate = String(args.appointment_date || '').trim()
+        const startTime = String(args.start_time || '').trim()
+        const jobDescription = String(args.job_description || '').trim() || null
+
+        if (!firstName || !lastName || !email) {
+          return JSON.stringify({
+            error: 'first_name, last_name, and email are required',
+          })
+        }
+        if (!phone) {
+          return JSON.stringify({
+            error:
+              'customer_phone is required. Ask the customer for a 10-digit callback number.',
+          })
+        }
+        if (!street1 || !city || !zipCode) {
+          return JSON.stringify({
+            error: 'street_1, city, and zip_code are required',
+          })
+        }
+        if (!appointmentDate || !startTime) {
+          return JSON.stringify({
+            error: 'appointment_date and start_time are required',
+          })
+        }
+
+        const result = await createAiStyleEstimate({
+          supabase,
+          customer: {
+            first_name: firstName,
+            last_name: lastName,
+            business_name: businessName,
+            email,
+            phone,
+          },
+          address: { street_1: street1, city, state, zip_code: zipCode },
+          appointment_date: appointmentDate,
+          start_time: startTime,
+          visit_duration_minutes: 60,
+          job_description: jobDescription,
+          booking_channel: 'ai_agent',
+          source_label: 'Scout Website Chat',
+          actor_label: 'Scout Web',
+          admin_heading: 'Scout website walkthrough',
+        })
+
+        if (!result.ok) {
+          return JSON.stringify({
+            error: result.error,
+            ...(result.suggested_slots
+              ? { suggested_slots: result.suggested_slots }
+              : {}),
+          })
+        }
+
+        return JSON.stringify({
+          success: true,
+          confirmation_number: result.confirmation_number,
+          appointment_date: result.appointment_date,
+          start_time: result.start_time,
+          visit_duration_minutes: result.visit_duration_minutes,
+          message: result.message,
+        })
+      }
+
+      default:
+        return JSON.stringify({ error: `Unknown tool: ${name}` })
+    }
+  } catch (e) {
+    console.error('[Scout web tool]', name, e)
+    return JSON.stringify({
+      error: 'Action failed. The office can help at (719) 249-8791.',
+    })
+  }
+}
+
+export function isScoutWebToolsEnabled(): boolean {
+  return process.env.SCOUT_WEB_TOOLS !== 'false'
+}
