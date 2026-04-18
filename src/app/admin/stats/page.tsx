@@ -1213,7 +1213,15 @@ export default function StatsPage() {
               </Card>
 
               <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
-                <h3 className="mb-3 text-sm font-semibold">Lead Source</h3>
+                <div className="mb-3 flex items-center justify-between">
+                  <h3 className="text-sm font-semibold">Lead Source</h3>
+                  <a
+                    href="/admin/stats/lead-sources"
+                    className="text-xs text-green-600 hover:text-green-700 hover:underline"
+                  >
+                    View Detailed Analytics →
+                  </a>
+                </div>
                 <div className="space-y-2">
                   {Object.entries(opsStats.leadSourceCounts).length === 0 ? (
                     <p className="text-muted-foreground text-sm">
