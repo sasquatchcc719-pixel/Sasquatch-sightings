@@ -660,7 +660,12 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
   )
 
   const handleDelete = useCallback(async () => {
-    if (!confirm('Delete this estimate permanently?')) return
+    const isConvertedEstimate = !!estimate?.converted_appointment_id
+    const warningMessage = isConvertedEstimate
+      ? 'This estimate was converted to an appointment. Deleting it will NOT delete the appointment. Delete the estimate anyway?'
+      : 'Delete this estimate permanently?'
+
+    if (!confirm(warningMessage)) return
     setActionLoading('delete')
     setError(null)
     try {
@@ -676,7 +681,7 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
       setError(err instanceof Error ? err.message : 'Failed to delete')
       setActionLoading(null)
     }
-  }, [estimateId, router])
+  }, [estimateId, router, estimate])
 
   const handleConvert = useCallback(async () => {
     setConvertSubmitting(true)
@@ -1534,15 +1539,6 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
 
             <div className="ml-auto flex flex-wrap items-center gap-2">
               <Button
-                variant="destructive"
-                className="gap-2"
-                disabled={actionLoading !== null}
-                onClick={() => void handleDelete()}
-              >
-                <Trash2 className="h-4 w-4" />
-                Delete
-              </Button>
-              <Button
                 className="gap-2 bg-emerald-600 text-white hover:bg-emerald-700"
                 disabled={lineItems.length === 0}
                 onClick={() => {
@@ -1569,6 +1565,17 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
             <ArrowRight className="ml-2 h-4 w-4" />
           </Button>
         )}
+
+        {/* Delete button - always visible for cleanup */}
+        <Button
+          variant="destructive"
+          className="gap-2"
+          disabled={actionLoading !== null}
+          onClick={() => void handleDelete()}
+        >
+          <Trash2 className="h-4 w-4" />
+          Delete
+        </Button>
       </Card>
 
       {emailError ? (
