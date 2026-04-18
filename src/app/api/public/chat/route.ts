@@ -287,7 +287,7 @@ Example:
 **Deep Restoration** (adds rotary extraction + sanitize; only when they say "really dirty" / "deep"):
 - 100–200: $75 · 201–400: $150 · 401–600: $225 · 601–800: $300
 
-**Upholstery**: Sofa $150 · Loveseat $100 · Sectional $15/linear ft (≈3 ft per seat) · Recliner $75 · Ottoman $40
+**Upholstery**: Sofa $150 · Loveseat $100 · Sectional $50/seat · Recliner $75 · Ottoman $40
 
 **Leather** (Leather Master 3-step): Chair $99 · Loveseat $159 · Sofa $199
 

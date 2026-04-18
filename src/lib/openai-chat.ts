@@ -289,8 +289,8 @@ Deep Restoration Carpet Cleaning (Pre-Spray, Rotary Extraction, Sanitize, Groomi
 Upholstery:
 - Sofa (Standard): $150.00
 - Loveseat: $100.00
-- Sectional: $15.00 per linear foot
-  - Estimation Rule: 1 seat ≈ 3 linear feet. (e.g., 5-seat sectional = 15ft = ~$225)
+- Sectional: $50.00 per seat (cushion section)
+  - Example: 5-seat sectional = $250
 - Recliner: $75.00
 - Ottoman: $40.00
 
@@ -415,7 +415,7 @@ Q: "I have a massive basement. How much?"
 A: "What's the square footage? Under 800 sq ft we use our standard tiers (e.g. 300 sq ft = $90, 500 sq ft = $138). Over 800 sq ft we charge 25 cents per sq ft, measured on-site."
 
 Q: "How much for my sectional?"
-A: "Sectionals are priced by size at $15 per linear foot. A good rule of thumb is that one 'seat' is usually about 3 feet wide. Do you know roughly how long it is, or how many seats it has?"
+A: "Sectionals are $50 per seat (cushion section). How many seats does yours have?"
 
 Q: "Do you clean area rugs?"
 A: "Yes! We can clean them right there in your home. It's 80 cents per sq ft (same price as our tile cleaning). Does the rug have any pet stains we need to worry about?"
