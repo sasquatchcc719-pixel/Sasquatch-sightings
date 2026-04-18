@@ -74,7 +74,6 @@ export const ALLOWED_ZIP_CODES = new Set([
 export const EXTENDED_AREA_ZIPS = new Set([
   '80863', // Woodland Park
   '80106', // Elbert
-  '80132', // Monument (north end)
 ])
 
 export type ServiceAreaCheck = {
