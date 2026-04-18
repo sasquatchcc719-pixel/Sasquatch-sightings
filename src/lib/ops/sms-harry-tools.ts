@@ -8,6 +8,7 @@ import {
   type ExistingAppointmentWindow,
 } from '@/lib/ops/availability'
 import { createAiStyleBooking } from '@/lib/ops/create-ai-style-booking'
+import { createAiStyleEstimate } from '@/lib/ops/create-ai-style-estimate'
 import { resyncInvoiceToQuickBooks } from '@/lib/quickbooks-api'
 
 /** Today's date in Mountain Time (YYYY-MM-DD). Avoids UTC rollover at 6 PM MDT. */
@@ -409,6 +410,58 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'book_commercial_estimate',
+      description:
+        "COMMERCIAL WORK ONLY. Book a 1-hour time slot on Charles's calendar for an on-site walkthrough / measurement visit of a commercial property (office, restaurant, HOA, church, apartment complex, school, medical office, gym, store, etc.). You are NOT generating the estimate — you are only reserving the slot for Charles to come out, measure, and build the quote himself. Requires a start_time that appears in get_calendar_slots for that date (use duration_minutes=60 when checking). DO NOT use this for any residential job — residential ALWAYS books directly via book_new_job, no matter how big or complex the house is.",
+      parameters: {
+        type: 'object',
+        properties: {
+          first_name: { type: 'string' },
+          last_name: { type: 'string' },
+          business_name: {
+            type: 'string',
+            description:
+              'Company / business name (strongly preferred for commercial leads — e.g. "Gold Hill Mesa HOA", "Joe\'s Barbershop"). Leave empty if the contact is an individual.',
+          },
+          email: { type: 'string' },
+          customer_phone: {
+            type: 'string',
+            description:
+              "Customer's real callback phone (10-digit US). Required — for LSA relay conversations pass the customer's actual number, not the relay.",
+          },
+          street_1: { type: 'string' },
+          city: { type: 'string' },
+          state: {
+            type: 'string',
+            description: 'Two-letter state, defaults to CO',
+          },
+          zip_code: { type: 'string' },
+          appointment_date: { type: 'string', description: 'YYYY-MM-DD' },
+          start_time: { type: 'string', description: 'HH:MM (24h)' },
+          job_description: {
+            type: 'string',
+            description:
+              'Short summary of what they want quoted — square footage if known, floor types, occupancy, any photos shared, urgency, etc.',
+          },
+        },
+        required: [
+          'first_name',
+          'last_name',
+          'email',
+          'customer_phone',
+          'street_1',
+          'city',
+          'zip_code',
+          'appointment_date',
+          'start_time',
+        ],
+        additionalProperties: false,
+      },
+    },
+  },
 ]
 
 export async function executeHarrySmsTool(
@@ -518,6 +571,8 @@ export async function executeHarrySmsTool(
           'Gratuity',
           'Mileage/ Travel',
           'Commercial carpet cleaning',
+          'Commercial Carpet Cleaning',
+          'Commercial Hard Floor Cleaning',
           'Low Moisture Encapsulation Cleaning LVM/Bonnet',
           'Commercial Deodorizer (Per Sqft)',
           'Auto scrubbing Floors (Lvt/Vinyl/Epoxy)',
@@ -1135,6 +1190,93 @@ export async function executeHarrySmsTool(
           appointment_date: result.appointment_date,
           start_time: result.start_time.slice(0, 5),
           total: result.total,
+          message: result.message,
+        })
+      }
+
+      case 'book_commercial_estimate': {
+        const firstName = String(args.first_name || '').trim()
+        const lastName = String(args.last_name || '').trim()
+        const businessName = String(args.business_name || '').trim() || null
+        const email = String(args.email || '').trim()
+        const street1 = String(args.street_1 || '').trim()
+        const city = String(args.city || '').trim()
+        const state = String(args.state || 'CO').trim() || 'CO'
+        const zipCode = String(args.zip_code || '').trim()
+        const appointmentDate = String(args.appointment_date || '').trim()
+        const startTime = String(args.start_time || '').trim()
+        const jobDescription = String(args.job_description || '').trim() || null
+
+        // For LSA relay conversations Harry must collect the real customer
+        // callback; otherwise use the SMS number.
+        const rawCustomerPhone = String(args.customer_phone || '').trim()
+        const normalizedCustomerPhone = rawCustomerPhone
+          ? '+1' + rawCustomerPhone.replace(/\D/g, '').slice(-10)
+          : ''
+        const bookingPhone = ctx.isLsaRelay
+          ? normalizedCustomerPhone
+          : normalizedCustomerPhone || ctx.customerPhoneE164
+
+        if (!bookingPhone) {
+          return JSON.stringify({
+            error:
+              'customer_phone is required. Ask the customer for their 10-digit callback number.',
+          })
+        }
+        if (!firstName || !lastName || !email) {
+          return JSON.stringify({
+            error: 'first_name, last_name, and email are required',
+          })
+        }
+        if (!street1 || !city || !zipCode) {
+          return JSON.stringify({
+            error: 'street_1, city, and zip_code are required',
+          })
+        }
+        if (!appointmentDate || !startTime) {
+          return JSON.stringify({
+            error: 'appointment_date and start_time are required',
+          })
+        }
+
+        const isLsa = ctx.isLsaRelay === true
+        const result = await createAiStyleEstimate({
+          supabase,
+          customer: {
+            first_name: firstName,
+            last_name: lastName,
+            business_name: businessName,
+            email,
+            phone: bookingPhone,
+          },
+          address: { street_1: street1, city, state, zip_code: zipCode },
+          appointment_date: appointmentDate,
+          start_time: startTime,
+          visit_duration_minutes: 60,
+          job_description: jobDescription,
+          booking_channel: isLsa ? 'lsa_sms' : 'sms_harry',
+          source_label: isLsa ? 'Google LSA' : 'Harry SMS',
+          actor_label: isLsa ? 'Harry LSA' : 'Harry SMS',
+          admin_heading: isLsa
+            ? 'Google LSA walkthrough'
+            : 'Harry SMS walkthrough',
+        })
+
+        if (!result.ok) {
+          return JSON.stringify({
+            error: result.error,
+            ...(result.suggested_slots
+              ? { suggested_slots: result.suggested_slots }
+              : {}),
+          })
+        }
+
+        return JSON.stringify({
+          success: true,
+          confirmation_number: result.confirmation_number,
+          appointment_date: result.appointment_date,
+          start_time: result.start_time,
+          visit_duration_minutes: result.visit_duration_minutes,
           message: result.message,
         })
       }
