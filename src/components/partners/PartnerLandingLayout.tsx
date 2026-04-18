@@ -493,13 +493,13 @@ END:VCARD`
         <div className="mb-8 grid grid-cols-3 gap-3 text-center">
           <div className="rounded-lg border border-white/10 bg-black/60 p-3 shadow-lg backdrop-blur-sm">
             <div className="text-2xl">⭐</div>
-            <div className="text-xs font-bold text-white">5 Stars</div>
+            <div className="text-xs font-bold text-white">58 Reviews</div>
             <div className="text-xs text-white/60">on Google</div>
           </div>
           <div className="rounded-lg border border-white/10 bg-black/60 p-3 shadow-lg backdrop-blur-sm">
-            <div className="text-2xl">🐾</div>
-            <div className="text-xs font-bold text-white">Pet Stain</div>
-            <div className="text-xs text-white/60">Experts</div>
+            <div className="text-2xl">🔔</div>
+            <div className="text-xs font-bold text-white">98 Follows</div>
+            <div className="text-xs text-white/60">on Nextdoor</div>
           </div>
           <div className="rounded-lg border border-white/10 bg-black/60 p-3 shadow-lg backdrop-blur-sm">
             <div className="text-2xl">✓</div>

@@ -1,3 +1,4 @@
+import { Resend } from 'resend'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type OpenAI from 'openai'
 import {
@@ -271,6 +272,45 @@ export const SCOUT_WEB_TOOLS: OpenAI.ChatCompletionTool[] = [
           'appointment_date',
           'start_time',
         ],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'notify_charles',
+      description:
+        'Send Charles an email alert about a customer issue Scout cannot resolve. ' +
+        'Use whenever you tell a customer that Charles will follow up. ' +
+        'Always collect the customer phone before calling this if a callback was promised.',
+      parameters: {
+        type: 'object',
+        properties: {
+          reason: {
+            type: 'string',
+            description:
+              'Short summary of why Charles needs to act (1–2 sentences)',
+          },
+          customer_name: {
+            type: 'string',
+            description: "Customer's name if known",
+          },
+          customer_phone: {
+            type: 'string',
+            description: 'Required if a callback was promised to the customer',
+          },
+          customer_email: {
+            type: 'string',
+            description: "Customer's email if known",
+          },
+          conversation_summary: {
+            type: 'string',
+            description:
+              'Key points from the conversation — what they wanted, what went wrong, what was promised',
+          },
+        },
+        required: ['reason', 'conversation_summary'],
         additionalProperties: false,
       },
     },
@@ -641,6 +681,79 @@ export async function executeScoutWebTool(
           start_time: result.start_time,
           visit_duration_minutes: result.visit_duration_minutes,
           message: result.message,
+        })
+      }
+
+      case 'notify_charles': {
+        const reason = String(args.reason || '').trim()
+        const customerName = String(args.customer_name || '').trim()
+        const customerPhone = String(args.customer_phone || '').trim()
+        const customerEmail = String(args.customer_email || '').trim()
+        const conversationSummary = String(
+          args.conversation_summary || '',
+        ).trim()
+
+        if (!reason || !conversationSummary) {
+          return JSON.stringify({
+            error: 'reason and conversation_summary are required',
+          })
+        }
+
+        const resendKey = process.env.RESEND_API_KEY
+        const toEmail = process.env.OWNER_ALERT_EMAIL
+        const fromEmail =
+          process.env.OPS_FROM_EMAIL || 'noreply@sasquatchcarpet.com'
+
+        if (!resendKey || !toEmail) {
+          console.warn(
+            '[scout] notify_charles: RESEND_API_KEY or OWNER_ALERT_EMAIL not set',
+          )
+          return JSON.stringify({
+            success: true,
+            message:
+              'Alert logged (email not configured — set RESEND_API_KEY and OWNER_ALERT_EMAIL in env).',
+          })
+        }
+
+        const rows = [
+          customerName &&
+            `<tr><td><strong>Customer</strong></td><td>${customerName}</td></tr>`,
+          customerPhone &&
+            `<tr><td><strong>Phone</strong></td><td>${customerPhone}</td></tr>`,
+          customerEmail &&
+            `<tr><td><strong>Email</strong></td><td>${customerEmail}</td></tr>`,
+        ]
+          .filter(Boolean)
+          .join('\n')
+
+        const html = `
+<h2 style="color:#c0392b;">Scout Alert</h2>
+<p><strong>Reason:</strong> ${reason}</p>
+${rows ? `<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;margin:12px 0;">${rows}</table>` : ''}
+<h3>Conversation Summary</h3>
+<pre style="background:#f4f4f4;padding:12px;border-radius:4px;white-space:pre-wrap;">${conversationSummary}</pre>
+<hr/>
+<p style="color:#888;font-size:12px;">Sent automatically by Scout (Sasquatch website chat)</p>
+`
+
+        const resend = new Resend(resendKey)
+        const { error: sendError } = await resend.emails.send({
+          from: fromEmail,
+          to: toEmail,
+          subject: `Scout Alert: ${reason.slice(0, 80)}`,
+          html,
+        })
+
+        if (sendError) {
+          console.error('[scout] notify_charles email error:', sendError)
+          return JSON.stringify({
+            error: 'Failed to send alert email. The issue has been logged.',
+          })
+        }
+
+        return JSON.stringify({
+          success: true,
+          message: 'Charles has been notified by email.',
         })
       }
 
