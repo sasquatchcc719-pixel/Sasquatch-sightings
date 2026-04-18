@@ -738,7 +738,7 @@ ${rows ? `<table border="1" cellpadding="6" cellspacing="0" style="border-collap
 
         const resend = new Resend(resendKey)
         const { error: sendError } = await resend.emails.send({
-          from: fromEmail,
+          from: `Scout <${fromEmail}>`,
           to: toEmail,
           subject: `Scout Alert: ${reason.slice(0, 80)}`,
           html,
