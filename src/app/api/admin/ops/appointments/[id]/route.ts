@@ -44,6 +44,7 @@ function parseClockMinutes(value: string): number {
 
 const APPOINTMENT_SELECT = `
   *,
+  lead_source,
   ops_customers!ops_appointments_customer_id_fkey (
     id,
     full_name,
@@ -268,6 +269,10 @@ export async function PATCH(
           body.internal_notes !== undefined
             ? String(body.internal_notes || '').trim() || null
             : current.internal_notes,
+        lead_source:
+          body.lead_source !== undefined
+            ? String(body.lead_source || '').trim() || null
+            : current.lead_source,
         assigned_staff_user_id:
           body.assigned_staff_user_id !== undefined
             ? body.assigned_staff_user_id || null

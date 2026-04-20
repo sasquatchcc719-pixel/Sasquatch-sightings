@@ -32,6 +32,7 @@ type Appointment = {
   end_time: string
   status: string
   quoted_total: number
+  lead_source: string | null
   ops_customers:
     | {
         full_name: string
@@ -1601,6 +1602,23 @@ export function OperationsSchedule() {
                             {appointment.ops_appointment_line_items[0]
                               ?.name_snapshot || 'Service'}
                           </div>
+                          {(() => {
+                            const address = unwrapRelation(
+                              appointment.ops_service_addresses,
+                            )
+                            const city = address?.city
+                            const leadSource = appointment.lead_source
+                            if (city || leadSource) {
+                              return (
+                                <div className="text-muted-foreground mt-0.5 text-[10px]">
+                                  {city && <span>{city}</span>}
+                                  {city && leadSource && <span> · </span>}
+                                  {leadSource && <span>{leadSource}</span>}
+                                </div>
+                              )
+                            }
+                            return null
+                          })()}
                           {invoice?.id ? (
                             <div className="text-muted-foreground mt-1">
                               Invoice ready
@@ -1923,6 +1941,25 @@ export function OperationsSchedule() {
                                 <div className="mt-1 text-slate-700">
                                   {placement.startLabel} - {placement.endLabel}
                                 </div>
+                                {(() => {
+                                  const address = unwrapRelation(
+                                    appointment.ops_service_addresses,
+                                  )
+                                  const city = address?.city
+                                  const leadSource = appointment.lead_source
+                                  if (city || leadSource) {
+                                    return (
+                                      <div className="mt-0.5 flex items-center gap-2 text-[10px] text-slate-500">
+                                        {city && <span>{city}</span>}
+                                        {city && leadSource && <span>·</span>}
+                                        {leadSource && (
+                                          <span>{leadSource}</span>
+                                        )}
+                                      </div>
+                                    )
+                                  }
+                                  return null
+                                })()}
                                 <div className="mt-2 line-clamp-2 text-slate-800">
                                   {appointment.ops_appointment_line_items
                                     .map((item) => item.name_snapshot)

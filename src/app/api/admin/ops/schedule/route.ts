@@ -4,6 +4,7 @@ import { createAdminClient } from '@/supabase/server'
 
 const APPOINTMENT_SELECT = `
   *,
+  lead_source,
   ops_customers!ops_appointments_customer_id_fkey (
     id,
     full_name,

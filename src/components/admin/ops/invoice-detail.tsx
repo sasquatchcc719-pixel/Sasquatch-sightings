@@ -108,6 +108,10 @@ type AddressEditForm = {
   notes: string
 }
 
+type AppointmentEditForm = {
+  lead_source: string
+}
+
 function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
   if (!value) return null
   return Array.isArray(value) ? value[0] || null : value
@@ -212,6 +216,9 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     zip_code: '',
     gate_code: '',
     notes: '',
+  })
+  const [appointmentForm, setAppointmentForm] = useState<AppointmentEditForm>({
+    lead_source: '',
   })
 
   const loadInvoice = useCallback(async () => {
@@ -408,6 +415,9 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
       gate_code: addr?.gate_code || '',
       notes: addr?.notes || '',
     })
+    setAppointmentForm({
+      lead_source: appt?.lead_source || '',
+    })
     setEditingCustomer(true)
   }
 
@@ -434,6 +444,9 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
             zip_code: addressForm.zip_code,
             gate_code: addressForm.gate_code || null,
             notes: addressForm.notes || null,
+          },
+          appointment: {
+            lead_source: appointmentForm.lead_source || null,
           },
         }),
       })
@@ -1058,6 +1071,34 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                   className="h-9"
                 />
               </div>
+            </div>
+
+            <div>
+              <Label htmlFor="edit-lead-source" className="text-xs">
+                Lead Source
+              </Label>
+              <select
+                id="edit-lead-source"
+                value={appointmentForm.lead_source}
+                onChange={(e) =>
+                  setAppointmentForm((f) => ({
+                    ...f,
+                    lead_source: e.target.value,
+                  }))
+                }
+                className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+              >
+                <option value="">Not specified</option>
+                <option value="Google">Google</option>
+                <option value="Nextdoor">Nextdoor</option>
+                <option value="Facebook">Facebook</option>
+                <option value="Yelp">Yelp</option>
+                <option value="Word of mouth / Referral">
+                  Word of mouth / Referral
+                </option>
+                <option value="Repeat customer">Repeat customer</option>
+                <option value="Other">Other</option>
+              </select>
             </div>
 
             <div className="border-border/60 border-t pt-4">

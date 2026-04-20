@@ -24,6 +24,7 @@ type AppointmentDetail = {
   payment_status: string
   internal_notes: string | null
   quoted_total: number
+  lead_source: string | null
   ops_customers:
     | {
         full_name: string
@@ -120,6 +121,7 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
     status: 'booked',
     payment_status: 'unpaid',
     internal_notes: '',
+    lead_source: '',
   })
   type OnMyWaySmsInfo = { body: string; actuallySent: boolean }
   const [onMyWaySmsInfo, setOnMyWaySmsInfo] = useState<OnMyWaySmsInfo | null>(
@@ -151,6 +153,7 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
           status: result.appointment.status,
           payment_status: result.appointment.payment_status,
           internal_notes: result.appointment.internal_notes || '',
+          lead_source: result.appointment.lead_source || '',
         })
       } catch (loadError) {
         setError(
@@ -250,6 +253,7 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
           status: result.appointment.status,
           payment_status: result.appointment.payment_status,
           internal_notes: result.appointment.internal_notes || '',
+          lead_source: result.appointment.lead_source || '',
         })
       }
       router.refresh()
@@ -504,6 +508,31 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
                 <option value="partial">Partial</option>
                 <option value="paid">Paid</option>
                 <option value="waived">Waived</option>
+              </select>
+            </div>
+            <div className="md:col-span-2">
+              <Label htmlFor="job-lead-source">Lead Source</Label>
+              <select
+                id="job-lead-source"
+                className="border-input bg-background h-10 w-full rounded-md border px-3 text-sm"
+                value={form.lead_source}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    lead_source: event.target.value,
+                  }))
+                }
+              >
+                <option value="">Not specified</option>
+                <option value="Google">Google</option>
+                <option value="Nextdoor">Nextdoor</option>
+                <option value="Facebook">Facebook</option>
+                <option value="Yelp">Yelp</option>
+                <option value="Word of mouth / Referral">
+                  Word of mouth / Referral
+                </option>
+                <option value="Repeat customer">Repeat customer</option>
+                <option value="Other">Other</option>
               </select>
             </div>
             <div className="md:col-span-2">

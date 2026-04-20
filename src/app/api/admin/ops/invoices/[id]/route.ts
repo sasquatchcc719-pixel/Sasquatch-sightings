@@ -170,6 +170,21 @@ export async function PATCH(
               .eq('id', appt.service_address_id)
           }
         }
+
+        if (body.appointment && typeof body.appointment === 'object') {
+          const apu: Record<string, unknown> = {}
+          if (body.appointment.lead_source !== undefined) {
+            apu.lead_source =
+              String(body.appointment.lead_source || '').trim() || null
+          }
+          if (Object.keys(apu).length > 0) {
+            apu.updated_at = new Date().toISOString()
+            await supabase
+              .from('ops_appointments')
+              .update(apu)
+              .eq('id', current.appointment_id)
+          }
+        }
       }
     }
 
