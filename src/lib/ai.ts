@@ -6,6 +6,184 @@
 import { createAnthropic } from '@ai-sdk/anthropic'
 import { generateText } from 'ai'
 
+export type SocialDraftType =
+  | 'educational'
+  | 'milestone'
+  | 'seasonal_tip'
+  | 'local_seo'
+  | 'behind_scenes'
+
+export type SocialDraftContext = {
+  city?: string
+  service?: string
+  milestoneCount?: number
+  milestoneLabel?: string
+  month?: number
+  recentCities?: string[]
+}
+
+const DRAFT_PROMPTS: Record<
+  SocialDraftType,
+  (ctx: SocialDraftContext) => string
+> = {
+  educational: (
+    ctx,
+  ) => `Write a Google Business Profile / social media post for Sasquatch Carpet Cleaning in Monument, Colorado.
+
+Type: Educational tip — teach the reader something genuinely useful about carpet or upholstery care.
+
+Topics to choose from (pick whichever feels freshest):
+- How often carpets should actually be cleaned (most people don't know)
+- Why hot water extraction beats dry cleaning for deep soil
+- What carpet protector does and when it's worth it
+- How pet urine damage works at the fiber level and why enzyme treatment matters
+- Why vacuuming direction matters
+- The difference between a portable unit and a truck-mount
+
+Service area: Monument, Palmer Lake, Castle Rock, Colorado Springs, Black Forest, Woodmoor, Gleneagle, Larkspur${ctx.service ? `\nRecent service focus: ${ctx.service}` : ''}
+
+Rules:
+- 2-3 short paragraphs, 120-150 words total
+- Warm and conversational, like a neighbor who happens to know a lot about carpet
+- No hashtags, no excessive punctuation
+- End with a soft call to action: "Book online or call (719) 249-8791"
+- Include a short punchy title (max 60 chars)
+
+Return plain text in this format:
+TITLE: <title here>
+BODY: <body here>`,
+
+  milestone: (
+    ctx,
+  ) => `Write a Google Business Profile / social media post for Sasquatch Carpet Cleaning in Monument, Colorado.
+
+Type: Milestone celebration — we hit a meaningful number.
+
+Milestone: ${ctx.milestoneLabel ?? `${ctx.milestoneCount} jobs completed${ctx.city ? ` in ${ctx.city}` : ''}`}
+
+Rules:
+- Warm, genuine, not braggy — thank the community, not yourself
+- 2 short paragraphs, 100-130 words
+- Reference the specific area if provided
+- End with: "Thank you for trusting us in your home. Book at sasquatchcarpet.com or call (719) 249-8791"
+- No hashtags
+- Include a short punchy title (max 60 chars)
+
+Return plain text in this format:
+TITLE: <title here>
+BODY: <body here>`,
+
+  seasonal_tip: (ctx) => {
+    const month = ctx.month ?? new Date().getMonth() + 1
+    const seasonHints: Record<number, string> = {
+      1: 'New Year, fresh start. Salt and sand tracked in all winter. Great time to reset.',
+      2: 'Still deep winter in Colorado. Mud and slush season is coming. Now is the time to prep.',
+      3: 'Mud season is starting. Snow melt, pet paws, kids in and out. Carpets take a beating.',
+      4: 'Spring cleaning season. Allergens are up, windows are opening, carpets need a refresh.',
+      5: 'Late spring. Pollen and outdoor traffic at a peak. Great time for a deep clean.',
+      6: 'Summer starts. Kids home all day. BBQ season. Outdoor traffic in and out constantly.',
+      7: 'Peak summer. Heat means carpets dry faster after cleaning — great timing.',
+      8: 'Late summer. Back to school incoming. Get ahead of the school-year traffic.',
+      9: 'Fall is here. Holiday prep season. Get carpets done before guests arrive.',
+      10: 'Pre-holiday season. Thanksgiving is coming. Now is the time.',
+      11: 'Holiday season. Last chance to get carpets clean before Christmas gatherings.',
+      12: 'Winter. Colorado salt and sand season. New Year is a great fresh start.',
+    }
+    return `Write a Google Business Profile / social media post for Sasquatch Carpet Cleaning in Monument, Colorado.
+
+Type: Seasonal tip — timely advice tied to the current time of year.
+
+Current month context: ${seasonHints[month] ?? 'Seasonal carpet care tip.'}
+Service area: Monument, Palmer Lake, Castle Rock, Colorado Springs, Black Forest${ctx.city ? `, ${ctx.city}` : ''}
+
+Rules:
+- 2 short paragraphs, 100-130 words
+- Feels timely and relevant to right now, not generic
+- Reference Colorado weather or lifestyle naturally
+- End with: "Book online at sasquatchcarpet.com or call (719) 249-8791"
+- No hashtags
+- Include a short punchy title (max 60 chars)
+
+Return plain text in this format:
+TITLE: <title here>
+BODY: <body here>`
+  },
+
+  local_seo: (ctx) => {
+    const city = ctx.city ?? ctx.recentCities?.[0] ?? 'Castle Rock'
+    return `Write a Google Business Profile / social media post for Sasquatch Carpet Cleaning in Monument, Colorado.
+
+Type: Local SEO post — targets a specific city we serve. Should feel natural, not keyword-stuffed.
+
+Target city: ${city}
+Service: ${ctx.service ?? 'carpet cleaning'}
+
+Rules:
+- Mention the city naturally 1-2 times
+- 2-3 short paragraphs, 120-150 words
+- Reference something real about the area (elevation, lifestyle, weather, neighborhoods) if you can
+- Position us as the local experts who know that area
+- End with: "Serving ${city} and the surrounding area — book at sasquatchcarpet.com or call (719) 249-8791"
+- No hashtags
+- Include a short punchy title (max 60 chars)
+
+Return plain text in this format:
+TITLE: <title here>
+BODY: <body here>`
+  },
+
+  behind_scenes:
+    () => `Write a Google Business Profile / social media post for Sasquatch Carpet Cleaning in Monument, Colorado.
+
+Type: Behind the scenes — a glimpse into the real work, the early mornings, the prep, the craft.
+
+Topics to choose from:
+- Prepping the truck and equipment before a big job day
+- The ritual of mixing the right solution for different carpet types
+- What it actually takes to clean a badly soiled carpet vs a maintenance clean
+- Driving out to a job in the Colorado mountains early in the morning
+- The satisfaction of packing up after a job that went really well
+
+Rules:
+- Personal and genuine — first-person is fine ("We start every morning...")
+- 2 paragraphs, 100-130 words
+- No hashtags, no excessive punctuation
+- End with: "Book us at sasquatchcarpet.com or call (719) 249-8791"
+- Include a short punchy title (max 60 chars)
+
+Return plain text in this format:
+TITLE: <title here>
+BODY: <body here>`,
+}
+
+function parseDraftResponse(text: string): { title: string; body: string } {
+  const titleMatch = text.match(/TITLE:\s*(.+?)(?:\n|$)/i)
+  const bodyMatch = text.match(/BODY:\s*([\s\S]+)/i)
+  return {
+    title: titleMatch?.[1]?.trim() ?? '',
+    body: bodyMatch?.[1]?.trim() ?? text.trim(),
+  }
+}
+
+export async function generateSocialDraft(
+  type: SocialDraftType,
+  context: SocialDraftContext = {},
+): Promise<{ title: string; body: string }> {
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey) throw new Error('ANTHROPIC_API_KEY not configured')
+
+  const anthropic = createAnthropic({ apiKey })
+  const prompt = DRAFT_PROMPTS[type](context)
+
+  const { text } = await generateText({
+    model: anthropic('claude-3-5-sonnet-20241022'),
+    prompt,
+    temperature: 0.8,
+  })
+
+  return parseDraftResponse(text)
+}
+
 /**
  * Generate a professional job description from field notes
  * Uses Claude 3.5 Sonnet via Vercel AI SDK

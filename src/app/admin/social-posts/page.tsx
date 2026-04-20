@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import {
   ImagePlay,
   CheckCircle2,
@@ -10,12 +10,23 @@ import {
   CalendarDays,
   Briefcase,
   RefreshCw,
+  FileEdit,
+  Send,
+  Trash2,
+  Pencil,
+  BookOpen,
+  Trophy,
+  Lightbulb,
+  MapPin,
+  Camera,
+  Loader2,
 } from 'lucide-react'
 
 interface Summary {
   weekly_posts_sent: number
   weekly_cap: number
   queued_jobs: number
+  pending_drafts: number
 }
 
 interface JobPost {
@@ -46,6 +57,33 @@ interface PromoPost {
   created_at: string
 }
 
+interface SocialDraft {
+  id: string
+  post_type:
+    | 'educational'
+    | 'milestone'
+    | 'seasonal_tip'
+    | 'local_seo'
+    | 'behind_scenes'
+  title: string | null
+  body: string
+  status: 'draft' | 'approved' | 'posted' | 'rejected'
+  context_data: Record<string, unknown> | null
+  posted_at: string | null
+  created_at: string
+}
+
+const DRAFT_TYPE_META: Record<
+  SocialDraft['post_type'],
+  { label: string; icon: React.ComponentType<{ className?: string }> }
+> = {
+  educational: { label: 'Educational', icon: BookOpen },
+  milestone: { label: 'Milestone', icon: Trophy },
+  seasonal_tip: { label: 'Seasonal Tip', icon: Lightbulb },
+  local_seo: { label: 'Local SEO', icon: MapPin },
+  behind_scenes: { label: 'Behind the Scenes', icon: Camera },
+}
+
 function StatusBadge({ postedAt }: { postedAt: string | null }) {
   if (postedAt) {
     return (
@@ -63,14 +101,179 @@ function StatusBadge({ postedAt }: { postedAt: string | null }) {
   )
 }
 
+function DraftCard({
+  draft,
+  onUpdate,
+}: {
+  draft: SocialDraft
+  onUpdate: () => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [bodyText, setBodyText] = useState(draft.body)
+  const [posting, setPosting] = useState(false)
+  const [rejecting, setRejecting] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [result, setResult] = useState<string | null>(null)
+
+  const meta = DRAFT_TYPE_META[draft.post_type]
+  const Icon = meta.icon
+
+  const handleSaveEdit = async () => {
+    setSaving(true)
+    try {
+      await fetch(`/api/admin/social-post-drafts/${draft.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body: bodyText }),
+      })
+      setEditing(false)
+      onUpdate()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handlePost = async () => {
+    setPosting(true)
+    setResult(null)
+    try {
+      const res = await fetch(
+        `/api/admin/social-post-drafts/${draft.id}/post`,
+        {
+          method: 'POST',
+        },
+      )
+      const data = await res.json()
+      if (res.ok) {
+        setResult('Posted successfully!')
+        onUpdate()
+      } else {
+        setResult(data.error ?? 'Failed to post')
+      }
+    } finally {
+      setPosting(false)
+    }
+  }
+
+  const handleReject = async () => {
+    setRejecting(true)
+    try {
+      await fetch(`/api/admin/social-post-drafts/${draft.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'rejected' }),
+      })
+      onUpdate()
+    } finally {
+      setRejecting(false)
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/5 p-5 transition hover:bg-white/[0.07]">
+      {/* Header */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-500/15 px-2.5 py-1 text-xs font-medium text-violet-300">
+          <Icon className="h-3 w-3" />
+          {meta.label}
+        </span>
+        <span className="text-xs text-slate-500">
+          Generated {new Date(draft.created_at).toLocaleDateString()}
+        </span>
+      </div>
+
+      {/* Title */}
+      {draft.title && (
+        <p className="mb-2 text-sm font-semibold text-white">{draft.title}</p>
+      )}
+
+      {/* Body — editable or display */}
+      {editing ? (
+        <div className="space-y-2">
+          <textarea
+            value={bodyText}
+            onChange={(e) => setBodyText(e.target.value)}
+            rows={6}
+            className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:border-violet-400 focus:outline-none"
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={handleSaveEdit}
+              disabled={saving}
+              className="flex items-center gap-1.5 rounded-lg bg-violet-500/20 px-3 py-1.5 text-xs font-medium text-violet-300 transition hover:bg-violet-500/30 disabled:opacity-50"
+            >
+              {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+              Save
+            </button>
+            <button
+              onClick={() => {
+                setBodyText(draft.body)
+                setEditing(false)
+              }}
+              className="rounded-lg px-3 py-1.5 text-xs text-slate-400 transition hover:text-slate-200"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <p className="text-sm leading-relaxed text-slate-300">{bodyText}</p>
+      )}
+
+      {/* Result message */}
+      {result && <p className="mt-2 text-xs text-emerald-400">{result}</p>}
+
+      {/* Actions */}
+      {!editing && (
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <button
+            onClick={handlePost}
+            disabled={posting}
+            className="flex items-center gap-1.5 rounded-lg bg-emerald-500/20 px-3 py-1.5 text-xs font-medium text-emerald-300 transition hover:bg-emerald-500/30 disabled:opacity-50"
+          >
+            {posting ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <Send className="h-3 w-3" />
+            )}
+            Approve & Post
+          </button>
+          <button
+            onClick={() => setEditing(true)}
+            className="flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:bg-white/20"
+          >
+            <Pencil className="h-3 w-3" />
+            Edit
+          </button>
+          <button
+            onClick={handleReject}
+            disabled={rejecting}
+            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs text-slate-500 transition hover:text-red-400 disabled:opacity-50"
+          >
+            {rejecting ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <Trash2 className="h-3 w-3" />
+            )}
+            Reject
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function SocialPostsPage() {
   const [summary, setSummary] = useState<Summary | null>(null)
   const [jobPosts, setJobPosts] = useState<JobPost[]>([])
   const [promoPosts, setPromoPosts] = useState<PromoPost[]>([])
+  const [drafts, setDrafts] = useState<SocialDraft[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'jobs' | 'promos'>('jobs')
+  const [activeTab, setActiveTab] = useState<'drafts' | 'jobs' | 'promos'>(
+    'drafts',
+  )
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true)
     try {
       const res = await fetch('/api/admin/social-posts')
@@ -78,18 +281,27 @@ export default function SocialPostsPage() {
       setSummary(data.summary)
       setJobPosts(data.jobPosts || [])
       setPromoPosts(data.promoPosts || [])
+      setDrafts(data.drafts || [])
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
-    fetchData()
-  }, [])
+    void fetchData()
+  }, [fetchData])
+
+  // Auto-switch to drafts tab if there are pending drafts
+  useEffect(() => {
+    if (drafts.some((d) => d.status === 'draft')) {
+      setActiveTab('drafts')
+    }
+  }, [drafts])
 
   const postedJobs = jobPosts.filter((j) => j.social_posted_at)
   const queuedJobs = jobPosts.filter((j) => !j.social_posted_at && j.city)
   const skippedJobs = jobPosts.filter((j) => !j.social_posted_at && !j.city)
+  const pendingDrafts = drafts.filter((d) => d.status === 'draft')
 
   return (
     <div className="min-h-screen p-4 sm:p-6 lg:p-8">
@@ -120,7 +332,7 @@ export default function SocialPostsPage() {
 
         {/* Summary cards */}
         {summary && (
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-center">
               <div className="text-2xl font-bold text-emerald-400">
                 {summary.weekly_posts_sent}
@@ -158,11 +370,38 @@ export default function SocialPostsPage() {
                 {promoPosts.filter((p) => !p.social_posted_at).length} pending
               </div>
             </div>
+            <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-center">
+              <div className="text-2xl font-bold text-sky-400">
+                {summary.pending_drafts}
+              </div>
+              <div className="mt-1 text-xs text-slate-400">
+                Drafts to review
+              </div>
+              <div className="mt-2 text-xs text-slate-500">
+                Ready for approval
+              </div>
+            </div>
           </div>
         )}
 
         {/* Tabs */}
         <div className="flex gap-1 rounded-xl border border-white/10 bg-white/5 p-1">
+          <button
+            onClick={() => setActiveTab('drafts')}
+            className={`relative flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all ${
+              activeTab === 'drafts'
+                ? 'bg-white/15 text-white shadow'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <FileEdit className="h-4 w-4" />
+            Drafts
+            {pendingDrafts.length > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-sky-500 text-[10px] font-bold text-white">
+                {pendingDrafts.length}
+              </span>
+            )}
+          </button>
           <button
             onClick={() => setActiveTab('jobs')}
             className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all ${
@@ -186,6 +425,40 @@ export default function SocialPostsPage() {
             Offers &amp; Events ({promoPosts.length})
           </button>
         </div>
+
+        {/* Drafts Tab */}
+        {activeTab === 'drafts' && (
+          <div className="space-y-3">
+            {loading && (
+              <div className="py-12 text-center text-slate-500">Loading...</div>
+            )}
+
+            {pendingDrafts.length > 0 && (
+              <div className="space-y-3">
+                <h3 className="text-xs font-semibold tracking-wider text-sky-400 uppercase">
+                  Awaiting review ({pendingDrafts.length})
+                </h3>
+                {pendingDrafts.map((draft) => (
+                  <DraftCard
+                    key={draft.id}
+                    draft={draft}
+                    onUpdate={fetchData}
+                  />
+                ))}
+              </div>
+            )}
+
+            {!loading && pendingDrafts.length === 0 && (
+              <div className="rounded-xl border border-dashed border-white/10 py-16 text-center">
+                <FileEdit className="mx-auto mb-3 h-8 w-8 text-slate-600" />
+                <p className="text-slate-400">No drafts waiting for review.</p>
+                <p className="mt-1 text-sm text-slate-500">
+                  New drafts are generated every Monday morning automatically.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Job Posts Tab */}
         {activeTab === 'jobs' && (
@@ -231,7 +504,8 @@ export default function SocialPostsPage() {
                   >
                     <XCircle className="h-4 w-4 text-slate-500" />
                     <span className="text-sm text-slate-500">
-                      {(job.service as any)?.name || 'Job'} — no city data
+                      {(job.service as { name: string } | null)?.name || 'Job'}{' '}
+                      — no city data
                     </span>
                     <span className="ml-auto text-xs text-slate-600">
                       {new Date(job.published_at).toLocaleDateString()}
@@ -282,7 +556,8 @@ export default function SocialPostsPage() {
 }
 
 function JobCard({ job }: { job: JobPost }) {
-  const serviceName = (job.service as any)?.name || 'Carpet Cleaning'
+  const serviceName =
+    (job.service as { name: string } | null)?.name || 'Carpet Cleaning'
   const location = job.neighborhood
     ? `${job.neighborhood}, ${job.city}`
     : job.city || 'Unknown'
@@ -318,8 +593,7 @@ function JobCard({ job }: { job: JobPost }) {
 
 function PromoCard({ post }: { post: PromoPost }) {
   const isOffer = post.post_type === 'OFFER'
-  const icon = isOffer ? Gift : CalendarDays
-  const Icon = icon
+  const Icon = isOffer ? Gift : CalendarDays
 
   return (
     <div className="rounded-xl border border-white/10 bg-white/5 p-5">

@@ -7,6 +7,7 @@ import {
   effectiveInvoiceAmount,
   utilizationHoursFromAppointment,
 } from '@/lib/ops/utilization-metrics'
+import { createSightingPost } from '@/lib/google-business'
 import sharp from 'sharp'
 
 type Params = { params: Promise<{ id: string }> }
@@ -312,7 +313,16 @@ export async function POST(request: NextRequest, { params }: Params) {
       .delete()
       .eq('ops_invoice_id', invoiceId)
 
-    // Trigger Zapier webhook
+    // Post directly to Google Business Profile
+    try {
+      await createSightingPost(publicUrl, description)
+      console.log('[publish] Google Business Profile post created successfully')
+    } catch (gbpErr) {
+      console.error('[publish] Google Business Profile post failed:', gbpErr)
+      // Non-fatal — job is published regardless
+    }
+
+    // Trigger Zapier webhook (kept as backup / for any other automations)
     if (process.env.ZAPIER_WEBHOOK_URL) {
       try {
         await fetch(process.env.ZAPIER_WEBHOOK_URL, {

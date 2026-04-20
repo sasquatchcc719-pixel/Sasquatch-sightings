@@ -40,3 +40,4 @@ yarn-error.log*
 
 # swc
 .swcscripts/
+.env.vercel.production

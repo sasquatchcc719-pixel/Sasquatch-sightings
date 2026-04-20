@@ -63,20 +63,19 @@ export async function createSightingPost(
       throw new Error('Failed to generate access token.')
     }
 
-    const postBody = {
+    const postBody: Record<string, unknown> = {
       languageCode: 'en-US',
       summary: description,
       topicType: 'STANDARD', // "What's New" post
-      media: [
-        {
-          mediaFormat: 'PHOTO',
-          sourceUrl: imageUrl,
-        },
-      ],
       callToAction: {
         actionType: 'BOOK',
         url: 'https://sightings.sasquatchcarpet.com/book',
       },
+    }
+
+    // Only attach media if a URL was provided
+    if (imageUrl) {
+      postBody.media = [{ mediaFormat: 'PHOTO', sourceUrl: imageUrl }]
     }
 
     const response = await fetch(postUrl, {

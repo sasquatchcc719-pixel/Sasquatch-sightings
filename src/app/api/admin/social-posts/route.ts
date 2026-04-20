@@ -60,15 +60,28 @@ export async function GET() {
       (j) => !j.social_posted_at && j.city,
     ).length
 
+    // Fetch pending drafts
+    const { data: drafts } = await admin
+      .from('social_post_drafts')
+      .select(
+        'id, post_type, title, body, status, context_data, posted_at, created_at',
+      )
+      .in('status', ['draft', 'approved'])
+      .order('created_at', { ascending: false })
+      .limit(20)
+
     return NextResponse.json({
       success: true,
       summary: {
         weekly_posts_sent: weeklyCount ?? 0,
         weekly_cap: 3,
         queued_jobs: queuedCount,
+        pending_drafts: (drafts || []).filter((d) => d.status === 'draft')
+          .length,
       },
       jobPosts: jobPosts || [],
       promoPosts: promoPosts || [],
+      drafts: drafts || [],
     })
   } catch (error) {
     console.error('Social posts admin API error:', error)
