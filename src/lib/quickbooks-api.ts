@@ -547,6 +547,32 @@ export async function syncAppointmentToQuickBooks(appointmentId: string) {
           .eq('entity_type', 'invoice')
           .eq('entity_id', invoice.id)
           .in('status', ['pending', 'failed', 'held'])
+
+        // If invoice was already marked paid before sync, record payment in QB
+        if (
+          invoice.status === 'paid' &&
+          invPm &&
+          invPm !== 'card' &&
+          invPm !== 'cash'
+        ) {
+          try {
+            await createQBPayment({
+              qbCustomerId,
+              qbInvoiceId,
+              amount: Number(invoice.total),
+              paymentMethod: invPm,
+            })
+            console.log(
+              `[QB sync] Recorded payment for invoice ${invoice.id} (paid before sync)`,
+            )
+          } catch (payErr) {
+            console.error(
+              `[QB sync] Failed to record payment for invoice ${invoice.id}:`,
+              payErr,
+            )
+            // Don't throw - invoice was created successfully, payment can be added manually
+          }
+        }
       }
     }
   } catch (err) {
