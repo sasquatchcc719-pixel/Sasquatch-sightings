@@ -429,6 +429,45 @@ export default function SocialPostsPage() {
         {/* Drafts Tab */}
         {activeTab === 'drafts' && (
           <div className="space-y-3">
+            {/* How it works */}
+            <div className="rounded-xl border border-sky-500/20 bg-sky-500/5 p-4">
+              <p className="mb-2 text-xs font-semibold tracking-wider text-sky-400 uppercase">
+                How this works
+              </p>
+              <ul className="space-y-1.5 text-sm text-slate-300">
+                <li>
+                  <span className="font-medium text-sky-400">Every Monday</span>{' '}
+                  — AI writes a new post based on your recent jobs (educational
+                  tips, city callouts, milestones, seasonal content) and drops
+                  it here as a draft.
+                </li>
+                <li>
+                  <span className="font-medium text-sky-400">
+                    You review it
+                  </span>{' '}
+                  — read the post, edit the text if anything needs tweaking,
+                  then hit{' '}
+                  <span className="font-medium text-emerald-400">
+                    Approve &amp; Post
+                  </span>
+                  .
+                </li>
+                <li>
+                  <span className="font-medium text-sky-400">
+                    It goes everywhere
+                  </span>{' '}
+                  — posts directly to Google Business Profile, then fires to
+                  Facebook, LinkedIn, and Instagram through Zapier.
+                </li>
+                <li>
+                  <span className="font-medium text-sky-400">
+                    Don&apos;t like it?
+                  </span>{' '}
+                  — hit Reject and it disappears. A new one will come next
+                  Monday.
+                </li>
+              </ul>
+            </div>
             {loading && (
               <div className="py-12 text-center text-slate-500">Loading...</div>
             )}
