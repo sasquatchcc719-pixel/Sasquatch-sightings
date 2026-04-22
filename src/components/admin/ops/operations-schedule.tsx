@@ -605,7 +605,12 @@ export function OperationsSchedule() {
   } | null>(null)
   const draggingYOffsetRef = useRef<number>(0)
   const didDragRef = useRef<boolean>(false)
-  const dateInputRef = useRef<HTMLInputElement>(null)
+  // Mini month-calendar popover for picking a specific date from the
+  // schedule top bar.
+  const [datePickerOpen, setDatePickerOpen] = useState(false)
+  const [pickerMonth, setPickerMonth] = useState<Date>(() =>
+    startOfMonth(new Date()),
+  )
 
   // On mobile, week and month views are cramped — default to day view so the
   // calendar is usable. Users can still switch views on wider screens via the
@@ -618,21 +623,23 @@ export function OperationsSchedule() {
   }, [])
 
   const openDatePicker = () => {
-    const el = dateInputRef.current
-    if (!el) return
-    // Prefer showPicker() when available (Chrome/Edge/modern Safari); falls
-    // back to click() which triggers the native picker on iOS/Android.
-    const anyEl = el as HTMLInputElement & { showPicker?: () => void }
-    if (typeof anyEl.showPicker === 'function') {
-      try {
-        anyEl.showPicker()
-        return
-      } catch {
-        // Fall through to click()
-      }
-    }
-    el.click()
+    setPickerMonth(startOfMonth(anchorDate))
+    setDatePickerOpen(true)
   }
+
+  const closeDatePicker = () => {
+    setDatePickerOpen(false)
+  }
+
+  // Close the date picker on Escape.
+  useEffect(() => {
+    if (!datePickerOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setDatePickerOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [datePickerOpen])
 
   // Touch-swipe navigation (mobile)
   const touchStartXRef = useRef<number>(0)
@@ -1444,36 +1451,126 @@ export function OperationsSchedule() {
           </Button>
         </div>
 
-        {/* Row 2: tappable date label that opens the native date picker */}
+        {/* Row 2: tappable date label that opens a mini month calendar */}
         <div className="relative mt-3">
           <Button
             type="button"
             variant="outline"
             size="sm"
             onClick={openDatePicker}
+            aria-expanded={datePickerOpen}
+            aria-haspopup="dialog"
             className="w-full justify-start gap-2 font-semibold sm:w-auto"
           >
             <CalendarRange className="h-4 w-4 opacity-70" />
             <span className="truncate">{viewLabel}</span>
           </Button>
-          {/* Hidden native date input — openDatePicker() triggers the OS
-              date picker (iOS wheel, Android calendar, desktop popover). */}
-          <input
-            ref={dateInputRef}
-            type="date"
-            aria-hidden
-            tabIndex={-1}
-            className="pointer-events-none absolute inset-0 h-0 w-0 opacity-0"
-            value={formatDateKey(anchorDate)}
-            onChange={(event) => {
-              const value = event.target.value
-              if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return
-              const parsed = new Date(`${value}T12:00:00`)
-              if (!isNaN(parsed.getTime())) {
-                setAnchorDate(parsed)
-              }
-            }}
-          />
+
+          {datePickerOpen ? (
+            <>
+              <button
+                type="button"
+                aria-label="Close calendar"
+                className="fixed inset-0 z-[219] cursor-default bg-transparent"
+                onClick={closeDatePicker}
+              />
+              <div
+                role="dialog"
+                aria-label="Pick a date"
+                className="border-border/60 bg-background animate-slide-up absolute top-full left-0 z-[220] mt-2 w-[19rem] max-w-[calc(100vw-2rem)] rounded-2xl border p-3 shadow-lg"
+              >
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    aria-label="Previous month"
+                    onClick={() => setPickerMonth((m) => addMonths(m, -1))}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={() => setPickerMonth(startOfMonth(new Date()))}
+                    className="hover:bg-muted rounded-md px-2 py-1 text-sm font-semibold"
+                    title="Jump to current month"
+                  >
+                    {pickerMonth.toLocaleDateString('en-US', {
+                      month: 'long',
+                      year: 'numeric',
+                    })}
+                  </button>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    aria-label="Next month"
+                    onClick={() => setPickerMonth((m) => addMonths(m, 1))}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="text-muted-foreground mb-1 grid grid-cols-7 gap-1 text-center text-[10px] font-medium tracking-wide uppercase">
+                  {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+                    <div key={`${d}-${i}`}>{d}</div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-7 gap-1">
+                  {buildMonthGrid(pickerMonth).map((d) => {
+                    const dKey = formatDateKey(d)
+                    const inMonth = d.getMonth() === pickerMonth.getMonth()
+                    const isToday = dKey === todayKey
+                    const isSelected = dKey === formatDateKey(anchorDate)
+                    return (
+                      <button
+                        key={dKey}
+                        type="button"
+                        onClick={() => {
+                          setAnchorDate(d)
+                          setDatePickerOpen(false)
+                        }}
+                        className={[
+                          'flex h-9 items-center justify-center rounded-lg text-sm transition',
+                          isSelected
+                            ? 'bg-emerald-500 font-semibold text-white shadow'
+                            : isToday
+                              ? 'border-emerald-500 text-emerald-600 ring-1 ring-emerald-500 hover:bg-emerald-50'
+                              : inMonth
+                                ? 'text-foreground hover:bg-muted'
+                                : 'text-muted-foreground/60 hover:bg-muted/60',
+                        ].join(' ')}
+                      >
+                        {d.getDate()}
+                      </button>
+                    )
+                  })}
+                </div>
+                <div className="mt-3 flex items-center justify-between gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      const now = new Date()
+                      setAnchorDate(now)
+                      setPickerMonth(startOfMonth(now))
+                      setDatePickerOpen(false)
+                    }}
+                  >
+                    Today
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={closeDatePicker}
+                  >
+                    Close
+                  </Button>
+                </div>
+              </div>
+            </>
+          ) : null}
         </div>
 
         {showBlockForm ? (
