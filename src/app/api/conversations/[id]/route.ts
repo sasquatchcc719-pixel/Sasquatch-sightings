@@ -38,6 +38,51 @@ export async function PATCH(
       return NextResponse.json({ success: true })
     }
 
+    // set_auto_reply action: toggles Harry's auto-reply for a single conversation.
+    // Google LSA conversations must stay automated — turning auto OFF is rejected.
+    if (body.action === 'set_auto_reply') {
+      const enabled = body.enabled === true
+      const supabase = createAdminClient()
+
+      const { data: convo, error: fetchErr } = await supabase
+        .from('conversations')
+        .select('source')
+        .eq('id', conversationId)
+        .single()
+
+      if (fetchErr || !convo) {
+        return NextResponse.json(
+          { error: 'Conversation not found' },
+          { status: 404 },
+        )
+      }
+
+      const isLsa = convo.source === 'Google LSA' || convo.source === 'lsa'
+      if (isLsa && !enabled) {
+        return NextResponse.json(
+          {
+            error:
+              'Google LSA conversations must remain automated. Harry auto-reply cannot be disabled for LSA leads.',
+          },
+          { status: 400 },
+        )
+      }
+
+      const { error } = await supabase
+        .from('conversations')
+        .update({ ai_enabled: enabled })
+        .eq('id', conversationId)
+
+      if (error) {
+        console.error('Set auto_reply error:', error)
+        return NextResponse.json(
+          { error: 'Failed to update auto-reply setting' },
+          { status: 500 },
+        )
+      }
+      return NextResponse.json({ success: true, ai_enabled: enabled })
+    }
+
     // Original status update
     const { status } = body
 

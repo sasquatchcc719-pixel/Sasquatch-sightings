@@ -586,7 +586,7 @@ export default function RecurringVisitDetail({
 
       {/* ── Service Picker Modal ──────────────────────────── */}
       {showPicker && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center">
+        <div className="fixed inset-0 z-[220] flex items-end justify-center bg-black/50 sm:items-center">
           <div className="bg-card w-full max-w-sm rounded-t-2xl p-5 shadow-xl sm:rounded-2xl">
             <div className="mb-4 flex items-center justify-between">
               <h4 className="text-base font-semibold">

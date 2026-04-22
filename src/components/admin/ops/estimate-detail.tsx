@@ -1593,7 +1593,7 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
       {/* ── Convert dialog ──────────────────────────────────────────── */}
       {showConvertDialog ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          className="fixed inset-0 z-[220] flex items-center justify-center bg-black/50 p-4"
           onClick={() => {
             if (!convertSubmitting) setShowConvertDialog(false)
           }}

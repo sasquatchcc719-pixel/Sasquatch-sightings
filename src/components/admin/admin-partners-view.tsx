@@ -1086,7 +1086,7 @@ export function AdminPartnersView({
 
       {/* Add Referral Modal */}
       {showAddReferral && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div className="fixed inset-0 z-[220] flex items-center justify-center bg-black/50 p-4">
           <Card className="w-full max-w-md">
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>Add Referral</CardTitle>
@@ -1177,7 +1177,7 @@ export function AdminPartnersView({
 
       {/* Adjust Balance Modal */}
       {showAdjustBalance && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div className="fixed inset-0 z-[220] flex items-center justify-center bg-black/50">
           <Card className="w-full max-w-md">
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>Adjust Balance</CardTitle>
@@ -1277,7 +1277,7 @@ export function AdminPartnersView({
 
       {/* Send Work Modal */}
       {showSendWork && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div className="fixed inset-0 z-[220] flex items-center justify-center bg-black/50 p-4">
           <Card className="max-h-[90vh] w-full max-w-md overflow-y-auto">
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>Send Work to Partner</CardTitle>

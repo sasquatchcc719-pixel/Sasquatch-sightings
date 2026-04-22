@@ -24,6 +24,7 @@ import {
   MessageCircle,
   Bot,
   Loader2,
+  Lock,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { CallButton } from '@/components/admin/softphone'
@@ -125,6 +126,7 @@ export function ConversationsView({
   const [composeMessage, setComposeMessage] = useState('')
   const [composeSending, setComposeSending] = useState(false)
   const [harryDraftLoading, setHarryDraftLoading] = useState(false)
+  const [autoReplyUpdating, setAutoReplyUpdating] = useState(false)
 
   // Optimistic read state: track which conversations have been marked read this session
   const [localReadIds, setLocalReadIds] = useState<Set<string>>(new Set())
@@ -159,6 +161,43 @@ export function ConversationsView({
       } catch {
         // Non-critical: badge will fix itself on next poll
       }
+    }
+  }
+
+  const isLsaConversation = (convo: Conversation | null): boolean => {
+    if (!convo) return false
+    return convo.source === 'Google LSA' || convo.source === 'lsa'
+  }
+
+  const handleToggleAutoReply = async () => {
+    if (!selectedConvo || autoReplyUpdating) return
+    if (isLsaConversation(selectedConvo)) {
+      alert(
+        'Google LSA conversations must remain automated. Harry auto-reply cannot be disabled for LSA leads.',
+      )
+      return
+    }
+    const next = !selectedConvo.ai_enabled
+    setAutoReplyUpdating(true)
+    try {
+      const res = await fetch(`/api/conversations/${selectedConvo.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set_auto_reply', enabled: next }),
+      })
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => null)) as {
+          error?: string
+        } | null
+        alert(payload?.error || 'Failed to update auto-reply setting.')
+        return
+      }
+      // Optimistic local update
+      setSelectedConvo({ ...selectedConvo, ai_enabled: next })
+    } catch {
+      alert('Network error updating auto-reply setting.')
+    } finally {
+      setAutoReplyUpdating(false)
     }
   }
 
@@ -644,7 +683,7 @@ export function ConversationsView({
       {/* Compose New Message Modal */}
       {composeOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          className="fixed inset-0 z-[220] flex items-center justify-center bg-black/50 p-4"
           onClick={() => setComposeOpen(false)}
         >
           <div
@@ -721,14 +760,14 @@ export function ConversationsView({
       {/* Conversation Detail Modal */}
       {selectedConvo && (
         <div
-          className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 sm:items-center sm:p-4"
+          className="fixed inset-0 z-[220] flex items-end justify-center bg-black/60 sm:items-center sm:p-4"
           onClick={() => {
             setSelectedConvo(null)
             setConfirmDelete(false)
           }}
         >
           <div
-            className="bg-background flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl shadow-xl sm:rounded-xl"
+            className="bg-background flex h-[100dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl shadow-xl sm:h-auto sm:max-h-[92vh] sm:rounded-xl"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
@@ -909,88 +948,129 @@ export function ConversationsView({
 
             {/* Reply Box */}
             <div className="border-t p-4">
-              {/* Open in Messages shortcut */}
-              <div className="mb-3 flex items-center gap-2">
-                <Button
-                  asChild
-                  variant="outline"
-                  size="sm"
-                  className="bg-green-600 text-white hover:bg-green-700 hover:text-white"
-                >
-                  <a href={`sms:${selectedConvo.phone_number}`}>
-                    <MessageCircle className="mr-1.5 h-3.5 w-3.5" />
-                    Open in Messages
-                  </a>
-                </Button>
+              {(() => {
+                const lsa = isLsaConversation(selectedConvo)
+                const autoOn = selectedConvo.ai_enabled
+                return (
+                  <>
+                    <div className="mb-3 flex flex-wrap items-center gap-2">
+                      <Button
+                        asChild
+                        variant="outline"
+                        size="sm"
+                        className="bg-green-600 text-white hover:bg-green-700 hover:text-white"
+                      >
+                        <a href={`sms:${selectedConvo.phone_number}`}>
+                          <MessageCircle className="mr-1.5 h-3.5 w-3.5" />
+                          Open in Messages
+                        </a>
+                      </Button>
 
-                {/* Ask Harry button — prominent for ops customers, secondary otherwise */}
-                <Button
-                  size="sm"
-                  variant={
-                    selectedConvo.ops_customer_id ? 'default' : 'outline'
-                  }
-                  className={
-                    selectedConvo.ops_customer_id
-                      ? 'bg-gradient-to-r from-emerald-600 to-cyan-600 text-white hover:from-emerald-500 hover:to-cyan-500'
-                      : 'border-emerald-500/40 text-emerald-400 hover:border-emerald-400 hover:text-emerald-300'
-                  }
-                  onClick={() => void handleAskHarry()}
-                  disabled={harryDraftLoading}
-                >
-                  {harryDraftLoading ? (
-                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Bot className="mr-1.5 h-3.5 w-3.5" />
-                  )}
-                  {harryDraftLoading ? 'Asking Harry…' : 'Ask Harry'}
-                </Button>
-              </div>
+                      {/* Auto/Manual toggle — locked Auto for LSA, togglable otherwise */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (lsa) return
+                          void handleToggleAutoReply()
+                        }}
+                        disabled={lsa || autoReplyUpdating}
+                        aria-pressed={autoOn}
+                        title={
+                          lsa
+                            ? 'Google LSA conversations must stay automated.'
+                            : autoOn
+                              ? 'Harry is auto-replying. Tap to switch to manual.'
+                              : 'Manual mode. Tap to let Harry auto-reply again.'
+                        }
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                          autoOn
+                            ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
+                            : 'border-amber-500/40 bg-amber-500/15 text-amber-300'
+                        } ${lsa ? 'cursor-not-allowed opacity-90' : 'hover:brightness-110'}`}
+                      >
+                        {autoReplyUpdating ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : lsa ? (
+                          <Lock className="h-3.5 w-3.5" />
+                        ) : (
+                          <Bot className="h-3.5 w-3.5" />
+                        )}
+                        <span>
+                          Harry: {autoOn ? 'Auto' : 'Manual'}
+                          {lsa ? ' (LSA)' : ''}
+                        </span>
+                      </button>
 
-              {/* Harry draft notice for ops customers */}
-              {selectedConvo.ops_customer_id &&
-                !harryDraftLoading &&
-                !replyText && (
-                  <p className="text-muted-foreground mb-2 text-xs">
-                    Harry auto-reply is off for scheduled customers. Tap
-                    &ldquo;Ask Harry&rdquo; to get a draft, or type your own
-                    reply.
-                  </p>
-                )}
+                      {/* Ask Harry draft button — only in manual mode */}
+                      {!autoOn && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="border-emerald-500/40 text-emerald-400 hover:border-emerald-400 hover:text-emerald-300"
+                          onClick={() => void handleAskHarry()}
+                          disabled={harryDraftLoading}
+                        >
+                          {harryDraftLoading ? (
+                            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Bot className="mr-1.5 h-3.5 w-3.5" />
+                          )}
+                          {harryDraftLoading ? 'Asking Harry…' : 'Ask Harry'}
+                        </Button>
+                      )}
+                    </div>
 
-              <div className="flex gap-2">
-                <Textarea
-                  value={replyText}
-                  onChange={(e) => setReplyText(e.target.value)}
-                  placeholder={
-                    selectedConvo.ops_customer_id
-                      ? 'Ask Harry for a draft or type your reply…'
-                      : 'Type your reply…'
-                  }
-                  className="min-h-[80px] flex-1"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                      void handleSendReply()
-                    }
-                  }}
-                />
-                <Button
-                  onClick={() => void handleSendReply()}
-                  disabled={!replyText.trim() || sending}
-                  className="self-end"
-                >
-                  {sending ? (
-                    'Sending...'
-                  ) : (
-                    <>
-                      <Send className="mr-1 h-4 w-4" />
-                      Send
-                    </>
-                  )}
-                </Button>
-              </div>
-              <p className="text-muted-foreground mt-2 text-xs">
-                Cmd/Ctrl + Enter to send
-              </p>
+                    {/* Helper text explaining the current mode */}
+                    {lsa ? (
+                      <p className="text-muted-foreground mb-2 text-xs">
+                        Google LSA is fully automated — Harry handles these
+                        leads end-to-end.
+                      </p>
+                    ) : !autoOn && !harryDraftLoading && !replyText ? (
+                      <p className="text-muted-foreground mb-2 text-xs">
+                        Manual mode: Harry won&apos;t reply automatically. Tap
+                        &ldquo;Ask Harry&rdquo; for a draft, or type your own
+                        reply.
+                      </p>
+                    ) : null}
+
+                    <div className="flex gap-2">
+                      <Textarea
+                        value={replyText}
+                        onChange={(e) => setReplyText(e.target.value)}
+                        placeholder={
+                          !autoOn
+                            ? 'Ask Harry for a draft or type your reply…'
+                            : 'Type your reply…'
+                        }
+                        className="min-h-[80px] flex-1"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                            void handleSendReply()
+                          }
+                        }}
+                      />
+                      <Button
+                        onClick={() => void handleSendReply()}
+                        disabled={!replyText.trim() || sending}
+                        className="self-end"
+                      >
+                        {sending ? (
+                          'Sending...'
+                        ) : (
+                          <>
+                            <Send className="mr-1 h-4 w-4" />
+                            Send
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                    <p className="text-muted-foreground mt-2 text-xs">
+                      Cmd/Ctrl + Enter to send
+                    </p>
+                  </>
+                )
+              })()}
             </div>
           </div>
         </div>

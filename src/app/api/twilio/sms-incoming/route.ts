@@ -262,6 +262,17 @@ function detectContestMention(message: string): boolean {
   return contestPhrases.some((phrase) => lowerMessage.includes(phrase))
 }
 
+// Google LSA sends every inbound as TWO SMS — the customer's actual message,
+// then this boilerplate disclaimer. Matching this text anywhere in a phone
+// number's history is a definitive signal that the phone is an LSA relay.
+const LSA_DISCLAIMER_PREFIX_RE =
+  /^\s*Replies to this number will be sent to the customer\b/i
+
+function isLsaDisclaimerText(text: string | null | undefined): boolean {
+  if (!text) return false
+  return LSA_DISCLAIMER_PREFIX_RE.test(text)
+}
+
 // Determine conversation source type from message content
 type ConversationSource =
   | 'vendor'
@@ -495,6 +506,7 @@ async function syncRecentOutboundContext(params: {
 async function determineSourceType(
   message: string,
   supabase: ReturnType<typeof createAdminClient>,
+  phoneNumber?: string,
 ): Promise<{
   sourceType: ConversationSource
   matchedPartner: {
@@ -504,6 +516,37 @@ async function determineSourceType(
     coupon_code: string | null
   } | null
 }> {
+  // LSA detection: strongest signal first.
+  // 1. The current message IS the LSA disclaimer boilerplate.
+  if (isLsaDisclaimerText(message)) {
+    return { sourceType: 'lsa', matchedPartner: null }
+  }
+
+  // 2. We've seen an LSA conversation from this phone before, OR any prior
+  //    message from this phone contained the disclaimer. Google routes every
+  //    LSA lead through a relay number, so once a phone is known to be LSA
+  //    it stays LSA.
+  if (phoneNumber) {
+    const { data: priorConvos } = await supabase
+      .from('conversations')
+      .select('source, messages')
+      .eq('phone_number', phoneNumber)
+      .order('updated_at', { ascending: false })
+      .limit(5)
+
+    for (const c of priorConvos || []) {
+      if (c.source === 'Google LSA' || c.source === 'lsa') {
+        return { sourceType: 'lsa', matchedPartner: null }
+      }
+      const msgs = Array.isArray(c.messages) ? c.messages : []
+      for (const m of msgs) {
+        if (isLsaDisclaimerText((m as { content?: string })?.content)) {
+          return { sourceType: 'lsa', matchedPartner: null }
+        }
+      }
+    }
+  }
+
   const isNFC = detectNFCMention(message)
   const isContest = detectContestMention(message)
 
@@ -673,6 +716,7 @@ export async function POST(request: NextRequest) {
     const { sourceType, matchedPartner } = await determineSourceType(
       messageBody,
       supabase,
+      normalizedPhone,
     )
     const controlSnapshot = await getHarryControlSnapshot()
     const channelKey = sourceTypeToChannelKey(sourceType)
@@ -721,6 +765,31 @@ export async function POST(request: NextRequest) {
     }
     const dbSource = sourceMap[sourceType]
 
+    // If this phone is an LSA relay, promote any prior 'inbound' conversations
+    // to 'Google LSA'. Google sends the customer's real message first and the
+    // disclaimer second, so the first message typically lands in a brand-new
+    // 'inbound' conversation before we know it's LSA. Once we know, migrate it.
+    if (sourceType === 'lsa') {
+      const { data: strandedInbound } = await supabase
+        .from('conversations')
+        .select('id')
+        .eq('phone_number', normalizedPhone)
+        .eq('source', 'inbound')
+
+      if (strandedInbound && strandedInbound.length > 0) {
+        console.log(
+          `[LSA] Promoting ${strandedInbound.length} prior inbound conversation(s) from ${normalizedPhone} to Google LSA`,
+        )
+        await supabase
+          .from('conversations')
+          .update({ source: 'Google LSA' })
+          .in(
+            'id',
+            strandedInbound.map((c) => c.id),
+          )
+      }
+    }
+
     if (!shouldProcessInbound) {
       console.log(
         `[Harry Control] Inbound processing disabled (source: ${sourceType}, global: ${isHarryGlobalEnabled}, intake: ${isInboundIntakeEnabled}, channel: ${isChannelEnabled})`,
@@ -743,9 +812,18 @@ export async function POST(request: NextRequest) {
       .maybeSingle()
 
     const isOpsCustomer = !!opsCustomerMatch
+    // Google LSA conversations must be 100% automated — they're fresh leads
+    // coming through a Google relay number, so even if the relay happens to
+    // collide with a known ops_customer phone we do NOT silence Harry.
+    const isLsaConversation = sourceType === 'lsa'
+    const shouldSilenceHarry = isOpsCustomer && !isLsaConversation
     if (isOpsCustomer) {
       console.log(
-        `[Harry] Sender ${normalizedPhone} matched ops_customer ${opsCustomerMatch!.full_name} (${opsCustomerMatch!.id}) — Harry auto-reply disabled`,
+        `[Harry] Sender ${normalizedPhone} matched ops_customer ${opsCustomerMatch!.full_name} (${opsCustomerMatch!.id}) — ${
+          shouldSilenceHarry
+            ? 'Harry auto-reply disabled'
+            : 'Harry auto-reply kept ON (Google LSA override)'
+        }`,
       )
     }
 
@@ -772,20 +850,36 @@ export async function POST(request: NextRequest) {
         conversation.status = 'active'
         console.log(`🔄 Reactivated conversation: ${conversation.id}`)
       }
-      // Ensure ops customer flag is current (in case they were added to schedule after first text)
-      if (
-        isOpsCustomer &&
-        (!conversation.ops_customer_id || conversation.ai_enabled)
-      ) {
+      // Ensure ops customer flag is current (in case they were added to schedule after first text).
+      // For LSA conversations, we still link the ops_customer_id for reference but keep ai_enabled=true.
+      if (isOpsCustomer && !conversation.ops_customer_id) {
         await supabase
           .from('conversations')
           .update({
-            ai_enabled: false,
             ops_customer_id: opsCustomerMatch!.id,
+            ...(shouldSilenceHarry ? { ai_enabled: false } : {}),
           })
           .eq('id', conversation.id)
-        conversation.ai_enabled = false
         conversation.ops_customer_id = opsCustomerMatch!.id
+        if (shouldSilenceHarry) conversation.ai_enabled = false
+      } else if (shouldSilenceHarry && conversation.ai_enabled) {
+        await supabase
+          .from('conversations')
+          .update({ ai_enabled: false })
+          .eq('id', conversation.id)
+        conversation.ai_enabled = false
+      } else if (
+        isLsaConversation &&
+        !conversation.ai_enabled &&
+        !isOpsCustomer
+      ) {
+        // Heal any LSA conversation that somehow ended up with ai_enabled=false
+        // (e.g. from a legacy silence path). LSA must stay automatic.
+        await supabase
+          .from('conversations')
+          .update({ ai_enabled: true })
+          .eq('id', conversation.id)
+        conversation.ai_enabled = true
       }
     } else {
       console.log(
@@ -800,7 +894,7 @@ export async function POST(request: NextRequest) {
           source: dbSource,
           lead_id: null,
           messages: [],
-          ai_enabled: !isOpsCustomer,
+          ai_enabled: !shouldSilenceHarry,
           ops_customer_id: isOpsCustomer ? opsCustomerMatch!.id : null,
           status: 'active',
           metadata:
@@ -863,10 +957,7 @@ export async function POST(request: NextRequest) {
     // both, the customer sees two Harry messages at the same timestamp (one
     // answering their real question, one answering the boilerplate). We save
     // the boilerplate for context but skip AI generation.
-    const isLsaDisclaimer =
-      /^\s*Replies to this number will be sent to the customer\b/i.test(
-        messageBody,
-      )
+    const isLsaDisclaimer = isLsaDisclaimerText(messageBody)
 
     // Add customer message to conversation history
     messages.push({

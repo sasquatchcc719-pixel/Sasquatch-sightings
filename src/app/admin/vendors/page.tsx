@@ -658,7 +658,7 @@ export default function LocationPartnersPage() {
 
             {/* Create Partner Modal */}
             {isDialogOpen && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+              <div className="fixed inset-0 z-[220] flex items-center justify-center bg-black/50">
                 <Card className="max-h-[90vh] w-full max-w-2xl overflow-y-auto p-6">
                   <div className="mb-4 flex items-center justify-between">
                     <h2 className="text-2xl font-bold">
@@ -1416,7 +1416,7 @@ export default function LocationPartnersPage() {
         {/* Conversation Detail Modal */}
         {selectedConvo && (
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+            className="fixed inset-0 z-[220] flex items-center justify-center bg-black/50 p-4"
             onClick={() => setSelectedConvo(null)}
           >
             <div

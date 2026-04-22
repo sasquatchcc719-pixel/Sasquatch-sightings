@@ -1698,7 +1698,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
 
         {/* ── Service Picker Modal ─────────────────────────── */}
         {showServicePicker ? (
-          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center">
+          <div className="fixed inset-0 z-[220] flex items-end justify-center bg-black/50 sm:items-center">
             <div className="bg-card w-full max-w-sm rounded-t-2xl p-5 shadow-xl sm:rounded-2xl">
               <div className="mb-4 flex items-center justify-between">
                 <h4 className="text-base font-semibold">
@@ -2173,7 +2173,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
       {/* In-person payment modal */}
       {showPaymentModal ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-[220] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
           onClick={() => setShowPaymentModal(false)}
         >
           <div

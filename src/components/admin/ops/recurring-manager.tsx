@@ -2489,7 +2489,7 @@ function RecurringVisitPanel({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex">
+    <div className="fixed inset-0 z-[220] flex">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div className="bg-background absolute top-0 right-0 flex h-full w-full max-w-lg flex-col overflow-hidden shadow-2xl">
         {/* Header */}

@@ -593,7 +593,7 @@ export default function LeadsDashboardPage() {
 
       {/* MOBILE: Full Screen Detail View */}
       {selectedLead && (
-        <div className="bg-background fixed inset-0 z-50 overflow-y-auto md:hidden">
+        <div className="bg-background fixed inset-0 z-[220] overflow-y-auto md:hidden">
           <div className="bg-background sticky top-0 z-10 flex items-center justify-between border-b p-4">
             <button
               onClick={() => {
@@ -838,7 +838,7 @@ export default function LeadsDashboardPage() {
       {/* DESKTOP: Modal Detail View */}
       {selectedLead && (
         <div
-          className="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 md:flex"
+          className="fixed inset-0 z-[220] hidden items-center justify-center bg-black/50 md:flex"
           onClick={() => {
             setSelectedLead(null)
             setConfirmDelete(false)
