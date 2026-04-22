@@ -11,6 +11,7 @@ export default async function ConversationsPage({ searchParams }: PageProps) {
   const supabase = createAdminClient()
 
   // Fetch all conversations with linked lead info
+  // admin_read_at and ops_customer_id are used for unread badges and Harry silence logic
   let query = supabase
     .from('conversations')
     .select(
@@ -28,7 +29,7 @@ export default async function ConversationsPage({ searchParams }: PageProps) {
   }
 
   // Filter by source if specified
-  // conversation.source: 'inbound' = direct texts | 'NFC Card' = vendor | 'Business Card' | 'Contest'
+  // conversation.source: 'inbound' = direct texts | 'NFC Card' = vendor | 'Business Card' | 'Contest' | 'Google LSA' | 'Yelp'
   let conversations = allConversations || []
   if (source === 'vendor') {
     // Vendor funnel: NFC cards at vendor locations (higher intent, no contest)
@@ -49,12 +50,22 @@ export default async function ConversationsPage({ searchParams }: PageProps) {
         c.source !== 'inbound' &&
         ['NFC Card', 'nfc_card', 'Business Card', 'Contest'].includes(c.source),
     )
+  } else if (source === 'lsa') {
+    // Google Local Services Ads inbound leads
+    conversations = conversations.filter(
+      (c) => c.source === 'Google LSA' || c.source === 'lsa',
+    )
+  } else if (source === 'yelp') {
+    // Yelp inbound messages (integration pending)
+    conversations = conversations.filter((c) => c.source === 'Yelp')
   }
 
   const isVendorView = source === 'vendor'
   const isContestView = source === 'contest'
   const isPhoneView = source === 'phone'
   const isAIChatsView = source === 'ai_chats'
+  const isLsaView = source === 'lsa'
+  const isYelpView = source === 'yelp'
   const title = isVendorView
     ? 'Vendor AI Chats'
     : isContestView
@@ -63,7 +74,11 @@ export default async function ConversationsPage({ searchParams }: PageProps) {
         ? 'Direct Texts'
         : isAIChatsView
           ? 'AI Chats (All)'
-          : 'All Conversations'
+          : isLsaView
+            ? 'Google LSA'
+            : isYelpView
+              ? 'Yelp'
+              : 'All Conversations'
   const subtitle = isVendorView
     ? 'Texts from people who tapped a vendor NFC card (higher-intent funnel)'
     : isContestView
@@ -72,7 +87,11 @@ export default async function ConversationsPage({ searchParams }: PageProps) {
         ? 'Texts from people who contacted your number directly'
         : isAIChatsView
           ? 'Texts from NFC card taps & contest (vendor, business card, contest)'
-          : 'All SMS conversations – use Marketing or Calls dropdown to filter by source'
+          : isLsaView
+            ? 'Inbound leads from Google Local Services Ads'
+            : isYelpView
+              ? 'Yelp inbound messages — integration coming soon'
+              : 'All SMS conversations – use Marketing or Calls dropdown to filter by source'
 
   return (
     <div className="space-y-6">

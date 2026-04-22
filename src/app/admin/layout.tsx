@@ -10,6 +10,8 @@ import { OneSignalInit } from '@/components/onesignal-init'
 import { PushNotificationBanner } from '@/components/push-notification-banner'
 import { VideoBackground } from '@/components/public/VideoBackground'
 import { SoftphoneProvider } from '@/components/admin/softphone'
+import { MobileHeader } from '@/components/admin/mobile-header'
+import { MobileBottomNav } from '@/components/admin/mobile-bottom-nav'
 
 type AdminLayoutProps = {
   children: React.ReactNode
@@ -48,8 +50,13 @@ export default async function AdminLayout({ children }: AdminLayoutProps) {
         <VideoBackground video="clouds" />
         <div className="pointer-events-none fixed inset-0 z-0 bg-slate-950/55" />
         <OneSignalInit />
-        <div className="relative z-10 flex w-full flex-1 flex-col items-center gap-8 pb-10">
-          <nav className="glass-nav flex h-14 w-full justify-center border-b">
+
+        {/* Mobile-only top header with hamburger drawer */}
+        <MobileHeader userEmail={user.email ?? ''} />
+
+        <div className="relative z-10 flex w-full flex-1 flex-col items-center gap-8 pt-14 pb-10 sm:pt-0 sm:pb-10">
+          {/* Desktop-only top nav bar */}
+          <nav className="glass-nav hidden h-14 w-full justify-center border-b sm:flex">
             <div className="flex w-full max-w-[1440px] items-center justify-between px-4 text-sm">
               <Link
                 href={'/admin'}
@@ -71,9 +78,11 @@ export default async function AdminLayout({ children }: AdminLayoutProps) {
               )}
             </div>
           </nav>
-          <div className="flex w-full max-w-[1440px] flex-1 flex-col gap-6 p-4 sm:p-5">
+
+          <div className="flex w-full max-w-[1440px] flex-1 flex-col gap-6 p-4 pb-24 sm:p-5 sm:pb-10">
             <PushNotificationBanner />
-            <div className="glass-panel glass-accent-ring relative z-[200] rounded-2xl border p-4">
+            {/* Desktop-only nav panel */}
+            <div className="glass-panel glass-accent-ring relative z-[200] hidden rounded-2xl border p-4 sm:block">
               <AdminNavigation />
             </div>
             <div className="glass-panel glass-accent-ring animate-slide-up relative z-[10] rounded-2xl border p-4 sm:p-6">
@@ -81,10 +90,13 @@ export default async function AdminLayout({ children }: AdminLayoutProps) {
             </div>
           </div>
 
-          <footer className="glass-nav text-muted-foreground mx-auto flex w-full items-center justify-center gap-8 border-t py-8 text-center text-xs">
+          <footer className="glass-nav text-muted-foreground mx-auto hidden w-full items-center justify-center gap-8 border-t py-8 text-center text-xs sm:flex">
             <p>Sasquatch Carpet Cleaning</p>
           </footer>
         </div>
+
+        {/* Mobile-only bottom tab bar */}
+        <MobileBottomNav />
       </main>
     </SoftphoneProvider>
   )

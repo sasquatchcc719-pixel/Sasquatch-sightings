@@ -22,9 +22,12 @@ import {
   Trash2,
   Plus,
   MessageCircle,
+  Bot,
+  Loader2,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { CallButton } from '@/components/admin/softphone'
+import { useQueryClient } from '@tanstack/react-query'
 
 type Message = {
   role: 'user' | 'assistant' | 'system'
@@ -40,6 +43,8 @@ type Conversation = {
   lead_id: string | null
   messages: Message[]
   ai_enabled: boolean
+  ops_customer_id: string | null
+  admin_read_at: string | null
   status: 'active' | 'completed' | 'escalated'
   created_at: string
   updated_at: string
@@ -55,10 +60,54 @@ type ConversationsViewProps = {
   conversations: Conversation[]
 }
 
+// Count unread inbound messages since admin last read this conversation
+function getUnreadCount(convo: Conversation): number {
+  if (!convo.messages?.length) return 0
+  const readAt = convo.admin_read_at ? new Date(convo.admin_read_at) : null
+  return convo.messages.filter((m) => {
+    if (m.role !== 'user') return false
+    if (!readAt) return true
+    if (!m.timestamp) return true
+    return new Date(m.timestamp) > readAt
+  }).length
+}
+
+// Build initials from a name or phone number
+function getInitials(name: string | null | undefined, phone: string): string {
+  if (name && name.trim()) {
+    const parts = name.trim().split(/\s+/)
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+    }
+    return name.slice(0, 2).toUpperCase()
+  }
+  // Use last 2 digits of phone as fallback
+  const digits = phone.replace(/\D/g, '')
+  return digits.slice(-2)
+}
+
+// Consistent avatar color based on phone number
+function getAvatarColor(phone: string): string {
+  const colors = [
+    'bg-blue-500',
+    'bg-purple-500',
+    'bg-teal-500',
+    'bg-orange-500',
+    'bg-pink-500',
+    'bg-indigo-500',
+    'bg-cyan-500',
+    'bg-rose-500',
+  ]
+  const digits = phone.replace(/\D/g, '')
+  const idx = parseInt(digits.slice(-2) || '0', 10) % colors.length
+  return colors[idx]
+}
+
 export function ConversationsView({
   conversations: initialConversations,
 }: ConversationsViewProps) {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const [conversations, setConversations] =
     useState<Conversation[]>(initialConversations)
   const [selectedConvo, setSelectedConvo] = useState<Conversation | null>(null)
@@ -75,8 +124,11 @@ export function ConversationsView({
   const [composePhone, setComposePhone] = useState('')
   const [composeMessage, setComposeMessage] = useState('')
   const [composeSending, setComposeSending] = useState(false)
+  const [harryDraftLoading, setHarryDraftLoading] = useState(false)
 
-  // Filter conversations based on selected status
+  // Optimistic read state: track which conversations have been marked read this session
+  const [localReadIds, setLocalReadIds] = useState<Set<string>>(new Set())
+
   const filteredConversations =
     filterStatus === 'all'
       ? conversations
@@ -85,6 +137,53 @@ export function ConversationsView({
   const allFilteredSelected =
     allFilteredIds.length > 0 &&
     allFilteredIds.every((id) => selectedIds.includes(id))
+
+  const openConversation = async (convo: Conversation) => {
+    setSelectedConvo(convo)
+    setReplyText('')
+
+    const unread = getUnreadCount(convo)
+    if (unread > 0 && !localReadIds.has(convo.id)) {
+      // Optimistically mark as read in UI
+      setLocalReadIds((prev) => new Set([...prev, convo.id]))
+
+      // Persist to server
+      try {
+        await fetch(`/api/conversations/${convo.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'mark_read' }),
+        })
+        // Invalidate the unread count so the bottom nav badge refreshes
+        queryClient.invalidateQueries({ queryKey: ['comms-unread'] })
+      } catch {
+        // Non-critical: badge will fix itself on next poll
+      }
+    }
+  }
+
+  const handleAskHarry = async () => {
+    if (!selectedConvo) return
+    setHarryDraftLoading(true)
+    try {
+      const res = await fetch(
+        `/api/admin/conversations/${selectedConvo.id}/harry-draft`,
+        { method: 'POST' },
+      )
+      if (res.ok) {
+        const { draft } = await res.json()
+        setReplyText(draft || '')
+      } else {
+        alert(
+          "Harry couldn't generate a draft right now. Try again or reply manually.",
+        )
+      }
+    } catch {
+      alert('Failed to reach Harry. Check your connection.')
+    } finally {
+      setHarryDraftLoading(false)
+    }
+  }
 
   const handleSendReply = async () => {
     if (!selectedConvo || !replyText.trim()) return
@@ -105,7 +204,7 @@ export function ConversationsView({
 
       if (response.ok) {
         setReplyText('')
-        router.refresh() // Refresh to show new message
+        router.refresh()
       } else {
         alert('Failed to send message')
       }
@@ -131,7 +230,10 @@ export function ConversationsView({
       if (response.ok) {
         router.refresh()
         if (selectedConvo?.id === conversationId) {
-          setSelectedConvo({ ...selectedConvo, status: newStatus as any })
+          setSelectedConvo({
+            ...selectedConvo,
+            status: newStatus as 'active' | 'completed' | 'escalated',
+          })
         }
       } else {
         alert('Failed to update status')
@@ -270,6 +372,8 @@ export function ConversationsView({
       nfc_card: 'Vendor',
       'Business Card': 'Your Card',
       Contest: 'Contest',
+      'Google LSA': 'Google LSA',
+      Yelp: 'Yelp',
       admin_outbound: 'Outbound',
     }
     return labels[source] || source
@@ -310,27 +414,44 @@ export function ConversationsView({
         day: 'numeric',
         hour: 'numeric',
         minute: '2-digit',
-        timeZone: 'America/Denver', // Colorado timezone
+        timeZone: 'America/Denver',
       })
-    } catch (e) {
+    } catch {
       return timestamp
+    }
+  }
+
+  const formatRelativeTime = (timestamp: string) => {
+    try {
+      const d = new Date(timestamp)
+      const now = new Date()
+      const diffMs = now.getTime() - d.getTime()
+      const diffMins = Math.floor(diffMs / 60000)
+      if (diffMins < 1) return 'Just now'
+      if (diffMins < 60) return `${diffMins}m ago`
+      const diffHours = Math.floor(diffMins / 60)
+      if (diffHours < 24) return `${diffHours}h ago`
+      const diffDays = Math.floor(diffHours / 24)
+      if (diffDays === 1) return 'Yesterday'
+      if (diffDays < 7) return `${diffDays}d ago`
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    } catch {
+      return ''
     }
   }
 
   return (
     <div className="space-y-4">
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-3 sm:gap-4 md:grid-cols-3">
+      <div className="grid grid-cols-3 gap-3 sm:gap-4">
         <button
           onClick={() => setFilterStatus('all')}
-          className={`text-left transition-all ${
-            filterStatus === 'all' ? 'ring-primary ring-2' : ''
-          }`}
+          className={`text-left transition-all ${filterStatus === 'all' ? 'ring-primary ring-2' : ''}`}
         >
           <Card className="hover:bg-muted/50 cursor-pointer">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 p-3 pb-2 sm:p-4">
               <CardTitle className="text-xs leading-tight font-medium sm:text-sm">
-                Total Conversations
+                Total
               </CardTitle>
               <MessageSquare className="text-muted-foreground h-3 w-3 flex-shrink-0 sm:h-4 sm:w-4" />
             </CardHeader>
@@ -338,20 +459,13 @@ export function ConversationsView({
               <div className="text-2xl font-bold sm:text-3xl">
                 {conversations.length}
               </div>
-              {filterStatus === 'all' && (
-                <p className="text-muted-foreground mt-1 text-xs">
-                  Showing all
-                </p>
-              )}
             </CardContent>
           </Card>
         </button>
 
         <button
           onClick={() => setFilterStatus('active')}
-          className={`text-left transition-all ${
-            filterStatus === 'active' ? 'ring-primary ring-2' : ''
-          }`}
+          className={`text-left transition-all ${filterStatus === 'active' ? 'ring-primary ring-2' : ''}`}
         >
           <Card className="hover:bg-muted/50 cursor-pointer">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 p-3 pb-2 sm:p-4">
@@ -364,23 +478,18 @@ export function ConversationsView({
               <div className="text-2xl font-bold sm:text-3xl">
                 {conversations.filter((c) => c.status === 'active').length}
               </div>
-              {filterStatus === 'active' && (
-                <p className="text-muted-foreground mt-1 text-xs">Filtered</p>
-              )}
             </CardContent>
           </Card>
         </button>
 
         <button
           onClick={() => setFilterStatus('escalated')}
-          className={`text-left transition-all ${
-            filterStatus === 'escalated' ? 'ring-primary ring-2' : ''
-          }`}
+          className={`text-left transition-all ${filterStatus === 'escalated' ? 'ring-primary ring-2' : ''}`}
         >
           <Card className="hover:bg-muted/50 cursor-pointer">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 p-3 pb-2 sm:p-4">
               <CardTitle className="text-xs leading-tight font-medium sm:text-sm">
-                Need Attention
+                Attention
               </CardTitle>
               <AlertCircle className="text-muted-foreground h-3 w-3 flex-shrink-0 sm:h-4 sm:w-4" />
             </CardHeader>
@@ -388,9 +497,6 @@ export function ConversationsView({
               <div className="text-2xl font-bold sm:text-3xl">
                 {conversations.filter((c) => c.status === 'escalated').length}
               </div>
-              {filterStatus === 'escalated' && (
-                <p className="text-muted-foreground mt-1 text-xs">Filtered</p>
-              )}
             </CardContent>
           </Card>
         </button>
@@ -411,7 +517,7 @@ export function ConversationsView({
               ? filterStatus === 'all'
                 ? 'No conversations yet'
                 : `No ${filterStatus} conversations`
-              : 'Click a conversation to view full message history'}
+              : 'Tap a conversation to read and reply'}
           </CardDescription>
           {filteredConversations.length > 0 && (
             <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -420,9 +526,7 @@ export function ConversationsView({
                 variant="outline"
                 onClick={toggleSelectAllFiltered}
               >
-                {allFilteredSelected
-                  ? 'Unselect All Shown'
-                  : 'Select All Shown'}
+                {allFilteredSelected ? 'Unselect All' : 'Select All'}
               </Button>
               <Button
                 size="sm"
@@ -430,7 +534,7 @@ export function ConversationsView({
                 onClick={() => setSelectedIds([])}
                 disabled={selectedIds.length === 0}
               >
-                Clear Selection
+                Clear
               </Button>
               <Button
                 size="sm"
@@ -440,79 +544,93 @@ export function ConversationsView({
               >
                 {bulkDeleting
                   ? 'Deleting...'
-                  : `Delete Selected (${selectedIds.length})`}
+                  : `Delete (${selectedIds.length})`}
               </Button>
             </div>
           )}
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0">
           {filteredConversations.length === 0 ? (
-            <div className="text-muted-foreground py-8 text-center">
+            <div className="text-muted-foreground px-4 py-8 text-center text-sm">
               {filterStatus === 'all'
-                ? "No conversations yet. When customers text your Twilio number, they'll appear here."
-                : `No ${filterStatus} conversations. Click "Total Conversations" to see all.`}
+                ? "No conversations yet. When customers text, they'll appear here."
+                : `No ${filterStatus} conversations.`}
             </div>
           ) : (
-            <div className="space-y-2">
-              {filteredConversations.map((convo) => {
-                const messageCount = convo.messages.length
-                const lastMessage = convo.messages[messageCount - 1]
+            <div>
+              {filteredConversations.map((convo, i) => {
+                const isLast = i === filteredConversations.length - 1
+                const lastMessage = convo.messages[convo.messages.length - 1]
+                const displayName = convo.lead?.name || null
+                const initials = getInitials(displayName, convo.phone_number)
+                const avatarColor = getAvatarColor(convo.phone_number)
+                const isLocallyRead = localReadIds.has(convo.id)
+                const unread = isLocallyRead ? 0 : getUnreadCount(convo)
+                const isUnread = unread > 0
+                const isOpsCustomer = !!convo.ops_customer_id
 
                 return (
                   <div
                     key={convo.id}
-                    onClick={() => setSelectedConvo(convo)}
-                    className="hover:bg-muted w-full cursor-pointer rounded-lg border p-3 text-left transition-colors sm:p-4"
+                    className={`flex items-center gap-3 px-4 py-3.5 transition-colors ${
+                      !isLast ? 'border-b border-white/5' : ''
+                    } ${isUnread ? 'bg-white/3' : ''} cursor-pointer hover:bg-white/5 active:bg-white/10`}
+                    onClick={() => openConversation(convo)}
                   >
-                    <div className="flex items-start gap-3">
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.includes(convo.id)}
-                        onChange={() => toggleConversationSelected(convo.id)}
-                        onClick={(e) => e.stopPropagation()}
-                        aria-label={`Select conversation ${convo.phone_number}`}
-                        className="mt-1"
-                      />
-                      <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-                        <div className="min-w-0 flex-1">
-                          <div className="mb-1 flex flex-wrap items-center gap-2">
-                            <a
-                              href={`tel:${convo.phone_number}`}
-                              className="text-sm font-medium text-blue-400 hover:underline sm:text-base"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {convo.phone_number}
-                            </a>
-                            {getStatusBadge(convo.status)}
-                            {getSourceLabel(convo.source) && (
-                              <Badge
-                                variant="outline"
-                                className="text-muted-foreground text-xs font-normal"
-                              >
-                                {getSourceLabel(convo.source)}
-                              </Badge>
-                            )}
-                          </div>
-                          {convo.lead?.name && (
-                            <div className="text-muted-foreground mb-1 text-xs sm:text-sm">
-                              {convo.lead.name}
-                            </div>
+                    {/* Checkbox */}
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(convo.id)}
+                      onChange={() => toggleConversationSelected(convo.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      aria-label={`Select ${convo.phone_number}`}
+                      className="flex-shrink-0"
+                    />
+
+                    {/* Avatar */}
+                    <div
+                      className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white ${avatarColor}`}
+                    >
+                      {initials}
+                    </div>
+
+                    {/* Content */}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span
+                          className={`truncate text-sm ${
+                            isUnread
+                              ? 'font-semibold text-white'
+                              : 'font-medium text-slate-200'
+                          }`}
+                        >
+                          {displayName || convo.phone_number}
+                          {isOpsCustomer && (
+                            <span className="ml-1.5 text-[10px] font-normal text-emerald-400">
+                              Scheduled
+                            </span>
                           )}
-                          {lastMessage && (
-                            <div className="text-muted-foreground line-clamp-2 text-xs sm:text-sm">
-                              {lastMessage.role === 'user' ? '💬 ' : '🤖 '}
-                              {lastMessage.content}
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 text-right sm:flex-col sm:items-end sm:gap-0">
-                          <div className="text-muted-foreground text-xs whitespace-nowrap">
-                            {formatTime(convo.updated_at)}
-                          </div>
-                          <div className="text-muted-foreground text-xs sm:mt-1">
-                            {messageCount} msg{messageCount !== 1 ? 's' : ''}
-                          </div>
-                        </div>
+                        </span>
+                        <span className="flex-shrink-0 text-[11px] text-slate-500">
+                          {formatRelativeTime(convo.updated_at)}
+                        </span>
+                      </div>
+                      <div className="mt-0.5 flex items-center justify-between gap-2">
+                        <p
+                          className={`truncate text-xs ${
+                            isUnread ? 'text-slate-300' : 'text-slate-500'
+                          }`}
+                        >
+                          {lastMessage
+                            ? (lastMessage.role === 'user' ? '' : '↩ ') +
+                              lastMessage.content
+                            : 'No messages yet'}
+                        </p>
+                        {unread > 0 && (
+                          <span className="flex h-5 min-w-5 flex-shrink-0 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
+                            {unread > 9 ? '9+' : unread}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -564,7 +682,7 @@ export function ConversationsView({
                   className="mt-1 min-h-[100px]"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                      handleComposeSend()
+                      void handleComposeSend()
                     }
                   }}
                 />
@@ -574,7 +692,7 @@ export function ConversationsView({
                   Cancel
                 </Button>
                 <Button
-                  onClick={handleComposeSend}
+                  onClick={() => void handleComposeSend()}
                   disabled={
                     !composePhone.trim() ||
                     !composeMessage.trim() ||
@@ -592,8 +710,8 @@ export function ConversationsView({
                 </Button>
               </div>
               <p className="text-muted-foreground text-xs">
-                Sends from the Sasquatch business line. Press Cmd/Ctrl + Enter
-                to send.
+                Sends from the Sasquatch business line. Cmd/Ctrl + Enter to
+                send.
               </p>
             </div>
           </div>
@@ -603,25 +721,52 @@ export function ConversationsView({
       {/* Conversation Detail Modal */}
       {selectedConvo && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 sm:items-center sm:p-4"
           onClick={() => {
             setSelectedConvo(null)
             setConfirmDelete(false)
           }}
         >
           <div
-            className="bg-background flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl shadow-xl"
+            className="bg-background flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl shadow-xl sm:rounded-xl"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
             <div className="border-b p-4">
               <div className="mb-2 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="text-lg font-semibold text-blue-400">
-                    {selectedConvo.phone_number}
-                  </span>
-                  <CallButton phoneNumber={selectedConvo.phone_number} />
-                  {getStatusBadge(selectedConvo.status)}
+                <div className="flex items-center gap-2.5">
+                  {/* Avatar in modal header */}
+                  <div
+                    className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold text-white ${getAvatarColor(selectedConvo.phone_number)}`}
+                  >
+                    {getInitials(
+                      selectedConvo.lead?.name,
+                      selectedConvo.phone_number,
+                    )}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-base font-semibold">
+                        {selectedConvo.lead?.name || selectedConvo.phone_number}
+                      </span>
+                      {selectedConvo.ops_customer_id && (
+                        <span className="rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400">
+                          Scheduled Customer
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <a
+                        href={`tel:${selectedConvo.phone_number}`}
+                        className="text-xs text-blue-400 hover:underline"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {selectedConvo.phone_number}
+                      </a>
+                      <CallButton phoneNumber={selectedConvo.phone_number} />
+                      {getStatusBadge(selectedConvo.status)}
+                    </div>
+                  </div>
                 </div>
                 <Button
                   variant="ghost"
@@ -634,14 +779,20 @@ export function ConversationsView({
                   <X className="h-4 w-4" />
                 </Button>
               </div>
+
               {selectedConvo.lead && (
-                <div className="text-muted-foreground mb-2 text-sm">
+                <div className="text-muted-foreground mb-2 text-xs">
                   Lead: {selectedConvo.lead.name} ({selectedConvo.lead.source})
                 </div>
               )}
               <div className="text-muted-foreground mb-3 text-xs">
-                Started: {formatTime(selectedConvo.created_at)} •{' '}
+                Started {formatTime(selectedConvo.created_at)} ·{' '}
                 {selectedConvo.messages.length} messages
+                {getSourceLabel(selectedConvo.source) && (
+                  <span className="ml-1 text-slate-500">
+                    · {getSourceLabel(selectedConvo.source)}
+                  </span>
+                )}
               </div>
 
               {/* Action Buttons */}
@@ -651,7 +802,7 @@ export function ConversationsView({
                     size="sm"
                     variant="outline"
                     onClick={() =>
-                      handleUpdateStatus(selectedConvo.id, 'completed')
+                      void handleUpdateStatus(selectedConvo.id, 'completed')
                     }
                   >
                     <CheckCircle className="mr-1 h-3 w-3" />
@@ -663,7 +814,7 @@ export function ConversationsView({
                     size="sm"
                     variant="outline"
                     onClick={() =>
-                      handleUpdateStatus(selectedConvo.id, 'active')
+                      void handleUpdateStatus(selectedConvo.id, 'active')
                     }
                   >
                     Reopen
@@ -674,15 +825,14 @@ export function ConversationsView({
                     size="sm"
                     variant="outline"
                     onClick={() =>
-                      handleUpdateStatus(selectedConvo.id, 'escalated')
+                      void handleUpdateStatus(selectedConvo.id, 'escalated')
                     }
                   >
                     <AlertCircle className="mr-1 h-3 w-3" />
-                    Flag for Attention
+                    Flag
                   </Button>
                 )}
 
-                {/* Delete Button */}
                 {confirmDelete ? (
                   <div className="flex items-center gap-2">
                     <span className="text-muted-foreground text-sm">
@@ -698,7 +848,7 @@ export function ConversationsView({
                     <Button
                       size="sm"
                       variant="destructive"
-                      onClick={handleDelete}
+                      onClick={() => void handleDelete()}
                       disabled={deleting}
                     >
                       {deleting ? 'Deleting...' : 'Confirm'}
@@ -720,40 +870,47 @@ export function ConversationsView({
 
             {/* Messages */}
             <div className="flex-1 space-y-3 overflow-y-auto p-4">
-              {selectedConvo.messages.map((msg, idx) => (
-                <div
-                  key={idx}
-                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
+              {selectedConvo.messages.length === 0 ? (
+                <div className="text-muted-foreground py-8 text-center text-sm">
+                  No messages yet
+                </div>
+              ) : (
+                selectedConvo.messages.map((msg, idx) => (
                   <div
-                    className={`max-w-[80%] rounded-lg p-3 ${
-                      msg.role === 'user'
-                        ? 'bg-blue-600 text-white'
-                        : msg.role === 'system'
-                          ? 'bg-red-100 text-xs text-red-800'
-                          : 'bg-muted'
-                    }`}
+                    key={idx}
+                    className={`flex ${msg.role === 'user' ? 'justify-start' : 'justify-end'}`}
                   >
-                    <div className="text-sm whitespace-pre-wrap">
-                      {msg.content}
-                    </div>
                     <div
-                      className={`mt-1 text-xs ${
+                      className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 ${
                         msg.role === 'user'
-                          ? 'text-blue-100'
-                          : 'text-muted-foreground'
+                          ? 'rounded-tl-sm bg-white/10 text-slate-100'
+                          : msg.role === 'system'
+                            ? 'rounded-tr-sm bg-red-500/15 text-xs text-red-300'
+                            : 'rounded-tr-sm bg-emerald-600/80 text-white'
                       }`}
                     >
-                      {formatTime(msg.timestamp)}
+                      <div className="text-sm whitespace-pre-wrap">
+                        {msg.content}
+                      </div>
+                      <div
+                        className={`mt-1 text-[10px] ${
+                          msg.role === 'user'
+                            ? 'text-slate-400'
+                            : 'text-white/60'
+                        }`}
+                      >
+                        {msg.timestamp ? formatTime(msg.timestamp) : ''}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
 
             {/* Reply Box */}
             <div className="border-t p-4">
-              <div className="mb-3 flex justify-end">
+              {/* Open in Messages shortcut */}
+              <div className="mb-3 flex items-center gap-2">
                 <Button
                   asChild
                   variant="outline"
@@ -761,25 +918,63 @@ export function ConversationsView({
                   className="bg-green-600 text-white hover:bg-green-700 hover:text-white"
                 >
                   <a href={`sms:${selectedConvo.phone_number}`}>
-                    <MessageCircle className="mr-2 h-4 w-4" />
+                    <MessageCircle className="mr-1.5 h-3.5 w-3.5" />
                     Open in Messages
                   </a>
                 </Button>
+
+                {/* Ask Harry button — prominent for ops customers, secondary otherwise */}
+                <Button
+                  size="sm"
+                  variant={
+                    selectedConvo.ops_customer_id ? 'default' : 'outline'
+                  }
+                  className={
+                    selectedConvo.ops_customer_id
+                      ? 'bg-gradient-to-r from-emerald-600 to-cyan-600 text-white hover:from-emerald-500 hover:to-cyan-500'
+                      : 'border-emerald-500/40 text-emerald-400 hover:border-emerald-400 hover:text-emerald-300'
+                  }
+                  onClick={() => void handleAskHarry()}
+                  disabled={harryDraftLoading}
+                >
+                  {harryDraftLoading ? (
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Bot className="mr-1.5 h-3.5 w-3.5" />
+                  )}
+                  {harryDraftLoading ? 'Asking Harry…' : 'Ask Harry'}
+                </Button>
               </div>
+
+              {/* Harry draft notice for ops customers */}
+              {selectedConvo.ops_customer_id &&
+                !harryDraftLoading &&
+                !replyText && (
+                  <p className="text-muted-foreground mb-2 text-xs">
+                    Harry auto-reply is off for scheduled customers. Tap
+                    &ldquo;Ask Harry&rdquo; to get a draft, or type your own
+                    reply.
+                  </p>
+                )}
+
               <div className="flex gap-2">
                 <Textarea
                   value={replyText}
                   onChange={(e) => setReplyText(e.target.value)}
-                  placeholder="Type your reply..."
+                  placeholder={
+                    selectedConvo.ops_customer_id
+                      ? 'Ask Harry for a draft or type your reply…'
+                      : 'Type your reply…'
+                  }
                   className="min-h-[80px] flex-1"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                      handleSendReply()
+                      void handleSendReply()
                     }
                   }}
                 />
                 <Button
-                  onClick={handleSendReply}
+                  onClick={() => void handleSendReply()}
                   disabled={!replyText.trim() || sending}
                   className="self-end"
                 >
@@ -794,8 +989,7 @@ export function ConversationsView({
                 </Button>
               </div>
               <p className="text-muted-foreground mt-2 text-xs">
-                Press Cmd/Ctrl + Enter to send via web, or use &ldquo;Open in
-                Messages&rdquo; for full-screen texting
+                Cmd/Ctrl + Enter to send
               </p>
             </div>
           </div>

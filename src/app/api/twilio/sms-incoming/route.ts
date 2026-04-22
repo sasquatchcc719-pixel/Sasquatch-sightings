@@ -20,6 +20,7 @@ import {
 } from '@/lib/harry/control'
 import { sendCustomerSMS, sendAdminSMS } from '@/lib/twilio'
 import { logChatMessage } from '@/lib/ai/logging'
+import { opsPhoneLookupVariants } from '@/lib/ops/phone'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -732,6 +733,22 @@ export async function POST(request: NextRequest) {
       await sendInboundEmail(aiReply)
     }
 
+    // Check if this sender is a known scheduled ops customer.
+    // If so, Harry should NOT auto-reply — the admin reviews and decides.
+    const opsPhoneVariants = opsPhoneLookupVariants(normalizedPhone)
+    const { data: opsCustomerMatch } = await supabase
+      .from('ops_customers')
+      .select('id, first_name, full_name')
+      .in('phone', opsPhoneVariants)
+      .maybeSingle()
+
+    const isOpsCustomer = !!opsCustomerMatch
+    if (isOpsCustomer) {
+      console.log(
+        `[Harry] Sender ${normalizedPhone} matched ops_customer ${opsCustomerMatch!.full_name} (${opsCustomerMatch!.id}) — Harry auto-reply disabled`,
+      )
+    }
+
     // Find existing conversation with SAME phone AND SAME source type
     let { data: conversation, error: fetchError } = await supabase
       .from('conversations')
@@ -755,6 +772,21 @@ export async function POST(request: NextRequest) {
         conversation.status = 'active'
         console.log(`🔄 Reactivated conversation: ${conversation.id}`)
       }
+      // Ensure ops customer flag is current (in case they were added to schedule after first text)
+      if (
+        isOpsCustomer &&
+        (!conversation.ops_customer_id || conversation.ai_enabled)
+      ) {
+        await supabase
+          .from('conversations')
+          .update({
+            ai_enabled: false,
+            ops_customer_id: opsCustomerMatch!.id,
+          })
+          .eq('id', conversation.id)
+        conversation.ai_enabled = false
+        conversation.ops_customer_id = opsCustomerMatch!.id
+      }
     } else {
       console.log(
         `⚠️ No existing ${dbSource} conversation found for ${normalizedPhone}`,
@@ -768,7 +800,8 @@ export async function POST(request: NextRequest) {
           source: dbSource,
           lead_id: null,
           messages: [],
-          ai_enabled: true,
+          ai_enabled: !isOpsCustomer,
+          ops_customer_id: isOpsCustomer ? opsCustomerMatch!.id : null,
           status: 'active',
           metadata:
             sourceType === 'vendor' && matchedPartner

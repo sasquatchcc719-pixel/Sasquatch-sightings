@@ -17,11 +17,35 @@ export async function PATCH(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { status } = await request.json()
+    const body = await request.json()
     const { id: conversationId } = await params
 
+    // mark_read action: sets admin_read_at = now()
+    if (body.action === 'mark_read') {
+      const supabase = createAdminClient()
+      const { error } = await supabase
+        .from('conversations')
+        .update({ admin_read_at: new Date().toISOString() })
+        .eq('id', conversationId)
+
+      if (error) {
+        console.error('Mark read error:', error)
+        return NextResponse.json(
+          { error: 'Failed to mark read' },
+          { status: 500 },
+        )
+      }
+      return NextResponse.json({ success: true })
+    }
+
+    // Original status update
+    const { status } = body
+
     if (!status || !['active', 'completed', 'escalated'].includes(status)) {
-      return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'Invalid status or action' },
+        { status: 400 },
+      )
     }
 
     const supabase = createAdminClient()
