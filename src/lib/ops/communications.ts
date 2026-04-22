@@ -63,6 +63,7 @@ type AppointmentWithRelations = {
         business_name: string | null
         email: string | null
         phone: string | null
+        email_opt_out: boolean | null
       }
     | {
         full_name: string
@@ -70,6 +71,7 @@ type AppointmentWithRelations = {
         business_name: string | null
         email: string | null
         phone: string | null
+        email_opt_out: boolean | null
       }[]
     | null
   ops_service_addresses:
@@ -104,7 +106,8 @@ const APPOINTMENT_SELECT = `
     first_name,
     business_name,
     email,
-    phone
+    phone,
+    email_opt_out
   ),
   ops_service_addresses (
     street_1,
@@ -457,6 +460,7 @@ export async function sendOpsLifecycleCommunications(params: {
   const customer = unwrapRelation(appointment.ops_customers)
   const customerPhone = customer?.phone || ''
   const customerEmail = customer?.email || ''
+  const customerEmailOptOut = customer?.email_opt_out ?? false
 
   const resendApiKey = process.env.RESEND_API_KEY
   const resend = resendApiKey ? new Resend(resendApiKey) : null
@@ -473,6 +477,7 @@ export async function sendOpsLifecycleCommunications(params: {
       template.template_key === 'satisfaction_checkin_email' &&
       template.delay_hours > 0
     ) {
+      if (customerEmailOptOut) continue
       await queueFollowupEmail({
         supabase,
         templateKey: template.template_key,
@@ -506,7 +511,7 @@ export async function sendOpsLifecycleCommunications(params: {
       continue
     }
 
-    if (!resend || !customerEmail) continue
+    if (!resend || !customerEmail || customerEmailOptOut) continue
     const bcc = process.env.OPS_EMAIL_BCC || undefined
     try {
       const emailResult = await resend.emails.send({

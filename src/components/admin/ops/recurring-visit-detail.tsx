@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import {
   ArrowLeft,
   CheckCircle,
+  ChevronLeft,
   ClipboardList,
   Loader2,
   MapPin,
@@ -116,6 +117,7 @@ type VisitData = {
 type CatalogItem = {
   id: string
   name: string
+  category?: string | null
   base_price?: number | null
   default_duration_minutes?: number | null
 }
@@ -158,6 +160,8 @@ export default function RecurringVisitDetail({
   const [driveElapsed, setDriveElapsed] = useState(0)
 
   const [catalog, setCatalog] = useState<CatalogItem[]>([])
+  const [showPicker, setShowPicker] = useState(false)
+  const [pickerCategory, setPickerCategory] = useState<string | null>(null)
 
   const notesTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -492,139 +496,297 @@ export default function RecurringVisitDetail({
         </Card>
       )}
 
-      {/* ── Job Controls (batch_monthly) ──────────────────── */}
-      {isBatch && (
-        <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
-          <h2 className="mb-4 text-lg font-semibold">Job Controls</h2>
+      {/* ── On My Way ─────────────────────────────────────── */}
+      {status !== 'completed' && (
+        <div className="border-border/60 bg-muted/30 rounded-xl border p-4">
+          <Button
+            variant="outline"
+            className={`h-14 w-full text-base font-semibold ${
+              status === 'on_my_way'
+                ? 'border-blue-500 bg-blue-500/20 text-blue-300 hover:bg-blue-500/30'
+                : ''
+            }`}
+            disabled={actionLoading !== null}
+            onClick={() => void handleOnMyWay()}
+          >
+            {actionLoading === 'on_my_way' ? (
+              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+            ) : (
+              <Truck className="mr-2 h-5 w-5" />
+            )}
+            {actionLoading === 'on_my_way'
+              ? 'Updating…'
+              : status === 'on_my_way'
+                ? 'En Route'
+                : 'On My Way'}
+          </Button>
+          {status === 'on_my_way' && driveStartMs != null && (
+            <p className="text-muted-foreground mt-2 text-center font-mono text-sm">
+              {formatElapsed(driveElapsed)}
+            </p>
+          )}
+        </div>
+      )}
 
-          {status === 'completed' ? (
-            <div className="flex items-center gap-2 rounded-xl border border-green-500/30 bg-green-500/10 p-4 text-green-400">
-              <CheckCircle className="h-5 w-5 shrink-0" />
-              <div>
-                <p className="font-semibold">Job closed out</p>
-                {appointment.completed_at && (
-                  <p className="text-sm opacity-75">
-                    Completed at{' '}
-                    {new Date(appointment.completed_at).toLocaleTimeString(
-                      'en-US',
-                      { hour: 'numeric', minute: '2-digit' },
-                    )}
-                    {appointment.on_my_way_at && (
-                      <>
-                        {' · '}
-                        {Math.round(
-                          (new Date(appointment.completed_at).getTime() -
-                            new Date(appointment.on_my_way_at).getTime()) /
-                            60000,
-                        )}{' '}
-                        min drive
-                      </>
-                    )}
-                  </p>
-                )}
-              </div>
-            </div>
-          ) : status === 'on_my_way' ? (
-            <div className="space-y-4">
-              <div className="flex items-center gap-3 rounded-xl border border-blue-500/30 bg-blue-500/10 p-4 text-blue-400">
-                <Truck className="h-5 w-5 shrink-0" />
-                <div>
-                  <p className="font-semibold">En route</p>
-                  {driveStartMs != null && (
-                    <p className="font-mono text-sm font-bold">
-                      {formatElapsed(driveElapsed)}
-                    </p>
+      {/* ── Job Completion ────────────────────────────────── */}
+      <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
+        <h3 className="text-lg font-semibold">
+          {status === 'completed' ? 'Job Closed Out' : 'Close Out Job'}
+        </h3>
+        {status === 'completed' ? (
+          <div className="mt-4 flex items-center gap-3 rounded-xl border border-green-500/30 bg-green-500/10 p-4 text-green-400">
+            <CheckCircle className="h-5 w-5 shrink-0" />
+            <div>
+              <p className="font-semibold">Job closed out</p>
+              {appointment.completed_at && (
+                <p className="text-sm opacity-75">
+                  Completed at{' '}
+                  {new Date(appointment.completed_at).toLocaleTimeString(
+                    'en-US',
+                    { hour: 'numeric', minute: '2-digit' },
                   )}
-                </div>
-              </div>
-              <Button
-                className="h-14 w-full border-green-600 bg-green-600 text-base font-semibold text-white hover:bg-green-700"
-                disabled={actionLoading !== null}
-                onClick={() => void handleCloseOut()}
-              >
-                {actionLoading === 'completed' ? (
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                ) : (
-                  <CheckCircle className="mr-2 h-5 w-5" />
-                )}
-                {actionLoading === 'completed'
-                  ? 'Closing out…'
-                  : 'Close Out Job'}
-              </Button>
+                  {appointment.on_my_way_at && (
+                    <>
+                      {' · '}
+                      {Math.round(
+                        (new Date(appointment.completed_at).getTime() -
+                          new Date(appointment.on_my_way_at).getTime()) /
+                          60000,
+                      )}{' '}
+                      min drive
+                    </>
+                  )}
+                </p>
+              )}
             </div>
-          ) : (
+          </div>
+        ) : (
+          <>
+            {isBatch && (
+              <p className="text-muted-foreground mt-2 text-sm">
+                Marks this visit complete and logs it for the monthly batch
+                invoice.
+              </p>
+            )}
             <Button
-              variant="outline"
-              className="h-14 w-full border-green-600 bg-green-600/10 text-base font-semibold text-green-400 hover:bg-green-600 hover:text-white"
+              className="mt-4 h-14 w-full border-green-600 bg-green-600 text-base font-semibold text-white hover:bg-green-700"
               disabled={actionLoading !== null}
-              onClick={() => void handleOnMyWay()}
+              onClick={() => void handleCloseOut()}
             >
-              {actionLoading === 'on_my_way' ? (
+              {actionLoading === 'completed' ? (
                 <Loader2 className="mr-2 h-5 w-5 animate-spin" />
               ) : (
-                <Truck className="mr-2 h-5 w-5" />
+                <CheckCircle className="mr-2 h-5 w-5" />
               )}
-              {actionLoading === 'on_my_way' ? 'Updating…' : 'On My Way'}
+              {actionLoading === 'completed' ? 'Closing out…' : 'Close Out Job'}
             </Button>
-          )}
-        </Card>
+          </>
+        )}
+      </Card>
+
+      {/* ── Service Picker Modal ──────────────────────────── */}
+      {showPicker && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center">
+          <div className="bg-card w-full max-w-sm rounded-t-2xl p-5 shadow-xl sm:rounded-2xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h4 className="text-base font-semibold">
+                {pickerCategory ? pickerCategory : 'Select a category'}
+              </h4>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPicker(false)
+                  setPickerCategory(null)
+                }}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {pickerCategory === null ? (
+              /* Step 1 — category list */
+              <div className="max-h-[60vh] space-y-2 overflow-y-auto">
+                {catalog.some((s) => s.category)
+                  ? Array.from(
+                      new Set(catalog.map((s) => s.category).filter(Boolean)),
+                    )
+                      .sort()
+                      .map((cat) => (
+                        <button
+                          key={cat}
+                          type="button"
+                          className="border-border/60 hover:bg-accent w-full rounded-xl border px-4 py-3 text-left text-sm font-medium transition-colors"
+                          onClick={() => setPickerCategory(cat!)}
+                        >
+                          {cat}
+                          <span className="text-muted-foreground ml-2 text-xs font-normal">
+                            ({catalog.filter((s) => s.category === cat).length})
+                          </span>
+                        </button>
+                      ))
+                  : /* No categories — flat list */
+                    catalog.map((svc) => (
+                      <button
+                        key={svc.id}
+                        type="button"
+                        className="border-border/60 hover:bg-accent flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left text-sm transition-colors"
+                        onClick={() => {
+                          setLineItems((prev) => [
+                            ...prev,
+                            {
+                              service_catalog_item_id: svc.id,
+                              name_snapshot: svc.name,
+                              quantity: '1',
+                              unit_price:
+                                svc.base_price != null
+                                  ? String(svc.base_price)
+                                  : '',
+                              duration_minutes:
+                                svc.default_duration_minutes != null
+                                  ? String(svc.default_duration_minutes)
+                                  : '60',
+                              notes: '',
+                            },
+                          ])
+                          setEditingLines(true)
+                          setShowPicker(false)
+                        }}
+                      >
+                        <span className="font-medium">{svc.name}</span>
+                        {svc.base_price != null && (
+                          <span className="text-muted-foreground text-xs">
+                            ${svc.base_price}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+              </div>
+            ) : (
+              /* Step 2 — services in category */
+              <div className="max-h-[60vh] space-y-2 overflow-y-auto">
+                <button
+                  type="button"
+                  className="text-muted-foreground mb-1 flex items-center gap-1 text-xs hover:underline"
+                  onClick={() => setPickerCategory(null)}
+                >
+                  <ChevronLeft className="h-3 w-3" />
+                  Back
+                </button>
+                {catalog
+                  .filter((s) => s.category === pickerCategory)
+                  .map((svc) => (
+                    <button
+                      key={svc.id}
+                      type="button"
+                      className="border-border/60 hover:bg-accent flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left text-sm transition-colors"
+                      onClick={() => {
+                        setLineItems((prev) => [
+                          ...prev,
+                          {
+                            service_catalog_item_id: svc.id,
+                            name_snapshot: svc.name,
+                            quantity: '1',
+                            unit_price:
+                              svc.base_price != null
+                                ? String(svc.base_price)
+                                : '',
+                            duration_minutes:
+                              svc.default_duration_minutes != null
+                                ? String(svc.default_duration_minutes)
+                                : '60',
+                            notes: '',
+                          },
+                        ])
+                        setEditingLines(true)
+                        setShowPicker(false)
+                        setPickerCategory(null)
+                      }}
+                    >
+                      <span className="font-medium">{svc.name}</span>
+                      {svc.base_price != null && (
+                        <span className="text-muted-foreground text-xs">
+                          ${svc.base_price}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {/* ── Line Items ────────────────────────────────────── */}
       <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Line Items</h2>
-          {!editingLines ? (
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1.5"
-              onClick={() => setEditingLines(true)}
-            >
-              <Pencil className="h-3.5 w-3.5" />
-              Edit
-            </Button>
-          ) : (
-            <div className="flex gap-2">
+          <div className="flex gap-2">
+            {catalog.length > 0 && (
               <Button
                 size="sm"
                 variant="outline"
+                className="gap-1.5"
                 onClick={() => {
-                  setEditingLines(false)
-                  // reset to server state
-                  setLineItems(
-                    (data.appointment.ops_appointment_line_items || []).map(
-                      (l) => ({
-                        id: l.id,
-                        service_catalog_item_id:
-                          l.service_catalog_item_id ?? null,
-                        name_snapshot: l.name_snapshot,
-                        quantity: String(l.quantity),
-                        unit_price: String(l.unit_price),
-                        duration_minutes: String(l.duration_minutes),
-                        notes: l.notes ?? '',
-                      }),
-                    ),
-                  )
+                  setPickerCategory(null)
+                  setShowPicker(true)
                 }}
               >
-                Cancel
+                <Plus className="h-3.5 w-3.5" />
+                Add Service
               </Button>
+            )}
+            {!editingLines ? (
               <Button
                 size="sm"
+                variant="outline"
                 className="gap-1.5"
-                onClick={() => void handleSaveLines()}
-                disabled={savingLines}
+                onClick={() => setEditingLines(true)}
               >
-                {savingLines ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Save className="h-3.5 w-3.5" />
-                )}
-                Save
+                <Pencil className="h-3.5 w-3.5" />
+                Edit
               </Button>
-            </div>
-          )}
+            ) : (
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setEditingLines(false)
+                    setLineItems(
+                      (data.appointment.ops_appointment_line_items || []).map(
+                        (l) => ({
+                          id: l.id,
+                          service_catalog_item_id:
+                            l.service_catalog_item_id ?? null,
+                          name_snapshot: l.name_snapshot,
+                          quantity: String(l.quantity),
+                          unit_price: String(l.unit_price),
+                          duration_minutes: String(l.duration_minutes),
+                          notes: l.notes ?? '',
+                        }),
+                      ),
+                    )
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => void handleSaveLines()}
+                  disabled={savingLines}
+                >
+                  {savingLines ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Save className="h-3.5 w-3.5" />
+                  )}
+                  Save
+                </Button>
+              </>
+            )}
+          </div>
         </div>
 
         <div className="space-y-3">
@@ -812,7 +974,7 @@ export default function RecurringVisitDetail({
             }
           >
             <Plus className="h-3.5 w-3.5" />
-            Add Line Item
+            Add Blank Line
           </Button>
         )}
 

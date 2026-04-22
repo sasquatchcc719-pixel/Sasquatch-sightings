@@ -38,6 +38,7 @@ type CustomerRow = {
   email: string | null
   phone: string
   notes: string | null
+  email_opt_out: boolean | null
   quickbooks_customer_id: string | null
   created_at: string
   job_count?: number
@@ -54,6 +55,7 @@ type CustomerEditState = {
   phone: string
   email: string
   notes: string
+  email_opt_out: boolean
   addresses: Array<{
     id: string
     label: string
@@ -132,6 +134,7 @@ export function CustomersDirectory() {
       phone: customer.phone || '',
       email: customer.email || '',
       notes: customer.notes || '',
+      email_opt_out: customer.email_opt_out ?? false,
       addresses: (customer.ops_service_addresses || []).map((a) => ({
         id: a.id,
         label: a.label || '',
@@ -168,6 +171,7 @@ export function CustomersDirectory() {
             phone: editForm.phone,
             email: editForm.email || null,
             notes: editForm.notes || null,
+            email_opt_out: editForm.email_opt_out,
           },
           addresses: editForm.addresses.map((a) => ({
             id: a.id,
@@ -371,6 +375,42 @@ export function CustomersDirectory() {
                           )
                         }
                       />
+                    </div>
+
+                    <div className="flex items-center justify-between rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+                      <div>
+                        <p className="text-sm font-medium text-amber-200">
+                          Suppress all emails
+                        </p>
+                        <p className="mt-0.5 text-xs text-amber-200/60">
+                          No booking confirmations, job-complete emails, or drip
+                          campaigns. Use for QB-billed commercial accounts (e.g.
+                          Recovery Village).
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={editForm.email_opt_out}
+                        onClick={() =>
+                          setEditForm((f) =>
+                            f ? { ...f, email_opt_out: !f.email_opt_out } : f,
+                          )
+                        }
+                        className={`relative ml-4 inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none ${
+                          editForm.email_opt_out
+                            ? 'bg-amber-500'
+                            : 'bg-white/20'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition-transform ${
+                            editForm.email_opt_out
+                              ? 'translate-x-5'
+                              : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
                     </div>
 
                     {editForm.addresses.map((addr, addrIdx) => (
@@ -591,6 +631,14 @@ export function CustomersDirectory() {
                           QB
                         </Badge>
                       ) : null}
+                      {customer.email_opt_out ? (
+                        <Badge
+                          variant="outline"
+                          className="border-amber-500/40 bg-amber-500/10 text-xs font-normal text-amber-300"
+                        >
+                          No emails
+                        </Badge>
+                      ) : null}
                     </div>
 
                     {/* Customer since */}
@@ -621,8 +669,10 @@ export function CustomersDirectory() {
                             </div>
                             <div className="text-muted-foreground mt-1">
                               {address.street_1}
-                              {address.street_2 ? `, ${address.street_2}` : ''},{' '}
-                              {address.city}, {address.state} {address.zip_code}
+                              {address.street_2
+                                ? `, ${address.street_2}`
+                                : ''}, {address.city}, {address.state}{' '}
+                              {address.zip_code}
                             </div>
                             {address.gate_code ? (
                               <div className="text-muted-foreground mt-1 text-xs">

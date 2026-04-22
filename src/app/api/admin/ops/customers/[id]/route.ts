@@ -38,6 +38,8 @@ export async function PATCH(
       if (c.email !== undefined) updates.email = c.email || null
       if (c.phone !== undefined) updates.phone = c.phone
       if (c.notes !== undefined) updates.notes = c.notes || null
+      if (c.email_opt_out !== undefined)
+        updates.email_opt_out = Boolean(c.email_opt_out)
 
       if (Object.keys(updates).length > 0) {
         updates.updated_at = new Date().toISOString()
