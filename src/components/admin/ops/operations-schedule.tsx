@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
   CalendarDays,
+  CalendarRange,
   ChevronLeft,
   ChevronRight,
   GripVertical,
@@ -604,6 +605,34 @@ export function OperationsSchedule() {
   } | null>(null)
   const draggingYOffsetRef = useRef<number>(0)
   const didDragRef = useRef<boolean>(false)
+  const dateInputRef = useRef<HTMLInputElement>(null)
+
+  // On mobile, week and month views are cramped — default to day view so the
+  // calendar is usable. Users can still switch views on wider screens via the
+  // Week/Day/Month toggle that only renders at sm+ breakpoints.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (window.matchMedia('(max-width: 639px)').matches) {
+      setView('day')
+    }
+  }, [])
+
+  const openDatePicker = () => {
+    const el = dateInputRef.current
+    if (!el) return
+    // Prefer showPicker() when available (Chrome/Edge/modern Safari); falls
+    // back to click() which triggers the native picker on iOS/Android.
+    const anyEl = el as HTMLInputElement & { showPicker?: () => void }
+    if (typeof anyEl.showPicker === 'function') {
+      try {
+        anyEl.showPicker()
+        return
+      } catch {
+        // Fall through to click()
+      }
+    }
+    el.click()
+  }
 
   // Touch-swipe navigation (mobile)
   const touchStartXRef = useRef<number>(0)
@@ -1178,65 +1207,97 @@ export function OperationsSchedule() {
       ) : null}
 
       <Card className="border-border/60 bg-card/80 p-4 shadow-sm backdrop-blur">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setAnchorDate(new Date())}
-            >
-              Today
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => moveRange('prev')}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => moveRange('next')}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-            <div className="min-w-48 text-sm font-semibold">{viewLabel}</div>
+        {/* Row 1: navigation on the left, actions on the right */}
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setAnchorDate(new Date())}
+          >
+            Today
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => moveRange('prev')}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => moveRange('next')}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+
+          {/* Week/Day/Month toggle — desktop only. On mobile we force day view. */}
+          <div className="border-border ml-2 hidden rounded-xl border p-1 sm:flex">
+            {(['week', 'day', 'month'] as ScheduleView[]).map((option) => (
+              <Button
+                key={option}
+                type="button"
+                size="sm"
+                variant={view === option ? 'default' : 'ghost'}
+                className="capitalize"
+                onClick={() => setView(option)}
+              >
+                {option}
+              </Button>
+            ))}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="border-border flex rounded-xl border p-1">
-              {(['week', 'day', 'month'] as ScheduleView[]).map((option) => (
-                <Button
-                  key={option}
-                  type="button"
-                  size="sm"
-                  variant={view === option ? 'default' : 'ghost'}
-                  className="capitalize"
-                  onClick={() => setView(option)}
-                >
-                  {option}
-                </Button>
-              ))}
-            </div>
-            <Button asChild size="sm" className="gap-2">
-              <Link href="/admin/operations/new-job">
-                <Plus className="h-4 w-4" />
-                New Job
-              </Link>
-            </Button>
-            <Button
-              size="icon"
-              variant="outline"
-              onClick={() => void loadSchedule()}
-            >
-              {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4" />
-              )}
-            </Button>
-          </div>
+          <div className="flex-1" />
+
+          <Button asChild size="sm" className="gap-2">
+            <Link href="/admin/operations/new-job">
+              <Plus className="h-4 w-4" />
+              New Job
+            </Link>
+          </Button>
+          <Button
+            size="icon"
+            variant="outline"
+            onClick={() => void loadSchedule()}
+          >
+            {loading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4" />
+            )}
+          </Button>
+        </div>
+
+        {/* Row 2: tappable date label that opens the native date picker */}
+        <div className="relative mt-3">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={openDatePicker}
+            className="w-full justify-start gap-2 font-semibold sm:w-auto"
+          >
+            <CalendarRange className="h-4 w-4 opacity-70" />
+            <span className="truncate">{viewLabel}</span>
+          </Button>
+          {/* Hidden native date input — openDatePicker() triggers the OS
+              date picker (iOS wheel, Android calendar, desktop popover). */}
+          <input
+            ref={dateInputRef}
+            type="date"
+            aria-hidden
+            tabIndex={-1}
+            className="pointer-events-none absolute inset-0 h-0 w-0 opacity-0"
+            value={formatDateKey(anchorDate)}
+            onChange={(event) => {
+              const value = event.target.value
+              if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return
+              const parsed = new Date(`${value}T12:00:00`)
+              if (!isNaN(parsed.getTime())) {
+                setAnchorDate(parsed)
+              }
+            }}
+          />
         </div>
 
         {showBlockForm ? (
