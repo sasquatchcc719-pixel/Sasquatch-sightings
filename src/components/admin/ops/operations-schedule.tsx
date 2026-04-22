@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
@@ -648,18 +649,21 @@ export function OperationsSchedule() {
   const calendarRef = useRef<HTMLDivElement>(null)
   const dayStripRef = useRef<HTMLDivElement>(null)
 
-  // Current-time indicator — updates every minute so the line moves live
-  const [nowMinutes, setNowMinutes] = useState(() => {
-    const n = new Date()
-    return n.getHours() * 60 + n.getMinutes()
-  })
-  const todayKey = formatDateKey(new Date())
+  // Current-time indicator — updates every minute so the line moves live.
+  // We start at null and only fill in after mount on the client so the SSR
+  // response (which runs in Vercel's UTC timezone) doesn't bake a bogus
+  // UTC hour count into the hydrated state. That's what caused the red
+  // line to be ~6 hours off on mobile until the next minute tick.
+  const [nowMinutes, setNowMinutes] = useState<number | null>(null)
+  const [todayKey, setTodayKey] = useState<string>('')
 
   useEffect(() => {
     const tick = () => {
       const n = new Date()
       setNowMinutes(n.getHours() * 60 + n.getMinutes())
+      setTodayKey(formatDateKey(n))
     }
+    tick()
     const id = setInterval(tick, 60_000)
     return () => clearInterval(id)
   }, [])
@@ -1466,112 +1470,115 @@ export function OperationsSchedule() {
             <span className="truncate">{viewLabel}</span>
           </Button>
 
-          {datePickerOpen ? (
-            <div
-              role="dialog"
-              aria-label="Pick a date"
-              aria-modal="true"
-              className="fixed inset-0 z-[220] flex items-start justify-center px-4 pt-20 sm:items-center sm:pt-0"
-            >
-              <button
-                type="button"
-                aria-label="Close calendar"
-                className="absolute inset-0 cursor-default bg-black/50 backdrop-blur-sm"
-                onClick={closeDatePicker}
-              />
-              <div className="border-border/60 bg-background animate-slide-up relative w-[19rem] max-w-[calc(100vw-2rem)] rounded-2xl border p-3 shadow-xl">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    aria-label="Previous month"
-                    onClick={() => setPickerMonth((m) => addMonths(m, -1))}
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
+          {datePickerOpen && typeof document !== 'undefined'
+            ? createPortal(
+                <div
+                  role="dialog"
+                  aria-label="Pick a date"
+                  aria-modal="true"
+                  className="fixed inset-0 z-[220] flex items-start justify-center px-4 pt-20 sm:items-center sm:pt-0"
+                >
                   <button
                     type="button"
-                    onClick={() => setPickerMonth(startOfMonth(new Date()))}
-                    className="hover:bg-muted rounded-md px-2 py-1 text-sm font-semibold"
-                    title="Jump to current month"
-                  >
-                    {pickerMonth.toLocaleDateString('en-US', {
-                      month: 'long',
-                      year: 'numeric',
-                    })}
-                  </button>
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    aria-label="Next month"
-                    onClick={() => setPickerMonth((m) => addMonths(m, 1))}
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-                <div className="text-muted-foreground mb-1 grid grid-cols-7 gap-1 text-center text-[10px] font-medium tracking-wide uppercase">
-                  {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
-                    <div key={`${d}-${i}`}>{d}</div>
-                  ))}
-                </div>
-                <div className="grid grid-cols-7 gap-1">
-                  {buildMonthGrid(pickerMonth).map((d) => {
-                    const dKey = formatDateKey(d)
-                    const inMonth = d.getMonth() === pickerMonth.getMonth()
-                    const isToday = dKey === todayKey
-                    const isSelected = dKey === formatDateKey(anchorDate)
-                    return (
-                      <button
-                        key={dKey}
+                    aria-label="Close calendar"
+                    className="absolute inset-0 cursor-default bg-black/50 backdrop-blur-sm"
+                    onClick={closeDatePicker}
+                  />
+                  <div className="border-border/60 bg-background animate-slide-up relative w-[19rem] max-w-[calc(100vw-2rem)] rounded-2xl border p-3 shadow-xl">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <Button
                         type="button"
+                        size="icon"
+                        variant="ghost"
+                        aria-label="Previous month"
+                        onClick={() => setPickerMonth((m) => addMonths(m, -1))}
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <button
+                        type="button"
+                        onClick={() => setPickerMonth(startOfMonth(new Date()))}
+                        className="hover:bg-muted rounded-md px-2 py-1 text-sm font-semibold"
+                        title="Jump to current month"
+                      >
+                        {pickerMonth.toLocaleDateString('en-US', {
+                          month: 'long',
+                          year: 'numeric',
+                        })}
+                      </button>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        aria-label="Next month"
+                        onClick={() => setPickerMonth((m) => addMonths(m, 1))}
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <div className="text-muted-foreground mb-1 grid grid-cols-7 gap-1 text-center text-[10px] font-medium tracking-wide uppercase">
+                      {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
+                        <div key={`${d}-${i}`}>{d}</div>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-7 gap-1">
+                      {buildMonthGrid(pickerMonth).map((d) => {
+                        const dKey = formatDateKey(d)
+                        const inMonth = d.getMonth() === pickerMonth.getMonth()
+                        const isToday = dKey === todayKey
+                        const isSelected = dKey === formatDateKey(anchorDate)
+                        return (
+                          <button
+                            key={dKey}
+                            type="button"
+                            onClick={() => {
+                              setAnchorDate(d)
+                              setDatePickerOpen(false)
+                            }}
+                            className={[
+                              'flex h-9 items-center justify-center rounded-lg text-sm transition',
+                              isSelected
+                                ? 'bg-emerald-500 font-semibold text-white shadow'
+                                : isToday
+                                  ? 'border-emerald-500 text-emerald-600 ring-1 ring-emerald-500 hover:bg-emerald-50'
+                                  : inMonth
+                                    ? 'text-foreground hover:bg-muted'
+                                    : 'text-muted-foreground/60 hover:bg-muted/60',
+                            ].join(' ')}
+                          >
+                            {d.getDate()}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <div className="mt-3 flex items-center justify-between gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
                         onClick={() => {
-                          setAnchorDate(d)
+                          const now = new Date()
+                          setAnchorDate(now)
+                          setPickerMonth(startOfMonth(now))
                           setDatePickerOpen(false)
                         }}
-                        className={[
-                          'flex h-9 items-center justify-center rounded-lg text-sm transition',
-                          isSelected
-                            ? 'bg-emerald-500 font-semibold text-white shadow'
-                            : isToday
-                              ? 'border-emerald-500 text-emerald-600 ring-1 ring-emerald-500 hover:bg-emerald-50'
-                              : inMonth
-                                ? 'text-foreground hover:bg-muted'
-                                : 'text-muted-foreground/60 hover:bg-muted/60',
-                        ].join(' ')}
                       >
-                        {d.getDate()}
-                      </button>
-                    )
-                  })}
-                </div>
-                <div className="mt-3 flex items-center justify-between gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      const now = new Date()
-                      setAnchorDate(now)
-                      setPickerMonth(startOfMonth(now))
-                      setDatePickerOpen(false)
-                    }}
-                  >
-                    Today
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={closeDatePicker}
-                  >
-                    Close
-                  </Button>
-                </div>
-              </div>
-            </div>
-          ) : null}
+                        Today
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={closeDatePicker}
+                      >
+                        Close
+                      </Button>
+                    </div>
+                  </div>
+                </div>,
+                document.body,
+              )
+            : null}
         </div>
 
         {showBlockForm ? (
@@ -2117,6 +2124,7 @@ export function OperationsSchedule() {
                       {/* Current-time indicator — only on today's column,
                           only while the clock is within the visible hour range */}
                       {dateKey === todayKey &&
+                      nowMinutes != null &&
                       nowMinutes >= GRID_START_MINUTES &&
                       nowMinutes <= (HOURS[HOURS.length - 1] + 1) * 60 ? (
                         <div
