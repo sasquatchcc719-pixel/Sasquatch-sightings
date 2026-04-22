@@ -566,6 +566,23 @@ export function OperationsSchedule() {
   const [showBusinessHours, setShowBusinessHours] = useState(false)
   const [showBlockForm, setShowBlockForm] = useState(false)
 
+  // Honor ?action=block|hours coming in from the Operations Menu. When the
+  // user picks "Block Time" or "Business Hours" from the menu, we route
+  // here with the query param and auto-open the matching form, then strip
+  // the param so the URL stays clean.
+  useEffect(() => {
+    const action = searchParams.get('action')
+    if (action === 'block') {
+      setShowBlockForm(true)
+      setShowBusinessHours(false)
+      router.replace('/admin/operations')
+    } else if (action === 'hours') {
+      setShowBusinessHours(true)
+      setShowBlockForm(false)
+      router.replace('/admin/operations')
+    }
+  }, [searchParams, router])
+
   // Drag-and-drop reschedule state
   const [draggingAppointment, setDraggingAppointment] =
     useState<Appointment | null>(null)
@@ -833,6 +850,22 @@ export function OperationsSchedule() {
     router.push(`/admin/operations/estimates/new?date=${dateKey}&time=${hh}:00`)
   }
 
+  const openBlockAt = (dateKey: string, hour: number) => {
+    const hh = String(hour).padStart(2, '0')
+    const nextHh = String(Math.min(hour + 1, 23)).padStart(2, '0')
+    setBlockForm({
+      title: '',
+      description: '',
+      start_date: dateKey,
+      end_date: dateKey,
+      start_time: `${hh}:00`,
+      end_time: `${nextHh}:00`,
+      is_all_day: false,
+    })
+    setShowBusinessHours(false)
+    setShowBlockForm(true)
+  }
+
   const PX_PER_MINUTE = HOUR_HEIGHT / 60
   const GRID_START_MINUTES = HOURS[0] * 60
 
@@ -1089,11 +1122,11 @@ export function OperationsSchedule() {
           <button
             type="button"
             aria-label="Close menu"
-            className="fixed inset-0 z-40 cursor-default bg-transparent"
+            className="fixed inset-0 z-[219] cursor-default bg-transparent"
             onClick={() => setCellMenu(null)}
           />
           <div
-            className="fixed z-50"
+            className="fixed z-[220]"
             style={{
               left: Math.min(cellMenu.x, window.innerWidth - 260),
               top: Math.min(cellMenu.y, window.innerHeight - 160),
@@ -1126,6 +1159,18 @@ export function OperationsSchedule() {
               >
                 <Ruler className="h-3.5 w-3.5" />
                 New estimate at this time
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="justify-start gap-2 text-rose-700 hover:bg-rose-50 hover:text-rose-800"
+                onClick={() => {
+                  openBlockAt(cellMenu.dateKey, cellMenu.hour)
+                  setCellMenu(null)
+                }}
+              >
+                <ShieldBan className="h-3.5 w-3.5" />
+                Block time at this hour
               </Button>
             </Card>
           </div>
@@ -1181,23 +1226,6 @@ export function OperationsSchedule() {
               </Link>
             </Button>
             <Button
-              size="sm"
-              variant="outline"
-              className="gap-2"
-              onClick={() => setShowBlockForm((current) => !current)}
-            >
-              <ShieldBan className="h-4 w-4" />
-              Block Time
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-2"
-              onClick={() => setShowBusinessHours((current) => !current)}
-            >
-              Business Hours
-            </Button>
-            <Button
               size="icon"
               variant="outline"
               onClick={() => void loadSchedule()}
@@ -1210,36 +1238,6 @@ export function OperationsSchedule() {
             </Button>
           </div>
         </div>
-
-        {Object.keys(recurringFreqMap).length > 0 && (
-          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500">
-            <span className="font-medium">Recurring:</span>
-            <span className="flex items-center gap-1">
-              <span className="inline-block h-2.5 w-2.5 rounded-sm border border-violet-400 bg-violet-100" />
-              Weekly
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="inline-block h-2.5 w-2.5 rounded-sm border border-sky-400 bg-sky-100" />
-              Biweekly
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="inline-block h-2.5 w-2.5 rounded-sm border border-teal-400 bg-teal-100" />
-              Monthly
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="inline-block h-2.5 w-2.5 rounded-sm border border-orange-400 bg-orange-100" />
-              90-day
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="inline-block h-2.5 w-2.5 rounded-sm border border-rose-400 bg-rose-100" />
-              180-day
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="inline-block h-2.5 w-2.5 rounded-sm border border-fuchsia-400 bg-fuchsia-100" />
-              Other
-            </span>
-          </div>
-        )}
 
         {showBlockForm ? (
           <form

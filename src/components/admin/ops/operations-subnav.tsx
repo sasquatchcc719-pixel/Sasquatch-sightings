@@ -13,6 +13,8 @@ import {
   Repeat,
   FileText,
   MessageSquare,
+  ShieldBan,
+  Clock,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -43,6 +45,18 @@ const NAV_ITEMS: NavItem[] = [
     label: 'New Job',
     description: 'Full-screen standard job workflow',
     icon: FilePlus2,
+  },
+  {
+    href: '/admin/operations?action=block',
+    label: 'Block Time',
+    description: 'Block vacation, sick days, or any time off',
+    icon: ShieldBan,
+  },
+  {
+    href: '/admin/operations?action=hours',
+    label: 'Business Hours',
+    description: 'Edit weekly business hours',
+    icon: Clock,
   },
   {
     href: '/admin/operations/estimates',
@@ -149,18 +163,6 @@ export function OperationsSubnav() {
           </p>
           <h1 className="text-2xl font-bold tracking-tight">{sectionLabel}</h1>
         </div>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <Button asChild size="sm" className="gap-2">
-          <Link href="/admin/operations/new-job">
-            <FilePlus2 className="h-4 w-4" />
-            New Job
-          </Link>
-        </Button>
-        <Button asChild size="sm" variant="outline">
-          <Link href="/admin/operations">Schedule</Link>
-        </Button>
       </div>
     </div>
   )
