@@ -92,7 +92,8 @@ export default function RootLayout({ children }: RootLayoutProps) {
           enableSystem
           disableTransitionOnChange
         >
-          <div className="fixed top-4 right-4 z-[250]">
+          {/* Hidden on mobile — ThemeSwitcher lives in the hamburger drawer on small screens */}
+          <div className="fixed top-4 right-4 z-[250] hidden sm:block">
             <div className="border-border/70 bg-background/85 rounded-full border shadow-lg backdrop-blur">
               <ThemeSwitcher />
             </div>

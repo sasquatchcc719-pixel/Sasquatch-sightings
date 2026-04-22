@@ -33,6 +33,7 @@ import {
 } from 'lucide-react'
 import { createClient } from '@/supabase/client'
 import { useRouter } from 'next/navigation'
+import { ThemeSwitcher } from '@/components/theme-switcher'
 
 interface MobileHeaderProps {
   userEmail: string
@@ -457,8 +458,13 @@ export function MobileHeader({ userEmail }: MobileHeaderProps) {
         </div>
 
         {/* Drawer footer */}
-        <div className="border-t border-white/10 p-4">
-          <p className="mb-2 truncate text-xs text-slate-500">{userEmail}</p>
+        <div className="space-y-3 border-t border-white/10 p-4">
+          <div className="flex items-center justify-between">
+            <p className="truncate text-xs text-slate-500">{userEmail}</p>
+            <div className="flex items-center rounded-full bg-white/5 px-1">
+              <ThemeSwitcher />
+            </div>
+          </div>
           <button
             onClick={() => {
               void handleLogout()

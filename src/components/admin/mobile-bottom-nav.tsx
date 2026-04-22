@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Calendar, MessageSquare, Users } from 'lucide-react'
+import { Calendar, MessageSquare, Users, BarChart3 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 
 type UnreadCountResponse = {
@@ -35,7 +35,9 @@ const tabs = [
     label: 'Schedule',
     href: '/admin/operations',
     icon: Calendar,
-    match: (p: string) => p.startsWith('/admin/operations'),
+    match: (p: string) =>
+      p.startsWith('/admin/operations') &&
+      !p.startsWith('/admin/operations/customers'),
   },
   {
     key: 'comms',
@@ -51,6 +53,13 @@ const tabs = [
     href: '/admin/operations/customers',
     icon: Users,
     match: (p: string) => p.startsWith('/admin/operations/customers'),
+  },
+  {
+    key: 'stats',
+    label: 'Stats',
+    href: '/admin/stats',
+    icon: BarChart3,
+    match: (p: string) => p.startsWith('/admin/stats'),
   },
 ]
 
