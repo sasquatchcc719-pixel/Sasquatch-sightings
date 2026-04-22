@@ -15,6 +15,9 @@ import {
   MessageSquare,
   ShieldBan,
   Clock,
+  MapPin,
+  Timer,
+  Footprints,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -100,6 +103,24 @@ const NAV_ITEMS: NavItem[] = [
     description: 'Queue, cron, and lifecycle messaging status',
     icon: Settings,
   },
+  {
+    href: '/admin/operations/dispatch',
+    label: 'Live Dispatch',
+    description: 'Real-time map of clocked-in technicians',
+    icon: MapPin,
+  },
+  {
+    href: '/admin/operations/timesheets',
+    label: 'GPS Timesheets',
+    description: 'Travel vs on-site time breakdown per shift',
+    icon: Timer,
+  },
+  {
+    href: '/admin/operations/my-day',
+    label: 'My Day',
+    description: 'Personal GPS shift summary for today',
+    icon: Footprints,
+  },
 ]
 
 function getSectionLabel(pathname: string): string {
@@ -110,6 +131,9 @@ function getSectionLabel(pathname: string): string {
     return 'Job Detail'
   if (pathname.startsWith('/admin/operations/invoices/'))
     return 'Invoice Detail'
+  if (pathname.startsWith('/admin/operations/estimates/')) return 'Estimate'
+  if (pathname.startsWith('/admin/operations/recurring/visit/'))
+    return 'Recurring Visit'
   return 'Operations'
 }
 

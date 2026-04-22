@@ -1,4 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js'
+import { queueGeocodeForAddress } from '@/lib/ops/forward-geocode'
 
 export async function resolveServiceAddress(
   supabase: SupabaseClient,
@@ -12,18 +13,18 @@ export async function resolveServiceAddress(
     zip_code?: string | null
     gate_code?: string | null
     notes?: string | null
-  } | null
+  } | null,
 ): Promise<{
-    id: string
-    label: string | null
-    street_1: string
-    street_2: string | null
-    city: string
-    state: string
-    zip_code: string
-    gate_code: string | null
-    notes: string | null
-  } | null> {
+  id: string
+  label: string | null
+  street_1: string
+  street_2: string | null
+  city: string
+  state: string
+  zip_code: string
+  gate_code: string | null
+  notes: string | null
+} | null> {
   if (!inlineAddress || !inlineAddress.street_1) return null
 
   const streetRaw = (inlineAddress.street_1 || '').trim()
@@ -38,7 +39,9 @@ export async function resolveServiceAddress(
     .eq('customer_id', customerId)
 
   if (!findError && existing) {
-    const match = existing.find((a: any) => (a.street_1 || '').trim().toLowerCase() === searchStreet)
+    const match = existing.find(
+      (a: any) => (a.street_1 || '').trim().toLowerCase() === searchStreet,
+    )
     if (match) {
       return match
     }
@@ -61,5 +64,18 @@ export async function resolveServiceAddress(
     .select('*')
 
   if (insertError) throw insertError
-  return inserted?.[0] || null
+
+  const newAddress = inserted?.[0] || null
+
+  // Fire-and-forget background geocode for new addresses
+  if (newAddress && !newAddress.latitude) {
+    queueGeocodeForAddress(supabase, newAddress.id, {
+      street_1: newAddress.street_1,
+      city: newAddress.city,
+      state: newAddress.state,
+      zip_code: newAddress.zip_code,
+    })
+  }
+
+  return newAddress
 }
