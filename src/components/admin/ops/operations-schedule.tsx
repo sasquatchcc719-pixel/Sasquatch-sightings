@@ -1467,18 +1467,19 @@ export function OperationsSchedule() {
           </Button>
 
           {datePickerOpen ? (
-            <>
+            <div
+              role="dialog"
+              aria-label="Pick a date"
+              aria-modal="true"
+              className="fixed inset-0 z-[220] flex items-start justify-center px-4 pt-20 sm:items-center sm:pt-0"
+            >
               <button
                 type="button"
                 aria-label="Close calendar"
-                className="fixed inset-0 z-[219] cursor-default bg-transparent"
+                className="absolute inset-0 cursor-default bg-black/50 backdrop-blur-sm"
                 onClick={closeDatePicker}
               />
-              <div
-                role="dialog"
-                aria-label="Pick a date"
-                className="border-border/60 bg-background animate-slide-up absolute top-full left-0 z-[220] mt-2 w-[19rem] max-w-[calc(100vw-2rem)] rounded-2xl border p-3 shadow-lg"
-              >
+              <div className="border-border/60 bg-background animate-slide-up relative w-[19rem] max-w-[calc(100vw-2rem)] rounded-2xl border p-3 shadow-xl">
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <Button
                     type="button"
@@ -1569,7 +1570,7 @@ export function OperationsSchedule() {
                   </Button>
                 </div>
               </div>
-            </>
+            </div>
           ) : null}
         </div>
 
