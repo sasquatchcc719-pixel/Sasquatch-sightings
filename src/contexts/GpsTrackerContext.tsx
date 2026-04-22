@@ -5,7 +5,13 @@ import { useGpsTracker, type GpsTrackerValue } from '@/hooks/useGpsTracker'
 import { GpsStatusBar } from '@/components/admin/GpsStatusBar'
 import { GpsClockBar } from '@/components/admin/GpsClockBar'
 
-const GpsTrackerContext = createContext<GpsTrackerValue | null>(null)
+export interface GpsFullContextValue extends GpsTrackerValue {
+  consentGiven: boolean
+  grantConsent: () => void
+  gpsEnabled: boolean
+}
+
+const GpsTrackerContext = createContext<GpsFullContextValue | null>(null)
 
 export function GpsTrackerProvider({
   gpsEnabled,
@@ -21,30 +27,39 @@ export function GpsTrackerProvider({
 
   const tracker = useGpsTracker({ enabled: gpsEnabled && consentGiven })
 
-  function handleConsent() {
+  function grantConsent() {
     try {
       localStorage.setItem('gps_consent_given', 'true')
     } catch {}
     setConsentGiven(true)
   }
 
+  const contextValue: GpsFullContextValue = {
+    ...tracker,
+    consentGiven,
+    grantConsent,
+    gpsEnabled,
+  }
+
   return (
-    <GpsTrackerContext.Provider value={tracker}>
+    <GpsTrackerContext.Provider value={contextValue}>
       {children}
-      {gpsEnabled && (
-        <>
-          <GpsStatusBar />
-          <GpsClockBar consentGiven={consentGiven} onConsent={handleConsent} />
-        </>
-      )}
+      {gpsEnabled && <GpsStatusBar />}
+      {/* GpsClockBar is desktop-only (sm+); mobile uses the nav tab */}
+      {gpsEnabled && <GpsClockBar />}
     </GpsTrackerContext.Provider>
   )
 }
 
-export function useGpsContext(): GpsTrackerValue {
+export function useGpsContext(): GpsFullContextValue {
   const ctx = useContext(GpsTrackerContext)
   if (!ctx) {
     throw new Error('useGpsContext must be used within GpsTrackerProvider')
   }
   return ctx
+}
+
+/** Safe to call outside the provider — returns null if no GPS context. */
+export function useGpsContextOptional(): GpsFullContextValue | null {
+  return useContext(GpsTrackerContext)
 }
