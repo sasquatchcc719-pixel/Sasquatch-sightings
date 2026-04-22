@@ -293,6 +293,27 @@ function isLsaSignalText(text: string | null | undefined): boolean {
   )
 }
 
+/**
+ * Extract customer name from LSA message prefix.
+ * Format: "You have received a new message from a customer via Google Local Services Ads. Customer Name: John Smith, Location: ..."
+ * Returns the name if found, null otherwise.
+ */
+function extractLsaCustomerName(
+  text: string | null | undefined,
+): string | null {
+  if (!text) return null
+
+  // Match "Customer Name: [name]" - capture everything until comma or newline
+  const nameMatch = text.match(/Customer Name:\s*([^,\n]+)/i)
+  if (nameMatch && nameMatch[1]) {
+    const name = nameMatch[1].trim()
+    // Return null if name is empty or just whitespace
+    return name.length > 0 ? name : null
+  }
+
+  return null
+}
+
 // Determine conversation source type from message content
 type ConversationSource =
   | 'vendor'
@@ -786,11 +807,22 @@ export async function POST(request: NextRequest) {
     }
     const dbSource = sourceMap[sourceType]
 
+    // LSA customer name tracking for relay number detection
+    let lsaCustomerName: string | null = null
+    let lsaPreviousCustomerName: string | null = null
+    let shouldVerifyLsaIdentity = false
+
     // If this phone is an LSA relay, promote any prior 'inbound' conversations
     // to 'Google LSA'. Google sends the customer's real message first and the
     // disclaimer second, so the first message typically lands in a brand-new
     // 'inbound' conversation before we know it's LSA. Once we know, migrate it.
     if (sourceType === 'lsa') {
+      // Extract customer name from this message
+      lsaCustomerName = extractLsaCustomerName(messageBody)
+      console.log(
+        `[LSA] Customer name in message: ${lsaCustomerName || '(not found)'}`,
+      )
+
       const { data: strandedInbound } = await supabase
         .from('conversations')
         .select('id')
@@ -808,6 +840,48 @@ export async function POST(request: NextRequest) {
             'id',
             strandedInbound.map((c) => c.id),
           )
+      }
+
+      // Check for previous LSA conversations on this relay number
+      const { data: priorLsaConvos } = await supabase
+        .from('conversations')
+        .select('id, metadata, messages, updated_at')
+        .eq('phone_number', normalizedPhone)
+        .eq('source', 'Google LSA')
+        .order('updated_at', { ascending: false })
+        .limit(5)
+
+      // Look for the most recent conversation with a tracked customer name
+      if (priorLsaConvos && priorLsaConvos.length > 0) {
+        for (const priorConvo of priorLsaConvos) {
+          const metadata = priorConvo.metadata as {
+            lsa_customer_name?: string
+          } | null
+          if (metadata?.lsa_customer_name) {
+            lsaPreviousCustomerName = metadata.lsa_customer_name
+            console.log(
+              `[LSA] Previous customer on this relay: ${lsaPreviousCustomerName}`,
+            )
+            break
+          }
+        }
+
+        // If we found a previous customer name and it's different from the current one,
+        // OR if we have a previous customer but can't determine the current one,
+        // flag for identity verification
+        if (lsaPreviousCustomerName) {
+          if (lsaCustomerName && lsaCustomerName !== lsaPreviousCustomerName) {
+            console.warn(
+              `[LSA] CUSTOMER SWITCH DETECTED: ${lsaPreviousCustomerName} → ${lsaCustomerName}`,
+            )
+            shouldVerifyLsaIdentity = true
+          } else if (!lsaCustomerName) {
+            console.warn(
+              `[LSA] Cannot determine customer name - previous was ${lsaPreviousCustomerName}`,
+            )
+            shouldVerifyLsaIdentity = true
+          }
+        }
       }
     }
 
@@ -902,12 +976,51 @@ export async function POST(request: NextRequest) {
           .eq('id', conversation.id)
         conversation.ai_enabled = true
       }
+
+      // Update LSA customer name in metadata if we have a new one
+      if (sourceType === 'lsa' && lsaCustomerName) {
+        const currentMetadata =
+          (conversation.metadata as Record<string, unknown>) || {}
+        if (currentMetadata.lsa_customer_name !== lsaCustomerName) {
+          console.log(
+            `[LSA] Updating customer name in metadata: ${lsaCustomerName}`,
+          )
+          await supabase
+            .from('conversations')
+            .update({
+              metadata: {
+                ...currentMetadata,
+                lsa_customer_name: lsaCustomerName,
+              },
+            })
+            .eq('id', conversation.id)
+          conversation.metadata = {
+            ...currentMetadata,
+            lsa_customer_name: lsaCustomerName,
+          }
+        }
+      }
     } else {
       console.log(
         `⚠️ No existing ${dbSource} conversation found for ${normalizedPhone}`,
       )
 
       // Create new conversation for this source type
+      let conversationMetadata: Record<string, unknown> | null = null
+
+      if (sourceType === 'vendor' && matchedPartner) {
+        conversationMetadata = {
+          partner_id: matchedPartner.id,
+          partner_name:
+            matchedPartner.location_name || matchedPartner.company_name,
+          coupon_code: matchedPartner.coupon_code,
+        }
+      } else if (sourceType === 'lsa' && lsaCustomerName) {
+        conversationMetadata = {
+          lsa_customer_name: lsaCustomerName,
+        }
+      }
+
       const { data: newConvo, error: createError } = await supabase
         .from('conversations')
         .insert({
@@ -918,15 +1031,7 @@ export async function POST(request: NextRequest) {
           ai_enabled: !shouldSilenceHarry,
           ops_customer_id: isOpsCustomer ? opsCustomerMatch!.id : null,
           status: 'active',
-          metadata:
-            sourceType === 'vendor' && matchedPartner
-              ? {
-                  partner_id: matchedPartner.id,
-                  partner_name:
-                    matchedPartner.location_name || matchedPartner.company_name,
-                  coupon_code: matchedPartner.coupon_code,
-                }
-              : null,
+          metadata: conversationMetadata,
         })
         .select()
         .single()
@@ -1141,6 +1246,22 @@ export async function POST(request: NextRequest) {
     // Generate AI response
     let aiResponse: string
     try {
+      // LSA Identity Verification: If we detected a potential customer switch on
+      // this relay number, inject a system message telling Harry to verify who
+      // he's speaking with before proceeding with booking/rescheduling operations.
+      if (shouldVerifyLsaIdentity && sourceType === 'lsa') {
+        console.log(`[LSA] Injecting identity verification prompt for Harry`)
+        messages.push({
+          role: 'system',
+          content: `CRITICAL: Google LSA relay number detected with potential customer switch. Previous customer: ${lsaPreviousCustomerName || 'unknown'}. Current customer from LSA: ${lsaCustomerName || 'unknown'}.
+
+BEFORE booking, rescheduling, or modifying ANY appointments, you MUST verify who you're speaking with by asking: "Hi! Just to confirm, who am I speaking with today?" or "Can I get your name to make sure I have the right information pulled up?"
+
+DO NOT assume this is a continuation of the previous conversation. DO NOT reschedule or modify existing appointments until you confirm the customer's identity.`,
+          timestamp: new Date().toISOString(),
+        })
+      }
+
       // Extract partner context if available
       const metadata = (
         conversation as {
