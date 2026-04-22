@@ -262,15 +262,35 @@ function detectContestMention(message: string): boolean {
   return contestPhrases.some((phrase) => lowerMessage.includes(phrase))
 }
 
-// Google LSA sends every inbound as TWO SMS — the customer's actual message,
-// then this boilerplate disclaimer. Matching this text anywhere in a phone
-// number's history is a definitive signal that the phone is an LSA relay.
+// Google LSA sends distinctive boilerplate in SMS. Any of these patterns
+// appearing in a message is a definitive signal that the phone number is
+// an LSA relay, even if no other signal is present.
+//   1. Lead-prefix: "You have received a new message from a customer via
+//      Google Local Services Ads. Customer Name: ..."
+//   2. Reply disclaimer: "Replies to this number will be sent to the
+//      customer. You can also choose to call the customer through this
+//      number (or respond via LSA dashboard: https://g.co/homeservices/...)"
+// Both are sent verbatim by Google, so exact/anchored matching is safe.
 const LSA_DISCLAIMER_PREFIX_RE =
   /^\s*Replies to this number will be sent to the customer\b/i
+const LSA_LEAD_PREFIX_RE =
+  /^\s*You have received a new message from a customer via Google Local Services Ads\b/i
+const LSA_NOTES_RE = /\[Notes from LSA:/i
+const LSA_HOMESERVICES_URL_RE = /g\.co\/homeservices\b/i
 
 function isLsaDisclaimerText(text: string | null | undefined): boolean {
   if (!text) return false
   return LSA_DISCLAIMER_PREFIX_RE.test(text)
+}
+
+function isLsaSignalText(text: string | null | undefined): boolean {
+  if (!text) return false
+  return (
+    LSA_DISCLAIMER_PREFIX_RE.test(text) ||
+    LSA_LEAD_PREFIX_RE.test(text) ||
+    LSA_NOTES_RE.test(text) ||
+    LSA_HOMESERVICES_URL_RE.test(text)
+  )
 }
 
 // Determine conversation source type from message content
@@ -517,13 +537,14 @@ async function determineSourceType(
   } | null
 }> {
   // LSA detection: strongest signal first.
-  // 1. The current message IS the LSA disclaimer boilerplate.
-  if (isLsaDisclaimerText(message)) {
+  // 1. The current message carries an LSA signal (lead-prefix, reply
+  //    disclaimer, "[Notes from LSA:" tag, or g.co/homeservices URL).
+  if (isLsaSignalText(message)) {
     return { sourceType: 'lsa', matchedPartner: null }
   }
 
   // 2. We've seen an LSA conversation from this phone before, OR any prior
-  //    message from this phone contained the disclaimer. Google routes every
+  //    message from this phone carried an LSA signal. Google routes every
   //    LSA lead through a relay number, so once a phone is known to be LSA
   //    it stays LSA.
   if (phoneNumber) {
@@ -540,7 +561,7 @@ async function determineSourceType(
       }
       const msgs = Array.isArray(c.messages) ? c.messages : []
       for (const m of msgs) {
-        if (isLsaDisclaimerText((m as { content?: string })?.content)) {
+        if (isLsaSignalText((m as { content?: string })?.content)) {
           return { sourceType: 'lsa', matchedPartner: null }
         }
       }
