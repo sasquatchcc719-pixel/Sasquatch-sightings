@@ -921,8 +921,12 @@ export function OperationsSchedule() {
   >(null)
   const resizeLiveEndRef = useRef<number | null>(null)
 
+  const resizePointerIdRef = useRef<number | null>(null)
+
   const beginResize = useCallback(
-    (e: React.MouseEvent, appointment: Appointment) => {
+    (e: React.PointerEvent<HTMLButtonElement>, appointment: Appointment) => {
+      // Ignore right-click / middle-click on mouse
+      if (e.pointerType === 'mouse' && e.button !== 0) return
       e.preventDefault()
       e.stopPropagation()
       setError(null)
@@ -936,6 +940,12 @@ export function OperationsSchedule() {
       })
       resizeLiveEndRef.current = endM
       setResizeLiveEndMinutes(endM)
+      try {
+        ;(e.currentTarget as Element).setPointerCapture(e.pointerId)
+        resizePointerIdRef.current = e.pointerId
+      } catch {
+        resizePointerIdRef.current = null
+      }
     },
     [],
   )
@@ -943,7 +953,14 @@ export function OperationsSchedule() {
   useEffect(() => {
     if (!resizeSession) return
 
-    const onMove = (e: MouseEvent) => {
+    const onMove = (e: PointerEvent) => {
+      if (
+        resizePointerIdRef.current != null &&
+        e.pointerId !== resizePointerIdRef.current
+      )
+        return
+      // Block native touch scrolling while resizing.
+      if (e.cancelable) e.preventDefault()
       const dy = e.clientY - resizeSession.grabClientY
       const delta = Math.round(dy / PX_PER_MINUTE / 15) * 15
       const next = Math.max(
@@ -954,7 +971,12 @@ export function OperationsSchedule() {
       setResizeLiveEndMinutes(next)
     }
 
-    const onUp = () => {
+    const onUp = (e: PointerEvent) => {
+      if (
+        resizePointerIdRef.current != null &&
+        e.pointerId !== resizePointerIdRef.current
+      )
+        return
       const session = resizeSession
       const finalEnd = resizeLiveEndRef.current ?? session.originEndMinutes
       void (async () => {
@@ -981,14 +1003,17 @@ export function OperationsSchedule() {
         setResizeSession(null)
         setResizeLiveEndMinutes(null)
         resizeLiveEndRef.current = null
+        resizePointerIdRef.current = null
       })()
     }
 
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
+    window.addEventListener('pointermove', onMove, { passive: false })
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
     return () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
     }
   }, [resizeSession, loadSchedule, PX_PER_MINUTE])
 
@@ -1005,18 +1030,13 @@ export function OperationsSchedule() {
     setDragPreview({ dateKey, snappedMinutes })
   }
 
-  const handleDrop = async (
-    e: React.DragEvent<HTMLDivElement>,
+  const commitAppointmentMove = async (
+    appointmentId: string,
     dateKey: string,
+    snappedMinutes: number,
+    clientX: number,
+    clientY: number,
   ) => {
-    e.preventDefault()
-    const appointmentId = e.dataTransfer.getData('appointmentId')
-    if (!appointmentId) return
-
-    const rect = e.currentTarget.getBoundingClientRect()
-    const rawY = e.clientY - rect.top - draggingYOffsetRef.current
-    const rawMinutes = GRID_START_MINUTES + rawY / PX_PER_MINUTE
-    const snappedMinutes = snapToMinutes(rawMinutes)
     const newTime = minutesToTimeString(snappedMinutes)
 
     setDragPreview(null)
@@ -1050,13 +1070,169 @@ export function OperationsSchedule() {
         setPendingNotify({
           appointmentId,
           customerName,
-          x: e.clientX,
-          y: e.clientY,
+          x: clientX,
+          y: clientY,
         })
       }
     } catch {
       setError('Failed to reschedule job')
     }
+  }
+
+  const handleDrop = async (
+    e: React.DragEvent<HTMLDivElement>,
+    dateKey: string,
+  ) => {
+    e.preventDefault()
+    const appointmentId = e.dataTransfer.getData('appointmentId')
+    if (!appointmentId) return
+
+    const rect = e.currentTarget.getBoundingClientRect()
+    const rawY = e.clientY - rect.top - draggingYOffsetRef.current
+    const rawMinutes = GRID_START_MINUTES + rawY / PX_PER_MINUTE
+    const snappedMinutes = snapToMinutes(rawMinutes)
+    await commitAppointmentMove(
+      appointmentId,
+      dateKey,
+      snappedMinutes,
+      e.clientX,
+      e.clientY,
+    )
+  }
+
+  // ---- Pointer-based move drag (works on mouse, touch, and pen) ----
+  // HTML5 drag-and-drop does not fire from touch gestures on iOS/Android,
+  // so we also run a parallel pointer-event pipeline that mirrors the
+  // logic of onDragStart/onDragOver/onDrop, but with setPointerCapture so
+  // the gesture is reliable on mobile.
+  const movePointerRef = useRef<{
+    pointerId: number
+    appointmentId: string
+    grabYOffsetWithinBlock: number
+    startX: number
+    startY: number
+    active: boolean
+  } | null>(null)
+  const [pointerDragging, setPointerDragging] = useState(false)
+
+  const hitTestDateColumn = (
+    clientX: number,
+    clientY: number,
+  ): { dateKey: string; rect: DOMRect } | null => {
+    const el = document.elementFromPoint(clientX, clientY) as HTMLElement | null
+    const col = el?.closest('[data-date-column]') as HTMLElement | null
+    if (!col) return null
+    const dateKey = col.getAttribute('data-date-column') || ''
+    if (!dateKey) return null
+    return { dateKey, rect: col.getBoundingClientRect() }
+  }
+
+  const handleMovePointerDown = (
+    e: React.PointerEvent<HTMLDivElement>,
+    appointment: Appointment,
+  ) => {
+    // On desktop, HTML5 drag-and-drop is already wired up via `draggable`
+    // and handles mouse drags natively. We only engage the pointer-based
+    // pipeline for touch + pen so the two paths don't fight for the
+    // same mouse gesture.
+    if (e.pointerType === 'mouse') return
+    const block = (e.currentTarget as HTMLElement).closest(
+      '[data-appointment-block]',
+    ) as HTMLElement | null
+    const blockRect = block?.getBoundingClientRect()
+    const grabOffset = blockRect ? e.clientY - blockRect.top : 0
+
+    movePointerRef.current = {
+      pointerId: e.pointerId,
+      appointmentId: appointment.id,
+      grabYOffsetWithinBlock: grabOffset,
+      startX: e.clientX,
+      startY: e.clientY,
+      active: false,
+    }
+    draggingYOffsetRef.current = grabOffset
+    didDragRef.current = false
+
+    try {
+      ;(e.currentTarget as Element).setPointerCapture(e.pointerId)
+    } catch {
+      // ignore
+    }
+  }
+
+  const handleMovePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const session = movePointerRef.current
+    if (!session || session.pointerId !== e.pointerId) return
+
+    // Start real drag only after a small movement threshold so a tap
+    // doesn't count as a drag.
+    if (!session.active) {
+      const dx = e.clientX - session.startX
+      const dy = e.clientY - session.startY
+      if (Math.hypot(dx, dy) < 6) return
+      session.active = true
+      didDragRef.current = true
+      setPointerDragging(true)
+      // Find the appointment and show the ghost
+      const moved = data.appointments.find(
+        (a) => a.id === session.appointmentId,
+      )
+      if (moved) setDraggingAppointment(moved)
+    }
+
+    // Block native touch scrolling while we're dragging.
+    if (e.cancelable) e.preventDefault()
+
+    const hit = hitTestDateColumn(e.clientX, e.clientY)
+    if (!hit) {
+      setDragPreview(null)
+      return
+    }
+    const rawY = e.clientY - hit.rect.top - session.grabYOffsetWithinBlock
+    const rawMinutes = GRID_START_MINUTES + rawY / PX_PER_MINUTE
+    const snapped = snapToMinutes(rawMinutes)
+    setDragPreview({ dateKey: hit.dateKey, snappedMinutes: snapped })
+  }
+
+  const handleMovePointerUp = async (e: React.PointerEvent<HTMLDivElement>) => {
+    const session = movePointerRef.current
+    if (!session || session.pointerId !== e.pointerId) return
+
+    try {
+      ;(e.currentTarget as Element).releasePointerCapture(e.pointerId)
+    } catch {
+      // ignore
+    }
+    movePointerRef.current = null
+    setPointerDragging(false)
+
+    if (!session.active) {
+      // Treat as a tap — reset drag state without committing.
+      setDraggingAppointment(null)
+      setDragPreview(null)
+      // Keep didDragRef false so any downstream click still works
+      // (the Move handle itself doesn't navigate anywhere).
+      didDragRef.current = false
+      return
+    }
+
+    const hit = hitTestDateColumn(e.clientX, e.clientY)
+    if (!hit) {
+      setDraggingAppointment(null)
+      setDragPreview(null)
+      return
+    }
+    const rawY = e.clientY - hit.rect.top - session.grabYOffsetWithinBlock
+    const rawMinutes = GRID_START_MINUTES + rawY / PX_PER_MINUTE
+    const snapped = snapToMinutes(rawMinutes)
+
+    await commitAppointmentMove(
+      session.appointmentId,
+      hit.dateKey,
+      snapped,
+      e.clientX,
+      e.clientY,
+    )
   }
 
   const sendRescheduleNotification = async (appointmentId: string) => {
@@ -1756,6 +1932,7 @@ export function OperationsSchedule() {
                   return (
                     <div
                       key={dateKey}
+                      data-date-column={dateKey}
                       className="relative border-r border-slate-200 bg-white"
                       onDragOver={(e) => handleDragOver(e, dateKey)}
                       onDragLeave={() => setDragPreview(null)}
@@ -1901,11 +2078,14 @@ export function OperationsSchedule() {
                                   ],
                                 ) ?? getStatusTone(appointment.status))
                               : getStatusTone(appointment.status)
+                          const isPointerDraggingThis =
+                            pointerDragging &&
+                            draggingAppointment?.id === appointment.id
                           return (
                             <div
                               key={appointment.id}
                               data-appointment-block
-                              className={`absolute flex flex-col overflow-hidden rounded-2xl border text-xs text-slate-900 shadow-sm transition ${blockTone} ${isDragging ? 'opacity-40' : 'hover:shadow-md'}`}
+                              className={`absolute flex flex-col overflow-hidden rounded-2xl border text-xs text-slate-900 shadow-sm transition ${blockTone} ${isDragging ? 'opacity-40' : 'hover:shadow-md'} ${isPointerDraggingThis ? 'pointer-events-none' : ''}`}
                               style={{
                                 top: placement.top + 6,
                                 height: placement.height - 8,
@@ -1943,11 +2123,20 @@ export function OperationsSchedule() {
                                   setDraggingAppointment(null)
                                   setDragPreview(null)
                                 }}
-                                className="flex shrink-0 cursor-grab items-center gap-1 border-b border-black/5 bg-black/[0.03] px-2 py-1 active:cursor-grabbing"
+                                onPointerDown={(e) =>
+                                  handleMovePointerDown(e, appointment)
+                                }
+                                onPointerMove={handleMovePointerMove}
+                                onPointerUp={(e) => void handleMovePointerUp(e)}
+                                onPointerCancel={(e) =>
+                                  void handleMovePointerUp(e)
+                                }
+                                style={{ touchAction: 'none' }}
+                                className="flex shrink-0 cursor-grab touch-none items-center gap-1 border-b border-black/5 bg-black/[0.03] px-2 py-1.5 active:cursor-grabbing sm:py-1"
                                 title="Drag to move start time"
                               >
-                                <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-500" />
-                                <span className="text-[10px] font-medium tracking-tight text-slate-600">
+                                <GripVertical className="h-4 w-4 shrink-0 text-slate-500 sm:h-3.5 sm:w-3.5" />
+                                <span className="text-[11px] font-medium tracking-tight text-slate-600 sm:text-[10px]">
                                   Move
                                 </span>
                               </div>
@@ -2038,9 +2227,17 @@ export function OperationsSchedule() {
                                 type="button"
                                 aria-label="Drag to change end time"
                                 title="Drag to extend or shorten"
-                                className="h-2.5 shrink-0 cursor-ns-resize rounded-b-[13px] border-t border-black/10 bg-black/[0.06] hover:bg-black/12"
-                                onMouseDown={(e) => beginResize(e, appointment)}
-                              />
+                                style={{ touchAction: 'none' }}
+                                className="relative flex h-5 shrink-0 cursor-ns-resize touch-none items-center justify-center rounded-b-[13px] border-t border-black/10 bg-black/[0.08] hover:bg-black/[0.14] sm:h-2.5"
+                                onPointerDown={(e) =>
+                                  beginResize(e, appointment)
+                                }
+                              >
+                                <span
+                                  aria-hidden
+                                  className="block h-0.5 w-8 rounded-full bg-black/30 sm:hidden"
+                                />
+                              </button>
                             </div>
                           )
                         })
