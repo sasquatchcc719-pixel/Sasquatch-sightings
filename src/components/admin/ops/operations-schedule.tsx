@@ -1913,13 +1913,16 @@ export function OperationsSchedule() {
                             : `/admin/operations/appointments/${appointment.id}`
                       const tone = isEstimate
                         ? getEstimateTone(appointment)
-                        : appointment.recurring_template_id
-                          ? (getRecurringTone(
-                              recurringFreqMap[
-                                appointment.recurring_template_id
-                              ],
-                            ) ?? getStatusTone(appointment.status))
-                          : getStatusTone(appointment.status)
+                        : appointment.status === 'completed' ||
+                            appointment.status === 'cancelled'
+                          ? getStatusTone(appointment.status)
+                          : appointment.recurring_template_id
+                            ? (getRecurringTone(
+                                recurringFreqMap[
+                                  appointment.recurring_template_id
+                                ],
+                              ) ?? getStatusTone(appointment.status))
+                            : getStatusTone(appointment.status)
                       return (
                         <Link
                           key={appointment.id}
@@ -2177,13 +2180,16 @@ export function OperationsSchedule() {
                           }
                           const blockTone = isEstimate
                             ? getEstimateTone(appointment)
-                            : appointment.recurring_template_id
-                              ? (getRecurringTone(
-                                  recurringFreqMap[
-                                    appointment.recurring_template_id
-                                  ],
-                                ) ?? getStatusTone(appointment.status))
-                              : getStatusTone(appointment.status)
+                            : appointment.status === 'completed' ||
+                                appointment.status === 'cancelled'
+                              ? getStatusTone(appointment.status)
+                              : appointment.recurring_template_id
+                                ? (getRecurringTone(
+                                    recurringFreqMap[
+                                      appointment.recurring_template_id
+                                    ],
+                                  ) ?? getStatusTone(appointment.status))
+                                : getStatusTone(appointment.status)
                           const isPointerDraggingThis =
                             pointerDragging &&
                             draggingAppointment?.id === appointment.id
