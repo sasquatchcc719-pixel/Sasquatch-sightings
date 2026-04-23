@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Card,
   CardContent,
@@ -130,6 +130,20 @@ export function ConversationsView({
 
   // Optimistic read state: track which conversations have been marked read this session
   const [localReadIds, setLocalReadIds] = useState<Set<string>>(new Set())
+
+  // Auto-refresh conversations every 10 seconds to catch new messages
+  useEffect(() => {
+    const refreshInterval = setInterval(() => {
+      router.refresh()
+    }, 10000) // 10 seconds
+
+    return () => clearInterval(refreshInterval)
+  }, [router])
+
+  // Update local state when server data changes (after router.refresh())
+  useEffect(() => {
+    setConversations(initialConversations)
+  }, [initialConversations])
 
   const filteredConversations =
     filterStatus === 'all'
