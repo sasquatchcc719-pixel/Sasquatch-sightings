@@ -145,7 +145,7 @@ export function ConversationsView({
     setReplyText('')
 
     const unread = getUnreadCount(convo)
-    if (unread > 0 && !localReadIds.has(convo.id)) {
+    if (unread > 0) {
       // Optimistically mark as read in UI
       setLocalReadIds((prev) => new Set([...prev, convo.id]))
 
