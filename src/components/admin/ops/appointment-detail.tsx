@@ -3,7 +3,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Loader2, MessageSquare, Receipt, MessageCircle } from 'lucide-react'
+import {
+  Loader2,
+  MessageSquare,
+  Receipt,
+  MessageCircle,
+  Navigation,
+  Clock,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -95,7 +102,7 @@ function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
   return Array.isArray(value) ? value[0] || null : value
 }
 
-function formatDriveElapsed(elapsedMs: number): string {
+function formatElapsed(elapsedMs: number): string {
   const totalSec = Math.max(0, Math.floor(elapsedMs / 1000))
   const m = Math.floor(totalSec / 60)
   const s = totalSec % 60
@@ -106,6 +113,54 @@ function timeToMinutes(value: string): number {
   const [h, m] = String(value).slice(0, 5).split(':').map(Number)
   return (h || 0) * 60 + (m || 0)
 }
+
+// Calculate distance between two lat/lng points using Haversine formula (returns meters)
+function calculateDistance(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number,
+): number {
+  const R = 6371e3 // Earth's radius in meters
+  const φ1 = (lat1 * Math.PI) / 180
+  const φ2 = (lat2 * Math.PI) / 180
+  const Δφ = ((lat2 - lat1) * Math.PI) / 180
+  const Δλ = ((lng2 - lng1) * Math.PI) / 180
+
+  const a =
+    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+
+  return R * c
+}
+
+// Geocode an address using Mapbox Geocoding API
+async function geocodeAddress(
+  address: string,
+): Promise<{ lat: number; lng: number } | null> {
+  const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN
+  if (!token) return null
+
+  try {
+    const encoded = encodeURIComponent(address)
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encoded}.json?access_token=${token}&limit=1`
+    const res = await fetch(url)
+    if (!res.ok) return null
+
+    const data = (await res.json()) as {
+      features?: Array<{ center?: [number, number] }>
+    }
+    const coords = data.features?.[0]?.center
+    if (!coords || coords.length !== 2) return null
+
+    return { lng: coords[0], lat: coords[1] }
+  } catch {
+    return null
+  }
+}
+
+const ARRIVAL_THRESHOLD_METERS = 30 // ~100 feet
 
 export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
   const router = useRouter()
@@ -129,6 +184,19 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
   )
   const [driveStartedAtMs, setDriveStartedAtMs] = useState<number | null>(null)
   const [driveElapsedMs, setDriveElapsedMs] = useState(0)
+  const [jobStartedAtMs, setJobStartedAtMs] = useState<number | null>(null)
+  const [jobElapsedMs, setJobElapsedMs] = useState(0)
+  const [currentLocation, setCurrentLocation] = useState<{
+    lat: number
+    lng: number
+  } | null>(null)
+  const [jobLocation, setJobLocation] = useState<{
+    lat: number
+    lng: number
+  } | null>(null)
+  const [distanceToJob, setDistanceToJob] = useState<number | null>(null)
+  const [geoWatchId, setGeoWatchId] = useState<number | null>(null)
+  const [autoArrivedTriggered, setAutoArrivedTriggered] = useState(false)
 
   const loadAppointment = useCallback(
     async (mode: 'initial' | 'refresh' = 'initial') => {
@@ -172,6 +240,7 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
     void loadAppointment('initial')
   }, [loadAppointment])
 
+  // Load drive start time from sessionStorage
   useEffect(() => {
     if (!appointment?.id || appointment.status !== 'on_my_way') return
     const raw = sessionStorage.getItem(`ops_onmyway_${appointment.id}`)
@@ -181,6 +250,17 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
     }
   }, [appointment, driveStartedAtMs])
 
+  // Load job start time from sessionStorage
+  useEffect(() => {
+    if (!appointment?.id || appointment.status !== 'in_progress') return
+    const raw = sessionStorage.getItem(`ops_inprogress_${appointment.id}`)
+    if (raw && jobStartedAtMs === null) {
+      const ms = Number(raw)
+      if (Number.isFinite(ms)) setJobStartedAtMs(ms)
+    }
+  }, [appointment, jobStartedAtMs])
+
+  // Load SMS info
   useEffect(() => {
     if (!appointment?.id || appointment.status !== 'on_my_way') return
     const raw = sessionStorage.getItem(`ops_omw_sms_${appointment.id}`)
@@ -204,15 +284,19 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
     }
   }, [appointment])
 
+  // Clean up timers when job completed
   useEffect(() => {
     if (appointment?.id && appointment.status === 'completed') {
       sessionStorage.removeItem(`ops_onmyway_${appointment.id}`)
+      sessionStorage.removeItem(`ops_inprogress_${appointment.id}`)
       sessionStorage.removeItem(`ops_omw_sms_${appointment.id}`)
       setDriveStartedAtMs(null)
+      setJobStartedAtMs(null)
       setOnMyWaySmsInfo(null)
     }
   }, [appointment])
 
+  // Drive timer tick
   useEffect(() => {
     if (appointment?.status !== 'on_my_way' || driveStartedAtMs == null) return
     const tick = () => setDriveElapsedMs(Date.now() - driveStartedAtMs)
@@ -220,6 +304,99 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
     const id = window.setInterval(tick, 1000)
     return () => window.clearInterval(id)
   }, [appointment, driveStartedAtMs])
+
+  // Job timer tick
+  useEffect(() => {
+    if (appointment?.status !== 'in_progress' || jobStartedAtMs == null) return
+    const tick = () => setJobElapsedMs(Date.now() - jobStartedAtMs)
+    tick()
+    const id = window.setInterval(tick, 1000)
+    return () => window.clearInterval(id)
+  }, [appointment, jobStartedAtMs])
+
+  // Geocode job address when appointment loads
+  useEffect(() => {
+    if (!appointment) return
+    const address = unwrapRelation(appointment.ops_service_addresses)
+    if (!address) return
+
+    const fullAddress = `${address.street_1}, ${address.city}, ${address.state} ${address.zip_code}`
+    geocodeAddress(fullAddress)
+      .then((coords) => {
+        if (coords) setJobLocation(coords)
+      })
+      .catch(() => {
+        /* ignore geocoding errors */
+      })
+  }, [appointment])
+
+  // Start GPS tracking when on_my_way
+  useEffect(() => {
+    if (appointment?.status !== 'on_my_way' || !jobLocation) {
+      // Stop tracking if not on_my_way or no job location
+      if (geoWatchId !== null) {
+        navigator.geolocation.clearWatch(geoWatchId)
+        setGeoWatchId(null)
+      }
+      return
+    }
+
+    // Start tracking
+    if (!navigator.geolocation) return
+
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        const newLocation = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        }
+        setCurrentLocation(newLocation)
+
+        // Calculate distance to job
+        const distance = calculateDistance(
+          newLocation.lat,
+          newLocation.lng,
+          jobLocation.lat,
+          jobLocation.lng,
+        )
+        setDistanceToJob(distance)
+      },
+      (error) => {
+        console.error('Geolocation error:', error)
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 5000,
+      },
+    )
+
+    setGeoWatchId(watchId)
+
+    return () => {
+      navigator.geolocation.clearWatch(watchId)
+    }
+  }, [appointment, jobLocation, geoWatchId])
+
+  // Auto-trigger arrival when within threshold
+  useEffect(() => {
+    if (
+      appointment?.status !== 'on_my_way' ||
+      distanceToJob === null ||
+      distanceToJob > ARRIVAL_THRESHOLD_METERS ||
+      autoArrivedTriggered
+    ) {
+      return
+    }
+
+    // We've arrived! Auto-transition to in_progress
+    setAutoArrivedTriggered(true)
+    void runQuickAction({
+      label: 'Start Job',
+      status: 'in_progress',
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [distanceToJob, appointment, autoArrivedTriggered])
 
   const handleSave = async () => {
     setSaving(true)
@@ -316,6 +493,12 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
         const t = Date.now()
         setDriveStartedAtMs(t)
         sessionStorage.setItem(`ops_onmyway_${appointmentId}`, String(t))
+        setAutoArrivedTriggered(false) // Reset for next time
+      }
+      if (updates.status === 'in_progress') {
+        const t = Date.now()
+        setJobStartedAtMs(t)
+        sessionStorage.setItem(`ops_inprogress_${appointmentId}`, String(t))
       }
       await loadAppointment('refresh')
       router.refresh()
@@ -379,6 +562,13 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
   const address = unwrapRelation(appointment.ops_service_addresses)
   const invoice = unwrapRelation(appointment.ops_invoices)
 
+  const showDriveTimer =
+    appointment.status === 'on_my_way' && driveStartedAtMs != null
+  const showJobTimer =
+    appointment.status === 'in_progress' && jobStartedAtMs != null
+  const showDistanceIndicator =
+    appointment.status === 'on_my_way' && distanceToJob !== null
+
   return (
     <div className="space-y-6">
       {error ? (
@@ -386,6 +576,64 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
           {error}
         </Card>
       ) : null}
+
+      {/* Timer Status Cards */}
+      {(showDriveTimer || showJobTimer) && (
+        <div className="grid gap-4 md:grid-cols-2">
+          {showDriveTimer && (
+            <Card className="border-green-500/50 bg-green-500/10 p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-500/20">
+                    <Navigation className="h-6 w-6 text-green-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-green-900">
+                      On My Way
+                    </p>
+                    <p className="text-2xl font-bold text-green-700">
+                      {formatElapsed(driveElapsedMs)}
+                    </p>
+                  </div>
+                </div>
+                {showDistanceIndicator && (
+                  <div className="text-right">
+                    <p className="text-xs text-green-700">Distance</p>
+                    <p className="text-lg font-semibold text-green-900">
+                      {distanceToJob < 1000
+                        ? `${Math.round(distanceToJob)}m`
+                        : `${(distanceToJob / 1000).toFixed(1)}km`}
+                    </p>
+                  </div>
+                )}
+              </div>
+              {showDistanceIndicator && distanceToJob < 100 && (
+                <p className="mt-2 text-xs font-medium text-green-700">
+                  🎯 Almost there! Auto-starting job when you arrive...
+                </p>
+              )}
+            </Card>
+          )}
+
+          {showJobTimer && (
+            <Card className="border-blue-500/50 bg-blue-500/10 p-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-500/20">
+                  <Clock className="h-6 w-6 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-blue-900">
+                    Job In Progress
+                  </p>
+                  <p className="text-2xl font-bold text-blue-700">
+                    {formatElapsed(jobElapsedMs)}
+                  </p>
+                </div>
+              </div>
+            </Card>
+          )}
+        </div>
+      )}
 
       <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -654,11 +902,6 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
               Delete Job
             </Button>
           </div>
-          {appointment.status === 'on_my_way' && driveStartedAtMs != null ? (
-            <p className="mt-3 font-mono text-sm font-semibold text-green-700">
-              Drive time {formatDriveElapsed(driveElapsedMs)}
-            </p>
-          ) : null}
           <div className="border-border/60 bg-muted/40 mt-3 min-h-[5rem] rounded-xl border p-3">
             <p className="text-muted-foreground mb-2 flex items-center gap-2 text-xs font-medium uppercase">
               <MessageSquare className="h-3.5 w-3.5 shrink-0" />
