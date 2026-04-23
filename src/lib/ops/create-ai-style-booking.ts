@@ -8,6 +8,7 @@ import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
 import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
 import { sendAdminSMS } from '@/lib/twilio'
 import { sendOneSignalNotification } from '@/lib/onesignal'
+import { sendBookingNotification, scheduleJobReminder } from '@/lib/telegram'
 import {
   buildQuickBooksCustomerPayload,
   getQuickBooksSyncStatus,
@@ -394,7 +395,27 @@ export async function createAiStyleBooking(
       content: `${fullName} — $${total.toFixed(2)} · ${appointmentDate}`,
       data: { type: 'new_booking', appointment_id: appointment.id },
     }),
+    sendBookingNotification({
+      customerName: fullName,
+      phone,
+      appointmentDate,
+      startTime: startTime.slice(0, 5),
+      total,
+      leadSource: leadSource,
+      services: lineItems.map((item) => item.name_snapshot),
+    }),
   ])
+
+  // Schedule 30-minute job reminder
+  if (appointmentStatus === 'booked') {
+    scheduleJobReminder({
+      appointmentDate,
+      startTime: startTime.slice(0, 5),
+      customerName: fullName,
+      address: `${street1}, ${city}, ${state} ${zipCode}`,
+      appointmentId: appointment.id,
+    })
+  }
 
   const confirmationNumber = `SC-${appointment.id.slice(0, 8).toUpperCase()}`
 

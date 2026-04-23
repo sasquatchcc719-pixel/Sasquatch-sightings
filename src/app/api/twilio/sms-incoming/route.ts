@@ -21,6 +21,7 @@ import {
 import { sendCustomerSMS, sendAdminSMS } from '@/lib/twilio'
 import { logChatMessage } from '@/lib/ai/logging'
 import { opsPhoneLookupVariants } from '@/lib/ops/phone'
+import { sendCancellationAlert, sendLSALeadNotification } from '@/lib/telegram'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -1049,6 +1050,15 @@ export async function POST(request: NextRequest) {
           `✅ Tagged with vendor: ${matchedPartner.location_name || matchedPartner.company_name} (code: ${matchedPartner.coupon_code})`,
         )
       }
+
+      // Send Telegram notification for new LSA leads
+      if (sourceType === 'lsa') {
+        void sendLSALeadNotification({
+          customerName: lsaCustomerName || undefined,
+          phone: normalizedPhone,
+          message: messageBody,
+        })
+      }
     }
 
     // Start from current history.
@@ -1161,6 +1171,11 @@ export async function POST(request: NextRequest) {
               phone: normalizedPhone,
               conversation_id: conversation.id,
             },
+          }),
+          sendCancellationAlert({
+            customerName,
+            phone: normalizedPhone,
+            message: messageBody,
           }),
           resend.emails.send({
             from: 'Sasquatch SMS <onboarding@resend.dev>',
