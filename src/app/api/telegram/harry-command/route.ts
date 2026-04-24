@@ -72,7 +72,7 @@ async function handleTextCommand(text: string, chatId: number): Promise<void> {
 
   try {
     const response = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
+      model: 'claude-3-5-sonnet-20240620',
       max_tokens: 2000,
       system: `You are Harry Command Bot, Charles's personal AI assistant for managing his carpet cleaning business.
 
