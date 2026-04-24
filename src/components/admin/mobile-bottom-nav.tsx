@@ -213,8 +213,9 @@ export function MobileBottomNav() {
   const { data } = useQuery({
     queryKey: ['comms-unread'],
     queryFn: fetchUnreadCount,
-    refetchInterval: 30_000,
-    staleTime: 20_000,
+    refetchInterval: 5_000, // Check every 5 seconds instead of 30
+    staleTime: 0, // Always refetch on focus/mount
+    refetchOnWindowFocus: true, // Refresh when switching back to the tab
   })
 
   const unreadTotal = data?.total ?? 0
