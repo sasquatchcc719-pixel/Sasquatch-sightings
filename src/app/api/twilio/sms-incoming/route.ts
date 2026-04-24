@@ -22,6 +22,7 @@ import { sendCustomerSMS, sendAdminSMS } from '@/lib/twilio'
 import { logChatMessage } from '@/lib/ai/logging'
 import { opsPhoneLookupVariants } from '@/lib/ops/phone'
 import { sendCancellationAlert, sendLSALeadNotification } from '@/lib/telegram'
+import { notifyNewCustomerMessage } from '@/lib/harry-command-bot'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -1403,6 +1404,24 @@ DO NOT assume this is a continuation of the previous conversation. DO NOT resche
         conversation.lead_id || undefined,
         'ai_dispatcher',
         toNumber || undefined,
+      )
+
+      // Notify Charles via Harry Command bot
+      const source =
+        channelKey === 'lsa'
+          ? 'lsa'
+          : channelKey === 'inbound'
+            ? 'main'
+            : 'other'
+      void notifyNewCustomerMessage({
+        customerName: extractedInfo.name || undefined,
+        phone: normalizedPhone,
+        message: messageBody,
+        source,
+        conversationId: conversation.id,
+        harryResponse: aiResponse,
+      }).catch((err) =>
+        console.error('Harry Command notification failed:', err),
       )
 
       await maybeSendInboundEmail(aiResponse)
