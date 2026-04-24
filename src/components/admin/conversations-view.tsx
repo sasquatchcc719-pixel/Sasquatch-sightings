@@ -127,6 +127,7 @@ export function ConversationsView({
   const [composeSending, setComposeSending] = useState(false)
   const [harryDraftLoading, setHarryDraftLoading] = useState(false)
   const [autoReplyUpdating, setAutoReplyUpdating] = useState(false)
+  const [markingAllRead, setMarkingAllRead] = useState(false)
 
   // Optimistic read state: track which conversations have been marked read this session
   const [localReadIds, setLocalReadIds] = useState<Set<string>>(new Set())
@@ -175,6 +176,30 @@ export function ConversationsView({
       } catch {
         // Non-critical: badge will fix itself on next poll
       }
+    }
+  }
+
+  const markAllAsRead = async () => {
+    if (markingAllRead) return
+    setMarkingAllRead(true)
+    try {
+      const response = await fetch('/api/admin/conversations/unread-count', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      if (response.ok) {
+        // Mark all conversations as read in local state
+        const allIds = conversations.map((c) => c.id)
+        setLocalReadIds(new Set(allIds))
+        // Refresh the page to update unread counts
+        router.refresh()
+        // Invalidate the unread count query
+        queryClient.invalidateQueries({ queryKey: ['comms-unread'] })
+      }
+    } catch (error) {
+      console.error('Failed to mark all as read:', error)
+    } finally {
+      setMarkingAllRead(false)
     }
   }
 
@@ -560,10 +585,25 @@ export function ConversationsView({
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle>Conversations</CardTitle>
-            <Button size="sm" onClick={() => setComposeOpen(true)}>
-              <Plus className="mr-1 h-4 w-4" />
-              New Message
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={markAllAsRead}
+                disabled={markingAllRead}
+              >
+                {markingAllRead ? (
+                  <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                ) : (
+                  <CheckCircle className="mr-1 h-4 w-4" />
+                )}
+                Mark All Read
+              </Button>
+              <Button size="sm" onClick={() => setComposeOpen(true)}>
+                <Plus className="mr-1 h-4 w-4" />
+                New Message
+              </Button>
+            </div>
           </div>
           <CardDescription>
             {filteredConversations.length === 0
