@@ -4,13 +4,13 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import Anthropic from '@anthropic-ai/sdk'
+import OpenAI from 'openai'
 import { createAdminClient } from '@/supabase/server'
 import { sendCustomerSMS } from '@/lib/twilio'
 import { sendToCharles } from '@/lib/harry-command-bot'
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
 })
 
 type TelegramUpdate = {
@@ -71,10 +71,12 @@ async function handleTextCommand(text: string, chatId: number): Promise<void> {
   const supabase = createAdminClient()
 
   try {
-    const response = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20240620',
-      max_tokens: 2000,
-      system: `You are Harry Command Bot, Charles's personal AI assistant for managing his carpet cleaning business.
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        {
+          role: 'system',
+          content: `You are Harry Command Bot, Charles's personal AI assistant for managing his carpet cleaning business.
 
 Charles owns Sasquatch Carpet Cleaning in Colorado Springs, CO. You help him manage customer conversations, send messages, and control Harry (the AI that handles customer SMS).
 
@@ -86,84 +88,101 @@ Your capabilities:
 - Answer questions about customer interactions
 
 Be conversational, helpful, and concise. Charles is texting you from his phone while working, so keep responses brief but informative.`,
-      messages: [{ role: 'user', content: text }],
+        },
+        { role: 'user', content: text },
+      ],
       tools: [
         {
-          name: 'send_sms',
-          description:
-            'Send an SMS message to a customer. Use this when Charles wants to text someone.',
-          input_schema: {
-            type: 'object',
-            properties: {
-              target: {
-                type: 'string',
-                description:
-                  'Customer name or phone number (e.g., "Ann", "Sally", "7195551234")',
+          type: 'function',
+          function: {
+            name: 'send_sms',
+            description:
+              'Send an SMS message to a customer. Use this when Charles wants to text someone.',
+            parameters: {
+              type: 'object',
+              properties: {
+                target: {
+                  type: 'string',
+                  description:
+                    'Customer name or phone number (e.g., "Ann", "Sally", "7195551234")',
+                },
+                message: {
+                  type: 'string',
+                  description: 'The message to send to the customer',
+                },
               },
-              message: {
-                type: 'string',
-                description: 'The message to send to the customer',
-              },
+              required: ['target', 'message'],
             },
-            required: ['target', 'message'],
           },
         },
         {
-          name: 'view_conversation',
-          description:
-            'View the full conversation thread with a customer. Shows recent messages and Harry status.',
-          input_schema: {
-            type: 'object',
-            properties: {
-              target: {
-                type: 'string',
-                description:
-                  'Customer name or phone number (e.g., "Ann", "7195551234")',
+          type: 'function',
+          function: {
+            name: 'view_conversation',
+            description:
+              'View the full conversation thread with a customer. Shows recent messages and Harry status.',
+            parameters: {
+              type: 'object',
+              properties: {
+                target: {
+                  type: 'string',
+                  description:
+                    'Customer name or phone number (e.g., "Ann", "7195551234")',
+                },
               },
+              required: ['target'],
             },
-            required: ['target'],
           },
         },
         {
-          name: 'take_over_conversation',
-          description:
-            'Disable Harry for a conversation so Charles can handle it manually.',
-          input_schema: {
-            type: 'object',
-            properties: {
-              target: {
-                type: 'string',
-                description: 'Customer name or phone number',
+          type: 'function',
+          function: {
+            name: 'take_over_conversation',
+            description:
+              'Disable Harry for a conversation so Charles can handle it manually.',
+            parameters: {
+              type: 'object',
+              properties: {
+                target: {
+                  type: 'string',
+                  description: 'Customer name or phone number',
+                },
               },
+              required: ['target'],
             },
-            required: ['target'],
           },
         },
         {
-          name: 'enable_harry',
-          description:
-            'Re-enable Harry to handle a conversation automatically.',
-          input_schema: {
-            type: 'object',
-            properties: {
-              target: {
-                type: 'string',
-                description: 'Customer name or phone number',
+          type: 'function',
+          function: {
+            name: 'enable_harry',
+            description:
+              'Re-enable Harry to handle a conversation automatically.',
+            parameters: {
+              type: 'object',
+              properties: {
+                target: {
+                  type: 'string',
+                  description: 'Customer name or phone number',
+                },
               },
+              required: ['target'],
             },
-            required: ['target'],
           },
         },
         {
-          name: 'list_recent_conversations',
-          description:
-            'List recent active customer conversations with their status.',
-          input_schema: {
-            type: 'object',
-            properties: {
-              limit: {
-                type: 'number',
-                description: 'Number of conversations to show (default 10)',
+          type: 'function',
+          function: {
+            name: 'list_recent_conversations',
+            description:
+              'List recent active customer conversations with their status.',
+            parameters: {
+              type: 'object',
+              properties: {
+                limit: {
+                  type: 'number',
+                  description: 'Number of conversations to show (default 10)',
+                },
               },
             },
           },
@@ -173,17 +192,23 @@ Be conversational, helpful, and concise. Charles is texting you from his phone w
 
     // Process the response
     let finalResponse = ''
+    const choice = response.choices[0]
 
-    for (const block of response.content) {
-      if (block.type === 'text') {
-        finalResponse += block.text
-      } else if (block.type === 'tool_use') {
-        const toolResult = await executeToolCall(
-          block.name,
-          block.input as Record<string, unknown>,
-          supabase,
-        )
-        finalResponse += '\n\n' + toolResult
+    if (choice.message.content) {
+      finalResponse += choice.message.content
+    }
+
+    if (choice.message.tool_calls) {
+      for (const toolCall of choice.message.tool_calls) {
+        if (toolCall.type === 'function') {
+          const args = JSON.parse(toolCall.function.arguments)
+          const toolResult = await executeToolCall(
+            toolCall.function.name,
+            args,
+            supabase,
+          )
+          finalResponse += '\n\n' + toolResult
+        }
       }
     }
 
