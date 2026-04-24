@@ -192,8 +192,9 @@ Be conversational, helpful, and concise. Charles is texting you from his phone w
     }
   } catch (error) {
     console.error('AI processing error:', error)
+    const errorMessage = error instanceof Error ? error.message : String(error)
     await sendToCharles(
-      '❌ Sorry, I had trouble processing that. Can you try again?',
+      `❌ Error: ${errorMessage}\n\nPlease contact support if this continues.`,
     )
   }
 }
