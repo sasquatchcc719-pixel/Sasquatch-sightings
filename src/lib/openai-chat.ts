@@ -520,23 +520,34 @@ export async function generateAIResponse(
     const supabase = createAdminClient()
     let knowledgeContext = ''
     let profileContext = ''
+    let promoContext = ''
 
     try {
-      const [{ data: knowledgeRows }, { data: profileRow }] = await Promise.all(
-        [
-          supabase
-            .from('harry_knowledge_blocks')
-            .select('title, content')
-            .eq('is_enabled', true)
-            .order('sort_order', { ascending: true }),
-          supabase
-            .from('harry_logic_profiles')
-            .select('label, booking_mode, prompt_overrides')
-            .eq('channel_key', channelKey)
-            .eq('is_enabled', true)
-            .maybeSingle(),
-        ],
-      )
+      const now = new Date().toISOString()
+      const [
+        { data: knowledgeRows },
+        { data: profileRow },
+        { data: promoRows },
+      ] = await Promise.all([
+        supabase
+          .from('harry_knowledge_blocks')
+          .select('title, content')
+          .eq('is_enabled', true)
+          .order('sort_order', { ascending: true }),
+        supabase
+          .from('harry_logic_profiles')
+          .select('label, booking_mode, prompt_overrides')
+          .eq('channel_key', channelKey)
+          .eq('is_enabled', true)
+          .maybeSingle(),
+        supabase
+          .from('promo_codes')
+          .select(
+            'code, discount_type, discount_amount, description, expires_at, max_uses, use_count',
+          )
+          .eq('active', true)
+          .or(`expires_at.is.null,expires_at.gt.${now}`),
+      ])
 
       if ((knowledgeRows || []).length > 0) {
         knowledgeContext = `
@@ -556,6 +567,33 @@ CHANNEL LOGIC PROFILE:
 - Profile: ${profileRow.label}
 - Booking mode: ${profileRow.booking_mode}
 - Overrides: ${profileRow.prompt_overrides || 'None'}
+`
+      }
+
+      if ((promoRows || []).length > 0) {
+        const codeLines = (promoRows || [])
+          .filter((p) => {
+            if (p.max_uses !== null && p.use_count >= p.max_uses) return false
+            return true
+          })
+          .map((p) => {
+            const amount =
+              p.discount_type === 'flat'
+                ? `$${Number(p.discount_amount).toFixed(2)} off`
+                : `${p.discount_amount}% off`
+            const expiry = p.expires_at
+              ? ` [expires ${new Date(p.expires_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}]`
+              : ''
+            const desc = p.description ? ` — ${p.description}` : ''
+            return `- ${p.code}: ${amount}${expiry}${desc}`
+          })
+          .join('\n')
+
+        promoContext = `
+
+ACTIVE DISCOUNT CODES (live from database — source of truth):
+${codeLines}
+Rules: Only offer a code if it is appropriate for this customer's channel and context. Never invent codes not on this list. If a customer asks about a code not listed above, tell them it is not currently active.
 `
       }
     } catch (contextError) {
@@ -598,6 +636,7 @@ CHANNEL LOGIC PROFILE:
       SYSTEM_PROMPT +
       knowledgeContext +
       profileContext +
+      promoContext +
       dateContext +
       channelContext
     if (context?.couponCode) {
@@ -610,7 +649,13 @@ CURRENT CUSTOMER CONTEXT:
 - Tell them to mention "${context.couponCode}" when booking to get their $20 off
 `
       systemPrompt =
-        SYSTEM_PROMPT + knowledgeContext + profileContext + partnerContext
+        SYSTEM_PROMPT +
+        knowledgeContext +
+        profileContext +
+        promoContext +
+        partnerContext +
+        dateContext +
+        channelContext
     }
 
     // Build messages array with system prompt + conversation history + new message

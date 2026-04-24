@@ -28,6 +28,7 @@ import {
   Mail,
   ClipboardList,
   Ruler,
+  Tag,
 } from 'lucide-react'
 
 interface NavTab {
@@ -218,6 +219,13 @@ export function AdminNavigation() {
       icon: ImagePlay,
       active: pathname === '/admin/social-posts',
       description: 'GBP job posts, offers & event campaigns',
+    },
+    {
+      name: 'Promo Codes',
+      href: '/admin/promo-codes',
+      icon: Tag,
+      active: pathname === '/admin/promo-codes',
+      description: 'Create, expire, and track discount codes',
     },
   ]
 

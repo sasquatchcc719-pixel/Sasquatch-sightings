@@ -15,6 +15,7 @@ import {
   resyncInvoiceToQuickBooks,
   syncAppointmentToQuickBooks,
 } from '@/lib/quickbooks-api'
+import { recordRevenueFromOpsInvoice } from '@/lib/ops/revenue-from-invoice'
 import { sendCustomerSMS } from '@/lib/twilio'
 import { Resend } from 'resend'
 
@@ -522,6 +523,121 @@ export async function PATCH(
       void syncAppointmentToQuickBooks(id).catch((qbErr) =>
         console.error('[ops/appointments/:id][PATCH] QB sync:', qbErr),
       )
+    }
+
+    // Auto-record revenue stats whenever a job is closed. Idempotent.
+    if (nextStatus === 'completed' && current.status !== 'completed') {
+      const { data: invForStats } = await supabase
+        .from('ops_invoices')
+        .select('id')
+        .eq('appointment_id', id)
+        .maybeSingle()
+
+      if (invForStats?.id) {
+        // Standard invoiced job — use the invoice-based recorder (handles
+        // line item totals, wall-clock hours, etc.)
+        void recordRevenueFromOpsInvoice(supabase, {
+          invoiceId: invForStats.id,
+          userId: access.id,
+        }).catch((statsErr) =>
+          console.error(
+            '[ops/appointments/:id][PATCH] auto-record-stats:',
+            statsErr,
+          ),
+        )
+      } else {
+        // No invoice (e.g. batch_monthly recurring like Recovery Village) —
+        // record directly from appointment line items. Skip if already exists.
+        void (async () => {
+          try {
+            const { data: existingEntry } = await supabase
+              .from('revenue_entries')
+              .select('id')
+              .eq('ops_appointment_id', id)
+              .maybeSingle()
+            if (existingEntry?.id) return
+
+            const { data: apptForStats } = await supabase
+              .from('ops_appointments')
+              .select(
+                `
+                appointment_date,
+                quoted_total,
+                on_my_way_at,
+                completed_at,
+                start_time,
+                end_time,
+                ops_appointment_line_items ( name_snapshot, line_total )
+              `,
+              )
+              .eq('id', id)
+              .single()
+
+            if (!apptForStats) return
+
+            const lineItems = Array.isArray(
+              apptForStats.ops_appointment_line_items,
+            )
+              ? apptForStats.ops_appointment_line_items
+              : apptForStats.ops_appointment_line_items
+                ? [apptForStats.ops_appointment_line_items]
+                : []
+
+            const invoiceAmount =
+              lineItems.reduce(
+                (sum: number, li: { line_total: number }) =>
+                  sum + Number(li.line_total || 0),
+                0,
+              ) || Number(apptForStats.quoted_total || 0)
+
+            let hoursWorked = 0
+            const omwAt = apptForStats.on_my_way_at as string | null
+            const doneAt = apptForStats.completed_at as string | null
+            if (omwAt && doneAt) {
+              const wallMs =
+                new Date(doneAt).getTime() - new Date(omwAt).getTime()
+              const wallHrs = wallMs / (1000 * 60 * 60)
+              // Only trust wall-clock if it's at least 15 minutes
+              if (wallHrs >= 0.25) hoursWorked = wallHrs
+            }
+            if (
+              hoursWorked === 0 &&
+              apptForStats.start_time &&
+              apptForStats.end_time
+            ) {
+              const [sh, sm] = String(apptForStats.start_time)
+                .split(':')
+                .map(Number)
+              const [eh, em] = String(apptForStats.end_time)
+                .split(':')
+                .map(Number)
+              hoursWorked = Math.max(0, (eh * 60 + em - (sh * 60 + sm)) / 60)
+            }
+
+            const description =
+              lineItems
+                .map((li: { name_snapshot: string }) => li.name_snapshot)
+                .filter(Boolean)
+                .join(', ') || 'Ops job'
+
+            await supabase.from('revenue_entries').insert({
+              user_id: access.id,
+              entry_date:
+                apptForStats.appointment_date ||
+                new Date().toISOString().split('T')[0],
+              description,
+              invoice_amount: invoiceAmount,
+              hours_worked: hoursWorked,
+              ops_appointment_id: id,
+            })
+          } catch (statsErr) {
+            console.error(
+              '[ops/appointments/:id][PATCH] auto-record-stats (no-invoice):',
+              statsErr,
+            )
+          }
+        })()
+      }
     }
 
     return NextResponse.json({

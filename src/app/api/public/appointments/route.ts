@@ -154,16 +154,34 @@ export async function POST(request: NextRequest) {
     const promoCode = body.promo_code
       ? String(body.promo_code).toUpperCase().trim()
       : null
+    let promoCodeId: string | null = null
 
     if (promoCode) {
       const { data: promo } = await supabase
         .from('promo_codes')
-        .select('discount_type, discount_amount')
+        .select(
+          'id, discount_type, discount_amount, expires_at, max_uses, use_count',
+        )
         .eq('code', promoCode)
         .eq('active', true)
         .maybeSingle()
 
       if (promo) {
+        // Enforce expiry
+        if (promo.expires_at && new Date(promo.expires_at) < new Date()) {
+          return NextResponse.json(
+            { error: `Promo code "${promoCode}" has expired.` },
+            { status: 400, headers: CORS },
+          )
+        }
+        // Enforce usage cap
+        if (promo.max_uses !== null && promo.use_count >= promo.max_uses) {
+          return NextResponse.json(
+            { error: `Promo code "${promoCode}" has reached its usage limit.` },
+            { status: 400, headers: CORS },
+          )
+        }
+
         const subtotal = lineItems.reduce(
           (sum, item) => sum + item.unit_price * item.quantity,
           0,
@@ -172,6 +190,7 @@ export async function POST(request: NextRequest) {
           promo.discount_type === 'percent'
             ? Math.round(((subtotal * promo.discount_amount) / 100) * 100) / 100
             : promo.discount_amount
+        promoCodeId = promo.id
       }
     }
 
@@ -441,6 +460,19 @@ export async function POST(request: NextRequest) {
         })
       })(),
     ])
+
+    // --- Increment promo code redemption counter (fire-and-forget) ---
+    if (promoCodeId) {
+      void supabase
+        .rpc('increment_promo_use_count', { promo_id: promoCodeId })
+        .then(({ error: rpcErr }) => {
+          if (rpcErr)
+            console.error(
+              '[public/appointments] promo use_count increment failed:',
+              rpcErr,
+            )
+        })
+    }
 
     // --- Generate confirmation number ---
     const confirmationNumber = `SC-${appointment.id.slice(0, 8).toUpperCase()}`
