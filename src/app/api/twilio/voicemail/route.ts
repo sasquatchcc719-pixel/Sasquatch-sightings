@@ -13,6 +13,11 @@ export const maxDuration = 300
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
+const voicemailFromEmail =
+  process.env.OPS_EMAIL_FROM || 'Sasquatch Voicemail <onboarding@resend.dev>'
+const voicemailNotifyEmail =
+  process.env.OWNER_ALERT_EMAIL || 'sasquatchcc719@gmail.com'
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -348,8 +353,8 @@ export async function POST(request: NextRequest) {
     if (shouldEmailVoicemail(transcriptionText, recordingDuration)) {
       try {
         await resend.emails.send({
-          from: 'Sasquatch Voicemail <onboarding@resend.dev>',
-          to: 'sasquatchcc719@gmail.com',
+          from: voicemailFromEmail,
+          to: voicemailNotifyEmail,
           subject: `🎤 New Voicemail from ${normalizedPhone}`,
           html: `
             <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
@@ -378,7 +383,7 @@ export async function POST(request: NextRequest) {
             </div>
           `,
         })
-        console.log('[Voicemail] Email sent to sasquatchcc719@gmail.com')
+        console.log(`[Voicemail] Email sent to ${voicemailNotifyEmail}`)
       } catch (emailError) {
         console.error('[Voicemail] Failed to send email:', emailError)
       }
