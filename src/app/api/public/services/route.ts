@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 
-export const revalidate = 300 // Cache for 5 minutes
-
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
