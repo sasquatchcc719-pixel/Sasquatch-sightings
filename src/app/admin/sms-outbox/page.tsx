@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { MessageSquare, AlertCircle, CheckCircle } from 'lucide-react'
@@ -8,6 +8,7 @@ import { MessageSquare, AlertCircle, CheckCircle } from 'lucide-react'
 type SmsLogEntry = {
   id: string
   recipient_phone: string
+  customer_name?: string | null
   message_type: string
   message_content: string
   status: string | null
@@ -24,18 +25,47 @@ const TYPE_LABELS: Record<string, string> = {
 
 export default function SmsOutboxPage() {
   const [messages, setMessages] = useState<SmsLogEntry[]>([])
-  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const [typeFilter, setTypeFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
 
   useEffect(() => {
-    fetch('/api/admin/comms/sms-log?limit=50')
+    const params = new URLSearchParams()
+    params.set('limit', '200')
+    if (typeFilter) params.set('message_type', typeFilter)
+    if (statusFilter) params.set('status', statusFilter)
+
+    fetch(`/api/admin/comms/sms-log?${params.toString()}`, {
+      cache: 'no-store',
+    })
       .then((r) => r.json())
       .then((data) => {
         setMessages(data.messages || [])
-        setTotal(data.total || 0)
       })
       .finally(() => setLoading(false))
-  }, [])
+  }, [typeFilter, statusFilter])
+
+  const filteredMessages = useMemo(() => {
+    const term = search.trim().toLowerCase()
+    if (!term) {
+      return messages
+    }
+    return messages.filter((row) => {
+      return (
+        String(row.customer_name || '')
+          .toLowerCase()
+          .includes(term) ||
+        String(row.recipient_phone || '')
+          .toLowerCase()
+          .includes(term) ||
+        String(row.message_content || '')
+          .toLowerCase()
+          .includes(term)
+      )
+    })
+  }, [messages, search])
+  const total = filteredMessages.length
 
   return (
     <div className="space-y-6 p-6">
@@ -55,16 +85,60 @@ export default function SmsOutboxPage() {
         <MessageSquare className="h-5 w-5 text-white/30" />
       </div>
 
+      <Card className="p-4">
+        <div className="grid gap-3 md:grid-cols-4">
+          <input
+            className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm"
+            placeholder="Search name, phone, or message"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <select
+            className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm"
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+          >
+            <option value="">All message types</option>
+            {Object.entries(TYPE_LABELS).map(([key, label]) => (
+              <option key={key} value={key}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <select
+            className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+          >
+            <option value="">All statuses</option>
+            <option value="sent">Sent</option>
+            <option value="failed">Failed</option>
+            <option value="received">Received</option>
+          </select>
+          <button
+            type="button"
+            className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm hover:bg-white/10"
+            onClick={() => {
+              setSearch('')
+              setTypeFilter('')
+              setStatusFilter('')
+            }}
+          >
+            Clear filters
+          </button>
+        </div>
+      </Card>
+
       {loading ? (
         <p className="text-sm text-white/40">Loading...</p>
-      ) : messages.length === 0 ? (
+      ) : filteredMessages.length === 0 ? (
         <Card className="p-8 text-center text-sm text-white/40">
           No Operations SMS logged yet. If texts are sending, check Twilio logs;
           if SMS was skipped (no Twilio env), nothing is stored here.
         </Card>
       ) : (
         <div className="space-y-2">
-          {messages.map((row) => (
+          {filteredMessages.map((row) => (
             <Card key={row.id} className="flex items-start gap-4 p-4">
               <div className="mt-0.5">
                 {row.status === 'failed' ? (
@@ -76,7 +150,9 @@ export default function SmsOutboxPage() {
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-sm font-medium">
-                    {row.recipient_phone}
+                    {row.customer_name
+                      ? `${row.customer_name} · ${row.recipient_phone}`
+                      : row.recipient_phone}
                   </span>
                   <Badge variant="outline" className="text-xs">
                     {TYPE_LABELS[row.message_type] || row.message_type}
