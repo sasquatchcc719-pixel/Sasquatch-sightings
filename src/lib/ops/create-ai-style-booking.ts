@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   applyAppointmentBuffer,
-  calculateLineItemDurationMinutes,
+  calculateAppointmentDurationFromTotal,
 } from '@/lib/ops/availability'
 import { getAgentPromoSettings } from '@/lib/agent-auth'
 import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
@@ -175,20 +175,10 @@ export async function createAiStyleBooking(
   }
   const total = Math.max(0, subtotal - discountAmount)
 
-  const totalMinutes = lineItems.reduce(
-    (sum, item) =>
-      sum +
-      calculateLineItemDurationMinutes({
-        durationMinutes: item.duration_minutes,
-        quantity: item.quantity,
-        pricingUnit: item.pricing_unit,
-        unitPrice: item.unit_price,
-        catalogSlug: item.catalog_slug || null,
-        nameSnapshot: item.name_snapshot,
-      }),
-    0,
-  )
-  const buffered = applyAppointmentBuffer(totalMinutes)
+  // Calculate duration based on dollar amount (simple tier system)
+  // $0-300 = 2hr, $301-600 = 3hr, $601+ = 4hr
+  const appointmentDuration = calculateAppointmentDurationFromTotal(subtotal)
+  const buffered = applyAppointmentBuffer(appointmentDuration)
   const [sh, sm] = startTime.split(':').map(Number)
   const endTotal = sh * 60 + sm + buffered
   const endTime = `${String(Math.floor(endTotal / 60) % 24).padStart(2, '0')}:${String(endTotal % 60).padStart(2, '0')}:00`

@@ -113,46 +113,26 @@ function overlaps(
   return startMinutes < busyEnd && endMinutes > busyStart
 }
 
-/** Residential800+ sqft carpet tier in service_catalog_items (per_sqft @ $0.25). */
-export const OVERSIZED_RESIDENTIAL_CARPET_SLUG =
-  'oversized-room-carpet-cleaning-800-plus-sqft'
-
-const OVERSIZED_RESIDENTIAL_CARPET_NAME =
-  'Oversized Room Carpet Cleaning (800+ sqft)'
-
-/** Billable dollars on this line that map to one hour of scheduled time. */
-const OVERSIZED_RESIDENTIAL_MINUTES_PER_DOLLAR_BLOCK = 250
-
-function isOversizedResidentialCarpetLine(params: {
-  catalogSlug?: string | null
-  nameSnapshot?: string | null
-}): boolean {
-  const slug = params.catalogSlug?.trim()
-  if (slug === OVERSIZED_RESIDENTIAL_CARPET_SLUG) return true
-  const n = (params.nameSnapshot || '').trim()
-  return n === OVERSIZED_RESIDENTIAL_CARPET_NAME
+/**
+ * Calculate appointment duration based on total dollar amount.
+ * Simple tier-based system:
+ *   $0-$300     → 2 hours (120 min)
+ *   $301-$600   → 3 hours (180 min)
+ *   $601+       → 4 hours (240 min)
+ */
+export function calculateAppointmentDurationFromTotal(
+  totalDollars: number,
+): number {
+  const total = Number.isFinite(totalDollars) ? totalDollars : 0
+  if (total <= 300) return 120
+  if (total <= 600) return 180
+  return 240
 }
 
 /**
- * Calculate how many minutes a line item contributes to the appointment window.
- *
- * For FIXED-price services (rooms, stairs, etc.) duration scales with quantity:
- *   3 rooms × 60 min = 180 min
- *
- * For MEASUREMENT-based services (per_linear_foot, per_sqft, per_unit) the
- * quantity is a dimension, not a count of service instances. Duration is flat:
- *   15.5 linear feet of sectional = 120 min (not 15.5 × 120 = 1,860 min)
- *
- * **Exception — oversized residential carpet (800+ sqft, $0.25/sqft):**
- *   Scheduled time = 1 hour per $250 of line total (quantity × unit_price),
- *   e.g. 1,000 sqft × $0.25 = $250 → 60 min; $500 → 120 min.
- *   Pass unitPrice, and catalogSlug or nameSnapshot so this branch can run.
- *   Set applyOversizedResidentialDollarDuration: false for estimate *measuring*
- *   visits so line-item sqft does not blow up the measure slot.
- *
- * Pass pricingUnit from service_catalog_items.pricing_unit. Anything other
- * than 'fixed' is treated as a measurement and does NOT scale with quantity
- * (except the oversized carpet rule above).
+ * @deprecated Use calculateAppointmentDurationFromTotal instead.
+ * This function is kept for backwards compatibility but should not be used
+ * for new code. Duration is now calculated from total dollar amount.
  */
 export function calculateLineItemDurationMinutes(params: {
   durationMinutes: number
@@ -161,40 +141,13 @@ export function calculateLineItemDurationMinutes(params: {
   unitPrice?: number | null
   catalogSlug?: string | null
   nameSnapshot?: string | null
-  /** When false, skip the oversized $250/hour rule (e.g. estimate measuring visits). Default true. */
   applyOversizedResidentialDollarDuration?: boolean
 }): number {
-  const qty = Number.isFinite(params.quantity) ? params.quantity : 1
-  const applyOversized =
-    params.applyOversizedResidentialDollarDuration !== false
-  const unit =
-    params.unitPrice != null && Number.isFinite(Number(params.unitPrice))
-      ? Number(params.unitPrice)
-      : NaN
-
-  if (
-    applyOversized &&
-    isOversizedResidentialCarpetLine({
-      catalogSlug: params.catalogSlug,
-      nameSnapshot: params.nameSnapshot,
-    }) &&
-    Number.isFinite(unit)
-  ) {
-    const lineTotal = unit * qty
-    return Math.max(
-      0,
-      Math.round(
-        (lineTotal / OVERSIZED_RESIDENTIAL_MINUTES_PER_DOLLAR_BLOCK) * 60,
-      ),
-    )
-  }
-
+  // For backwards compatibility, return base duration without quantity scaling
   const raw = Number.isFinite(params.durationMinutes)
     ? params.durationMinutes
-    : 0
-  // Only multiply when pricing is truly per-unit (fixed price per room/step/piece)
-  const scalesWithQty = !params.pricingUnit || params.pricingUnit === 'fixed'
-  return Math.max(0, Math.round(scalesWithQty ? raw * qty : raw))
+    : 60
+  return Math.max(0, Math.round(raw))
 }
 
 export function applyAppointmentBuffer(

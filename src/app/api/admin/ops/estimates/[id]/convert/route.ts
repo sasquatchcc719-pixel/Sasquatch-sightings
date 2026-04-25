@@ -3,7 +3,7 @@ import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import {
   applyAppointmentBuffer,
-  calculateLineItemDurationMinutes,
+  calculateAppointmentDurationFromTotal,
 } from '@/lib/ops/availability'
 import {
   buildQuickBooksCustomerPayload,
@@ -145,35 +145,24 @@ export async function POST(
       )
     }
 
-    // --- Duration math for the real service visit ---
-    const totalMinutes = lineItems.reduce(
-      (sum: number, item) =>
-        sum +
-        calculateLineItemDurationMinutes({
-          durationMinutes: Number(item.duration_minutes || 0),
-          quantity: Number(item.quantity || 1),
-          pricingUnit: item.pricing_unit_snapshot,
-          unitPrice: Number(item.unit_price || 0),
-          nameSnapshot: String(item.name_snapshot || ''),
-        }),
-      0,
-    )
-    const totalMinutesWithBuffer = applyAppointmentBuffer(
-      totalMinutes > 0 ? totalMinutes : 60,
-    )
-
-    const providedEndTime = body.end_time ? String(body.end_time) : null
-    const endTime =
-      providedEndTime && /^\d{2}:\d{2}/.test(providedEndTime)
-        ? `${providedEndTime}:00`.slice(0, 8)
-        : addMinutesToTime(startTime, totalMinutesWithBuffer)
-
+    // --- Calculate subtotal and duration ---
     const subtotal = lineItems.reduce(
       (sum: number, item) => sum + Number(item.line_total || 0),
       0,
     )
     const discountAmount = Math.max(0, Number(body.discount_amount || 0))
     const total = Math.max(0, subtotal - discountAmount)
+
+    // Calculate duration based on dollar amount (simple tier system)
+    // $0-300 = 2hr, $301-600 = 3hr, $601+ = 4hr
+    const appointmentDuration = calculateAppointmentDurationFromTotal(subtotal)
+    const totalMinutesWithBuffer = applyAppointmentBuffer(appointmentDuration)
+
+    const providedEndTime = body.end_time ? String(body.end_time) : null
+    const endTime =
+      providedEndTime && /^\d{2}:\d{2}/.test(providedEndTime)
+        ? `${providedEndTime}:00`.slice(0, 8)
+        : addMinutesToTime(startTime, totalMinutesWithBuffer)
     const syncStatus = getQuickBooksSyncStatus()
 
     // --- Create the service appointment ---

@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 import {
   applyAppointmentBuffer,
-  calculateLineItemDurationMinutes,
+  calculateAppointmentDurationFromTotal,
 } from '@/lib/ops/availability'
 import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
 import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
@@ -236,20 +236,10 @@ export async function POST(request: NextRequest) {
     )
     const total = Math.max(0, subtotal - discountAmount)
 
-    // --- Calculate end time ---
-    const totalMinutes = lineItems.reduce((sum, item) => {
-      return (
-        sum +
-        calculateLineItemDurationMinutes({
-          durationMinutes: item.duration_minutes || 60,
-          quantity: item.quantity,
-          pricingUnit: item.pricing_unit,
-          unitPrice: item.unit_price,
-          nameSnapshot: item.name_snapshot,
-        })
-      )
-    }, 0)
-    const buffered = applyAppointmentBuffer(totalMinutes)
+    // --- Calculate end time based on dollar amount ---
+    // Simple tier system: $0-300 = 2hr, $301-600 = 3hr, $601+ = 4hr
+    const appointmentDuration = calculateAppointmentDurationFromTotal(subtotal)
+    const buffered = applyAppointmentBuffer(appointmentDuration)
     const [sh, sm] = startTime.split(':').map(Number)
     const endTotal = sh * 60 + sm + buffered
     const endTime = `${String(Math.floor(endTotal / 60) % 24).padStart(2, '0')}:${String(endTotal % 60).padStart(2, '0')}:00`

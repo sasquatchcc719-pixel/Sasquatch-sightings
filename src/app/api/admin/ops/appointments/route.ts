@@ -7,7 +7,7 @@ import {
 } from '@/lib/quickbooks'
 import {
   applyAppointmentBuffer,
-  calculateLineItemDurationMinutes,
+  calculateAppointmentDurationFromTotal,
   getAvailableSlots,
 } from '@/lib/ops/availability'
 import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
@@ -159,44 +159,18 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const totalMinutes = normalizedLineItems.reduce(
-      (sum: number, item: NormalizedLineItem) => {
-        const service = item.service_catalog_item_id
-          ? serviceMap.get(String(item.service_catalog_item_id))
-          : null
-        return (
-          sum +
-          calculateLineItemDurationMinutes({
-            durationMinutes: item.duration_minutes,
-            quantity: item.quantity,
-            pricingUnit: service?.pricing_unit ?? null,
-            unitPrice: item.unit_price,
-            catalogSlug: service?.slug ?? null,
-            nameSnapshot: item.name_snapshot,
-          })
-        )
-      },
-      0,
-    )
-
-    if (totalMinutes <= 0) {
-      return NextResponse.json(
-        {
-          error:
-            'At least one selected service needs a duration. Set durations in Operations → Services before booking.',
-        },
-        { status: 400 },
-      )
-    }
-
-    const totalMinutesWithBuffer = applyAppointmentBuffer(totalMinutes)
-
     const quotedSubtotal = normalizedLineItems.reduce(
       (sum: number, item: NormalizedLineItem) => sum + item.line_total,
       0,
     )
     const discountAmount = Math.max(0, Number(body.discount_amount || 0))
     const quotedTotal = Math.max(0, quotedSubtotal - discountAmount)
+
+    // Calculate duration based on dollar amount (simple tier system)
+    // $0-300 = 2hr, $301-600 = 3hr, $601+ = 4hr
+    const appointmentDuration =
+      calculateAppointmentDurationFromTotal(quotedSubtotal)
+    const totalMinutesWithBuffer = applyAppointmentBuffer(appointmentDuration)
 
     const appointmentDate = String(
       body.appointment?.appointment_date || '',
