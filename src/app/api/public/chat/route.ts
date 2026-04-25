@@ -112,7 +112,7 @@ function getClientIp(request: NextRequest): string {
 
 // ── System prompt ─────────────────────────────────────────────────────────────
 
-function buildSystemPrompt(): string {
+function buildSystemPrompt(promoBlock = ''): string {
   const todayMT = new Date().toLocaleDateString('en-US', {
     timeZone: 'America/Denver',
     weekday: 'long',
@@ -125,6 +125,7 @@ function buildSystemPrompt(): string {
   })
 
   return `You are Scout, the AI booking assistant on the Sasquatch Carpet Cleaning website (sasquatchcarpet.com). Colorado Springs, CO.
+${promoBlock}
 
 Team context:
 - Harry handles SMS conversations
@@ -562,9 +563,46 @@ export async function POST(request: NextRequest) {
     const supabase = createAdminClient()
     const toolsEnabled = isScoutWebToolsEnabled()
 
+    // Fetch active promo codes to inject into Scout's system prompt
+    let promoBlock = ''
+    try {
+      const now = new Date().toISOString()
+      const { data: promoRows } = await supabase
+        .from('promo_codes')
+        .select(
+          'code, discount_type, discount_amount, description, expires_at, max_uses, use_count',
+        )
+        .eq('active', true)
+        .or(`expires_at.is.null,expires_at.gt.${now}`)
+
+      const validCodes = (promoRows || []).filter(
+        (p) => p.max_uses === null || p.use_count < p.max_uses,
+      )
+
+      if (validCodes.length > 0) {
+        const codeLines = validCodes
+          .map((p) => {
+            const amount =
+              p.discount_type === 'flat'
+                ? `$${Number(p.discount_amount).toFixed(2)} off`
+                : `${p.discount_amount}% off`
+            const expiry = p.expires_at
+              ? ` [expires ${new Date(p.expires_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}]`
+              : ''
+            const desc = p.description ? ` — ${p.description}` : ''
+            return `- ${p.code}: ${amount}${expiry}${desc}`
+          })
+          .join('\n')
+
+        promoBlock = `\n## ACTIVE DISCOUNT CODES (live from database — source of truth)\n${codeLines}\nOnly offer a code if it fits the customer's situation. Never invent codes not listed above. If a customer mentions a code not on this list, tell them it is not currently active.\n`
+      }
+    } catch (promoErr) {
+      console.error('[scout] failed to fetch promo codes:', promoErr)
+    }
+
     try {
       const messages: OpenAI.ChatCompletionMessageParam[] = [
-        { role: 'system', content: buildSystemPrompt() },
+        { role: 'system', content: buildSystemPrompt(promoBlock) },
         ...conversationHistory.map((m) => ({
           role: m.role as 'user' | 'assistant',
           content: m.content,
