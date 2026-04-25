@@ -798,30 +798,65 @@ export function NfcBookingWidget({
           )}
 
           {cart.length > 0 && (
-            <div className="mt-4 flex items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3">
-              <div>
-                <p className="text-xs text-white/50">
-                  {cart.reduce((s, c) => s + c.quantity, 0)} service
-                  {cart.reduce((s, c) => s + c.quantity, 0) !== 1 ? 's' : ''}
-                </p>
-                <p className="text-sm font-bold text-white">
-                  {formatPrice(subtotal)}
-                </p>
-                {!meetsMinimum && (
-                  <p className="text-xs text-red-400">
-                    {formatPrice(MIN_TOTAL - subtotal)} more to meet minimum
-                  </p>
-                )}
-              </div>
-              <button
-                type="button"
-                disabled={!meetsMinimum}
-                onClick={() => setStep(2)}
-                className="rounded-xl bg-green-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-green-500 disabled:cursor-not-allowed disabled:opacity-40"
+            <>
+              {/* Mobile: one-line fixed total bar (tap page is mostly phone) */}
+              <div
+                className="fixed right-0 bottom-0 left-0 z-50 flex border-t border-white/15 bg-black/90 px-3 py-2 backdrop-blur-sm md:hidden"
+                style={{
+                  paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))',
+                }}
               >
-                Next →
-              </button>
-            </div>
+                <div className="mx-auto flex w-full max-w-xl items-center justify-between gap-2 text-xs text-white/80">
+                  <span className="min-w-0 truncate">
+                    <span className="text-white/50">Subtotal</span>{' '}
+                    <span className="font-semibold text-green-400">
+                      {formatPrice(subtotal)}
+                    </span>
+                    {meetsMinimum ? null : (
+                      <span className="text-red-300/90">
+                        {' '}
+                        · {formatPrice(MIN_TOTAL - subtotal)} to min
+                      </span>
+                    )}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={!meetsMinimum}
+                    onClick={() => setStep(2)}
+                    className="shrink-0 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-green-500 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Next →
+                  </button>
+                </div>
+              </div>
+              {/* Keeps list scrollable above the fixed bar */}
+              <div className="h-10 shrink-0 md:hidden" aria-hidden />
+
+              <div className="mt-4 hidden items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3 md:flex">
+                <div>
+                  <p className="text-xs text-white/50">
+                    {cart.reduce((s, c) => s + c.quantity, 0)} service
+                    {cart.reduce((s, c) => s + c.quantity, 0) !== 1 ? 's' : ''}
+                  </p>
+                  <p className="text-sm font-bold text-white">
+                    {formatPrice(subtotal)}
+                  </p>
+                  {!meetsMinimum && (
+                    <p className="text-xs text-red-400">
+                      {formatPrice(MIN_TOTAL - subtotal)} more to meet minimum
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  disabled={!meetsMinimum}
+                  onClick={() => setStep(2)}
+                  className="rounded-xl bg-green-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-green-500 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Next →
+                </button>
+              </div>
+            </>
           )}
         </div>
       )}
