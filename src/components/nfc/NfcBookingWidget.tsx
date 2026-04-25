@@ -611,10 +611,14 @@ export function NfcBookingWidget({
     setSlotsLoading(true)
     setSelectedSlot(null)
 
-    const totalMinutes = cart.reduce(
-      (sum, ci) => sum + (ci.service.duration_minutes ?? 60) * ci.quantity,
-      0,
-    )
+    // Calculate duration properly: fixed-price services scale with quantity,
+    // measurement-based (per_sqft, per_linear_foot) do not
+    const totalMinutes = cart.reduce((sum, ci) => {
+      const baseDuration = ci.service.duration_minutes ?? 60
+      const pricingUnit = ci.service.pricing_unit
+      const scalesWithQty = !pricingUnit || pricingUnit === 'fixed'
+      return sum + (scalesWithQty ? baseDuration * ci.quantity : baseDuration)
+    }, 0)
 
     fetch(
       `/api/public/availability?date=${selectedDate}&required_minutes=${Math.max(totalMinutes, 60)}`,
