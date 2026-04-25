@@ -811,7 +811,7 @@ export function NfcBookingWidget({
             {cart.length > 0 && (
               <>
                 {/* In-flow spacer: mobile subtotal is portaled to document.body */}
-                <div className="h-10 shrink-0 md:hidden" aria-hidden />
+                <div className="h-14 shrink-0 md:hidden" aria-hidden />
 
                 <div className="mt-4 hidden items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3 md:flex">
                   <div>
@@ -1279,15 +1279,15 @@ export function NfcBookingWidget({
         cart.length > 0 &&
         createPortal(
           <div
-            className="fixed right-0 bottom-0 left-0 z-[100] flex border-t border-white/15 bg-black/90 px-3 py-2 shadow-[0_-4px_20px_rgba(0,0,0,0.45)] backdrop-blur-sm md:hidden"
+            className="fixed right-0 bottom-0 left-0 z-[100] flex min-h-12 border-t border-white/15 bg-black/90 px-4 py-2.5 shadow-[0_-4px_20px_rgba(0,0,0,0.45)] backdrop-blur-sm md:hidden"
             style={{
-              paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))',
+              paddingBottom: 'max(0.625rem, env(safe-area-inset-bottom))',
             }}
           >
-            <div className="mx-auto flex w-full max-w-xl items-center justify-between gap-2 text-xs text-white/80">
+            <div className="mx-auto flex w-full max-w-xl items-center justify-between gap-3 text-base leading-tight text-white/85">
               <span className="min-w-0 truncate">
-                <span className="text-white/50">Subtotal</span>{' '}
-                <span className="font-semibold text-green-400">
+                <span className="text-white/55">Subtotal</span>{' '}
+                <span className="font-bold text-green-400 tabular-nums">
                   {formatPrice(subtotal)}
                 </span>
                 {meetsMinimum ? null : (
@@ -1301,7 +1301,7 @@ export function NfcBookingWidget({
                 type="button"
                 disabled={!meetsMinimum}
                 onClick={() => setStep(2)}
-                className="shrink-0 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-green-500 disabled:cursor-not-allowed disabled:opacity-40"
+                className="shrink-0 rounded-lg bg-green-600 px-4 py-2 text-base font-semibold whitespace-nowrap text-white transition-colors hover:bg-green-500 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Next →
               </button>
