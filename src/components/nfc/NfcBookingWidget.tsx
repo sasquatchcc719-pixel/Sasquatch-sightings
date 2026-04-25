@@ -94,6 +94,16 @@ function isLeatherService(item: ServiceItem) {
   )
 }
 
+function needsDirectInput(unit: string | null) {
+  if (!unit) return false
+  const normalized = unit.toLowerCase().replace(/_/g, ' ')
+  return (
+    normalized.includes('sqft') ||
+    normalized.includes('square') ||
+    normalized.includes('linear')
+  )
+}
+
 function toLocalISO(d: Date) {
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
@@ -199,12 +209,14 @@ function CategorySection({
   cart,
   onAdd,
   onRemove,
+  onSetQuantity,
 }: {
   category: string
   items: ServiceItem[]
   cart: CartItem[]
   onAdd: (s: ServiceItem) => void
   onRemove: (s: ServiceItem) => void
+  onSetQuantity: (s: ServiceItem, qty: number) => void
 }) {
   const [open, setOpen] = useState(false)
   const [leatherOpen, setLeatherOpen] = useState(false)
@@ -289,9 +301,31 @@ function CategorySection({
                 />
               </svg>
             </button>
-            <span className="w-5 text-center text-sm font-bold text-white">
-              {qty}
-            </span>
+            {needsDirectInput(item.pricing_unit) ? (
+              <input
+                type="number"
+                inputMode="numeric"
+                min="1"
+                value={qty}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10)
+                  if (!isNaN(val) && val > 0) {
+                    onSetQuantity(item, val)
+                  }
+                }}
+                onBlur={(e) => {
+                  const val = parseInt(e.target.value, 10)
+                  if (isNaN(val) || val < 1) {
+                    onSetQuantity(item, 1)
+                  }
+                }}
+                className="w-16 rounded-lg border border-white/20 bg-white/10 px-2 py-1 text-center text-sm font-bold text-white focus:border-green-400 focus:ring-1 focus:ring-green-400/40 focus:outline-none"
+              />
+            ) : (
+              <span className="w-5 text-center text-sm font-bold text-white">
+                {qty}
+              </span>
+            )}
             <button
               type="button"
               onClick={() => onAdd(item)}
@@ -615,6 +649,21 @@ export function NfcBookingWidget({
     })
   }
 
+  function setCartQuantity(service: ServiceItem, quantity: number) {
+    setCart((prev) => {
+      if (quantity <= 0) {
+        return prev.filter((c) => c.service.id !== service.id)
+      }
+      const existing = prev.find((c) => c.service.id === service.id)
+      if (existing) {
+        return prev.map((c) =>
+          c.service.id === service.id ? { ...c, quantity } : c,
+        )
+      }
+      return [...prev, { service, quantity }]
+    })
+  }
+
   function setField<K extends keyof CustomerForm>(
     key: K,
     value: CustomerForm[K],
@@ -844,6 +893,7 @@ export function NfcBookingWidget({
                   cart={cart}
                   onAdd={addToCart}
                   onRemove={removeFromCart}
+                  onSetQuantity={setCartQuantity}
                 />
               ))
             )}
