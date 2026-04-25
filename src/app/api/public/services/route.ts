@@ -1,10 +1,14 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 
+export const runtime = 'edge'
+export const revalidate = 300 // Cache for 5 minutes
+
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
+  'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
 }
 
 // Categories and items exposed to the public booking widget

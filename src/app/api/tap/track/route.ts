@@ -1,23 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 
-// Helper to get location from IP
-async function getLocationFromIP(ip: string) {
-  try {
-    // Free IP geolocation service
-    const response = await fetch(`https://ipapi.co/${ip}/json/`)
-    if (response.ok) {
-      const data = await response.json()
-      return {
-        city: data.city,
-        region: data.region,
-        country: data.country_name,
-      }
-    }
-  } catch (error) {
-    console.error('Failed to get location:', error)
+export const runtime = 'edge'
+
+// Get location from Vercel geo headers (instant, no external API call)
+function getLocationFromHeaders(request: NextRequest) {
+  return {
+    city: request.headers.get('x-vercel-ip-city') || null,
+    region: request.headers.get('x-vercel-ip-country-region') || null,
+    country: request.headers.get('x-vercel-ip-country') || null,
   }
-  return { city: null, region: null, country: null }
 }
 
 // Helper to detect device type
@@ -51,8 +43,8 @@ export async function POST(request: NextRequest) {
     const deviceType = getDeviceType(userAgent)
 
     if (action === 'page_view') {
-      // Get location from IP
-      const location = await getLocationFromIP(ip)
+      // Get location from Vercel geo headers (instant)
+      const location = getLocationFromHeaders(request)
 
       // If partnerId provided, look up the partner
       let partnerData = null
