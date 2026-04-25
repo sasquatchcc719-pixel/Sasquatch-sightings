@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
-import { Loader2, MessageSquare, Play, RefreshCw } from 'lucide-react'
+import { Loader2, Mail, MessageSquare, Play, RefreshCw } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -33,6 +33,32 @@ type TemplatesResponse = {
   templates: CommunicationTemplate[]
 }
 
+type EmailLogEntry = {
+  id: string
+  template_key: string
+  to_email: string
+  subject: string | null
+  status: 'sent' | 'failed'
+  error_message: string | null
+  sent_at: string
+  ops_customers: { full_name: string } | null
+  ops_appointments: { appointment_date: string } | null
+}
+
+const OPS_EMAIL_TEMPLATE_LABELS: Record<string, string> = {
+  job_scheduled_email: 'Booking confirmation',
+  job_finished_email: 'Job completed',
+  satisfaction_checkin_email: 'Satisfaction check-in',
+  quote: 'Estimate / quote',
+  estimate_send: 'Estimate',
+  invoice_send: 'Invoice',
+  payment_request: 'Payment',
+}
+
+function formatEmailTemplateLabel(key: string) {
+  return OPS_EMAIL_TEMPLATE_LABELS[key] || key.replace(/_/g, ' ')
+}
+
 export function OperationsSettings() {
   const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState(false)
@@ -40,19 +66,24 @@ export function OperationsSettings() {
   const [status, setStatus] = useState<QueueStatusResponse | null>(null)
   const [templates, setTemplates] = useState<CommunicationTemplate[]>([])
   const [lastRunMessage, setLastRunMessage] = useState<string | null>(null)
+  const [emailLog, setEmailLog] = useState<EmailLogEntry[]>([])
+  const [emailLogTotal, setEmailLogTotal] = useState(0)
 
   const loadStatus = async () => {
     setLoading(true)
     setError(null)
     try {
-      const [queueResponse, templatesResponse] = await Promise.all([
-        fetch('/api/admin/ops/communications/queue', {
-          cache: 'no-store',
-        }),
-        fetch('/api/admin/ops/communications/templates', {
-          cache: 'no-store',
-        }),
-      ])
+      const [queueResponse, templatesResponse, logResponse] = await Promise.all(
+        [
+          fetch('/api/admin/ops/communications/queue', {
+            cache: 'no-store',
+          }),
+          fetch('/api/admin/ops/communications/templates', {
+            cache: 'no-store',
+          }),
+          fetch('/api/admin/comms/email-log?limit=40', { cache: 'no-store' }),
+        ],
+      )
 
       const [queueResult, templatesResult] = (await Promise.all([
         queueResponse.json(),
@@ -70,6 +101,18 @@ export function OperationsSettings() {
       }
       setStatus(queueResult)
       setTemplates(templatesResult.templates || [])
+
+      if (logResponse.ok) {
+        const logData = (await logResponse.json()) as {
+          emails?: EmailLogEntry[]
+          total?: number
+        }
+        setEmailLog(logData.emails || [])
+        setEmailLogTotal(logData.total ?? 0)
+      } else {
+        setEmailLog([])
+        setEmailLogTotal(0)
+      }
     } catch (loadError) {
       setError(
         loadError instanceof Error
@@ -300,6 +343,16 @@ export function OperationsSettings() {
               <div className="font-medium">On Job Complete</div>
               <div className="text-muted-foreground text-sm">
                 Triggered when job status is changed to <code>completed</code>.
+                Email sends only if the customer has an email, has not opted
+                out, <code className="mx-1">RESEND_API_KEY</code> is set, and
+                this template is enabled. See{' '}
+                <Link
+                  href="/admin/email-outbox"
+                  className="text-primary font-medium underline-offset-4 hover:underline"
+                >
+                  Email outbox
+                </Link>{' '}
+                or <code>ops_email_log</code> for delivery rows.
               </div>
             </div>
             <div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center">
@@ -407,6 +460,105 @@ export function OperationsSettings() {
               {status?.stats.sent_last_24h ?? 0}
             </div>
           </Card>
+        </div>
+      </Card>
+
+      <Card className="border-border/60 bg-card/80 p-6 shadow-sm backdrop-blur">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-semibold">Recent emails sent</h3>
+            <p className="text-muted-foreground mt-1 text-sm">
+              Logged in <code>ops_email_log</code> (
+              {emailLogTotal.toLocaleString()} total
+              {emailLog.length < emailLogTotal
+                ? ` — showing last ${emailLog.length}`
+                : ''}
+              ). Bodies are stored for messages sent after the email-log update;
+              we cannot backfill Resend or mail history from before that.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/admin/email-outbox">Full log &amp; preview</Link>
+            </Button>
+            <Mail className="text-muted-foreground h-5 w-5" />
+          </div>
+        </div>
+
+        <div className="mt-4 max-h-[min(28rem,50vh)] overflow-auto rounded-lg border">
+          {loading && emailLog.length === 0 ? (
+            <div className="text-muted-foreground flex items-center gap-2 p-6 text-sm">
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+              Loading…
+            </div>
+          ) : emailLog.length === 0 ? (
+            <p className="text-muted-foreground p-6 text-sm">
+              No logged emails yet. After the next send (booking, job finished,
+              queue follow-up, etc.), rows appear here.
+            </p>
+          ) : (
+            <table className="w-full min-w-[640px] text-left text-sm">
+              <thead className="bg-muted/50 text-muted-foreground sticky top-0 z-10 text-xs uppercase">
+                <tr>
+                  <th className="p-2.5 pl-3 font-medium">When</th>
+                  <th className="p-2.5 font-medium">To / customer</th>
+                  <th className="p-2.5 font-medium">Type</th>
+                  <th className="p-2.5 font-medium">Subject</th>
+                  <th className="p-2.5 pr-3 font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {emailLog.map((row) => (
+                  <tr
+                    key={row.id}
+                    className="border-border/60 border-b last:border-0"
+                  >
+                    <td className="text-muted-foreground p-2.5 pl-3 font-mono text-xs whitespace-nowrap">
+                      {new Date(row.sent_at).toLocaleString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      })}
+                    </td>
+                    <td className="max-w-[200px] p-2.5">
+                      <div className="truncate text-xs" title={row.to_email}>
+                        {row.ops_customers?.full_name
+                          ? `${row.ops_customers.full_name} · `
+                          : ''}
+                        {row.to_email}
+                      </div>
+                    </td>
+                    <td className="p-2.5">
+                      <Badge variant="secondary" className="font-normal">
+                        {formatEmailTemplateLabel(row.template_key)}
+                      </Badge>
+                    </td>
+                    <td
+                      className="max-w-[220px] truncate p-2.5 text-xs"
+                      title={row.subject || ''}
+                    >
+                      {row.subject || '—'}
+                    </td>
+                    <td className="p-2.5 pr-3">
+                      {row.status === 'sent' ? (
+                        <span className="text-xs text-emerald-600 dark:text-emerald-400">
+                          Sent
+                        </span>
+                      ) : (
+                        <span
+                          className="text-destructive max-w-[140px] truncate text-xs"
+                          title={row.error_message || undefined}
+                        >
+                          Failed
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </Card>
 

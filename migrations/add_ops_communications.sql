@@ -118,8 +118,8 @@ VALUES
     'email',
     'Finished job email',
     false,
-    'Thank You from {{company_name}} (Care Guide Included)',
-    'Hi {{first_name}},\n\nThank you for choosing {{company_name}}. It was a pleasure serving you.\n\nPost-Cleaning Care & Dry Times:\n- Dry time is usually 12 to 24 hours.\n- Keep airflow moving with fans for faster drying.\n- Be careful stepping from damp carpet onto hard surfaces.\n\nIf everything looks great, we would appreciate your review:\nhttps://www.sasquatchcarpet.com/reviews\n\nIf anything needs attention, reply to this email and we will make it right.',
+    'Thank you from {{company_name}} — care tips & review',
+    'Hi {{first_name}},\n\nThank you for choosing {{company_name}}! It was a pleasure serving you today and providing a Legendary Clean for your home.\n\nPost-Cleaning Care & Dry Times:\n\n- Dry Time: While every home is different, carpets generally take 12 to 24 hours to dry completely. We recommend waiting the full 24 hours before moving heavy furniture back or walking on it with outdoor shoes.\n\n- Airflow is Key: To speed things up, move air across the carpet fibers at floor level using ceiling fans or floor fans. Good airflow can sometimes drop dry times to just a few hours!\n\n- Safety First: Please be extra careful when walking from the damp carpet onto hard surfaces like tile or wood—it will be very slippery!\n\nA Small Favor? As a local business, your feedback helps the Sasquatch grow! If you are thrilled with your clean, would you mind leaving us a quick review?\n\nLeave a review here:\nhttps://www.sasquatchcarpet.com/reviews\n\nIf anything is not 100% legendary, please reply to this email or call us directly so we can make it right.\n\nThanks again for the business!\n— {{company_name}}',
     0
   ),
   (

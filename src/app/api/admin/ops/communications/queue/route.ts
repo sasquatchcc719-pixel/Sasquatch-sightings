@@ -7,7 +7,7 @@ import {
 
 export async function GET() {
   try {
-    await requireAnyRole(['admin', 'owner', 'dispatcher', 'marketing'])
+    await requireAnyRole(['admin', 'owner', 'dispatcher', 'tech', 'marketing'])
     const stats = await getOpsCommunicationQueueStats()
     return NextResponse.json({
       stats,

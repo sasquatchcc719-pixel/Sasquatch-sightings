@@ -291,6 +291,15 @@ export async function processDripEmails(): Promise<{
             updated_at: new Date().toISOString(),
           })
           .eq('id', enrollment.id)
+      } else {
+        // No email (or customer missing): do not keep retrying on every cron run.
+        await supabase
+          .from('drip_campaign_enrollments')
+          .update({
+            status: 'cancelled',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', enrollment.id)
       }
 
       results.skipped++

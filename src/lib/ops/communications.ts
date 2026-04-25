@@ -34,6 +34,8 @@ type QueueItem = {
   template_key: OpsTemplateKey
   scheduled_for: string
   payload: Record<string, unknown>
+  appointment_id: string
+  customer_id: string
 }
 
 type TemplateContext = {
@@ -602,7 +604,9 @@ export async function processOpsCommunicationQueue(params?: {
 
   const { data: dueItemsRaw, error: dueError } = await supabase
     .from('ops_communication_queue')
-    .select('id, template_key, scheduled_for, payload')
+    .select(
+      'id, template_key, scheduled_for, payload, appointment_id, customer_id',
+    )
     .eq('status', 'pending')
     .lte('scheduled_for', nowIso)
     .order('scheduled_for', { ascending: true })
@@ -670,12 +674,22 @@ export async function processOpsCommunicationQueue(params?: {
           throw new Error('Missing recipient email')
         }
         const bcc = process.env.OPS_EMAIL_BCC || undefined
-        await resend.emails.send({
+        const emailResult = await resend.emails.send({
           from: fromEmail,
           to,
           bcc,
           subject,
           html: buildEmailHtml(body, item.template_key as OpsTemplateKey),
+        })
+        await supabase.from('ops_email_log').insert({
+          appointment_id: item.appointment_id,
+          customer_id: item.customer_id,
+          template_key: item.template_key,
+          to_email: to,
+          subject,
+          resend_id: emailResult.data?.id || null,
+          status: 'sent',
+          body_text: body,
         })
       } else {
         const toPhone = String(payload.to_phone || '').trim()
@@ -711,6 +725,26 @@ export async function processOpsCommunicationQueue(params?: {
         error instanceof Error ? error.message : 'Unknown queue send error'
       results.failed++
       results.errors.push(`${item.id}: ${message}`)
+
+      const ch = templateChannelByKey.get(item.template_key)
+      if (ch === 'email') {
+        const payload = item.payload || {}
+        const bodyText = String(payload.body || '').trim()
+        const toEmail = String(payload.to || '').trim()
+        const subj = String(
+          payload.subject || 'Update from Sasquatch Carpet Cleaning',
+        ).trim()
+        await supabase.from('ops_email_log').insert({
+          appointment_id: item.appointment_id,
+          customer_id: item.customer_id,
+          template_key: item.template_key,
+          to_email: toEmail || 'unknown',
+          subject: subj,
+          status: 'failed',
+          error_message: message,
+          body_text: bodyText || null,
+        })
+      }
 
       await supabase
         .from('ops_communication_queue')

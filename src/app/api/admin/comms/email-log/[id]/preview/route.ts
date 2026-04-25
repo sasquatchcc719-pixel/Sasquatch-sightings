@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getUserWithRole, hasRoleAccess } from '@/lib/auth'
+import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { buildEmailHtml } from '@/lib/ops/communications'
 
@@ -8,10 +8,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { user, role } = await getUserWithRole()
-    if (!user || !hasRoleAccess(role, ['admin', 'owner'])) {
-      return new NextResponse('Unauthorized', { status: 401 })
-    }
+    await requireAnyRole(['admin', 'owner', 'dispatcher', 'tech', 'marketing'])
 
     const { id } = await params
     const supabase = createAdminClient()
@@ -32,6 +29,9 @@ export async function GET(
       headers: { 'Content-Type': 'text/html; charset=utf-8' },
     })
   } catch (err) {
+    if (err instanceof Error && err.message === 'Not authorized') {
+      return new NextResponse('Unauthorized', { status: 401 })
+    }
     console.error('[email-log/preview] Error:', err)
     return new NextResponse('Internal server error', { status: 500 })
   }

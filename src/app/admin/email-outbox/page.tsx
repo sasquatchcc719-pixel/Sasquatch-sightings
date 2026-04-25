@@ -177,16 +177,27 @@ export default function EmailOutboxPage() {
   const [emails, setEmails] = useState<EmailLogEntry[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const [templateKey, setTemplateKey] = useState('')
+  const [status, setStatus] = useState('')
 
   useEffect(() => {
-    fetch('/api/admin/comms/email-log?limit=50')
+    const query = new URLSearchParams()
+    query.set('limit', '50')
+    if (search.trim()) query.set('q', search.trim())
+    if (templateKey) query.set('template_key', templateKey)
+    if (status) query.set('status', status)
+
+    fetch(`/api/admin/comms/email-log?${query.toString()}`, {
+      cache: 'no-store',
+    })
       .then((r) => r.json())
       .then((data) => {
         setEmails(data.emails || [])
         setTotal(data.total || 0)
       })
       .finally(() => setLoading(false))
-  }, [])
+  }, [search, templateKey, status])
 
   return (
     <div className="space-y-6 p-6">
@@ -199,6 +210,49 @@ export default function EmailOutboxPage() {
         </div>
         <Mail className="h-5 w-5 text-white/30" />
       </div>
+
+      <Card className="p-4">
+        <div className="grid gap-3 md:grid-cols-4">
+          <input
+            className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm"
+            placeholder="Search customer, email, or subject"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <select
+            className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm"
+            value={templateKey}
+            onChange={(e) => setTemplateKey(e.target.value)}
+          >
+            <option value="">All template types</option>
+            {Object.entries(TEMPLATE_LABELS).map(([key, label]) => (
+              <option key={key} value={key}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <select
+            className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm"
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+          >
+            <option value="">All statuses</option>
+            <option value="sent">Sent</option>
+            <option value="failed">Failed</option>
+          </select>
+          <button
+            type="button"
+            className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm hover:bg-white/10"
+            onClick={() => {
+              setSearch('')
+              setTemplateKey('')
+              setStatus('')
+            }}
+          >
+            Clear filters
+          </button>
+        </div>
+      </Card>
 
       {loading ? (
         <p className="text-sm text-white/40">Loading...</p>

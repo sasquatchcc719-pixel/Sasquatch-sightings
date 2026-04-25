@@ -11,7 +11,13 @@ export async function GET() {
 
   const supabase = createAdminClient()
 
-  const [templatesResult, enrollmentsResult, logResult] = await Promise.all([
+  const [
+    templatesResult,
+    enrollmentsResult,
+    logResult,
+    autoLogResult,
+    blockedResult,
+  ] = await Promise.all([
     supabase.from('drip_email_templates').select('*').order('step_index'),
     supabase
       .from('drip_campaign_enrollments')
@@ -30,12 +36,35 @@ export async function GET() {
       .select('*')
       .order('sent_at', { ascending: false })
       .limit(200),
+    supabase
+      .from('ops_email_log')
+      .select(
+        `
+        id, template_key, to_email, subject, status, error_message, sent_at,
+        ops_customers(full_name)
+      `,
+      )
+      .in('template_key', [
+        'job_scheduled_email',
+        'job_finished_email',
+        'satisfaction_checkin_email',
+      ])
+      .order('sent_at', { ascending: false })
+      .limit(200),
+    supabase
+      .from('ops_customers')
+      .select('id, full_name, email, email_opt_out')
+      .eq('email_opt_out', true)
+      .order('full_name', { ascending: true })
+      .limit(200),
   ])
 
   return NextResponse.json({
     templates: templatesResult.data || [],
     enrollments: enrollmentsResult.data || [],
     log: logResult.data || [],
+    auto_email_log: autoLogResult.data || [],
+    blocked_customers: blockedResult.data || [],
     stats: {
       active: (enrollmentsResult.data || []).filter(
         (e) => e.status === 'active',
@@ -50,6 +79,71 @@ export async function GET() {
         .length,
     },
   })
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    await requireAnyRole(['admin', 'owner'])
+  } catch {
+    return NextResponse.json({ error: 'Not authorized' }, { status: 401 })
+  }
+
+  const body = await request.json().catch(() => ({}))
+  const action = String(body?.action || '').trim()
+  const customerId = String(body?.customer_id || '').trim()
+  if (!action || !customerId) {
+    return NextResponse.json(
+      { error: 'Missing action or customer_id' },
+      { status: 400 },
+    )
+  }
+
+  const supabase = createAdminClient()
+
+  if (action === 'block_customer_email') {
+    const { error: customerError } = await supabase
+      .from('ops_customers')
+      .update({ email_opt_out: true })
+      .eq('id', customerId)
+    if (customerError) {
+      return NextResponse.json(
+        { error: customerError.message },
+        { status: 500 },
+      )
+    }
+
+    // Remove from active drip cycle immediately.
+    const { error: enrollmentError } = await supabase
+      .from('drip_campaign_enrollments')
+      .update({ status: 'unsubscribed', updated_at: new Date().toISOString() })
+      .eq('customer_id', customerId)
+      .eq('status', 'active')
+
+    if (enrollmentError) {
+      return NextResponse.json(
+        { error: enrollmentError.message },
+        { status: 500 },
+      )
+    }
+
+    return NextResponse.json({ success: true })
+  }
+
+  if (action === 'unblock_customer_email') {
+    const { error: customerError } = await supabase
+      .from('ops_customers')
+      .update({ email_opt_out: false })
+      .eq('id', customerId)
+    if (customerError) {
+      return NextResponse.json(
+        { error: customerError.message },
+        { status: 500 },
+      )
+    }
+    return NextResponse.json({ success: true })
+  }
+
+  return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
 }
 
 export async function PUT(request: NextRequest) {

@@ -11,6 +11,7 @@ import {
   getAvailableSlots,
 } from '@/lib/ops/availability'
 import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
+import { enrollCustomerInDrip } from '@/lib/ops/drip-campaign'
 import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
 import { scheduleJobReminder } from '@/lib/onesignal'
 import { normalizeOpsPhone, opsPhoneLookupVariants } from '@/lib/ops/phone'
@@ -735,6 +736,16 @@ export async function PATCH(request: NextRequest) {
           event: 'job_finished',
           appointmentId,
         })
+        // Same as PATCH /appointments/[id]: start post-job drip for one-off jobs
+        // (not tied to a recurring series). `enrollCustomerInDrip` no-ops if no email / opted out.
+        const recurringTid = (
+          appointment as { recurring_template_id?: string | null }
+        ).recurring_template_id
+        if (!recurringTid) {
+          void enrollCustomerInDrip(appointmentId).catch((err) =>
+            console.error('[drip] enrollment error:', err),
+          )
+        }
       }
     }
 

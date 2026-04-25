@@ -9,6 +9,8 @@ import {
   Users,
   CheckCircle,
   XCircle,
+  Ban,
+  ShieldCheck,
   ChevronDown,
   ChevronRight,
 } from 'lucide-react'
@@ -67,6 +69,24 @@ type DripStats = {
   totalEmails: number
 }
 
+type AutoEmailLogRow = {
+  id: string
+  template_key: string
+  to_email: string
+  subject: string | null
+  status: string
+  error_message: string | null
+  sent_at: string
+  ops_customers: { full_name: string } | { full_name: string }[] | null
+}
+
+type BlockedCustomer = {
+  id: string
+  full_name: string | null
+  email: string | null
+  email_opt_out: boolean | null
+}
+
 function unwrap<T>(val: T | T[] | null): T | null {
   if (!val) return null
   return Array.isArray(val) ? val[0] || null : val
@@ -79,6 +99,10 @@ export function DripCampaignsTab() {
   const [templates, setTemplates] = useState<DripTemplate[]>([])
   const [enrollments, setEnrollments] = useState<EnrollmentRow[]>([])
   const [log, setLog] = useState<LogRow[]>([])
+  const [autoEmailLog, setAutoEmailLog] = useState<AutoEmailLogRow[]>([])
+  const [blockedCustomers, setBlockedCustomers] = useState<BlockedCustomer[]>(
+    [],
+  )
   const [stats, setStats] = useState<DripStats>({
     active: 0,
     completed: 0,
@@ -87,6 +111,9 @@ export function DripCampaignsTab() {
   })
   const [showEnrollments, setShowEnrollments] = useState(false)
   const [showLog, setShowLog] = useState(false)
+  const [blockingCustomerId, setBlockingCustomerId] = useState<string | null>(
+    null,
+  )
 
   useEffect(() => {
     loadData()
@@ -105,6 +132,8 @@ export function DripCampaignsTab() {
       setTemplates(data.templates || [])
       setEnrollments(data.enrollments || [])
       setLog(data.log || [])
+      setAutoEmailLog(data.auto_email_log || [])
+      setBlockedCustomers(data.blocked_customers || [])
       setStats(
         data.stats || {
           active: 0,
@@ -117,6 +146,54 @@ export function DripCampaignsTab() {
       setError(e instanceof Error ? e.message : 'Failed to load')
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function blockCustomerEmail(customerId: string, customerName?: string) {
+    setBlockingCustomerId(customerId)
+    setError(null)
+    try {
+      const res = await fetch('/api/admin/ops/drip-campaigns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'block_customer_email',
+          customer_id: customerId,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to block customer')
+      await loadData()
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : `Failed to block ${customerName || 'customer'}`,
+      )
+    } finally {
+      setBlockingCustomerId(null)
+    }
+  }
+
+  async function unblockCustomerEmail(customerId: string) {
+    setBlockingCustomerId(customerId)
+    setError(null)
+    try {
+      const res = await fetch('/api/admin/ops/drip-campaigns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'unblock_customer_email',
+          customer_id: customerId,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to unblock customer')
+      await loadData()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to unblock customer')
+    } finally {
+      setBlockingCustomerId(null)
     }
   }
 
@@ -353,6 +430,136 @@ export function DripCampaignsTab() {
         </div>
       </div>
 
+      {/* Automatic Email Log */}
+      <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Mail className="h-5 w-5" />
+            <h3 className="text-lg font-semibold">
+              Automatic Email Log ({autoEmailLog.length})
+            </h3>
+          </div>
+          <Badge variant="outline" className="text-xs">
+            Job Scheduled / Job Finished / Satisfaction
+          </Badge>
+        </div>
+        <p className="text-muted-foreground mt-2 text-sm">
+          Running list of automatic lifecycle emails, directly under this tool.
+        </p>
+        <div className="mt-4 overflow-x-auto">
+          {autoEmailLog.length === 0 ? (
+            <p className="text-muted-foreground text-sm">
+              No automatic emails logged yet.
+            </p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-muted-foreground border-b text-left text-xs">
+                  <th className="pb-2">Date</th>
+                  <th className="pb-2">Customer</th>
+                  <th className="pb-2">To</th>
+                  <th className="pb-2">Type</th>
+                  <th className="pb-2">Subject</th>
+                  <th className="pb-2">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {autoEmailLog.map((entry) => {
+                  const customer = unwrap(entry.ops_customers)
+                  return (
+                    <tr key={entry.id} className="border-border/30 border-b">
+                      <td className="py-2 text-xs">
+                        {new Date(entry.sent_at).toLocaleDateString()}
+                      </td>
+                      <td className="py-2 text-xs">
+                        {customer?.full_name || '—'}
+                      </td>
+                      <td className="py-2 text-xs">{entry.to_email || '—'}</td>
+                      <td className="py-2 text-xs">
+                        {entry.template_key === 'job_scheduled_email'
+                          ? 'Job scheduled'
+                          : entry.template_key === 'job_finished_email'
+                            ? 'Job finished'
+                            : entry.template_key ===
+                                'satisfaction_checkin_email'
+                              ? 'Satisfaction'
+                              : entry.template_key}
+                      </td>
+                      <td className="max-w-56 truncate py-2 text-xs">
+                        {entry.subject || '—'}
+                      </td>
+                      <td className="py-2">
+                        {entry.status === 'sent' ? (
+                          <CheckCircle className="h-4 w-4 text-green-500" />
+                        ) : (
+                          <span className="flex items-center gap-1 text-red-500">
+                            <XCircle className="h-4 w-4" />
+                            <span className="text-xs">
+                              {entry.error_message || 'failed'}
+                            </span>
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </Card>
+
+      {/* Do Not Send List */}
+      <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="h-5 w-5" />
+          <h3 className="text-lg font-semibold">
+            Do Not Send Email List ({blockedCustomers.length})
+          </h3>
+        </div>
+        <p className="text-muted-foreground mt-2 text-sm">
+          Customers on this list have <code>email_opt_out=true</code> and are
+          excluded from automated emails.
+        </p>
+        <div className="mt-4 overflow-x-auto">
+          {blockedCustomers.length === 0 ? (
+            <p className="text-muted-foreground text-sm">
+              No blocked customers yet.
+            </p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-muted-foreground border-b text-left text-xs">
+                  <th className="pb-2">Customer</th>
+                  <th className="pb-2">Email</th>
+                  <th className="pb-2">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {blockedCustomers.map((row) => (
+                  <tr key={row.id} className="border-border/30 border-b">
+                    <td className="py-2">{row.full_name || '—'}</td>
+                    <td className="py-2 text-xs">{row.email || '—'}</td>
+                    <td className="py-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={blockingCustomerId === row.id}
+                        onClick={() => void unblockCustomerEmail(row.id)}
+                      >
+                        {blockingCustomerId === row.id
+                          ? 'Saving…'
+                          : 'Allow Emails'}
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </Card>
+
       {/* Enrollments */}
       <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
         <button
@@ -389,6 +596,7 @@ export function DripCampaignsTab() {
                       <th className="pb-2">Step</th>
                       <th className="pb-2">Next Send</th>
                       <th className="pb-2">Status</th>
+                      <th className="pb-2">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -415,6 +623,27 @@ export function DripCampaignsTab() {
                           </td>
                           <td className="py-2">
                             <StatusBadge status={enrollment.status} />
+                          </td>
+                          <td className="py-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="gap-1.5"
+                              disabled={
+                                blockingCustomerId === enrollment.customer_id
+                              }
+                              onClick={() =>
+                                void blockCustomerEmail(
+                                  enrollment.customer_id,
+                                  customer?.full_name || undefined,
+                                )
+                              }
+                            >
+                              <Ban className="h-3.5 w-3.5" />
+                              {blockingCustomerId === enrollment.customer_id
+                                ? 'Blocking…'
+                                : 'Do Not Send'}
+                            </Button>
                           </td>
                         </tr>
                       )
