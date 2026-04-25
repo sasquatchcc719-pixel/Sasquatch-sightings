@@ -1786,147 +1786,189 @@ export function OperationsSchedule() {
         ) : null}
 
         {editingEvent ? (
-          <form
-            className="border-border/60 bg-background/70 mt-4 grid gap-3 rounded-2xl border p-4 md:grid-cols-3"
-            onSubmit={handleUpdateEvent}
-          >
-            <div className="flex items-center justify-between md:col-span-3">
-              <span className="text-sm font-semibold">Edit Blocked Time</span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => setEditingEvent(null)}
+          <div className="fixed inset-0 z-50 flex items-end justify-center md:items-center">
+            {/* Backdrop — tap to dismiss */}
+            <div
+              className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+              onClick={() => setEditingEvent(null)}
+            />
+            {/* Panel — slides up from bottom on mobile, centered on desktop */}
+            <div className="bg-background border-border/60 relative max-h-[92dvh] w-full overflow-y-auto rounded-t-3xl border shadow-2xl md:max-w-lg md:rounded-3xl">
+              {/* Drag handle — mobile only */}
+              <div className="mx-auto mt-3 mb-1 h-1 w-10 rounded-full bg-slate-300 md:hidden" />
+              <form
+                className="pb-safe grid gap-4 p-5 md:grid-cols-2"
+                onSubmit={handleUpdateEvent}
               >
-                ✕
-              </Button>
-            </div>
-            <div className="md:col-span-3">
-              <Label htmlFor="edit-block-title">Description</Label>
-              <Input
-                id="edit-block-title"
-                value={editEventForm.title}
-                onChange={(e) =>
-                  setEditEventForm((cur) => ({ ...cur, title: e.target.value }))
-                }
-                placeholder="Vacation, doctor, sick day, hold, or anything else"
-              />
-            </div>
-            <div>
-              <Label htmlFor="edit-block-start-date">Start Date</Label>
-              <Input
-                id="edit-block-start-date"
-                type="date"
-                value={editEventForm.start_date}
-                onChange={(e) =>
-                  setEditEventForm((cur) => ({
-                    ...cur,
-                    start_date: e.target.value,
-                  }))
-                }
-              />
-            </div>
-            <div>
-              <Label htmlFor="edit-block-end-date">End Date</Label>
-              <Input
-                id="edit-block-end-date"
-                type="date"
-                value={editEventForm.end_date}
-                onChange={(e) =>
-                  setEditEventForm((cur) => ({
-                    ...cur,
-                    end_date: e.target.value,
-                  }))
-                }
-              />
-            </div>
-            <label className="text-muted-foreground flex items-center gap-2 self-end text-sm">
-              <input
-                type="checkbox"
-                checked={editEventForm.is_all_day}
-                onChange={(e) =>
-                  setEditEventForm((cur) => ({
-                    ...cur,
-                    is_all_day: e.target.checked,
-                    start_time: e.target.checked ? '' : cur.start_time,
-                    end_time: e.target.checked ? '' : cur.end_time,
-                  }))
-                }
-              />
-              All day / full range
-            </label>
-            {!editEventForm.is_all_day ? (
-              <>
-                <div>
-                  <Label htmlFor="edit-block-start-time">Start Time</Label>
+                {/* Header */}
+                <div className="flex items-center justify-between md:col-span-2">
+                  <span className="text-base font-semibold">
+                    Edit Blocked Time
+                  </span>
+                  <button
+                    type="button"
+                    className="text-muted-foreground hover:text-foreground rounded-full p-1 text-xl leading-none transition-colors"
+                    onClick={() => setEditingEvent(null)}
+                    aria-label="Close"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                {/* Title */}
+                <div className="md:col-span-2">
+                  <Label htmlFor="edit-block-title">Description</Label>
                   <Input
-                    id="edit-block-start-time"
-                    type="time"
-                    value={editEventForm.start_time}
+                    id="edit-block-title"
+                    className="mt-1"
+                    value={editEventForm.title}
                     onChange={(e) =>
                       setEditEventForm((cur) => ({
                         ...cur,
-                        start_time: e.target.value,
+                        title: e.target.value,
+                      }))
+                    }
+                    placeholder="Vacation, doctor, sick day, hold…"
+                  />
+                </div>
+
+                {/* Dates */}
+                <div>
+                  <Label htmlFor="edit-block-start-date">Start Date</Label>
+                  <Input
+                    id="edit-block-start-date"
+                    type="date"
+                    className="mt-1"
+                    value={editEventForm.start_date}
+                    onChange={(e) =>
+                      setEditEventForm((cur) => ({
+                        ...cur,
+                        start_date: e.target.value,
                       }))
                     }
                   />
                 </div>
                 <div>
-                  <Label htmlFor="edit-block-end-time">End Time</Label>
+                  <Label htmlFor="edit-block-end-date">End Date</Label>
                   <Input
-                    id="edit-block-end-time"
-                    type="time"
-                    value={editEventForm.end_time}
+                    id="edit-block-end-date"
+                    type="date"
+                    className="mt-1"
+                    value={editEventForm.end_date}
                     onChange={(e) =>
                       setEditEventForm((cur) => ({
                         ...cur,
-                        end_time: e.target.value,
+                        end_date: e.target.value,
                       }))
                     }
                   />
                 </div>
-              </>
-            ) : null}
-            <div className="md:col-span-3">
-              <Label htmlFor="edit-block-notes">Notes</Label>
-              <Textarea
-                id="edit-block-notes"
-                value={editEventForm.description}
-                onChange={(e) =>
-                  setEditEventForm((cur) => ({
-                    ...cur,
-                    description: e.target.value,
-                  }))
-                }
-                placeholder="Optional notes for the block"
-              />
-            </div>
-            <div className="flex flex-wrap gap-2 md:col-span-3">
-              <Button type="submit" disabled={editEventSaving}>
-                {editEventSaving ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+
+                {/* All-day toggle */}
+                <label className="text-muted-foreground flex cursor-pointer items-center gap-3 rounded-xl p-2 text-sm md:col-span-2">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4"
+                    checked={editEventForm.is_all_day}
+                    onChange={(e) =>
+                      setEditEventForm((cur) => ({
+                        ...cur,
+                        is_all_day: e.target.checked,
+                        start_time: e.target.checked ? '' : cur.start_time,
+                        end_time: e.target.checked ? '' : cur.end_time,
+                      }))
+                    }
+                  />
+                  All day / full range
+                </label>
+
+                {/* Times — only shown when not all-day */}
+                {!editEventForm.is_all_day ? (
+                  <>
+                    <div>
+                      <Label htmlFor="edit-block-start-time">Start Time</Label>
+                      <Input
+                        id="edit-block-start-time"
+                        type="time"
+                        className="mt-1"
+                        value={editEventForm.start_time}
+                        onChange={(e) =>
+                          setEditEventForm((cur) => ({
+                            ...cur,
+                            start_time: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="edit-block-end-time">End Time</Label>
+                      <Input
+                        id="edit-block-end-time"
+                        type="time"
+                        className="mt-1"
+                        value={editEventForm.end_time}
+                        onChange={(e) =>
+                          setEditEventForm((cur) => ({
+                            ...cur,
+                            end_time: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                  </>
                 ) : null}
-                Save Changes
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setEditingEvent(null)}
-                disabled={editEventSaving}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                className="ml-auto"
-                onClick={() => void handleDeleteEvent(editingEvent.id)}
-                disabled={editEventSaving}
-              >
-                Delete Block
-              </Button>
+
+                {/* Notes */}
+                <div className="md:col-span-2">
+                  <Label htmlFor="edit-block-notes">Notes</Label>
+                  <Textarea
+                    id="edit-block-notes"
+                    className="mt-1"
+                    value={editEventForm.description}
+                    onChange={(e) =>
+                      setEditEventForm((cur) => ({
+                        ...cur,
+                        description: e.target.value,
+                      }))
+                    }
+                    placeholder="Optional notes"
+                  />
+                </div>
+
+                {/* Actions */}
+                <div className="flex flex-col gap-2 pt-1 md:col-span-2 md:flex-row">
+                  <Button
+                    type="submit"
+                    className="w-full md:w-auto"
+                    disabled={editEventSaving}
+                  >
+                    {editEventSaving ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : null}
+                    Save Changes
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full md:w-auto"
+                    onClick={() => setEditingEvent(null)}
+                    disabled={editEventSaving}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    className="w-full md:ml-auto md:w-auto"
+                    onClick={() => void handleDeleteEvent(editingEvent.id)}
+                    disabled={editEventSaving}
+                  >
+                    Delete Block
+                  </Button>
+                </div>
+              </form>
             </div>
-          </form>
+          </div>
         ) : null}
 
         {showBusinessHours ? (
