@@ -567,6 +567,17 @@ export function OperationsSchedule() {
   >(() => DEFAULT_BUSINESS_HOURS_ROWS.map((row) => ({ ...row })))
   const [showBusinessHours, setShowBusinessHours] = useState(false)
   const [showBlockForm, setShowBlockForm] = useState(false)
+  const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null)
+  const [editEventForm, setEditEventForm] = useState({
+    title: '',
+    description: '',
+    start_date: '',
+    end_date: '',
+    start_time: '',
+    end_time: '',
+    is_all_day: false,
+  })
+  const [editEventSaving, setEditEventSaving] = useState(false)
 
   // Honor ?action=block|hours coming in from the Operations Menu. When the
   // user picks "Block Time" or "Business Hours" from the menu, we route
@@ -1293,6 +1304,73 @@ export function OperationsSchedule() {
     }
   }
 
+  const openEditEvent = (calEvent: CalendarEvent) => {
+    setEditingEvent(calEvent)
+    setEditEventForm({
+      title: calEvent.title,
+      description: calEvent.description ?? '',
+      start_date: calEvent.start_date,
+      end_date: calEvent.end_date,
+      start_time: calEvent.start_time ?? '',
+      end_time: calEvent.end_time ?? '',
+      is_all_day: calEvent.is_all_day,
+    })
+    setShowBlockForm(false)
+  }
+
+  const handleUpdateEvent = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingEvent) return
+    setEditEventSaving(true)
+    setError(null)
+    try {
+      const response = await fetch(`/api/admin/ops/events/${editingEvent.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editEventForm),
+      })
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to update block')
+      }
+      setEditingEvent(null)
+      await loadSchedule()
+    } catch (updateError) {
+      setError(
+        updateError instanceof Error
+          ? updateError.message
+          : 'Failed to update block',
+      )
+    } finally {
+      setEditEventSaving(false)
+    }
+  }
+
+  const handleDeleteEvent = async (id: string) => {
+    if (!confirm('Delete this blocked time? This cannot be undone.')) return
+    setEditEventSaving(true)
+    setError(null)
+    try {
+      const response = await fetch(`/api/admin/ops/events/${id}`, {
+        method: 'DELETE',
+      })
+      if (!response.ok) {
+        const result = await response.json()
+        throw new Error(result.error || 'Failed to delete block')
+      }
+      setEditingEvent(null)
+      await loadSchedule()
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : 'Failed to delete block',
+      )
+    } finally {
+      setEditEventSaving(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Notify customer popup — anchored near the drop point */}
@@ -1707,6 +1785,150 @@ export function OperationsSchedule() {
           </form>
         ) : null}
 
+        {editingEvent ? (
+          <form
+            className="border-border/60 bg-background/70 mt-4 grid gap-3 rounded-2xl border p-4 md:grid-cols-3"
+            onSubmit={handleUpdateEvent}
+          >
+            <div className="flex items-center justify-between md:col-span-3">
+              <span className="text-sm font-semibold">Edit Blocked Time</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setEditingEvent(null)}
+              >
+                ✕
+              </Button>
+            </div>
+            <div className="md:col-span-3">
+              <Label htmlFor="edit-block-title">Description</Label>
+              <Input
+                id="edit-block-title"
+                value={editEventForm.title}
+                onChange={(e) =>
+                  setEditEventForm((cur) => ({ ...cur, title: e.target.value }))
+                }
+                placeholder="Vacation, doctor, sick day, hold, or anything else"
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-block-start-date">Start Date</Label>
+              <Input
+                id="edit-block-start-date"
+                type="date"
+                value={editEventForm.start_date}
+                onChange={(e) =>
+                  setEditEventForm((cur) => ({
+                    ...cur,
+                    start_date: e.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="edit-block-end-date">End Date</Label>
+              <Input
+                id="edit-block-end-date"
+                type="date"
+                value={editEventForm.end_date}
+                onChange={(e) =>
+                  setEditEventForm((cur) => ({
+                    ...cur,
+                    end_date: e.target.value,
+                  }))
+                }
+              />
+            </div>
+            <label className="text-muted-foreground flex items-center gap-2 self-end text-sm">
+              <input
+                type="checkbox"
+                checked={editEventForm.is_all_day}
+                onChange={(e) =>
+                  setEditEventForm((cur) => ({
+                    ...cur,
+                    is_all_day: e.target.checked,
+                    start_time: e.target.checked ? '' : cur.start_time,
+                    end_time: e.target.checked ? '' : cur.end_time,
+                  }))
+                }
+              />
+              All day / full range
+            </label>
+            {!editEventForm.is_all_day ? (
+              <>
+                <div>
+                  <Label htmlFor="edit-block-start-time">Start Time</Label>
+                  <Input
+                    id="edit-block-start-time"
+                    type="time"
+                    value={editEventForm.start_time}
+                    onChange={(e) =>
+                      setEditEventForm((cur) => ({
+                        ...cur,
+                        start_time: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit-block-end-time">End Time</Label>
+                  <Input
+                    id="edit-block-end-time"
+                    type="time"
+                    value={editEventForm.end_time}
+                    onChange={(e) =>
+                      setEditEventForm((cur) => ({
+                        ...cur,
+                        end_time: e.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              </>
+            ) : null}
+            <div className="md:col-span-3">
+              <Label htmlFor="edit-block-notes">Notes</Label>
+              <Textarea
+                id="edit-block-notes"
+                value={editEventForm.description}
+                onChange={(e) =>
+                  setEditEventForm((cur) => ({
+                    ...cur,
+                    description: e.target.value,
+                  }))
+                }
+                placeholder="Optional notes for the block"
+              />
+            </div>
+            <div className="flex flex-wrap gap-2 md:col-span-3">
+              <Button type="submit" disabled={editEventSaving}>
+                {editEventSaving ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
+                Save Changes
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setEditingEvent(null)}
+                disabled={editEventSaving}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                className="ml-auto"
+                onClick={() => void handleDeleteEvent(editingEvent.id)}
+                disabled={editEventSaving}
+              >
+                Delete Block
+              </Button>
+            </div>
+          </form>
+        ) : null}
+
         {showBusinessHours ? (
           <form
             className="border-border/60 bg-background/70 mt-4 space-y-3 rounded-2xl border p-4"
@@ -1893,12 +2115,14 @@ export function OperationsSchedule() {
                   </div>
                   <div className="mt-3 space-y-2">
                     {dayEvents.slice(0, 2).map((event) => (
-                      <div
+                      <button
                         key={event.id}
-                        className={`rounded-xl border px-2 py-1 text-xs ${getEventTone(event)}`}
+                        type="button"
+                        className={`w-full cursor-pointer rounded-xl border px-2 py-1 text-left text-xs transition-opacity hover:opacity-80 ${getEventTone(event)}`}
+                        onClick={() => openEditEvent(event)}
                       >
                         {event.title}
-                      </div>
+                      </button>
                     ))}
                     {dayAppointments.slice(0, 3).map((appointment) => {
                       const customer = unwrapRelation(appointment.ops_customers)
@@ -2106,13 +2330,15 @@ export function OperationsSchedule() {
                       {dayEvents.map((event) => {
                         const placement = getBlockPlacement(event)
                         return (
-                          <div
+                          <button
                             key={event.id}
-                            className={`absolute right-2 left-2 rounded-2xl border p-2 text-xs shadow-sm ${getEventTone(event)}`}
+                            type="button"
+                            className={`absolute right-2 left-2 cursor-pointer rounded-2xl border p-2 text-left text-xs shadow-sm transition-opacity hover:opacity-80 ${getEventTone(event)}`}
                             style={{
                               top: placement.top + 6,
                               height: placement.height - 8,
                             }}
+                            onClick={() => openEditEvent(event)}
                           >
                             <div className="font-semibold">{event.title}</div>
                             {event.description ? (
@@ -2120,7 +2346,7 @@ export function OperationsSchedule() {
                                 {event.description}
                               </div>
                             ) : null}
-                          </div>
+                          </button>
                         )
                       })}
 
