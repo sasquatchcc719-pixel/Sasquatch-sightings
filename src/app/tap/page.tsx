@@ -7,15 +7,15 @@ import {
   Phone,
   MessageSquare,
   UserPlus,
-  MapPin,
-  Clock,
   Share2,
+  Star,
+  CalendarCheck,
+  MapPin,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Card } from '@/components/ui/card'
 import { RecentJobsCarousel } from '@/components/nfc/recent-jobs-carousel'
+import { NfcBookingWidget } from '@/components/nfc/NfcBookingWidget'
 import { VideoBackground } from '@/components/public/VideoBackground'
 import { PushOptInBanner } from '@/components/push-opt-in-banner'
 
@@ -27,14 +27,8 @@ export default function TapLandingPage() {
   const [tapId, setTapId] = useState<string | null>(null)
   const [partnerName, setPartnerName] = useState<string | null>(null)
   const [couponCode, setCouponCode] = useState<string>('SCC20')
-  const [showForm, setShowForm] = useState(false)
-  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [showWidget, setShowWidget] = useState(false)
   const [showShareToast, setShowShareToast] = useState(false)
-  const [formData, setFormData] = useState({
-    name: '',
-    phone: '',
-    zip: '',
-  })
   const [isRedirecting, setIsRedirecting] = useState(!!partnerId)
 
   // Redirect logic moved to trackTap to support placard configuration
@@ -173,45 +167,6 @@ export default function TapLandingPage() {
     }
   }
 
-  const handleFormSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsSubmitting(true)
-
-    try {
-      // Submit the lead
-      const response = await fetch('/api/leads', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: formData.name,
-          phone: formData.phone,
-          zip_code: formData.zip,
-          source: cardId ? `NFC Card - ${cardId}` : 'NFC Card Tap',
-          notes: `$20 OFF - Coupon code: ${couponCode} (from NFC card tap)`,
-        }),
-      })
-
-      if (response.ok) {
-        // Track conversion
-        trackButtonClick('form_submit')
-
-        // Show success message
-        alert(
-          "🎉 Thanks! We'll call you soon to schedule your cleaning and apply your $20 discount!",
-        )
-        setShowForm(false)
-        setFormData({ name: '', phone: '', zip: '' })
-      } else {
-        alert('Something went wrong. Please call us at 719-249-8791')
-      }
-    } catch (error) {
-      console.error('Failed to submit form:', error)
-      alert('Something went wrong. Please call us at 719-249-8791')
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
   return (
     <div className="relative min-h-screen overflow-hidden">
       <VideoBackground video="clouds" />
@@ -230,42 +185,59 @@ export default function TapLandingPage() {
           />
         </div>
 
-        {/* Action Buttons - Moved right under card */}
+        {/* Action Buttons */}
         <div className="mb-6 space-y-3">
-          {/* PRIMARY CTA - Text to Book */}
-          <a
-            href={`sms:719-249-8791?body=${encodeURIComponent(
-              partnerName
-                ? `Hi! I scanned the card at ${partnerName} and I'd like to get a quote and book a cleaning.`
-                : "Hi! I scanned your card and I'd like to get a quote and book a cleaning.",
-            )}`}
-            onClick={() => trackButtonClick('booking_sms')}
-            className="group relative block w-full overflow-hidden rounded-2xl shadow-2xl transition-all hover:scale-105"
+          {/* PRIMARY CTA — Get a Free Estimate (booking widget) */}
+          <button
+            onClick={() => {
+              setShowWidget((v) => !v)
+              if (!showWidget) trackButtonClick('booking_widget_open')
+            }}
+            className="group relative w-full overflow-hidden rounded-2xl shadow-2xl transition-all hover:scale-[1.02]"
           >
-            {/* Button with 3D effect */}
             <div className="relative bg-gradient-to-b from-green-400 to-green-600 px-8 py-8 text-center transition-all group-hover:from-green-500 group-hover:to-green-700">
-              {/* Top highlight for 3D effect */}
               <div className="absolute inset-x-0 top-0 h-2 bg-gradient-to-b from-white/30 to-transparent" />
-
-              {/* Button text with press animation */}
-              <div className="animate-button-press relative">
+              <div className="relative">
                 <p className="mb-1 text-sm font-semibold tracking-wide text-white/90 uppercase">
-                  Tap to Schedule
+                  {showWidget ? 'Hide Estimator' : 'Tap to get prices & book'}
                 </p>
                 <p className="text-3xl font-black text-white drop-shadow-lg">
-                  📱 TEXT TO BOOK
+                  <CalendarCheck className="mr-2 inline-block h-8 w-8" />
+                  {showWidget ? 'Hide Estimator' : 'Get a Free Estimate'}
                 </p>
                 <p className="mt-1 text-lg font-bold text-white/90">
-                  Use code: {couponCode} for $20 off
+                  {couponCode} saves you $20 — auto-applied
                 </p>
               </div>
-
-              {/* Bottom shadow for 3D depth */}
               <div className="absolute inset-x-0 bottom-0 h-3 bg-gradient-to-t from-black/20 to-transparent" />
             </div>
-
-            {/* Shine effect on hover */}
             <div className="absolute inset-0 translate-x-[-100%] bg-gradient-to-r from-transparent via-white/10 to-transparent transition-transform duration-700 group-hover:translate-x-[100%]" />
+          </button>
+
+          {/* Inline booking widget — expands below the CTA */}
+          {showWidget && (
+            <NfcBookingWidget
+              couponCode={couponCode}
+              cardId={cardId}
+              onTrackClick={trackButtonClick}
+            />
+          )}
+
+          {/* Leave Us a Review */}
+          <a
+            href="https://search.google.com/local/writereview?placeid=ChIJw1Fmyv9_EQIRSsL80280NoQ"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => trackButtonClick('review')}
+          >
+            <Button
+              size="lg"
+              variant="outline"
+              className="w-full border-2 border-amber-400 py-6 text-lg font-semibold text-amber-400 hover:bg-amber-400/10"
+            >
+              <Star className="mr-2 h-5 w-5" />
+              Leave Us a Review
+            </Button>
           </a>
 
           {/* Call Button */}
@@ -310,17 +282,6 @@ export default function TapLandingPage() {
             <Share2 className="mr-2 h-5 w-5" />
             Share This Deal
           </Button>
-
-          {/* Request Callback */}
-          <Button
-            onClick={() => setShowForm(!showForm)}
-            size="lg"
-            variant="outline"
-            className="w-full border-2 py-6 text-lg font-semibold"
-          >
-            <MessageSquare className="mr-2 h-5 w-5" />
-            {showForm ? 'Hide Form' : 'Request a Call Back'}
-          </Button>
         </div>
 
         {/* Location Partner Badge (if applicable) */}
@@ -346,66 +307,6 @@ export default function TapLandingPage() {
             </span>
           </div>
         </Card>
-
-        {/* Contact Form */}
-        {showForm && (
-          <Card className="mb-6 border-white/20 bg-black/90 p-6">
-            <h3 className="mb-4 text-xl font-bold text-white">
-              Request a Call Back
-            </h3>
-            <form onSubmit={handleFormSubmit} className="space-y-4">
-              <div>
-                <Label htmlFor="name">Your Name</Label>
-                <Input
-                  id="name"
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) =>
-                    setFormData({ ...formData, name: e.target.value })
-                  }
-                  placeholder="John Smith"
-                  required
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="phone">Phone Number</Label>
-                <Input
-                  id="phone"
-                  type="tel"
-                  value={formData.phone}
-                  onChange={(e) =>
-                    setFormData({ ...formData, phone: e.target.value })
-                  }
-                  placeholder="719-555-0123"
-                  required
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="zip">ZIP Code</Label>
-                <Input
-                  id="zip"
-                  type="text"
-                  value={formData.zip}
-                  onChange={(e) =>
-                    setFormData({ ...formData, zip: e.target.value })
-                  }
-                  placeholder="80132"
-                  required
-                />
-              </div>
-
-              <Button
-                type="submit"
-                className="w-full bg-green-600 hover:bg-green-700"
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? 'Submitting...' : 'Get My $20 Off'}
-              </Button>
-            </form>
-          </Card>
-        )}
 
         {/* Why Choose Us */}
         <Card className="mb-6 border-white/20 bg-black/80 p-6">
