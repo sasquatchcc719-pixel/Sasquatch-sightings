@@ -124,6 +124,7 @@ export function calculateAppointmentDurationFromTotal(
   totalDollars: number,
 ): number {
   const total = Number.isFinite(totalDollars) ? totalDollars : 0
+  // Force redeploy - dollar-based tiers
   if (total <= 300) return 120
   if (total <= 600) return 180
   return 240
