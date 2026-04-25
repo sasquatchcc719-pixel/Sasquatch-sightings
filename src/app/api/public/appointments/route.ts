@@ -20,6 +20,7 @@ import {
 } from '@/lib/quickbooks'
 import { checkServiceArea } from '@/lib/service-area'
 import { resolveServiceAddress } from '@/lib/ops/addresses'
+import { computePromoDiscountAmount } from '@/lib/promo-discount'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -186,10 +187,11 @@ export async function POST(request: NextRequest) {
           (sum, item) => sum + item.unit_price * item.quantity,
           0,
         )
-        discountAmount =
-          promo.discount_type === 'percent'
-            ? Math.round(((subtotal * promo.discount_amount) / 100) * 100) / 100
-            : promo.discount_amount
+        discountAmount = computePromoDiscountAmount(
+          subtotal,
+          promo.discount_type,
+          Number(promo.discount_amount),
+        )
         promoCodeId = promo.id
       }
     }

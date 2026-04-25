@@ -547,6 +547,12 @@ export function NfcBookingWidget({
   const [submitError, setSubmitError] = useState('')
   const [result, setResult] = useState<BookingResult | null>(null)
 
+  /** Line-item math on review (matches POST /api/public/appointments). */
+  const [reviewPromo, setReviewPromo] = useState<{
+    discountAmount: number
+    total: number
+  } | null>(null)
+
   // Portal target for the mobile subtotal bar. The widget card uses
   // backdrop-blur, which makes `position: fixed` children stick to the card
   // instead of the phone viewport — rendering into `body` fixes that.
@@ -619,6 +625,40 @@ export function NfcBookingWidget({
   const subtotal = cartTotal(cart)
   const meetsMinimum = subtotal >= MIN_TOTAL
   const orderedGroups = useMemo(() => groupByCategory(services), [services])
+
+  useEffect(() => {
+    if (step !== 4) {
+      setReviewPromo(null)
+      return
+    }
+    if (!couponCode.trim()) {
+      setReviewPromo({ discountAmount: 0, total: subtotal })
+      return
+    }
+    setReviewPromo(null)
+    const ac = new AbortController()
+    const u = new URL('/api/public/promo-preview', window.location.origin)
+    u.searchParams.set('code', couponCode.trim().toUpperCase())
+    u.searchParams.set('subtotal', String(subtotal))
+    void fetch(u.toString(), { signal: ac.signal })
+      .then((r) => r.json().then((j) => ({ ok: r.ok, j })))
+      .then(({ ok, j }) => {
+        if (ok && typeof j.total === 'number' && j.discount_amount != null) {
+          setReviewPromo({
+            discountAmount: Number(j.discount_amount) || 0,
+            total: Number(j.total) || subtotal,
+          })
+        } else {
+          setReviewPromo({ discountAmount: 0, total: subtotal })
+        }
+      })
+      .catch(() => {
+        if (!ac.signal.aborted) {
+          setReviewPromo({ discountAmount: 0, total: subtotal })
+        }
+      })
+    return () => ac.abort()
+  }, [step, couponCode, subtotal])
 
   function validateStep3(): string {
     if (!form.first_name.trim() || !form.last_name.trim())
@@ -1116,9 +1156,41 @@ export function NfcBookingWidget({
                   </div>
                 ))}
               </div>
-              <div className="mt-2 flex justify-between border-t border-white/10 pt-2 text-sm font-bold">
-                <span className="text-white/70">Subtotal</span>
-                <span className="text-green-400">{formatPrice(subtotal)}</span>
+              <div className="mt-2 space-y-1.5 border-t border-white/10 pt-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-white/70">Subtotal</span>
+                  <span className="font-medium text-white">
+                    {formatPrice(subtotal)}
+                  </span>
+                </div>
+                {couponCode.trim() && reviewPromo === null ? (
+                  <div className="flex justify-between text-xs text-white/40">
+                    <span>Promo and total</span>
+                    <span>…</span>
+                  </div>
+                ) : null}
+                {reviewPromo && reviewPromo.discountAmount > 0 ? (
+                  <div className="flex justify-between text-green-400/95">
+                    <span>
+                      Discount (
+                      <span className="font-mono font-semibold">
+                        {couponCode.trim().toUpperCase()}
+                      </span>
+                      )
+                    </span>
+                    <span className="font-semibold">
+                      −{formatPrice(reviewPromo.discountAmount)}
+                    </span>
+                  </div>
+                ) : null}
+                {reviewPromo ? (
+                  <div className="flex justify-between border-t border-white/10 pt-2 text-base font-bold">
+                    <span className="text-white">Total</span>
+                    <span className="text-green-400">
+                      {formatPrice(reviewPromo.total)}
+                    </span>
+                  </div>
+                ) : null}
               </div>
             </div>
 
@@ -1172,11 +1244,12 @@ export function NfcBookingWidget({
               </div>
             </div>
 
-            {/* Discount */}
-            {couponCode && (
-              <div className="mb-3 flex items-center gap-3 rounded-xl border border-green-500/30 bg-green-500/10 p-4">
+            {couponCode.trim() &&
+            reviewPromo &&
+            reviewPromo.discountAmount > 0 ? (
+              <div className="mb-3 flex items-center gap-3 rounded-xl border border-green-500/30 bg-green-500/10 p-3">
                 <svg
-                  className="h-5 w-5 shrink-0 text-green-400"
+                  className="h-4 w-4 shrink-0 text-green-400"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -1188,18 +1261,11 @@ export function NfcBookingWidget({
                     d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
                   />
                 </svg>
-                <div>
-                  <p className="text-sm font-semibold text-green-300">
-                    Card Holder Discount Applied
-                  </p>
-                  <p className="text-xs text-green-400/70">
-                    Code{' '}
-                    <span className="font-mono font-bold">{couponCode}</span> —
-                    $20 off your total
-                  </p>
-                </div>
+                <p className="text-xs font-medium text-green-300/90">
+                  Your card code is included — discount shown in Services above.
+                </p>
               </div>
-            )}
+            ) : null}
 
             {/* Payment notice */}
             <div className="mb-4 flex items-start gap-3 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3">
