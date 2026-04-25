@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 
-export const runtime = 'edge'
 export const revalidate = 300 // Cache for 5 minutes
 
 const CORS = {

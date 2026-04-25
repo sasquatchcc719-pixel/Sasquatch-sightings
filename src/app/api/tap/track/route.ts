@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 
-export const runtime = 'edge'
-
 // Get location from Vercel geo headers (instant, no external API call)
 function getLocationFromHeaders(request: NextRequest) {
   return {
