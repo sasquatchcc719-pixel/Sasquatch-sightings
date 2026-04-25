@@ -21,18 +21,12 @@ import {
 import { checkServiceArea } from '@/lib/service-area'
 import { resolveServiceAddress } from '@/lib/ops/addresses'
 import { computePromoDiscountAmount } from '@/lib/promo-discount'
+import { resolveOpsCustomer } from '@/lib/ops/customers'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, x-booking-secret',
-}
-
-function normalizePhone(phone: string): string {
-  const digits = phone.replace(/\D/g, '')
-  if (digits.length === 10) return `+1${digits}`
-  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`
-  return phone.startsWith('+') ? phone : `+${digits}`
 }
 
 export async function OPTIONS() {
@@ -57,14 +51,22 @@ export async function POST(request: NextRequest) {
     const firstName = String(body.customer?.first_name || '').trim()
     const lastName = String(body.customer?.last_name || '').trim()
     const email = String(body.customer?.email || '').trim()
-    const phone = normalizePhone(String(body.customer?.phone || '').trim())
+    const phone = String(body.customer?.phone || '').trim()
     const notes = body.customer?.notes
       ? String(body.customer.notes).trim()
       : null
 
-    if (!firstName || !lastName || !email || !phone) {
+    if (
+      !firstName ||
+      !lastName ||
+      !email ||
+      phone.replace(/\D/g, '').length < 10
+    ) {
       return NextResponse.json(
-        { error: 'First name, last name, email, and phone are required' },
+        {
+          error:
+            'First name, last name, email, and a valid phone number are required',
+        },
         { status: 400, headers: CORS },
       )
     }
@@ -198,47 +200,16 @@ export async function POST(request: NextRequest) {
 
     // --- Find or create customer ---
     const fullName = `${firstName} ${lastName}`.trim()
-    let customerId: string
-    let quickbooksCustomerId: string | null = null
-
-    const { data: existingCustomer } = await supabase
-      .from('ops_customers')
-      .select('id, quickbooks_customer_id')
-      .eq('email', email)
-      .maybeSingle()
-
-    if (existingCustomer) {
-      customerId = existingCustomer.id
-      quickbooksCustomerId = existingCustomer.quickbooks_customer_id
-      const { error: updateErr } = await supabase
-        .from('ops_customers')
-        .update({
-          full_name: fullName,
-          first_name: firstName,
-          last_name: lastName,
-          phone,
-          notes,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', customerId)
-      if (updateErr) throw updateErr
-    } else {
-      const { data: newCustomer, error: insertErr } = await supabase
-        .from('ops_customers')
-        .insert({
-          full_name: fullName,
-          first_name: firstName,
-          last_name: lastName,
-          email,
-          phone,
-          notes,
-        })
-        .select('id, quickbooks_customer_id')
-        .single()
-      if (insertErr) throw insertErr
-      customerId = newCustomer.id
-      quickbooksCustomerId = newCustomer.quickbooks_customer_id
-    }
+    const resolvedCustomer = await resolveOpsCustomer({
+      supabase,
+      firstName,
+      lastName,
+      email,
+      phone,
+      notes,
+    })
+    const customerId = resolvedCustomer.id
+    const quickbooksCustomerId = resolvedCustomer.quickbooks_customer_id
 
     // --- Find or create service address ---
     const resolved = await resolveServiceAddress(supabase, customerId, {

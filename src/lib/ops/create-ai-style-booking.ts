@@ -13,6 +13,7 @@ import {
   buildQuickBooksCustomerPayload,
   getQuickBooksSyncStatus,
 } from '@/lib/quickbooks'
+import { resolveOpsCustomer } from '@/lib/ops/customers'
 
 export type AiStyleBookingLineRequest = {
   service_id: string
@@ -194,42 +195,18 @@ export async function createAiStyleBooking(
 
   const fullName = `${firstName} ${lastName}`.trim()
   let customerId: string
-
-  const { data: existingCustomer } = await supabase
-    .from('ops_customers')
-    .select('id')
-    .eq('email', email)
-    .maybeSingle()
-
-  if (existingCustomer) {
-    customerId = existingCustomer.id
-    await supabase
-      .from('ops_customers')
-      .update({
-        full_name: fullName,
-        first_name: firstName,
-        last_name: lastName,
-        phone,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', customerId)
-  } else {
-    const { data: newCustomer, error: insertErr } = await supabase
-      .from('ops_customers')
-      .insert({
-        full_name: fullName,
-        first_name: firstName,
-        last_name: lastName,
-        email,
-        phone,
-      })
-      .select('id')
-      .single()
-    if (insertErr) {
-      console.error('[createAiStyleBooking] insert customer:', insertErr)
-      return { ok: false, error: 'Could not create customer record' }
-    }
-    customerId = newCustomer.id
+  try {
+    const resolvedCustomer = await resolveOpsCustomer({
+      supabase,
+      firstName,
+      lastName,
+      email,
+      phone,
+    })
+    customerId = resolvedCustomer.id
+  } catch (customerErr) {
+    console.error('[createAiStyleBooking] resolve customer:', customerErr)
+    return { ok: false, error: 'Could not create customer record' }
   }
 
   const { data: existingAddress } = await supabase
