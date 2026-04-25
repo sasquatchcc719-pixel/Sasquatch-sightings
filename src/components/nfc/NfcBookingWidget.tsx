@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -546,6 +547,15 @@ export function NfcBookingWidget({
   const [submitError, setSubmitError] = useState('')
   const [result, setResult] = useState<BookingResult | null>(null)
 
+  // Portal target for the mobile subtotal bar. The widget card uses
+  // backdrop-blur, which makes `position: fixed` children stick to the card
+  // instead of the phone viewport — rendering into `body` fixes that.
+  const [mobileSubtotalHost, setMobileSubtotalHost] =
+    useState<HTMLElement | null>(null)
+  useEffect(() => {
+    setMobileSubtotalHost(document.body)
+  }, [])
+
   // Load services on mount
   useEffect(() => {
     fetch('/api/public/services')
@@ -762,435 +772,439 @@ export function NfcBookingWidget({
 
   // ── Step layout ─────────────────────────────────────────────────────────────
   return (
-    <div className="rounded-2xl border border-white/10 bg-black/60 p-4 backdrop-blur-sm">
-      <StepBar current={step} />
+    <>
+      <div className="rounded-2xl border border-white/10 bg-black/60 p-4 backdrop-blur-sm">
+        <StepBar current={step} />
 
-      {/* ── Step 1: Services ── */}
-      {step === 1 && (
-        <div>
-          <h3 className="mb-1 text-base font-bold text-white">
-            Select Services
-          </h3>
-          <p className="mb-4 text-xs text-white/50">
-            Minimum booking {formatPrice(MIN_TOTAL)}.
-          </p>
+        {/* ── Step 1: Services ── */}
+        {step === 1 && (
+          <div>
+            <h3 className="mb-1 text-base font-bold text-white">
+              Select Services
+            </h3>
+            <p className="mb-4 text-xs text-white/50">
+              Minimum booking {formatPrice(MIN_TOTAL)}.
+            </p>
 
-          {servicesLoading ? (
-            <div className="space-y-3">
-              {[1, 2, 3].map((i) => (
-                <div
-                  key={i}
-                  className="h-20 animate-pulse rounded-xl bg-white/5"
+            {servicesLoading ? (
+              <div className="space-y-3">
+                {[1, 2, 3].map((i) => (
+                  <div
+                    key={i}
+                    className="h-20 animate-pulse rounded-xl bg-white/5"
+                  />
+                ))}
+              </div>
+            ) : (
+              orderedGroups.map(([category, items]) => (
+                <CategorySection
+                  key={category}
+                  category={CATEGORY_DISPLAY_NAMES[category] || category}
+                  items={items}
+                  cart={cart}
+                  onAdd={addToCart}
+                  onRemove={removeFromCart}
                 />
-              ))}
-            </div>
-          ) : (
-            orderedGroups.map(([category, items]) => (
-              <CategorySection
-                key={category}
-                category={CATEGORY_DISPLAY_NAMES[category] || category}
-                items={items}
-                cart={cart}
-                onAdd={addToCart}
-                onRemove={removeFromCart}
-              />
-            ))
-          )}
+              ))
+            )}
 
-          {cart.length > 0 && (
-            <>
-              {/* Mobile: one-line fixed total bar (tap page is mostly phone) */}
-              <div
-                className="fixed right-0 bottom-0 left-0 z-50 flex border-t border-white/15 bg-black/90 px-3 py-2 backdrop-blur-sm md:hidden"
-                style={{
-                  paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))',
-                }}
-              >
-                <div className="mx-auto flex w-full max-w-xl items-center justify-between gap-2 text-xs text-white/80">
-                  <span className="min-w-0 truncate">
-                    <span className="text-white/50">Subtotal</span>{' '}
-                    <span className="font-semibold text-green-400">
+            {cart.length > 0 && (
+              <>
+                {/* In-flow spacer: mobile subtotal is portaled to document.body */}
+                <div className="h-10 shrink-0 md:hidden" aria-hidden />
+
+                <div className="mt-4 hidden items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3 md:flex">
+                  <div>
+                    <p className="text-xs text-white/50">
+                      {cart.reduce((s, c) => s + c.quantity, 0)} service
+                      {cart.reduce((s, c) => s + c.quantity, 0) !== 1
+                        ? 's'
+                        : ''}
+                    </p>
+                    <p className="text-sm font-bold text-white">
                       {formatPrice(subtotal)}
-                    </span>
-                    {meetsMinimum ? null : (
-                      <span className="text-red-300/90">
-                        {' '}
-                        · {formatPrice(MIN_TOTAL - subtotal)} to min
-                      </span>
+                    </p>
+                    {!meetsMinimum && (
+                      <p className="text-xs text-red-400">
+                        {formatPrice(MIN_TOTAL - subtotal)} more to meet minimum
+                      </p>
                     )}
-                  </span>
+                  </div>
                   <button
                     type="button"
                     disabled={!meetsMinimum}
                     onClick={() => setStep(2)}
-                    className="shrink-0 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-green-500 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="rounded-xl bg-green-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-green-500 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     Next →
                   </button>
                 </div>
-              </div>
-              {/* Keeps list scrollable above the fixed bar */}
-              <div className="h-10 shrink-0 md:hidden" aria-hidden />
-
-              <div className="mt-4 hidden items-center justify-between rounded-xl border border-white/10 bg-white/5 p-3 md:flex">
-                <div>
-                  <p className="text-xs text-white/50">
-                    {cart.reduce((s, c) => s + c.quantity, 0)} service
-                    {cart.reduce((s, c) => s + c.quantity, 0) !== 1 ? 's' : ''}
-                  </p>
-                  <p className="text-sm font-bold text-white">
-                    {formatPrice(subtotal)}
-                  </p>
-                  {!meetsMinimum && (
-                    <p className="text-xs text-red-400">
-                      {formatPrice(MIN_TOTAL - subtotal)} more to meet minimum
-                    </p>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  disabled={!meetsMinimum}
-                  onClick={() => setStep(2)}
-                  className="rounded-xl bg-green-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-green-500 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Next →
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* ── Step 2: Schedule ── */}
-      {step === 2 && (
-        <div>
-          <h3 className="mb-1 text-base font-bold text-white">
-            Pick a Date & Time
-          </h3>
-          <p className="mb-4 text-xs text-white/50">
-            Select a date, then choose a time window.
-          </p>
-
-          <div className="mb-4 rounded-xl border border-white/10 bg-white/5 p-4">
-            <MiniCalendar selected={selectedDate} onSelect={setSelectedDate} />
+              </>
+            )}
           </div>
+        )}
 
-          {selectedDate && (
+        {/* ── Step 2: Schedule ── */}
+        {step === 2 && (
+          <div>
+            <h3 className="mb-1 text-base font-bold text-white">
+              Pick a Date & Time
+            </h3>
+            <p className="mb-4 text-xs text-white/50">
+              Select a date, then choose a time window.
+            </p>
+
             <div className="mb-4 rounded-xl border border-white/10 bg-white/5 p-4">
-              <p className="mb-3 text-xs font-semibold text-white/60">
-                Available windows — {formatDateDisplay(selectedDate)}
-              </p>
-              {slotsLoading ? (
-                <div className="grid grid-cols-2 gap-2">
-                  {[1, 2, 3, 4].map((i) => (
-                    <div
-                      key={i}
-                      className="h-10 animate-pulse rounded-lg bg-white/5"
-                    />
-                  ))}
-                </div>
-              ) : slots.length === 0 ? (
-                <p className="py-3 text-center text-sm text-white/40">
-                  No availability. Try another day.
+              <MiniCalendar
+                selected={selectedDate}
+                onSelect={setSelectedDate}
+              />
+            </div>
+
+            {selectedDate && (
+              <div className="mb-4 rounded-xl border border-white/10 bg-white/5 p-4">
+                <p className="mb-3 text-xs font-semibold text-white/60">
+                  Available windows — {formatDateDisplay(selectedDate)}
                 </p>
-              ) : (
-                <div className="grid grid-cols-2 gap-2">
-                  {slots.map((slot) => (
-                    <button
-                      key={slot.start_time}
-                      type="button"
-                      onClick={() => setSelectedSlot(slot)}
-                      className={`rounded-xl border py-2.5 text-sm font-medium transition-all ${
-                        selectedSlot?.start_time === slot.start_time
-                          ? 'border-green-500 bg-green-600 text-white'
-                          : 'border-white/15 text-white/70 hover:border-green-400 hover:text-green-300'
-                      }`}
-                    >
-                      {slot.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+                {slotsLoading ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    {[1, 2, 3, 4].map((i) => (
+                      <div
+                        key={i}
+                        className="h-10 animate-pulse rounded-lg bg-white/5"
+                      />
+                    ))}
+                  </div>
+                ) : slots.length === 0 ? (
+                  <p className="py-3 text-center text-sm text-white/40">
+                    No availability. Try another day.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    {slots.map((slot) => (
+                      <button
+                        key={slot.start_time}
+                        type="button"
+                        onClick={() => setSelectedSlot(slot)}
+                        className={`rounded-xl border py-2.5 text-sm font-medium transition-all ${
+                          selectedSlot?.start_time === slot.start_time
+                            ? 'border-green-500 bg-green-600 text-white'
+                            : 'border-white/15 text-white/70 hover:border-green-400 hover:text-green-300'
+                        }`}
+                      >
+                        {slot.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={() => setStep(1)}
-              className="flex-1 rounded-xl border border-white/15 py-3 text-sm font-medium text-white/60 transition-colors hover:bg-white/5"
-            >
-              ← Back
-            </button>
-            <button
-              type="button"
-              disabled={!selectedDate || !selectedSlot}
-              onClick={() => setStep(3)}
-              className="flex-1 rounded-xl bg-green-600 py-3 text-sm font-semibold text-white transition-colors hover:bg-green-500 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Continue →
-            </button>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setStep(1)}
+                className="flex-1 rounded-xl border border-white/15 py-3 text-sm font-medium text-white/60 transition-colors hover:bg-white/5"
+              >
+                ← Back
+              </button>
+              <button
+                type="button"
+                disabled={!selectedDate || !selectedSlot}
+                onClick={() => setStep(3)}
+                className="flex-1 rounded-xl bg-green-600 py-3 text-sm font-semibold text-white transition-colors hover:bg-green-500 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Continue →
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* ── Step 3: Your Info ── */}
-      {step === 3 && (
-        <div>
-          <h3 className="mb-1 text-base font-bold text-white">
-            Your Information
-          </h3>
-          <p className="mb-4 text-xs text-white/50">
-            We&apos;ll text reminders to your phone.
-          </p>
+        {/* ── Step 3: Your Info ── */}
+        {step === 3 && (
+          <div>
+            <h3 className="mb-1 text-base font-bold text-white">
+              Your Information
+            </h3>
+            <p className="mb-4 text-xs text-white/50">
+              We&apos;ll text reminders to your phone.
+            </p>
 
-          <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className={labelCls}>First Name *</label>
-                <input
-                  type="text"
-                  autoComplete="given-name"
-                  value={form.first_name}
-                  onChange={(e) => setField('first_name', e.target.value)}
-                  className={inputCls}
-                  placeholder="John"
-                />
-              </div>
-              <div>
-                <label className={labelCls}>Last Name *</label>
-                <input
-                  type="text"
-                  autoComplete="family-name"
-                  value={form.last_name}
-                  onChange={(e) => setField('last_name', e.target.value)}
-                  className={inputCls}
-                  placeholder="Smith"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className={labelCls}>Email *</label>
-              <input
-                type="email"
-                autoComplete="email"
-                value={form.email}
-                onChange={(e) => setField('email', e.target.value)}
-                className={inputCls}
-                placeholder="john@example.com"
-              />
-            </div>
-
-            <div>
-              <label className={labelCls}>Phone *</label>
-              <input
-                type="tel"
-                autoComplete="tel"
-                value={form.phone}
-                onChange={(e) => setField('phone', e.target.value)}
-                className={inputCls}
-                placeholder="(719) 555-0123"
-              />
-            </div>
-
-            <div className="border-t border-white/10 pt-3">
-              <p className="mb-2 text-xs font-semibold text-white/50">
-                Service Address
-              </p>
-              <div className="space-y-2">
-                <input
-                  type="text"
-                  autoComplete="street-address"
-                  value={form.street_1}
-                  onChange={(e) => setField('street_1', e.target.value)}
-                  className={inputCls}
-                  placeholder="Street address *"
-                />
-                <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelCls}>First Name *</label>
                   <input
                     type="text"
-                    autoComplete="address-level2"
-                    value={form.city}
-                    onChange={(e) => setField('city', e.target.value)}
+                    autoComplete="given-name"
+                    value={form.first_name}
+                    onChange={(e) => setField('first_name', e.target.value)}
                     className={inputCls}
-                    placeholder="City *"
+                    placeholder="John"
                   />
-                  <div className="flex gap-2">
-                    <select
-                      value={form.state}
-                      onChange={(e) => setField('state', e.target.value)}
-                      className="w-14 rounded-xl border border-white/20 bg-white/10 px-2 py-2.5 text-sm text-white focus:border-green-400 focus:outline-none"
-                    >
-                      {['CO', 'WY', 'NM', 'UT', 'KS', 'NE', 'OK', 'TX'].map(
-                        (s) => (
-                          <option key={s} className="bg-gray-900">
-                            {s}
-                          </option>
-                        ),
-                      )}
-                    </select>
+                </div>
+                <div>
+                  <label className={labelCls}>Last Name *</label>
+                  <input
+                    type="text"
+                    autoComplete="family-name"
+                    value={form.last_name}
+                    onChange={(e) => setField('last_name', e.target.value)}
+                    className={inputCls}
+                    placeholder="Smith"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className={labelCls}>Email *</label>
+                <input
+                  type="email"
+                  autoComplete="email"
+                  value={form.email}
+                  onChange={(e) => setField('email', e.target.value)}
+                  className={inputCls}
+                  placeholder="john@example.com"
+                />
+              </div>
+
+              <div>
+                <label className={labelCls}>Phone *</label>
+                <input
+                  type="tel"
+                  autoComplete="tel"
+                  value={form.phone}
+                  onChange={(e) => setField('phone', e.target.value)}
+                  className={inputCls}
+                  placeholder="(719) 555-0123"
+                />
+              </div>
+
+              <div className="border-t border-white/10 pt-3">
+                <p className="mb-2 text-xs font-semibold text-white/50">
+                  Service Address
+                </p>
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    autoComplete="street-address"
+                    value={form.street_1}
+                    onChange={(e) => setField('street_1', e.target.value)}
+                    className={inputCls}
+                    placeholder="Street address *"
+                  />
+                  <div className="grid grid-cols-2 gap-2">
                     <input
                       type="text"
-                      autoComplete="postal-code"
-                      value={form.zip_code}
-                      onChange={(e) => setField('zip_code', e.target.value)}
+                      autoComplete="address-level2"
+                      value={form.city}
+                      onChange={(e) => setField('city', e.target.value)}
                       className={inputCls}
-                      placeholder="ZIP *"
-                      maxLength={5}
+                      placeholder="City *"
                     />
+                    <div className="flex gap-2">
+                      <select
+                        value={form.state}
+                        onChange={(e) => setField('state', e.target.value)}
+                        className="w-14 rounded-xl border border-white/20 bg-white/10 px-2 py-2.5 text-sm text-white focus:border-green-400 focus:outline-none"
+                      >
+                        {['CO', 'WY', 'NM', 'UT', 'KS', 'NE', 'OK', 'TX'].map(
+                          (s) => (
+                            <option key={s} className="bg-gray-900">
+                              {s}
+                            </option>
+                          ),
+                        )}
+                      </select>
+                      <input
+                        type="text"
+                        autoComplete="postal-code"
+                        value={form.zip_code}
+                        onChange={(e) => setField('zip_code', e.target.value)}
+                        className={inputCls}
+                        placeholder="ZIP *"
+                        maxLength={5}
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
+
+              <div>
+                <label className={labelCls}>
+                  Notes{' '}
+                  <span className="font-normal text-white/30">(optional)</span>
+                </label>
+                <textarea
+                  value={form.notes}
+                  onChange={(e) => setField('notes', e.target.value)}
+                  rows={2}
+                  className={`${inputCls} resize-none`}
+                  placeholder="Gate codes, pets, parking…"
+                />
+              </div>
             </div>
 
-            <div>
-              <label className={labelCls}>
-                Notes{' '}
-                <span className="font-normal text-white/30">(optional)</span>
-              </label>
-              <textarea
-                value={form.notes}
-                onChange={(e) => setField('notes', e.target.value)}
-                rows={2}
-                className={`${inputCls} resize-none`}
-                placeholder="Gate codes, pets, parking…"
-              />
+            {submitError && (
+              <p className="mt-3 text-center text-sm text-red-400">
+                {submitError}
+              </p>
+            )}
+
+            <div className="mt-4 flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setSubmitError('')
+                  setStep(2)
+                }}
+                className="flex-1 rounded-xl border border-white/15 py-3 text-sm font-medium text-white/60 transition-colors hover:bg-white/5"
+              >
+                ← Back
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const err = validateStep3()
+                  if (err) {
+                    setSubmitError(err)
+                    return
+                  }
+                  setSubmitError('')
+                  setStep(4)
+                }}
+                className="flex-1 rounded-xl bg-green-600 py-3 text-sm font-semibold text-white transition-colors hover:bg-green-500"
+              >
+                Review →
+              </button>
             </div>
           </div>
+        )}
 
-          {submitError && (
-            <p className="mt-3 text-center text-sm text-red-400">
-              {submitError}
+        {/* ── Step 4: Review & Confirm ── */}
+        {step === 4 && (
+          <div>
+            <h3 className="mb-1 text-base font-bold text-white">
+              Review & Confirm
+            </h3>
+            <p className="mb-4 text-xs text-white/50">
+              Double-check before we lock in your appointment.
             </p>
-          )}
 
-          <div className="mt-4 flex gap-3">
-            <button
-              type="button"
-              onClick={() => {
-                setSubmitError('')
-                setStep(2)
-              }}
-              className="flex-1 rounded-xl border border-white/15 py-3 text-sm font-medium text-white/60 transition-colors hover:bg-white/5"
-            >
-              ← Back
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                const err = validateStep3()
-                if (err) {
-                  setSubmitError(err)
-                  return
-                }
-                setSubmitError('')
-                setStep(4)
-              }}
-              className="flex-1 rounded-xl bg-green-600 py-3 text-sm font-semibold text-white transition-colors hover:bg-green-500"
-            >
-              Review →
-            </button>
-          </div>
-        </div>
-      )}
+            {/* Services summary */}
+            <div className="mb-3 rounded-xl border border-white/10 bg-white/5 p-4">
+              <p className="mb-2 text-xs font-semibold tracking-wide text-white/40 uppercase">
+                Services
+              </p>
+              <div className="space-y-1.5">
+                {cart.map((ci) => (
+                  <div
+                    key={ci.service.id}
+                    className="flex justify-between text-sm"
+                  >
+                    <span className="text-white/80">
+                      {ci.service.name}
+                      {ci.quantity > 1 && (
+                        <span className="ml-1 text-white/40">
+                          × {ci.quantity}
+                        </span>
+                      )}
+                    </span>
+                    <span className="font-medium text-white">
+                      {formatPrice(ci.service.base_price * ci.quantity)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-2 flex justify-between border-t border-white/10 pt-2 text-sm font-bold">
+                <span className="text-white/70">Subtotal</span>
+                <span className="text-green-400">{formatPrice(subtotal)}</span>
+              </div>
+            </div>
 
-      {/* ── Step 4: Review & Confirm ── */}
-      {step === 4 && (
-        <div>
-          <h3 className="mb-1 text-base font-bold text-white">
-            Review & Confirm
-          </h3>
-          <p className="mb-4 text-xs text-white/50">
-            Double-check before we lock in your appointment.
-          </p>
-
-          {/* Services summary */}
-          <div className="mb-3 rounded-xl border border-white/10 bg-white/5 p-4">
-            <p className="mb-2 text-xs font-semibold tracking-wide text-white/40 uppercase">
-              Services
-            </p>
-            <div className="space-y-1.5">
-              {cart.map((ci) => (
-                <div
-                  key={ci.service.id}
-                  className="flex justify-between text-sm"
-                >
-                  <span className="text-white/80">
-                    {ci.service.name}
-                    {ci.quantity > 1 && (
-                      <span className="ml-1 text-white/40">
-                        × {ci.quantity}
-                      </span>
-                    )}
-                  </span>
+            {/* Appointment */}
+            <div className="mb-3 rounded-xl border border-white/10 bg-white/5 p-4">
+              <p className="mb-2 text-xs font-semibold tracking-wide text-white/40 uppercase">
+                Appointment
+              </p>
+              <div className="space-y-1 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-white/50">Date</span>
                   <span className="font-medium text-white">
-                    {formatPrice(ci.service.base_price * ci.quantity)}
+                    {formatDateDisplay(selectedDate)}
                   </span>
                 </div>
-              ))}
+                <div className="flex justify-between">
+                  <span className="text-white/50">Time</span>
+                  <span className="font-medium text-white">
+                    {selectedSlot?.label}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-white/50">Address</span>
+                  <span className="max-w-[60%] text-right font-medium text-white">
+                    {form.street_1}, {form.city}
+                  </span>
+                </div>
+              </div>
             </div>
-            <div className="mt-2 flex justify-between border-t border-white/10 pt-2 text-sm font-bold">
-              <span className="text-white/70">Subtotal</span>
-              <span className="text-green-400">{formatPrice(subtotal)}</span>
-            </div>
-          </div>
 
-          {/* Appointment */}
-          <div className="mb-3 rounded-xl border border-white/10 bg-white/5 p-4">
-            <p className="mb-2 text-xs font-semibold tracking-wide text-white/40 uppercase">
-              Appointment
-            </p>
-            <div className="space-y-1 text-sm">
-              <div className="flex justify-between">
-                <span className="text-white/50">Date</span>
-                <span className="font-medium text-white">
-                  {formatDateDisplay(selectedDate)}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-white/50">Time</span>
-                <span className="font-medium text-white">
-                  {selectedSlot?.label}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-white/50">Address</span>
-                <span className="max-w-[60%] text-right font-medium text-white">
-                  {form.street_1}, {form.city}
-                </span>
+            {/* Contact */}
+            <div className="mb-3 rounded-xl border border-white/10 bg-white/5 p-4">
+              <p className="mb-2 text-xs font-semibold tracking-wide text-white/40 uppercase">
+                Contact
+              </p>
+              <div className="space-y-1 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-white/50">Name</span>
+                  <span className="font-medium text-white">
+                    {form.first_name} {form.last_name}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-white/50">Phone</span>
+                  <span className="font-medium text-white">{form.phone}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-white/50">Email</span>
+                  <span className="font-medium text-white">{form.email}</span>
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Contact */}
-          <div className="mb-3 rounded-xl border border-white/10 bg-white/5 p-4">
-            <p className="mb-2 text-xs font-semibold tracking-wide text-white/40 uppercase">
-              Contact
-            </p>
-            <div className="space-y-1 text-sm">
-              <div className="flex justify-between">
-                <span className="text-white/50">Name</span>
-                <span className="font-medium text-white">
-                  {form.first_name} {form.last_name}
-                </span>
+            {/* Discount */}
+            {couponCode && (
+              <div className="mb-3 flex items-center gap-3 rounded-xl border border-green-500/30 bg-green-500/10 p-4">
+                <svg
+                  className="h-5 w-5 shrink-0 text-green-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
+                  />
+                </svg>
+                <div>
+                  <p className="text-sm font-semibold text-green-300">
+                    Card Holder Discount Applied
+                  </p>
+                  <p className="text-xs text-green-400/70">
+                    Code{' '}
+                    <span className="font-mono font-bold">{couponCode}</span> —
+                    $20 off your total
+                  </p>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-white/50">Phone</span>
-                <span className="font-medium text-white">{form.phone}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-white/50">Email</span>
-                <span className="font-medium text-white">{form.email}</span>
-              </div>
-            </div>
-          </div>
+            )}
 
-          {/* Discount */}
-          {couponCode && (
-            <div className="mb-3 flex items-center gap-3 rounded-xl border border-green-500/30 bg-green-500/10 p-4">
+            {/* Payment notice */}
+            <div className="mb-4 flex items-start gap-3 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3">
               <svg
-                className="h-5 w-5 shrink-0 text-green-400"
+                className="mt-0.5 h-4 w-4 shrink-0 text-amber-400"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -1199,93 +1213,102 @@ export function NfcBookingWidget({
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth={2}
-                  d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
+                  d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
                 />
               </svg>
-              <div>
-                <p className="text-sm font-semibold text-green-300">
-                  Card Holder Discount Applied
-                </p>
-                <p className="text-xs text-green-400/70">
-                  Code <span className="font-mono font-bold">{couponCode}</span>{' '}
-                  — $20 off your total
-                </p>
-              </div>
+              <p className="text-xs leading-relaxed text-amber-300/80">
+                Payment collected day-of. We accept cash, card, Venmo, or
+                CashApp. No payment required to confirm.
+              </p>
             </div>
-          )}
 
-          {/* Payment notice */}
-          <div className="mb-4 flex items-start gap-3 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3">
-            <svg
-              className="mt-0.5 h-4 w-4 shrink-0 text-amber-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
-            <p className="text-xs leading-relaxed text-amber-300/80">
-              Payment collected day-of. We accept cash, card, Venmo, or CashApp.
-              No payment required to confirm.
-            </p>
+            {submitError && (
+              <p className="mb-4 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-center text-sm text-red-400">
+                {submitError}
+              </p>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={() => setStep(3)}
+                className="flex-1 rounded-xl border border-white/15 py-3 text-sm font-medium text-white/60 transition-colors hover:bg-white/5 disabled:opacity-40"
+              >
+                ← Back
+              </button>
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={() => void handleSubmit()}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-green-600 py-3 text-sm font-bold text-white transition-colors hover:bg-green-500 disabled:opacity-50"
+              >
+                {submitting ? (
+                  <>
+                    <svg
+                      className="h-4 w-4 animate-spin"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      />
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                      />
+                    </svg>
+                    Booking…
+                  </>
+                ) : (
+                  'Confirm Booking'
+                )}
+              </button>
+            </div>
           </div>
-
-          {submitError && (
-            <p className="mb-4 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-center text-sm text-red-400">
-              {submitError}
-            </p>
-          )}
-
-          <div className="flex gap-3">
-            <button
-              type="button"
-              disabled={submitting}
-              onClick={() => setStep(3)}
-              className="flex-1 rounded-xl border border-white/15 py-3 text-sm font-medium text-white/60 transition-colors hover:bg-white/5 disabled:opacity-40"
-            >
-              ← Back
-            </button>
-            <button
-              type="button"
-              disabled={submitting}
-              onClick={() => void handleSubmit()}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-green-600 py-3 text-sm font-bold text-white transition-colors hover:bg-green-500 disabled:opacity-50"
-            >
-              {submitting ? (
-                <>
-                  <svg
-                    className="h-4 w-4 animate-spin"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                    />
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                    />
-                  </svg>
-                  Booking…
-                </>
-              ) : (
-                'Confirm Booking'
-              )}
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+      {mobileSubtotalHost &&
+        step === 1 &&
+        cart.length > 0 &&
+        createPortal(
+          <div
+            className="fixed right-0 bottom-0 left-0 z-[100] flex border-t border-white/15 bg-black/90 px-3 py-2 shadow-[0_-4px_20px_rgba(0,0,0,0.45)] backdrop-blur-sm md:hidden"
+            style={{
+              paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))',
+            }}
+          >
+            <div className="mx-auto flex w-full max-w-xl items-center justify-between gap-2 text-xs text-white/80">
+              <span className="min-w-0 truncate">
+                <span className="text-white/50">Subtotal</span>{' '}
+                <span className="font-semibold text-green-400">
+                  {formatPrice(subtotal)}
+                </span>
+                {meetsMinimum ? null : (
+                  <span className="text-red-300/90">
+                    {' '}
+                    · {formatPrice(MIN_TOTAL - subtotal)} to min
+                  </span>
+                )}
+              </span>
+              <button
+                type="button"
+                disabled={!meetsMinimum}
+                onClick={() => setStep(2)}
+                className="shrink-0 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-green-500 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Next →
+              </button>
+            </div>
+          </div>,
+          mobileSubtotalHost,
+        )}
+    </>
   )
 }
