@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 interface ServiceItem {
   id: string
+  slug?: string
   name: string
   base_price: number
   category: string
@@ -77,6 +78,19 @@ function cartTotal(cart: CartItem[]) {
 
 function formatPrice(n: number) {
   return n.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+}
+
+function formatPricingUnit(unit: string | null) {
+  if (!unit || unit === 'fixed') return ''
+  const normalized = unit.replace(/_/g, ' ')
+  return normalized.startsWith('per ') ? normalized : `per ${normalized}`
+}
+
+function isLeatherService(item: ServiceItem) {
+  return (
+    item.slug?.includes('leather') ||
+    item.name.toLowerCase().includes('leather')
+  )
 }
 
 function toLocalISO(d: Date) {
@@ -191,10 +205,115 @@ function CategorySection({
   onAdd: (s: ServiceItem) => void
   onRemove: (s: ServiceItem) => void
 }) {
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(false)
+  const [leatherOpen, setLeatherOpen] = useState(false)
 
   function getQty(id: string) {
     return cart.find((c) => c.service.id === id)?.quantity ?? 0
+  }
+
+  const isUpholstery = category === 'Upholstery Cleaning'
+  const regularItems = isUpholstery
+    ? items.filter((item) => !isLeatherService(item))
+    : items
+  const leatherItems = isUpholstery ? items.filter(isLeatherService) : []
+
+  function renderServiceItem(item: ServiceItem) {
+    const qty = getQty(item.id)
+    const unit = formatPricingUnit(item.pricing_unit)
+
+    return (
+      <div
+        key={item.id}
+        className="flex items-center justify-between px-4 py-3"
+      >
+        <div className="min-w-0 flex-1 pr-4">
+          <p className="text-sm leading-tight font-medium text-white">
+            {item.name}
+          </p>
+          {item.description && (
+            <p className="mt-0.5 line-clamp-2 text-xs leading-tight text-white/50">
+              {item.description}
+            </p>
+          )}
+          <p className="mt-1 text-sm font-semibold text-green-400">
+            {formatPrice(item.base_price)}
+            {unit && (
+              <span className="ml-1 text-xs font-normal text-white/40">
+                /{unit}
+              </span>
+            )}
+          </p>
+        </div>
+
+        {qty === 0 ? (
+          <button
+            type="button"
+            onClick={() => onAdd(item)}
+            className="flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-1.5 text-sm font-medium whitespace-nowrap text-white transition-colors hover:bg-green-500"
+          >
+            <svg
+              className="h-3.5 w-3.5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2.5}
+                d="M12 4v16m8-8H4"
+              />
+            </svg>
+            Add
+          </button>
+        ) : (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onRemove(item)}
+              className="flex h-7 w-7 items-center justify-center rounded-full border border-white/20 text-white/60 transition-colors hover:border-red-400 hover:text-red-400"
+            >
+              <svg
+                className="h-3 w-3"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2.5}
+                  d="M20 12H4"
+                />
+              </svg>
+            </button>
+            <span className="w-5 text-center text-sm font-bold text-white">
+              {qty}
+            </span>
+            <button
+              type="button"
+              onClick={() => onAdd(item)}
+              className="flex h-7 w-7 items-center justify-center rounded-full border border-green-500 text-green-400 transition-colors hover:bg-green-600 hover:text-white"
+            >
+              <svg
+                className="h-3 w-3"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2.5}
+                  d="M12 4v16m8-8H4"
+                />
+              </svg>
+            </button>
+          </div>
+        )}
+      </div>
+    )
   }
 
   return (
@@ -222,101 +341,43 @@ function CategorySection({
 
       {open && (
         <div className="divide-y divide-white/5">
-          {items.map((item) => {
-            const qty = getQty(item.id)
-            return (
-              <div
-                key={item.id}
-                className="flex items-center justify-between px-4 py-3"
+          {regularItems.map(renderServiceItem)}
+          {leatherItems.length > 0 && (
+            <div className="bg-white/[0.03]">
+              <button
+                type="button"
+                className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-white/5"
+                onClick={() => setLeatherOpen((value) => !value)}
               >
-                <div className="min-w-0 flex-1 pr-4">
-                  <p className="text-sm leading-tight font-medium text-white">
-                    {item.name}
-                  </p>
-                  {item.description && (
-                    <p className="mt-0.5 line-clamp-2 text-xs leading-tight text-white/50">
-                      {item.description}
-                    </p>
-                  )}
-                  <p className="mt-1 text-sm font-semibold text-green-400">
-                    {formatPrice(item.base_price)}
-                    {item.pricing_unit && (
-                      <span className="ml-1 text-xs font-normal text-white/40">
-                        /{item.pricing_unit}
-                      </span>
-                    )}
+                <div>
+                  <span className="text-sm font-semibold text-white">
+                    Leather Furniture Cleaning
+                  </span>
+                  <p className="mt-0.5 text-xs text-white/45">
+                    Chairs, loveseats, sofas, and sectionals
                   </p>
                 </div>
-
-                {qty === 0 ? (
-                  <button
-                    type="button"
-                    onClick={() => onAdd(item)}
-                    className="flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-1.5 text-sm font-medium whitespace-nowrap text-white transition-colors hover:bg-green-500"
-                  >
-                    <svg
-                      className="h-3.5 w-3.5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2.5}
-                        d="M12 4v16m8-8H4"
-                      />
-                    </svg>
-                    Add
-                  </button>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => onRemove(item)}
-                      className="flex h-7 w-7 items-center justify-center rounded-full border border-white/20 text-white/60 transition-colors hover:border-red-400 hover:text-red-400"
-                    >
-                      <svg
-                        className="h-3 w-3"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2.5}
-                          d="M20 12H4"
-                        />
-                      </svg>
-                    </button>
-                    <span className="w-5 text-center text-sm font-bold text-white">
-                      {qty}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => onAdd(item)}
-                      className="flex h-7 w-7 items-center justify-center rounded-full border border-green-500 text-green-400 transition-colors hover:bg-green-600 hover:text-white"
-                    >
-                      <svg
-                        className="h-3 w-3"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2.5}
-                          d="M12 4v16m8-8H4"
-                        />
-                      </svg>
-                    </button>
-                  </div>
-                )}
-              </div>
-            )
-          })}
+                <svg
+                  className={`h-4 w-4 text-white/50 transition-transform ${leatherOpen ? 'rotate-180' : ''}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 9l-7 7-7-7"
+                  />
+                </svg>
+              </button>
+              {leatherOpen && (
+                <div className="divide-y divide-white/5 border-t border-white/5">
+                  {leatherItems.map(renderServiceItem)}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
