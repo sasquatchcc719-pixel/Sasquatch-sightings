@@ -86,6 +86,7 @@ type PhotonProperties = {
   street?: string
   housenumber?: string
   city?: string
+  county?: string
   state?: string
   statecode?: string
   postcode?: string
@@ -94,7 +95,10 @@ type PhotonProperties = {
   type?: string
 }
 
-type PhotonFeature = { properties?: PhotonProperties }
+type PhotonFeature = {
+  properties?: PhotonProperties
+  geometry?: { coordinates?: [number, number] | number[] }
+}
 
 /** Reject if we know it's not the US; allow empty country (Photon sometimes omits). */
 function isLikelyUS(p: PhotonProperties): boolean {
@@ -135,15 +139,63 @@ function buildLabel(
   return [street1, city, stateAbbr, zip].filter(Boolean).join(', ')
 }
 
+export type PhotonSuggestionsOptions = {
+  /** When state/region is missing, fill with this 2-letter code (only if you are not also using allowedStateAbbr). */
+  fallbackState?: string
+  /** If set (e.g. CO), only include rows whose state resolves to this code. Unknown state is dropped — no guessing. */
+  allowedStateAbbr?: string
+  /** Optional county filter (normalized lowercase names). */
+  allowedCountyNames?: string[]
+  /** Optional fallback bounds check for rows missing county metadata. */
+  allowedBounds?: {
+    minLon: number
+    minLat: number
+    maxLon: number
+    maxLat: number
+  }
+}
+
+function inBounds(
+  coords: [number, number] | number[] | undefined,
+  bounds:
+    | {
+        minLon: number
+        minLat: number
+        maxLon: number
+        maxLat: number
+      }
+    | undefined,
+): boolean {
+  if (!coords || !bounds || coords.length < 2) return false
+  const lon = Number(coords[0])
+  const lat = Number(coords[1])
+  if (!Number.isFinite(lon) || !Number.isFinite(lat)) return false
+  return (
+    lon >= bounds.minLon &&
+    lon <= bounds.maxLon &&
+    lat >= bounds.minLat &&
+    lat <= bounds.maxLat
+  )
+}
+
 /**
  * Map Photon /api JSON to form suggestions. Drops non-US results; keeps street-level
  * and other layers so partial queries still return useful rows.
  */
 export function photonFeaturesToSuggestions(
   features: PhotonFeature[] | undefined,
-  fallbackState: string,
+  options: PhotonSuggestionsOptions = {},
 ): AddressSuggestion[] {
+  const {
+    fallbackState = 'CO',
+    allowedStateAbbr,
+    allowedCountyNames = [],
+    allowedBounds,
+  } = options
   if (!features?.length) return []
+  const countySet = new Set(
+    allowedCountyNames.map((c) => c.trim().toLowerCase()),
+  )
   const out: AddressSuggestion[] = []
   for (const f of features) {
     const p = f.properties
@@ -152,11 +204,24 @@ export function photonFeaturesToSuggestions(
 
     const city = p.city?.trim() ?? ''
     const zip = p.postcode?.trim() ?? ''
+    // Do not default to CO when we are filtering to Colorado — that would turn unknown-state hits into false CO.
     const stateAbbr = normalizeUsStateAbbrev(
       p.state,
       p.statecode,
-      fallbackState,
+      allowedStateAbbr ? '' : fallbackState,
     )
+    if (allowedStateAbbr && stateAbbr !== allowedStateAbbr) continue
+    if (!stateAbbr) continue
+    if (countySet.size > 0) {
+      const county = (p.county || '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+county$/, '')
+      const countyOk = countySet.has(county)
+      if (!countyOk && !inBounds(f.geometry?.coordinates, allowedBounds))
+        continue
+    }
+
     const street1 = buildStreet1(p)
     if (!street1) continue
 

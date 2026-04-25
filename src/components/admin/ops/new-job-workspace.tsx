@@ -1197,9 +1197,9 @@ export function NewJobWorkspace() {
                 <Card className="p-4">
                   <h4 className="text-sm font-semibold">Search address</h4>
                   <p className="text-muted-foreground mt-1 text-xs">
-                    Optional. Type and pick a match to autofill the manual entry
-                    fields below. Skip this entirely if you already know the
-                    address.
+                    Optional. Suggestions are Colorado only (service area). Type
+                    and pick a match to autofill the fields below, or skip and
+                    use manual entry.
                   </p>
                   <div className="relative mt-3">
                     <Label htmlFor="address-lookup" className="sr-only">
