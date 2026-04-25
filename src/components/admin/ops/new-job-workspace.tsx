@@ -225,7 +225,7 @@ export function NewJobWorkspace() {
   const [leadSource, setLeadSource] = useState('')
   const [useCustomTime, setUseCustomTime] = useState(false)
 
-  // Address lookup (Photon) — separate from manual fields below
+  // Address lookup (server /api/.../address-suggest) — manual fields still canonical
   const [addrSearchQuery, setAddrSearchQuery] = useState('')
   const [addrSuggestions, setAddrSuggestions] = useState<
     Array<{
@@ -1223,50 +1223,23 @@ export function NewJobWorkspace() {
                           setAddrLoading(true)
                           try {
                             const res = await fetch(
-                              `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=6&lang=en&lat=38.8339&lon=-104.8214&layer=house`,
+                              `/api/admin/ops/address-suggest?q=${encodeURIComponent(q)}`,
+                              { cache: 'no-store' },
                             )
+                            if (!res.ok) {
+                              setAddrSuggestions([])
+                              return
+                            }
                             const data = (await res.json()) as {
-                              features: Array<{
-                                properties: {
-                                  housenumber?: string
-                                  street?: string
-                                  name?: string
-                                  city?: string
-                                  state?: string
-                                  postcode?: string
-                                  country?: string
-                                }
+                              suggestions?: Array<{
+                                label: string
+                                street: string
+                                city: string
+                                state: string
+                                zip: string
                               }>
                             }
-                            const suggestions = (data.features ?? [])
-                              .filter(
-                                (f) => f.properties.country === 'United States',
-                              )
-                              .map((f) => {
-                                const p = f.properties
-                                const streetLine = [
-                                  p.housenumber,
-                                  p.street ?? p.name,
-                                ]
-                                  .filter(Boolean)
-                                  .join(' ')
-                                return {
-                                  label: [
-                                    streetLine,
-                                    p.city,
-                                    p.state,
-                                    p.postcode,
-                                  ]
-                                    .filter(Boolean)
-                                    .join(', '),
-                                  street: streetLine,
-                                  city: p.city ?? '',
-                                  state: p.state ?? '',
-                                  zip: p.postcode ?? '',
-                                }
-                              })
-                              .filter((s) => s.street)
-                            setAddrSuggestions(suggestions)
+                            setAddrSuggestions(data.suggestions ?? [])
                           } catch {
                             setAddrSuggestions([])
                           } finally {
@@ -1302,11 +1275,10 @@ export function NewJobWorkspace() {
                                   ...current,
                                   street_1: s.street,
                                   city: s.city || current.city,
-                                  state: s.state
-                                    ? s.state.length === 2
-                                      ? s.state
-                                      : s.state.slice(0, 2).toUpperCase()
-                                    : current.state,
+                                  state:
+                                    s.state && s.state.length === 2
+                                      ? s.state.toUpperCase()
+                                      : current.state,
                                   zip_code: s.zip || current.zip_code,
                                 }))
                                 dismissAddrSuggestions()
@@ -1324,8 +1296,8 @@ export function NewJobWorkspace() {
                 <Card className="p-4">
                   <h4 className="text-sm font-semibold">Manual entry</h4>
                   <p className="text-muted-foreground mt-1 text-xs">
-                    This is what gets saved on the job. No autocomplete here —
-                    type the service address directly.
+                    This is what gets saved on the job. You can type from
+                    scratch or fix any field after using search above.
                   </p>
                   <div className="mt-3 grid gap-3 md:grid-cols-2">
                     <div>
