@@ -35,7 +35,6 @@ Type: Educational tip — teach the reader something genuinely useful about carp
 Topics to choose from (pick whichever feels freshest):
 - How often carpets should actually be cleaned (most people don't know)
 - Why hot water extraction beats dry cleaning for deep soil
-- What carpet protector does and when it's worth it
 - How pet urine damage works at the fiber level and why enzyme treatment matters
 - Why vacuuming direction matters
 - The difference between a portable unit and a truck-mount

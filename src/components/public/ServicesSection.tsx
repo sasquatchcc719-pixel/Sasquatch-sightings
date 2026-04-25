@@ -7,6 +7,7 @@ function scrollToContact() {
 }
 
 const STANDARD_PRICING = [
+  { label: 'Urine Eliminator Treatment', price: '$25' },
   { label: 'Step / Landing', price: '$4', unit: 'per step' },
   {
     label: 'Small Area / Hall / Closet',
@@ -33,18 +34,6 @@ const LEGENDARY_PRICING = [
 ]
 
 const ADD_ONS = [
-  {
-    title: 'Carpet Protector',
-    tagline: 'Protect your investment.',
-    description:
-      'Applied after cleaning, our fiber protector creates an invisible shield that repels spills and slows soiling — keeping your carpets cleaner, longer.',
-    icon: '🛡️',
-    highlights: [
-      'Spill & stain resistance',
-      'Extends carpet life',
-      'Safe for kids & pets',
-    ],
-  },
   {
     title: 'Pre-Vacuuming',
     tagline: 'The detail that makes the difference.',
@@ -75,6 +64,11 @@ function PriceTable({ rows }: { rows: typeof STANDARD_PRICING }) {
           </div>
           <span className="text-sm font-semibold text-cyan-400">
             {row.price}
+            {row.unit && (
+              <span className="ml-1 text-xs font-normal text-white/35">
+                /{row.unit}
+              </span>
+            )}
           </span>
         </div>
       ))}
@@ -186,8 +180,7 @@ export function ServicesSection() {
 
         {/* Add-ons note */}
         <p className="mt-4 text-center text-xs tracking-wider text-white/30">
-          Carpet Protector and Pre-Vacuuming available as add-ons with any
-          service.
+          Pre-Vacuuming available as an add-on with any service.
         </p>
       </div>
     </section>
