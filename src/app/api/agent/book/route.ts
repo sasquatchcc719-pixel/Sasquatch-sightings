@@ -113,6 +113,26 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Reject if the requested start time falls inside an existing active appointment
+    const normalizedStart =
+      startTime.length === 5 ? `${startTime}:00` : startTime
+    const { data: slotConflicts } = await supabase
+      .from('ops_appointments')
+      .select('id, start_time, end_time')
+      .eq('appointment_date', appointmentDate)
+      .not('status', 'eq', 'cancelled')
+      .lte('start_time', normalizedStart)
+      .gt('end_time', normalizedStart)
+
+    if (slotConflicts && slotConflicts.length > 0) {
+      return NextResponse.json(
+        {
+          error: `The ${startTime} slot on ${appointmentDate} is not available. Please call GET /api/agent/availability?date=${appointmentDate} to see open times.`,
+        },
+        { status: 400, headers: CORS },
+      )
+    }
+
     // AI agent bookings go direct (confirmed immediately) unless the key explicitly
     // overrides to request mode. Service-area approval is no longer forced.
     const effectiveBookingMode =
