@@ -14,6 +14,7 @@ import {
   getQuickBooksSyncStatus,
 } from '@/lib/quickbooks'
 import { resolveOpsCustomer } from '@/lib/ops/customers'
+import { resolveServiceAddress } from '@/lib/ops/addresses'
 
 export type AiStyleBookingLineRequest = {
   service_id: string
@@ -199,40 +200,21 @@ export async function createAiStyleBooking(
     return { ok: false, error: 'Could not create customer record' }
   }
 
-  const { data: existingAddress } = await supabase
-    .from('ops_service_addresses')
-    .select('id')
-    .eq('customer_id', customerId)
-    .eq('street_1', street1)
-    .eq('zip_code', zipCode)
-    .maybeSingle()
-
-  let addressId: string
-  if (existingAddress) {
-    addressId = existingAddress.id
-    await supabase
-      .from('ops_service_addresses')
-      .update({ city, state, updated_at: new Date().toISOString() })
-      .eq('id', addressId)
-  } else {
-    const { data: newAddress, error: addrErr } = await supabase
-      .from('ops_service_addresses')
-      .insert({
-        customer_id: customerId,
-        street_1: street1,
-        city,
-        state,
-        zip_code: zipCode,
-        label: 'Service Address',
-      })
-      .select('id')
-      .single()
-    if (addrErr) {
-      console.error('[createAiStyleBooking] address:', addrErr)
-      return { ok: false, error: 'Could not save service address' }
-    }
-    addressId = newAddress.id
+  const resolvedAddr = await resolveServiceAddress(supabase, customerId, {
+    label: 'Service Address',
+    street_1: street1,
+    city,
+    state,
+    zip_code: zipCode,
+  })
+  if (!resolvedAddr) {
+    return { ok: false, error: 'Could not save service address' }
   }
+  const addressId = resolvedAddr.id
+  await supabase
+    .from('ops_service_addresses')
+    .update({ city, state, updated_at: new Date().toISOString() })
+    .eq('id', addressId)
 
   const appointmentStatus =
     bookingMode === 'direct' ? 'booked' : 'pending_approval'

@@ -27,6 +27,7 @@ import {
 } from '@/lib/ops/availability'
 import { sendAdminSMS } from '@/lib/twilio'
 import { sendOneSignalNotification } from '@/lib/onesignal'
+import { resolveServiceAddress } from '@/lib/ops/addresses'
 
 export type CreateAiStyleEstimateInput = {
   supabase: SupabaseClient
@@ -254,41 +255,22 @@ export async function createAiStyleEstimate(
     customerId = newCustomer.id
   }
 
-  // --- Service address: reuse if the customer already has this street+zip ---
-  const { data: existingAddress } = await supabase
-    .from('ops_service_addresses')
-    .select('id')
-    .eq('customer_id', customerId)
-    .eq('street_1', street1)
-    .eq('zip_code', zipCode)
-    .maybeSingle()
-
-  let addressId: string
-  if (existingAddress) {
-    addressId = existingAddress.id
-    await supabase
-      .from('ops_service_addresses')
-      .update({ city, state, updated_at: new Date().toISOString() })
-      .eq('id', addressId)
-  } else {
-    const { data: newAddress, error: addrErr } = await supabase
-      .from('ops_service_addresses')
-      .insert({
-        customer_id: customerId,
-        street_1: street1,
-        city,
-        state,
-        zip_code: zipCode,
-        label: businessName || 'Walkthrough Address',
-      })
-      .select('id')
-      .single()
-    if (addrErr) {
-      console.error('[createAiStyleEstimate] address:', addrErr)
-      return { ok: false, error: 'Could not save service address' }
-    }
-    addressId = newAddress.id
+  // --- Service address: reuse via shared dedupe (street + zip when set) ---
+  const resolved = await resolveServiceAddress(supabase, customerId, {
+    label: businessName || 'Walkthrough Address',
+    street_1: street1,
+    city,
+    state,
+    zip_code: zipCode,
+  })
+  if (!resolved) {
+    return { ok: false, error: 'Could not save service address' }
   }
+  const addressId = resolved.id
+  await supabase
+    .from('ops_service_addresses')
+    .update({ city, state, updated_at: new Date().toISOString() })
+    .eq('id', addressId)
 
   const endTime = addMinutesToHHMM(startTime, requiredMinutes)
 

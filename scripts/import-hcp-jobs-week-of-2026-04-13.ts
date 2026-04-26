@@ -23,6 +23,7 @@ import {
   buildQuickBooksInvoicePayload,
   getQuickBooksSyncStatus,
 } from '@/lib/quickbooks'
+import { resolveServiceAddress } from '@/lib/ops/addresses'
 
 dotenv.config({ path: '.env.local' })
 
@@ -784,22 +785,26 @@ async function insertAppointmentForJob(
   const discountAmount = Math.max(0, job.discount_amount ?? 0)
   const quotedTotal = Math.max(0, quotedSubtotal - discountAmount)
 
-  const { data: address, error: addrErr } = await supabase
+  const address = await resolveServiceAddress(supabase, customerId, {
+    label: job.business_name
+      ? 'Commercial / service address'
+      : 'Service Address',
+    street_1: job.street_1,
+    city: job.city,
+    state: job.state,
+    zip_code: job.zip_code,
+    notes: null,
+  })
+  if (!address)
+    throw new Error('Could not resolve service address for import job')
+  await supabase
     .from('ops_service_addresses')
-    .insert({
-      customer_id: customerId,
-      label: job.business_name
-        ? 'Commercial / service address'
-        : 'Service Address',
-      street_1: job.street_1,
+    .update({
       city: job.city,
       state: job.state,
-      zip_code: job.zip_code,
-      notes: null,
+      updated_at: new Date().toISOString(),
     })
-    .select()
-    .single()
-  if (addrErr) throw addrErr
+    .eq('id', address.id)
 
   const syncStatus = getQuickBooksSyncStatus()
 
