@@ -67,6 +67,7 @@ type Appointment = {
   ops_appointment_line_items: Array<{
     id: string
     name_snapshot: string
+    notes?: string | null
     quantity?: number | null
     duration_minutes?: number | null
     line_total?: number | null
@@ -142,6 +143,33 @@ const DEFAULT_BUSINESS_HOURS_ROWS: BusinessHoursRow[] = [
 function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
   if (!value) return null
   return Array.isArray(value) ? value[0] || null : value
+}
+
+/** Per-line work descriptions (amber box) — same idea as recurring visit / invoice line items. */
+function recurringLineItemDescriptionBoxes(
+  appointment: Appointment,
+  compact: boolean,
+) {
+  if (!appointment.recurring_template_id) return null
+  const items = appointment.ops_appointment_line_items || []
+  const withNotes = items.filter((i) => (i.notes || '').trim())
+  if (withNotes.length === 0) return null
+  return (
+    <div className={compact ? 'mt-0.5 space-y-0.5' : 'mt-1.5 space-y-1'}>
+      {withNotes.map((item, idx) => (
+        <div
+          key={item.id || String(idx)}
+          className={
+            compact
+              ? 'line-clamp-2 rounded border border-amber-400/80 bg-amber-50 px-1.5 py-0.5 text-[9px] leading-tight text-amber-950'
+              : 'rounded-md border border-amber-400/80 bg-amber-50 px-2 py-1.5 text-[10px] leading-snug text-amber-950'
+          }
+        >
+          {(item.notes || '').trim()}
+        </div>
+      ))}
+    </div>
+  )
 }
 
 /** Align with stats/utilization: invoice + line math first, then quote. */
@@ -2211,6 +2239,7 @@ export function OperationsSchedule() {
                             {appointment.ops_appointment_line_items[0]
                               ?.name_snapshot || 'Service'}
                           </div>
+                          {recurringLineItemDescriptionBoxes(appointment, true)}
                           {(() => {
                             const address = unwrapRelation(
                               appointment.ops_service_addresses,
@@ -2593,6 +2622,10 @@ export function OperationsSchedule() {
                                     .map((item) => item.name_snapshot)
                                     .join(', ')}
                                 </div>
+                                {recurringLineItemDescriptionBoxes(
+                                  appointment,
+                                  false,
+                                )}
                                 <div
                                   className={`mt-auto pt-2 text-right font-semibold tabular-nums ${
                                     appointment.status === 'completed'
