@@ -86,6 +86,9 @@ Your capabilities:
 - Enable/disable Harry for specific conversations
 - List recent active conversations
 - Answer questions about customer interactions
+- Add jobs/appointments to the schedule
+- View the schedule
+- Modify existing appointments
 
 Be conversational, helpful, and concise. Charles is texting you from his phone while working, so keep responses brief but informative.`,
         },
@@ -184,6 +187,91 @@ Be conversational, helpful, and concise. Charles is texting you from his phone w
                   description: 'Number of conversations to show (default 10)',
                 },
               },
+            },
+          },
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'add_appointment',
+            description:
+              'Add a new appointment/job to the schedule. Use this when Charles wants to schedule a job.',
+            parameters: {
+              type: 'object',
+              properties: {
+                customer_name: {
+                  type: 'string',
+                  description: 'Customer name (e.g., "Evan Cox", "John Smith")',
+                },
+                date: {
+                  type: 'string',
+                  description:
+                    'Date in YYYY-MM-DD format. Tomorrow, today, specific date, etc.',
+                },
+                start_time: {
+                  type: 'string',
+                  description: 'Start time in HH:MM format (24-hour)',
+                },
+                duration_hours: {
+                  type: 'number',
+                  description: 'Duration in hours (default 1)',
+                },
+                notes: {
+                  type: 'string',
+                  description:
+                    'Internal notes (e.g., "Warranty - spot popped back up")',
+                },
+              },
+              required: ['customer_name', 'date', 'start_time'],
+            },
+          },
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'view_schedule',
+            description:
+              'View the schedule for a specific date. Shows all appointments.',
+            parameters: {
+              type: 'object',
+              properties: {
+                date: {
+                  type: 'string',
+                  description:
+                    'Date in YYYY-MM-DD format, or "today", "tomorrow", specific weekday',
+                },
+              },
+              required: ['date'],
+            },
+          },
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'update_appointment',
+            description:
+              'Update an existing appointment (reschedule, change notes, etc.)',
+            parameters: {
+              type: 'object',
+              properties: {
+                customer_name: {
+                  type: 'string',
+                  description: 'Customer name to find the appointment',
+                },
+                new_date: {
+                  type: 'string',
+                  description: 'New date (optional)',
+                },
+                new_start_time: {
+                  type: 'string',
+                  description: 'New start time (optional)',
+                },
+                new_notes: {
+                  type: 'string',
+                  description: 'New internal notes (optional)',
+                },
+              },
+              required: ['customer_name'],
             },
           },
         },
@@ -383,6 +471,214 @@ async function executeToolCall(
       }
 
       return list
+    }
+
+    case 'add_appointment': {
+      const customerName = String(input.customer_name)
+      const date = String(input.date)
+      const startTime = String(input.start_time)
+      const durationHours = Number(input.duration_hours) || 1
+      const notes = input.notes ? String(input.notes) : null
+
+      // Find customer by name
+      const { data: customer } = await supabase
+        .from('ops_customers')
+        .select('id, full_name, phone')
+        .or(
+          `full_name.ilike.%${customerName}%,first_name.ilike.%${customerName}%,last_name.ilike.%${customerName}%`,
+        )
+        .limit(1)
+        .maybeSingle()
+
+      if (!customer) {
+        return `❌ Couldn't find customer "${customerName}". Make sure they exist in the system first.`
+      }
+
+      // Get their service address
+      const { data: serviceAddress } = await supabase
+        .from('ops_service_addresses')
+        .select('id')
+        .eq('customer_id', customer.id)
+        .limit(1)
+        .maybeSingle()
+
+      // Calculate end time
+      const [hours, minutes] = startTime.split(':').map(Number)
+      const endHours = hours + durationHours
+      const endTime = `${endHours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:00`
+
+      // Insert appointment
+      const { data: newAppt, error } = await supabase
+        .from('ops_appointments')
+        .insert({
+          customer_id: customer.id,
+          service_address_id: serviceAddress?.id || null,
+          appointment_date: date,
+          start_time: startTime + ':00',
+          end_time: endTime,
+          status: 'booked',
+          kind: 'service',
+          internal_notes: notes,
+          booking_channel: 'manual',
+          source: 'owner',
+        })
+        .select('id, appointment_date, start_time, end_time')
+        .single()
+
+      if (error) {
+        return `❌ Failed to create appointment: ${error.message}`
+      }
+
+      const formattedDate = new Date(date).toLocaleDateString('en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+      })
+      const formattedTime = new Date(
+        `2000-01-01 ${startTime}`,
+      ).toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+      })
+
+      return `✅ Added ${customer.full_name} to schedule\n📅 ${formattedDate} at ${formattedTime}\n⏱️ ${durationHours}h${notes ? `\n📝 ${notes}` : ''}`
+    }
+
+    case 'view_schedule': {
+      let targetDate = String(input.date)
+
+      // Handle relative dates
+      const today = new Date()
+      if (targetDate.toLowerCase() === 'today') {
+        targetDate = today.toISOString().split('T')[0]
+      } else if (targetDate.toLowerCase() === 'tomorrow') {
+        const tomorrow = new Date(today)
+        tomorrow.setDate(tomorrow.getDate() + 1)
+        targetDate = tomorrow.toISOString().split('T')[0]
+      }
+
+      const { data: appointments } = await supabase
+        .from('ops_appointments')
+        .select(
+          'id, appointment_date, start_time, end_time, status, internal_notes, customer_id',
+        )
+        .eq('appointment_date', targetDate)
+        .order('start_time', { ascending: true })
+
+      if (!appointments || appointments.length === 0) {
+        const formattedDate = new Date(targetDate).toLocaleDateString('en-US', {
+          weekday: 'long',
+          month: 'long',
+          day: 'numeric',
+        })
+        return `📅 ${formattedDate}\n\nNo appointments scheduled`
+      }
+
+      // Get customer names
+      const customerIds = appointments.map((a) => a.customer_id)
+      const { data: customers } = await supabase
+        .from('ops_customers')
+        .select('id, full_name')
+        .in('id', customerIds)
+
+      const customerMap = new Map(customers?.map((c) => [c.id, c.full_name]))
+
+      const formattedDate = new Date(targetDate).toLocaleDateString('en-US', {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+      })
+
+      let schedule = `📅 ${formattedDate}\n\n`
+      for (const appt of appointments) {
+        const customerName =
+          customerMap.get(appt.customer_id) || 'Unknown Customer'
+        const time = new Date(
+          `2000-01-01 ${appt.start_time}`,
+        ).toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+        })
+        const statusIcon =
+          appt.status === 'completed'
+            ? '✅'
+            : appt.status === 'booked'
+              ? '📌'
+              : '⏸️'
+
+        schedule += `${statusIcon} ${time} - ${customerName}`
+        if (appt.internal_notes) {
+          schedule += `\n   📝 ${appt.internal_notes}`
+        }
+        schedule += '\n\n'
+      }
+
+      return schedule
+    }
+
+    case 'update_appointment': {
+      const customerName = String(input.customer_name)
+      const newDate = input.new_date ? String(input.new_date) : null
+      const newStartTime = input.new_start_time
+        ? String(input.new_start_time)
+        : null
+      const newNotes = input.new_notes ? String(input.new_notes) : null
+
+      // Find customer
+      const { data: customer } = await supabase
+        .from('ops_customers')
+        .select('id, full_name')
+        .or(
+          `full_name.ilike.%${customerName}%,first_name.ilike.%${customerName}%,last_name.ilike.%${customerName}%`,
+        )
+        .limit(1)
+        .maybeSingle()
+
+      if (!customer) {
+        return `❌ Couldn't find customer "${customerName}"`
+      }
+
+      // Find their most recent upcoming appointment
+      const { data: appointments } = await supabase
+        .from('ops_appointments')
+        .select('id, appointment_date, start_time, status')
+        .eq('customer_id', customer.id)
+        .gte('appointment_date', new Date().toISOString().split('T')[0])
+        .order('appointment_date', { ascending: true })
+        .order('start_time', { ascending: true })
+        .limit(1)
+
+      if (!appointments || appointments.length === 0) {
+        return `❌ No upcoming appointments found for ${customer.full_name}`
+      }
+
+      const appt = appointments[0]
+
+      // Build update object
+      const updates: Record<string, string> = {}
+      if (newDate) updates.appointment_date = newDate
+      if (newStartTime) updates.start_time = newStartTime + ':00'
+      if (newNotes) updates.internal_notes = newNotes
+
+      if (Object.keys(updates).length === 0) {
+        return '❌ No changes specified'
+      }
+
+      const { error } = await supabase
+        .from('ops_appointments')
+        .update(updates)
+        .eq('id', appt.id)
+
+      if (error) {
+        return `❌ Failed to update: ${error.message}`
+      }
+
+      let response = `✅ Updated appointment for ${customer.full_name}\n`
+      if (newDate) response += `📅 New date: ${newDate}\n`
+      if (newStartTime) response += `⏰ New time: ${newStartTime}\n`
+      if (newNotes) response += `📝 Notes: ${newNotes}\n`
+
+      return response.trim()
     }
 
     default:
