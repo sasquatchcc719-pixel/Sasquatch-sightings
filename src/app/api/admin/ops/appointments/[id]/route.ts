@@ -253,6 +253,53 @@ export async function PATCH(
         ? nowIso
         : completedAtExisting
 
+    // Re-link to (or detach from) a recurring series — only owner/dispatcher/admin.
+    // Validates template customer_id + service_address_id match the job.
+    let nextRecurringTemplateId: string | null | undefined
+    if (Object.prototype.hasOwnProperty.call(body, 'recurring_template_id')) {
+      if (!['admin', 'owner', 'dispatcher'].includes(String(access.role))) {
+        return NextResponse.json(
+          { error: 'Not authorized to change recurring template link' },
+          { status: 403 },
+        )
+      }
+      if (body.recurring_template_id === null) {
+        nextRecurringTemplateId = null
+      } else {
+        const tid = String(body.recurring_template_id).trim()
+        if (!tid) {
+          return NextResponse.json(
+            { error: 'Invalid recurring_template_id' },
+            { status: 400 },
+          )
+        }
+        const { data: tpl, error: tplErr } = await supabase
+          .from('ops_recurring_templates')
+          .select('id, customer_id, service_address_id')
+          .eq('id', tid)
+          .maybeSingle()
+        if (tplErr || !tpl) {
+          return NextResponse.json(
+            { error: 'Recurring template not found' },
+            { status: 400 },
+          )
+        }
+        if (
+          tpl.customer_id !== current.customer_id ||
+          tpl.service_address_id !== current.service_address_id
+        ) {
+          return NextResponse.json(
+            {
+              error:
+                'That template is for a different customer or service address than this job',
+            },
+            { status: 400 },
+          )
+        }
+        nextRecurringTemplateId = tid
+      }
+    }
+
     const { data: updated, error: updateError } = await supabase
       .from('ops_appointments')
       .update({
@@ -276,12 +323,19 @@ export async function PATCH(
         on_my_way_at: nextOnMyWayAt,
         completed_at: nextCompletedAt,
         updated_at: nowIso,
+        ...(nextRecurringTemplateId !== undefined
+          ? { recurring_template_id: nextRecurringTemplateId }
+          : {}),
       })
       .eq('id', id)
       .select()
       .single()
 
     if (updateError) throw updateError
+
+    const effRecurringTid =
+      (updated as { recurring_template_id?: string | null })
+        .recurring_template_id ?? null
 
     // Handle line item updates (for recurring batch visit editing)
     if (Array.isArray(body.line_items)) {
@@ -428,11 +482,11 @@ export async function PATCH(
     // Determine if this is a batch_monthly recurring appointment — skip
     // lifecycle notifications and QB sync for commercial batch clients.
     let isBatchMonthlyRecurring = false
-    if (current.recurring_template_id && current.status !== nextStatus) {
+    if (effRecurringTid && current.status !== nextStatus) {
       const { data: tplMeta } = await supabase
         .from('ops_recurring_templates')
         .select('invoice_mode')
-        .eq('id', current.recurring_template_id)
+        .eq('id', effRecurringTid)
         .maybeSingle()
       isBatchMonthlyRecurring = tplMeta?.invoice_mode === 'batch_monthly'
     }
@@ -474,7 +528,7 @@ export async function PATCH(
         })
         lifecycleNotifications = sent
 
-        if (!current.recurring_template_id) {
+        if (!effRecurringTid) {
           enrollCustomerInDrip(id).catch((err) =>
             console.error('[drip] enrollment error:', err),
           )

@@ -10,6 +10,7 @@ import {
   MessageCircle,
   Navigation,
   Clock,
+  Repeat,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -74,6 +75,8 @@ type AppointmentDetail = {
         gate_code: string | null
         notes: string | null
       }>
+  kind?: string
+  recurring_template_id?: string | null
   ops_appointment_line_items: Array<{
     id: string
     name_snapshot: string
@@ -197,6 +200,10 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
   const [distanceToJob, setDistanceToJob] = useState<number | null>(null)
   const [geoWatchId, setGeoWatchId] = useState<number | null>(null)
   const [autoArrivedTriggered, setAutoArrivedTriggered] = useState(false)
+  const [recurringLinkOptions, setRecurringLinkOptions] = useState<
+    { id: string; label: string }[] | null
+  >(null)
+  const [selectedRecurringTid, setSelectedRecurringTid] = useState<string>('')
 
   const loadAppointment = useCallback(
     async (mode: 'initial' | 'refresh' = 'initial') => {
@@ -239,6 +246,37 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
   useEffect(() => {
     void loadAppointment('initial')
   }, [loadAppointment])
+
+  // Offer re-link to recurring when this job was detached (e.g. old calendar move bug).
+  useEffect(() => {
+    if (!appointment?.id) return
+    const kind = appointment.kind ?? 'service'
+    if (kind === 'estimate' || appointment.recurring_template_id) {
+      setRecurringLinkOptions(null)
+      return
+    }
+    let alive = true
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/admin/ops/appointments/${appointment.id}/recurring-link-options`,
+          { cache: 'no-store' },
+        )
+        const data = (await res.json()) as {
+          templates?: { id: string; label: string }[]
+        }
+        if (!alive) return
+        const list = data.templates || []
+        setRecurringLinkOptions(list)
+        if (list[0]) setSelectedRecurringTid(list[0].id)
+      } catch {
+        if (alive) setRecurringLinkOptions([])
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, [appointment])
 
   // Load drive start time from sessionStorage
   useEffect(() => {
@@ -545,6 +583,33 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
     }
   }
 
+  const handleLinkRecurring = async (templateId: string) => {
+    setActionLoading('recurring-link')
+    setError(null)
+    try {
+      const response = await fetch(
+        `/api/admin/ops/appointments/${appointmentId}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ recurring_template_id: templateId }),
+        },
+      )
+      const result = (await response.json()) as { error?: string }
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to link recurring series')
+      }
+      await router.push(`/admin/operations/recurring/visit/${appointmentId}`)
+      router.refresh()
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : 'Failed to link recurring series',
+      )
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
   if (loading) {
     return (
       <div className="text-muted-foreground flex items-center gap-3">
@@ -576,6 +641,64 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
           {error}
         </Card>
       ) : null}
+
+      {recurringLinkOptions && recurringLinkOptions.length > 0 && (
+        <Card className="border-amber-200 bg-amber-50 p-4 text-amber-950">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex gap-3">
+              <Repeat className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+              <div>
+                <p className="font-medium">Not linked to a recurring series</p>
+                <p className="text-sm text-amber-900/90">
+                  This job is missing the recurring link, so you see the one-off
+                  job layout. Link it to restore line-item editing and calendar
+                  styling (common after the old &quot;move detaches&quot;
+                  behavior).
+                </p>
+                {recurringLinkOptions.length > 1 && (
+                  <div className="mt-2">
+                    <label className="text-xs font-medium text-amber-900/80">
+                      Series
+                      <select
+                        className="text-foreground ml-2 rounded-md border border-amber-300 bg-white px-2 py-1 text-sm"
+                        value={selectedRecurringTid}
+                        onChange={(e) =>
+                          setSelectedRecurringTid(e.target.value)
+                        }
+                      >
+                        {recurringLinkOptions.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                )}
+              </div>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              className="shrink-0 bg-amber-900 text-white hover:bg-amber-800"
+              disabled={actionLoading === 'recurring-link'}
+              onClick={() => {
+                const templateId =
+                  recurringLinkOptions.length === 1
+                    ? recurringLinkOptions[0].id
+                    : selectedRecurringTid
+                if (templateId) void handleLinkRecurring(templateId)
+              }}
+            >
+              {actionLoading === 'recurring-link' ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                'Link to series'
+              )}
+            </Button>
+          </div>
+        </Card>
+      )}
 
       {/* Timer Status Cards */}
       {(showDriveTimer || showJobTimer) && (
