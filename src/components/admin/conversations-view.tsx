@@ -29,6 +29,7 @@ import {
 import { useRouter } from 'next/navigation'
 import { CallButton } from '@/components/admin/softphone'
 import { useQueryClient } from '@tanstack/react-query'
+import { countUnreadInboundMessages } from '@/lib/conversations-unread'
 
 type Message = {
   role: 'user' | 'assistant' | 'system'
@@ -59,18 +60,6 @@ type Conversation = {
 
 type ConversationsViewProps = {
   conversations: Conversation[]
-}
-
-// Count unread inbound messages since admin last read this conversation
-function getUnreadCount(convo: Conversation): number {
-  if (!convo.messages?.length) return 0
-  const readAt = convo.admin_read_at ? new Date(convo.admin_read_at) : null
-  return convo.messages.filter((m) => {
-    if (m.role !== 'user') return false
-    if (!readAt) return true
-    if (!m.timestamp) return true
-    return new Date(m.timestamp) > readAt
-  }).length
 }
 
 // Build initials from a name or phone number
@@ -159,7 +148,7 @@ export function ConversationsView({
     setSelectedConvo(convo)
     setReplyText('')
 
-    const unread = getUnreadCount(convo)
+    const unread = countUnreadInboundMessages(convo)
     if (unread > 0) {
       // Optimistically mark as read in UI
       setLocalReadIds((prev) => new Set([...prev, convo.id]))
@@ -658,7 +647,9 @@ export function ConversationsView({
                 const initials = getInitials(displayName, convo.phone_number)
                 const avatarColor = getAvatarColor(convo.phone_number)
                 const isLocallyRead = localReadIds.has(convo.id)
-                const unread = isLocallyRead ? 0 : getUnreadCount(convo)
+                const unread = isLocallyRead
+                  ? 0
+                  : countUnreadInboundMessages(convo)
                 const isUnread = unread > 0
                 const isOpsCustomer = !!convo.ops_customer_id
 
@@ -721,7 +712,7 @@ export function ConversationsView({
                         </p>
                         {unread > 0 && (
                           <span className="flex h-5 min-w-5 flex-shrink-0 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
-                            {unread > 9 ? '9+' : unread}
+                            {unread > 99 ? '99+' : unread}
                           </span>
                         )}
                       </div>

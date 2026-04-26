@@ -32,9 +32,14 @@ async function fetchUnreadCount(): Promise<UnreadCountResponse> {
 
 function BadgeCount({ count }: { count: number }) {
   if (count <= 0) return null
-  const label = count > 9 ? '9+' : String(count)
+  // Match per-message counts (can exceed 9); cap display at 99+ for layout
+  const label = count > 99 ? '99+' : String(count)
   return (
-    <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] leading-none font-bold text-white shadow-md">
+    <span
+      className={`absolute -top-1 -right-1 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] leading-none font-bold text-white shadow-md ${
+        count > 9 ? 'min-w-5 px-1.5' : ''
+      }`}
+    >
       {label}
     </span>
   )

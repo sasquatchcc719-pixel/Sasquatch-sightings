@@ -1,28 +1,13 @@
 import { createAdminClient } from '@/supabase/server'
 import Link from 'next/link'
 import { MessageSquare, ChevronRight } from 'lucide-react'
-
-type Message = {
-  role: string
-  timestamp?: string
-}
+import { countUnreadInboundMessages } from '@/lib/conversations-unread'
 
 type ConversationRow = {
   source: string | null
-  messages: Message[]
+  messages: { role: string; timestamp?: string }[]
   admin_read_at: string | null
   updated_at: string
-}
-
-function countUnread(conv: ConversationRow): number {
-  if (!conv.messages?.length) return 0
-  const readAt = conv.admin_read_at ? new Date(conv.admin_read_at) : null
-  return conv.messages.filter((m) => {
-    if (m.role !== 'user') return false
-    if (!readAt) return true
-    if (!m.timestamp) return true
-    return new Date(m.timestamp) > readAt
-  }).length
 }
 
 function getLastActiveLabel(updatedAt: string): string {
@@ -65,7 +50,7 @@ export default async function CommsHubPage() {
     else if (src === 'yelp') key = 'yelp'
 
     if (key) {
-      channels[key].unread += countUnread(conv)
+      channels[key].unread += countUnreadInboundMessages(conv)
       if (!channels[key].lastActive) {
         channels[key].lastActive = conv.updated_at
       }

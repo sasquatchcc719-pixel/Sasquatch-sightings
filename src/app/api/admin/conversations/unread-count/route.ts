@@ -3,43 +3,25 @@
  * GET  – returns total unread + per-channel breakdown
  * PATCH – bulk marks all conversations as read
  *
- * "Unread" = admin_read_at IS NULL OR admin_read_at < updated_at
- * AND the conversation has at least one inbound (role:'user') message.
+ * "Unread" = per inbound (role `user`) message with timestamp > admin_read_at
+ * (same as Comms hub and conversation list). `total` is the sum of those
+ * message counts, not a thread count.
  */
 
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 import { getUserWithRole } from '@/lib/auth'
-
-type Message = {
-  role: string
-  timestamp?: string
-}
+import {
+  countUnreadInboundMessages,
+  sourceToCommsChannel,
+} from '@/lib/conversations-unread'
 
 type ConversationRow = {
   id: string
   source: string | null
-  messages: Message[]
+  messages: { role: string; timestamp?: string }[]
   admin_read_at: string | null
   updated_at: string
-}
-
-function hasUnreadMessages(conv: ConversationRow): boolean {
-  const hasInbound = conv.messages.some((m) => m.role === 'user')
-  if (!hasInbound) return false
-  if (!conv.admin_read_at) return true
-  return new Date(conv.updated_at) > new Date(conv.admin_read_at)
-}
-
-function sourceToChannel(
-  source: string | null,
-): 'phone' | 'lsa' | 'yelp' | 'other' {
-  if (!source) return 'other'
-  const s = source.toLowerCase()
-  if (s === 'inbound') return 'phone'
-  if (s === 'google lsa' || s === 'lsa') return 'lsa'
-  if (s === 'yelp') return 'yelp'
-  return 'other'
 }
 
 export async function GET() {
@@ -70,10 +52,10 @@ export async function GET() {
     let total = 0
 
     for (const conv of rows) {
-      if (hasUnreadMessages(conv)) {
-        total++
-        const ch = sourceToChannel(conv.source)
-        byChannel[ch]++
+      const n = countUnreadInboundMessages(conv)
+      if (n > 0) {
+        total += n
+        byChannel[sourceToCommsChannel(conv.source)] += n
       }
     }
 
