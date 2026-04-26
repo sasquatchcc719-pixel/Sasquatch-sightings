@@ -10,7 +10,7 @@
   },
   "servers": [
     {
-      "url": "https://sasquatchsightings.com/api/agent",
+      "url": "https://sightings.sasquatchcarpet.com/api/agent",
       "description": "Production API"
     }
   ],

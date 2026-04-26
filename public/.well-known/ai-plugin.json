@@ -13,9 +13,9 @@
   },
   "api": {
     "type": "openapi",
-    "url": "https://sasquatchsightings.com/.well-known/openapi.json"
+    "url": "https://sasquatchcarpet.com/.well-known/openapi.json"
   },
-  "logo_url": "https://sasquatchsightings.com/sasquatch-logo.png",
+  "logo_url": "https://sasquatchcarpet.com/assets/icons/icon-512x512.png",
   "contact_email": "sasquatchcc719@gmail.com",
-  "legal_info_url": "https://sasquatchsightings.com/terms"
+  "legal_info_url": "https://sasquatchcarpet.com/privacy"
 }
