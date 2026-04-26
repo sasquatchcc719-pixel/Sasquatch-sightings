@@ -1,10 +1,12 @@
+/**
+ * AI Agent API — GET /api/agent/services
+ * Public endpoint — no auth required.
+ * Returns active services, pricing, promo info, and booking instructions.
+ */
+
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
-import {
-  validateAgentRequest,
-  getAgentPromoSettings,
-  checkRateLimit,
-} from '@/lib/agent-auth'
+import { getAgentPromoSettings } from '@/lib/agent-auth'
 import { getServiceAreaDescription } from '@/lib/service-area'
 
 const CORS = {
@@ -39,30 +41,8 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS })
 }
 
-export async function GET(request: Request) {
+export async function GET() {
   try {
-    const auth = await validateAgentRequest(request)
-    if (!auth.ok) {
-      return NextResponse.json(
-        { error: auth.error },
-        { status: auth.status, headers: CORS },
-      )
-    }
-
-    const rl = checkRateLimit(auth.key.id, '/api/agent/services')
-    if (!rl.allowed) {
-      return NextResponse.json(
-        { error: 'Rate limit exceeded. Please slow down.' },
-        {
-          status: 429,
-          headers: {
-            ...CORS,
-            'Retry-After': String(Math.ceil((rl.retryAfterMs || 60000) / 1000)),
-          },
-        },
-      )
-    }
-
     const supabase = createAdminClient()
     const { data, error } = await supabase
       .from('service_catalog_items')
@@ -93,10 +73,9 @@ export async function GET(request: Request) {
       ? [
           {
             code: 'AI20',
-            description: `$${promo.discount} off any job over $${promo.minimum} when booked through this service`,
+            description: `$${promo.discount} off any job over $${promo.minimum} when booked through an AI assistant`,
             discount_amount: promo.discount,
             minimum_subtotal: promo.minimum,
-            type: 'fixed',
           },
         ]
       : []
@@ -106,7 +85,9 @@ export async function GET(request: Request) {
         services,
         promotions,
         booking_instructions:
-          'To book a job: 1) Use GET /api/agent/availability to find open time slots. 2) Use GET /api/agent/estimate to get a price quote. 3) Use POST /api/agent/book with the customer details and selected services.',
+          'To book: 1) Call GET /api/agent/availability?date=YYYY-MM-DD to find open slots. 2) Call GET /api/agent/estimate?services=id1,id2 for pricing. 3) Call POST /api/agent/book with customer info, address, date, start_time, and line_items. Use Authorization: Bearer ' +
+          process.env.AI_PUBLIC_BOOKING_KEY +
+          ' for the book request.',
         service_area: getServiceAreaDescription(),
       },
       { headers: CORS },

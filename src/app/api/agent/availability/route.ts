@@ -1,6 +1,10 @@
+/**
+ * AI Agent API — GET /api/agent/availability
+ * Public endpoint — no auth required.
+ */
+
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
-import { validateAgentRequest, checkRateLimit } from '@/lib/agent-auth'
 import {
   applyAppointmentBuffer,
   getAvailableSlots,
@@ -11,8 +15,6 @@ const CORS = {
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 }
-
-const DEFAULT_DURATION_MINUTES = 120
 
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS })
@@ -27,28 +29,6 @@ function formatTime(time: string): string {
 
 export async function GET(request: NextRequest) {
   try {
-    const auth = await validateAgentRequest(request)
-    if (!auth.ok) {
-      return NextResponse.json(
-        { error: auth.error },
-        { status: auth.status, headers: CORS },
-      )
-    }
-
-    const rl = checkRateLimit(auth.key.id, '/api/agent/availability')
-    if (!rl.allowed) {
-      return NextResponse.json(
-        { error: 'Rate limit exceeded. Please slow down.' },
-        {
-          status: 429,
-          headers: {
-            ...CORS,
-            'Retry-After': String(Math.ceil((rl.retryAfterMs || 60000) / 1000)),
-          },
-        },
-      )
-    }
-
     const { searchParams } = new URL(request.url)
     const date = searchParams.get('date')
     const durationParam = Number(searchParams.get('duration_minutes') || '0')
@@ -69,9 +49,8 @@ export async function GET(request: NextRequest) {
     }
 
     const requiredMinutes = applyAppointmentBuffer(
-      durationParam > 0 ? durationParam : DEFAULT_DURATION_MINUTES,
+      durationParam > 0 ? durationParam : 120,
     )
-
     const supabase = createAdminClient()
 
     async function getSlotsForDate(targetDate: string) {
@@ -90,7 +69,6 @@ export async function GET(request: NextRequest) {
             .select('appointment_date, start_time, end_time, status')
             .eq('appointment_date', targetDate),
         ])
-
       return getAvailableSlots({
         date: targetDate,
         requiredMinutes,

@@ -1,10 +1,11 @@
+/**
+ * AI Agent API — GET /api/agent/estimate
+ * Public endpoint — no auth required.
+ */
+
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
-import {
-  validateAgentRequest,
-  getAgentPromoSettings,
-  checkRateLimit,
-} from '@/lib/agent-auth'
+import { getAgentPromoSettings } from '@/lib/agent-auth'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -18,28 +19,6 @@ export async function OPTIONS() {
 
 export async function GET(request: NextRequest) {
   try {
-    const auth = await validateAgentRequest(request)
-    if (!auth.ok) {
-      return NextResponse.json(
-        { error: auth.error },
-        { status: auth.status, headers: CORS },
-      )
-    }
-
-    const rl = checkRateLimit(auth.key.id, '/api/agent/estimate')
-    if (!rl.allowed) {
-      return NextResponse.json(
-        { error: 'Rate limit exceeded. Please slow down.' },
-        {
-          status: 429,
-          headers: {
-            ...CORS,
-            'Retry-After': String(Math.ceil((rl.retryAfterMs || 60000) / 1000)),
-          },
-        },
-      )
-    }
-
     const { searchParams } = new URL(request.url)
     const serviceIds =
       searchParams.get('services')?.split(',').filter(Boolean) || []
@@ -118,8 +97,8 @@ export async function GET(request: NextRequest) {
         total,
         estimated_duration_minutes: totalDuration,
         note: promotionApplied
-          ? `A $${promo.discount} discount has been applied because the subtotal exceeds $${promo.minimum}.`
-          : subtotal < promo.minimum && promo.enabled
+          ? `$${promo.discount} AI discount applied!`
+          : promo.enabled && subtotal < promo.minimum
             ? `Add $${(promo.minimum - subtotal).toFixed(2)} more to qualify for a $${promo.discount} discount.`
             : undefined,
       },

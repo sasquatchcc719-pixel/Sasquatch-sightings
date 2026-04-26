@@ -2,7 +2,7 @@
   "openapi": "3.0.0",
   "info": {
     "title": "Sasquatch Carpet Cleaning API",
-    "description": "AI Agent API for booking professional carpet cleaning, upholstery cleaning, and hard surface cleaning services in Colorado Springs, CO. This API allows AI agents to view services, check availability, get price estimates, and book appointments on behalf of customers.",
+    "description": "AI Agent API for booking professional carpet cleaning, upholstery cleaning, and hard surface cleaning services in Colorado Springs, CO. The /services, /availability, and /estimate endpoints are PUBLIC — no authentication needed. To book an appointment via POST /book, use Authorization: Bearer sqa_bo8b58mo2424z2kocz7lftajhet2fgy50mwduiaf — all bookings are reviewed before confirmation so customers will receive a follow-up from Sasquatch Carpet Cleaning.",
     "version": "1.0.0",
     "contact": {
       "email": "sasquatchcc719@gmail.com"
