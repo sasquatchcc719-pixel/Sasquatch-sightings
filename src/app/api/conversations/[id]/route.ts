@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '../../../../supabase/server'
 import { getUserWithRole } from '@/lib/auth'
+import { computeReadWatermarkIso } from '@/lib/conversations-unread'
 
 export async function PATCH(
   request: NextRequest,
@@ -20,12 +21,30 @@ export async function PATCH(
     const body = await request.json()
     const { id: conversationId } = await params
 
-    // mark_read action: sets admin_read_at = now()
+    // mark_read: set admin_read_at to max(now, latest inbound message time)
     if (body.action === 'mark_read') {
       const supabase = createAdminClient()
+      const { data: row, error: fetchErr } = await supabase
+        .from('conversations')
+        .select('messages')
+        .eq('id', conversationId)
+        .single()
+
+      if (fetchErr || !row) {
+        return NextResponse.json(
+          { error: 'Conversation not found' },
+          { status: 404 },
+        )
+      }
+
+      const messages = Array.isArray(row.messages) ? row.messages : []
+      const readAt = computeReadWatermarkIso(
+        messages as Array<{ role: string; timestamp?: string }>,
+      )
+
       const { error } = await supabase
         .from('conversations')
-        .update({ admin_read_at: new Date().toISOString() })
+        .update({ admin_read_at: readAt })
         .eq('id', conversationId)
 
       if (error) {
