@@ -1,6 +1,6 @@
 import { createAdminClient } from '@/supabase/server'
 import Link from 'next/link'
-import { MessageSquare, ChevronRight } from 'lucide-react'
+import { Inbox, MessageSquare, ChevronRight } from 'lucide-react'
 import { countUnreadInboundMessages } from '@/lib/conversations-unread'
 
 type ConversationRow = {
@@ -40,6 +40,8 @@ export default async function CommsHubPage() {
     phone: { unread: 0, lastActive: null },
     lsa: { unread: 0, lastActive: null },
     yelp: { unread: 0, lastActive: null },
+    // NFC, contest, business card, missing source, etc. — still count for the global badge
+    other: { unread: 0, lastActive: null },
   }
 
   for (const conv of rows) {
@@ -53,6 +55,11 @@ export default async function CommsHubPage() {
       channels[key].unread += countUnreadInboundMessages(conv)
       if (!channels[key].lastActive) {
         channels[key].lastActive = conv.updated_at
+      }
+    } else {
+      channels.other.unread += countUnreadInboundMessages(conv)
+      if (!channels.other.lastActive) {
+        channels.other.lastActive = conv.updated_at
       }
     }
   }
@@ -101,6 +108,19 @@ export default async function CommsHubPage() {
         </div>
       ),
       active: false,
+    },
+    {
+      key: 'other',
+      label: 'Other',
+      description:
+        'NFC, contest, business card, missing source — not in Direct/LSA/Yelp',
+      href: '/admin/conversations',
+      icon: (
+        <div className="flex h-11 w-11 items-center justify-center rounded-full bg-amber-500/15 text-amber-400">
+          <Inbox className="h-5 w-5" />
+        </div>
+      ),
+      active: true,
     },
   ]
 

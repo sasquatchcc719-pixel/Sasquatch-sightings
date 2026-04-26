@@ -329,6 +329,8 @@ export function ConversationsView({
         )
         setSelectedConvo(null)
         setConfirmDelete(false)
+        queryClient.invalidateQueries({ queryKey: ['comms-unread'] })
+        router.refresh()
       } else {
         alert('Failed to delete conversation')
       }
@@ -392,6 +394,8 @@ export function ConversationsView({
         setConfirmDelete(false)
       }
       setSelectedIds([])
+      queryClient.invalidateQueries({ queryKey: ['comms-unread'] })
+      router.refresh()
     } catch (error) {
       console.error('Bulk delete error:', error)
       alert('Failed to delete selected conversations')
