@@ -11,6 +11,7 @@ import {
   Mail,
   MapPin,
   MessageSquare,
+  Navigation,
   Pencil,
   Phone,
   Send,
@@ -24,6 +25,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { BeforeAfterCombiner } from '@/components/admin/before-after-combiner'
+import { getCurrentLocation } from '@/lib/image-utils'
 
 type JobPhoto = {
   id: string
@@ -67,6 +69,8 @@ type OpsAppointment = {
   end_time: string
   status: string
   lead_source: string | null
+  gps_lat: number | null
+  gps_lng: number | null
   ops_customers: OpsCustomer | OpsCustomer[] | null
   ops_service_addresses: OpsAddress | OpsAddress[] | null
 }
@@ -220,6 +224,60 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   const [appointmentForm, setAppointmentForm] = useState<AppointmentEditForm>({
     lead_source: '',
   })
+  const [gpsCapturing, setGpsCapturing] = useState(false)
+  const [gpsCoords, setGpsCoords] = useState<{
+    lat: number
+    lng: number
+  } | null>(null)
+  const [gpsFeedback, setGpsFeedback] = useState<{
+    ok: boolean
+    message: string
+  } | null>(null)
+
+  const handleCaptureGps = async () => {
+    const apptId = unwrapRelation(invoice?.ops_appointments)?.id
+    if (!apptId) return
+
+    setGpsCapturing(true)
+    setGpsFeedback(null)
+
+    try {
+      const coords = await getCurrentLocation()
+      if (!coords) {
+        setGpsFeedback({
+          ok: false,
+          message:
+            'Could not get your location. Make sure location is enabled.',
+        })
+        return
+      }
+
+      const res = await fetch(`/api/admin/ops/appointments/${apptId}/gps`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lat: coords.lat, lng: coords.lng }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Failed to save GPS')
+      }
+
+      setGpsCoords(coords)
+      setGpsFeedback({
+        ok: true,
+        message: `GPS saved: ${coords.lat.toFixed(6)}, ${coords.lng.toFixed(6)}`,
+      })
+      setTimeout(() => setGpsFeedback(null), 5000)
+    } catch (err) {
+      setGpsFeedback({
+        ok: false,
+        message: err instanceof Error ? err.message : 'Failed to capture GPS',
+      })
+    } finally {
+      setGpsCapturing(false)
+    }
+  }
 
   const loadInvoice = useCallback(async () => {
     setLoading(true)
@@ -237,10 +295,22 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
       setDiscount(String(result.invoice.discount_amount || 0))
       setPaymentMethod(result.invoice.payment_method ?? null)
 
-      // Photos are now embedded in the invoice response via the appointment join
+      // Load appointment data for GPS and photos
       const appt = Array.isArray(result.invoice.ops_appointments)
         ? result.invoice.ops_appointments[0]
         : result.invoice.ops_appointments
+
+      // Load GPS coordinates if they exist
+      if (
+        appt?.gps_lat &&
+        appt?.gps_lng &&
+        Number.isFinite(appt.gps_lat) &&
+        Number.isFinite(appt.gps_lng)
+      ) {
+        setGpsCoords({ lat: appt.gps_lat, lng: appt.gps_lng })
+      }
+
+      // Photos are now embedded in the invoice response via the appointment join
       const embeddedPhotos = appt?.ops_job_photos ?? null
       if (Array.isArray(embeddedPhotos)) {
         setPhotos(embeddedPhotos)
@@ -2020,45 +2090,76 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
         )}
 
         {/* Upload controls */}
-        <div className="border-border/60 mt-4 flex flex-wrap items-center gap-3 border-t pt-4">
-          <label className="flex cursor-pointer items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={photoWatermark}
-              onChange={(e) => setPhotoWatermark(e.target.checked)}
-              className="h-4 w-4 rounded"
-            />
-            Add Sasquatch watermark
-          </label>
+        <div className="border-border/60 mt-4 border-t pt-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex cursor-pointer items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={photoWatermark}
+                onChange={(e) => setPhotoWatermark(e.target.checked)}
+                className="h-4 w-4 rounded"
+              />
+              Add Sasquatch watermark
+            </label>
 
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0]
-              if (file) void handlePhotoUpload(file)
-            }}
-          />
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="gap-2"
-            disabled={photoUploading}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            {photoUploading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Camera className="h-4 w-4" />
-            )}
-            {photoUploading ? 'Uploading…' : 'Add Photo'}
-          </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) void handlePhotoUpload(file)
+              }}
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="gap-2"
+              disabled={photoUploading}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {photoUploading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Camera className="h-4 w-4" />
+              )}
+              {photoUploading ? 'Uploading…' : 'Add Photo'}
+            </Button>
+
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="gap-2"
+              disabled={gpsCapturing}
+              onClick={() => void handleCaptureGps()}
+            >
+              {gpsCapturing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Navigation className="h-4 w-4" />
+              )}
+              {gpsCapturing ? 'Getting GPS…' : 'Capture GPS'}
+            </Button>
+          </div>
 
           {photoError ? (
-            <p className="w-full text-sm text-red-500">{photoError}</p>
+            <p className="mt-2 text-sm text-red-500">{photoError}</p>
+          ) : null}
+
+          {gpsFeedback ? (
+            <p
+              className={`mt-2 text-sm ${gpsFeedback.ok ? 'text-green-600' : 'text-red-500'}`}
+            >
+              {gpsFeedback.message}
+            </p>
+          ) : gpsCoords ? (
+            <p className="text-muted-foreground mt-2 flex items-center gap-1.5 text-xs">
+              <MapPin className="h-3.5 w-3.5" />
+              GPS: {gpsCoords.lat.toFixed(6)}, {gpsCoords.lng.toFixed(6)}
+            </p>
           ) : null}
         </div>
       </Card>
