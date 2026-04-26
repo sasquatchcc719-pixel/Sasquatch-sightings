@@ -113,12 +113,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // If service area requires approval, force request mode even for direct booking agents
-    const effectiveBookingMode = serviceAreaCheck.requiresApproval
-      ? 'request'
-      : auth.key.booking_mode === 'direct'
-        ? 'direct'
-        : 'request'
+    // AI agent bookings go direct (confirmed immediately) unless the key explicitly
+    // overrides to request mode. Service-area approval is no longer forced.
+    const effectiveBookingMode =
+      auth.key.booking_mode === 'request' ? 'request' : 'direct'
 
     const result = await createAiStyleBooking({
       supabase,

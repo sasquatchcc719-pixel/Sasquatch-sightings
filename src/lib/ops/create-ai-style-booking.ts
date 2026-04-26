@@ -169,6 +169,14 @@ export async function createAiStyleBooking(
     0,
   )
 
+  const MINIMUM_BOOKING_AMOUNT = 150
+  if (subtotal < MINIMUM_BOOKING_AMOUNT) {
+    return {
+      ok: false,
+      error: `Minimum booking amount is $${MINIMUM_BOOKING_AMOUNT}. Your current total is $${subtotal.toFixed(2)}. Please add more services to meet the minimum.`,
+    }
+  }
+
   const promo = await getAgentPromoSettings()
   let discountAmount = 0
   if (promo.enabled && subtotal >= promo.minimum) {

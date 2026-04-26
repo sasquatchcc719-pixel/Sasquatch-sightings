@@ -107,6 +107,27 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    if (body.action === 'update_key') {
+      const keyId = String(body.key_id || '')
+      if (!keyId)
+        return NextResponse.json(
+          { error: 'key_id is required' },
+          { status: 400 },
+        )
+
+      const updates: Record<string, unknown> = {
+        updated_at: new Date().toISOString(),
+      }
+      if (body.booking_mode === 'direct' || body.booking_mode === 'request')
+        updates.booking_mode = body.booking_mode
+      if (typeof body.label === 'string' && body.label.trim())
+        updates.label = body.label.trim()
+
+      await supabase.from('agent_api_keys').update(updates).eq('id', keyId)
+
+      return NextResponse.json({ ok: true })
+    }
+
     if (body.action === 'revoke_key') {
       const keyId = String(body.key_id || '')
       if (!keyId)
