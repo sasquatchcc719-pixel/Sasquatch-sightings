@@ -1,0 +1,21 @@
+{
+  "schema_version": "v1",
+  "name_for_human": "Sasquatch Carpet Cleaning",
+  "name_for_model": "sasquatch_carpet_cleaning",
+  "description_for_human": "Book professional carpet cleaning, upholstery cleaning, and hard surface cleaning services in Colorado Springs, CO.",
+  "description_for_model": "AI agents can view available services, check real-time availability, get price estimates, and book carpet cleaning appointments for customers in the Colorado Springs area. Use this API to help customers schedule professional cleaning services.",
+  "auth": {
+    "type": "service_http",
+    "authorization_type": "bearer",
+    "verification_tokens": {
+      "openai": "Contact owner for API key"
+    }
+  },
+  "api": {
+    "type": "openapi",
+    "url": "https://sasquatchsightings.com/.well-known/openapi.json"
+  },
+  "logo_url": "https://sasquatchsightings.com/sasquatch-logo.png",
+  "contact_email": "sasquatchcc719@gmail.com",
+  "legal_info_url": "https://sasquatchsightings.com/terms"
+}
