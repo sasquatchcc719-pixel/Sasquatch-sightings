@@ -253,11 +253,6 @@ export async function PATCH(
         ? nowIso
         : completedAtExisting
 
-    // When a recurring visit is moved to a different date, detach it from
-    // the template so the cron doesn't regenerate on the vacated date.
-    const detachFromTemplate =
-      dateChanged && current.recurring_template_id != null
-
     const { data: updated, error: updateError } = await supabase
       .from('ops_appointments')
       .update({
@@ -281,7 +276,6 @@ export async function PATCH(
         on_my_way_at: nextOnMyWayAt,
         completed_at: nextCompletedAt,
         updated_at: nowIso,
-        ...(detachFromTemplate ? { recurring_template_id: null } : {}),
       })
       .eq('id', id)
       .select()

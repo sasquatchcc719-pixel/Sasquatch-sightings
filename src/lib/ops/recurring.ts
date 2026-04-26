@@ -159,6 +159,74 @@ function formatDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+function monthKeyFromYmd(ymd: string): string {
+  return ymd.slice(0, 7)
+}
+
+/** Monday 00:00 in local time — two dates in the same calendar week share the same key. */
+function mondayKeyFromYmd(ymd: string): string {
+  const d = new Date(ymd + 'T12:00:00')
+  const dow = d.getDay()
+  const diff = dow === 0 ? -6 : 1 - dow
+  d.setDate(d.getDate() + diff)
+  return formatDate(d)
+}
+
+/**
+ * Whether moving / rescheduling a generated visit for this date should block the cron
+ * from also scheduling the "nominal" rule date. Uses all existing rows for the template
+ * in the planning window (moves stay on recurring_template_id, so the moved date appears here).
+ */
+function shouldSkipRecurringSlot(args: {
+  candidateDate: string
+  rule: RecurrenceRule
+  templateDates: Set<string>
+  /** true when this YYYY-MM has only one rule-generated date in the whole horizon. */
+  monthIsSingleInstance: boolean
+  extraBlockedDates: Set<string>
+}): boolean {
+  const {
+    candidateDate,
+    rule,
+    templateDates,
+    monthIsSingleInstance,
+    extraBlockedDates,
+  } = args
+  if (
+    extraBlockedDates.has(candidateDate) ||
+    templateDates.has(candidateDate)
+  ) {
+    return true
+  }
+  if (templateDates.size === 0) return false
+
+  const templateDateList = [...templateDates]
+
+  if (rule.frequency === 'monthly') {
+    if (monthIsSingleInstance) {
+      const mk = monthKeyFromYmd(candidateDate)
+      for (const t of templateDateList) {
+        if (monthKeyFromYmd(t) === mk) return true
+      }
+    } else {
+      const wk = mondayKeyFromYmd(candidateDate)
+      for (const t of templateDateList) {
+        if (mondayKeyFromYmd(t) === wk) return true
+      }
+    }
+    return false
+  }
+
+  if (rule.frequency === 'weekly' || rule.frequency === 'biweekly') {
+    const wk = mondayKeyFromYmd(candidateDate)
+    for (const t of templateDateList) {
+      if (mondayKeyFromYmd(t) === wk) return true
+    }
+  }
+
+  return false
+}
+
 function addMinutesToTime(time: string, minutes: number): string {
   const parts = time.split(':').map(Number)
   const total = parts[0] * 60 + parts[1] + minutes
@@ -255,13 +323,18 @@ export async function generateRecurringAppointments(
   rangeEnd.setMonth(rangeEnd.getMonth() + horizonMonths)
 
   const allDates: { date: string; startTime: string }[] = []
+  const dateToRule = new Map<string, RecurrenceRule>()
   for (const rule of rules as RecurrenceRule[]) {
     const dates = expandRule(rule, rangeStart, rangeEnd)
     for (const d of dates) {
+      const ds = formatDate(d)
+      if (!dateToRule.has(ds)) {
+        dateToRule.set(ds, rule)
+      }
       const startTime = rule.override_start_time || template.start_time
       const normalizedTime =
         startTime.length >= 5 ? startTime.slice(0, 5) : startTime
-      allDates.push({ date: formatDate(d), startTime: normalizedTime })
+      allDates.push({ date: ds, startTime: normalizedTime })
     }
   }
 
@@ -272,28 +345,36 @@ export async function generateRecurringAppointments(
     return result
   }
 
-  const [{ data: existing }, { data: customerExisting }] = await Promise.all([
-    supabase
-      .from('ops_appointments')
-      .select('appointment_date')
-      .eq('recurring_template_id', templateId)
-      .in(
-        'appointment_date',
-        uniqueDates.map((d) => d.date),
-      ),
-    supabase
-      .from('ops_appointments')
-      .select('appointment_date, quoted_total')
-      .eq('customer_id', template.customer_id)
-      .is('recurring_template_id', null)
-      .in(
-        'appointment_date',
-        uniqueDates.map((d) => d.date),
-      ),
-  ])
+  const countDatesPerMonth = new Map<string, number>()
+  for (const { date } of uniqueDates) {
+    const mk = monthKeyFromYmd(date)
+    countDatesPerMonth.set(mk, (countDatesPerMonth.get(mk) || 0) + 1)
+  }
 
-  const existingSet = new Set(
-    (existing || []).map(
+  const rangeStartStr = formatDate(rangeStart)
+  const rangeEndStr = formatDate(rangeEnd)
+
+  const [{ data: templateInRange }, { data: customerExisting }] =
+    await Promise.all([
+      supabase
+        .from('ops_appointments')
+        .select('appointment_date')
+        .eq('recurring_template_id', templateId)
+        .gte('appointment_date', rangeStartStr)
+        .lte('appointment_date', rangeEndStr),
+      supabase
+        .from('ops_appointments')
+        .select('appointment_date, quoted_total')
+        .eq('customer_id', template.customer_id)
+        .is('recurring_template_id', null)
+        .in(
+          'appointment_date',
+          uniqueDates.map((d) => d.date),
+        ),
+    ])
+
+  const templateDateSet = new Set(
+    (templateInRange || []).map(
       (a: { appointment_date: string }) => a.appointment_date,
     ),
   )
@@ -308,9 +389,10 @@ export async function generateRecurringAppointments(
   const discountPreCalc = Math.max(0, Number(template.discount_amount || 0))
   const expectedTotal = Math.max(0, quotedSubtotalPreCalc - discountPreCalc)
 
+  const extraBlockedDates = new Set<string>()
   for (const appt of customerExisting || []) {
     if (Math.abs(Number(appt.quoted_total) - expectedTotal) < 1) {
-      existingSet.add(appt.appointment_date)
+      extraBlockedDates.add(appt.appointment_date)
     }
   }
 
@@ -362,7 +444,22 @@ export async function generateRecurringAppointments(
   const quotedTotal = Math.max(0, quotedSubtotal - discountAmount)
 
   for (const { date, startTime } of uniqueDates) {
-    if (existingSet.has(date)) {
+    const rule = dateToRule.get(date)
+    if (!rule) {
+      result.errors.push(`${date}: missing recurrence rule (internal)`)
+      continue
+    }
+    const monthIsSingleInstance =
+      (countDatesPerMonth.get(monthKeyFromYmd(date)) || 0) === 1
+    if (
+      shouldSkipRecurringSlot({
+        candidateDate: date,
+        rule,
+        templateDates: templateDateSet,
+        monthIsSingleInstance,
+        extraBlockedDates,
+      })
+    ) {
       result.skipped++
       continue
     }
@@ -490,6 +587,7 @@ export async function generateRecurringAppointments(
       ])
 
       result.created++
+      templateDateSet.add(date)
     } catch (err) {
       result.errors.push(
         `${date}: ${err instanceof Error ? err.message : 'unknown error'}`,
