@@ -56,10 +56,10 @@ async function sendUpcomingJobReminders() {
         phone
       ),
       ops_service_addresses (
-        street,
+        street_1,
         city,
         state,
-        zip
+        zip_code
       )
     `,
     )
@@ -113,7 +113,7 @@ async function sendUpcomingJobReminders() {
       const customerName = customer?.full_name || 'Unknown Customer'
       const customerPhone = customer?.phone || 'No phone'
       const addressLine = address
-        ? `${address.street}, ${address.city}, ${address.state} ${address.zip}`
+        ? `${address.street_1}, ${address.city}, ${address.state} ${address.zip_code}`
         : 'No address'
 
       const timeFormatted = new Date(
