@@ -33,12 +33,33 @@ export async function GET(request: NextRequest) {
 
 async function sendUpcomingJobReminders() {
   const supabase = createAdminClient()
-  const now = new Date()
-  const thirtyMinutesFromNow = new Date(now.getTime() + 30 * 60 * 1000)
-  const thirtyFiveMinutesFromNow = new Date(now.getTime() + 35 * 60 * 1000)
 
-  // Get today's date in YYYY-MM-DD format
-  const todayDate = now.toISOString().split('T')[0]
+  // Use Mountain Time (Colorado Springs timezone)
+  const now = new Date()
+  const nowMountain = new Date(
+    now.toLocaleString('en-US', { timeZone: 'America/Denver' }),
+  )
+
+  console.log(
+    '[job-reminders] Current time (Mountain):',
+    nowMountain.toLocaleTimeString(),
+  )
+
+  const thirtyMinutesFromNow = new Date(nowMountain.getTime() + 30 * 60 * 1000)
+  const thirtyFiveMinutesFromNow = new Date(
+    nowMountain.getTime() + 35 * 60 * 1000,
+  )
+
+  // Get today's date in Mountain Time
+  const todayDate = nowMountain.toLocaleDateString('en-CA') // YYYY-MM-DD format
+
+  console.log('[job-reminders] Looking for appointments on:', todayDate)
+  console.log(
+    '[job-reminders] Time window:',
+    thirtyMinutesFromNow.toLocaleTimeString(),
+    'to',
+    thirtyFiveMinutesFromNow.toLocaleTimeString(),
+  )
 
   // Find appointments starting in 30-35 minutes
   const { data: upcomingAppointments, error } = await supabase
@@ -73,22 +94,52 @@ async function sendUpcomingJobReminders() {
   }
 
   if (!upcomingAppointments || upcomingAppointments.length === 0) {
+    console.log('[job-reminders] No appointments found for today')
     return { sent: 0, message: 'No appointments today' }
   }
+
+  console.log(
+    '[job-reminders] Found',
+    upcomingAppointments.length,
+    'appointments',
+  )
 
   let sent = 0
 
   for (const appt of upcomingAppointments) {
-    // Parse the appointment start time
+    // Parse the appointment start time and create a proper Date object
     const [hours, minutes] = appt.start_time.split(':').map(Number)
-    const apptDateTime = new Date(now)
+
+    // Create appointment datetime in Mountain Time
+    const apptDateTime = new Date(nowMountain)
     apptDateTime.setHours(hours, minutes, 0, 0)
 
+    console.log(
+      `[job-reminders] Checking appt ${appt.id} at ${appt.start_time}:`,
+      apptDateTime.toLocaleTimeString(),
+      '| Window:',
+      thirtyMinutesFromNow.toLocaleTimeString(),
+      '-',
+      thirtyFiveMinutesFromNow.toLocaleTimeString(),
+    )
+
     // Check if appointment is in the 30-35 minute window
-    if (
-      apptDateTime > thirtyMinutesFromNow &&
-      apptDateTime <= thirtyFiveMinutesFromNow
-    ) {
+    const inWindow =
+      apptDateTime >= thirtyMinutesFromNow &&
+      apptDateTime < thirtyFiveMinutesFromNow
+
+    console.log(
+      `[job-reminders] Appt ${appt.id} in window?`,
+      inWindow,
+      '| apptTime:',
+      apptDateTime.getTime(),
+      '| windowStart:',
+      thirtyMinutesFromNow.getTime(),
+      '| windowEnd:',
+      thirtyFiveMinutesFromNow.getTime(),
+    )
+
+    if (inWindow) {
       // Check if we've already sent a reminder for this appointment today
       const reminderKey = `reminder_${appt.id}_${todayDate}`
       const { data: existingReminder } = await supabase
