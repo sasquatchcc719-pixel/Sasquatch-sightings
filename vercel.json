@@ -1,6 +1,10 @@
 {
   "crons": [
     {
+      "path": "/api/cron/job-reminders",
+      "schedule": "*/5 * * * *"
+    },
+    {
       "path": "/api/cron/nurture-leads",
       "schedule": "0 9 * * *"
     },
