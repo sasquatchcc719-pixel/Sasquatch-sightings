@@ -13,6 +13,7 @@ import {
   MessageSquare,
   Navigation,
   Pencil,
+  PenTool,
   Phone,
   Send,
   Sparkles,
@@ -26,6 +27,7 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { BeforeAfterCombiner } from '@/components/admin/before-after-combiner'
 import { getCurrentLocation } from '@/lib/image-utils'
+import { SignatureModal } from './signature-modal'
 
 type JobPhoto = {
   id: string
@@ -83,6 +85,9 @@ type InvoiceDetail = {
   subtotal: number
   total: number
   discount_amount: number | null
+  signature_url: string | null
+  signature_captured_at: string | null
+  signature_customer_name: string | null
   ops_appointments: OpsAppointment | OpsAppointment[] | null
   ops_invoice_line_items: Array<{
     id: string
@@ -201,6 +206,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     null,
   )
   const [driveStartedAtMs, setDriveStartedAtMs] = useState<number | null>(null)
+  const [showSignatureModal, setShowSignatureModal] = useState(false)
   const [driveElapsedMs, setDriveElapsedMs] = useState(0)
 
   const [editingCustomer, setEditingCustomer] = useState(false)
@@ -730,6 +736,43 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
       setPhotos((prev) => prev.filter((p) => p.id !== photoId))
     } catch (err) {
       setPhotoError(err instanceof Error ? err.message : 'Delete failed')
+    }
+  }
+
+  const handleSaveSignature = async (
+    signatureData: string,
+    customerName: string,
+  ) => {
+    try {
+      const res = await fetch(
+        `/api/admin/ops/invoices/${invoiceId}/signature`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ signatureData, customerName }),
+        },
+      )
+
+      if (!res.ok) throw new Error('Failed to save signature')
+
+      const data = await res.json()
+
+      // Update local invoice state
+      setInvoice((prev) =>
+        prev
+          ? {
+              ...prev,
+              signature_url: data.signatureUrl,
+              signature_captured_at: new Date().toISOString(),
+              signature_customer_name: customerName,
+            }
+          : null,
+      )
+
+      alert('Signature saved successfully!')
+    } catch (err) {
+      console.error('Signature save error:', err)
+      throw err
     }
   }
 
@@ -2043,8 +2086,70 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
               <span className="tabular-nums">${billableTotal.toFixed(2)}</span>
             </div>
           </div>
+
+          {/* Get Signature Button */}
+          {!invoice?.signature_url && billableTotal > 0 && (
+            <div className="border-border/60 mt-4 border-t pt-4">
+              <Button
+                onClick={() => setShowSignatureModal(true)}
+                variant="outline"
+                className="w-full gap-2 border-green-500/40 text-green-400 hover:border-green-400 hover:bg-green-500/10"
+              >
+                <PenTool className="h-4 w-4" />
+                Get Customer Signature
+              </Button>
+              <p className="text-muted-foreground mt-2 text-center text-xs">
+                Capture signature to confirm price agreement
+              </p>
+            </div>
+          )}
         </div>
       </Card>
+
+      {/* Customer Signature */}
+      {invoice?.signature_url && (
+        <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
+          <div className="mb-3 flex items-center gap-2">
+            <PenTool className="text-muted-foreground h-5 w-5" />
+            <h3 className="text-lg font-semibold">Customer Signature</h3>
+            <Badge variant="outline" className="bg-green-500/15 text-green-400">
+              Signed
+            </Badge>
+          </div>
+          <div className="space-y-3">
+            <div className="border-border/60 overflow-hidden rounded-xl border bg-white p-4">
+              <img
+                src={invoice.signature_url}
+                alt="Customer signature"
+                className="mx-auto max-h-32 w-auto"
+              />
+            </div>
+            <div className="text-muted-foreground text-sm">
+              <p>
+                <strong>Signed by:</strong> {invoice.signature_customer_name}
+              </p>
+              <p>
+                <strong>Date:</strong>{' '}
+                {invoice.signature_captured_at
+                  ? new Date(invoice.signature_captured_at).toLocaleString(
+                      'en-US',
+                      {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      },
+                    )
+                  : 'Unknown'}
+              </p>
+              <p>
+                <strong>Amount:</strong> ${billableTotal.toFixed(2)}
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
       {/* Job Photos */}
       <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
         <div className="flex items-center gap-2">
@@ -2385,6 +2490,15 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
           </div>
         </div>
       ) : null}
+
+      {/* Signature Modal */}
+      <SignatureModal
+        isOpen={showSignatureModal}
+        onClose={() => setShowSignatureModal(false)}
+        onSave={handleSaveSignature}
+        totalAmount={billableTotal}
+        customerName={customer?.full_name || ''}
+      />
     </div>
   )
 }
