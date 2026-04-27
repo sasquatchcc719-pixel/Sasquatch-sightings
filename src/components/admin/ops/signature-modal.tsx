@@ -31,6 +31,25 @@ export function SignatureModal({
     setCustomerName(initialCustomerName)
   }, [initialCustomerName])
 
+  // Lock body scroll when modal is open
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden'
+      document.body.style.position = 'fixed'
+      document.body.style.width = '100%'
+    } else {
+      document.body.style.overflow = ''
+      document.body.style.position = ''
+      document.body.style.width = ''
+    }
+
+    return () => {
+      document.body.style.overflow = ''
+      document.body.style.position = ''
+      document.body.style.width = ''
+    }
+  }, [isOpen])
+
   const handleClear = () => {
     sigCanvas.current?.clear()
     setIsEmpty(true)
@@ -63,8 +82,19 @@ export function SignatureModal({
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 p-4">
-      <div className="bg-background relative flex w-full max-w-4xl flex-col rounded-2xl shadow-2xl">
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 p-4"
+      onClick={(e) => {
+        // Close if clicking backdrop (not the modal content)
+        if (e.target === e.currentTarget) {
+          onClose()
+        }
+      }}
+    >
+      <div
+        className="bg-background relative flex w-full max-w-4xl flex-col rounded-2xl shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="flex items-center justify-between border-b p-4">
           <div>
