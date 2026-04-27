@@ -158,13 +158,17 @@ export function SignatureModal({
             </Button>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={onClose} disabled={saving}>
+            <Button
+              variant="outline"
+              onClick={onClose}
+              className="min-w-[100px] border-2"
+            >
               Cancel
             </Button>
             <Button
               onClick={handleSave}
               disabled={isEmpty || !customerName.trim() || saving}
-              className="bg-green-600 hover:bg-green-700"
+              className="min-w-[140px] bg-green-600 hover:bg-green-700"
             >
               {saving ? (
                 'Saving...'
