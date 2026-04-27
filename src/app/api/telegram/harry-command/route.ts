@@ -13,6 +13,31 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
 
+/**
+ * Get current time in Mountain Time (Colorado Springs)
+ */
+function getMountainTime(): Date {
+  return new Date(
+    new Date().toLocaleString('en-US', { timeZone: 'America/Denver' }),
+  )
+}
+
+/**
+ * Get today's date in YYYY-MM-DD format (Mountain Time)
+ */
+function getTodayMountain(): string {
+  return getMountainTime().toLocaleDateString('en-CA') // YYYY-MM-DD format
+}
+
+/**
+ * Get tomorrow's date in YYYY-MM-DD format (Mountain Time)
+ */
+function getTomorrowMountain(): string {
+  const tomorrow = getMountainTime()
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  return tomorrow.toLocaleDateString('en-CA')
+}
+
 type TelegramUpdate = {
   message?: {
     message_id: number
@@ -71,6 +96,20 @@ async function handleTextCommand(text: string, chatId: number): Promise<void> {
   const supabase = createAdminClient()
 
   try {
+    const now = getMountainTime()
+    const currentTime = now.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZone: 'America/Denver',
+    })
+    const currentDate = now.toLocaleDateString('en-US', {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      timeZone: 'America/Denver',
+    })
+
     const response = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages: [
@@ -79,6 +118,11 @@ async function handleTextCommand(text: string, chatId: number): Promise<void> {
           content: `You are Harry Command Bot, Charles's personal AI assistant for managing his carpet cleaning business.
 
 Charles owns Sasquatch Carpet Cleaning in Colorado Springs, CO. You help him manage customer conversations, send messages, and control Harry (the AI that handles customer SMS).
+
+CURRENT TIME: ${currentTime} Mountain Time
+CURRENT DATE: ${currentDate}
+
+IMPORTANT: All scheduling is done in Mountain Time (America/Denver timezone). When Charles says "today" or "tomorrow", use the current Mountain Time date shown above.
 
 Your capabilities:
 - Send SMS messages to customers
@@ -783,14 +827,11 @@ async function executeToolCall(
     case 'view_schedule': {
       let targetDate = String(input.date)
 
-      // Handle relative dates
-      const today = new Date()
+      // Handle relative dates (Mountain Time)
       if (targetDate.toLowerCase() === 'today') {
-        targetDate = today.toISOString().split('T')[0]
+        targetDate = getTodayMountain()
       } else if (targetDate.toLowerCase() === 'tomorrow') {
-        const tomorrow = new Date(today)
-        tomorrow.setDate(tomorrow.getDate() + 1)
-        targetDate = tomorrow.toISOString().split('T')[0]
+        targetDate = getTomorrowMountain()
       }
 
       const { data: appointments } = await supabase
@@ -879,7 +920,7 @@ async function executeToolCall(
         .from('ops_appointments')
         .select('id, appointment_date, start_time, status')
         .eq('customer_id', customer.id)
-        .gte('appointment_date', new Date().toISOString().split('T')[0])
+        .gte('appointment_date', getTodayMountain())
         .order('appointment_date', { ascending: true })
         .order('start_time', { ascending: true })
         .limit(1)
@@ -940,7 +981,7 @@ async function executeToolCall(
         .from('ops_appointments')
         .select('id, appointment_date, start_time, status')
         .eq('customer_id', customer.id)
-        .gte('appointment_date', new Date().toISOString().split('T')[0])
+        .gte('appointment_date', getTodayMountain())
 
       if (targetDate) {
         query = query.eq('appointment_date', targetDate)
@@ -1107,9 +1148,7 @@ async function executeToolCall(
 
     case 'mark_complete': {
       const customerName = String(input.customer_name)
-      const targetDate = input.date
-        ? String(input.date)
-        : new Date().toISOString().split('T')[0]
+      const targetDate = input.date ? String(input.date) : getTodayMountain()
 
       // Find customer
       const { data: customer } = await supabase
@@ -1144,7 +1183,7 @@ async function executeToolCall(
         .from('ops_appointments')
         .update({
           status: 'completed',
-          completed_at: new Date().toISOString(),
+          completed_at: getMountainTime().toISOString(),
         })
         .eq('id', appt.id)
 
@@ -1156,9 +1195,7 @@ async function executeToolCall(
     }
 
     case 'today_summary': {
-      const targetDate = input.date
-        ? String(input.date)
-        : new Date().toISOString().split('T')[0]
+      const targetDate = input.date ? String(input.date) : getTodayMountain()
 
       // Get all appointments for the day
       const { data: appointments } = await supabase
@@ -1286,14 +1323,11 @@ async function executeToolCall(
       const startTime = String(input.start_time)
       const durationHours = Number(input.duration_hours) || 1
 
-      // Handle relative dates
-      const today = new Date()
+      // Handle relative dates (Mountain Time)
       if (targetDate.toLowerCase() === 'today') {
-        targetDate = today.toISOString().split('T')[0]
+        targetDate = getTodayMountain()
       } else if (targetDate.toLowerCase() === 'tomorrow') {
-        const tomorrow = new Date(today)
-        tomorrow.setDate(tomorrow.getDate() + 1)
-        targetDate = tomorrow.toISOString().split('T')[0]
+        targetDate = getTomorrowMountain()
       }
 
       // Calculate end time
