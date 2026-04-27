@@ -143,13 +143,14 @@ async function sendUpcomingJobReminders() {
       // Check if we've already sent a reminder for this appointment today
       const reminderKey = `reminder_${appt.id}_${todayDate}`
       const { data: existingReminder } = await supabase
-        .from('settings')
+        .from('system_settings')
         .select('value')
         .eq('key', reminderKey)
         .maybeSingle()
 
       if (existingReminder) {
         // Already sent reminder for this appointment
+        console.log(`[job-reminders] Already sent reminder for appt ${appt.id}`)
         continue
       }
 
@@ -188,12 +189,13 @@ async function sendUpcomingJobReminders() {
       await sendToCharles(message, { parseMode: 'Markdown' })
 
       // Mark as sent
-      await supabase.from('settings').upsert({
+      await supabase.from('system_settings').upsert({
         key: reminderKey,
-        value: new Date().toISOString(),
+        value: JSON.stringify({ sent_at: new Date().toISOString() }),
         updated_at: new Date().toISOString(),
       })
 
+      console.log(`[job-reminders] Sent reminder for appt ${appt.id}`)
       sent++
     }
   }
