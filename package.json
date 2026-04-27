@@ -67,6 +67,7 @@
     "nextjs-toploader": "^3.9.17",
     "onesignal-node": "^3.4.0",
     "openai": "^6.16.0",
+    "pg": "^8.20.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-hook-form": "^7.71.0",
