@@ -820,7 +820,7 @@ export function ConversationsView({
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="border-b p-4">
+            <div className="flex-shrink-0 border-b p-4">
               <div className="mb-2 flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   {/* Avatar in modal header */}
@@ -957,7 +957,7 @@ export function ConversationsView({
             </div>
 
             {/* Messages */}
-            <div className="flex-1 space-y-3 overflow-y-auto p-4">
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
               {selectedConvo.messages.length === 0 ? (
                 <div className="text-muted-foreground py-8 text-center text-sm">
                   No messages yet
@@ -996,7 +996,7 @@ export function ConversationsView({
             </div>
 
             {/* Reply Box */}
-            <div className="border-t p-4">
+            <div className="flex-shrink-0 border-t p-4">
               {(() => {
                 const lsa = isLsaConversation(selectedConvo)
                 const autoOn = selectedConvo.ai_enabled
