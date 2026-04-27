@@ -747,6 +747,24 @@ async function executeToolCall(
         return `❌ Failed to create appointment: ${error.message}`
       }
 
+      // Send booking notification (fire and forget)
+      fetch(
+        `${process.env.NEXT_PUBLIC_SITE_URL}/api/webhooks/appointment-booked`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'INSERT',
+            record: { id: newAppt.id },
+          }),
+        },
+      ).catch((err) =>
+        console.error(
+          '[add_appointment] Failed to send booking notification:',
+          err,
+        ),
+      )
+
       const formattedDate = new Date(date).toLocaleDateString('en-US', {
         weekday: 'short',
         month: 'short',
