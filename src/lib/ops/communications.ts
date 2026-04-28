@@ -782,6 +782,7 @@ export async function processOpsCommunicationQueue(params?: {
 
 export async function sendDayBeforeReminderSms(params?: {
   targetHourMountain?: number
+  bypassHourCheck?: boolean
 }) {
   const supabase = createAdminClient()
   const now = new Date()
@@ -789,7 +790,7 @@ export async function sendDayBeforeReminderSms(params?: {
     now.toLocaleString('en-US', { timeZone: 'America/Denver' }),
   )
   const targetHour = Math.max(0, Math.min(23, params?.targetHourMountain ?? 9))
-  if (nowMountain.getHours() !== targetHour) {
+  if (!params?.bypassHourCheck && nowMountain.getHours() !== targetHour) {
     return {
       sent: 0,
       skipped_outside_hour: true,

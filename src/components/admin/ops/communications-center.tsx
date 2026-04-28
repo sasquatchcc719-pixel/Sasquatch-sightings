@@ -29,6 +29,8 @@ function groupTitle(channel: 'sms' | 'email') {
 export function CommunicationsCenter() {
   const [loading, setLoading] = useState(true)
   const [savingKey, setSavingKey] = useState<string | null>(null)
+  const [runningReminders, setRunningReminders] = useState(false)
+  const [runMessage, setRunMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [templates, setTemplates] = useState<TemplateRow[]>([])
 
@@ -105,6 +107,37 @@ export function CommunicationsCenter() {
     }
   }
 
+  const runDayBeforeReminders = async () => {
+    setRunningReminders(true)
+    setRunMessage(null)
+    setError(null)
+    try {
+      const response = await fetch(
+        '/api/admin/ops/communications/day-before-reminders',
+        {
+          method: 'POST',
+        },
+      )
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to run reminders')
+      }
+
+      const summary = result.result || {}
+      setRunMessage(
+        `Checked ${summary.checked || 0}, sent ${summary.sent || 0}, skipped duplicates ${summary.skipped_duplicate || 0}, skipped disabled ${summary.skipped_template_disabled || 0}.`,
+      )
+    } catch (runError) {
+      setError(
+        runError instanceof Error
+          ? runError.message
+          : 'Failed to run reminders',
+      )
+    } finally {
+      setRunningReminders(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="text-muted-foreground flex items-center gap-3">
@@ -123,14 +156,38 @@ export function CommunicationsCenter() {
       ) : null}
 
       <Card className="animate-slide-up border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
-        <h2 className="text-gradient-purple text-2xl font-bold tracking-tight">
-          Communications Center
-        </h2>
-        <p className="text-muted-foreground mt-2 text-sm">
-          Edit the automatic job lifecycle messages and toggle each one on when
-          you are ready. All templates start disabled by default.
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 className="text-gradient-purple text-2xl font-bold tracking-tight">
+              Communications Center
+            </h2>
+            <p className="text-muted-foreground mt-2 text-sm">
+              Edit the automatic job lifecycle messages and toggle each one on
+              when you are ready. All templates start disabled by default.
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void runDayBeforeReminders()}
+            disabled={runningReminders}
+            className="gap-2"
+          >
+            {runningReminders ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <MessageSquare className="h-4 w-4" />
+            )}
+            Run Day-Before Reminders Now
+          </Button>
+        </div>
       </Card>
+
+      {runMessage ? (
+        <Card className="border-border/60 bg-card/80 p-4 text-sm shadow-sm backdrop-blur">
+          {runMessage}
+        </Card>
+      ) : null}
 
       {(['sms', 'email'] as const).map((channel) => (
         <div key={channel} className="space-y-4">
