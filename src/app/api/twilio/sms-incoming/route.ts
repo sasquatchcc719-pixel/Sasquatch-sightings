@@ -34,6 +34,16 @@ function normalizePhone(phone: string): string {
   return digits.startsWith('+') ? phone : `+${digits}`
 }
 
+function firstNameFromCustomer(
+  customer: { first_name?: string | null; full_name?: string | null } | null,
+): string | null {
+  const explicitFirst = customer?.first_name?.trim()
+  if (explicitFirst) return explicitFirst
+
+  const fullNameFirst = customer?.full_name?.trim().split(/\s+/)[0]
+  return fullNameFirst || null
+}
+
 // Extract customer info from conversation messages
 type ExtractedInfo = {
   name: string | null
@@ -996,7 +1006,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if this sender is a known scheduled ops customer.
-    // If so, Harry should NOT auto-reply — the admin reviews and decides.
+    // Recognizing them should personalize Harry's reply, not silence him.
     const opsPhoneVariants = opsPhoneLookupVariants(normalizedPhone)
     const { data: opsCustomerMatch } = await supabase
       .from('ops_customers')
@@ -1005,6 +1015,7 @@ export async function POST(request: NextRequest) {
       .maybeSingle()
 
     const isOpsCustomer = !!opsCustomerMatch
+    const opsCustomerName = firstNameFromCustomer(opsCustomerMatch)
     const isReminderThread = isOpsCustomer
       ? await isRecentDayBeforeReminderThread({
           supabase,
@@ -1015,16 +1026,14 @@ export async function POST(request: NextRequest) {
     // coming through a Google relay number, so even if the relay happens to
     // collide with a known ops_customer phone we do NOT silence Harry.
     const isLsaConversation = sourceType === 'lsa'
-    const shouldSilenceHarry =
-      isOpsCustomer && !isLsaConversation && !isReminderThread
     if (isOpsCustomer) {
       console.log(
         `[Harry] Sender ${normalizedPhone} matched ops_customer ${opsCustomerMatch!.full_name} (${opsCustomerMatch!.id}) — ${
-          shouldSilenceHarry
-            ? 'Harry auto-reply disabled'
-            : isReminderThread
-              ? 'Harry auto-reply enabled (day-before reminder thread)'
-              : 'Harry auto-reply kept ON (Google LSA override)'
+          isReminderThread
+            ? 'Harry auto-reply enabled (day-before reminder thread)'
+            : isLsaConversation
+              ? 'Harry auto-reply kept ON (Google LSA override)'
+              : 'Harry auto-reply kept ON (known customer)'
         }`,
       )
     }
@@ -1053,23 +1062,29 @@ export async function POST(request: NextRequest) {
         console.log(`🔄 Reactivated conversation: ${conversation.id}`)
       }
       // Ensure ops customer flag is current (in case they were added to schedule after first text).
-      // For LSA conversations, we still link the ops_customer_id for reference but keep ai_enabled=true.
       if (isOpsCustomer && !conversation.ops_customer_id) {
         await supabase
           .from('conversations')
           .update({
             ops_customer_id: opsCustomerMatch!.id,
-            ...(shouldSilenceHarry ? { ai_enabled: false } : {}),
+            ...(conversation.status === 'active' ? { ai_enabled: true } : {}),
           })
           .eq('id', conversation.id)
         conversation.ops_customer_id = opsCustomerMatch!.id
-        if (shouldSilenceHarry) conversation.ai_enabled = false
-      } else if (shouldSilenceHarry && conversation.ai_enabled) {
+        if (conversation.status === 'active') conversation.ai_enabled = true
+      } else if (
+        isOpsCustomer &&
+        !conversation.ai_enabled &&
+        conversation.status === 'active'
+      ) {
         await supabase
           .from('conversations')
-          .update({ ai_enabled: false })
+          .update({ ai_enabled: true })
           .eq('id', conversation.id)
-        conversation.ai_enabled = false
+        conversation.ai_enabled = true
+        console.log(
+          `[Harry] Re-enabled auto-reply for known customer ${opsCustomerMatch!.id}`,
+        )
       } else if (
         isLsaConversation &&
         !conversation.ai_enabled &&
@@ -1135,7 +1150,7 @@ export async function POST(request: NextRequest) {
           source: dbSource,
           lead_id: null,
           messages: [],
-          ai_enabled: !shouldSilenceHarry,
+          ai_enabled: true,
           ops_customer_id: isOpsCustomer ? opsCustomerMatch!.id : null,
           status: 'active',
           metadata: conversationMetadata,
@@ -1385,6 +1400,14 @@ export async function POST(request: NextRequest) {
 BEFORE booking, rescheduling, or modifying ANY appointments, you MUST verify who you're speaking with by asking: "Hi! Just to confirm, who am I speaking with today?" or "Can I get your name to make sure I have the right information pulled up?"
 
 DO NOT assume this is a continuation of the previous conversation. DO NOT reschedule or modify existing appointments until you confirm the customer's identity.`,
+          timestamp: new Date().toISOString(),
+        })
+      }
+
+      if (opsCustomerName && sourceType !== 'lsa') {
+        messages.push({
+          role: 'system',
+          content: `Known customer context: This SMS phone number matches an existing Sasquatch customer named ${opsCustomerName}. Greet them by first name naturally (for example, "Hi ${opsCustomerName}, great to hear from you.") and help with their request. Do not stay silent just because they are already in the system.`,
           timestamp: new Date().toISOString(),
         })
       }
