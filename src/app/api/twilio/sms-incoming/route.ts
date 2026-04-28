@@ -21,10 +21,7 @@ import {
 import { sendCustomerSMS, sendAdminSMS } from '@/lib/twilio'
 import { logChatMessage } from '@/lib/ai/logging'
 import { opsPhoneLookupVariants } from '@/lib/ops/phone'
-import {
-  sendCancellationAlert,
-  sendInboundTextNotification,
-} from '@/lib/telegram'
+import { sendCancellationAlert, sendLSALeadNotification } from '@/lib/telegram'
 import { notifyNewCustomerMessage } from '@/lib/harry-command-bot'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
@@ -1232,22 +1229,13 @@ export async function POST(request: NextRequest) {
       return emptyTwiml
     }
 
-    const notificationSource =
-      channelKey === 'lsa' ? 'lsa' : channelKey === 'inbound' ? 'main' : 'other'
-
-    void sendInboundTextNotification({
-      source: notificationSource,
-      customerName:
-        lsaCustomerName ||
-        opsCustomerMatch?.full_name ||
-        conversation.customer_name ||
-        undefined,
-      phone: normalizedPhone,
-      message: messageBody,
-      conversationId: conversation.id,
-    }).catch((err) =>
-      console.error('Telegram inbound text notification failed:', err),
-    )
+    if (sourceType === 'lsa') {
+      void sendLSALeadNotification({
+        customerName: lsaCustomerName || undefined,
+        phone: normalizedPhone,
+        message: messageBody,
+      })
+    }
 
     // Persist the user message immediately so that Twilio webhook retries
     // (which arrive while the AI is still generating) see the twilio_sid in
