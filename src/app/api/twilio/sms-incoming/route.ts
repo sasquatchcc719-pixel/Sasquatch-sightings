@@ -21,7 +21,10 @@ import {
 import { sendCustomerSMS, sendAdminSMS } from '@/lib/twilio'
 import { logChatMessage } from '@/lib/ai/logging'
 import { opsPhoneLookupVariants } from '@/lib/ops/phone'
-import { sendCancellationAlert, sendLSALeadNotification } from '@/lib/telegram'
+import {
+  sendCancellationAlert,
+  sendInboundTextNotification,
+} from '@/lib/telegram'
 import { notifyNewCustomerMessage } from '@/lib/harry-command-bot'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
@@ -368,6 +371,74 @@ function detectCancelIntent(text: string): boolean {
   return cancelPhrases.some((p) => lower.includes(p))
 }
 
+function detectBillingOrPriceIntent(text: string): boolean {
+  const billingPhrases = [
+    'price',
+    'pricing',
+    'cost',
+    'charge',
+    'charged',
+    'invoice',
+    'billing',
+    'bill',
+    'payment',
+    'paid',
+    'refund',
+    'overcharged',
+    'dispute',
+  ]
+  const lower = text.toLowerCase()
+  return billingPhrases.some((p) => lower.includes(p))
+}
+
+function isAcknowledgmentOnlyMessage(text: string): boolean {
+  const lower = text.toLowerCase().trim()
+  if (!lower || lower.includes('?')) return false
+
+  const actionSignals = [
+    'reschedule',
+    'cancel',
+    'change',
+    'move',
+    'different time',
+    'later',
+    'earlier',
+    'running late',
+    'access',
+    'gate',
+    'code',
+    'parking',
+    'price',
+    'cost',
+    'invoice',
+    'payment',
+    'call me',
+    'can you',
+    'could you',
+    'please',
+  ]
+  if (actionSignals.some((s) => lower.includes(s))) return false
+
+  const ackPhrases = [
+    'thanks',
+    'thank you',
+    'perfect',
+    'sounds good',
+    'looks good',
+    'great',
+    'awesome',
+    'ok',
+    'okay',
+    'appreciate it',
+    'see you then',
+    'got it',
+    'confirmed',
+  ]
+  return ackPhrases.some(
+    (phrase) => lower === phrase || lower.startsWith(`${phrase} `),
+  )
+}
+
 function shouldHoldForHuman(params: {
   latestUserMessage: string
   messages: ConversationMessageRecord[]
@@ -376,6 +447,10 @@ function shouldHoldForHuman(params: {
 
   if (detectCancelIntent(text)) {
     return { hold: true, reason: 'cancel_request' }
+  }
+
+  if (detectBillingOrPriceIntent(text)) {
+    return { hold: true, reason: 'billing_or_price_dispute' }
   }
 
   const hasRecentManualOutbound = params.messages.some((m) => {
@@ -544,6 +619,30 @@ async function syncRecentOutboundContext(params: {
     console.error('[SMS] Failed to sync outbound context:', error)
     return messages
   }
+}
+
+async function isRecentDayBeforeReminderThread(params: {
+  supabase: ReturnType<typeof createAdminClient>
+  phoneVariants: string[]
+}): Promise<boolean> {
+  if (params.phoneVariants.length === 0) return false
+  const seventyTwoHoursAgoIso = new Date(
+    Date.now() - 72 * 60 * 60 * 1000,
+  ).toISOString()
+
+  const { data } = await params.supabase
+    .from('sms_logs')
+    .select('id')
+    .in('recipient_phone', params.phoneVariants)
+    .in('message_type', [
+      'ops_day_before_residential_sms',
+      'ops_day_before_recovery_village_sms',
+    ])
+    .eq('status', 'sent')
+    .gte('sent_at', seventyTwoHoursAgoIso)
+    .limit(1)
+
+  return !!(data && data.length > 0)
 }
 
 async function determineSourceType(
@@ -909,17 +1008,26 @@ export async function POST(request: NextRequest) {
       .maybeSingle()
 
     const isOpsCustomer = !!opsCustomerMatch
+    const isReminderThread = isOpsCustomer
+      ? await isRecentDayBeforeReminderThread({
+          supabase,
+          phoneVariants: opsPhoneVariants,
+        })
+      : false
     // Google LSA conversations must be 100% automated — they're fresh leads
     // coming through a Google relay number, so even if the relay happens to
     // collide with a known ops_customer phone we do NOT silence Harry.
     const isLsaConversation = sourceType === 'lsa'
-    const shouldSilenceHarry = isOpsCustomer && !isLsaConversation
+    const shouldSilenceHarry =
+      isOpsCustomer && !isLsaConversation && !isReminderThread
     if (isOpsCustomer) {
       console.log(
         `[Harry] Sender ${normalizedPhone} matched ops_customer ${opsCustomerMatch!.full_name} (${opsCustomerMatch!.id}) — ${
           shouldSilenceHarry
             ? 'Harry auto-reply disabled'
-            : 'Harry auto-reply kept ON (Google LSA override)'
+            : isReminderThread
+              ? 'Harry auto-reply enabled (day-before reminder thread)'
+              : 'Harry auto-reply kept ON (Google LSA override)'
         }`,
       )
     }
@@ -1052,14 +1160,7 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      // Send Telegram notification for new LSA leads
-      if (sourceType === 'lsa') {
-        void sendLSALeadNotification({
-          customerName: lsaCustomerName || undefined,
-          phone: normalizedPhone,
-          message: messageBody,
-        })
-      }
+      // Inbound conversation alerts are sent after dedupe below so retries do not double-notify.
     }
 
     // Start from current history.
@@ -1131,6 +1232,23 @@ export async function POST(request: NextRequest) {
       return emptyTwiml
     }
 
+    const notificationSource =
+      channelKey === 'lsa' ? 'lsa' : channelKey === 'inbound' ? 'main' : 'other'
+
+    void sendInboundTextNotification({
+      source: notificationSource,
+      customerName:
+        lsaCustomerName ||
+        opsCustomerMatch?.full_name ||
+        conversation.customer_name ||
+        undefined,
+      phone: normalizedPhone,
+      message: messageBody,
+      conversationId: conversation.id,
+    }).catch((err) =>
+      console.error('Telegram inbound text notification failed:', err),
+    )
+
     // Persist the user message immediately so that Twilio webhook retries
     // (which arrive while the AI is still generating) see the twilio_sid in
     // the conversation and hit the dedup check above.
@@ -1138,6 +1256,11 @@ export async function POST(request: NextRequest) {
       .from('conversations')
       .update({ messages, updated_at: new Date().toISOString() })
       .eq('id', conversation.id)
+
+    if (isAcknowledgmentOnlyMessage(messageBody)) {
+      console.log('[SMS] Acknowledgment-only inbound detected, no reply sent')
+      return emptyTwiml
+    }
 
     // Check if this thread should be held for human handling.
     const holdDecision = shouldHoldForHuman({

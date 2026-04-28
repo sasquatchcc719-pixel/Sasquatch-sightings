@@ -21,6 +21,8 @@ const TYPE_LABELS: Record<string, string> = {
   ops_on_my_way_sms: 'On my way',
   ops_job_finished_sms: 'Job finished',
   ops_job_rescheduled_sms: 'Rescheduled',
+  ops_day_before_residential_sms: 'Day-before reminder (Residential)',
+  ops_day_before_recovery_village_sms: 'Day-before reminder (Recovery Village)',
 }
 
 export default function SmsOutboxPage() {

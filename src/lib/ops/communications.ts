@@ -7,6 +7,8 @@ export const OPS_TEMPLATE_KEYS = [
   'on_my_way_sms',
   'job_finished_sms',
   'job_rescheduled_sms',
+  'day_before_residential_sms',
+  'day_before_recovery_village_sms',
   'job_scheduled_email',
   'job_finished_email',
   'satisfaction_checkin_email',
@@ -50,6 +52,7 @@ type TemplateContext = {
   address_line: string
   tech_name: string
   quoted_total: string
+  work_area: string
 }
 
 type AppointmentWithRelations = {
@@ -58,6 +61,7 @@ type AppointmentWithRelations = {
   appointment_date: string
   start_time: string
   end_time: string
+  internal_notes: string | null
   ops_customers:
     | {
         full_name: string
@@ -92,8 +96,10 @@ type AppointmentWithRelations = {
     | null
   ops_appointment_line_items: Array<{
     name_snapshot: string
+    notes?: string | null
   }>
   quoted_total: number | null
+  status?: string | null
 }
 
 const APPOINTMENT_SELECT = `
@@ -102,6 +108,8 @@ const APPOINTMENT_SELECT = `
   appointment_date,
   start_time,
   end_time,
+  internal_notes,
+  status,
   quoted_total,
   ops_customers!ops_appointments_customer_id_fkey (
     full_name,
@@ -118,7 +126,8 @@ const APPOINTMENT_SELECT = `
     zip_code
   ),
   ops_appointment_line_items (
-    name_snapshot
+    name_snapshot,
+    notes
   )
 `
 
@@ -250,6 +259,17 @@ async function getAppointmentContext(
       : '',
     tech_name: 'Charles',
     quoted_total: Number(appointment.quoted_total || 0).toFixed(2),
+    work_area:
+      appointment.internal_notes?.trim() ||
+      appointment.ops_appointment_line_items
+        ?.map((item) => item.notes?.trim())
+        .filter(Boolean)
+        .join('; ') ||
+      appointment.ops_appointment_line_items
+        ?.map((item) => item.name_snapshot)
+        .filter(Boolean)
+        .join(', ') ||
+      'Scheduled service area',
   }
 
   return { appointment, context }
@@ -758,4 +778,137 @@ export async function processOpsCommunicationQueue(params?: {
   }
 
   return results
+}
+
+export async function sendDayBeforeReminderSms(params?: {
+  targetHourMountain?: number
+}) {
+  const supabase = createAdminClient()
+  const now = new Date()
+  const nowMountain = new Date(
+    now.toLocaleString('en-US', { timeZone: 'America/Denver' }),
+  )
+  const targetHour = Math.max(0, Math.min(23, params?.targetHourMountain ?? 9))
+  if (nowMountain.getHours() !== targetHour) {
+    return {
+      sent: 0,
+      skipped_outside_hour: true,
+      target_hour_mt: targetHour,
+      now_hour_mt: nowMountain.getHours(),
+      checked: 0,
+    }
+  }
+
+  const tomorrow = new Date(nowMountain)
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  const tomorrowDate = tomorrow.toLocaleDateString('en-CA')
+
+  const { data: appointmentsRaw, error: appointmentsError } = await supabase
+    .from('ops_appointments')
+    .select(APPOINTMENT_SELECT)
+    .eq('appointment_date', tomorrowDate)
+    .not('status', 'in', '(cancelled,completed)')
+
+  if (appointmentsError) {
+    throw new Error(
+      `[day-before-reminders] Failed to load appointments: ${appointmentsError.message}`,
+    )
+  }
+
+  const appointments = (appointmentsRaw || []) as AppointmentWithRelations[]
+  if (appointments.length === 0) {
+    return {
+      sent: 0,
+      checked: 0,
+      message: `No appointments for ${tomorrowDate}`,
+    }
+  }
+
+  const { data: templatesRaw, error: templatesError } = await supabase
+    .from('ops_communication_templates')
+    .select('template_key, body_template, is_enabled')
+    .in('template_key', [
+      'day_before_residential_sms',
+      'day_before_recovery_village_sms',
+    ])
+
+  if (templatesError) {
+    throw new Error(
+      `[day-before-reminders] Failed to load templates: ${templatesError.message}`,
+    )
+  }
+
+  const templateByKey = new Map(
+    (templatesRaw || []).map((row) => [row.template_key, row]),
+  )
+  const twilioFrom = process.env.TWILIO_PHONE_NUMBER
+
+  let sent = 0
+  let skippedNoPhone = 0
+  let skippedDuplicate = 0
+  let skippedTemplateDisabled = 0
+
+  for (const appointment of appointments) {
+    const customer = unwrapRelation(appointment.ops_customers)
+    const customerPhone = customer?.phone?.trim() || ''
+    if (!customerPhone) {
+      skippedNoPhone++
+      continue
+    }
+
+    const isRecoveryVillage =
+      (customer?.business_name || '').trim() === 'Recovery Village'
+    const templateKey = isRecoveryVillage
+      ? 'day_before_recovery_village_sms'
+      : 'day_before_residential_sms'
+    const template = templateByKey.get(templateKey)
+    if (!template?.is_enabled || !template.body_template?.trim()) {
+      skippedTemplateDisabled++
+      continue
+    }
+
+    const { context } = await getAppointmentContext(supabase, appointment.id)
+    if (!context) continue
+    const body = renderTemplate(template.body_template, context)
+    if (!body.trim()) continue
+
+    const dedupeKey = `day_before_sms_${appointment.id}_${tomorrowDate}`
+    const { data: existingReminder } = await supabase
+      .from('system_settings')
+      .select('value')
+      .eq('key', dedupeKey)
+      .maybeSingle()
+    if (existingReminder) {
+      skippedDuplicate++
+      continue
+    }
+
+    await sendCustomerSMS(
+      customerPhone,
+      body,
+      undefined,
+      `ops_${templateKey}`,
+      twilioFrom,
+    )
+
+    await supabase.from('system_settings').upsert({
+      key: dedupeKey,
+      value: JSON.stringify({
+        sent_at: new Date().toISOString(),
+        template_key: templateKey,
+      }),
+      updated_at: new Date().toISOString(),
+    })
+
+    sent++
+  }
+
+  return {
+    sent,
+    checked: appointments.length,
+    skipped_no_phone: skippedNoPhone,
+    skipped_duplicate: skippedDuplicate,
+    skipped_template_disabled: skippedTemplateDisabled,
+    target_date: tomorrowDate,
+  }
 }
