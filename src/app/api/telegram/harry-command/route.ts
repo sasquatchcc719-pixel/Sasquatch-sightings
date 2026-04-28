@@ -3,11 +3,13 @@
  * AI-powered conversational interface for Charles to manage customer conversations
  */
 
+import { randomUUID } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import { createAdminClient } from '@/supabase/server'
 import { sendCustomerSMS } from '@/lib/twilio'
 import { sendToCharles } from '@/lib/harry-command-bot'
+import { opsPhoneLookupVariants } from '@/lib/ops/phone'
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -36,6 +38,48 @@ function getTomorrowMountain(): string {
   const tomorrow = getMountainTime()
   tomorrow.setDate(tomorrow.getDate() + 1)
   return tomorrow.toLocaleDateString('en-CA')
+}
+
+function getEndOfYearMountain(): string {
+  const now = getMountainTime()
+  return `${now.getFullYear()}-12-31`
+}
+
+type HarryCustomer = {
+  id: string
+  full_name: string
+  first_name: string | null
+  last_name: string | null
+  business_name: string | null
+  phone: string | null
+  email: string | null
+  notes: string | null
+  created_at: string | null
+}
+
+type JobDetailLineItem = {
+  name_snapshot: string | null
+  notes: string | null
+  quantity: number | string | null
+  line_total: number | string | null
+}
+
+type PendingSmsDraftNotice = {
+  id: string
+  target: string
+  phoneNumber: string
+  message: string
+}
+
+const CUSTOMER_SELECT =
+  'id, full_name, first_name, last_name, business_name, phone, email, notes, created_at'
+
+const SMS_DRAFT_TTL_MS = 30 * 60 * 1000
+
+function displayCustomerName(
+  customer: Pick<HarryCustomer, 'full_name' | 'business_name'>,
+): string {
+  return customer.business_name || customer.full_name
 }
 
 type TelegramUpdate = {
@@ -110,12 +154,10 @@ async function handleTextCommand(text: string, chatId: number): Promise<void> {
       timeZone: 'America/Denver',
     })
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      messages: [
-        {
-          role: 'system',
-          content: `You are Harry Command Bot, Charles's personal AI assistant for managing his carpet cleaning business.
+    const messages: OpenAI.ChatCompletionMessageParam[] = [
+      {
+        role: 'system',
+        content: `You are Harry Command Bot, Charles's personal AI assistant for managing his carpet cleaning business.
 
 Charles owns Sasquatch Carpet Cleaning in Colorado Springs, CO. You help him manage customer conversations, send messages, and control Harry (the AI that handles customer SMS).
 
@@ -136,6 +178,7 @@ Your capabilities:
 - Cancel/delete appointments
 - Look up customer details
 - View customer job history
+- Search job line items, descriptions, rooms, buildings, and service notes
 - Mark jobs as complete
 - Add new customers to the system
 - Check schedule availability
@@ -143,427 +186,546 @@ Your capabilities:
 - Add notes to jobs
 - Get daily business summary
 
-Be conversational, helpful, and concise. Charles is texting you from his phone while working, so keep responses brief but informative.`,
-        },
-        { role: 'user', content: text },
-      ],
-      tools: [
-        {
-          type: 'function',
-          function: {
-            name: 'send_sms',
-            description:
-              'Send an SMS message to a customer. Use this when Charles wants to text someone.',
-            parameters: {
-              type: 'object',
-              properties: {
-                target: {
-                  type: 'string',
-                  description:
-                    'Customer name or phone number (e.g., "Ann", "Sally", "7195551234")',
-                },
-                message: {
-                  type: 'string',
-                  description: 'The message to send to the customer',
-                },
-              },
-              required: ['target', 'message'],
-            },
-          },
-        },
-        {
-          type: 'function',
-          function: {
-            name: 'view_conversation',
-            description:
-              'View the full conversation thread with a customer. Shows recent messages and Harry status.',
-            parameters: {
-              type: 'object',
-              properties: {
-                target: {
-                  type: 'string',
-                  description:
-                    'Customer name or phone number (e.g., "Ann", "7195551234")',
-                },
-              },
-              required: ['target'],
-            },
-          },
-        },
-        {
-          type: 'function',
-          function: {
-            name: 'take_over_conversation',
-            description:
-              'Disable Harry for a conversation so Charles can handle it manually.',
-            parameters: {
-              type: 'object',
-              properties: {
-                target: {
-                  type: 'string',
-                  description: 'Customer name or phone number',
-                },
-              },
-              required: ['target'],
-            },
-          },
-        },
-        {
-          type: 'function',
-          function: {
-            name: 'enable_harry',
-            description:
-              'Re-enable Harry to handle a conversation automatically.',
-            parameters: {
-              type: 'object',
-              properties: {
-                target: {
-                  type: 'string',
-                  description: 'Customer name or phone number',
-                },
-              },
-              required: ['target'],
-            },
-          },
-        },
-        {
-          type: 'function',
-          function: {
-            name: 'list_recent_conversations',
-            description:
-              'List recent active customer conversations with their status.',
-            parameters: {
-              type: 'object',
-              properties: {
-                limit: {
-                  type: 'number',
-                  description: 'Number of conversations to show (default 10)',
-                },
-              },
-            },
-          },
-        },
-        {
-          type: 'function',
-          function: {
-            name: 'add_appointment',
-            description:
-              'Add a new appointment/job to the schedule. Use this when Charles wants to schedule a job.',
-            parameters: {
-              type: 'object',
-              properties: {
-                customer_name: {
-                  type: 'string',
-                  description: 'Customer name (e.g., "Evan Cox", "John Smith")',
-                },
-                date: {
-                  type: 'string',
-                  description:
-                    'Date in YYYY-MM-DD format. Tomorrow, today, specific date, etc.',
-                },
-                start_time: {
-                  type: 'string',
-                  description: 'Start time in HH:MM format (24-hour)',
-                },
-                duration_hours: {
-                  type: 'number',
-                  description: 'Duration in hours (default 1)',
-                },
-                notes: {
-                  type: 'string',
-                  description:
-                    'Internal notes (e.g., "Warranty - spot popped back up")',
-                },
-              },
-              required: ['customer_name', 'date', 'start_time'],
-            },
-          },
-        },
-        {
-          type: 'function',
-          function: {
-            name: 'view_schedule',
-            description:
-              'View the schedule for a specific date. Shows all appointments.',
-            parameters: {
-              type: 'object',
-              properties: {
-                date: {
-                  type: 'string',
-                  description:
-                    'Date in YYYY-MM-DD format, or "today", "tomorrow", specific weekday',
-                },
-              },
-              required: ['date'],
-            },
-          },
-        },
-        {
-          type: 'function',
-          function: {
-            name: 'update_appointment',
-            description:
-              'Update an existing appointment (reschedule, change notes, etc.)',
-            parameters: {
-              type: 'object',
-              properties: {
-                customer_name: {
-                  type: 'string',
-                  description: 'Customer name to find the appointment',
-                },
-                new_date: {
-                  type: 'string',
-                  description: 'New date (optional)',
-                },
-                new_start_time: {
-                  type: 'string',
-                  description: 'New start time (optional)',
-                },
-                new_notes: {
-                  type: 'string',
-                  description: 'New internal notes (optional)',
-                },
-              },
-              required: ['customer_name'],
-            },
-          },
-        },
-        {
-          type: 'function',
-          function: {
-            name: 'cancel_appointment',
-            description: 'Cancel/delete an appointment from the schedule.',
-            parameters: {
-              type: 'object',
-              properties: {
-                customer_name: {
-                  type: 'string',
-                  description: 'Customer name to find the appointment',
-                },
-                date: {
-                  type: 'string',
-                  description:
-                    'Optional: specific date if customer has multiple appointments',
-                },
-              },
-              required: ['customer_name'],
-            },
-          },
-        },
-        {
-          type: 'function',
-          function: {
-            name: 'lookup_customer',
-            description:
-              'Look up customer details including phone, email, address, and notes.',
-            parameters: {
-              type: 'object',
-              properties: {
-                customer_name: {
-                  type: 'string',
-                  description: 'Customer name or phone number',
-                },
-              },
-              required: ['customer_name'],
-            },
-          },
-        },
-        {
-          type: 'function',
-          function: {
-            name: 'customer_history',
-            description:
-              'View past jobs for a customer with dates, amounts, and status.',
-            parameters: {
-              type: 'object',
-              properties: {
-                customer_name: {
-                  type: 'string',
-                  description: 'Customer name',
-                },
-                limit: {
-                  type: 'number',
-                  description: 'Number of jobs to show (default 5)',
-                },
-              },
-              required: ['customer_name'],
-            },
-          },
-        },
-        {
-          type: 'function',
-          function: {
-            name: 'mark_complete',
-            description:
-              'Mark a job/appointment as completed. Updates status and completion timestamp.',
-            parameters: {
-              type: 'object',
-              properties: {
-                customer_name: {
-                  type: 'string',
-                  description: 'Customer name for the job',
-                },
-                date: {
-                  type: 'string',
-                  description:
-                    'Date of the appointment (optional, defaults to today)',
-                },
-              },
-              required: ['customer_name'],
-            },
-          },
-        },
-        {
-          type: 'function',
-          function: {
-            name: 'today_summary',
-            description:
-              "Get a summary of today's business: jobs, revenue, completion status.",
-            parameters: {
-              type: 'object',
-              properties: {
-                date: {
-                  type: 'string',
-                  description: 'Date to summarize (default today)',
-                },
-              },
-            },
-          },
-        },
-        {
-          type: 'function',
-          function: {
-            name: 'add_customer',
-            description: 'Add a new customer to the system.',
-            parameters: {
-              type: 'object',
-              properties: {
-                full_name: {
-                  type: 'string',
-                  description: 'Customer full name',
-                },
-                phone: {
-                  type: 'string',
-                  description: 'Phone number',
-                },
-                email: {
-                  type: 'string',
-                  description: 'Email address (optional)',
-                },
-                address: {
-                  type: 'string',
-                  description: 'Service address (optional)',
-                },
-                notes: {
-                  type: 'string',
-                  description: 'Internal notes (optional)',
-                },
-              },
-              required: ['full_name', 'phone'],
-            },
-          },
-        },
-        {
-          type: 'function',
-          function: {
-            name: 'check_availability',
-            description:
-              'Check if a time slot is available (no conflicting appointments).',
-            parameters: {
-              type: 'object',
-              properties: {
-                date: {
-                  type: 'string',
-                  description:
-                    'Date to check (YYYY-MM-DD or "today", "tomorrow")',
-                },
-                start_time: {
-                  type: 'string',
-                  description: 'Start time in HH:MM format',
-                },
-                duration_hours: {
-                  type: 'number',
-                  description: 'Duration in hours (default 1)',
-                },
-              },
-              required: ['date', 'start_time'],
-            },
-          },
-        },
-        {
-          type: 'function',
-          function: {
-            name: 'payment_status',
-            description: 'Check payment status for a job or mark it as paid.',
-            parameters: {
-              type: 'object',
-              properties: {
-                customer_name: {
-                  type: 'string',
-                  description: 'Customer name',
-                },
-                mark_paid: {
-                  type: 'boolean',
-                  description: 'Set to true to mark as paid',
-                },
-              },
-              required: ['customer_name'],
-            },
-          },
-        },
-        {
-          type: 'function',
-          function: {
-            name: 'add_job_note',
-            description: 'Add a note to a job/appointment.',
-            parameters: {
-              type: 'object',
-              properties: {
-                customer_name: {
-                  type: 'string',
-                  description: 'Customer name',
-                },
-                note: {
-                  type: 'string',
-                  description: 'Note to add',
-                },
-                date: {
-                  type: 'string',
-                  description:
-                    'Date of the job (optional, defaults to next upcoming)',
-                },
-              },
-              required: ['customer_name', 'note'],
-            },
-          },
-        },
-      ],
-    })
+Voice:
+- Sound like a sharp employee who knows the business, not a generic chatbot.
+- Be brief, direct, and useful. Charles is texting from his phone while working.
+- If the data is missing or only partially imported, say that plainly.
+- Treat Charles's messages as directions from the owner. When he asks for an operational outcome, use tools to gather the data and complete the requested prep work.
+- Only ask a follow-up when the target customer, date range, or requested action is genuinely unclear.
+- When asked for a customer's schedule, year schedule, upcoming jobs, dates/services/notes, or work to send to a customer, use customer_schedule_summary. Do not use search_job_details unless Charles asks for a specific room/building/service/detail phrase.
+- When Charles asks you to text a customer, draft the SMS with send_sms. The system will ask Charles to approve before sending; never claim it was sent until approval happens.
+- When asked "when did we last..." or about a room/building/scope, use search_job_details so you can inspect line-item descriptions before answering.`,
+      },
+      { role: 'user', content: text },
+    ]
 
-    // Process the response
+    const tools: OpenAI.ChatCompletionTool[] = [
+      {
+        type: 'function',
+        function: {
+          name: 'send_sms',
+          description:
+            'Send an SMS message to a customer. Use this when Charles wants to text someone.',
+          parameters: {
+            type: 'object',
+            properties: {
+              target: {
+                type: 'string',
+                description:
+                  'Customer name or phone number (e.g., "Ann", "Sally", "7195551234")',
+              },
+              message: {
+                type: 'string',
+                description: 'The message to send to the customer',
+              },
+            },
+            required: ['target', 'message'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'view_conversation',
+          description:
+            'View the full conversation thread with a customer. Shows recent messages and Harry status.',
+          parameters: {
+            type: 'object',
+            properties: {
+              target: {
+                type: 'string',
+                description:
+                  'Customer name or phone number (e.g., "Ann", "7195551234")',
+              },
+            },
+            required: ['target'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'take_over_conversation',
+          description:
+            'Disable Harry for a conversation so Charles can handle it manually.',
+          parameters: {
+            type: 'object',
+            properties: {
+              target: {
+                type: 'string',
+                description: 'Customer name or phone number',
+              },
+            },
+            required: ['target'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'enable_harry',
+          description:
+            'Re-enable Harry to handle a conversation automatically.',
+          parameters: {
+            type: 'object',
+            properties: {
+              target: {
+                type: 'string',
+                description: 'Customer name or phone number',
+              },
+            },
+            required: ['target'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'list_recent_conversations',
+          description:
+            'List recent active customer conversations with their status.',
+          parameters: {
+            type: 'object',
+            properties: {
+              limit: {
+                type: 'number',
+                description: 'Number of conversations to show (default 10)',
+              },
+            },
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'add_appointment',
+          description:
+            'Add a new appointment/job to the schedule. Use this when Charles wants to schedule a job.',
+          parameters: {
+            type: 'object',
+            properties: {
+              customer_name: {
+                type: 'string',
+                description: 'Customer name (e.g., "Evan Cox", "John Smith")',
+              },
+              date: {
+                type: 'string',
+                description:
+                  'Date in YYYY-MM-DD format. Tomorrow, today, specific date, etc.',
+              },
+              start_time: {
+                type: 'string',
+                description: 'Start time in HH:MM format (24-hour)',
+              },
+              duration_hours: {
+                type: 'number',
+                description: 'Duration in hours (default 1)',
+              },
+              notes: {
+                type: 'string',
+                description:
+                  'Internal notes (e.g., "Warranty - spot popped back up")',
+              },
+            },
+            required: ['customer_name', 'date', 'start_time'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'view_schedule',
+          description:
+            'View the schedule for a specific date. Shows all appointments.',
+          parameters: {
+            type: 'object',
+            properties: {
+              date: {
+                type: 'string',
+                description:
+                  'Date in YYYY-MM-DD format, or "today", "tomorrow", specific weekday',
+              },
+            },
+            required: ['date'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'update_appointment',
+          description:
+            'Update an existing appointment (reschedule, change notes, etc.)',
+          parameters: {
+            type: 'object',
+            properties: {
+              customer_name: {
+                type: 'string',
+                description: 'Customer name to find the appointment',
+              },
+              new_date: {
+                type: 'string',
+                description: 'New date (optional)',
+              },
+              new_start_time: {
+                type: 'string',
+                description: 'New start time (optional)',
+              },
+              new_notes: {
+                type: 'string',
+                description: 'New internal notes (optional)',
+              },
+            },
+            required: ['customer_name'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'cancel_appointment',
+          description: 'Cancel/delete an appointment from the schedule.',
+          parameters: {
+            type: 'object',
+            properties: {
+              customer_name: {
+                type: 'string',
+                description: 'Customer name to find the appointment',
+              },
+              date: {
+                type: 'string',
+                description:
+                  'Optional: specific date if customer has multiple appointments',
+              },
+            },
+            required: ['customer_name'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'lookup_customer',
+          description:
+            'Look up customer details including phone, email, address, and notes.',
+          parameters: {
+            type: 'object',
+            properties: {
+              customer_name: {
+                type: 'string',
+                description: 'Customer name or phone number',
+              },
+            },
+            required: ['customer_name'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'customer_history',
+          description:
+            'View past jobs for a customer with dates, amounts, and status.',
+          parameters: {
+            type: 'object',
+            properties: {
+              customer_name: {
+                type: 'string',
+                description: 'Customer name',
+              },
+              limit: {
+                type: 'number',
+                description: 'Number of jobs to show (default 5)',
+              },
+            },
+            required: ['customer_name'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'customer_schedule_summary',
+          description:
+            'Fetch a customer schedule or job summary across a date range, including dates, services, line-item notes, internal notes, status, and totals. Use for requests like "send Recovery Village the rest of the year schedule" or "show all upcoming jobs for Lance."',
+          parameters: {
+            type: 'object',
+            properties: {
+              customer_name: {
+                type: 'string',
+                description:
+                  'Customer, contact, or business name, e.g. "Lance Johnson at Recovery Village"',
+              },
+              from_date: {
+                type: 'string',
+                description:
+                  'Start date in YYYY-MM-DD. Defaults to today in Mountain Time.',
+              },
+              to_date: {
+                type: 'string',
+                description:
+                  'End date in YYYY-MM-DD. Defaults to the end of the current year.',
+              },
+              include_cancelled: {
+                type: 'boolean',
+                description: 'Include cancelled appointments. Default false.',
+              },
+              limit: {
+                type: 'number',
+                description: 'Maximum appointments to return. Default 80.',
+              },
+            },
+            required: ['customer_name'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'search_job_details',
+          description:
+            'Search a customer’s appointment line items, service descriptions, notes, room/building names, dates, times, status, and totals. Use this for questions like “when did we last clean the dining room?”, “what did we do in A building?”, or “show Recovery Village kitchen jobs.”',
+          parameters: {
+            type: 'object',
+            properties: {
+              customer_name: {
+                type: 'string',
+                description:
+                  'Customer or business name, e.g. "Recovery Village"',
+              },
+              query: {
+                type: 'string',
+                description:
+                  'Room, building, service, or phrase to search for, e.g. "dining room", "kitchen", "A building"',
+              },
+              include_future: {
+                type: 'boolean',
+                description:
+                  'Include future booked jobs. Default false when asking what was last done; true when asking what is scheduled.',
+              },
+              limit: {
+                type: 'number',
+                description: 'Maximum matching jobs to return (default 5)',
+              },
+            },
+            required: ['customer_name', 'query'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'mark_complete',
+          description:
+            'Mark a job/appointment as completed. Updates status and completion timestamp.',
+          parameters: {
+            type: 'object',
+            properties: {
+              customer_name: {
+                type: 'string',
+                description: 'Customer name for the job',
+              },
+              date: {
+                type: 'string',
+                description:
+                  'Date of the appointment (optional, defaults to today)',
+              },
+            },
+            required: ['customer_name'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'today_summary',
+          description:
+            "Get a summary of today's business: jobs, revenue, completion status.",
+          parameters: {
+            type: 'object',
+            properties: {
+              date: {
+                type: 'string',
+                description: 'Date to summarize (default today)',
+              },
+            },
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'add_customer',
+          description: 'Add a new customer to the system.',
+          parameters: {
+            type: 'object',
+            properties: {
+              full_name: {
+                type: 'string',
+                description: 'Customer full name',
+              },
+              phone: {
+                type: 'string',
+                description: 'Phone number',
+              },
+              email: {
+                type: 'string',
+                description: 'Email address (optional)',
+              },
+              address: {
+                type: 'string',
+                description: 'Service address (optional)',
+              },
+              notes: {
+                type: 'string',
+                description: 'Internal notes (optional)',
+              },
+            },
+            required: ['full_name', 'phone'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'check_availability',
+          description:
+            'Check if a time slot is available (no conflicting appointments).',
+          parameters: {
+            type: 'object',
+            properties: {
+              date: {
+                type: 'string',
+                description:
+                  'Date to check (YYYY-MM-DD or "today", "tomorrow")',
+              },
+              start_time: {
+                type: 'string',
+                description: 'Start time in HH:MM format',
+              },
+              duration_hours: {
+                type: 'number',
+                description: 'Duration in hours (default 1)',
+              },
+            },
+            required: ['date', 'start_time'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'payment_status',
+          description: 'Check payment status for a job or mark it as paid.',
+          parameters: {
+            type: 'object',
+            properties: {
+              customer_name: {
+                type: 'string',
+                description: 'Customer name',
+              },
+              mark_paid: {
+                type: 'boolean',
+                description: 'Set to true to mark as paid',
+              },
+            },
+            required: ['customer_name'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'add_job_note',
+          description: 'Add a note to a job/appointment.',
+          parameters: {
+            type: 'object',
+            properties: {
+              customer_name: {
+                type: 'string',
+                description: 'Customer name',
+              },
+              note: {
+                type: 'string',
+                description: 'Note to add',
+              },
+              date: {
+                type: 'string',
+                description:
+                  'Date of the job (optional, defaults to next upcoming)',
+              },
+            },
+            required: ['customer_name', 'note'],
+          },
+        },
+      },
+    ]
+
     let finalResponse = ''
-    const choice = response.choices[0]
+    const smsDrafts: PendingSmsDraftNotice[] = []
 
-    if (choice.message.content) {
-      finalResponse += choice.message.content
-    }
+    for (let round = 0; round < 6; round += 1) {
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        messages,
+        tools,
+        tool_choice: 'auto',
+        temperature: 0.35,
+        max_tokens: 1000,
+      })
 
-    if (choice.message.tool_calls) {
-      for (const toolCall of choice.message.tool_calls) {
-        if (toolCall.type === 'function') {
-          const args = JSON.parse(toolCall.function.arguments)
+      const message = response.choices[0]?.message
+      if (!message) break
+
+      if (message.tool_calls && message.tool_calls.length > 0) {
+        messages.push(message)
+
+        for (const toolCall of message.tool_calls) {
+          if (toolCall.type !== 'function') continue
+
+          let args: Record<string, unknown>
+          try {
+            args = JSON.parse(toolCall.function.arguments || '{}')
+          } catch {
+            args = {}
+          }
+
           const toolResult = await executeToolCall(
             toolCall.function.name,
             args,
             supabase,
+            { smsDrafts },
           )
-          finalResponse += '\n\n' + toolResult
+          messages.push({
+            role: 'tool',
+            tool_call_id: toolCall.id,
+            content: toolResult,
+          })
         }
+
+        continue
       }
+
+      finalResponse = (message.content || '').trim()
+      break
+    }
+
+    const latestDraft = smsDrafts[smsDrafts.length - 1]
+    if (!finalResponse && latestDraft) {
+      finalResponse = `Draft ready for ${latestDraft.target} (${latestDraft.phoneNumber}):\n\n"${latestDraft.message}"\n\nSend it?`
     }
 
     if (finalResponse) {
-      await sendToCharles(finalResponse.trim())
+      await sendToCharles(finalResponse.trim(), {
+        buttons: latestDraft
+          ? [
+              [
+                { text: 'Send SMS', data: `senddraft_${latestDraft.id}` },
+                { text: 'Cancel', data: `canceldraft_${latestDraft.id}` },
+              ],
+            ]
+          : undefined,
+      })
     }
   } catch (error) {
     console.error('AI processing error:', error)
@@ -577,49 +739,102 @@ Be conversational, helpful, and concise. Charles is texting you from his phone w
 /**
  * Execute a tool call from Claude
  */
+async function findCustomer(
+  target: string,
+  supabase: ReturnType<typeof createAdminClient>,
+): Promise<HarryCustomer | null> {
+  const cleanTarget = String(target || '').trim()
+  if (!cleanTarget) return null
+
+  const phoneVariants = opsPhoneLookupVariants(cleanTarget)
+  if (phoneVariants.length > 0) {
+    const { data } = await supabase
+      .from('ops_customers')
+      .select(CUSTOMER_SELECT)
+      .in('phone', phoneVariants)
+      .order('updated_at', { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (data) return data
+  }
+
+  const targetParts = [cleanTarget]
+  const atMatch = cleanTarget.match(/^(.+?)\s+(?:at|for)\s+(.+)$/i)
+  if (atMatch) {
+    targetParts.push(atMatch[2].trim(), atMatch[1].trim())
+  }
+
+  const searchableTargets = Array.from(
+    new Set(targetParts.filter((part) => part.length > 0)),
+  )
+  const searchableColumns = ['business_name', 'full_name', 'email'] as const
+  for (const searchableTarget of searchableTargets) {
+    for (const column of searchableColumns) {
+      const { data } = await supabase
+        .from('ops_customers')
+        .select(CUSTOMER_SELECT)
+        .ilike(column, `%${searchableTarget}%`)
+        .order('updated_at', { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (data) return data
+    }
+  }
+
+  return null
+}
+
 async function executeToolCall(
   toolName: string,
   input: Record<string, unknown>,
   supabase: ReturnType<typeof createAdminClient>,
+  context: { smsDrafts?: PendingSmsDraftNotice[] } = {},
 ): Promise<string> {
   switch (toolName) {
     case 'send_sms': {
       const target = String(input.target)
       const message = String(input.message)
       const conversation = await findConversation(target, supabase)
+      let phoneNumber = conversation?.phone_number || null
+      let targetLabel = target
 
-      if (!conversation) {
-        return `❌ Couldn't find conversation for "${target}"`
+      if (!phoneNumber) {
+        const customer = await findCustomer(target, supabase)
+        if (customer?.phone) {
+          phoneNumber = customer.phone
+          targetLabel = displayCustomerName(customer)
+        }
       }
 
-      // Get current messages
-      const messages =
-        (conversation.messages as Array<{
-          role: string
-          content: string
-          timestamp: string
-        }>) || []
+      if (!phoneNumber) {
+        return `❌ Couldn't find a phone number or conversation for "${target}"`
+      }
 
-      // Add Charles's message
-      messages.push({
-        role: 'assistant',
-        content: message,
-        timestamp: new Date().toISOString(),
+      const draftId = randomUUID()
+      const expiresAt = new Date(Date.now() + SMS_DRAFT_TTL_MS).toISOString()
+      const { error } = await supabase.from('harry_command_sms_drafts').insert({
+        id: draftId,
+        target_label: targetLabel,
+        phone_number: phoneNumber,
+        message,
+        conversation_id: conversation?.id || null,
+        expires_at: expiresAt,
       })
 
-      // Send via Twilio
-      await sendCustomerSMS(conversation.phone_number, message)
+      if (error) {
+        return `❌ Couldn't create SMS draft: ${error.message}`
+      }
 
-      // Update conversation
-      await supabase
-        .from('conversations')
-        .update({
-          messages,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', conversation.id)
+      context.smsDrafts?.push({
+        id: draftId,
+        target: targetLabel,
+        phoneNumber,
+        message,
+      })
 
-      return `✅ Sent to ${conversation.phone_number}: "${message}"`
+      return `SMS draft created for ${targetLabel} (${phoneNumber}). It has not been sent yet and needs Charles approval. Draft: "${message}"`
     }
 
     case 'view_conversation': {
@@ -742,15 +957,7 @@ async function executeToolCall(
       const durationHours = Number(input.duration_hours) || 1
       const notes = input.notes ? String(input.notes) : null
 
-      // Find customer by name
-      const { data: customer } = await supabase
-        .from('ops_customers')
-        .select('id, full_name, phone')
-        .or(
-          `full_name.ilike.%${customerName}%,first_name.ilike.%${customerName}%,last_name.ilike.%${customerName}%`,
-        )
-        .limit(1)
-        .maybeSingle()
+      const customer = await findCustomer(customerName, supabase)
 
       if (!customer) {
         return `❌ Couldn't find customer "${customerName}". Make sure they exist in the system first.`
@@ -791,23 +998,7 @@ async function executeToolCall(
         return `❌ Failed to create appointment: ${error.message}`
       }
 
-      // Send booking notification (fire and forget)
-      fetch(
-        `${process.env.NEXT_PUBLIC_SITE_URL}/api/webhooks/appointment-booked`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'INSERT',
-            record: { id: newAppt.id },
-          }),
-        },
-      ).catch((err) =>
-        console.error(
-          '[add_appointment] Failed to send booking notification:',
-          err,
-        ),
-      )
+      // Booking notification is handled by the Supabase DB trigger on ops_appointments INSERT
 
       const formattedDate = new Date(date).toLocaleDateString('en-US', {
         weekday: 'short',
@@ -821,7 +1012,7 @@ async function executeToolCall(
         minute: '2-digit',
       })
 
-      return `✅ Added ${customer.full_name} to schedule\n📅 ${formattedDate} at ${formattedTime}\n⏱️ ${durationHours}h${notes ? `\n📝 ${notes}` : ''}`
+      return `✅ Added ${displayCustomerName(customer)} to schedule\n📅 ${formattedDate} at ${formattedTime}\n⏱️ ${durationHours}h${notes ? `\n📝 ${notes}` : ''}`
     }
 
     case 'view_schedule': {
@@ -855,10 +1046,12 @@ async function executeToolCall(
       const customerIds = appointments.map((a) => a.customer_id)
       const { data: customers } = await supabase
         .from('ops_customers')
-        .select('id, full_name')
+        .select('id, full_name, business_name')
         .in('id', customerIds)
 
-      const customerMap = new Map(customers?.map((c) => [c.id, c.full_name]))
+      const customerMap = new Map(
+        customers?.map((c) => [c.id, displayCustomerName(c)]),
+      )
 
       const formattedDate = new Date(targetDate).toLocaleDateString('en-US', {
         weekday: 'long',
@@ -901,15 +1094,7 @@ async function executeToolCall(
         : null
       const newNotes = input.new_notes ? String(input.new_notes) : null
 
-      // Find customer
-      const { data: customer } = await supabase
-        .from('ops_customers')
-        .select('id, full_name')
-        .or(
-          `full_name.ilike.%${customerName}%,first_name.ilike.%${customerName}%,last_name.ilike.%${customerName}%`,
-        )
-        .limit(1)
-        .maybeSingle()
+      const customer = await findCustomer(customerName, supabase)
 
       if (!customer) {
         return `❌ Couldn't find customer "${customerName}"`
@@ -926,7 +1111,7 @@ async function executeToolCall(
         .limit(1)
 
       if (!appointments || appointments.length === 0) {
-        return `❌ No upcoming appointments found for ${customer.full_name}`
+        return `❌ No upcoming appointments found for ${displayCustomerName(customer)}`
       }
 
       const appt = appointments[0]
@@ -950,7 +1135,7 @@ async function executeToolCall(
         return `❌ Failed to update: ${error.message}`
       }
 
-      let response = `✅ Updated appointment for ${customer.full_name}\n`
+      let response = `✅ Updated appointment for ${displayCustomerName(customer)}\n`
       if (newDate) response += `📅 New date: ${newDate}\n`
       if (newStartTime) response += `⏰ New time: ${newStartTime}\n`
       if (newNotes) response += `📝 Notes: ${newNotes}\n`
@@ -962,15 +1147,7 @@ async function executeToolCall(
       const customerName = String(input.customer_name)
       const targetDate = input.date ? String(input.date) : null
 
-      // Find customer
-      const { data: customer } = await supabase
-        .from('ops_customers')
-        .select('id, full_name')
-        .or(
-          `full_name.ilike.%${customerName}%,first_name.ilike.%${customerName}%,last_name.ilike.%${customerName}%`,
-        )
-        .limit(1)
-        .maybeSingle()
+      const customer = await findCustomer(customerName, supabase)
 
       if (!customer) {
         return `❌ Couldn't find customer "${customerName}"`
@@ -993,15 +1170,15 @@ async function executeToolCall(
         .limit(1)
 
       if (!appointments || appointments.length === 0) {
-        return `❌ No upcoming appointments found for ${customer.full_name}`
+        return `❌ No upcoming appointments found for ${displayCustomerName(customer)}`
       }
 
       const appt = appointments[0]
 
-      // Delete the appointment
+      // Soft cancel — never hard delete appointments
       const { error } = await supabase
         .from('ops_appointments')
-        .delete()
+        .update({ status: 'cancelled', updated_at: new Date().toISOString() })
         .eq('id', appt.id)
 
       if (error) {
@@ -1023,21 +1200,13 @@ async function executeToolCall(
         minute: '2-digit',
       })
 
-      return `✅ Cancelled appointment for ${customer.full_name}\n📅 ${formattedDate} at ${formattedTime}`
+      return `✅ Cancelled appointment for ${displayCustomerName(customer)}\n📅 ${formattedDate} at ${formattedTime}`
     }
 
     case 'lookup_customer': {
       const customerName = String(input.customer_name)
 
-      // Find customer
-      const { data: customer } = await supabase
-        .from('ops_customers')
-        .select('id, full_name, phone, email, notes, created_at')
-        .or(
-          `full_name.ilike.%${customerName}%,first_name.ilike.%${customerName}%,last_name.ilike.%${customerName}%,phone.ilike.%${customerName}%`,
-        )
-        .limit(1)
-        .maybeSingle()
+      const customer = await findCustomer(customerName, supabase)
 
       if (!customer) {
         return `❌ Couldn't find customer "${customerName}"`
@@ -1046,7 +1215,7 @@ async function executeToolCall(
       // Get their service address
       const { data: address } = await supabase
         .from('ops_service_addresses')
-        .select('street, city, state, zip')
+        .select('street_1, city, state, zip_code')
         .eq('customer_id', customer.id)
         .limit(1)
         .maybeSingle()
@@ -1068,11 +1237,17 @@ async function executeToolCall(
         .limit(1)
         .maybeSingle()
 
-      let info = `👤 ${customer.full_name}\n`
+      let info = `👤 ${displayCustomerName(customer)}\n`
+      if (
+        customer.business_name &&
+        customer.full_name !== customer.business_name
+      ) {
+        info += `Contact: ${customer.full_name}\n`
+      }
       info += `📱 ${customer.phone}\n`
       if (customer.email) info += `📧 ${customer.email}\n`
       if (address) {
-        info += `📍 ${address.street}, ${address.city}, ${address.state} ${address.zip}\n`
+        info += `📍 ${address.street_1}, ${address.city}, ${address.state} ${address.zip_code}\n`
       }
       info += `\n📊 Total jobs: ${totalJobs || 0}\n`
       if (lastJob) {
@@ -1096,15 +1271,7 @@ async function executeToolCall(
       const customerName = String(input.customer_name)
       const limit = Number(input.limit) || 5
 
-      // Find customer
-      const { data: customer } = await supabase
-        .from('ops_customers')
-        .select('id, full_name')
-        .or(
-          `full_name.ilike.%${customerName}%,first_name.ilike.%${customerName}%,last_name.ilike.%${customerName}%`,
-        )
-        .limit(1)
-        .maybeSingle()
+      const customer = await findCustomer(customerName, supabase)
 
       if (!customer) {
         return `❌ Couldn't find customer "${customerName}"`
@@ -1119,10 +1286,10 @@ async function executeToolCall(
         .limit(limit)
 
       if (!jobs || jobs.length === 0) {
-        return `📭 No job history found for ${customer.full_name}`
+        return `📭 No job history found for ${displayCustomerName(customer)}`
       }
 
-      let history = `📜 Job History - ${customer.full_name}\n\n`
+      let history = `📜 Job History - ${displayCustomerName(customer)}\n\n`
       for (const job of jobs) {
         const date = new Date(job.appointment_date).toLocaleDateString(
           'en-US',
@@ -1146,19 +1313,245 @@ async function executeToolCall(
       return history
     }
 
+    case 'customer_schedule_summary': {
+      const customerName = String(input.customer_name)
+      const fromDate = input.from_date
+        ? String(input.from_date)
+        : getTodayMountain()
+      const toDate = input.to_date
+        ? String(input.to_date)
+        : getEndOfYearMountain()
+      const includeCancelled = input.include_cancelled === true
+      const limit = Math.min(Math.max(Number(input.limit) || 80, 1), 150)
+
+      const customer = await findCustomer(customerName, supabase)
+
+      if (!customer) {
+        return JSON.stringify({
+          error: `Couldn't find customer "${customerName}"`,
+        })
+      }
+
+      let query = supabase
+        .from('ops_appointments')
+        .select(
+          `
+          id,
+          appointment_date,
+          start_time,
+          end_time,
+          status,
+          internal_notes,
+          quoted_total,
+          ops_appointment_line_items (
+            name_snapshot,
+            notes,
+            quantity,
+            line_total
+          )
+        `,
+        )
+        .eq('customer_id', customer.id)
+        .gte('appointment_date', fromDate)
+        .lte('appointment_date', toDate)
+        .order('appointment_date', { ascending: true })
+        .order('start_time', { ascending: true })
+        .limit(limit)
+
+      if (!includeCancelled) {
+        query = query.neq('status', 'cancelled')
+      }
+
+      const { data: appointments, error } = await query
+
+      if (error) {
+        return JSON.stringify({
+          error: `Couldn't load schedule: ${error.message}`,
+        })
+      }
+
+      const jobs = (appointments || []).map((appointment) => {
+        const lineItems = (
+          Array.isArray(appointment.ops_appointment_line_items)
+            ? appointment.ops_appointment_line_items
+            : []
+        ) as JobDetailLineItem[]
+
+        return {
+          id: appointment.id,
+          date: appointment.appointment_date,
+          start_time: appointment.start_time,
+          end_time: appointment.end_time,
+          status: appointment.status,
+          internal_notes: appointment.internal_notes,
+          total: appointment.quoted_total,
+          services: lineItems.map((line) => ({
+            name: line.name_snapshot,
+            quantity: line.quantity,
+            notes: line.notes,
+            line_total: line.line_total,
+          })),
+        }
+      })
+
+      return JSON.stringify({
+        customer: {
+          id: customer.id,
+          name: displayCustomerName(customer),
+          contact_name: customer.full_name,
+          phone: customer.phone,
+          email: customer.email,
+        },
+        range: { from_date: fromDate, to_date: toDate },
+        count: jobs.length,
+        truncated: jobs.length >= limit,
+        jobs,
+      })
+    }
+
+    case 'search_job_details': {
+      const customerName = String(input.customer_name)
+      const searchText = String(input.query || '').trim()
+      const includeFuture = input.include_future === true
+      const limit = Number(input.limit) || 5
+
+      const customer = await findCustomer(customerName, supabase)
+
+      if (!customer) {
+        return `❌ Couldn't find customer "${customerName}"`
+      }
+
+      if (!searchText) {
+        return '❌ Tell me what room, building, service, or detail to search for.'
+      }
+
+      let query = supabase
+        .from('ops_appointments')
+        .select(
+          `
+          id,
+          appointment_date,
+          start_time,
+          completed_at,
+          status,
+          internal_notes,
+          quoted_total,
+          ops_appointment_line_items (
+            name_snapshot,
+            notes,
+            quantity,
+            line_total
+          )
+        `,
+        )
+        .eq('customer_id', customer.id)
+        .order('appointment_date', { ascending: false })
+        .order('start_time', { ascending: false })
+        .limit(100)
+
+      if (!includeFuture) {
+        query = query.lte('appointment_date', getTodayMountain())
+      }
+
+      const { data: appointments, error } = await query
+
+      if (error) {
+        return `❌ Couldn't search job details: ${error.message}`
+      }
+
+      const terms = searchText.toLowerCase().split(/\s+/).filter(Boolean)
+
+      const matches = (appointments || [])
+        .map((appointment) => {
+          const lineItems = (
+            Array.isArray(appointment.ops_appointment_line_items)
+              ? appointment.ops_appointment_line_items
+              : []
+          ) as JobDetailLineItem[]
+
+          const searchable = [
+            appointment.internal_notes,
+            ...lineItems.flatMap((line) => [
+              line.name_snapshot,
+              line.notes,
+              line.quantity,
+              line.line_total,
+            ]),
+          ]
+            .filter((value) => value !== null && value !== undefined)
+            .join(' ')
+            .toLowerCase()
+
+          const isMatch = terms.every((term) => searchable.includes(term))
+          return { appointment, lineItems, isMatch }
+        })
+        .filter((entry) => entry.isMatch)
+        .slice(0, limit)
+
+      if (matches.length === 0) {
+        const futureNote = includeFuture
+          ? ''
+          : ' I only checked past/today jobs; ask what is scheduled if you want future booked work too.'
+        return `📭 I found ${displayCustomerName(customer)}, but no job details matching "${searchText}".${futureNote}`
+      }
+
+      let response = `🔎 ${displayCustomerName(customer)} — "${searchText}"\n\n`
+      for (const { appointment, lineItems } of matches) {
+        const date = new Date(appointment.appointment_date).toLocaleDateString(
+          'en-US',
+          {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          },
+        )
+        const time = new Date(
+          `2000-01-01 ${appointment.start_time}`,
+        ).toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+        })
+        const statusIcon =
+          appointment.status === 'completed'
+            ? '✅'
+            : appointment.status === 'booked'
+              ? '📌'
+              : '⏸️'
+        response += `${statusIcon} ${date} at ${time} — ${appointment.status}\n`
+
+        const matchingLines = lineItems.filter((line) => {
+          const lineText = [line.name_snapshot, line.notes]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase()
+          return terms.every((term) => lineText.includes(term))
+        })
+        const linesToShow = matchingLines.length > 0 ? matchingLines : lineItems
+
+        for (const line of linesToShow.slice(0, 3)) {
+          const qty = line.quantity ? ` (${line.quantity})` : ''
+          response += `• ${line.name_snapshot || 'Service'}${qty}`
+          if (line.notes) response += ` — ${line.notes}`
+          response += '\n'
+        }
+
+        if (appointment.internal_notes) {
+          response += `Notes: ${appointment.internal_notes}\n`
+        }
+        if (appointment.quoted_total) {
+          response += `Total: $${appointment.quoted_total}\n`
+        }
+        response += '\n'
+      }
+
+      return response.trim()
+    }
+
     case 'mark_complete': {
       const customerName = String(input.customer_name)
       const targetDate = input.date ? String(input.date) : getTodayMountain()
 
-      // Find customer
-      const { data: customer } = await supabase
-        .from('ops_customers')
-        .select('id, full_name')
-        .or(
-          `full_name.ilike.%${customerName}%,first_name.ilike.%${customerName}%,last_name.ilike.%${customerName}%`,
-        )
-        .limit(1)
-        .maybeSingle()
+      const customer = await findCustomer(customerName, supabase)
 
       if (!customer) {
         return `❌ Couldn't find customer "${customerName}"`
@@ -1173,7 +1566,7 @@ async function executeToolCall(
         .limit(1)
 
       if (!appointments || appointments.length === 0) {
-        return `❌ No appointment found for ${customer.full_name} on ${targetDate}`
+        return `❌ No appointment found for ${displayCustomerName(customer)} on ${targetDate}`
       }
 
       const appt = appointments[0]
@@ -1191,7 +1584,7 @@ async function executeToolCall(
         return `❌ Failed to mark complete: ${error.message}`
       }
 
-      return `✅ Marked ${customer.full_name}'s job as complete`
+      return `✅ Marked ${displayCustomerName(customer)}'s job as complete`
     }
 
     case 'today_summary': {
@@ -1219,10 +1612,12 @@ async function executeToolCall(
       const customerIds = appointments.map((a) => a.customer_id)
       const { data: customers } = await supabase
         .from('ops_customers')
-        .select('id, full_name')
+        .select('id, full_name, business_name')
         .in('id', customerIds)
 
-      const customerMap = new Map(customers?.map((c) => [c.id, c.full_name]))
+      const customerMap = new Map(
+        customers?.map((c) => [c.id, displayCustomerName(c)]),
+      )
 
       const completed = appointments.filter((a) => a.status === 'completed')
       const pending = appointments.filter((a) => a.status !== 'completed')
@@ -1361,10 +1756,12 @@ async function executeToolCall(
       const customerIds = conflicts.map((c) => c.customer_id)
       const { data: customers } = await supabase
         .from('ops_customers')
-        .select('id, full_name')
+        .select('id, full_name, business_name')
         .in('id', customerIds)
 
-      const customerMap = new Map(customers?.map((c) => [c.id, c.full_name]))
+      const customerMap = new Map(
+        customers?.map((c) => [c.id, displayCustomerName(c)]),
+      )
 
       let conflictInfo = `❌ Time slot conflicts:\n\n`
       for (const conflict of conflicts) {
@@ -1385,15 +1782,7 @@ async function executeToolCall(
       const customerName = String(input.customer_name)
       const markPaid = input.mark_paid === true
 
-      // Find customer
-      const { data: customer } = await supabase
-        .from('ops_customers')
-        .select('id, full_name')
-        .or(
-          `full_name.ilike.%${customerName}%,first_name.ilike.%${customerName}%,last_name.ilike.%${customerName}%`,
-        )
-        .limit(1)
-        .maybeSingle()
+      const customer = await findCustomer(customerName, supabase)
 
       if (!customer) {
         return `❌ Couldn't find customer "${customerName}"`
@@ -1409,7 +1798,7 @@ async function executeToolCall(
         .limit(1)
 
       if (!jobs || jobs.length === 0) {
-        return `❌ No completed jobs found for ${customer.full_name}`
+        return `❌ No completed jobs found for ${displayCustomerName(customer)}`
       }
 
       const job = jobs[0]
@@ -1424,7 +1813,7 @@ async function executeToolCall(
           return `❌ Failed to update payment: ${error.message}`
         }
 
-        return `✅ Marked as paid: ${customer.full_name}\n💰 $${job.quoted_total || '0.00'}`
+        return `✅ Marked as paid: ${displayCustomerName(customer)}\n💰 $${job.quoted_total || '0.00'}`
       }
 
       const isPaid = job.payment_status === 'paid'
@@ -1434,7 +1823,7 @@ async function executeToolCall(
         day: 'numeric',
       })
 
-      return `${status}\n👤 ${customer.full_name}\n📅 ${date}\n💰 $${job.quoted_total || '0.00'}`
+      return `${status}\n👤 ${displayCustomerName(customer)}\n📅 ${date}\n💰 $${job.quoted_total || '0.00'}`
     }
 
     case 'add_job_note': {
@@ -1442,15 +1831,7 @@ async function executeToolCall(
       const note = String(input.note)
       const targetDate = input.date ? String(input.date) : null
 
-      // Find customer
-      const { data: customer } = await supabase
-        .from('ops_customers')
-        .select('id, full_name')
-        .or(
-          `full_name.ilike.%${customerName}%,first_name.ilike.%${customerName}%,last_name.ilike.%${customerName}%`,
-        )
-        .limit(1)
-        .maybeSingle()
+      const customer = await findCustomer(customerName, supabase)
 
       if (!customer) {
         return `❌ Couldn't find customer "${customerName}"`
@@ -1476,7 +1857,7 @@ async function executeToolCall(
         .limit(1)
 
       if (!appointments || appointments.length === 0) {
-        return `❌ No appointment found for ${customer.full_name}`
+        return `❌ No appointment found for ${displayCustomerName(customer)}`
       }
 
       const appt = appointments[0]
@@ -1494,7 +1875,7 @@ async function executeToolCall(
         return `❌ Failed to add note: ${error.message}`
       }
 
-      return `✅ Added note to ${customer.full_name}'s job\n📝 "${note}"`
+      return `✅ Added note to ${displayCustomerName(customer)}'s job\n📝 "${note}"`
     }
 
     default:
@@ -1507,6 +1888,113 @@ async function executeToolCall(
  */
 async function handleButtonClick(data: string, userId: number): Promise<void> {
   const supabase = createAdminClient()
+
+  if (data.startsWith('senddraft_')) {
+    const draftId = data.replace('senddraft_', '')
+    const { data: draft, error } = await supabase
+      .from('harry_command_sms_drafts')
+      .select(
+        'id, target_label, phone_number, message, conversation_id, status, expires_at',
+      )
+      .eq('id', draftId)
+      .maybeSingle()
+
+    if (error || !draft) {
+      await sendToCharles(
+        '❌ SMS draft not found. Ask Harry to draft it again.',
+      )
+      return
+    }
+
+    if (draft.status !== 'pending') {
+      await sendToCharles(`❌ SMS draft is already ${draft.status}.`)
+      return
+    }
+
+    if (Date.parse(String(draft.expires_at || '')) < Date.now()) {
+      await supabase
+        .from('harry_command_sms_drafts')
+        .update({
+          status: 'expired',
+          error_message: 'Approval expired before send',
+        })
+        .eq('id', draft.id)
+      await sendToCharles('❌ SMS draft expired. Ask Harry to draft it again.')
+      return
+    }
+
+    try {
+      await sendCustomerSMS(draft.phone_number, draft.message)
+
+      if (draft.conversation_id) {
+        const { data: conversation } = await supabase
+          .from('conversations')
+          .select('messages')
+          .eq('id', draft.conversation_id)
+          .maybeSingle()
+
+        const messages =
+          (conversation?.messages as Array<{
+            role: string
+            content: string
+            timestamp: string
+          }>) || []
+
+        messages.push({
+          role: 'assistant',
+          content: draft.message,
+          timestamp: new Date().toISOString(),
+        })
+
+        await supabase
+          .from('conversations')
+          .update({
+            messages,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', draft.conversation_id)
+      }
+
+      await supabase
+        .from('harry_command_sms_drafts')
+        .update({
+          status: 'sent',
+          approved_at: new Date().toISOString(),
+          sent_at: new Date().toISOString(),
+        })
+        .eq('id', draft.id)
+
+      await sendToCharles(
+        `✅ Sent SMS to ${draft.target_label} (${draft.phone_number}):\n\n"${draft.message}"`,
+      )
+    } catch (sendError) {
+      const errorMessage =
+        sendError instanceof Error ? sendError.message : String(sendError)
+      await supabase
+        .from('harry_command_sms_drafts')
+        .update({
+          status: 'failed',
+          error_message: errorMessage,
+        })
+        .eq('id', draft.id)
+      await sendToCharles(`❌ Failed to send SMS: ${errorMessage}`)
+    }
+    return
+  }
+
+  if (data.startsWith('canceldraft_')) {
+    const draftId = data.replace('canceldraft_', '')
+    await supabase
+      .from('harry_command_sms_drafts')
+      .update({
+        status: 'cancelled',
+        cancelled_at: new Date().toISOString(),
+      })
+      .eq('id', draftId)
+      .eq('status', 'pending')
+    await sendToCharles('✅ SMS draft cancelled.')
+    return
+  }
 
   // View conversation button
   if (data.startsWith('view_')) {
@@ -1596,28 +2084,25 @@ async function findConversation(
   const digits = target.replace(/\D/g, '')
   if (digits.length >= 10) {
     const phone = digits.length === 10 ? `+1${digits}` : `+${digits}`
+    const phoneVariants = opsPhoneLookupVariants(phone)
     const { data } = await supabase
       .from('conversations')
       .select('id, phone_number, messages')
-      .eq('phone_number', phone)
+      .in('phone_number', phoneVariants)
       .maybeSingle()
 
     if (data) return data
   }
 
-  // Try to find by customer name
-  const { data: customer } = await supabase
-    .from('ops_customers')
-    .select('id, phone')
-    .or(`full_name.ilike.%${target}%,first_name.ilike.%${target}%`)
-    .limit(1)
-    .maybeSingle()
+  // Try to find by customer or business name
+  const customer = await findCustomer(target, supabase)
 
-  if (customer) {
+  if (customer?.phone) {
+    const phoneVariants = opsPhoneLookupVariants(customer.phone)
     const { data: conv } = await supabase
       .from('conversations')
       .select('id, phone_number, messages')
-      .eq('phone_number', customer.phone)
+      .in('phone_number', phoneVariants)
       .maybeSingle()
 
     if (conv) return conv
