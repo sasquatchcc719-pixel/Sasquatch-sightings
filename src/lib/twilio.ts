@@ -150,51 +150,74 @@ export async function sendCustomerSMS(
   messageType: string = 'customer_notification',
   fromNumber?: string,
 ): Promise<void> {
-  if (!client || !twilioPhone) {
-    console.warn(
-      'Twilio credentials not configured, skipping SMS. SID:',
-      !!accountSid,
-      'Token:',
-      !!authToken,
-      'From:',
-      !!twilioPhone,
-    )
-    return
-  }
-
-  const toPhone = toE164(customerPhone)
-  const from = fromNumber ? toE164(fromNumber) : twilioPhone
   try {
-    console.log(`📤 SENDING SMS: From=${from} To=${toPhone}`)
-    console.log(`   Message: ${message.substring(0, 50)}...`)
-
-    const result = await client.messages.create({
-      body: message,
-      from: from,
-      to: toPhone,
-    })
-    console.log(
-      `✅ Customer SMS sent successfully to ${toPhone} SID=${result.sid}`,
+    await sendCustomerSMSWithResult(
+      customerPhone,
+      message,
+      leadId,
+      messageType,
+      fromNumber,
+    )
+  } catch (error) {
+    console.error(
+      `Failed to send customer SMS to ${toE164(customerPhone)}:`,
+      error,
     )
 
-    // Log the SMS
     await logSMS({
       leadId,
-      recipientPhone: toPhone,
-      messageType,
-      messageContent: message,
-      twilioSid: result.sid,
-    })
-  } catch (error) {
-    console.error(`Failed to send customer SMS to ${toPhone}:`, error)
-
-    // Log the failure
-    await logSMS({
-      leadId,
-      recipientPhone: toPhone,
+      recipientPhone: toE164(customerPhone),
       messageType,
       messageContent: message,
       status: 'failed',
     })
   }
+}
+
+/**
+ * Send SMS to customer and require a Twilio SID. Use this for approval flows
+ * where the caller must know whether a message actually went out.
+ */
+export async function sendCustomerSMSWithResult(
+  customerPhone: string,
+  message: string,
+  leadId?: string,
+  messageType: string = 'customer_notification',
+  fromNumber?: string,
+): Promise<{ sid: string; to: string; from: string }> {
+  if (!client || !twilioPhone) {
+    throw new Error(
+      `Twilio credentials not configured (SID=${!!accountSid}, token=${!!authToken}, from=${!!twilioPhone})`,
+    )
+  }
+
+  const toPhone = toE164(customerPhone)
+  const from = fromNumber ? toE164(fromNumber) : twilioPhone
+
+  console.log(`📤 SENDING SMS: From=${from} To=${toPhone}`)
+  console.log(`   Message: ${message.substring(0, 50)}...`)
+
+  const result = await client.messages.create({
+    body: message,
+    from: from,
+    to: toPhone,
+  })
+
+  if (!result.sid) {
+    throw new Error('Twilio did not return a message SID')
+  }
+
+  console.log(
+    `✅ Customer SMS sent successfully to ${toPhone} SID=${result.sid}`,
+  )
+
+  await logSMS({
+    leadId,
+    recipientPhone: toPhone,
+    messageType,
+    messageContent: message,
+    twilioSid: result.sid,
+  })
+
+  return { sid: result.sid, to: toPhone, from }
 }

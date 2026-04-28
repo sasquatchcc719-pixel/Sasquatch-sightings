@@ -3,11 +3,11 @@
  * AI-powered conversational interface for Charles to manage customer conversations
  */
 
-import { randomUUID } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
 import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import { createAdminClient } from '@/supabase/server'
-import { sendCustomerSMS } from '@/lib/twilio'
+import { sendCustomerSMSWithResult } from '@/lib/twilio'
 import { sendToCharles } from '@/lib/harry-command-bot'
 import { opsPhoneLookupVariants } from '@/lib/ops/phone'
 
@@ -71,10 +71,52 @@ type PendingSmsDraftNotice = {
   message: string
 }
 
+type CommandThread = {
+  id: string
+  telegram_chat_id: string
+  telegram_user_id: string | null
+  last_customer_id: string | null
+  last_artifact_id: string | null
+}
+
+type CommandArtifact = {
+  id: string
+  thread_id: string
+  artifact_type: string
+  title: string
+  content: string
+  customer_id: string | null
+  conversation_id: string | null
+  metadata: Record<string, unknown> | null
+  created_at: string
+}
+
+type CommandActionPayload = {
+  kind: 'send_customer_sms'
+  targetLabel: string
+  phoneNumber: string
+  message: string
+  conversationId?: string | null
+  artifactId?: string | null
+}
+
+type CommandActionRow = {
+  id: string
+  thread_id: string
+  action_type: string
+  action_payload: CommandActionPayload
+  payload_hash: string
+  target_label: string | null
+  preview: string
+  status: string
+  expires_at: string
+  telegram_user_id: string | null
+}
+
 const CUSTOMER_SELECT =
   'id, full_name, first_name, last_name, business_name, phone, email, notes, created_at'
 
-const SMS_DRAFT_TTL_MS = 30 * 60 * 1000
+const COMMAND_ACTION_TTL_MS = 30 * 60 * 1000
 
 function displayCustomerName(
   customer: Pick<HarryCustomer, 'full_name' | 'business_name'>,
@@ -83,6 +125,7 @@ function displayCustomerName(
 }
 
 type TelegramUpdate = {
+  update_id?: number
   message?: {
     message_id: number
     from: {
@@ -109,13 +152,108 @@ type TelegramUpdate = {
   }
 }
 
+function hashPayload(payload: unknown): string {
+  return createHash('sha256').update(JSON.stringify(payload)).digest('hex')
+}
+
+function getAllowedTelegramUserIds(): Set<string> {
+  const raw = [
+    process.env.HARRY_COMMAND_ALLOWED_TELEGRAM_USER_IDS,
+    process.env.CHARLES_TELEGRAM_USER_ID,
+    process.env.CHARLES_TELEGRAM_CHAT_ID,
+  ]
+    .filter(Boolean)
+    .join(',')
+
+  return new Set(
+    raw
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean),
+  )
+}
+
+function isAllowedTelegramUser(userId?: number): boolean {
+  const allowed = getAllowedTelegramUserIds()
+  if (allowed.size === 0) return true
+  return Boolean(userId && allowed.has(String(userId)))
+}
+
+function verifyTelegramSecret(request: NextRequest): boolean {
+  const expected = process.env.HARRY_COMMAND_TELEGRAM_SECRET_TOKEN
+  if (!expected) return true
+  return request.headers.get('x-telegram-bot-api-secret-token') === expected
+}
+
+function looksLikeSendPreviousArtifact(text: string): boolean {
+  const lower = text.toLowerCase()
+  return (
+    /\b(text|send|message)\b/.test(lower) &&
+    /\b(that|it|the report|the schedule|what you just sent|message you just sent)\b/.test(
+      lower,
+    )
+  )
+}
+
+function extractTargetFromSendRequest(text: string): string | null {
+  const patterns = [
+    /\b(?:to|for)\s+([^?.!,]+?)(?:\s+with|\s+at\s*$|[?.!,]|$)/i,
+    /\b(?:text|send|message)\s+([^?.!,]+?)(?:\s+that|\s+the|\s+with|[?.!,]|$)/i,
+  ]
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern)
+    if (match?.[1]) return match[1].trim()
+  }
+
+  return null
+}
+
+function trimForSmsArtifact(content: string): string {
+  return content
+    .replace(/\*\*/g, '')
+    .replace(/[^\S\r\n]+/g, ' ')
+    .trim()
+}
+
 export async function POST(request: NextRequest) {
   try {
+    if (!verifyTelegramSecret(request)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const update = (await request.json()) as TelegramUpdate
+    const actorId = update.message?.from.id || update.callback_query?.from.id
+    if (!isAllowedTelegramUser(actorId)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    const supabase = createAdminClient()
+    const chatId =
+      update.message?.chat.id || update.callback_query?.message.chat.id || null
+    const thread = chatId
+      ? await getOrCreateCommandThread(supabase, chatId, actorId || null)
+      : null
+
+    if (update.update_id != null) {
+      const isDuplicate = await recordTelegramUpdate(
+        supabase,
+        update.update_id,
+        thread?.id || null,
+      )
+      if (isDuplicate) return NextResponse.json({ ok: true, duplicate: true })
+    }
 
     // Handle text commands
     if (update.message?.text) {
-      await handleTextCommand(update.message.text, update.message.chat.id)
+      if (!thread) throw new Error('Missing Telegram thread')
+      await handleTextCommand(
+        update.message.text,
+        update.message.chat.id,
+        update.message.from.id,
+        update.message.message_id,
+        thread,
+      )
     }
 
     // Handle button clicks
@@ -123,6 +261,7 @@ export async function POST(request: NextRequest) {
       await handleButtonClick(
         update.callback_query.data,
         update.callback_query.from.id,
+        thread,
       )
     }
 
@@ -136,10 +275,373 @@ export async function POST(request: NextRequest) {
 /**
  * Handle text messages from Charles using AI
  */
-async function handleTextCommand(text: string, chatId: number): Promise<void> {
+async function getOrCreateCommandThread(
+  supabase: ReturnType<typeof createAdminClient>,
+  chatId: number,
+  userId: number | null,
+): Promise<CommandThread> {
+  const chatIdText = String(chatId)
+  const { data: existing } = await supabase
+    .from('harry_command_threads')
+    .select(
+      'id, telegram_chat_id, telegram_user_id, last_customer_id, last_artifact_id',
+    )
+    .eq('telegram_chat_id', chatIdText)
+    .maybeSingle()
+
+  if (existing) return existing as CommandThread
+
+  const { data, error } = await supabase
+    .from('harry_command_threads')
+    .insert({
+      telegram_chat_id: chatIdText,
+      telegram_user_id: userId ? String(userId) : null,
+    })
+    .select(
+      'id, telegram_chat_id, telegram_user_id, last_customer_id, last_artifact_id',
+    )
+    .single()
+
+  if (error) throw error
+  return data as CommandThread
+}
+
+async function recordTelegramUpdate(
+  supabase: ReturnType<typeof createAdminClient>,
+  updateId: number,
+  threadId: string | null,
+): Promise<boolean> {
+  const { error } = await supabase
+    .from('harry_command_telegram_updates')
+    .insert({
+      update_id: updateId,
+      thread_id: threadId,
+    })
+
+  if (!error) return false
+  if (error.code === '23505') return true
+  throw error
+}
+
+async function logCommandMessage(
+  supabase: ReturnType<typeof createAdminClient>,
+  params: {
+    threadId: string
+    role: 'owner' | 'assistant' | 'tool' | 'system'
+    content: string
+    telegramMessageId?: number | null
+    metadata?: Record<string, unknown>
+  },
+): Promise<void> {
+  const { error } = await supabase.from('harry_command_messages').insert({
+    thread_id: params.threadId,
+    telegram_message_id: params.telegramMessageId || null,
+    role: params.role,
+    content: params.content,
+    metadata: params.metadata || {},
+  })
+  if (error) throw error
+}
+
+async function getRecentCommandMessages(
+  supabase: ReturnType<typeof createAdminClient>,
+  threadId: string,
+): Promise<Array<{ role: string; content: string; created_at: string }>> {
+  const { data, error } = await supabase
+    .from('harry_command_messages')
+    .select('role, content, created_at')
+    .eq('thread_id', threadId)
+    .order('created_at', { ascending: false })
+    .limit(12)
+
+  if (error) throw error
+  return (data || []).reverse()
+}
+
+async function getLatestArtifact(
+  supabase: ReturnType<typeof createAdminClient>,
+  threadId: string,
+): Promise<CommandArtifact | null> {
+  const { data, error } = await supabase
+    .from('harry_command_artifacts')
+    .select(
+      'id, thread_id, artifact_type, title, content, customer_id, conversation_id, metadata, created_at',
+    )
+    .eq('thread_id', threadId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) throw error
+  return (data as CommandArtifact | null) || null
+}
+
+async function saveArtifact(
+  supabase: ReturnType<typeof createAdminClient>,
+  params: {
+    threadId: string
+    type: string
+    title: string
+    content: string
+    customerId?: string | null
+    conversationId?: string | null
+    metadata?: Record<string, unknown>
+  },
+): Promise<CommandArtifact> {
+  const { data, error } = await supabase
+    .from('harry_command_artifacts')
+    .insert({
+      thread_id: params.threadId,
+      artifact_type: params.type,
+      title: params.title,
+      content: params.content,
+      customer_id: params.customerId || null,
+      conversation_id: params.conversationId || null,
+      metadata: params.metadata || {},
+    })
+    .select(
+      'id, thread_id, artifact_type, title, content, customer_id, conversation_id, metadata, created_at',
+    )
+    .single()
+
+  if (error) throw error
+  await supabase
+    .from('harry_command_threads')
+    .update({
+      last_artifact_id: data.id,
+      last_customer_id: params.customerId || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', params.threadId)
+
+  return data as CommandArtifact
+}
+
+async function createPendingCommandAction(
+  supabase: ReturnType<typeof createAdminClient>,
+  params: {
+    threadId: string
+    action: CommandActionPayload
+    targetLabel: string
+    preview: string
+    telegramUserId?: number | null
+  },
+): Promise<CommandActionRow> {
+  const actionId = randomUUID()
+  const expiresAt = new Date(Date.now() + COMMAND_ACTION_TTL_MS).toISOString()
+  const { data, error } = await supabase
+    .from('harry_command_pending_actions')
+    .insert({
+      id: actionId,
+      thread_id: params.threadId,
+      action_type: params.action.kind,
+      action_payload: params.action,
+      payload_hash: hashPayload(params.action),
+      target_label: params.targetLabel,
+      preview: params.preview,
+      telegram_user_id: params.telegramUserId
+        ? String(params.telegramUserId)
+        : null,
+      expires_at: expiresAt,
+    })
+    .select(
+      'id, thread_id, action_type, action_payload, payload_hash, target_label, preview, status, expires_at, telegram_user_id',
+    )
+    .single()
+
+  if (error) throw error
+  return data as CommandActionRow
+}
+
+async function writeCommandAudit(
+  supabase: ReturnType<typeof createAdminClient>,
+  params: {
+    threadId?: string | null
+    pendingActionId?: string | null
+    actionType: string
+    status: string
+    targetLabel?: string | null
+    reason?: string | null
+    payload?: Record<string, unknown>
+    result?: Record<string, unknown>
+    telegramUserId?: number | null
+  },
+): Promise<void> {
+  await supabase.from('harry_command_action_audit').insert({
+    thread_id: params.threadId || null,
+    pending_action_id: params.pendingActionId || null,
+    action_type: params.actionType,
+    status: params.status,
+    target_label: params.targetLabel || null,
+    reason: params.reason || null,
+    payload: params.payload || {},
+    result: params.result || {},
+    telegram_user_id: params.telegramUserId
+      ? String(params.telegramUserId)
+      : null,
+  })
+}
+
+async function handleSendLatestArtifactRequest(
+  text: string,
+  thread: CommandThread,
+  artifact: CommandArtifact,
+  userId: number,
+  supabase: ReturnType<typeof createAdminClient>,
+): Promise<boolean> {
+  const targetText = extractTargetFromSendRequest(text)
+  let customer: HarryCustomer | null = null
+
+  if (targetText) {
+    const candidates = await findCustomerCandidates(targetText, supabase)
+    if (candidates.length > 1) {
+      const reply = `I found a few possible matches for "${targetText}". Pick the one to text.`
+      await logCommandMessage(supabase, {
+        threadId: thread.id,
+        role: 'assistant',
+        content: reply,
+        metadata: {
+          artifact_id: artifact.id,
+          candidates: candidates.map((candidate) => candidate.id),
+        },
+      })
+      await sendToCharles(reply, {
+        buttons: candidates.slice(0, 5).map((candidate) => [
+          {
+            text: `${displayCustomerName(candidate)}${candidate.phone ? ` ${candidate.phone}` : ''}`.slice(
+              0,
+              60,
+            ),
+            data: `selectcust_${candidate.id}`,
+          },
+        ]),
+      })
+      return true
+    }
+    customer = candidates[0] || null
+  }
+
+  if (!customer && artifact.customer_id) {
+    const { data } = await supabase
+      .from('ops_customers')
+      .select(CUSTOMER_SELECT)
+      .eq('id', artifact.customer_id)
+      .maybeSingle()
+    customer = (data as HarryCustomer | null) || null
+  }
+
+  if (!customer?.phone) {
+    const reply = targetText
+      ? `I found the saved report, but I couldn't resolve "${targetText}" to a customer with a phone number. Give me the phone or pick the exact customer.`
+      : "I found the saved report, but I don't know who to send it to. Tell me the customer or phone number."
+    await logCommandMessage(supabase, {
+      threadId: thread.id,
+      role: 'assistant',
+      content: reply,
+    })
+    await sendToCharles(reply)
+    return true
+  }
+
+  await createArtifactSmsApproval(thread, artifact, customer, userId, supabase)
+  return true
+}
+
+async function createArtifactSmsApproval(
+  thread: CommandThread,
+  artifact: CommandArtifact,
+  customer: HarryCustomer,
+  userId: number,
+  supabase: ReturnType<typeof createAdminClient>,
+): Promise<void> {
+  if (!customer.phone) {
+    await sendToCharles(
+      `❌ ${displayCustomerName(customer)} has no phone number.`,
+    )
+    return
+  }
+
+  const conversation = await findConversation(customer.phone, supabase)
+  const message = trimForSmsArtifact(artifact.content)
+  const targetLabel = displayCustomerName(customer)
+  const action = await createPendingCommandAction(supabase, {
+    threadId: thread.id,
+    telegramUserId: userId,
+    targetLabel,
+    preview: message,
+    action: {
+      kind: 'send_customer_sms',
+      targetLabel,
+      phoneNumber: customer.phone,
+      message,
+      conversationId: conversation?.id || null,
+      artifactId: artifact.id,
+    },
+  })
+
+  await writeCommandAudit(supabase, {
+    threadId: thread.id,
+    pendingActionId: action.id,
+    actionType: action.action_type,
+    status: 'proposed',
+    targetLabel,
+    reason: 'Owner asked to send saved artifact',
+    payload: action.action_payload,
+    telegramUserId: userId,
+  })
+
+  const reply = `Draft ready for ${targetLabel} (${customer.phone}). It uses the saved report "${artifact.title}". Send it?`
+  await logCommandMessage(supabase, {
+    threadId: thread.id,
+    role: 'assistant',
+    content: reply,
+    metadata: { artifact_id: artifact.id, pending_action_id: action.id },
+  })
+  await sendToCharles(`${reply}\n\n${message.slice(0, 2800)}`, {
+    buttons: [
+      [
+        { text: 'Send SMS', data: `approveaction_${action.id}` },
+        { text: 'Cancel', data: `cancelaction_${action.id}` },
+      ],
+    ],
+  })
+}
+
+async function handleTextCommand(
+  text: string,
+  chatId: number,
+  userId: number,
+  messageId: number,
+  thread: CommandThread,
+): Promise<void> {
   const supabase = createAdminClient()
 
   try {
+    void chatId
+    await logCommandMessage(supabase, {
+      threadId: thread.id,
+      role: 'owner',
+      content: text,
+      telegramMessageId: messageId,
+      metadata: { telegram_user_id: userId },
+    })
+
+    const latestArtifact = await getLatestArtifact(supabase, thread.id)
+    if (latestArtifact && looksLikeSendPreviousArtifact(text)) {
+      const handled = await handleSendLatestArtifactRequest(
+        text,
+        thread,
+        latestArtifact,
+        userId,
+        supabase,
+      )
+      if (handled) return
+    }
+
+    const recentCommandMessages = await getRecentCommandMessages(
+      supabase,
+      thread.id,
+    )
     const now = getMountainTime()
     const currentTime = now.toLocaleTimeString('en-US', {
       hour: 'numeric',
@@ -190,11 +692,27 @@ Voice:
 - Sound like a sharp employee who knows the business, not a generic chatbot.
 - Be brief, direct, and useful. Charles is texting from his phone while working.
 - If the data is missing or only partially imported, say that plainly.
+- You are allowed a little personality: competent shop manager, direct, lightly dry, never gushy.
 - Treat Charles's messages as directions from the owner. When he asks for an operational outcome, use tools to gather the data and complete the requested prep work.
 - Only ask a follow-up when the target customer, date range, or requested action is genuinely unclear.
 - When asked for a customer's schedule, year schedule, upcoming jobs, dates/services/notes, or work to send to a customer, use customer_schedule_summary. Do not use search_job_details unless Charles asks for a specific room/building/service/detail phrase.
 - When Charles asks you to text a customer, draft the SMS with send_sms. The system will ask Charles to approve before sending; never claim it was sent until approval happens.
-- When asked "when did we last..." or about a room/building/scope, use search_job_details so you can inspect line-item descriptions before answering.`,
+- When Charles says "that", "it", "same thing", or "the report", use RECENT COMMAND MEMORY and LAST ARTIFACT before asking what he means.
+- When asked "when did we last..." or about a room/building/scope, use search_job_details so you can inspect line-item descriptions before answering.
+
+RECENT COMMAND MEMORY:
+${
+  recentCommandMessages
+    .map((msg) => `${msg.role.toUpperCase()}: ${msg.content.slice(0, 1200)}`)
+    .join('\n\n') || '(none)'
+}
+
+LAST ARTIFACT:
+${
+  latestArtifact
+    ? `${latestArtifact.title}\n${latestArtifact.content.slice(0, 2500)}`
+    : '(none)'
+}`,
       },
       { role: 'user', content: text },
     ]
@@ -663,6 +1181,7 @@ Voice:
 
     let finalResponse = ''
     const smsDrafts: PendingSmsDraftNotice[] = []
+    let scheduleSummaryResult: Record<string, unknown> | null = null
 
     for (let round = 0; round < 6; round += 1) {
       const response = await openai.chat.completions.create({
@@ -694,8 +1213,27 @@ Voice:
             toolCall.function.name,
             args,
             supabase,
-            { smsDrafts },
+            { smsDrafts, threadId: thread.id, telegramUserId: userId },
           )
+          await logCommandMessage(supabase, {
+            threadId: thread.id,
+            role: 'tool',
+            content: toolResult,
+            metadata: {
+              tool_name: toolCall.function.name,
+              arguments: args,
+            },
+          })
+          if (toolCall.function.name === 'customer_schedule_summary') {
+            try {
+              scheduleSummaryResult = JSON.parse(toolResult) as Record<
+                string,
+                unknown
+              >
+            } catch {
+              scheduleSummaryResult = null
+            }
+          }
           messages.push({
             role: 'tool',
             tool_call_id: toolCall.id,
@@ -716,12 +1254,32 @@ Voice:
     }
 
     if (finalResponse) {
+      await logCommandMessage(supabase, {
+        threadId: thread.id,
+        role: 'assistant',
+        content: finalResponse,
+      })
+
+      if (scheduleSummaryResult && !('error' in scheduleSummaryResult)) {
+        const customer = scheduleSummaryResult.customer as
+          | { id?: string; name?: string }
+          | undefined
+        await saveArtifact(supabase, {
+          threadId: thread.id,
+          type: 'customer_schedule_report',
+          title: `Schedule report${customer?.name ? ` - ${customer.name}` : ''}`,
+          content: finalResponse.trim(),
+          customerId: customer?.id || null,
+          metadata: scheduleSummaryResult,
+        })
+      }
+
       await sendToCharles(finalResponse.trim(), {
         buttons: latestDraft
           ? [
               [
-                { text: 'Send SMS', data: `senddraft_${latestDraft.id}` },
-                { text: 'Cancel', data: `canceldraft_${latestDraft.id}` },
+                { text: 'Send SMS', data: `approveaction_${latestDraft.id}` },
+                { text: 'Cancel', data: `cancelaction_${latestDraft.id}` },
               ],
             ]
           : undefined,
@@ -743,8 +1301,17 @@ async function findCustomer(
   target: string,
   supabase: ReturnType<typeof createAdminClient>,
 ): Promise<HarryCustomer | null> {
+  const candidates = await findCustomerCandidates(target, supabase)
+  return candidates[0] || null
+}
+
+async function findCustomerCandidates(
+  target: string,
+  supabase: ReturnType<typeof createAdminClient>,
+): Promise<HarryCustomer[]> {
   const cleanTarget = String(target || '').trim()
-  if (!cleanTarget) return null
+  if (!cleanTarget) return []
+  const customers = new Map<string, HarryCustomer>()
 
   const phoneVariants = opsPhoneLookupVariants(cleanTarget)
   if (phoneVariants.length > 0) {
@@ -753,10 +1320,11 @@ async function findCustomer(
       .select(CUSTOMER_SELECT)
       .in('phone', phoneVariants)
       .order('updated_at', { ascending: false, nullsFirst: false })
-      .limit(1)
-      .maybeSingle()
+      .limit(5)
 
-    if (data) return data
+    for (const customer of data || []) {
+      customers.set(customer.id, customer as HarryCustomer)
+    }
   }
 
   const targetParts = [cleanTarget]
@@ -776,21 +1344,26 @@ async function findCustomer(
         .select(CUSTOMER_SELECT)
         .ilike(column, `%${searchableTarget}%`)
         .order('updated_at', { ascending: false, nullsFirst: false })
-        .limit(1)
-        .maybeSingle()
+        .limit(5)
 
-      if (data) return data
+      for (const customer of data || []) {
+        customers.set(customer.id, customer as HarryCustomer)
+      }
     }
   }
 
-  return null
+  return Array.from(customers.values()).slice(0, 8)
 }
 
 async function executeToolCall(
   toolName: string,
   input: Record<string, unknown>,
   supabase: ReturnType<typeof createAdminClient>,
-  context: { smsDrafts?: PendingSmsDraftNotice[] } = {},
+  context: {
+    smsDrafts?: PendingSmsDraftNotice[]
+    threadId?: string
+    telegramUserId?: number
+  } = {},
 ): Promise<string> {
   switch (toolName) {
     case 'send_sms': {
@@ -812,23 +1385,37 @@ async function executeToolCall(
         return `❌ Couldn't find a phone number or conversation for "${target}"`
       }
 
-      const draftId = randomUUID()
-      const expiresAt = new Date(Date.now() + SMS_DRAFT_TTL_MS).toISOString()
-      const { error } = await supabase.from('harry_command_sms_drafts').insert({
-        id: draftId,
-        target_label: targetLabel,
-        phone_number: phoneNumber,
-        message,
-        conversation_id: conversation?.id || null,
-        expires_at: expiresAt,
-      })
-
-      if (error) {
-        return `❌ Couldn't create SMS draft: ${error.message}`
+      if (!context.threadId) {
+        return '❌ Missing command thread for SMS approval.'
       }
 
+      const action = await createPendingCommandAction(supabase, {
+        threadId: context.threadId,
+        telegramUserId: context.telegramUserId || null,
+        targetLabel,
+        preview: message,
+        action: {
+          kind: 'send_customer_sms',
+          targetLabel,
+          phoneNumber,
+          message,
+          conversationId: conversation?.id || null,
+        },
+      })
+
+      await writeCommandAudit(supabase, {
+        threadId: context.threadId,
+        pendingActionId: action.id,
+        actionType: action.action_type,
+        status: 'proposed',
+        targetLabel,
+        reason: 'Owner requested customer SMS draft',
+        payload: action.action_payload,
+        telegramUserId: context.telegramUserId || null,
+      })
+
       context.smsDrafts?.push({
-        id: draftId,
+        id: action.id,
         target: targetLabel,
         phoneNumber,
         message,
@@ -1883,11 +2470,242 @@ async function executeToolCall(
   }
 }
 
+async function approvePendingCommandAction(
+  actionId: string,
+  userId: number,
+  supabase: ReturnType<typeof createAdminClient>,
+): Promise<void> {
+  const { data, error } = await supabase
+    .from('harry_command_pending_actions')
+    .select(
+      'id, thread_id, action_type, action_payload, payload_hash, target_label, preview, status, expires_at, telegram_user_id',
+    )
+    .eq('id', actionId)
+    .maybeSingle()
+
+  const action = data as CommandActionRow | null
+  if (error || !action) {
+    await sendToCharles(
+      '❌ Pending action not found. Ask Harry to build it again.',
+    )
+    return
+  }
+
+  if (action.status !== 'pending') {
+    await sendToCharles(`❌ That action is already ${action.status}.`)
+    return
+  }
+
+  if (Date.parse(String(action.expires_at || '')) < Date.now()) {
+    await supabase
+      .from('harry_command_pending_actions')
+      .update({
+        status: 'expired',
+        error_message: 'Approval expired before execution',
+      })
+      .eq('id', action.id)
+    await sendToCharles(
+      '❌ That approval expired. Ask Harry to build it again.',
+    )
+    return
+  }
+
+  if (hashPayload(action.action_payload) !== action.payload_hash) {
+    await supabase
+      .from('harry_command_pending_actions')
+      .update({
+        status: 'failed',
+        error_message: 'Payload hash mismatch',
+      })
+      .eq('id', action.id)
+    await sendToCharles('❌ Integrity check failed. I cancelled that action.')
+    return
+  }
+
+  if (action.action_payload.kind !== 'send_customer_sms') {
+    await sendToCharles(`❌ Unsupported action: ${action.action_type}`)
+    return
+  }
+
+  try {
+    const payload = action.action_payload
+    const sendResult = await sendCustomerSMSWithResult(
+      payload.phoneNumber,
+      payload.message,
+    )
+
+    if (payload.conversationId) {
+      const { data: conversation } = await supabase
+        .from('conversations')
+        .select('messages')
+        .eq('id', payload.conversationId)
+        .maybeSingle()
+
+      const messages =
+        (conversation?.messages as Array<{
+          role: string
+          content: string
+          timestamp: string
+        }>) || []
+
+      messages.push({
+        role: 'assistant',
+        content: payload.message,
+        timestamp: new Date().toISOString(),
+      })
+
+      await supabase
+        .from('conversations')
+        .update({
+          messages,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', payload.conversationId)
+    }
+
+    await supabase
+      .from('harry_command_pending_actions')
+      .update({
+        status: 'executed',
+        approved_at: new Date().toISOString(),
+        executed_at: new Date().toISOString(),
+        error_message: null,
+      })
+      .eq('id', action.id)
+
+    await writeCommandAudit(supabase, {
+      threadId: action.thread_id,
+      pendingActionId: action.id,
+      actionType: action.action_type,
+      status: 'executed',
+      targetLabel: payload.targetLabel,
+      payload: payload as unknown as Record<string, unknown>,
+      result: sendResult,
+      telegramUserId: userId,
+    })
+
+    await logCommandMessage(supabase, {
+      threadId: action.thread_id,
+      role: 'assistant',
+      content: `Sent SMS to ${payload.targetLabel} (${sendResult.to}). Twilio SID: ${sendResult.sid}`,
+      metadata: { pending_action_id: action.id, twilio_sid: sendResult.sid },
+    })
+
+    await sendToCharles(
+      `✅ Sent SMS to ${payload.targetLabel} (${sendResult.to}). Twilio SID: ${sendResult.sid}`,
+    )
+  } catch (sendError) {
+    const errorMessage =
+      sendError instanceof Error ? sendError.message : String(sendError)
+    await supabase
+      .from('harry_command_pending_actions')
+      .update({
+        status: 'failed',
+        error_message: errorMessage,
+      })
+      .eq('id', action.id)
+    await writeCommandAudit(supabase, {
+      threadId: action.thread_id,
+      pendingActionId: action.id,
+      actionType: action.action_type,
+      status: 'failed',
+      targetLabel: action.target_label,
+      payload: action.action_payload as unknown as Record<string, unknown>,
+      result: { error: errorMessage },
+      telegramUserId: userId,
+    })
+    await sendToCharles(`❌ SMS failed: ${errorMessage}`)
+  }
+}
+
+async function cancelPendingCommandAction(
+  actionId: string,
+  userId: number,
+  supabase: ReturnType<typeof createAdminClient>,
+  thread: CommandThread | null,
+): Promise<void> {
+  const { data } = await supabase
+    .from('harry_command_pending_actions')
+    .update({
+      status: 'cancelled',
+      cancelled_at: new Date().toISOString(),
+    })
+    .eq('id', actionId)
+    .eq('status', 'pending')
+    .select('id, thread_id, action_type, action_payload, target_label')
+    .maybeSingle()
+
+  const action = data as {
+    id: string
+    thread_id: string
+    action_type: string
+    action_payload: Record<string, unknown>
+    target_label: string | null
+  } | null
+
+  await writeCommandAudit(supabase, {
+    threadId: action?.thread_id || thread?.id || null,
+    pendingActionId: actionId,
+    actionType: action?.action_type || 'unknown',
+    status: 'cancelled',
+    targetLabel: action?.target_label || null,
+    payload: action?.action_payload || {},
+    telegramUserId: userId,
+  })
+  await sendToCharles('✅ Action cancelled.')
+}
+
 /**
  * Handle button clicks
  */
-async function handleButtonClick(data: string, userId: number): Promise<void> {
+async function handleButtonClick(
+  data: string,
+  userId: number,
+  thread: CommandThread | null,
+): Promise<void> {
   const supabase = createAdminClient()
+
+  if (data.startsWith('approveaction_')) {
+    const actionId = data.replace('approveaction_', '')
+    await approvePendingCommandAction(actionId, userId, supabase)
+    return
+  }
+
+  if (data.startsWith('cancelaction_')) {
+    const actionId = data.replace('cancelaction_', '')
+    await cancelPendingCommandAction(actionId, userId, supabase, thread)
+    return
+  }
+
+  if (data.startsWith('selectcust_')) {
+    if (!thread) {
+      await sendToCharles('❌ Missing command thread. Ask Harry again.')
+      return
+    }
+    const customerId = data.replace('selectcust_', '')
+    const artifact = await getLatestArtifact(supabase, thread.id)
+    const { data: customer } = await supabase
+      .from('ops_customers')
+      .select(CUSTOMER_SELECT)
+      .eq('id', customerId)
+      .maybeSingle()
+
+    if (!artifact || !customer) {
+      await sendToCharles(
+        '❌ I lost the report or customer selection. Ask Harry to build it again.',
+      )
+      return
+    }
+
+    await createArtifactSmsApproval(
+      thread,
+      artifact,
+      customer as HarryCustomer,
+      userId,
+      supabase,
+    )
+    return
+  }
 
   if (data.startsWith('senddraft_')) {
     const draftId = data.replace('senddraft_', '')
@@ -1924,7 +2742,10 @@ async function handleButtonClick(data: string, userId: number): Promise<void> {
     }
 
     try {
-      await sendCustomerSMS(draft.phone_number, draft.message)
+      const sendResult = await sendCustomerSMSWithResult(
+        draft.phone_number,
+        draft.message,
+      )
 
       if (draft.conversation_id) {
         const { data: conversation } = await supabase
@@ -1961,11 +2782,12 @@ async function handleButtonClick(data: string, userId: number): Promise<void> {
           status: 'sent',
           approved_at: new Date().toISOString(),
           sent_at: new Date().toISOString(),
+          error_message: null,
         })
         .eq('id', draft.id)
 
       await sendToCharles(
-        `✅ Sent SMS to ${draft.target_label} (${draft.phone_number}):\n\n"${draft.message}"`,
+        `✅ Sent SMS to ${draft.target_label} (${draft.phone_number}). Twilio SID: ${sendResult.sid}\n\n"${draft.message}"`,
       )
     } catch (sendError) {
       const errorMessage =
