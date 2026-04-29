@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
-import { sendToCharles } from '@/lib/harry-command-bot'
+import { sendTelegramNotification } from '@/lib/telegram'
 
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization')
@@ -186,7 +186,7 @@ async function sendUpcomingJobReminders() {
       }
 
       // Send Telegram notification
-      await sendToCharles(message, { parseMode: 'Markdown' })
+      await sendTelegramNotification(message, { parseMode: 'Markdown' })
 
       // Mark as sent
       await supabase.from('system_settings').upsert({
