@@ -1010,12 +1010,28 @@ export async function POST(request: NextRequest) {
     const opsPhoneVariants = opsPhoneLookupVariants(normalizedPhone)
     const { data: opsCustomerMatch } = await supabase
       .from('ops_customers')
-      .select('id, first_name, full_name')
+      .select('id, first_name, full_name, email, phone')
       .in('phone', opsPhoneVariants)
       .maybeSingle()
 
     const isOpsCustomer = !!opsCustomerMatch
     const opsCustomerName = firstNameFromCustomer(opsCustomerMatch)
+    let opsCustomerAddress: {
+      street_1?: string | null
+      city?: string | null
+      state?: string | null
+      zip_code?: string | null
+    } | null = null
+    if (opsCustomerMatch?.id) {
+      const { data: addressRows } = await supabase
+        .from('ops_service_addresses')
+        .select('street_1, city, state, zip_code')
+        .eq('customer_id', opsCustomerMatch.id)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+
+      opsCustomerAddress = addressRows?.[0] || null
+    }
     const isReminderThread = isOpsCustomer
       ? await isRecentDayBeforeReminderThread({
           supabase,
@@ -1405,9 +1421,49 @@ DO NOT assume this is a continuation of the previous conversation. DO NOT resche
       }
 
       if (opsCustomerName && sourceType !== 'lsa') {
+        const hasConfirmedKnownCustomerDetails = messages.some((m) => {
+          if (m.role !== 'assistant') return false
+          const content = String(m.content || '').toLowerCase()
+          return (
+            content.includes('contact') &&
+            (content.includes('email') || content.includes('address')) &&
+            content.includes('changed')
+          )
+        })
+        const knownCustomerLines = [
+          `Name: ${opsCustomerMatch?.full_name || opsCustomerName}`,
+          opsCustomerMatch?.email ? `Email: ${opsCustomerMatch.email}` : null,
+          opsCustomerMatch?.phone ? `Phone: ${opsCustomerMatch.phone}` : null,
+          opsCustomerAddress?.street_1
+            ? `Address: ${opsCustomerAddress.street_1}, ${opsCustomerAddress.city || ''}, ${opsCustomerAddress.state || 'CO'} ${
+                opsCustomerAddress.zip_code ||
+                (opsCustomerAddress.city?.toLowerCase() === 'monument'
+                  ? '80132'
+                  : '')
+              }`.trim()
+            : null,
+        ]
+          .filter(Boolean)
+          .join('\n')
+
         messages.push({
           role: 'system',
-          content: `Known customer context: This SMS phone number matches an existing Sasquatch customer named ${opsCustomerName}. Greet them by first name naturally (for example, "Hi ${opsCustomerName}, great to hear from you.") and help with their request. Do not stay silent just because they are already in the system.`,
+          content: `Known customer context: This SMS phone number matches an existing Sasquatch customer. Use these database fields as already collected and do not ask the customer for any of them again:
+${knownCustomerLines}
+
+If the address city is Monument and the zip is missing, use 80132.
+
+${
+  hasConfirmedKnownCustomerDetails
+    ? 'You have already confirmed the stored contact details in this thread. Do not repeat that confirmation unless the customer asks; keep moving toward booking or updating the job.'
+    : `In your next customer-facing reply, start by confirming the stored contact details before asking for any other booking information. Use this pattern:
+"Hi ${opsCustomerName}, looks like I have your contact details here:
+Email: [stored email]
+Address: [stored address]
+Has anything changed?"
+
+If the customer says something changed, collect only the changed field and use the appropriate update flow. If nothing changed, continue booking using the stored details.`
+}`,
           timestamp: new Date().toISOString(),
         })
       }
