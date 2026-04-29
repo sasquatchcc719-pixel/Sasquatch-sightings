@@ -185,7 +185,7 @@ export const SCOUT_WEB_TOOLS: OpenAI.ChatCompletionTool[] = [
           lead_source: {
             type: 'string',
             description:
-              'How the customer heard about Sasquatch. Options: Google, Nextdoor, Facebook, Yelp, Word of mouth / Referral, Repeat customer, Other.',
+              'How the customer heard about Sasquatch. Options: Google, Nextdoor, Facebook, Yelp, Saw truck/vehicle wrap, Word of mouth / Referral, Repeat customer, Other.',
           },
           street_1: { type: 'string' },
           city: { type: 'string' },

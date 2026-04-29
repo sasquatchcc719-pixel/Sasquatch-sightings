@@ -983,6 +983,9 @@ export default function BookPage() {
                       <option value="Nextdoor">Nextdoor</option>
                       <option value="Facebook">Facebook</option>
                       <option value="Yelp">Yelp</option>
+                      <option value="Saw truck/vehicle wrap">
+                        Saw truck/vehicle wrap
+                      </option>
                       <option value="Word of mouth / Referral">
                         Word of mouth / Referral
                       </option>

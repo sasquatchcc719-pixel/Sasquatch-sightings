@@ -374,7 +374,7 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
           lead_source: {
             type: 'string',
             description:
-              'How the customer heard about Sasquatch Carpet Cleaning. Always required — ask before booking if not already known. Examples: Google, Nextdoor, Facebook, Yelp, Word of mouth / Referral, Repeat customer, Google LSA, NFC Card, Other.',
+              'How the customer heard about Sasquatch Carpet Cleaning. Always required — ask before booking if not already known. Examples: Google, Nextdoor, Facebook, Yelp, Saw truck/vehicle wrap, Word of mouth / Referral, Repeat customer, Google LSA, NFC Card, Other.',
           },
           street_1: { type: 'string' },
           city: { type: 'string' },
