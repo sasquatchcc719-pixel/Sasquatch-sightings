@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
-import { sendToCharles } from '@/lib/harry-command-bot'
+import { sendTelegramNotification } from '@/lib/telegram'
 
 export async function POST(request: NextRequest) {
   try {
@@ -27,6 +27,7 @@ export async function POST(request: NextRequest) {
         end_time,
         internal_notes,
         status,
+        kind,
         ops_customers!ops_appointments_customer_id_fkey (
           full_name,
           phone,
@@ -49,6 +50,14 @@ export async function POST(request: NextRequest) {
         { error: 'Appointment not found' },
         { status: 404 },
       )
+    }
+
+    // Skip estimates - they have their own notification in create-ai-style-estimate
+    if (appointment.kind === 'estimate') {
+      console.log(
+        '[appointment-booked] Skipping estimate notification (handled separately)',
+      )
+      return NextResponse.json({ success: true, skipped: true })
     }
 
     // Build notification message
@@ -94,7 +103,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Send Telegram notification
-    await sendToCharles(message, { parseMode: 'Markdown' })
+    await sendTelegramNotification(message, { parseMode: 'Markdown' })
 
     return NextResponse.json({ success: true })
   } catch (error) {
