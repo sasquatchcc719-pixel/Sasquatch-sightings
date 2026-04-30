@@ -1020,9 +1020,25 @@ export async function executeHarrySmsTool(
 
         // LSA conversations MUST have explicit customer_phone - relay can't receive texts
         if (ctx.isLsaRelay && !normalizedCustomerPhone) {
+          console.error(
+            '[book_new_job] LSA booking attempted without customer_phone',
+            {
+              relay: ctx.customerPhoneE164,
+              providedPhone: rawCustomerPhone,
+            },
+          )
           return JSON.stringify({
             error:
               'customer_phone is required for Google LSA leads. Ask the customer: "What\'s the best phone number to reach you for confirmations?"',
+          })
+        }
+
+        // Log phone usage for LSA bookings to help debug relay number issues
+        if (ctx.isLsaRelay) {
+          console.log('[book_new_job] LSA booking with phone numbers', {
+            relay: ctx.customerPhoneE164,
+            customerProvided: normalizedCustomerPhone,
+            willUse: bookingPhone,
           })
         }
 
@@ -1160,13 +1176,21 @@ export async function executeHarrySmsTool(
           })
         }
 
+        // Double-check: for LSA, bookingPhone MUST be the customer-provided number
+        if (ctx.isLsaRelay && bookingPhone === ctx.customerPhoneE164) {
+          return JSON.stringify({
+            error:
+              'SYSTEM ERROR: LSA booking attempted with relay number. The customer\'s real callback number was not captured. Ask: "What\'s the best phone number to reach you for confirmations?"',
+          })
+        }
+
         const result = await createAiStyleBooking({
           supabase,
           customer: {
             first_name: firstName,
             last_name: lastName,
             email,
-            phone: bookingPhone ?? ctx.customerPhoneE164,
+            phone: bookingPhone,
           },
           address: { street_1: street1, city, state, zip_code: zipCode },
           appointment_date: appointmentDate,
