@@ -359,7 +359,7 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
     function: {
       name: 'book_new_job',
       description:
-        "Create a new Ops appointment for this SMS customer. Requires name, email, full address, catalog service IDs, and a slot time that appears in get_calendar_slots for that date. Phone is normally taken from SMS automatically. For Google LSA relay conversations, you MUST collect the customer's real callback number and pass it as customer_phone.",
+        "Create a new Ops appointment for this SMS customer. Requires name, email, full address, catalog service IDs, and a slot time that appears in get_calendar_slots for that date. ALWAYS collect the customer's real callback phone number - many leads come through forwarding/relay numbers (Google LSA, tracking numbers) so you MUST ask for their direct number before booking.",
       parameters: {
         type: 'object',
         properties: {
@@ -369,7 +369,7 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
           customer_phone: {
             type: 'string',
             description:
-              "Customer's real callback phone number. Required for Google LSA leads since the relay number cannot receive confirmations. Format: 10-digit US number.",
+              "Customer's direct callback phone number. REQUIRED for all new bookings - ask 'What's the best number to reach you at for confirmations?' Many SMS conversations come through relay/forwarding numbers. Format: 10-digit US number.",
           },
           lead_source: {
             type: 'string',
@@ -1009,19 +1009,37 @@ export async function executeHarrySmsTool(
         const startTime = String(args.start_time || '').trim()
         const lineItems = Array.isArray(args.line_items) ? args.line_items : []
 
-        // For LSA relay conversations, Harry must collect the real customer phone
+        // Harry must ALWAYS collect the real customer callback phone since many
+        // conversations come through relay/forwarding numbers (LSA, tracking, etc.)
         const rawCustomerPhone = String(args.customer_phone || '').trim()
         const normalizedCustomerPhone = rawCustomerPhone
           ? '+1' + rawCustomerPhone.replace(/\D/g, '').slice(-10)
           : ''
-        const bookingPhone = ctx.isLsaRelay
-          ? normalizedCustomerPhone
-          : ctx.customerPhoneE164
 
-        if (ctx.isLsaRelay && !bookingPhone) {
+        // Use customer-provided phone if available, otherwise fall back to SMS number
+        // (fallback allows known customers to book without re-confirming)
+        const bookingPhone = normalizedCustomerPhone || ctx.customerPhoneE164
+
+        // For new conversations, strongly prefer explicit phone collection
+        if (ctx.isLsaRelay && !normalizedCustomerPhone) {
           return JSON.stringify({
             error:
               'customer_phone is required for Google LSA leads. Ask the customer: "What\'s the best phone number to reach you for confirmations?"',
+          })
+        }
+
+        // Warn if booking phone looks like a potential relay/forwarding number
+        // (many relay numbers have patterns like +1844, +1855, +1866, +1877, +1888)
+        const phoneDigits = bookingPhone.replace(/\D/g, '')
+        const areaCode = phoneDigits.substring(
+          phoneDigits.length >= 11 ? 1 : 0,
+          phoneDigits.length >= 11 ? 4 : 3,
+        )
+        const tollFreePatterns = ['800', '844', '855', '866', '877', '888']
+        if (tollFreePatterns.includes(areaCode) && !normalizedCustomerPhone) {
+          return JSON.stringify({
+            error:
+              'This appears to be a forwarding number. Ask the customer: "What\'s your direct callback number for confirmations?" (many leads come through relay/tracking numbers)',
           })
         }
 
