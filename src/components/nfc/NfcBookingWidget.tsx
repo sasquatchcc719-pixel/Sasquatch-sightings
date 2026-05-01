@@ -587,6 +587,8 @@ export function NfcBookingWidget({
   const [selectedUpsellIds, setSelectedUpsellIds] = useState<string[]>([])
   const [showRugUpsell, setShowRugUpsell] = useState(false)
   const [rugUpsellSeen, setRugUpsellSeen] = useState(false)
+  const [selectedRugUpsellId, setSelectedRugUpsellId] = useState('')
+  const [rugUpsellQuantity, setRugUpsellQuantity] = useState(1)
 
   // Schedule
   const [selectedDate, setSelectedDate] = useState('')
@@ -727,15 +729,12 @@ export function NfcBookingWidget({
   const meetsMinimum = subtotal >= MIN_TOTAL
   const orderedGroups = useMemo(() => groupByCategory(services), [services])
   const rugOfferServices = useMemo(
-    () =>
-      services
-        .filter(
-          (service) =>
-            isRugService(service) && !needsDirectInput(service.pricing_unit),
-        )
-        .slice(0, 4),
+    () => services.filter((service) => isRugService(service)),
     [services],
   )
+  const selectedRugOfferService =
+    rugOfferServices.find((service) => service.id === selectedRugUpsellId) ??
+    rugOfferServices[0]
 
   function handleReviewAttempt() {
     const err = validateStep3()
@@ -752,13 +751,14 @@ export function NfcBookingWidget({
     setStep(4)
   }
 
-  function addTwoRugsFromOffer(service: ServiceItem) {
-    setCartQuantity(
-      service,
-      Math.max(2, cart.find((c) => c.service.id === service.id)?.quantity ?? 0),
-    )
-    setShowRugUpsell(false)
-    setStep(4)
+  function addRugFromOffer() {
+    if (!selectedRugOfferService) return
+    const quantity = Math.max(1, Math.floor(rugUpsellQuantity || 1))
+    const existingQty =
+      cart.find((c) => c.service.id === selectedRugOfferService.id)?.quantity ??
+      0
+    setCartQuantity(selectedRugOfferService, existingQty + quantity)
+    setRugUpsellQuantity(1)
   }
 
   function skipRugOffer() {
@@ -1565,27 +1565,86 @@ export function NfcBookingWidget({
                 Most homes have a couple rugs that need attention. Add two or
                 more rugs now and the discount applies only to rug cleaning.
               </p>
-              <div className="mt-4 space-y-2">
-                {rugOfferServices.map((service) => (
-                  <button
-                    key={service.id}
-                    type="button"
-                    onClick={() => addTwoRugsFromOffer(service)}
-                    className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-left transition-colors hover:border-green-500/50 hover:bg-green-500/10"
-                  >
-                    <span>
-                      <span className="block text-sm font-semibold text-white">
-                        {service.name} × 2
+              <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-4">
+                <label className="mb-1.5 block text-xs font-semibold text-white/60">
+                  Rug size
+                </label>
+                <select
+                  value={selectedRugOfferService?.id ?? ''}
+                  onChange={(event) => {
+                    setSelectedRugUpsellId(event.target.value)
+                    setRugUpsellQuantity(1)
+                  }}
+                  className="w-full rounded-lg border border-white/20 bg-zinc-900 px-3 py-2 text-sm text-white focus:border-green-400 focus:outline-none"
+                >
+                  {rugOfferServices.map((service) => (
+                    <option key={service.id} value={service.id}>
+                      {service.name} — {formatPrice(service.base_price)}
+                      {formatPricingUnit(service.pricing_unit)
+                        ? ` / ${formatPricingUnit(service.pricing_unit)}`
+                        : ''}
+                    </option>
+                  ))}
+                </select>
+
+                <label className="mt-3 mb-1.5 block text-xs font-semibold text-white/60">
+                  {selectedRugOfferService &&
+                  needsDirectInput(selectedRugOfferService.pricing_unit)
+                    ? 'Square feet'
+                    : 'Quantity'}
+                </label>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min="1"
+                  value={rugUpsellQuantity}
+                  onChange={(event) => {
+                    const next = parseInt(event.target.value, 10)
+                    setRugUpsellQuantity(Number.isFinite(next) ? next : 1)
+                  }}
+                  className="w-full rounded-lg border border-white/20 bg-zinc-900 px-3 py-2 text-sm text-white focus:border-green-400 focus:outline-none"
+                />
+
+                <button
+                  type="button"
+                  onClick={addRugFromOffer}
+                  className="mt-4 w-full rounded-xl bg-green-600 py-3 text-sm font-semibold text-white transition-colors hover:bg-green-500"
+                >
+                  Add selected rug
+                </button>
+
+                {rugUnits > 0 ? (
+                  <p className="mt-3 text-center text-xs text-white/50">
+                    Rug count in quote: {rugUnits}.{' '}
+                    {rugUnits >= 2
+                      ? 'Your rug discount is active.'
+                      : 'Add one more rug to unlock 10% off rug cleaning.'}
+                  </p>
+                ) : null}
+              </div>
+              <div className="mt-3 space-y-2">
+                {cart
+                  .filter((item) => isRugService(item.service))
+                  .map((item) => (
+                    <button
+                      key={item.service.id}
+                      type="button"
+                      onClick={() => removeFromCart(item.service)}
+                      className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2 text-left transition-colors hover:border-red-500/50 hover:bg-red-500/10"
+                    >
+                      <span>
+                        <span className="block text-sm font-semibold text-white">
+                          {item.service.name} × {item.quantity}
+                        </span>
+                        <span className="text-xs text-white/45">
+                          Tap to remove one
+                        </span>
                       </span>
-                      <span className="text-xs text-white/45">
-                        Qualifies for the multi-rug discount
+                      <span className="text-sm font-bold text-green-400">
+                        {formatPrice(item.service.base_price * item.quantity)}
                       </span>
-                    </span>
-                    <span className="text-sm font-bold text-green-400">
-                      {formatPrice(service.base_price * 2)}
-                    </span>
-                  </button>
-                ))}
+                    </button>
+                  ))}
               </div>
               <div className="mt-5 flex gap-3">
                 <button
