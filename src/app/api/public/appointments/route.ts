@@ -9,6 +9,8 @@ import { createAdminClient } from '@/supabase/server'
 import {
   applyAppointmentBuffer,
   calculateAppointmentDurationFromTotal,
+  getAvailableSlots,
+  timeToMinutes,
 } from '@/lib/ops/availability'
 import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
 import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
@@ -28,6 +30,8 @@ const CORS = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, x-booking-secret',
 }
+
+const MINIMUM_SAME_DAY_LEAD_MINUTES = 60
 
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS })
@@ -289,8 +293,79 @@ export async function POST(request: NextRequest) {
     const appointmentDuration = calculateAppointmentDurationFromTotal(subtotal)
     const buffered = applyAppointmentBuffer(appointmentDuration)
     const [sh, sm] = startTime.split(':').map(Number)
+    if (!Number.isFinite(sh) || !Number.isFinite(sm)) {
+      return NextResponse.json(
+        { error: 'Please choose a valid appointment time.' },
+        { status: 400, headers: CORS },
+      )
+    }
     const endTotal = sh * 60 + sm + buffered
     const endTime = `${String(Math.floor(endTotal / 60) % 24).padStart(2, '0')}:${String(endTotal % 60).padStart(2, '0')}:00`
+
+    const now = new Date()
+    const todayMT = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Denver',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(now)
+    if (appointmentDate < todayMT) {
+      return NextResponse.json(
+        { error: 'Please choose a future appointment date.' },
+        { status: 409, headers: CORS },
+      )
+    }
+
+    const currentTimeMT = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'America/Denver',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(now)
+    const minStartMinutes =
+      appointmentDate === todayMT
+        ? timeToMinutes(currentTimeMT) + MINIMUM_SAME_DAY_LEAD_MINUTES
+        : undefined
+
+    const [templatesResult, overridesResult, appointmentsResult] =
+      await Promise.all([
+        supabase
+          .from('availability_templates')
+          .select('*')
+          .eq('is_active', true),
+        supabase
+          .from('availability_overrides')
+          .select('*')
+          .eq('override_date', appointmentDate),
+        supabase
+          .from('ops_appointments')
+          .select('appointment_date, start_time, end_time, status')
+          .eq('appointment_date', appointmentDate),
+      ])
+
+    const availableSlots = getAvailableSlots({
+      date: appointmentDate,
+      requiredMinutes: buffered,
+      templates: templatesResult.data || [],
+      overrides: overridesResult.data || [],
+      appointments: appointmentsResult.data || [],
+      minStartMinutes,
+      maxResults: 8,
+    })
+    const requestedStart = `${String(sh).padStart(2, '0')}:${String(sm).padStart(2, '0')}:00`
+    const slotIsStillAvailable = availableSlots.some(
+      (slot) => slot.start_time === requestedStart,
+    )
+
+    if (!slotIsStillAvailable) {
+      return NextResponse.json(
+        {
+          error:
+            'That time is no longer available. Please pick another appointment time.',
+        },
+        { status: 409, headers: CORS },
+      )
+    }
 
     // --- Determine appointment status ---
     // If location requires travel approval, set to pending_approval instead of booked

@@ -3,6 +3,7 @@ import { createAdminClient } from '@/supabase/server'
 import {
   applyAppointmentBuffer,
   getAvailableSlots,
+  timeToMinutes,
 } from '@/lib/ops/availability'
 
 const CORS = {
@@ -13,6 +14,7 @@ const CORS = {
 
 // Default job duration for public bookings when we can't calculate exactly
 const DEFAULT_DURATION_MINUTES = 120
+const MINIMUM_SAME_DAY_LEAD_MINUTES = 60
 
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS })
@@ -34,12 +36,26 @@ export async function GET(request: NextRequest) {
     }
 
     // Don't allow booking in the past (use Mountain Time to avoid UTC rollover)
-    const todayMT = new Date().toLocaleDateString('en-CA', {
+    const now = new Date()
+    const todayMT = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'America/Denver',
-    })
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(now)
     if (date < todayMT) {
       return NextResponse.json({ slots: [] }, { headers: CORS })
     }
+    const currentTimeMT = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'America/Denver',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(now)
+    const minStartMinutes =
+      date === todayMT
+        ? timeToMinutes(currentTimeMT) + MINIMUM_SAME_DAY_LEAD_MINUTES
+        : undefined
 
     const requiredMinutes = applyAppointmentBuffer(
       requiredMinutesParam > 0
@@ -70,6 +86,7 @@ export async function GET(request: NextRequest) {
       templates: templatesResult.data || [],
       overrides: overridesResult.data || [],
       appointments: appointmentsResult.data || [],
+      minStartMinutes,
       maxResults: 8,
     })
 

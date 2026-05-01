@@ -91,9 +91,10 @@ const ACTIVE_APPOINTMENT_STATUSES = new Set([
   'confirmed',
   'on_my_way',
   'in_progress',
+  'completed',
 ])
 
-function timeToMinutes(value: string): number {
+export function timeToMinutes(value: string): number {
   const [hours, minutes] = value.split(':').map(Number)
   return hours * 60 + minutes
 }
@@ -174,6 +175,7 @@ export function getAvailableSlots(params: {
   templates: AvailabilityTemplate[]
   overrides: AvailabilityOverride[]
   appointments: ExistingAppointmentWindow[]
+  minStartMinutes?: number
   maxResults?: number
 }): SlotOption[] {
   const {
@@ -182,6 +184,7 @@ export function getAvailableSlots(params: {
     templates,
     overrides,
     appointments,
+    minStartMinutes,
     maxResults = 6,
   } = params
 
@@ -226,6 +229,9 @@ export function getAvailableSlots(params: {
     const windowEnd = timeToMinutes(template.end_time)
 
     for (const blockStart of BLOCK_STARTS_MINUTES) {
+      if (minStartMinutes !== undefined && blockStart < minStartMinutes) {
+        continue
+      }
       if (blockStart < windowStart) continue
       if (blockStart + requiredMinutes > windowEnd) continue
       if (seen.has(blockStart)) continue
