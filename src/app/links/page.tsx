@@ -28,6 +28,7 @@ const REVIEW_LINKS: {
     | 'bbb'
     | 'sitejabber'
     | 'trustpilot'
+    | 'dexknows'
   color: string
 }[] = [
   {
@@ -72,6 +73,12 @@ const REVIEW_LINKS: {
     icon: 'sitejabber',
     color: 'bg-orange-600/70 hover:bg-orange-700/80',
   },
+  {
+    name: 'DexKnows',
+    url: 'https://www.dexknows.com/palmer-lake-co/bp/sasquatch-carpet-cleaning-581745787',
+    icon: 'dexknows',
+    color: 'bg-yellow-600/70 hover:bg-yellow-700/80',
+  },
 ]
 
 // Icon component for review links
@@ -90,6 +97,8 @@ function ReviewIcon({ type }: { type: string }) {
     case 'sitejabber':
     case 'trustpilot':
       return <Star className="h-5 w-5" />
+    case 'dexknows':
+      return <Building2 className="h-5 w-5" />
     default:
       return <Star className="h-5 w-5" />
   }
