@@ -1653,17 +1653,14 @@ export function NfcBookingWidget({
                   onClick={skipRugOffer}
                   className="flex-1 rounded-xl border border-white/15 py-3 text-sm font-medium text-white/60 transition-colors hover:bg-white/5"
                 >
-                  No thanks
+                  Skip offer
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowRugUpsell(false)
-                    setStep(1)
-                  }}
+                  onClick={skipRugOffer}
                   className="flex-1 rounded-xl bg-green-600 py-3 text-sm font-semibold text-white transition-colors hover:bg-green-500"
                 >
-                  Browse rugs
+                  Continue to review
                 </button>
               </div>
             </div>
