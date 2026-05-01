@@ -584,27 +584,26 @@ export async function PATCH(
       if (invForStats?.id) {
         // Standard invoiced job — use the invoice-based recorder (handles
         // line item totals, wall-clock hours, etc.)
-        void recordRevenueFromOpsInvoice(supabase, {
+        const statsResult = await recordRevenueFromOpsInvoice(supabase, {
           invoiceId: invForStats.id,
           userId: access.id,
-        }).catch((statsErr) =>
+        })
+        if (!statsResult.ok) {
           console.error(
             '[ops/appointments/:id][PATCH] auto-record-stats:',
-            statsErr,
-          ),
-        )
+            statsResult.error,
+          )
+        }
       } else {
         // No invoice (e.g. batch_monthly recurring like Recovery Village) —
         // record directly from appointment line items. Skip if already exists.
-        void (async () => {
-          try {
-            const { data: existingEntry } = await supabase
-              .from('revenue_entries')
-              .select('id')
-              .eq('ops_appointment_id', id)
-              .maybeSingle()
-            if (existingEntry?.id) return
-
+        try {
+          const { data: existingEntry } = await supabase
+            .from('revenue_entries')
+            .select('id')
+            .eq('ops_appointment_id', id)
+            .maybeSingle()
+          if (!existingEntry?.id) {
             const { data: apptForStats } = await supabase
               .from('ops_appointments')
               .select(
@@ -621,7 +620,8 @@ export async function PATCH(
               .eq('id', id)
               .single()
 
-            if (!apptForStats) return
+            if (!apptForStats)
+              throw new Error('Appointment not found for stats')
 
             const lineItems = Array.isArray(
               apptForStats.ops_appointment_line_items,
@@ -678,13 +678,13 @@ export async function PATCH(
               hours_worked: hoursWorked,
               ops_appointment_id: id,
             })
-          } catch (statsErr) {
-            console.error(
-              '[ops/appointments/:id][PATCH] auto-record-stats (no-invoice):',
-              statsErr,
-            )
           }
-        })()
+        } catch (statsErr) {
+          console.error(
+            '[ops/appointments/:id][PATCH] auto-record-stats (no-invoice):',
+            statsErr,
+          )
+        }
       }
     }
 

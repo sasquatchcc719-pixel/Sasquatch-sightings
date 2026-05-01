@@ -11,6 +11,7 @@ import {
   createQBInvoice,
   queryRecentQBPayments,
   reconcileStaleQuickBooksInvoiceLink,
+  syncBatchInvoiceToQuickBooks,
 } from '@/lib/quickbooks-api'
 import { getQBConnectionStatus } from '@/lib/quickbooks-auth'
 
@@ -235,7 +236,10 @@ export async function GET(request: NextRequest) {
           }
 
           const lineItems = Array.isArray(invRow.ops_invoice_line_items)
-            ? invRow.ops_invoice_line_items
+            ? invRow.ops_invoice_line_items.map((line) => ({
+                ...line,
+                product_name: line.description,
+              }))
             : []
 
           const qbInvoiceId = await createQBInvoice({
@@ -258,54 +262,28 @@ export async function GET(request: NextRequest) {
         } else if (job.entity_type === 'batch_invoice') {
           const payload = job.payload as {
             invoice_id: string
-            customer_id: string
-            service_date: string
-            subtotal: number
-            total: number
-            lines: Array<{
-              description: string
-              quantity: number
-              unit_price: number
-              line_total: number
-            }>
-          }
-
-          const { data: customer } = await supabase
-            .from('ops_customers')
-            .select('quickbooks_customer_id')
-            .eq('id', payload.customer_id)
-            .maybeSingle()
-
-          if (!customer?.quickbooks_customer_id) {
-            throw new Error(
-              `Customer ${payload.customer_id} not yet synced to QB`,
-            )
           }
 
           const { data: batchRow } = await supabase
             .from('ops_batch_invoices')
-            .select('invoice_number')
+            .select('quickbooks_invoice_id')
             .eq('id', payload.invoice_id)
             .maybeSingle()
 
-          const qbInvoiceId = await createQBInvoice({
-            qbCustomerId: customer.quickbooks_customer_id,
-            serviceDate: payload.service_date,
-            lineItems: payload.lines,
-            docNumber:
-              (batchRow as { invoice_number?: number | string | null } | null)
-                ?.invoice_number ?? null,
-          })
+          if (batchRow?.quickbooks_invoice_id) {
+            await supabase
+              .from('ops_quickbooks_sync_jobs')
+              .update({
+                status: 'synced',
+                error_message: null,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', job.id)
+            results.synced++
+            continue
+          }
 
-          await supabase
-            .from('ops_batch_invoices')
-            .update({
-              quickbooks_invoice_id: qbInvoiceId,
-              sync_status: 'synced',
-              status: 'sent',
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', payload.invoice_id)
+          await syncBatchInvoiceToQuickBooks(payload.invoice_id)
         }
 
         // Mark job synced

@@ -1,17 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
+import { syncBatchInvoiceToQuickBooks } from '@/lib/quickbooks-api'
 import { createAdminClient } from '@/supabase/server'
-import {
-  buildQuickBooksCustomerPayload,
-  buildQuickBooksInvoicePayload,
-  getQuickBooksSyncStatus,
-} from '@/lib/quickbooks'
 
 /**
  * POST /api/admin/ops/recurring/generate-monthly-invoice
  *
- * Consolidates ALL completed batch_monthly visits for a single customer
- * in a given month into one ops_batch_invoices row + one QB sync job.
+ * Consolidates ALL completed batch_monthly visits for a single customer,
+ * then immediately sends that invoice to QuickBooks.
  *
  * Body: { customerId: string, month: string }   month = "YYYY-MM-01"
  */
@@ -40,14 +36,44 @@ export async function POST(request: NextRequest) {
     // Prevent duplicates: check if a batch invoice already exists for this customer + month
     const { data: existingBatch } = await supabase
       .from('ops_batch_invoices')
-      .select('id')
+      .select('id, quickbooks_invoice_id, sync_status')
       .eq('customer_id', customerId)
       .eq('month', monthStart)
       .maybeSingle()
 
     if (existingBatch) {
+      if (!existingBatch.quickbooks_invoice_id) {
+        try {
+          const quickbooksInvoiceId = await syncBatchInvoiceToQuickBooks(
+            existingBatch.id,
+          )
+          return NextResponse.json({
+            batchInvoiceId: existingBatch.id,
+            quickbooksInvoiceId,
+            retried: true,
+          })
+        } catch (syncErr) {
+          await supabase
+            .from('ops_batch_invoices')
+            .update({
+              sync_status: 'failed',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', existingBatch.id)
+
+          const msg =
+            syncErr instanceof Error
+              ? syncErr.message
+              : 'Failed to send invoice to QuickBooks'
+          return NextResponse.json({ error: msg }, { status: 500 })
+        }
+      }
+
       return NextResponse.json(
-        { error: 'A batch invoice already exists for this customer and month' },
+        {
+          error:
+            'A batch invoice already exists for this customer and month and has already been sent to QuickBooks',
+        },
         { status: 409 },
       )
     }
@@ -134,7 +160,6 @@ export async function POST(request: NextRequest) {
     }
 
     const total = Math.max(0, subtotal)
-    const syncStatus = getQuickBooksSyncStatus()
 
     // Create ONE batch invoice for the customer (template_id = null since it spans multiple)
     const { data: batchInvoice, error: biErr } = await supabase
@@ -146,7 +171,7 @@ export async function POST(request: NextRequest) {
         status: 'ready',
         subtotal: Number(subtotal.toFixed(2)),
         total: Number(total.toFixed(2)),
-        sync_status: syncStatus,
+        sync_status: 'pending',
       })
       .select('id')
       .single()
@@ -166,99 +191,47 @@ export async function POST(request: NextRequest) {
       subtotal: Number(e.apptSubtotal.toFixed(2)),
     }))
 
-    await supabase.from('ops_batch_invoice_entries').insert(entryPayload)
+    const { error: entryErr } = await supabase
+      .from('ops_batch_invoice_entries')
+      .insert(entryPayload)
 
-    // Build QB line items — each line includes the date for context
-    const qbLineItems = appointments.flatMap((appt) => {
-      const lines = Array.isArray(appt.ops_appointment_line_items)
-        ? appt.ops_appointment_line_items
-        : []
-      const dateObj = new Date(appt.appointment_date + 'T12:00:00')
-      const datePrefix = dateObj.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-      })
+    if (entryErr) {
+      await supabase
+        .from('ops_batch_invoices')
+        .delete()
+        .eq('id', batchInvoice.id)
 
-      return lines.map(
-        (l: {
-          name_snapshot: string
-          notes?: string | null
-          quantity: number
-          unit_price: number
-          line_total: number
-        }) => ({
-          description: `${datePrefix} — ${l.notes || l.name_snapshot}`,
-          quantity: l.quantity,
-          unit_price: l.unit_price,
-          line_total: Number(l.line_total),
-        }),
+      return NextResponse.json(
+        { error: entryErr.message || 'Failed to create batch invoice entries' },
+        { status: 500 },
       )
-    })
-
-    // Fetch customer details for the QB customer sync job
-    const { data: customer } = await supabase
-      .from('ops_customers')
-      .select('full_name, email, phone')
-      .eq('id', customerId)
-      .single()
-
-    const { data: address } = await supabase
-      .from('ops_service_addresses')
-      .select('street_1, street_2, city, state, zip_code')
-      .eq('customer_id', customerId)
-      .limit(1)
-      .maybeSingle()
-
-    // Queue QB sync jobs: customer (ensure exists) + batch_invoice
-    const syncJobs: Array<{
-      entity_type: string
-      entity_id: string
-      status: string
-      payload: Record<string, unknown>
-    }> = []
-
-    if (customer && address) {
-      syncJobs.push({
-        entity_type: 'customer',
-        entity_id: customerId,
-        status: syncStatus,
-        payload: buildQuickBooksCustomerPayload({
-          customerId,
-          fullName: customer.full_name,
-          email: customer.email,
-          phone: customer.phone,
-          address: {
-            street_1: address.street_1,
-            street_2: address.street_2,
-            city: address.city,
-            state: address.state,
-            zip_code: address.zip_code,
-          },
-        }),
-      })
     }
 
-    syncJobs.push({
-      entity_type: 'batch_invoice',
-      entity_id: batchInvoice.id,
-      status: syncStatus,
-      payload: buildQuickBooksInvoicePayload({
-        invoiceId: batchInvoice.id,
-        customerId,
-        serviceDate: monthStart,
-        subtotal,
-        total,
-        lineItems: qbLineItems,
-      }),
-    })
+    let quickbooksInvoiceId: string
+    try {
+      quickbooksInvoiceId = await syncBatchInvoiceToQuickBooks(batchInvoice.id)
+    } catch (syncErr) {
+      await supabase
+        .from('ops_batch_invoices')
+        .update({
+          sync_status: 'failed',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', batchInvoice.id)
 
-    await supabase.from('ops_quickbooks_sync_jobs').insert(syncJobs)
+      const msg =
+        syncErr instanceof Error
+          ? syncErr.message
+          : 'Failed to send invoice to QuickBooks'
+      return NextResponse.json({ error: msg }, { status: 500 })
+    }
 
     return NextResponse.json({
       batchInvoiceId: batchInvoice.id,
       appointmentCount: appointments.length,
       subtotal: Number(subtotal.toFixed(2)),
       total: Number(total.toFixed(2)),
+      quickbooksInvoiceId,
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unexpected error'

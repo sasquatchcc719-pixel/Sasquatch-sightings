@@ -443,6 +443,8 @@ type BillingCustomer = {
   existingInvoice: {
     id: string
     status: string
+    sync_status: string | null
+    quickbooks_invoice_id: string | null
     total: number
   } | null
 }
@@ -749,6 +751,8 @@ function MonthEndBillingSection() {
         customers.map((entry) => {
           const isGenerating = generating === entry.customerId
           const hasInvoice = !!entry.existingInvoice
+          const canSendExisting =
+            hasInvoice && !entry.existingInvoice!.quickbooks_invoice_id
           const canGenerate = entry.completedVisits > 0 && !hasInvoice
           const isAdding = addingFor === entry.customerId
 
@@ -801,6 +805,21 @@ function MonthEndBillingSection() {
                         <Plus className="h-3.5 w-3.5" />
                       )}
                       {isAdding ? 'Cancel' : 'Add Job'}
+                    </Button>
+                  )}
+                  {canSendExisting && (
+                    <Button
+                      size="sm"
+                      onClick={() => handleGenerate(entry.customerId)}
+                      disabled={isGenerating}
+                      className="gap-1.5"
+                    >
+                      {isGenerating ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Receipt className="h-3.5 w-3.5" />
+                      )}
+                      Send to QB
                     </Button>
                   )}
                 </div>
@@ -1274,7 +1293,7 @@ function MonthEndBillingSection() {
                     ) : (
                       <Receipt className="h-4 w-4" />
                     )}
-                    Generate Invoice
+                    Generate & Send to QB
                   </Button>
                 )}
               </div>

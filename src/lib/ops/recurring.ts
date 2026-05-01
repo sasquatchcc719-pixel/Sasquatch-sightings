@@ -5,9 +5,9 @@ import {
 } from '@/lib/ops/availability'
 import {
   buildQuickBooksCustomerPayload,
-  buildQuickBooksInvoicePayload,
   getQuickBooksSyncStatus,
 } from '@/lib/quickbooks'
+import { syncBatchInvoiceToQuickBooks } from '@/lib/quickbooks-api'
 import { scheduleJobReminder } from '@/lib/onesignal'
 
 // ─── Types ──────────────────────────────────────────────────────────────
@@ -631,6 +631,7 @@ export type BatchInvoiceResult = {
   appointmentCount: number
   subtotal: number
   total: number
+  quickbooksInvoiceId: string
 }
 
 /**
@@ -722,8 +723,6 @@ export async function generateBatchInvoice(
   }
 
   const total = Math.max(0, subtotal)
-  const syncStatus = getQuickBooksSyncStatus()
-
   const { data: batchInvoice, error: biErr } = await supabase
     .from('ops_batch_invoices')
     .insert({
@@ -733,7 +732,7 @@ export async function generateBatchInvoice(
       status: 'ready',
       subtotal: Number(subtotal.toFixed(2)),
       total: Number(total.toFixed(2)),
-      sync_status: syncStatus,
+      sync_status: 'pending',
     })
     .select('id')
     .single()
@@ -749,48 +748,42 @@ export async function generateBatchInvoice(
     subtotal: Number(e.apptSubtotal.toFixed(2)),
   }))
 
-  await supabase.from('ops_batch_invoice_entries').insert(entryPayload)
+  const { error: entryErr } = await supabase
+    .from('ops_batch_invoice_entries')
+    .insert(entryPayload)
 
-  const customer = Array.isArray(template.ops_customers)
-    ? template.ops_customers[0]
-    : template.ops_customers
+  if (entryErr) {
+    await supabase.from('ops_batch_invoices').delete().eq('id', batchInvoice.id)
+    return {
+      error: entryErr.message || 'Failed to create batch invoice entries',
+    }
+  }
 
-  // Each visit's line items get prefixed with the service date so QB shows
-  // exactly what was done on which day of the month.
-  const allLineItems = entries.flatMap((e) =>
-    (
-      e.lineItemsSnapshot as Array<{
-        name_snapshot: string
-        quantity: number
-        unit_price: number
-        line_total: number
-      }>
-    ).map((l) => ({
-      description: `${e.appointmentDate} — ${l.name_snapshot}`,
-      quantity: l.quantity,
-      unit_price: l.unit_price,
-      line_total: l.line_total,
-    })),
-  )
+  let quickbooksInvoiceId: string
+  try {
+    quickbooksInvoiceId = await syncBatchInvoiceToQuickBooks(batchInvoice.id)
+  } catch (syncErr) {
+    await supabase
+      .from('ops_batch_invoices')
+      .update({
+        sync_status: 'failed',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', batchInvoice.id)
 
-  await supabase.from('ops_quickbooks_sync_jobs').insert({
-    entity_type: 'batch_invoice',
-    entity_id: batchInvoice.id,
-    status: syncStatus,
-    payload: {
-      invoice_id: batchInvoice.id,
-      customer_id: template.customer_id,
-      service_date: monthStart,
-      subtotal,
-      total,
-      lines: allLineItems,
-    },
-  })
+    return {
+      error:
+        syncErr instanceof Error
+          ? syncErr.message
+          : 'Failed to send invoice to QuickBooks',
+    }
+  }
 
   return {
     batchInvoiceId: batchInvoice.id,
     appointmentCount: appointments.length,
     subtotal: Number(subtotal.toFixed(2)),
     total: Number(total.toFixed(2)),
+    quickbooksInvoiceId,
   }
 }

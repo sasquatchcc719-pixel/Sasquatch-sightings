@@ -192,9 +192,11 @@ export async function createQBInvoice(params: {
   serviceDate: string
   lineItems: Array<{
     description: string
+    product_name?: string | null
     quantity: number
     unit_price: number
     line_total: number
+    service_date?: string | null
   }>
   discountAmount?: number
   /**
@@ -206,15 +208,34 @@ export async function createQBInvoice(params: {
   const auth = await getValidQBAccessToken()
   if (!auth) throw new Error('QuickBooks not connected')
 
-  const lines = params.lineItems.map((item) => ({
-    Amount: item.line_total,
-    DetailType: 'SalesItemLineDetail',
-    Description: item.description,
-    SalesItemLineDetail: {
-      Qty: item.quantity,
-      UnitPrice: item.unit_price,
-    },
-  }))
+  const itemRefCache = new Map<string, { value: string; name: string } | null>()
+  const lines: Record<string, unknown>[] = await Promise.all(
+    params.lineItems.map(async (item) => {
+      const productName = String(item.product_name || item.description || '')
+        .trim()
+        .replace(/\s+/g, ' ')
+      const itemRef = productName
+        ? await findQBItemRefByName(
+            auth.realmId,
+            auth.accessToken,
+            productName,
+            itemRefCache,
+          )
+        : null
+
+      return {
+        Amount: item.line_total,
+        DetailType: 'SalesItemLineDetail',
+        Description: item.description,
+        SalesItemLineDetail: {
+          ...(itemRef ? { ItemRef: itemRef } : {}),
+          Qty: item.quantity,
+          UnitPrice: item.unit_price,
+          ServiceDate: item.service_date || params.serviceDate,
+        },
+      }
+    }),
+  )
 
   if (params.discountAmount && params.discountAmount > 0) {
     lines.push({
@@ -261,6 +282,174 @@ export async function createQBInvoice(params: {
 
   const data = await res.json()
   return data.Invoice.Id
+}
+
+async function findQBItemRefByName(
+  realmId: string,
+  accessToken: string,
+  name: string,
+  cache: Map<string, { value: string; name: string } | null>,
+): Promise<{ value: string; name: string } | null> {
+  const key = name.toLowerCase()
+  if (cache.has(key)) return cache.get(key) ?? null
+
+  const escapedName = name.replace(/'/g, "\\'")
+  const queries = [
+    `SELECT * FROM Item WHERE Name = '${escapedName}'`,
+    `SELECT * FROM Item WHERE FullyQualifiedName = '${escapedName}'`,
+  ]
+
+  for (const rawQuery of queries) {
+    const query = encodeURIComponent(rawQuery)
+    const res = await qbFetch(
+      realmId,
+      accessToken,
+      `/query?query=${query}&minorversion=65`,
+    )
+    if (!res.ok) continue
+
+    const data = await res.json()
+    const item = data?.QueryResponse?.Item?.[0]
+    if (item?.Id) {
+      const ref = { value: String(item.Id), name: String(item.Name || name) }
+      cache.set(key, ref)
+      return ref
+    }
+  }
+
+  cache.set(key, null)
+  return null
+}
+
+export async function syncBatchInvoiceToQuickBooks(batchInvoiceId: string) {
+  const status = await getQBConnectionStatus()
+  if (!status.connected || !status.sync_enabled) {
+    throw new Error('QuickBooks sync is disabled or not connected')
+  }
+
+  const supabase = createAdminClient()
+  const { data: batchInvoice } = await supabase
+    .from('ops_batch_invoices')
+    .select(
+      `
+      id,
+      customer_id,
+      month,
+      invoice_number,
+      quickbooks_invoice_id,
+      ops_customers!ops_batch_invoices_customer_id_fkey (
+        id, full_name, business_name, email, phone, quickbooks_customer_id,
+        ops_service_addresses ( street_1, street_2, city, state, zip_code )
+      ),
+      ops_batch_invoice_entries (
+        line_items_snapshot,
+        ops_appointments ( appointment_date )
+      )
+    `,
+    )
+    .eq('id', batchInvoiceId)
+    .single()
+
+  if (!batchInvoice) {
+    throw new Error(`Batch invoice ${batchInvoiceId} not found`)
+  }
+
+  if (batchInvoice.quickbooks_invoice_id) {
+    return batchInvoice.quickbooks_invoice_id
+  }
+
+  const customer = Array.isArray(batchInvoice.ops_customers)
+    ? batchInvoice.ops_customers[0]
+    : batchInvoice.ops_customers
+
+  if (!customer) {
+    throw new Error('Missing customer data')
+  }
+
+  const address = Array.isArray(customer.ops_service_addresses)
+    ? customer.ops_service_addresses[0]
+    : customer.ops_service_addresses
+
+  let qbCustomerId = customer.quickbooks_customer_id
+  if (!qbCustomerId) {
+    qbCustomerId = await createQBCustomer({
+      customerId: customer.id,
+      displayName: customer.business_name || customer.full_name,
+      email: customer.email,
+      phone: customer.phone || '',
+      address: {
+        street_1: address?.street_1 || '',
+        street_2: address?.street_2,
+        city: address?.city || '',
+        state: address?.state || 'CO',
+        zip_code: address?.zip_code || '',
+      },
+    })
+
+    await supabase
+      .from('ops_customers')
+      .update({ quickbooks_customer_id: qbCustomerId })
+      .eq('id', customer.id)
+  }
+
+  const entries = Array.isArray(batchInvoice.ops_batch_invoice_entries)
+    ? batchInvoice.ops_batch_invoice_entries
+    : []
+
+  const lineItems = entries.flatMap((entry) => {
+    const appointment = Array.isArray(entry.ops_appointments)
+      ? entry.ops_appointments[0]
+      : entry.ops_appointments
+    const date = appointment?.appointment_date || batchInvoice.month
+    const datePrefix = new Date(date + 'T12:00:00').toLocaleDateString(
+      'en-US',
+      {
+        month: 'short',
+        day: 'numeric',
+      },
+    )
+    const snapshot = Array.isArray(entry.line_items_snapshot)
+      ? entry.line_items_snapshot
+      : []
+
+    return snapshot.map(
+      (line: {
+        name_snapshot: string
+        notes?: string | null
+        quantity: number
+        unit_price: number
+        line_total: number
+      }) => ({
+        description: `${datePrefix} — ${line.notes || line.name_snapshot}`,
+        product_name: line.name_snapshot,
+        quantity: Number(line.quantity || 1),
+        unit_price: Number(line.unit_price || 0),
+        line_total: Number(line.line_total || 0),
+        service_date: date,
+      }),
+    )
+  })
+
+  const qbInvoiceId = await createQBInvoice({
+    qbCustomerId,
+    serviceDate: batchInvoice.month,
+    lineItems,
+    docNumber:
+      (batchInvoice as { invoice_number?: number | string | null })
+        .invoice_number ?? null,
+  })
+
+  await supabase
+    .from('ops_batch_invoices')
+    .update({
+      quickbooks_invoice_id: qbInvoiceId,
+      sync_status: 'synced',
+      status: 'sent',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', batchInvoice.id)
+
+  return qbInvoiceId
 }
 
 export async function chargeCardViaQB(params: {
@@ -428,7 +617,8 @@ export async function syncAppointmentToQuickBooks(appointmentId: string) {
       appointment_date,
       kind,
       ops_customers!ops_appointments_customer_id_fkey (
-        id, full_name, first_name, email, phone, quickbooks_customer_id,
+        id, full_name, first_name, business_name, email, phone,
+        quickbooks_customer_id,
         ops_service_addresses ( street_1, street_2, city, state, zip_code )
       ),
       ops_invoices (
@@ -471,7 +661,7 @@ export async function syncAppointmentToQuickBooks(appointmentId: string) {
     if (!qbCustomerId) {
       qbCustomerId = await createQBCustomer({
         customerId: customer.id,
-        displayName: customer.full_name,
+        displayName: customer.business_name || customer.full_name,
         email: customer.email,
         phone: customer.phone || '',
         address: {
@@ -522,7 +712,10 @@ export async function syncAppointmentToQuickBooks(appointmentId: string) {
         )
       } else {
         const lineItems = Array.isArray(invoice.ops_invoice_line_items)
-          ? invoice.ops_invoice_line_items
+          ? invoice.ops_invoice_line_items.map((line) => ({
+              ...line,
+              product_name: line.description,
+            }))
           : []
 
         const qbInvoiceId = await createQBInvoice({
@@ -676,7 +869,10 @@ export async function resyncInvoiceToQuickBooks(invoiceId: string) {
   }
 
   const lineItems = Array.isArray(inv.ops_invoice_line_items)
-    ? inv.ops_invoice_line_items
+    ? inv.ops_invoice_line_items.map((line) => ({
+        ...line,
+        product_name: line.description,
+      }))
     : []
 
   const qbIdToReplace = invAfter.quickbooks_invoice_id

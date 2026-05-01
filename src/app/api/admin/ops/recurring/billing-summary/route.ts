@@ -90,7 +90,9 @@ export async function GET(request: NextRequest) {
     })
     const { data: batchInvoices } = await supabase
       .from('ops_batch_invoices')
-      .select('id, customer_id, status, total')
+      .select(
+        'id, customer_id, status, sync_status, quickbooks_invoice_id, total',
+      )
       .in('customer_id', customerIds)
       .gte('month', monthStart)
       .lt('month', nextMonth)

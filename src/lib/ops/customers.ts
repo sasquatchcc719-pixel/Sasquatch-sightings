@@ -17,6 +17,8 @@ export type ResolvedOpsCustomer = {
 
 type OpsCustomerRow = {
   id: string
+  full_name: string | null
+  business_name: string | null
   email: string | null
   phone: string | null
   quickbooks_customer_id: string | null
@@ -57,7 +59,9 @@ export async function resolveOpsCustomer({
   if (phoneVariants.length > 0) {
     const { data, error } = await supabase
       .from('ops_customers')
-      .select('id, email, phone, quickbooks_customer_id')
+      .select(
+        'id, full_name, business_name, email, phone, quickbooks_customer_id',
+      )
       .in('phone', phoneVariants)
       .order('updated_at', { ascending: false, nullsFirst: false })
       .limit(1)
@@ -71,7 +75,9 @@ export async function resolveOpsCustomer({
   if (cleanEmail) {
     const { data, error } = await supabase
       .from('ops_customers')
-      .select('id, email, phone, quickbooks_customer_id')
+      .select(
+        'id, full_name, business_name, email, phone, quickbooks_customer_id',
+      )
       .ilike('email', cleanEmail)
       .order('updated_at', { ascending: false, nullsFirst: false })
       .limit(1)
@@ -81,7 +87,19 @@ export async function resolveOpsCustomer({
     emailMatch = data
   }
 
-  const existingCustomer = phoneMatch || emailMatch
+  const phoneMatchLooksLikeDifferentBusiness =
+    !!phoneMatch?.business_name &&
+    !!fullName &&
+    ![phoneMatch.full_name, phoneMatch.business_name]
+      .filter(Boolean)
+      .some((name) => name!.trim().toLowerCase() === fullName.toLowerCase()) &&
+    (!phoneMatch.email ||
+      !cleanEmail ||
+      normalizeEmail(phoneMatch.email) !== cleanEmail)
+
+  const existingCustomer = phoneMatchLooksLikeDifferentBusiness
+    ? emailMatch
+    : phoneMatch || emailMatch
 
   if (existingCustomer) {
     if (phoneMatch && emailMatch && phoneMatch.id !== emailMatch.id) {
