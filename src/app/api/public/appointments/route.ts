@@ -119,6 +119,7 @@ export async function POST(request: NextRequest) {
       unit_price: number
       duration_minutes?: number
       pricing_unit?: string
+      category?: string
     }> = Array.isArray(body.line_items) ? body.line_items : []
 
     if (lineItems.length === 0) {
@@ -137,16 +138,24 @@ export async function POST(request: NextRequest) {
     if (catalogIds.length > 0) {
       const { data: catalogRows } = await supabase
         .from('service_catalog_items')
-        .select('id, pricing_unit')
+        .select('id, pricing_unit, category')
         .in('id', catalogIds)
       if (catalogRows) {
         const catalogMap = new Map(
-          catalogRows.map((r) => [r.id, r.pricing_unit]),
+          catalogRows.map((r) => [
+            r.id,
+            { pricing_unit: r.pricing_unit, category: r.category },
+          ]),
         )
         for (const item of lineItems) {
-          if (item.service_catalog_item_id && !item.pricing_unit) {
-            item.pricing_unit =
-              catalogMap.get(item.service_catalog_item_id) ?? 'fixed'
+          if (item.service_catalog_item_id) {
+            const catalogItem = catalogMap.get(item.service_catalog_item_id)
+            if (!item.pricing_unit) {
+              item.pricing_unit = catalogItem?.pricing_unit ?? 'fixed'
+            }
+            if (!item.category) {
+              item.category = catalogItem?.category ?? undefined
+            }
           }
         }
       }
@@ -229,12 +238,51 @@ export async function POST(request: NextRequest) {
 
     const addressId = resolved.id
 
+    const requestedPercentageDiscount =
+      body.percentage_discount &&
+      typeof body.percentage_discount === 'object' &&
+      body.percentage_discount.scope === 'rug_cleaning'
+        ? {
+            label: 'Multi-rug discount',
+            percent: 10,
+            scope: 'rug_cleaning',
+          }
+        : null
+    const rugLineItems = lineItems.filter(
+      (item) => item.category?.toLowerCase() === 'rug cleaning',
+    )
+    const rugUnitCount = rugLineItems.reduce((sum, item) => {
+      const unit = String(item.pricing_unit || '').toLowerCase()
+      const isMeasurement =
+        unit.includes('sq') ||
+        unit.includes('square') ||
+        unit.includes('linear')
+      return sum + (isMeasurement ? 1 : Number(item.quantity || 0))
+    }, 0)
+    const rugDiscountEligible = requestedPercentageDiscount && rugUnitCount >= 2
+    const percentageDiscountScopeSubtotal = rugLineItems.reduce(
+      (sum, item) => sum + item.unit_price * item.quantity,
+      0,
+    )
+    const percentageDiscountAmount = rugDiscountEligible
+      ? Number(
+          (
+            (percentageDiscountScopeSubtotal *
+              requestedPercentageDiscount.percent) /
+            100
+          ).toFixed(2),
+        )
+      : 0
+
     // --- Calculate totals ---
     const subtotal = lineItems.reduce(
       (sum, item) => sum + item.unit_price * item.quantity,
       0,
     )
-    const total = Math.max(0, subtotal - discountAmount)
+    const total = Math.max(
+      0,
+      subtotal - discountAmount - percentageDiscountAmount,
+    )
 
     // --- Calculate end time based on dollar amount ---
     // Simple tier system: $0-300 = 2hr, $301-600 = 3hr, $601+ = 4hr
@@ -282,6 +330,26 @@ export async function POST(request: NextRequest) {
         appointment_id: appointment.id,
         subtotal,
         discount_amount: discountAmount,
+        percentage_discount_label: rugDiscountEligible
+          ? requestedPercentageDiscount.label
+          : null,
+        percentage_discount_percent: rugDiscountEligible
+          ? requestedPercentageDiscount.percent
+          : 0,
+        percentage_discount_scope: rugDiscountEligible
+          ? requestedPercentageDiscount.scope
+          : null,
+        percentage_discount_amount: percentageDiscountAmount,
+        discount_metadata: rugDiscountEligible
+          ? {
+              multi_rug: {
+                rug_units: rugUnitCount,
+                rug_subtotal: Number(
+                  percentageDiscountScopeSubtotal.toFixed(2),
+                ),
+              },
+            }
+          : {},
         total,
         status: 'draft',
         sync_status: 'pending',
@@ -295,6 +363,7 @@ export async function POST(request: NextRequest) {
     const invoiceLines = lineItems.map((item) => ({
       invoice_id: invoice.id,
       description: item.name_snapshot,
+      service_catalog_item_id: item.service_catalog_item_id ?? null,
       quantity: item.quantity,
       unit_price: item.unit_price,
       line_total: item.unit_price * item.quantity,
@@ -447,7 +516,8 @@ export async function POST(request: NextRequest) {
         invoice_id: invoice.id,
         confirmation_number: confirmationNumber,
         total,
-        discount_applied: discountAmount,
+        discount_applied: discountAmount + percentageDiscountAmount,
+        percentage_discount_applied: percentageDiscountAmount,
       },
       { headers: CORS },
     )

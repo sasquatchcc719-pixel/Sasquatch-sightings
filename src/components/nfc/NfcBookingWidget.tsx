@@ -55,6 +55,7 @@ export interface NfcBookingWidgetProps {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const MIN_TOTAL = 150
+const MULTI_RUG_DISCOUNT_PERCENT = 10
 const STEPS = ['Services', 'Schedule', 'Your Info', 'Review']
 
 const CATEGORY_ORDER = [
@@ -98,9 +99,35 @@ function needsDirectInput(unit: string | null) {
   if (!unit) return false
   const normalized = unit.toLowerCase().replace(/_/g, ' ')
   return (
+    normalized.includes('sq ft') ||
     normalized.includes('sqft') ||
     normalized.includes('square') ||
     normalized.includes('linear')
+  )
+}
+
+function isRugService(item: ServiceItem) {
+  return item.category.toLowerCase() === 'rug cleaning'
+}
+
+function rugUnitCount(cart: CartItem[]) {
+  return cart.reduce((sum, ci) => {
+    if (!isRugService(ci.service)) return sum
+    return sum + (needsDirectInput(ci.service.pricing_unit) ? 1 : ci.quantity)
+  }, 0)
+}
+
+function rugSubtotal(cart: CartItem[]) {
+  return cart.reduce((sum, ci) => {
+    if (!isRugService(ci.service)) return sum
+    return sum + ci.service.base_price * ci.quantity
+  }, 0)
+}
+
+function multiRugDiscount(cart: CartItem[]) {
+  if (rugUnitCount(cart) < 2) return 0
+  return Number(
+    ((rugSubtotal(cart) * MULTI_RUG_DISCOUNT_PERCENT) / 100).toFixed(2),
   )
 }
 
@@ -554,8 +581,12 @@ export function NfcBookingWidget({
 
   // Services
   const [services, setServices] = useState<ServiceItem[]>([])
+  const [checkoutUpsells, setCheckoutUpsells] = useState<ServiceItem[]>([])
   const [servicesLoading, setServicesLoading] = useState(true)
   const [cart, setCart] = useState<CartItem[]>([])
+  const [selectedUpsellIds, setSelectedUpsellIds] = useState<string[]>([])
+  const [showRugUpsell, setShowRugUpsell] = useState(false)
+  const [rugUpsellSeen, setRugUpsellSeen] = useState(false)
 
   // Schedule
   const [selectedDate, setSelectedDate] = useState('')
@@ -598,9 +629,12 @@ export function NfcBookingWidget({
 
   // Load services on mount
   useEffect(() => {
-    fetch('/api/public/services')
+    fetch('/api/public/services', { cache: 'no-store' })
       .then((r) => r.json())
-      .then((d) => setServices(d.services || []))
+      .then((d) => {
+        setServices(d.services || [])
+        setCheckoutUpsells(d.checkoutUpsells || [])
+      })
       .catch(console.error)
       .finally(() => setServicesLoading(false))
   }, [])
@@ -677,8 +711,68 @@ export function NfcBookingWidget({
   }
 
   const subtotal = cartTotal(cart)
+  const selectedUpsells = checkoutUpsells.filter((upsell) =>
+    selectedUpsellIds.includes(upsell.id),
+  )
+  const freeUvInspection = checkoutUpsells.find(
+    (upsell) => upsell.slug === 'free-uv-inspection',
+  )
+  const rugUnits = rugUnitCount(cart)
+  const rugDiscountAmount = multiRugDiscount(cart)
+  const promoDiscountAmount = reviewPromo?.discountAmount ?? 0
+  const reviewTotal = Math.max(
+    0,
+    subtotal - promoDiscountAmount - rugDiscountAmount,
+  )
   const meetsMinimum = subtotal >= MIN_TOTAL
   const orderedGroups = useMemo(() => groupByCategory(services), [services])
+  const rugOfferServices = useMemo(
+    () =>
+      services
+        .filter(
+          (service) =>
+            isRugService(service) && !needsDirectInput(service.pricing_unit),
+        )
+        .slice(0, 4),
+    [services],
+  )
+
+  function handleReviewAttempt() {
+    const err = validateStep3()
+    if (err) {
+      setSubmitError(err)
+      return
+    }
+    setSubmitError('')
+    if (!rugUpsellSeen && rugUnits < 2 && rugOfferServices.length > 0) {
+      setRugUpsellSeen(true)
+      setShowRugUpsell(true)
+      return
+    }
+    setStep(4)
+  }
+
+  function addTwoRugsFromOffer(service: ServiceItem) {
+    setCartQuantity(
+      service,
+      Math.max(2, cart.find((c) => c.service.id === service.id)?.quantity ?? 0),
+    )
+    setShowRugUpsell(false)
+    setStep(4)
+  }
+
+  function skipRugOffer() {
+    setShowRugUpsell(false)
+    setStep(4)
+  }
+
+  function toggleUpsell(service: ServiceItem) {
+    setSelectedUpsellIds((prev) =>
+      prev.includes(service.id)
+        ? prev.filter((id) => id !== service.id)
+        : [...prev, service.id],
+    )
+  }
 
   useEffect(() => {
     if (step !== 4) {
@@ -732,13 +826,22 @@ export function NfcBookingWidget({
     setSubmitting(true)
     setSubmitError('')
 
-    const lineItems = cart.map((ci) => ({
-      service_catalog_item_id: ci.service.id,
-      name_snapshot: ci.service.name,
-      quantity: ci.quantity,
-      unit_price: ci.service.base_price,
-      duration_minutes: ci.service.duration_minutes ?? 60,
-    }))
+    const lineItems = [
+      ...cart.map((ci) => ({
+        service_catalog_item_id: ci.service.id,
+        name_snapshot: ci.service.name,
+        quantity: ci.quantity,
+        unit_price: ci.service.base_price,
+        duration_minutes: ci.service.duration_minutes ?? 60,
+      })),
+      ...selectedUpsells.map((service) => ({
+        service_catalog_item_id: service.id,
+        name_snapshot: service.name,
+        quantity: 1,
+        unit_price: service.base_price,
+        duration_minutes: service.duration_minutes ?? 0,
+      })),
+    ]
 
     const payload = {
       customer: {
@@ -760,6 +863,14 @@ export function NfcBookingWidget({
         lead_source: cardId ? `NFC Card - ${cardId}` : 'NFC Card',
       },
       line_items: lineItems,
+      percentage_discount:
+        rugDiscountAmount > 0
+          ? {
+              label: 'Multi-rug discount',
+              percent: MULTI_RUG_DISCOUNT_PERCENT,
+              scope: 'rug_cleaning',
+            }
+          : undefined,
       promo_code: couponCode || undefined,
     }
 
@@ -1159,15 +1270,7 @@ export function NfcBookingWidget({
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  const err = validateStep3()
-                  if (err) {
-                    setSubmitError(err)
-                    return
-                  }
-                  setSubmitError('')
-                  setStep(4)
-                }}
+                onClick={handleReviewAttempt}
                 className="flex-1 rounded-xl bg-green-600 py-3 text-sm font-semibold text-white transition-colors hover:bg-green-500"
               >
                 Review →
@@ -1210,6 +1313,15 @@ export function NfcBookingWidget({
                     </span>
                   </div>
                 ))}
+                {selectedUpsells.map((service) => (
+                  <div
+                    key={service.id}
+                    className="flex justify-between text-sm"
+                  >
+                    <span className="text-white/80">{service.name}</span>
+                    <span className="font-medium text-green-400">Free</span>
+                  </div>
+                ))}
               </div>
               <div className="mt-2 space-y-1.5 border-t border-white/10 pt-2 text-sm">
                 <div className="flex justify-between">
@@ -1238,16 +1350,59 @@ export function NfcBookingWidget({
                     </span>
                   </div>
                 ) : null}
+                {rugDiscountAmount > 0 ? (
+                  <div className="flex justify-between text-green-400/95">
+                    <span>Multi-rug discount</span>
+                    <span className="font-semibold">
+                      −{formatPrice(rugDiscountAmount)}
+                    </span>
+                  </div>
+                ) : null}
                 {reviewPromo ? (
                   <div className="flex justify-between border-t border-white/10 pt-2 text-base font-bold">
                     <span className="text-white">Total</span>
                     <span className="text-green-400">
-                      {formatPrice(reviewPromo.total)}
+                      {formatPrice(reviewTotal)}
                     </span>
                   </div>
                 ) : null}
               </div>
             </div>
+
+            {freeUvInspection ? (
+              <button
+                type="button"
+                onClick={() => toggleUpsell(freeUvInspection)}
+                className={`mb-3 w-full rounded-xl border p-4 text-left transition-colors ${
+                  selectedUpsellIds.includes(freeUvInspection.id)
+                    ? 'border-green-500/60 bg-green-500/15'
+                    : 'border-white/10 bg-white/5 hover:border-green-500/40 hover:bg-white/10'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-bold text-white">
+                      Add a free UV inspection?
+                    </p>
+                    <p className="mt-1 text-xs leading-relaxed text-white/55">
+                      We will check for pet-related trouble spots with a UV
+                      light and point out anything worth treating.
+                    </p>
+                  </div>
+                  <span
+                    className={`rounded-full px-2.5 py-1 text-xs font-bold ${
+                      selectedUpsellIds.includes(freeUvInspection.id)
+                        ? 'bg-green-500 text-white'
+                        : 'bg-white/10 text-white/60'
+                    }`}
+                  >
+                    {selectedUpsellIds.includes(freeUvInspection.id)
+                      ? 'Added'
+                      : 'Free'}
+                  </span>
+                </div>
+              </button>
+            ) : null}
 
             {/* Appointment */}
             <div className="mb-3 rounded-xl border border-white/10 bg-white/5 p-4">
@@ -1395,6 +1550,66 @@ export function NfcBookingWidget({
           </div>
         )}
       </div>
+      {mobileSubtotalHost &&
+        showRugUpsell &&
+        createPortal(
+          <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
+            <div className="w-full max-w-md rounded-2xl border border-green-500/30 bg-zinc-950 p-5 shadow-2xl">
+              <p className="mb-1 text-xs font-semibold tracking-[0.2em] text-green-300 uppercase">
+                Checkout offer
+              </p>
+              <h3 className="text-xl font-bold text-white">
+                Add two rugs and save 10%
+              </h3>
+              <p className="mt-2 text-sm leading-relaxed text-white/60">
+                Most homes have a couple rugs that need attention. Add two or
+                more rugs now and the discount applies only to rug cleaning.
+              </p>
+              <div className="mt-4 space-y-2">
+                {rugOfferServices.map((service) => (
+                  <button
+                    key={service.id}
+                    type="button"
+                    onClick={() => addTwoRugsFromOffer(service)}
+                    className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-left transition-colors hover:border-green-500/50 hover:bg-green-500/10"
+                  >
+                    <span>
+                      <span className="block text-sm font-semibold text-white">
+                        {service.name} × 2
+                      </span>
+                      <span className="text-xs text-white/45">
+                        Qualifies for the multi-rug discount
+                      </span>
+                    </span>
+                    <span className="text-sm font-bold text-green-400">
+                      {formatPrice(service.base_price * 2)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <div className="mt-5 flex gap-3">
+                <button
+                  type="button"
+                  onClick={skipRugOffer}
+                  className="flex-1 rounded-xl border border-white/15 py-3 text-sm font-medium text-white/60 transition-colors hover:bg-white/5"
+                >
+                  No thanks
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRugUpsell(false)
+                    setStep(1)
+                  }}
+                  className="flex-1 rounded-xl bg-green-600 py-3 text-sm font-semibold text-white transition-colors hover:bg-green-500"
+                >
+                  Browse rugs
+                </button>
+              </div>
+            </div>
+          </div>,
+          mobileSubtotalHost,
+        )}
       {mobileSubtotalHost &&
         step === 1 &&
         cart.length > 0 &&

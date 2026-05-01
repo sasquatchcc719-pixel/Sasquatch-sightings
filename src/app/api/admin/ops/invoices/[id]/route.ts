@@ -19,6 +19,8 @@ const INVOICE_SELECT = `
     end_time,
     status,
     payment_status,
+    gps_lat,
+    gps_lng,
     quoted_total,
     internal_notes,
     lead_source,
@@ -295,10 +297,15 @@ export async function PATCH(
       body.discount_amount !== undefined
         ? Math.max(0, Number(body.discount_amount || 0))
         : Number(current.discount_amount || 0)
+    const percentageDiscountAmount =
+      body.percentage_discount_amount !== undefined
+        ? Math.max(0, Number(body.percentage_discount_amount || 0))
+        : Number(current.percentage_discount_amount || 0)
     const total = Number(
       (
         subtotal -
-        discountAmount +
+        discountAmount -
+        percentageDiscountAmount +
         Number(current.minimum_charge_adjustment || 0) +
         Number(current.tax_amount || 0)
       ).toFixed(2),
@@ -310,6 +317,19 @@ export async function PATCH(
         subtotal: Number(subtotal.toFixed(2)),
         total,
         discount_amount: discountAmount,
+        percentage_discount_amount: percentageDiscountAmount,
+        percentage_discount_label:
+          body.percentage_discount_label !== undefined
+            ? body.percentage_discount_label
+            : current.percentage_discount_label,
+        percentage_discount_percent:
+          body.percentage_discount_percent !== undefined
+            ? Math.max(0, Number(body.percentage_discount_percent || 0))
+            : Number(current.percentage_discount_percent || 0),
+        percentage_discount_scope:
+          body.percentage_discount_scope !== undefined
+            ? body.percentage_discount_scope
+            : current.percentage_discount_scope,
         status:
           body.status !== undefined ? String(body.status) : current.status,
         payment_method:
@@ -416,7 +436,9 @@ export async function PATCH(
     }
 
     const lineOrDiscountChanged =
-      (lineItemsInBody && !dangerousEmpty) || body.discount_amount !== undefined
+      (lineItemsInBody && !dangerousEmpty) ||
+      body.discount_amount !== undefined ||
+      body.percentage_discount_amount !== undefined
     if (
       current.quickbooks_invoice_id &&
       lineOrDiscountChanged &&
@@ -490,7 +512,7 @@ export async function PATCH(
             serviceAddress,
             serviceDate: apptRow?.appointment_date ?? '',
             lineItems,
-            discountAmount,
+            discountAmount: discountAmount + percentageDiscountAmount,
             subtotal: Number(subtotal.toFixed(2)),
             total,
           })

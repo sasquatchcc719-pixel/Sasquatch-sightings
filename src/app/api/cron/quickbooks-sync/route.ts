@@ -157,6 +157,7 @@ export async function GET(request: NextRequest) {
               status,
               payment_method,
               discount_amount,
+              percentage_discount_amount,
               invoice_number,
               quickbooks_invoice_id,
               appointment_id,
@@ -246,7 +247,9 @@ export async function GET(request: NextRequest) {
             qbCustomerId: custRow.quickbooks_customer_id,
             serviceDate: appt.appointment_date,
             lineItems,
-            discountAmount: Number(invRow.discount_amount || 0),
+            discountAmount:
+              Number(invRow.discount_amount || 0) +
+              Number(invRow.percentage_discount_amount || 0),
             docNumber:
               (invRow as { invoice_number?: number | string | null })
                 .invoice_number ?? null,

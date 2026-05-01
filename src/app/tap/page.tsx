@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Image from 'next/image'
+import Link from 'next/link'
 import {
+  ChevronRight,
   Phone,
   MessageSquare,
   UserPlus,
@@ -11,6 +13,7 @@ import {
   Star,
   CalendarCheck,
   MapPin,
+  Wrench,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -73,7 +76,7 @@ export default function TapLandingPage() {
     }
 
     trackTap()
-  }, [cardId, partnerId, isRedirecting])
+  }, [cardId, partnerId, isRedirecting, router])
 
   if (isRedirecting) {
     return (
@@ -308,18 +311,39 @@ export default function TapLandingPage() {
           </div>
         </Card>
 
-        {/* Why Choose Us */}
+        {/* Recommended Contractors */}
         <Card className="mb-6 border-white/20 bg-black/80 p-6">
-          <h3 className="mb-4 text-xl font-bold text-white">
-            Why Choose Sasquatch?
-          </h3>
-          <ul className="space-y-2 text-sm text-white/90">
-            <li>✅ Professional carpet, tile & upholstery cleaning</li>
-            <li>✅ Serving Colorado Springs area since 2012</li>
-            <li>✅ Same-day service available</li>
-            <li>✅ 100% satisfaction guaranteed</li>
-            <li>✅ Eco-friendly cleaning solutions</li>
-          </ul>
+          <div className="mb-4 flex items-start gap-3">
+            <div className="rounded-full bg-green-500/20 p-3 text-green-300">
+              <Wrench className="h-6 w-6" />
+            </div>
+            <div>
+              <p className="mb-1 text-sm font-semibold tracking-wide text-green-200 uppercase">
+                Local pros we trust
+              </p>
+              <h3 className="text-xl font-bold text-white">
+                What contractors do we recommend?
+              </h3>
+            </div>
+          </div>
+          <p className="mb-4 text-sm leading-6 text-white/80">
+            Customers ask us for plumbers, carpet repair, electricians, and
+            other local pros all the time. We&apos;re building that list in one
+            easy place.
+          </p>
+          <Button
+            asChild
+            size="lg"
+            className="w-full bg-green-600 py-6 text-base font-bold hover:bg-green-700"
+          >
+            <Link
+              href="/recommended-contractors"
+              onClick={() => trackButtonClick('recommended_contractors')}
+            >
+              View Recommended Contractors
+              <ChevronRight className="h-5 w-5" />
+            </Link>
+          </Button>
         </Card>
 
         {/* Recent Jobs Carousel */}

@@ -11,7 +11,6 @@ import {
   Mail,
   MapPin,
   MessageSquare,
-  Navigation,
   Pencil,
   PenTool,
   Phone,
@@ -85,6 +84,10 @@ type InvoiceDetail = {
   subtotal: number
   total: number
   discount_amount: number | null
+  percentage_discount_label: string | null
+  percentage_discount_percent: number | null
+  percentage_discount_scope: string | null
+  percentage_discount_amount: number | null
   signature_url: string | null
   signature_captured_at: string | null
   signature_customer_name: string | null
@@ -446,6 +449,11 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
           status,
           payment_method: paymentMethod,
           discount_amount: Number(discount || 0),
+          percentage_discount_amount: percentageDiscountAmount,
+          percentage_discount_label: invoice?.percentage_discount_label ?? null,
+          percentage_discount_percent:
+            invoice?.percentage_discount_percent ?? 0,
+          percentage_discount_scope: invoice?.percentage_discount_scope ?? null,
           line_items: lineItems.map((item) => ({
             id: item.id,
             appointment_line_item_id: item.appointment_line_item_id,
@@ -1046,7 +1054,14 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     0,
   )
   const discountAmount = Math.max(0, Number(discount || 0))
-  const total = Math.max(0, subtotalCalc - discountAmount)
+  const percentageDiscountAmount = Math.max(
+    0,
+    Number(invoice.percentage_discount_amount || 0),
+  )
+  const total = Math.max(
+    0,
+    subtotalCalc - discountAmount - percentageDiscountAmount,
+  )
   const billableTotal = total > 0.005 ? total : Number(invoice?.total || 0)
 
   return (
@@ -2064,7 +2079,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                 htmlFor="invoice-discount"
                 className="text-sm whitespace-nowrap text-slate-500"
               >
-                Discount ($)
+                Dollar Discounts
               </Label>
               <Input
                 id="invoice-discount"
@@ -2077,6 +2092,22 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
               />
             </div>
           </div>
+          {percentageDiscountAmount > 0 ? (
+            <div className="flex items-center justify-end gap-4">
+              <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-right text-sm text-green-800">
+                <div className="font-medium">Percentage Discounts</div>
+                <div className="text-xs">
+                  {invoice.percentage_discount_label || 'Scoped discount'} ·{' '}
+                  {Number(invoice.percentage_discount_percent || 0).toFixed(0)}%
+                  off{' '}
+                  {invoice.percentage_discount_scope === 'rug_cleaning'
+                    ? 'rug cleaning'
+                    : invoice.percentage_discount_scope || 'selected items'}
+                  : −${percentageDiscountAmount.toFixed(2)}
+                </div>
+              </div>
+            </div>
+          ) : null}
           <div className="flex items-center justify-between gap-4">
             <Button onClick={handleSave} disabled={saving} className="px-8">
               {saving ? (
@@ -2235,39 +2266,10 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
               )}
               {photoUploading ? 'Uploading…' : 'Add Photo'}
             </Button>
-
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="gap-2"
-              disabled={gpsCapturing}
-              onClick={() => void handleCaptureGps()}
-            >
-              {gpsCapturing ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Navigation className="h-4 w-4" />
-              )}
-              {gpsCapturing ? 'Getting GPS…' : 'Capture GPS'}
-            </Button>
           </div>
 
           {photoError ? (
             <p className="mt-2 text-sm text-red-500">{photoError}</p>
-          ) : null}
-
-          {gpsFeedback ? (
-            <p
-              className={`mt-2 text-sm ${gpsFeedback.ok ? 'text-green-600' : 'text-red-500'}`}
-            >
-              {gpsFeedback.message}
-            </p>
-          ) : gpsCoords ? (
-            <p className="text-muted-foreground mt-2 flex items-center gap-1.5 text-xs">
-              <MapPin className="h-3.5 w-3.5" />
-              GPS: {gpsCoords.lat.toFixed(6)}, {gpsCoords.lng.toFixed(6)}
-            </p>
           ) : null}
         </div>
       </Card>
@@ -2282,6 +2284,44 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
           <strong>QuickBooks</strong> when connected. You do not need a social
           post—use the section below only if you want a before/after post.
         </p>
+        <div className="border-border/60 mt-4 rounded-xl border bg-white/60 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium">Job-site GPS</p>
+              <p className="text-muted-foreground mt-1 text-xs">
+                Same backup as the old jobs tab. Tap this on-site before
+                publishing the map post.
+              </p>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="gap-2"
+              disabled={gpsCapturing}
+              onClick={() => void handleCaptureGps()}
+            >
+              {gpsCapturing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <MapPin className="h-4 w-4" />
+              )}
+              {gpsCapturing ? 'Getting…' : 'Use Current Location'}
+            </Button>
+          </div>
+          {gpsFeedback ? (
+            <p
+              className={`mt-2 text-sm ${gpsFeedback.ok ? 'text-green-600' : 'text-red-500'}`}
+            >
+              {gpsFeedback.message}
+            </p>
+          ) : gpsCoords ? (
+            <p className="text-muted-foreground mt-2 flex items-center gap-1.5 text-xs">
+              <MapPin className="h-3.5 w-3.5" />
+              GPS: {gpsCoords.lat.toFixed(6)}, {gpsCoords.lng.toFixed(6)}
+            </p>
+          ) : null}
+        </div>
         <Button
           type="button"
           className="mt-4 h-14 w-full border-green-600 bg-green-600 text-base font-semibold text-white hover:bg-green-700"
@@ -2342,10 +2382,61 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
             <strong>Finish &amp; close job</strong> above if you are skipping
             social media.
           </p>
+          <div className="bg-muted/50 border-border/60 mb-3 rounded-md border p-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <MapPin className="h-4 w-4" />
+                <span className="text-sm font-medium">
+                  {gpsCoords
+                    ? 'GPS: Using device location'
+                    : 'GPS: Not captured'}
+                </span>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => void handleCaptureGps()}
+                disabled={gpsCapturing}
+              >
+                {gpsCapturing ? (
+                  <>
+                    <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                    Getting...
+                  </>
+                ) : (
+                  <>
+                    <MapPin className="mr-2 h-3 w-3" />
+                    Use Current Location
+                  </>
+                )}
+              </Button>
+            </div>
+            {gpsFeedback ? (
+              <p
+                className={`mt-2 text-sm ${gpsFeedback.ok ? 'text-green-600' : 'text-red-500'}`}
+              >
+                {gpsFeedback.message}
+              </p>
+            ) : gpsCoords ? (
+              <p className="text-muted-foreground mt-2 text-xs">
+                Coordinates: {gpsCoords.lat.toFixed(6)},{' '}
+                {gpsCoords.lng.toFixed(6)}
+              </p>
+            ) : (
+              <p className="text-muted-foreground mt-2 text-xs">
+                Publishing is blocked until this is captured, so it cannot drop
+                another pin in central Colorado Springs.
+              </p>
+            )}
+          </div>
           <Button
             className="h-14 w-full gap-2 bg-green-600 text-lg font-bold text-white hover:bg-green-700"
             disabled={
-              publishLoading || !combinedImageDataUrl || !aiDescription.trim()
+              publishLoading ||
+              !combinedImageDataUrl ||
+              !aiDescription.trim() ||
+              !gpsCoords
             }
             onClick={() => void handleFinishAndPublish()}
           >
@@ -2356,13 +2447,15 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
             )}
             {publishLoading ? 'Publishing…' : 'Publish to social & create post'}
           </Button>
-          {!combinedImageDataUrl || !aiDescription.trim() ? (
+          {!combinedImageDataUrl || !aiDescription.trim() || !gpsCoords ? (
             <p className="text-muted-foreground mt-2 text-center text-xs">
-              {!combinedImageDataUrl && !aiDescription.trim()
-                ? 'Combine photos and generate a description to publish'
-                : !combinedImageDataUrl
-                  ? 'Combine before/after photos to continue'
-                  : 'Generate or write a description to continue'}
+              {!gpsCoords
+                ? 'Use Current Location before publishing the map post'
+                : !combinedImageDataUrl && !aiDescription.trim()
+                  ? 'Combine photos and generate a description to publish'
+                  : !combinedImageDataUrl
+                    ? 'Combine before/after photos to continue'
+                    : 'Generate or write a description to continue'}
             </p>
           ) : null}
         </Card>

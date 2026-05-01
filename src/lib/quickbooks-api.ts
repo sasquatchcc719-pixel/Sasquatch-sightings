@@ -622,7 +622,7 @@ export async function syncAppointmentToQuickBooks(appointmentId: string) {
         ops_service_addresses ( street_1, street_2, city, state, zip_code )
       ),
       ops_invoices (
-        id, status, payment_method, subtotal, total, discount_amount, invoice_number, quickbooks_invoice_id,
+        id, status, payment_method, subtotal, total, discount_amount, percentage_discount_amount, invoice_number, quickbooks_invoice_id,
         ops_invoice_line_items ( description, quantity, unit_price, line_total )
       )
     `,
@@ -722,7 +722,9 @@ export async function syncAppointmentToQuickBooks(appointmentId: string) {
           qbCustomerId,
           serviceDate: appointment.appointment_date,
           lineItems,
-          discountAmount: Number(invoice.discount_amount || 0),
+          discountAmount:
+            Number(invoice.discount_amount || 0) +
+            Number(invoice.percentage_discount_amount || 0),
           docNumber:
             (invoice as { invoice_number?: number | string | null })
               .invoice_number ?? null,
@@ -812,6 +814,7 @@ export async function resyncInvoiceToQuickBooks(invoiceId: string) {
       status,
       payment_method,
       discount_amount,
+      percentage_discount_amount,
       invoice_number,
       quickbooks_invoice_id,
       appointment_id,
@@ -888,7 +891,9 @@ export async function resyncInvoiceToQuickBooks(invoiceId: string) {
     qbCustomerId,
     serviceDate: appt.appointment_date,
     lineItems,
-    discountAmount: Number(inv.discount_amount || 0),
+    discountAmount:
+      Number(inv.discount_amount || 0) +
+      Number(inv.percentage_discount_amount || 0),
     docNumber:
       (inv as { invoice_number?: number | string | null }).invoice_number ??
       null,

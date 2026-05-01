@@ -408,7 +408,7 @@ export async function PATCH(
       const { data: invRow } = await supabase
         .from('ops_invoices')
         .select(
-          'id, discount_amount, tax_amount, minimum_charge_adjustment, quickbooks_invoice_id, status',
+          'id, discount_amount, percentage_discount_amount, tax_amount, minimum_charge_adjustment, quickbooks_invoice_id, status',
         )
         .eq('appointment_id', id)
         .maybeSingle()
@@ -436,11 +436,15 @@ export async function PATCH(
         }
 
         const discountAmount = Number(invRow.discount_amount || 0)
+        const percentageDiscountAmount = Number(
+          invRow.percentage_discount_amount || 0,
+        )
         const subtotal = Number(newTotal.toFixed(2))
         const total = Number(
           (
             subtotal -
-            discountAmount +
+            discountAmount -
+            percentageDiscountAmount +
             Number(invRow.minimum_charge_adjustment || 0) +
             Number(invRow.tax_amount || 0)
           ).toFixed(2),

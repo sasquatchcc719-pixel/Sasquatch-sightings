@@ -17,6 +17,8 @@ const PUBLIC_CATEGORIES = [
   'Legendary Restoration Clean',
 ]
 
+const CHECKOUT_UPSELL_CATEGORY = 'Checkout Upsells'
+
 // Internal-only items excluded from the public widget
 const EXCLUDED_SLUGS = [
   'card-fee',
@@ -57,8 +59,9 @@ export async function GET() {
       .select(
         'id, name, slug, base_price, category, description, pricing_unit, sort_order',
       )
-      .in('category', PUBLIC_CATEGORIES)
+      .in('category', [...PUBLIC_CATEGORIES, CHECKOUT_UPSELL_CATEGORY])
       .eq('is_active', true)
+      .eq('online_booking_enabled', true)
       .order('sort_order', { ascending: true, nullsFirst: false })
       .order('base_price')
 
@@ -70,7 +73,14 @@ export async function GET() {
         !EXCLUDED_NAMES.includes(item.name),
     )
 
-    return NextResponse.json({ services: filtered }, { headers: CORS })
+    const services = filtered.filter(
+      (item) => item.category !== CHECKOUT_UPSELL_CATEGORY,
+    )
+    const checkoutUpsells = filtered.filter(
+      (item) => item.category === CHECKOUT_UPSELL_CATEGORY,
+    )
+
+    return NextResponse.json({ services, checkoutUpsells }, { headers: CORS })
   } catch (error) {
     console.error('[public/services] Error:', error)
     return NextResponse.json(

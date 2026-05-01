@@ -152,6 +152,7 @@ export async function POST(
         total,
         subtotal,
         discount_amount,
+        percentage_discount_amount,
         quickbooks_invoice_id,
         ops_appointments (
           id,
@@ -298,9 +299,14 @@ export async function POST(
             process.env.OPS_EMAIL_FROM ||
             'Sasquatch Carpet Cleaning <onboarding@resend.dev>'
 
-          const discountAmount = Number(
-            (invoice as { discount_amount?: number }).discount_amount || 0,
-          )
+          const discountAmount =
+            Number(
+              (invoice as { discount_amount?: number }).discount_amount || 0,
+            ) +
+            Number(
+              (invoice as { percentage_discount_amount?: number })
+                .percentage_discount_amount || 0,
+            )
           const subtotal = Number(
             (invoice as { subtotal?: number }).subtotal || total,
           )

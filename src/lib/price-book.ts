@@ -207,7 +207,7 @@ export const PRICE_BOOK = {
     services: [
       {
         name: 'Rug 4x6',
-        price: 25,
+        price: 20,
         unit: 'each',
         description: 'Wool or polyester',
       },
