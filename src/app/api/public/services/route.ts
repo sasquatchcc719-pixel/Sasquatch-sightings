@@ -61,7 +61,6 @@ export async function GET() {
       )
       .in('category', [...PUBLIC_CATEGORIES, CHECKOUT_UPSELL_CATEGORY])
       .eq('is_active', true)
-      .eq('online_booking_enabled', true)
       .order('sort_order', { ascending: true, nullsFirst: false })
       .order('base_price')
 
