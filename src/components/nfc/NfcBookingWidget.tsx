@@ -1002,15 +1002,51 @@ export function NfcBookingWidget({
               </div>
             ) : (
               orderedGroups.map(([category, items]) => (
-                <CategorySection
-                  key={category}
-                  category={CATEGORY_DISPLAY_NAMES[category] || category}
-                  items={items}
-                  cart={cart}
-                  onAdd={addToCart}
-                  onRemove={removeFromCart}
-                  onSetQuantity={setCartQuantity}
-                />
+                <div key={category}>
+                  <CategorySection
+                    category={CATEGORY_DISPLAY_NAMES[category] || category}
+                    items={items}
+                    cart={cart}
+                    onAdd={addToCart}
+                    onRemove={removeFromCart}
+                    onSetQuantity={setCartQuantity}
+                  />
+                  {category === 'Carpet Cleaning' && freeUvInspection ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleUpsell(freeUvInspection)}
+                      className={`mb-3 w-full rounded-xl border p-4 text-left shadow-[0_0_18px_rgba(250,204,21,0.22)] transition-all ${
+                        selectedUpsellIds.includes(freeUvInspection.id)
+                          ? 'border-yellow-300 bg-yellow-300/25'
+                          : 'animate-pulse border-yellow-300/80 bg-yellow-400/15 hover:bg-yellow-400/25'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-bold text-yellow-100">
+                            Add a free UV inspection?
+                          </p>
+                          <p className="mt-1 text-xs leading-relaxed text-white/65">
+                            We will check carpet with a UV light for pet-related
+                            trouble spots. Inspection only; treatment is quoted
+                            separately if needed.
+                          </p>
+                        </div>
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-xs font-bold ${
+                            selectedUpsellIds.includes(freeUvInspection.id)
+                              ? 'bg-yellow-300 text-zinc-950'
+                              : 'bg-yellow-400/20 text-yellow-100'
+                          }`}
+                        >
+                          {selectedUpsellIds.includes(freeUvInspection.id)
+                            ? 'Added'
+                            : 'Free'}
+                        </span>
+                      </div>
+                    </button>
+                  ) : null}
+                </div>
               ))
             )}
 
@@ -1368,41 +1404,6 @@ export function NfcBookingWidget({
                 ) : null}
               </div>
             </div>
-
-            {freeUvInspection ? (
-              <button
-                type="button"
-                onClick={() => toggleUpsell(freeUvInspection)}
-                className={`mb-3 w-full rounded-xl border p-4 text-left transition-colors ${
-                  selectedUpsellIds.includes(freeUvInspection.id)
-                    ? 'border-green-500/60 bg-green-500/15'
-                    : 'border-white/10 bg-white/5 hover:border-green-500/40 hover:bg-white/10'
-                }`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-bold text-white">
-                      Add a free UV inspection?
-                    </p>
-                    <p className="mt-1 text-xs leading-relaxed text-white/55">
-                      We will check for pet-related trouble spots with a UV
-                      light and point out anything worth treating.
-                    </p>
-                  </div>
-                  <span
-                    className={`rounded-full px-2.5 py-1 text-xs font-bold ${
-                      selectedUpsellIds.includes(freeUvInspection.id)
-                        ? 'bg-green-500 text-white'
-                        : 'bg-white/10 text-white/60'
-                    }`}
-                  >
-                    {selectedUpsellIds.includes(freeUvInspection.id)
-                      ? 'Added'
-                      : 'Free'}
-                  </span>
-                </div>
-              </button>
-            ) : null}
 
             {/* Appointment */}
             <div className="mb-3 rounded-xl border border-white/10 bg-white/5 p-4">
