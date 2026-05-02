@@ -565,14 +565,17 @@ async function quoteAndPrepareBooking(
 
   const dollars = prepared.subtotal.toFixed(2).replace(/\.00$/, '')
   if (!prepared.meetsMinimum) {
+    const amountNeeded = prepared.minimum - prepared.subtotal
+    const amountNeededDollars = amountNeeded.toFixed(2).replace(/\.00$/, '')
     return response(true, `Estimated total is $${dollars}.`, {
       quote_total: prepared.subtotal,
       minimum_booking_amount: prepared.minimum,
+      amount_needed_to_minimum: amountNeeded,
       meets_minimum: false,
       can_offer_slots: false,
       line_items: prepared.lineItems,
       missing_fields: prepared.missingFields,
-      caller_script: `The estimate is $${dollars}. Our minimum booking amount is $${prepared.minimum}, so I cannot finalize this appointment yet. Would you like to add another area, hallway, stairs, or deodorizer to meet the minimum?`,
+      caller_script: `The updated estimate is $${dollars}. That is $${amountNeededDollars} below our $${prepared.minimum} minimum, so I cannot check appointment availability or finalize a booking yet. Would you like to add another area, stairs, deodorizer, or another service to meet the minimum?`,
     })
   }
 
@@ -759,6 +762,32 @@ async function findRecentCompletedAppointments(
   args: Record<string, unknown>,
   context: RebeccaToolContext,
 ): Promise<PriorAppointmentRow[]> {
+  const orderNumber =
+    stringArg(args, 'order_number') ||
+    stringArg(args, 'invoice_number') ||
+    stringArg(args, 'appointment_number')
+  if (orderNumber) {
+    const invoiceNumber = Number(orderNumber.replace(/\D/g, ''))
+    if (Number.isFinite(invoiceNumber) && invoiceNumber > 0) {
+      const { data: invoiceRows, error: invoiceError } = await context.supabase
+        .from('ops_invoices')
+        .select('appointment_id')
+        .eq('invoice_number', invoiceNumber)
+        .limit(1)
+
+      if (invoiceError) throw invoiceError
+      const appointmentId = invoiceRows?.[0]?.appointment_id
+      if (appointmentId) {
+        const appointment = await findCompletedAppointmentById(
+          context.supabase,
+          appointmentId,
+          args,
+        )
+        if (appointment) return [appointment]
+      }
+    }
+  }
+
   const lookupPhone =
     stringArg(args, 'lookup_phone') ||
     stringArg(asRecord(args.customer), 'phone') ||
@@ -833,6 +862,64 @@ async function findRecentCompletedAppointments(
   return (data || []) as PriorAppointmentRow[]
 }
 
+async function findCompletedAppointmentById(
+  supabase: SupabaseClient,
+  appointmentId: string,
+  args: Record<string, unknown>,
+): Promise<PriorAppointmentRow | null> {
+  const lookbackDays = Math.max(
+    1,
+    Math.min(numberArg(args, 'lookback_days') || 30, 90),
+  )
+  const status = stringArg(args, 'appointment_status') || 'completed'
+  const { data, error } = await supabase
+    .from('ops_appointments')
+    .select(
+      `
+      id,
+      customer_id,
+      service_address_id,
+      appointment_date,
+      start_time,
+      end_time,
+      status,
+      quoted_total,
+      source,
+      lead_source,
+      ops_customers!ops_appointments_customer_id_fkey (
+        id,
+        full_name,
+        first_name,
+        last_name,
+        email,
+        phone
+      ),
+      ops_service_addresses (
+        id,
+        street_1,
+        street_2,
+        city,
+        state,
+        zip_code
+      ),
+      ops_appointment_line_items (
+        name_snapshot,
+        quantity,
+        duration_minutes,
+        line_total
+      )
+    `,
+    )
+    .eq('id', appointmentId)
+    .eq('status', status)
+    .gte('appointment_date', daysAgoIsoDate(lookbackDays))
+    .lte('appointment_date', todayIsoDate())
+    .maybeSingle()
+
+  if (error) throw error
+  return (data || null) as PriorAppointmentRow | null
+}
+
 function appointmentSummary(row: PriorAppointmentRow) {
   const customer = firstRelated(row.ops_customers)
   const address = firstRelated(row.ops_service_addresses)
@@ -876,7 +963,7 @@ async function listCallerAppointments(
   if (appointments.length === 0) {
     return response(
       false,
-      'No completed appointment from the last 30 days was found for this caller. Collect details and notify admin.',
+      'No completed appointment from the last 30 days was found. Collect the customer name, callback phone, email, service address, order number, issue summary, and preferred reclean date/time before escalating.',
       { appointments: [] },
     )
   }

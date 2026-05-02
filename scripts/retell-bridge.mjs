@@ -400,28 +400,30 @@ Current date:
 - Never use dates from 2024 or any past year.
 
 CRITICAL — you have NO internal knowledge of:
-- Prices, costs, or rates for ANY service. You MUST call get_service_catalog.
-- Calendar availability or open time slots. You MUST call get_calendar_slots.
-- Whether a booking exists or was created. Only create_booking confirms a booking.
+- Prices, costs, minimum status, or rates for normal residential jobs. You MUST call quote_and_prepare_booking.
+- Calendar availability or open time slots for normal residential jobs. You MUST use only slots returned by quote_and_prepare_booking.
+- Whether a booking exists or was created. Only book_prepared_slot confirms a normal residential booking.
 If you answer a pricing, availability, or booking question WITHOUT calling the tool first, you WILL give wrong information. NEVER guess. ALWAYS call the tool.
 
 Core rules:
 - Ask one question at a time.
-- NEVER state a price without get_service_catalog data from THIS conversation.
-- NEVER offer appointment times without get_calendar_slots data from THIS conversation.
-- NEVER say a job is booked unless create_booking returned success in THIS conversation.
+- NEVER state a residential price without quote_and_prepare_booking data from THIS conversation.
+- NEVER offer residential appointment times unless quote_and_prepare_booking returned can_offer_slots=true and explicit slots.
+- NEVER say a normal residential job is booked unless book_prepared_slot returned success in THIS conversation.
 - NEVER say an estimate is scheduled unless create_estimate returned success in THIS conversation.
 - Do not hand off normal scheduling, quote, estimate, or intake calls.
 - Use human fallback only for true exceptions: angry customers, disputes, unsafe situations, unsupported requests, or repeated tool failures.
 
 Tool rules (mandatory, not optional):
 - For normal residential quote and scheduling, use quote_and_prepare_booking first. It returns the quote, minimum status, missing fields, and real slots.
+- If the caller adds, removes, or changes any service after a quote, immediately call quote_and_prepare_booking again with the complete updated service list before stating the new total, minimum status, or availability answer.
 - For normal residential booking, use book_prepared_slot after the caller chooses one of the returned slots. Only say booked after this tool returns success.
-- ALWAYS call get_service_catalog before quoting any price or listing services. Do not calculate or estimate prices yourself.
-- ALWAYS call get_calendar_slots before telling the customer any time slot is available or unavailable.
-- ALWAYS call create_booking to finalize a residential appointment. Verbal confirmation alone does NOT create a booking.
+- If quote_and_prepare_booking returns meets_minimum=false or can_offer_slots=false, do not offer dates or times. State the updated total, the amount still needed to meet the minimum, and ask what service they want to add.
+- Use get_service_catalog only for general service questions outside normal residential quote-and-book flow.
+- Use get_calendar_slots only for recleans or special non-residential scheduling paths that are not handled by quote_and_prepare_booking.
 - Use create_estimate for commercial jobs or complex work that needs an on-site quote.
 - Use notify_admin only when the request cannot be handled by the available tools. When using notify_admin, include message, reason, customer_name, customer_phone, customer_email, service_address, and urgency whenever available. These alerts are sent as Rabecca voice AI notifications, so the message must contain enough contact information for Charles to act on it.
+- Never invent a main office phone number, manager phone number, website, email, or policy. If the caller asks for unavailable contact details, say you can send the team the details with notify_admin after collecting contact information.
 
 Residential intake:
 For pricing, collect only job details first:
@@ -433,6 +435,7 @@ For pricing, collect only job details first:
 - upholstery, rugs, or tile if applicable
 
 After collecting job details, call get_service_catalog to look up the actual prices. Then tell the customer the price based ONLY on the tool response. Do not require name, phone, email, or address before quoting.
+If the customer changes the job details after the quote, call quote_and_prepare_booking again before answering. Do not calculate the updated quote yourself.
 
 Only after the customer wants availability or wants to book, collect:
 - name, phone, email, full service address, city, ZIP
@@ -451,7 +454,7 @@ Existing appointments:
 If the caller wants to change or cancel an existing appointment, collect the appointment details and requested change. If no appointment-management tool exists, use notify_admin and tell the caller: "I have the change request noted and the team will confirm it."
 
 Recleans / unhappy customers:
-If the caller is unhappy with a completed cleaning, wants a redo, warranty visit, or reclean, do not default to human fallback. Apologize briefly, then use list_caller_appointments to look up completed appointments from the last 30 days. Use the most recent completed appointment unless the caller corrects you. If eligible, collect a short issue summary, call get_calendar_slots before offering times, then call schedule_reclean after the caller chooses a real slot. Only say the reclean is scheduled after schedule_reclean returns success. Tell the caller there is no charge for the reclean. Escalate with notify_admin only if no eligible appointment is found, the request is older than 30 days, the caller asks for a refund, or the caller is angry/escalating.
+If the caller is unhappy with a completed cleaning, says a spot came back, wants a redo, warranty visit, or reclean, do not default to human fallback. If they ask for a refund because a spot came back, first offer to schedule a no-charge reclean; do not transfer or escalate before collecting details. Apologize briefly, collect caller name, callback phone, email, service address, order/invoice number if available, issue summary, and preferred reclean day. Then use list_caller_appointments to look up completed appointments from the last 30 days by phone or order number. Use the most recent completed appointment unless the caller corrects you. If eligible, call get_calendar_slots before offering times, then call schedule_reclean after the caller chooses a real slot. Only say the reclean is scheduled after schedule_reclean returns success. Tell the caller there is no charge for the reclean. Escalate with notify_admin only after collecting contact details if no eligible appointment is found, the request is older than 30 days, the caller refuses a reclean and still demands a refund, or the caller is angry/escalating.
 
 Flood restoration / water damage:
 If the caller mentions flood restoration, active water damage, water extraction, burst pipe, sewage backup, flooded basement, standing water, emergency drying, or similar urgent water-damage work, do not quote or schedule it as normal carpet cleaning. Collect caller name, phone, address, and a one-sentence summary if possible. Send an urgent admin alert, then transfer to line 2 / Charles. Say: "That sounds like a water-damage situation, so I’m going to get you over to Charles directly." If the transfer fails, tell the caller the team has been alerted and Charles will follow up as soon as possible.
@@ -688,7 +691,7 @@ function addExplicitToolNodes(flow) {
     buildCustomTool(
       'tool-rabecca-quote-prepare-booking',
       'quote_and_prepare_booking',
-      'Deterministically quote a residential job, validate minimum booking rules, normalize the requested date, and return real available slots. Use this for normal residential quote and scheduling before attempting to book.',
+      'Deterministically quote a residential job, validate minimum booking rules, normalize the requested date, and return real available slots only when the job meets the minimum. Use this for normal residential quote and scheduling before attempting to book.',
       {
         type: 'object',
         properties: {
@@ -786,7 +789,7 @@ function addExplicitToolNodes(flow) {
     buildCustomTool(
       'tool-rabecca-list-caller-appointments',
       'list_caller_appointments',
-      'Look up the caller’s completed Sasquatch appointments from the last 30 days. Use this when a customer is unhappy with prior work, asks for a reclean, or needs help with a recent completed appointment.',
+      'Look up the caller’s completed Sasquatch appointments from the last 30 days by caller phone, provided phone, or order/invoice number. Use this when a customer is unhappy with prior work, says a spot came back, asks for a reclean, or requests a refund for a recent cleaning issue.',
       {
         type: 'object',
         properties: {
@@ -802,6 +805,11 @@ function addExplicitToolNodes(flow) {
           appointment_status: {
             type: 'string',
             description: 'Appointment status to look up. Use completed for reclean requests.',
+          },
+          order_number: {
+            type: 'string',
+            description:
+              'Customer-provided order or invoice number, if available. Use this when the caller gives an order number.',
           },
         },
       },
@@ -863,9 +871,11 @@ function addExplicitToolNodes(flow) {
   const scheduleRecleanNodeId = findFunctionNodeId(flow, 'schedule_reclean')
   const notifyNodeId = findFunctionNodeId(flow, 'notify_admin')
   const bookingConfirmedNodeId = 'node-rabecca-booking-confirmed'
+  const belowMinimumEndNodeId = 'node-rabecca-below-minimum-end'
   const estimateConfirmedNodeId = 'node-rabecca-estimate-confirmed'
   const recleanIntakeNodeId = 'node-rabecca-reclean-intake'
   const recleanConfirmedNodeId = 'node-rabecca-reclean-confirmed'
+  const recleanSlotsNodeId = 'function-rabecca-reclean-calendar-slots'
   const floodIntakeNodeId = 'node-rabecca-flood-intake'
   const floodAlertNodeId = 'function-rabecca-flood-alert'
   const floodTransferNodeId = 'node-rabecca-flood-transfer-line-2'
@@ -876,15 +886,23 @@ function addExplicitToolNodes(flow) {
     id: bookingConfirmedNodeId,
     name: 'Booking Confirmed',
     instruction:
-      'Only enter this node after create_booking returned success. Say: "You are all set. Your appointment is booked for the confirmed date and time. You will receive confirmation with the details." Then end the call.',
+      'Only enter this node after book_prepared_slot returned success. Say: "You are all set. Your appointment is booked for the confirmed date and time. You will receive confirmation with the details." Then end the call.',
     displayPosition: { x: 2140, y: -186 },
+  })
+
+  upsertConversationNode(flow, {
+    id: belowMinimumEndNodeId,
+    name: 'Below Minimum Not Bookable',
+    instruction:
+      'Use this only after quote_and_prepare_booking returned a below-minimum quote and the caller declines to add enough services to reach the minimum. Say: "I understand. With that scope, I cannot schedule or hold an appointment because it is below our $150 minimum. If you decide to add enough service to meet the minimum, we can check availability and book it then." Then end the call.',
+    displayPosition: { x: 2140, y: -30 },
   })
 
   upsertConversationNode(flow, {
     id: recleanIntakeNodeId,
     name: 'Complaint / Reclean Intake',
     instruction:
-      'Handle customer dissatisfaction with prior work. Apologize briefly without blaming anyone. First use list_caller_appointments to find a completed job from the last 30 days. If a matching job is found, collect a concise issue summary and ask what day they would like the reclean. Use get_calendar_slots before offering times. After the caller chooses a real slot, call schedule_reclean. If no eligible job is found, the caller asks for a refund, or the caller is angry/escalating, call notify_admin.',
+      'Handle customer dissatisfaction with prior work, including a spot that came back. Apologize briefly without blaming anyone. If the caller asks for a refund because a spot returned, first offer a no-charge reclean appointment; do not transfer, promise a refund, or notify admin before collecting details. Collect customer name, callback phone, email, service address, order/invoice number if available, concise issue summary, and preferred reclean day. Then use list_caller_appointments to find a completed job from the last 30 days by phone or order number. If a matching job is found, use get_calendar_slots before offering times. After the caller chooses a real slot, call schedule_reclean. If no eligible job is found or the caller refuses a reclean and still demands a refund, call notify_admin with all collected details.',
     displayPosition: { x: 1060, y: 298 },
     endAfterMessage: false,
   })
@@ -957,6 +975,15 @@ function addExplicitToolNodes(flow) {
       elseNodeId: 'node-1777681751263',
       instruction: 'Checking real appointment availability.',
       displayPosition: { x: 1660, y: -186 },
+    })
+    upsertFunctionNode(flow, {
+      id: recleanSlotsNodeId,
+      name: 'Tool: Get Reclean Calendar Slots',
+      toolId: slotsToolId,
+      nextNodeId: recleanIntakeNodeId,
+      elseNodeId: recleanIntakeNodeId,
+      instruction: 'Checking real appointment availability for a no-charge reclean.',
+      displayPosition: { x: 1660, y: 298 },
     })
   }
   if (bookingToolId) {
@@ -1043,6 +1070,18 @@ function addExplicitToolNodes(flow) {
   upsertEdgeToNode(
     flow,
     'Quote and Scheduling',
+    quotePrepareNodeId,
+    'Customer adds, removes, or changes residential services, or asks for an updated quote, updated minimum status, or availability after changing services',
+  )
+  upsertEdgeToNode(
+    flow,
+    'Quote and Scheduling',
+    belowMinimumEndNodeId,
+    'Customer declines to add services after a below-minimum residential quote, asks to book below the minimum anyway, or asks for availability while refusing to meet the minimum',
+  )
+  upsertEdgeToNode(
+    flow,
+    'Quote and Scheduling',
     slotsNodeId,
     'Customer has chosen services and wants available appointment times',
   )
@@ -1070,7 +1109,7 @@ function addExplicitToolNodes(flow) {
     flow,
     'intent router',
     recleanIntakeNodeId,
-    'Customer is unhappy with prior work, wants a reclean, redo, warranty visit, or complaint help',
+    'Customer is unhappy with prior work, says a spot came back, wants a refund for a recent cleaning issue, wants a reclean, redo, warranty visit, or complaint help',
   )
   upsertEdgeToNode(
     flow,
@@ -1111,7 +1150,7 @@ function addExplicitToolNodes(flow) {
   upsertEdgeToNode(
     flow,
     'Complaint / Reclean Intake',
-    slotsNodeId,
+    recleanSlotsNodeId,
     'Eligible reclean job is identified and caller wants available reclean times',
   )
   upsertEdgeToNode(
@@ -1124,7 +1163,7 @@ function addExplicitToolNodes(flow) {
     flow,
     'Complaint / Reclean Intake',
     notifyNodeId,
-    'No eligible completed appointment was found, the request is outside 30 days, refund/dispute is requested, or caller is angry/escalating',
+    'No eligible completed appointment was found after collecting customer details, request is outside 30 days, caller refuses a no-charge reclean and still demands a refund, or caller is angry/escalating',
   )
   upsertEdgeToNode(
     flow,
@@ -1168,7 +1207,7 @@ function buildSelfServeSandboxFlow(flow) {
   updateNodeInstruction(
     nextFlow,
     'intent router',
-    'Determine the caller intent and route them. Scheduling, pricing, and residential booking go to Residential Intake. Commercial work goes to Commercial Intake. Flood restoration, active water damage, water extraction, burst pipes, sewage backups, flooded basements, standing water, and emergency drying go to Flood / Water Damage Transfer. Complaints, unhappy customers, recleans, redos, and warranty visits go to Complaint / Reclean Intake. Existing appointment changes go to Existing Appointment Help. Simple service questions should be answered directly when possible. Spam or sales calls go to Spam End.',
+    'Determine the caller intent and route them. Scheduling, pricing, and residential booking go to Residential Intake. Commercial work goes to Commercial Intake. Flood restoration, active water damage, water extraction, burst pipes, sewage backups, flooded basements, standing water, and emergency drying go to Flood / Water Damage Transfer. Complaints, spot came back, refund request after a recent cleaning issue, unhappy customers, recleans, redos, and warranty visits go to Complaint / Reclean Intake. Existing appointment changes go to Existing Appointment Help. Simple service questions should be answered directly when possible. Spam or sales calls go to Spam End.',
   )
   updateNodeInstruction(
     nextFlow,
@@ -1178,7 +1217,7 @@ function buildSelfServeSandboxFlow(flow) {
   updateNodeInstruction(
     nextFlow,
     'Quote and Scheduling',
-    'Use the result from quote_and_prepare_booking as the source of truth. Read its caller_script when helpful. If it says the job is below the minimum, explain the minimum and ask whether they want to add another service; do not offer to book yet. If it returns slots, offer only those slots. Reuse any name, phone, email, address, date, and service details the customer already provided. Before calling book_prepared_slot, confirm one concise summary if any contact details were spoken unclearly: service, selected slot, customer name, phone, email, and full address. Convert spelled-out email into normal email format before sending the tool. After the customer chooses one returned slot and all required fields are collected, call book_prepared_slot. NEVER say the customer is booked unless book_prepared_slot returned success in this conversation. If book_prepared_slot fails, read the failure/next step and do not say booked.',
+    'Use the result from quote_and_prepare_booking as the source of truth. Read its caller_script when helpful. If it says the job is below the minimum, state the updated total and the amount still needed. Do not offer dates, times, or say you are checking availability while meets_minimum=false or can_offer_slots=false. If the caller asks for the earliest date while below minimum, say you cannot check or hold appointment availability until the job reaches the $150 minimum, then ask what service they want to add or whether they want to stop there. If the caller adds another service, call quote_and_prepare_booking again with all previous services plus the added service. If it returns slots, offer only those slots. Reuse any name, phone, email, address, date, and service details the customer already provided. Before calling book_prepared_slot, confirm one concise summary if any contact details were spoken unclearly: service, selected slot, customer name, phone, email, and full address. Convert spelled-out email into normal email format before sending the tool. After the customer chooses one returned slot and all required fields are collected, call book_prepared_slot. NEVER say the customer is booked unless book_prepared_slot returned success in this conversation. If book_prepared_slot fails, read the failure/next step and do not say booked.',
   )
   updateNodeInstruction(
     nextFlow,
@@ -1266,7 +1305,7 @@ function buildSelfServeSandboxFlow(flow) {
     }
     if (tool.name === 'list_caller_appointments') {
       tool.description =
-        'Look up the caller’s completed appointments from the last 30 days before scheduling a reclean, redo, or warranty visit.'
+        'Look up the caller’s completed appointments from the last 30 days by phone or order/invoice number before scheduling a reclean, redo, or warranty visit.'
     }
     if (tool.name === 'schedule_reclean') {
       tool.description =
