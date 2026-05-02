@@ -252,13 +252,17 @@ function parseAddressString(value: string): RebeccaAddressArgs {
   const street1 = parts[0] || value.trim()
   const city = parts[1] || ''
   const stateZip = parts.slice(2).join(' ')
-  const stateZipMatch = /\b([A-Za-z]{2})\b\s+(\d{5}(?:-\d{4})?)/.exec(stateZip)
+  const zipMatch = /\b(\d{5}(?:-\d{4})?)\b/.exec(stateZip)
+  const stateMatch = /\b([A-Za-z]{2}|Colorado|Colo\.?)\b/i.exec(stateZip)
+  const stateValue = stateMatch?.[1] || ''
 
   return {
     street_1: street1,
     city,
-    state: stateZipMatch?.[1]?.toUpperCase() || 'CO',
-    zip_code: stateZipMatch?.[2] || '',
+    state: /^co(?:lorado|lo\.?)?$/i.test(stateValue)
+      ? 'CO'
+      : stateValue.toUpperCase() || 'CO',
+    zip_code: zipMatch?.[1] || '',
   }
 }
 
@@ -728,7 +732,12 @@ async function createBooking(
     admin_heading: REBECCA_RETELL_CONFIG.adminHeading,
   })
 
-  if (!result.ok) return response(false, result.error)
+  if (!result.ok) {
+    return response(
+      false,
+      `Booking was NOT created: ${result.error}. Do not tell the caller they are booked. Resolve this issue or offer the returned next step.`,
+    )
+  }
   return response(true, result.message, result)
 }
 
