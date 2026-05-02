@@ -12,46 +12,6 @@ import sharp from 'sharp'
 
 type Params = { params: Promise<{ id: string }> }
 
-async function geocodeAddress(
-  street: string,
-  city: string,
-  state: string,
-  zip: string,
-): Promise<{
-  lat: number
-  lng: number
-  resolvedCity: string
-  neighborhood: string
-} | null> {
-  const query = encodeURIComponent(`${street}, ${city}, ${state} ${zip}, USA`)
-  const url = `https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1&addressdetails=1`
-
-  try {
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'SasquatchCarpetCleaning/1.0 (sasquatchcc719@gmail.com)',
-      },
-    })
-    const results = await response.json()
-    if (!Array.isArray(results) || results.length === 0) return null
-
-    const result = results[0]
-    const addr = result.address ?? {}
-    const resolvedCity =
-      addr.city ?? addr.town ?? addr.village ?? addr.hamlet ?? city
-    const neighborhood = addr.neighbourhood ?? addr.suburb ?? addr.county ?? ''
-
-    return {
-      lat: parseFloat(result.lat),
-      lng: parseFloat(result.lon),
-      resolvedCity,
-      neighborhood,
-    }
-  } catch {
-    return null
-  }
-}
-
 async function resolveServiceId(
   supabase: ReturnType<typeof createAdminClient>,
   lineItemNames: string[],
@@ -130,6 +90,8 @@ export async function POST(request: NextRequest, { params }: Params) {
           quoted_total,
           on_my_way_at,
           completed_at,
+          gps_lat,
+          gps_lng,
           ops_service_addresses (
             street_1, city, state, zip_code
           ),
@@ -203,17 +165,34 @@ export async function POST(request: NextRequest, { params }: Params) {
       ),
     })
 
-    // Geocode
-    const geo = await geocodeAddress(
-      address.street_1,
-      address.city,
-      address.state,
-      address.zip_code,
+    const capturedLat = Number(
+      (appointment as { gps_lat?: number | string | null }).gps_lat,
     )
-    const lat = geo?.lat ?? 38.8339
-    const lng = geo?.lng ?? -104.8214
-    const resolvedCity = geo?.resolvedCity ?? address.city
-    const neighborhood = geo?.neighborhood ?? ''
+    const capturedLng = Number(
+      (appointment as { gps_lng?: number | string | null }).gps_lng,
+    )
+    const hasCapturedGps =
+      Number.isFinite(capturedLat) &&
+      Number.isFinite(capturedLng) &&
+      capturedLat >= -90 &&
+      capturedLat <= 90 &&
+      capturedLng >= -180 &&
+      capturedLng <= 180
+
+    if (!hasCapturedGps) {
+      return NextResponse.json(
+        {
+          error:
+            'Capture GPS on the invoice before publishing so the map pin uses the job-site location.',
+        },
+        { status: 400 },
+      )
+    }
+
+    const lat = capturedLat
+    const lng = capturedLng
+    const resolvedCity = address.city
+    const neighborhood = ''
 
     const fuzzOffset = 0.002
     const fuzzLat = lat + (Math.random() - 0.5) * fuzzOffset

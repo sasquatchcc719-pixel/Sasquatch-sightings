@@ -446,6 +446,32 @@ function isAcknowledgmentOnlyMessage(text: string): boolean {
   )
 }
 
+function isSmsReactionOnlyMessage(text: string): boolean {
+  const trimmed = text.trim()
+  if (!trimmed) return false
+
+  const reactionVerbs = [
+    'Liked',
+    'Loved',
+    'Disliked',
+    'Laughed at',
+    'Emphasized',
+    'Questioned',
+  ]
+  const quoteChars = String.raw`["“”'‘’]`
+  const quotedReaction = new RegExp(
+    `^(?:${reactionVerbs.join('|')})\\s+${quoteChars}[\\s\\S]+${quoteChars}\\.?$`,
+    'i',
+  )
+  if (quotedReaction.test(trimmed)) return true
+
+  const attachmentReaction = new RegExp(
+    `^(?:${reactionVerbs.join('|')})\\s+(?:an?|the)\\s+(?:image|photo|picture|video|attachment)\\.?$`,
+    'i',
+  )
+  return attachmentReaction.test(trimmed)
+}
+
 function shouldHoldForHuman(params: {
   latestUserMessage: string
   messages: ConversationMessageRecord[]
@@ -1224,6 +1250,7 @@ export async function POST(request: NextRequest) {
     // answering their real question, one answering the boilerplate). We save
     // the boilerplate for context but skip AI generation.
     const isLsaDisclaimer = isLsaDisclaimerText(messageBody)
+    const isSmsReaction = isSmsReactionOnlyMessage(messageBody)
 
     // Add customer message to conversation history
     messages.push({
@@ -1246,6 +1273,7 @@ export async function POST(request: NextRequest) {
         to_number: toNumber || null,
         channel_key: channelKey,
         is_lsa_disclaimer: isLsaDisclaimer,
+        is_sms_reaction: isSmsReaction,
       },
     })
 
@@ -1253,6 +1281,15 @@ export async function POST(request: NextRequest) {
       console.log(
         `[SMS] LSA disclaimer detected — saving to history but skipping AI response`,
       )
+      await supabase
+        .from('conversations')
+        .update({ messages, updated_at: new Date().toISOString() })
+        .eq('id', conversation.id)
+      return emptyTwiml
+    }
+
+    if (isSmsReaction) {
+      console.log('[SMS] Reaction-only inbound detected, no reply sent')
       await supabase
         .from('conversations')
         .update({ messages, updated_at: new Date().toISOString() })

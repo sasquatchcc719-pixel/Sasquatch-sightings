@@ -189,7 +189,8 @@ Prefer single-file or single-test runs during iteration. Full suites are for the
 
 When the user corrects your approach, append a one-line rule here before ending the session. Write it concretely ("Always use X for Y"), never abstractly ("be careful with Y"). If an existing line already covers the correction, tighten it instead of adding a new one. Remove lines when the underlying issue goes away (model upgrades, refactors, process changes).
 
-- (empty)
+- Keep each AI agent's orchestration layer isolated; reuse shared low-level business primitives, not another agent's executor or wrapper.
+- For Rabecca repairs, update all affected surfaces together: backend tools, Retell flow/tool wiring, and `docs/RABECCA-VOICE-KNOWLEDGE.md` / Retell knowledge base.
 
 ---
 

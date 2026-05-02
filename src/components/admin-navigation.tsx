@@ -246,6 +246,13 @@ export function AdminNavigation() {
       description: 'Smart field copilot with confirmation-gated actions',
     },
     {
+      name: 'Rabecca Voice',
+      href: '/admin/rabecca',
+      icon: Phone,
+      active: pathname === '/admin/rabecca',
+      description: 'Voice agent tool logs and booking audit trail',
+    },
+    {
       name: 'AI Chats',
       href: '/admin/conversations?source=ai_chats',
       icon: MessageSquare,

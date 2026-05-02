@@ -40,7 +40,7 @@ export type CreateAiStyleBookingInput = {
   line_items: AiStyleBookingLineRequest[]
   /** 'direct' → booked; otherwise pending_approval */
   booking_mode: 'direct' | 'request'
-  booking_channel: 'ai_agent' | 'sms_harry' | 'lsa_sms'
+  booking_channel: 'ai_agent' | 'sms_harry' | 'lsa_sms' | 'retell_rabecca'
   /** Shown on appointment.source */
   source_label: string
   /** ops_appointments.lead_source */

@@ -41,3 +41,6 @@ yarn-error.log*
 # swc
 .swcscripts/
 .env.vercel.production
+
+# Retell config exports and local bridge artifacts
+.retell/
