@@ -296,6 +296,16 @@ function normalizePhone(value: string): string {
   return value.trim()
 }
 
+function appointmentLookbackDays(args: Record<string, unknown>): number {
+  return Math.max(1, Math.min(numberArg(args, 'lookback_days') || 730, 1095))
+}
+
+function appointmentLookupStatuses(args: Record<string, unknown>): string[] {
+  const status = stringArg(args, 'appointment_status')
+  if (status && status !== 'completed') return [status]
+  return ['completed', 'booked', 'confirmed']
+}
+
 function normalizeServiceCity(city: string, zipCode: string): string {
   const value = city.trim()
   const compact = value.toLowerCase().replace(/[^a-z]/g, '')
@@ -804,7 +814,9 @@ async function findRecentCompletedAppointments(
     ''
   const variants = opsPhoneLookupVariants(lookupPhone)
 
-  if (variants.length === 0) return []
+  if (variants.length === 0) {
+    return findCompletedAppointmentsByContactDetails(args, context)
+  }
 
   const { data: customers, error: customerError } = await context.supabase
     .from('ops_customers')
@@ -814,14 +826,13 @@ async function findRecentCompletedAppointments(
 
   if (customerError) throw customerError
   const customerIds = (customers || []).map((customer) => customer.id)
-  if (customerIds.length === 0) return []
+  if (customerIds.length === 0) {
+    return findCompletedAppointmentsByContactDetails(args, context)
+  }
 
-  const lookbackDays = Math.max(
-    1,
-    Math.min(numberArg(args, 'lookback_days') || 30, 90),
-  )
-  const status = stringArg(args, 'appointment_status') || 'completed'
-  const { data, error } = await context.supabase
+  const lookbackDays = appointmentLookbackDays(args)
+  const statuses = appointmentLookupStatuses(args)
+  let query = context.supabase
     .from('ops_appointments')
     .select(
       `
@@ -860,15 +871,171 @@ async function findRecentCompletedAppointments(
     `,
     )
     .in('customer_id', customerIds)
-    .eq('status', status)
-    .gte('appointment_date', daysAgoIsoDate(lookbackDays))
+    .in('status', statuses)
     .lte('appointment_date', todayIsoDate())
     .order('appointment_date', { ascending: false })
     .order('start_time', { ascending: false })
     .limit(5)
 
+  const originalDate = originalServiceDateArg(args)
+  query = originalDate
+    ? query.eq('appointment_date', originalDate)
+    : query.gte('appointment_date', daysAgoIsoDate(lookbackDays))
+
+  const { data, error } = await query
+
   if (error) throw error
-  return (data || []) as PriorAppointmentRow[]
+  const appointments = (data || []) as PriorAppointmentRow[]
+  return appointments.length > 0
+    ? appointments
+    : findCompletedAppointmentsByContactDetails(args, context)
+}
+
+function originalServiceDateArg(args: Record<string, unknown>): string {
+  const value =
+    stringArg(args, 'original_service_date') ||
+    stringArg(args, 'original_appointment_date') ||
+    stringArg(args, 'prior_service_date')
+  return isValidIsoDate(value) ? value : ''
+}
+
+function contactLookupArgs(args: Record<string, unknown>): {
+  customerName: string
+  customerEmail: string
+  serviceAddress: string
+} {
+  const customer = asRecord(args.customer)
+  return {
+    customerName:
+      stringArg(args, 'customer_name') ||
+      stringArg(args, 'name') ||
+      stringArg(customer, 'full_name') ||
+      [stringArg(customer, 'first_name'), stringArg(customer, 'last_name')]
+        .filter(Boolean)
+        .join(' '),
+    customerEmail:
+      normalizeSpokenEmail(stringArg(args, 'customer_email')) ||
+      normalizeSpokenEmail(stringArg(args, 'email')) ||
+      normalizeSpokenEmail(stringArg(customer, 'email')),
+    serviceAddress:
+      stringArg(args, 'service_address') ||
+      stringArg(args, 'address') ||
+      stringArg(asRecord(args.address), 'street_1'),
+  }
+}
+
+async function findCompletedAppointmentsByContactDetails(
+  args: Record<string, unknown>,
+  context: RebeccaToolContext,
+): Promise<PriorAppointmentRow[]> {
+  const { customerName, customerEmail, serviceAddress } =
+    contactLookupArgs(args)
+  const customerIds = new Set<string>()
+
+  if (customerEmail) {
+    const { data, error } = await context.supabase
+      .from('ops_customers')
+      .select('id')
+      .ilike('email', customerEmail)
+      .limit(10)
+    if (error) throw error
+    for (const customer of data || []) customerIds.add(customer.id)
+  }
+
+  if (customerName) {
+    const compactName = customerName.replace(/[%,]/g, ' ').trim()
+    const { data, error } = await context.supabase
+      .from('ops_customers')
+      .select('id')
+      .ilike('full_name', `%${compactName}%`)
+      .limit(10)
+    if (error) throw error
+    for (const customer of data || []) customerIds.add(customer.id)
+  }
+
+  const addressIds = new Set<string>()
+  if (serviceAddress) {
+    const parsedAddress = parseAddressString(serviceAddress)
+    const street = (parsedAddress.street_1 || serviceAddress)
+      .replace(/[%,]/g, ' ')
+      .trim()
+    const { data, error } = await context.supabase
+      .from('ops_service_addresses')
+      .select('id')
+      .ilike('street_1', `%${street}%`)
+      .limit(20)
+    if (error) throw error
+    for (const address of data || []) addressIds.add(address.id)
+  }
+
+  if (customerIds.size === 0 && addressIds.size === 0) return []
+
+  const lookbackDays = appointmentLookbackDays(args)
+  const statuses = appointmentLookupStatuses(args)
+  let query = context.supabase
+    .from('ops_appointments')
+    .select(
+      `
+      id,
+      customer_id,
+      service_address_id,
+      appointment_date,
+      start_time,
+      end_time,
+      status,
+      quoted_total,
+      source,
+      lead_source,
+      ops_customers!ops_appointments_customer_id_fkey (
+        id,
+        full_name,
+        first_name,
+        last_name,
+        email,
+        phone
+      ),
+      ops_service_addresses (
+        id,
+        street_1,
+        street_2,
+        city,
+        state,
+        zip_code
+      ),
+      ops_appointment_line_items (
+        name_snapshot,
+        quantity,
+        duration_minutes,
+        line_total
+      )
+    `,
+    )
+    .in('status', statuses)
+    .lte('appointment_date', todayIsoDate())
+    .order('appointment_date', { ascending: false })
+    .order('start_time', { ascending: false })
+    .limit(10)
+
+  if (customerIds.size > 0) {
+    query = query.in('customer_id', Array.from(customerIds))
+  } else {
+    query = query.in('service_address_id', Array.from(addressIds))
+  }
+
+  const originalDate = originalServiceDateArg(args)
+  query = originalDate
+    ? query.eq('appointment_date', originalDate)
+    : query.gte('appointment_date', daysAgoIsoDate(lookbackDays))
+
+  const { data, error } = await query
+  if (error) throw error
+
+  const appointments = (data || []) as PriorAppointmentRow[]
+  return addressIds.size > 0 && customerIds.size > 0
+    ? appointments.filter((appointment) =>
+        addressIds.has(appointment.service_address_id),
+      )
+    : appointments
 }
 
 async function findCompletedAppointmentById(
@@ -876,12 +1043,9 @@ async function findCompletedAppointmentById(
   appointmentId: string,
   args: Record<string, unknown>,
 ): Promise<PriorAppointmentRow | null> {
-  const lookbackDays = Math.max(
-    1,
-    Math.min(numberArg(args, 'lookback_days') || 30, 90),
-  )
-  const status = stringArg(args, 'appointment_status') || 'completed'
-  const { data, error } = await supabase
+  const lookbackDays = appointmentLookbackDays(args)
+  const statuses = appointmentLookupStatuses(args)
+  let query = supabase
     .from('ops_appointments')
     .select(
       `
@@ -920,10 +1084,15 @@ async function findCompletedAppointmentById(
     `,
     )
     .eq('id', appointmentId)
-    .eq('status', status)
-    .gte('appointment_date', daysAgoIsoDate(lookbackDays))
+    .in('status', statuses)
     .lte('appointment_date', todayIsoDate())
-    .maybeSingle()
+
+  const originalDate = originalServiceDateArg(args)
+  query = originalDate
+    ? query.eq('appointment_date', originalDate)
+    : query.gte('appointment_date', daysAgoIsoDate(lookbackDays))
+
+  const { data, error } = await query.maybeSingle()
 
   if (error) throw error
   return (data || null) as PriorAppointmentRow | null
@@ -972,7 +1141,7 @@ async function listCallerAppointments(
   if (appointments.length === 0) {
     return response(
       false,
-      'No completed appointment from the last 30 days was found. Collect the customer name, callback phone, email, service address, order number, issue summary, and preferred reclean date/time before escalating.',
+      'No prior appointment was found with the provided phone, email, name, address, order number, or original service date. Collect the customer name, callback phone, email, service address, order number if available, issue summary, and preferred reclean date/time before escalating.',
       { appointments: [] },
     )
   }
@@ -980,7 +1149,7 @@ async function listCallerAppointments(
   const summaries = appointments.map(appointmentSummary)
   return response(
     true,
-    `Found ${appointments.length} completed appointment${appointments.length === 1 ? '' : 's'} from the last 30 days. Use the most recent one unless the caller corrects you.`,
+    `Found ${appointments.length} prior appointment${appointments.length === 1 ? '' : 's'}. Use the most recent one unless the caller corrects you.`,
     {
       recommended_appointment: summaries[0],
       appointments: summaries,
@@ -1270,7 +1439,7 @@ async function scheduleReclean(
   if (!original) {
     return response(
       false,
-      'No eligible completed appointment from the last 30 days was found for this caller. Do not schedule a reclean; notify admin instead.',
+      'No matching prior appointment was found for this caller. Do not schedule a reclean; notify admin instead.',
       { appointments: recentAppointments.map(appointmentSummary) },
     )
   }

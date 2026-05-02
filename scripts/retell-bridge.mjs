@@ -455,7 +455,7 @@ Existing appointments:
 If the caller wants to change or cancel an existing appointment, collect the appointment details and requested change. If no appointment-management tool exists, use notify_admin and tell the caller: "I have the change request noted and the team will confirm it."
 
 Recleans / unhappy customers:
-If the caller is unhappy with a completed cleaning, says a spot came back, wants a redo, warranty visit, or reclean, do not default to human fallback. If they ask for a refund because a spot came back, first offer to schedule a no-charge reclean; do not transfer or escalate before collecting details. Apologize briefly, collect caller name, real callback phone, email, service address, order/invoice number if available, issue summary, and preferred reclean day. Then use list_caller_appointments to look up completed appointments from the last 30 days by phone or order number. Use the most recent completed appointment unless the caller corrects you. If eligible, call get_calendar_slots before offering times, then call schedule_reclean after the caller chooses a real slot. Only say the reclean is scheduled after schedule_reclean returns success. Tell the caller there is no charge for the reclean. Escalate with notify_admin only after collecting a real callback phone or using caller ID if no eligible appointment is found, the request is older than 30 days, the caller refuses a reclean and still demands a refund, or the caller is angry/escalating. After notify_admin succeeds, tell the caller the team has the details, no refund can be promised on the call, and Charles or the team will review and follow up as soon as possible. Ask if there is anything else they want added to the note before ending politely.
+If the caller is unhappy with a completed cleaning, says a spot came back, wants a redo, warranty visit, or reclean, do not default to human fallback. If they ask for a refund because a spot came back, first offer to schedule a no-charge reclean; do not transfer or escalate before collecting details. Apologize briefly, collect caller name, real callback phone, email, service address, order/invoice number if available, original service date if available, issue summary, and preferred reclean day. Then use list_caller_appointments to look up completed appointments by phone, email, name, address, order number, or original service date. Use the most recent completed appointment unless the caller corrects you. If eligible, call get_calendar_slots before offering times, then call schedule_reclean after the caller chooses a real slot. Only say the reclean is scheduled after schedule_reclean returns success. Tell the caller there is no charge for the reclean. Escalate with notify_admin only after collecting a real callback phone or using caller ID if no matching appointment is found, the caller refuses a reclean and still demands a refund, or the caller is angry/escalating. After notify_admin succeeds, tell the caller the team has the details and Charles or the team will review and follow up as soon as possible. Do not mention refunds unless the caller asked for a refund.
 
 Flood restoration / water damage:
 If the caller mentions flood restoration, active water damage, water extraction, burst pipe, sewage backup, flooded basement, standing water, emergency drying, or similar urgent water-damage work, do not quote or schedule it as normal carpet cleaning. Collect caller name, phone, address, and a one-sentence summary if possible. Send an urgent admin alert, then transfer to line 2 / Charles. Say: "That sounds like a water-damage situation, so I’m going to get you over to Charles directly." If the transfer fails, tell the caller the team has been alerted and Charles will follow up as soon as possible.
@@ -790,7 +790,7 @@ function addExplicitToolNodes(flow) {
     buildCustomTool(
       'tool-rabecca-list-caller-appointments',
       'list_caller_appointments',
-      'Look up the caller’s completed Sasquatch appointments from the last 30 days by caller phone, provided phone, or order/invoice number. Use this when a customer is unhappy with prior work, says a spot came back, asks for a reclean, or requests a refund for a recent cleaning issue.',
+      'Look up the caller’s prior Sasquatch appointments by caller phone, provided phone, email, customer name, service address, original service date, or order/invoice number. Use this when a customer is unhappy with prior work, says a spot came back, asks for a reclean, or requests a refund for a recent cleaning issue.',
       {
         type: 'object',
         properties: {
@@ -801,16 +801,35 @@ function addExplicitToolNodes(flow) {
           },
           lookback_days: {
             type: 'number',
-            description: 'Optional lookback window. Use 30 for direct reclean eligibility.',
+            description:
+              'Optional lookback window. Defaults broad enough to find older completed jobs when the caller provides an original service date.',
           },
           appointment_status: {
             type: 'string',
-            description: 'Appointment status to look up. Use completed for reclean requests.',
+            description:
+              'Appointment status to look up. Use completed for reclean requests; the backend may also match prior booked/confirmed jobs on the calendar.',
           },
           order_number: {
             type: 'string',
             description:
               'Customer-provided order or invoice number, if available. Use this when the caller gives an order number.',
+          },
+          customer_name: {
+            type: 'string',
+            description: 'Customer name if provided.',
+          },
+          customer_email: {
+            type: 'string',
+            description: 'Customer email if provided.',
+          },
+          service_address: {
+            type: 'string',
+            description: 'Service address where the original cleaning happened.',
+          },
+          original_service_date: {
+            type: 'string',
+            description:
+              'Original cleaning date in YYYY-MM-DD format if the caller provides it.',
           },
         },
       },
@@ -821,7 +840,7 @@ function addExplicitToolNodes(flow) {
     buildCustomTool(
       'tool-rabecca-schedule-reclean',
       'schedule_reclean',
-      'Schedule a no-charge reclean / warranty redo for the caller after a matching completed appointment from the last 30 days has been found and the caller has chosen an available time.',
+      'Schedule a no-charge reclean / warranty redo for the caller after a matching prior appointment has been found and the caller has chosen an available time.',
       {
         type: 'object',
         properties: {
@@ -846,6 +865,27 @@ function addExplicitToolNodes(flow) {
           duration_minutes: {
             type: 'number',
             description: 'Optional reclean duration. Use 120 unless the job clearly needs longer.',
+          },
+          customer_name: {
+            type: 'string',
+            description: 'Customer name if provided.',
+          },
+          customer_email: {
+            type: 'string',
+            description: 'Customer email if provided.',
+          },
+          lookup_phone: {
+            type: 'string',
+            description: 'Customer callback phone if provided.',
+          },
+          service_address: {
+            type: 'string',
+            description: 'Service address where the original cleaning happened.',
+          },
+          original_service_date: {
+            type: 'string',
+            description:
+              'Original cleaning date in YYYY-MM-DD format if the caller provides it.',
           },
         },
         required: ['appointment_date', 'start_time', 'issue_summary'],
@@ -905,7 +945,7 @@ function addExplicitToolNodes(flow) {
     id: adminFollowupNodeId,
     name: 'Admin Follow-Up Confirmed',
     instruction:
-      'Only enter this node after notify_admin succeeds. Do not hang up abruptly. Say: "I have sent those details to the team. I cannot promise a refund on this call, but Charles or the team will review it and follow up as soon as possible. I also noted that a no-charge reclean is the preferred next step if you decide you want us to come back out." Ask if there is anything else they want added to the note. If the caller asks follow-up questions, answer briefly from policy: no refund is guaranteed, no exact review time is promised, no separate case number exists unless the tool returned one, and the team will use the provided callback phone or email. If the caller has nothing else, close politely with "Thanks for calling, and I’m sorry again for the trouble. We’ll have the team review this and follow up."',
+      'Only enter this node after notify_admin succeeds. Do not hang up abruptly. Say: "I have sent those details to the team. Charles or the team will review it and follow up as soon as possible." If this is a reclean request, say: "I noted that you prefer a no-charge reclean." If the caller specifically asked for a refund, say: "I cannot promise a refund on this call." Ask if there is anything else they want added to the note. If the caller asks follow-up questions, answer briefly from policy: no exact review time is promised, no separate case number exists unless the tool returned one, and the team will use the provided callback phone or email. If the caller has nothing else, close politely with "Thanks for calling, and I’m sorry again for the trouble. We’ll have the team review this and follow up."',
     displayPosition: { x: 1880, y: 534 },
     endAfterMessage: false,
   })
@@ -922,7 +962,7 @@ function addExplicitToolNodes(flow) {
     id: recleanIntakeNodeId,
     name: 'Complaint / Reclean Intake',
     instruction:
-      'Handle customer dissatisfaction with prior work, including a spot that came back. Apologize briefly without blaming anyone. If the caller asks for a refund because a spot returned, first offer a no-charge reclean appointment; do not transfer, promise a refund, or notify admin before collecting details. Collect customer name, callback phone, email, service address, order/invoice number if available, concise issue summary, and preferred reclean day. Then use list_caller_appointments to find a completed job from the last 30 days by phone or order number. Never say you see, found, verified, or matched an order or prior job until list_caller_appointments returns success. Never call get_calendar_slots or schedule_reclean until list_caller_appointments has returned an eligible completed appointment in this conversation. If a matching job is found, use get_calendar_slots before offering times. After the caller chooses a real slot, call schedule_reclean using the recommended_appointment.id from list_caller_appointments. If no eligible job is found or the caller refuses a reclean and still demands a refund, call notify_admin with all collected details.',
+      'Handle customer dissatisfaction with prior work, including a spot that came back. Apologize briefly without blaming anyone. If the caller asks for a refund because a spot returned, first offer a no-charge reclean appointment; do not transfer, promise a refund, or notify admin before collecting details. Collect customer name, callback phone, email, service address, order/invoice number if available, original service date if available, concise issue summary, and preferred reclean day. Then use list_caller_appointments to find a prior job by phone, email, name, address, order number, or original service date. Never say you see, found, verified, or matched an order or prior job until list_caller_appointments returns success. Never call get_calendar_slots or schedule_reclean until list_caller_appointments has returned a matching prior appointment in this conversation. If a matching job is found, use get_calendar_slots before offering times. After the caller chooses a real slot, call schedule_reclean using the recommended_appointment.id from list_caller_appointments and include the caller contact/address details. If no matching job is found or the caller refuses a reclean and still demands a refund, call notify_admin with all collected details.',
     displayPosition: { x: 1060, y: 298 },
     endAfterMessage: false,
   })
@@ -1165,25 +1205,25 @@ function addExplicitToolNodes(flow) {
     flow,
     'Complaint / Reclean Intake',
     appointmentLookupNodeId,
-    'Need to look up the caller’s recent completed appointments',
+    'Need to look up the caller’s prior appointments',
   )
   upsertEdgeToNode(
     flow,
     'Complaint / Reclean Intake',
     scheduleRecleanNodeId,
-    'list_caller_appointments returned an eligible completed appointment, get_calendar_slots returned the selected reclean slot, caller asks to book or confirm that slot, and issue summary is collected',
+    'list_caller_appointments returned a matching prior appointment, get_calendar_slots returned the selected reclean slot, caller asks to book or confirm that slot, and issue summary is collected',
   )
   upsertEdgeToNode(
     flow,
     'Complaint / Reclean Intake',
     recleanSlotsNodeId,
-    'list_caller_appointments returned an eligible completed appointment and caller needs available reclean times but has not yet chosen a returned slot',
+    'list_caller_appointments returned a matching prior appointment and caller needs available reclean times but has not yet chosen a returned slot',
   )
   upsertEdgeToNode(
     flow,
     'Complaint / Reclean Intake',
     notifyNodeId,
-    'No eligible completed appointment was found after collecting customer details and a real callback phone, request is outside 30 days, caller refuses a no-charge reclean and still demands a refund, or caller is angry/escalating',
+    'No matching completed appointment was found after collecting customer details and a real callback phone, caller refuses a no-charge reclean and still demands a refund, or caller is angry/escalating',
   )
   upsertEdgeToNode(
     flow,
@@ -1379,11 +1419,11 @@ function buildSelfServeSandboxFlow(flow) {
     }
     if (tool.name === 'list_caller_appointments') {
       tool.description =
-        'Look up the caller’s completed appointments from the last 30 days by phone or order/invoice number before scheduling a reclean, redo, or warranty visit.'
+        'Look up the caller’s prior appointments by phone, email, name, address, original service date, or order/invoice number before scheduling a reclean, redo, or warranty visit.'
     }
     if (tool.name === 'schedule_reclean') {
       tool.description =
-        'Schedule a no-charge reclean / warranty redo after list_caller_appointments found an eligible completed appointment and the caller selected a real available slot.'
+        'Schedule a no-charge reclean / warranty redo after list_caller_appointments found a matching prior appointment and the caller selected a real available slot.'
     }
   }
 
