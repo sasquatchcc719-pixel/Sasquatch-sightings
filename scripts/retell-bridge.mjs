@@ -751,17 +751,25 @@ function addExplicitToolNodes(flow) {
           },
           customer: {
             type: 'object',
-            description: 'Customer name, phone, and email.',
+            description:
+              'Customer name, phone, and email. Convert spelled emails to normal format when possible, for example c l s e w e l l nine seven zero at g mail dot com becomes clsewell970@gmail.com.',
             properties: {
               name: { type: 'string' },
-              phone: { type: 'string' },
-              email: { type: 'string' },
+              phone: {
+                type: 'string',
+                description: 'Best callback number, preferably 10 digits or E.164.',
+              },
+              email: {
+                type: 'string',
+                description: 'Normal email format, not spaced-out spoken words.',
+              },
             },
             required: ['name', 'phone', 'email'],
           },
           address: {
             type: 'string',
-            description: 'Full service address including street, city, state, and ZIP.',
+            description:
+              'Full service address including street, city, state, and ZIP. Use exactly what the caller confirmed.',
           },
         },
         required: [
@@ -1170,7 +1178,7 @@ function buildSelfServeSandboxFlow(flow) {
   updateNodeInstruction(
     nextFlow,
     'Quote and Scheduling',
-    'Use the result from quote_and_prepare_booking as the source of truth. Read its caller_script when helpful. If it says the job is below the minimum, explain the minimum and ask whether they want to add another service; do not offer to book yet. If it returns slots, offer only those slots. Reuse any name, phone, email, address, date, and service details the customer already provided. After the customer chooses one returned slot and all required fields are collected, call book_prepared_slot. NEVER say the customer is booked unless book_prepared_slot returned success in this conversation. If book_prepared_slot fails, read the failure/next step and do not say booked.',
+    'Use the result from quote_and_prepare_booking as the source of truth. Read its caller_script when helpful. If it says the job is below the minimum, explain the minimum and ask whether they want to add another service; do not offer to book yet. If it returns slots, offer only those slots. Reuse any name, phone, email, address, date, and service details the customer already provided. Before calling book_prepared_slot, confirm one concise summary if any contact details were spoken unclearly: service, selected slot, customer name, phone, email, and full address. Convert spelled-out email into normal email format before sending the tool. After the customer chooses one returned slot and all required fields are collected, call book_prepared_slot. NEVER say the customer is booked unless book_prepared_slot returned success in this conversation. If book_prepared_slot fails, read the failure/next step and do not say booked.',
   )
   updateNodeInstruction(
     nextFlow,

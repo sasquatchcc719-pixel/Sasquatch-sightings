@@ -262,6 +262,49 @@ function splitCustomerName(name: string): {
   }
 }
 
+function normalizeSpokenEmail(value: string): string {
+  const replacements: Array<[RegExp, string]> = [
+    [/\bzero\b/gi, '0'],
+    [/\bone\b/gi, '1'],
+    [/\btwo\b/gi, '2'],
+    [/\bthree\b/gi, '3'],
+    [/\bfour\b/gi, '4'],
+    [/\bfive\b/gi, '5'],
+    [/\bsix\b/gi, '6'],
+    [/\bseven\b/gi, '7'],
+    [/\beight\b/gi, '8'],
+    [/\bnine\b/gi, '9'],
+    [/\bat\b/gi, '@'],
+    [/\bdot\b/gi, '.'],
+  ]
+
+  let normalized = value.trim().toLowerCase()
+  for (const [pattern, replacement] of replacements) {
+    normalized = normalized.replace(pattern, replacement)
+  }
+
+  return normalized
+    .replace(/\s+@\s+/g, '@')
+    .replace(/\s*\.\s*/g, '.')
+    .replace(/\s+/g, '')
+}
+
+function normalizePhone(value: string): string {
+  const digits = value.replace(/\D/g, '')
+  if (digits.length === 10) return `+1${digits}`
+  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`
+  return value.trim()
+}
+
+function normalizeServiceCity(city: string, zipCode: string): string {
+  const value = city.trim()
+  const compact = value.toLowerCase().replace(/[^a-z]/g, '')
+  if (zipCode === '80133' && ['palmerlake', 'pommellake'].includes(compact)) {
+    return 'Palmer Lake'
+  }
+  return value
+}
+
 function parseAddressString(value: string): RebeccaAddressArgs {
   const parts = value
     .split(',')
@@ -276,7 +319,7 @@ function parseAddressString(value: string): RebeccaAddressArgs {
 
   return {
     street_1: street1,
-    city,
+    city: normalizeServiceCity(city, zipMatch?.[1] || ''),
     state: /^co(?:lorado|lo\.?)?$/i.test(stateValue)
       ? 'CO'
       : stateValue.toUpperCase() || 'CO',
@@ -593,6 +636,8 @@ async function bookPreparedSlot(
       'Booking was NOT created: missing required fields.',
       {
         missing_fields: missingFields,
+        normalized_customer: customer,
+        normalized_address: address,
         caller_script: `I still need ${missingFields.join(
           ', ',
         )} before I can book that.`,
@@ -625,12 +670,22 @@ async function bookPreparedSlot(
     return response(false, `Booking was NOT created: ${result.error}`, {
       quote_total: prepared.subtotal,
       line_items: prepared.lineItems,
+      normalized_customer: {
+        ...customer,
+        phone: customer.phone || context.callerPhone || '',
+      },
+      normalized_address: address,
       caller_script: `I could not finalize that booking: ${result.error}`,
     })
   }
 
   return response(true, result.message, {
     ...result,
+    normalized_customer: {
+      ...customer,
+      phone: customer.phone || context.callerPhone || '',
+    },
+    normalized_address: address,
     caller_script: `You're all set for ${result.appointment_date} at ${result.start_time}. You'll receive confirmation with the details.`,
   })
 }
@@ -963,6 +1018,8 @@ function customerArgs(args: Record<string, unknown>): RebeccaCustomerArgs {
   const customer = asRecord(args.customer)
   const fullName = stringArg(customer, 'name') || stringArg(args, 'name')
   const parsedName = splitCustomerName(fullName)
+  const email = stringArg(customer, 'email') || stringArg(args, 'email')
+  const phone = stringArg(customer, 'phone') || stringArg(args, 'phone')
   return {
     first_name:
       stringArg(customer, 'first_name') ||
@@ -972,8 +1029,8 @@ function customerArgs(args: Record<string, unknown>): RebeccaCustomerArgs {
       stringArg(customer, 'last_name') ||
       stringArg(args, 'last_name') ||
       parsedName.lastName,
-    email: stringArg(customer, 'email') || stringArg(args, 'email'),
-    phone: stringArg(customer, 'phone') || stringArg(args, 'phone'),
+    email: normalizeSpokenEmail(email),
+    phone: normalizePhone(phone),
     business_name:
       stringArg(customer, 'business_name') ||
       stringArg(args, 'business_name') ||
@@ -987,11 +1044,13 @@ function addressArgs(args: Record<string, unknown>): RebeccaAddressArgs {
   }
 
   const address = asRecord(args.address)
+  const zipCode = stringArg(address, 'zip_code') || stringArg(args, 'zip_code')
+  const city = stringArg(address, 'city') || stringArg(args, 'city')
   return {
     street_1: stringArg(address, 'street_1') || stringArg(args, 'street_1'),
-    city: stringArg(address, 'city') || stringArg(args, 'city'),
+    city: normalizeServiceCity(city, zipCode),
     state: stringArg(address, 'state') || stringArg(args, 'state') || 'CO',
-    zip_code: stringArg(address, 'zip_code') || stringArg(args, 'zip_code'),
+    zip_code: zipCode,
   }
 }
 
