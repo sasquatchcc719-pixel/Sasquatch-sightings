@@ -498,6 +498,17 @@ function numberArgFromKeys(
   return null
 }
 
+function serviceRequestText(args: Record<string, unknown>): string {
+  return [
+    stringArg(args, 'service_request'),
+    stringArg(args, 'service_summary'),
+    stringArg(args, 'requested_services'),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+}
+
 function addPreparedLineItemsFromRawInputs(
   items: PreparedLineItem[],
   catalog: CatalogItem[],
@@ -534,6 +545,12 @@ async function prepareResidentialBookingQuote(
 > {
   const catalog = await loadRabeccaBookableCatalog(context.supabase)
   const lineItems: PreparedLineItem[] = []
+  const serviceRequest = serviceRequestText(args)
+  const requestMentionsTile = /\b(tile|grout|hard\s*surface)\b/.test(
+    serviceRequest,
+  )
+  const requestMentionsCarpet =
+    /\b(carpet|bedroom|living room|hall|stairs)\b/.test(serviceRequest)
   const regularRoom = catalogBySlug(
     catalog,
     'regular-size-room-100-to-200-sqft',
@@ -595,6 +612,14 @@ async function prepareResidentialBookingQuote(
     'grout_sqft',
     'hard_surface_sqft',
   ])
+  const inferredTileGroutSquareFeet =
+    tileGroutSquareFeet ||
+    (requestMentionsTile && !requestMentionsCarpet
+      ? livingRoomSquareFeet
+      : null)
+  const carpetLivingRoomSquareFeet =
+    requestMentionsTile && !requestMentionsCarpet ? null : livingRoomSquareFeet
+  const carpetHalls = requestMentionsTile && !requestMentionsCarpet ? 0 : halls
   const customRugSquareFeet = numberArgFromKeys(args, [
     'rug_sqft',
     'area_rug_sqft',
@@ -631,7 +656,7 @@ async function prepareResidentialBookingQuote(
 
   addPreparedLineItemsFromRawInputs(lineItems, catalog, args.line_items)
   addPreparedLineItem(lineItems, regularRoom, bedrooms)
-  addPreparedLineItem(lineItems, hall, halls)
+  addPreparedLineItem(lineItems, hall, carpetHalls)
   addPreparedLineItem(lineItems, steps, stepCount)
   addPreparedLineItem(lineItems, sofa, couchCount)
   addPreparedLineItem(lineItems, loveseat, loveseatCount)
@@ -662,7 +687,7 @@ async function prepareResidentialBookingQuote(
       catalog,
       'tile-grout-cleaning-per-foot-pre-scrub-and-clean-with-hydroforce',
     ),
-    tileGroutSquareFeet || 0,
+    inferredTileGroutSquareFeet || 0,
   )
   addPreparedLineItem(
     lineItems,
@@ -742,11 +767,11 @@ async function prepareResidentialBookingQuote(
     preVacuumingRooms,
   )
 
-  if (livingRoomSquareFeet && livingRoomSquareFeet > 0) {
+  if (carpetLivingRoomSquareFeet && carpetLivingRoomSquareFeet > 0) {
     addPreparedLineItem(
       lineItems,
-      catalogBySlug(catalog, roomSlugForSquareFeet(livingRoomSquareFeet)),
-      livingRoomSquareFeet > 800 ? livingRoomSquareFeet : 1,
+      catalogBySlug(catalog, roomSlugForSquareFeet(carpetLivingRoomSquareFeet)),
+      carpetLivingRoomSquareFeet > 800 ? carpetLivingRoomSquareFeet : 1,
     )
   }
 

@@ -592,6 +592,66 @@ Be clear that you want all four services included and ask for next week's availa
   return definition
 }
 
+async function createTileOnlyQuoteCorrectionTestDefinition(args) {
+  const definition = await retellRequest('/create-test-case-definition', {
+    method: 'POST',
+    body: {
+      name: args.name,
+      response_engine: {
+        type: 'conversation-flow',
+        conversation_flow_id: args.flowId,
+        version: args.flowVersion,
+      },
+      llm_model: 'gpt-5.1',
+      user_prompt: `## Identity
+Your name is Rick James.
+
+## Goal
+Ask to book tile and grout cleaning for your home.
+When asked for square footage, say it is about 400 square feet.
+When asked about specific concerns, say no.
+Ask for the price per foot if the assistant gives a total.`,
+      metrics: [
+        'The agent calls quote_and_prepare_booking with tile_grout_sqft or a tile/grout service_request for the 400 square feet.',
+        'The agent does not call quote_and_prepare_booking with living_room_sqft or hall_count as the only representation of the tile/grout job.',
+        'The agent quotes $300 for 400 square feet of tile and grout at $0.75 per square foot.',
+        'The agent does not first quote $163 or any carpet-room total for the tile/grout job.',
+      ],
+      tool_mocks: [
+        {
+          tool_name: 'quote_and_prepare_booking',
+          input_match_rule: { type: 'any' },
+          output: JSON.stringify({
+            success: true,
+            message: 'Estimated total is $300.',
+            data: {
+              quote_total: 300,
+              minimum_booking_amount: 150,
+              meets_minimum: true,
+              can_offer_slots: false,
+              line_items: [
+                {
+                  service_name:
+                    'Tile & grout cleaning (per Foot) pre-scrub and clean with Hydroforce',
+                  quantity: 400,
+                  unit_price: 0.75,
+                  total: 300,
+                },
+              ],
+              caller_script:
+                'The estimate is $300 for 400 square feet of tile and grout cleaning.',
+            },
+          }),
+        },
+      ],
+      dynamic_variables: {},
+    },
+  })
+
+  console.log(JSON.stringify(definition, null, 2))
+  return definition
+}
+
 async function createFloodRestorationBlockedTestDefinition(args) {
   const definition = await retellRequest('/create-test-case-definition', {
     method: 'POST',
@@ -1006,6 +1066,10 @@ async function runRegressionSuite(args) {
     createTileCarpetCouchAddOnTestDefinition({
       ...args,
       name: `Rabecca regression tile carpet couch add-on ${timestamp}`,
+    }),
+    createTileOnlyQuoteCorrectionTestDefinition({
+      ...args,
+      name: `Rabecca regression tile-only quote correction ${timestamp}`,
     }),
     createFloodRestorationBlockedTestDefinition({
       ...args,

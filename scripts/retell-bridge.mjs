@@ -704,6 +704,11 @@ function removeBrokenOrphanEdges(flow) {
 
 function rabeccaQuoteToolProperties() {
   return {
+    service_request: {
+      type: 'string',
+      description:
+        'Plain-English summary of what the customer asked to clean. Always include this. Example: "400 square feet of tile and grout cleaning". This lets the backend prevent category mixups.',
+    },
     line_items: {
       type: 'array',
       description:
@@ -726,11 +731,12 @@ function rabeccaQuoteToolProperties() {
     living_room_sqft: {
       type: 'number',
       description:
-        'Approximate square footage for one standard carpeted living room or open area.',
+        'Approximate square footage for one standard carpeted living room or open carpet area only. Never use this for tile/grout, rugs, or hard surfaces.',
     },
     tile_grout_sqft: {
       type: 'number',
-      description: 'Square footage for residential tile and grout cleaning.',
+      description:
+        'Square footage for residential tile and grout cleaning. If the caller asks for tile or grout, put the square footage here, not in living_room_sqft or hall_count.',
     },
     rug_sqft: {
       type: 'number',
@@ -1450,7 +1456,7 @@ function buildSelfServeSandboxFlow(flow) {
   updateNodeInstruction(
     nextFlow,
     'Residential Intake',
-    'Handle residential quote-first intake. Ask one question at a time. First ask what they need cleaned. If they mention flood restoration, active water damage, water extraction, burst pipes, sewage backup, flooded basement, standing water, or emergency drying, route to Flood / Water Damage Transfer and do not quote or schedule as normal cleaning. For normal pricing or scheduling, collect only service details first: standard or Legendary/deep carpet rooms and large-room square footage, halls/closets/bathrooms, stairs, tile/grout square footage, rug size or square footage, upholstery type/count, pet urine or odor concerns, deodorizer, and normal add-ons. Once you have enough details, call quote_and_prepare_booking with the complete service list. Do not quote from memory and do not call separate catalog/calendar tools for normal booking.',
+    'Handle residential quote-first intake. Ask one question at a time. First ask what they need cleaned. If they mention flood restoration, active water damage, water extraction, burst pipes, sewage backup, flooded basement, standing water, or emergency drying, route to Flood / Water Damage Transfer and do not quote or schedule as normal cleaning. For normal pricing or scheduling, collect only service details first: standard or Legendary/deep carpet rooms and large-room square footage, halls/closets/bathrooms, stairs, tile/grout square footage, rug size or square footage, upholstery type/count, pet urine or odor concerns, deodorizer, and normal add-ons. Once you have enough details, call quote_and_prepare_booking with service_request plus the complete service list. If the caller asks for tile/grout, use tile_grout_sqft and never use living_room_sqft or hall_count for that square footage. Do not quote from memory and do not call separate catalog/calendar tools for normal booking.',
   )
   updateNodeInstruction(
     nextFlow,
