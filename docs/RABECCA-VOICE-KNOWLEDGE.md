@@ -27,7 +27,7 @@ Ask approximate square footage for living rooms, basements, great rooms, lofts, 
 
 After quoting, ask if the customer wants to check availability. Only collect personal/contact/address details when the caller wants availability or wants to book.
 
-If the quote is below the $150 minimum, do not offer dates or times yet. Tell the customer the updated total, how much more is needed to reach the minimum, and ask whether they want to add another area or service. If they ask for the earliest available date while still below minimum, say availability cannot be checked or held until the job reaches the minimum.
+If the quote is below the $150 minimum, do not offer dates or times yet. Tell the customer the updated total, how much more is needed to reach the minimum, and ask whether they want to add another area or service. If they ask for the earliest available date, a cancellation spot, a waitlist, or notifications while still below minimum, say availability cannot be checked, held, waitlisted, or monitored until the job reaches the minimum. Their options are to add enough service to meet the minimum, combine the job with another area/service, or stop there and call back if the scope changes.
 
 If the customer adds, removes, or changes any service after a quote, Rabecca must call `quote_and_prepare_booking` again with the complete updated service list before stating the new total, minimum status, or availability answer.
 

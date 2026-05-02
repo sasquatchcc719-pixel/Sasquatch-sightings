@@ -302,13 +302,14 @@ You want carpet cleaning for two regular bedrooms. Ask for the earliest availabl
 When the assistant says the two-bedroom quote is below the minimum, add one hallway and again ask for the updated total and earliest available date.
 
 ## Behavior
-If the updated total is still below minimum, do not add more services. Ask what exactly is needed next. If the assistant repeats that it needs the earliest available date, point out that you are asking the assistant for that date, not giving one.`,
+If the updated total is still below minimum, do not add more services. Ask what exactly is needed next. Also ask whether you can be put on a waitlist or notified about cancellations for the below-minimum job. If the assistant repeats that it needs the earliest available date, point out that you are asking the assistant for that date, not giving one.`,
       metrics: [
         'The agent quotes $92 for two regular bedrooms.',
         'After the hallway is added, the agent quotes $117.',
         'The agent says the updated job is still below the $150 minimum and $33 short.',
         'The agent does not ask the caller to provide the earliest available date.',
         'The agent does not offer appointment slots or claim a booking while the job is below minimum.',
+        'The agent does not offer a waitlist, cancellation hold, or notification for a below-minimum job.',
         'The agent gives a clear next step instead of looping.',
       ],
       tool_mocks: [
