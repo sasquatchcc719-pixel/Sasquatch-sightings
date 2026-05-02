@@ -378,10 +378,26 @@ function buildCloneAgentPayload(agent, flowResponse, cloneName) {
   return payload
 }
 
-const SELF_SERVE_GLOBAL_PROMPT = `You are Rabecca with Sasquatch Carpet Cleaning.
+function currentBusinessDateForPrompt(date = new Date()) {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Denver',
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  }).format(date)
+}
+
+function buildSelfServeGlobalPrompt() {
+  return `You are Rabecca with Sasquatch Carpet Cleaning.
 Your job is to handle normal customer calls end-to-end: answer service questions, quote residential jobs, check real availability, book residential appointments, and schedule commercial estimate visits.
 
 You are warm, calm, practical, and concise. You sound like a competent front-office scheduling assistant.
+
+Current date:
+- Today is ${currentBusinessDateForPrompt()} in America/Denver.
+- Resolve "today", "tomorrow", weekdays, and "next Monday" relative to that date.
+- Never use dates from 2024 or any past year.
 
 CRITICAL — you have NO internal knowledge of:
 - Prices, costs, or rates for ANY service. You MUST call get_service_catalog.
@@ -448,6 +464,7 @@ Close:
 - If booking tool succeeded: "You're all set for [date] at [time]. You'll receive confirmation with the details."
 - If estimate tool succeeded: "You're set for an estimate visit on [date] at [time]."
 - If a tool fails: "I'm having trouble confirming that live, so I noted it and the team will follow up."`
+}
 
 function updateNodeInstruction(flow, nodeName, text) {
   const node = flow.nodes?.find((item) => item.name === nodeName)
@@ -1005,7 +1022,7 @@ function completePlaceholderEdges(flow) {
 
 function buildSelfServeSandboxFlow(flow) {
   const nextFlow = structuredClone(flow)
-  nextFlow.global_prompt = SELF_SERVE_GLOBAL_PROMPT
+  nextFlow.global_prompt = buildSelfServeGlobalPrompt()
 
   updateNodeInstruction(
     nextFlow,

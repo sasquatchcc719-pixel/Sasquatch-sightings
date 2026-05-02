@@ -127,7 +127,7 @@ function addMinutesToTime(value: string, minutesToAdd: number): string {
 }
 
 function todayIsoDate(): string {
-  return new Date().toISOString().slice(0, 10)
+  return businessDateParts().iso
 }
 
 function daysAgoIsoDate(days: number): string {
@@ -145,6 +145,92 @@ function normalizeLookup(value: string): string {
 
 function catalogSearchTerm(value: string): string {
   return value.replace(/[%,]/g, ' ').trim()
+}
+
+function businessDateParts(date = new Date()): {
+  iso: string
+  year: number
+  month: number
+  day: number
+} {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Denver',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date)
+  const value = (type: string) =>
+    parts.find((part) => part.type === type)?.value || ''
+  const year = Number(value('year'))
+  const month = Number(value('month'))
+  const day = Number(value('day'))
+
+  return {
+    iso: `${String(year).padStart(4, '0')}-${String(month).padStart(
+      2,
+      '0',
+    )}-${String(day).padStart(2, '0')}`,
+    year,
+    month,
+    day,
+  }
+}
+
+function isValidIsoDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (!match) return false
+
+  const [, year, month, day] = match
+  const parsed = new Date(`${value}T12:00:00Z`)
+  return (
+    parsed.getUTCFullYear() === Number(year) &&
+    parsed.getUTCMonth() + 1 === Number(month) &&
+    parsed.getUTCDate() === Number(day)
+  )
+}
+
+function normalizeRequestedDate(value: string):
+  | {
+      ok: true
+      date: string
+      normalizedFrom?: string
+    }
+  | {
+      ok: false
+      message: string
+    } {
+  const today = businessDateParts()
+  if (!isValidIsoDate(value)) {
+    return {
+      ok: false,
+      message: `date must be a real date in YYYY-MM-DD format. Today's date is ${today.iso} in America/Denver. Ask the caller for the appointment date again if needed.`,
+    }
+  }
+
+  const [, inputYear, inputMonth, inputDay] =
+    /^(\d{4})-(\d{2})-(\d{2})$/.exec(value) || []
+  let normalized = value
+
+  if (Number(inputYear) < today.year) {
+    const currentYearCandidate = `${today.year}-${inputMonth}-${inputDay}`
+    normalized =
+      currentYearCandidate >= today.iso
+        ? currentYearCandidate
+        : `${today.year + 1}-${inputMonth}-${inputDay}`
+  }
+
+  if (normalized < today.iso) {
+    return {
+      ok: false,
+      message: `The requested appointment date ${value} is in the past. Today's date is ${today.iso} in America/Denver. Ask the caller for a future appointment date.`,
+    }
+  }
+
+  return {
+    ok: true,
+    date: normalized,
+    ...(normalized === value ? {} : { normalizedFrom: value }),
+  }
 }
 
 function splitCustomerName(name: string): {
@@ -270,10 +356,10 @@ async function getCalendarSlots(
   args: Record<string, unknown>,
   context: RebeccaToolContext,
 ): Promise<RetellFunctionResponse> {
-  const date = stringArg(args, 'date')
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    return response(false, 'date is required in YYYY-MM-DD format.')
-  }
+  const requestedDate = stringArg(args, 'date')
+  const normalizedDate = normalizeRequestedDate(requestedDate)
+  if (!normalizedDate.ok) return response(false, normalizedDate.message)
+  const date = normalizedDate.date
 
   const durationMinutes = numberArg(args, 'duration_minutes')
   const totalDollars = numberArg(args, 'total_dollars')
@@ -294,6 +380,9 @@ async function getCalendarSlots(
 
   return response(true, `Found ${slots.length} available slots.`, {
     date,
+    ...(normalizedDate.normalizedFrom
+      ? { normalized_from_date: normalizedDate.normalizedFrom }
+      : {}),
     required_minutes: applyAppointmentBuffer(requiredMinutes),
     slots,
   })
@@ -511,6 +600,10 @@ async function validateRequestedSlotAvailable(
     lineItems: Array<{ service_id: string; quantity: number }>
   },
 ): Promise<{ ok: true } | { ok: false; message: string; slots: unknown[] }> {
+  const normalizedDate = normalizeRequestedDate(params.appointmentDate)
+  if (!normalizedDate.ok) {
+    return { ok: false, message: normalizedDate.message, slots: [] }
+  }
   const normalizedStart =
     params.startTime.length === 5 ? `${params.startTime}:00` : params.startTime
   const serviceIds = params.lineItems.map((item) => item.service_id)
@@ -530,9 +623,9 @@ async function validateRequestedSlotAvailable(
   const requiredMinutes = applyAppointmentBuffer(
     calculateAppointmentDurationFromTotal(subtotal),
   )
-  const bundle = await loadAvailabilityBundle(supabase, params.appointmentDate)
+  const bundle = await loadAvailabilityBundle(supabase, normalizedDate.date)
   const slots = getAvailableSlots({
-    date: params.appointmentDate,
+    date: normalizedDate.date,
     requiredMinutes,
     templates: bundle.templates,
     overrides: bundle.overrides,
@@ -602,7 +695,10 @@ async function createBooking(
     return response(false, 'At least one valid line item is required.')
   }
 
-  const appointmentDate = stringArg(args, 'appointment_date')
+  const requestedAppointmentDate = stringArg(args, 'appointment_date')
+  const normalizedDate = normalizeRequestedDate(requestedAppointmentDate)
+  if (!normalizedDate.ok) return response(false, normalizedDate.message)
+  const appointmentDate = normalizedDate.date
   const startTime = stringArg(args, 'start_time')
   const slotCheck = await validateRequestedSlotAvailable(context.supabase, {
     appointmentDate,
@@ -640,11 +736,15 @@ async function createEstimate(
   args: Record<string, unknown>,
   context: RebeccaToolContext,
 ): Promise<RetellFunctionResponse> {
+  const requestedAppointmentDate = stringArg(args, 'appointment_date')
+  const normalizedDate = normalizeRequestedDate(requestedAppointmentDate)
+  if (!normalizedDate.ok) return response(false, normalizedDate.message)
+
   const result = await createAiStyleEstimate({
     supabase: context.supabase,
     customer: customerArgs(args),
     address: addressArgs(args),
-    appointment_date: stringArg(args, 'appointment_date'),
+    appointment_date: normalizedDate.date,
     start_time: stringArg(args, 'start_time'),
     visit_duration_minutes: numberArg(args, 'visit_duration_minutes') || 60,
     job_description: stringArg(args, 'job_description') || null,
@@ -662,7 +762,10 @@ async function scheduleReclean(
   args: Record<string, unknown>,
   context: RebeccaToolContext,
 ): Promise<RetellFunctionResponse> {
-  const appointmentDate = stringArg(args, 'appointment_date')
+  const requestedAppointmentDate = stringArg(args, 'appointment_date')
+  const normalizedDate = normalizeRequestedDate(requestedAppointmentDate)
+  if (!normalizedDate.ok) return response(false, normalizedDate.message)
+  const appointmentDate = normalizedDate.date
   const startTime = stringArg(args, 'start_time')
   const issueSummary =
     stringArg(args, 'issue_summary') ||
