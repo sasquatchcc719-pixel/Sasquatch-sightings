@@ -516,6 +516,15 @@ function contactLine(label: string, value: string): string {
   return `${label}: ${value || 'Not provided'}`
 }
 
+function nonPlaceholderContact(value: string): string {
+  const normalized = value.trim()
+  if (!normalized) return ''
+  if (/^\[.*\]$/.test(normalized)) return ''
+  if (/your\s+(phone|email|name|address)/i.test(normalized)) return ''
+  if (/not\s+provided/i.test(normalized)) return ''
+  return normalized
+}
+
 function shortHash(value: string): string {
   return createHash('sha256').update(value).digest('hex').slice(0, 16)
 }
@@ -1422,11 +1431,15 @@ async function notifyAdmin(
   if (!message) return response(false, 'message is required.')
 
   const reason = stringArg(args, 'reason')
-  const customerName = stringArg(args, 'customer_name')
+  const customerName = nonPlaceholderContact(stringArg(args, 'customer_name'))
   const customerPhone =
-    stringArg(args, 'customer_phone') || context.callerPhone || ''
-  const customerEmail = stringArg(args, 'customer_email')
-  const serviceAddress = stringArg(args, 'service_address')
+    nonPlaceholderContact(stringArg(args, 'customer_phone')) ||
+    context.callerPhone ||
+    ''
+  const customerEmail = nonPlaceholderContact(stringArg(args, 'customer_email'))
+  const serviceAddress = nonPlaceholderContact(
+    stringArg(args, 'service_address'),
+  )
   const urgency = stringArg(args, 'urgency') || 'normal'
   const source = 'Rabecca voice AI'
 

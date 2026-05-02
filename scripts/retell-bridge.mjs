@@ -424,6 +424,7 @@ Tool rules (mandatory, not optional):
 - Use create_estimate for commercial jobs or complex work that needs an on-site quote.
 - Use notify_admin only when the request cannot be handled by the available tools. When using notify_admin, include message, reason, customer_name, customer_phone, customer_email, service_address, and urgency whenever available. These alerts are sent as Rabecca voice AI notifications, so the message must contain enough contact information for Charles to act on it.
 - Never invent a main office phone number, manager phone number, website, email, or policy. If the caller asks for unavailable contact details, say you can send the team the details with notify_admin after collecting contact information.
+- Never send placeholder contact fields like "[your phone number]" or "not provided" to a tool. If the caller ID is unavailable and you need team follow-up, ask for the caller's real callback phone number before calling notify_admin.
 
 Residential intake:
 For pricing, collect only job details first:
@@ -454,7 +455,7 @@ Existing appointments:
 If the caller wants to change or cancel an existing appointment, collect the appointment details and requested change. If no appointment-management tool exists, use notify_admin and tell the caller: "I have the change request noted and the team will confirm it."
 
 Recleans / unhappy customers:
-If the caller is unhappy with a completed cleaning, says a spot came back, wants a redo, warranty visit, or reclean, do not default to human fallback. If they ask for a refund because a spot came back, first offer to schedule a no-charge reclean; do not transfer or escalate before collecting details. Apologize briefly, collect caller name, callback phone, email, service address, order/invoice number if available, issue summary, and preferred reclean day. Then use list_caller_appointments to look up completed appointments from the last 30 days by phone or order number. Use the most recent completed appointment unless the caller corrects you. If eligible, call get_calendar_slots before offering times, then call schedule_reclean after the caller chooses a real slot. Only say the reclean is scheduled after schedule_reclean returns success. Tell the caller there is no charge for the reclean. Escalate with notify_admin only after collecting contact details if no eligible appointment is found, the request is older than 30 days, the caller refuses a reclean and still demands a refund, or the caller is angry/escalating.
+If the caller is unhappy with a completed cleaning, says a spot came back, wants a redo, warranty visit, or reclean, do not default to human fallback. If they ask for a refund because a spot came back, first offer to schedule a no-charge reclean; do not transfer or escalate before collecting details. Apologize briefly, collect caller name, real callback phone, email, service address, order/invoice number if available, issue summary, and preferred reclean day. Then use list_caller_appointments to look up completed appointments from the last 30 days by phone or order number. Use the most recent completed appointment unless the caller corrects you. If eligible, call get_calendar_slots before offering times, then call schedule_reclean after the caller chooses a real slot. Only say the reclean is scheduled after schedule_reclean returns success. Tell the caller there is no charge for the reclean. Escalate with notify_admin only after collecting a real callback phone or using caller ID if no eligible appointment is found, the request is older than 30 days, the caller refuses a reclean and still demands a refund, or the caller is angry/escalating. After notify_admin succeeds, tell the caller the team has the details, no refund can be promised on the call, and Charles or the team will review and follow up as soon as possible. Ask if there is anything else they want added to the note before ending politely.
 
 Flood restoration / water damage:
 If the caller mentions flood restoration, active water damage, water extraction, burst pipe, sewage backup, flooded basement, standing water, emergency drying, or similar urgent water-damage work, do not quote or schedule it as normal carpet cleaning. Collect caller name, phone, address, and a one-sentence summary if possible. Send an urgent admin alert, then transfer to line 2 / Charles. Say: "That sounds like a water-damage situation, so I’m going to get you over to Charles directly." If the transfer fails, tell the caller the team has been alerted and Charles will follow up as soon as possible.
@@ -872,6 +873,8 @@ function addExplicitToolNodes(flow) {
   const notifyNodeId = findFunctionNodeId(flow, 'notify_admin')
   const bookingConfirmedNodeId = 'node-rabecca-booking-confirmed'
   const belowMinimumEndNodeId = 'node-rabecca-below-minimum-end'
+  const adminFollowupNodeId = 'node-rabecca-admin-followup'
+  const adminCloseNodeId = 'node-rabecca-admin-close'
   const estimateConfirmedNodeId = 'node-rabecca-estimate-confirmed'
   const recleanIntakeNodeId = 'node-rabecca-reclean-intake'
   const recleanConfirmedNodeId = 'node-rabecca-reclean-confirmed'
@@ -899,10 +902,27 @@ function addExplicitToolNodes(flow) {
   })
 
   upsertConversationNode(flow, {
+    id: adminFollowupNodeId,
+    name: 'Admin Follow-Up Confirmed',
+    instruction:
+      'Only enter this node after notify_admin succeeds. Do not hang up abruptly. Say: "I have sent those details to the team. I cannot promise a refund on this call, but Charles or the team will review it and follow up as soon as possible. I also noted that a no-charge reclean is the preferred next step if you decide you want us to come back out." Ask if there is anything else they want added to the note. If the caller asks follow-up questions, answer briefly from policy: no refund is guaranteed, no exact review time is promised, no separate case number exists unless the tool returned one, and the team will use the provided callback phone or email. If the caller has nothing else, close politely with "Thanks for calling, and I’m sorry again for the trouble. We’ll have the team review this and follow up."',
+    displayPosition: { x: 1880, y: 534 },
+    endAfterMessage: false,
+  })
+
+  upsertConversationNode(flow, {
+    id: adminCloseNodeId,
+    name: 'Admin Follow-Up Close',
+    instruction:
+      'Close politely after the admin alert follow-up is complete. Say: "Thanks for calling, and I’m sorry again for the trouble. We’ll have the team review this and follow up." Then end the call.',
+    displayPosition: { x: 2060, y: 534 },
+  })
+
+  upsertConversationNode(flow, {
     id: recleanIntakeNodeId,
     name: 'Complaint / Reclean Intake',
     instruction:
-      'Handle customer dissatisfaction with prior work, including a spot that came back. Apologize briefly without blaming anyone. If the caller asks for a refund because a spot returned, first offer a no-charge reclean appointment; do not transfer, promise a refund, or notify admin before collecting details. Collect customer name, callback phone, email, service address, order/invoice number if available, concise issue summary, and preferred reclean day. Then use list_caller_appointments to find a completed job from the last 30 days by phone or order number. If a matching job is found, use get_calendar_slots before offering times. After the caller chooses a real slot, call schedule_reclean. If no eligible job is found or the caller refuses a reclean and still demands a refund, call notify_admin with all collected details.',
+      'Handle customer dissatisfaction with prior work, including a spot that came back. Apologize briefly without blaming anyone. If the caller asks for a refund because a spot returned, first offer a no-charge reclean appointment; do not transfer, promise a refund, or notify admin before collecting details. Collect customer name, callback phone, email, service address, order/invoice number if available, concise issue summary, and preferred reclean day. Then use list_caller_appointments to find a completed job from the last 30 days by phone or order number. Never say you see, found, verified, or matched an order or prior job until list_caller_appointments returns success. Never call get_calendar_slots or schedule_reclean until list_caller_appointments has returned an eligible completed appointment in this conversation. If a matching job is found, use get_calendar_slots before offering times. After the caller chooses a real slot, call schedule_reclean using the recommended_appointment.id from list_caller_appointments. If no eligible job is found or the caller refuses a reclean and still demands a refund, call notify_admin with all collected details.',
     displayPosition: { x: 1060, y: 298 },
     endAfterMessage: false,
   })
@@ -1035,7 +1055,7 @@ function addExplicitToolNodes(flow) {
       id: notifyNodeId,
       name: 'Tool: Notify Admin',
       toolId: notifyToolId,
-      nextNodeId: 'end-call-node-1777659262103',
+      nextNodeId: adminFollowupNodeId,
       elseNodeId: 'node-1777682450750',
       instruction: 'Notifying the team about an exception or unsupported request.',
       displayPosition: { x: 1660, y: 534 },
@@ -1150,20 +1170,26 @@ function addExplicitToolNodes(flow) {
   upsertEdgeToNode(
     flow,
     'Complaint / Reclean Intake',
-    recleanSlotsNodeId,
-    'Eligible reclean job is identified and caller wants available reclean times',
+    scheduleRecleanNodeId,
+    'list_caller_appointments returned an eligible completed appointment, get_calendar_slots returned the selected reclean slot, caller asks to book or confirm that slot, and issue summary is collected',
   )
   upsertEdgeToNode(
     flow,
     'Complaint / Reclean Intake',
-    scheduleRecleanNodeId,
-    'Caller chose an available reclean slot and issue summary is collected',
+    recleanSlotsNodeId,
+    'list_caller_appointments returned an eligible completed appointment and caller needs available reclean times but has not yet chosen a returned slot',
   )
   upsertEdgeToNode(
     flow,
     'Complaint / Reclean Intake',
     notifyNodeId,
-    'No eligible completed appointment was found after collecting customer details, request is outside 30 days, caller refuses a no-charge reclean and still demands a refund, or caller is angry/escalating',
+    'No eligible completed appointment was found after collecting customer details and a real callback phone, request is outside 30 days, caller refuses a no-charge reclean and still demands a refund, or caller is angry/escalating',
+  )
+  upsertEdgeToNode(
+    flow,
+    'Admin Follow-Up Confirmed',
+    adminCloseNodeId,
+    'Caller says no, nothing else, thanks, goodbye, bye, or otherwise indicates the admin follow-up conversation is complete',
   )
   upsertEdgeToNode(
     flow,
@@ -1195,9 +1221,57 @@ function completePlaceholderEdges(flow) {
   }
 }
 
+function routeResidentialQuoteEdgesToTool(flow, quotePrepareNodeId) {
+  const residentialNode = flow.nodes?.find((node) => node.name === 'Residential Intake')
+  if (!residentialNode || !quotePrepareNodeId) return
+
+  for (const edge of residentialNode.edges || []) {
+    const prompt = edge.transition_condition?.prompt || ''
+    if (prompt === 'Caller has given enough details for quote and scheduling') {
+      edge.id = `${residentialNode.id}-to-${quotePrepareNodeId}`
+      edge.destination_node_id = quotePrepareNodeId
+      edge.transition_condition.prompt =
+        'Customer has residential service details and needs a quote, minimum check, or appointment availability'
+    }
+  }
+
+  const seenQuoteEdge = new Set()
+  residentialNode.edges = (residentialNode.edges || []).filter((edge) => {
+    if (edge.destination_node_id !== quotePrepareNodeId) return true
+    const key = `${edge.destination_node_id}:${edge.transition_condition?.prompt || ''}`
+    if (seenQuoteEdge.has(key)) return false
+    seenQuoteEdge.add(key)
+    return true
+  })
+}
+
+function prioritizeEdge(flow, fromNodeName, firstDestinationNodeId) {
+  const node = flow.nodes?.find((item) => item.name === fromNodeName)
+  if (!node || !Array.isArray(node.edges)) return
+
+  node.edges = [
+    ...node.edges.filter((edge) => edge.destination_node_id === firstDestinationNodeId),
+    ...node.edges.filter((edge) => edge.destination_node_id !== firstDestinationNodeId),
+  ]
+}
+
+function removeDuplicateEdgeIds(flow) {
+  const seen = new Set()
+  for (const node of flow.nodes || []) {
+    if (!Array.isArray(node.edges)) continue
+    node.edges = node.edges.filter((edge) => {
+      if (!edge.id) return true
+      if (seen.has(edge.id)) return false
+      seen.add(edge.id)
+      return true
+    })
+  }
+}
+
 function buildSelfServeSandboxFlow(flow) {
   const nextFlow = structuredClone(flow)
   nextFlow.global_prompt = buildSelfServeGlobalPrompt()
+  nextFlow.flex_mode = false
 
   updateNodeInstruction(
     nextFlow,
@@ -1232,7 +1306,7 @@ function buildSelfServeSandboxFlow(flow) {
   updateNodeInstruction(
     nextFlow,
     'Transfer to Charles',
-    'Use this only for true exceptions: angry customer, dispute, emergency, unsafe situation, repeated tool failure, or a request outside the available tools. Do not use this for ordinary scheduling, quotes, residential bookings, or commercial estimate scheduling. Before saying Charles will follow up, collect caller name, callback phone, email if available, service address if relevant, and a concise reason. Call notify_admin with message, reason, customer_name, customer_phone, customer_email, service_address, and urgency.',
+    'Use this only for true exceptions: angry customer, dispute, emergency, unsafe situation, repeated tool failure, or a request outside the available tools. Do not use this for ordinary scheduling, quotes, residential bookings, or commercial estimate scheduling. Before saying Charles will follow up, collect caller name, real callback phone if caller ID is unavailable, email if available, service address if relevant, and a concise reason. Call notify_admin with message, reason, customer_name, customer_phone, customer_email, service_address, and urgency. After notify_admin succeeds, explain that the team has the details, do not promise a refund, and close politely.',
   )
   updateNodeInstruction(
     nextFlow,
@@ -1262,7 +1336,7 @@ function buildSelfServeSandboxFlow(flow) {
     }
     if (tool.name === 'notify_admin') {
       tool.description =
-        'Notify Charles through Rabecca voice AI alerts. Use only for exceptions, appointment change requests, disputes, urgent issues, flood restoration, or repeated tool failures. Include contact details so Charles can act on the alert.'
+        'Notify Charles through Rabecca voice AI alerts. Use only for exceptions, appointment change requests, disputes, urgent issues, flood restoration, or repeated tool failures. Include real contact details so Charles can act on the alert; do not send placeholder phone numbers.'
       tool.parameters = {
         type: 'object',
         properties: {
@@ -1314,8 +1388,11 @@ function buildSelfServeSandboxFlow(flow) {
   }
 
   addExplicitToolNodes(nextFlow)
+  routeResidentialQuoteEdgesToTool(nextFlow, findFunctionNodeId(nextFlow, 'quote_and_prepare_booking'))
+  prioritizeEdge(nextFlow, 'Complaint / Reclean Intake', findFunctionNodeId(nextFlow, 'schedule_reclean'))
   completePlaceholderEdges(nextFlow)
   removeBrokenOrphanEdges(nextFlow)
+  removeDuplicateEdgeIds(nextFlow)
 
   return omitKeys(
     nextFlow,

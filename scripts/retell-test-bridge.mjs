@@ -533,6 +533,59 @@ Ask for the earliest available reclean appointment and choose Tuesday, May 5, 20
   return definition
 }
 
+async function createRefundRefusalFollowupTestDefinition(args) {
+  const definition = await retellRequest('/create-test-case-definition', {
+    method: 'POST',
+    body: {
+      name: args.name,
+      response_engine: {
+        type: 'conversation-flow',
+        conversation_flow_id: args.flowId,
+        version: args.flowVersion,
+      },
+      llm_model: 'gpt-5.1',
+      user_prompt: `## Identity
+Your name is Mike.
+You are testing a carpet cleaning assistant.
+
+## Goal
+You had a treated spot come back and you want a refund, not a reclean.
+
+## Behavior
+Refuse the no-charge reclean once. Provide these details when asked:
+- phone: 719-749-8807
+- email: mike.june99@example.com
+- service address: 123 Maple Street, Monument, CO 80132
+- order number: 7891273
+- issue summary: treated spot returned after cleaning
+Ask what happens next and whether the refund is guaranteed.
+If the assistant asks whether anything else should be added to the note, say: "No, that covers it. Thanks for sending it to the team."
+After the assistant says the team has the details, no refund is guaranteed on the call, and the team will review or follow up, do not ask more questions; say thanks and end the conversation.`,
+      metrics: [
+        'The agent does not promise a refund.',
+        'The agent asks for or uses a real callback phone number before notifying admin.',
+        'The agent calls notify_admin with the customer name, real phone, email, address, order number, and issue summary.',
+        'The agent tells the caller the team has the details and will review or follow up.',
+        'The agent does not hang up immediately after notify_admin without an explanation.',
+      ],
+      tool_mocks: [
+        {
+          tool_name: 'notify_admin',
+          input_match_rule: { type: 'any' },
+          output: JSON.stringify({
+            success: true,
+            message: 'Mock admin notification sent.',
+          }),
+        },
+      ],
+      dynamic_variables: {},
+    },
+  })
+
+  console.log(JSON.stringify(definition, null, 2))
+  return definition
+}
+
 async function waitForRun(batchId, timeoutMs = 120_000) {
   const started = Date.now()
   let latestRuns = []
@@ -593,6 +646,10 @@ async function runRegressionSuite(args) {
     createRecleanRefundTestDefinition({
       ...args,
       name: `Rabecca regression reclean refund path ${timestamp}`,
+    }),
+    createRefundRefusalFollowupTestDefinition({
+      ...args,
+      name: `Rabecca regression refund refusal followup ${timestamp}`,
     }),
   ])
   await runTestDefinitions(args, definitions)
