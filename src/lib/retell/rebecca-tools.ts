@@ -989,6 +989,30 @@ async function bookPreparedSlot(
     )
   }
 
+  const slotCheck = await validateRequestedSlotAvailable(context.supabase, {
+    appointmentDate,
+    startTime,
+    lineItems: prepared.lineItems.map((item) => ({
+      service_id: item.service_id,
+      quantity: item.quantity,
+    })),
+  })
+  if (!slotCheck.ok) {
+    return response(false, `Booking was NOT created: ${slotCheck.message}`, {
+      appointment_date: appointmentDate,
+      requested_start_time: startTime,
+      quote_total: prepared.subtotal,
+      line_items: prepared.lineItems,
+      available_slots: slotCheck.slots,
+      caller_script:
+        slotCheck.slots.length > 0
+          ? `That time is no longer available. I can offer ${slotCheck.slots
+              .map((slot) => `${slot.start_time} to ${slot.end_time}`)
+              .join(', ')} instead.`
+          : 'That time is no longer available, and I do not see another opening for that date. Ask for another day.',
+    })
+  }
+
   const result = await createAiStyleBooking({
     supabase: context.supabase,
     customer: {
@@ -1586,7 +1610,14 @@ async function validateRequestedSlotAvailable(
     startTime: string
     lineItems: Array<{ service_id: string; quantity: number }>
   },
-): Promise<{ ok: true } | { ok: false; message: string; slots: unknown[] }> {
+): Promise<
+  | { ok: true }
+  | {
+      ok: false
+      message: string
+      slots: Array<{ start_time: string; end_time: string }>
+    }
+> {
   const normalizedDate = normalizeRequestedDate(params.appointmentDate)
   if (!normalizedDate.ok) {
     return { ok: false, message: normalizedDate.message, slots: [] }
