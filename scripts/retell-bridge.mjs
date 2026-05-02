@@ -415,6 +415,8 @@ Core rules:
 - Use human fallback only for true exceptions: angry customers, disputes, unsafe situations, unsupported requests, or repeated tool failures.
 
 Tool rules (mandatory, not optional):
+- For normal residential quote and scheduling, use quote_and_prepare_booking first. It returns the quote, minimum status, missing fields, and real slots.
+- For normal residential booking, use book_prepared_slot after the caller chooses one of the returned slots. Only say booked after this tool returns success.
 - ALWAYS call get_service_catalog before quoting any price or listing services. Do not calculate or estimate prices yourself.
 - ALWAYS call get_calendar_slots before telling the customer any time slot is available or unavailable.
 - ALWAYS call create_booking to finalize a residential appointment. Verbal confirmation alone does NOT create a booking.
@@ -661,6 +663,12 @@ function upsertEdgeToNode(flow, fromNodeName, toNodeId, prompt) {
   node.edges = edges
 }
 
+function removeEdgeToNode(flow, fromNodeName, toNodeId) {
+  const node = flow.nodes?.find((item) => item.name === fromNodeName)
+  if (!node || !Array.isArray(node.edges)) return
+  node.edges = node.edges.filter((edge) => edge.destination_node_id !== toNodeId)
+}
+
 function removeBrokenOrphanEdges(flow) {
   for (const node of flow.nodes || []) {
     if (!Array.isArray(node.edges)) continue
@@ -675,6 +683,96 @@ function removeBrokenOrphanEdges(flow) {
 }
 
 function addExplicitToolNodes(flow) {
+  upsertTool(
+    flow,
+    buildCustomTool(
+      'tool-rabecca-quote-prepare-booking',
+      'quote_and_prepare_booking',
+      'Deterministically quote a residential job, validate minimum booking rules, normalize the requested date, and return real available slots. Use this for normal residential quote and scheduling before attempting to book.',
+      {
+        type: 'object',
+        properties: {
+          bedrooms_count: {
+            type: 'number',
+            description: 'Number of regular bedrooms or regular rooms.',
+          },
+          living_room_sqft: {
+            type: 'number',
+            description: 'Approximate square footage for one living room or open area, if provided.',
+          },
+          hall_count: {
+            type: 'number',
+            description: 'Number of halls, bathrooms, or closets to clean.',
+          },
+          stairs_count: {
+            type: 'number',
+            description: 'Number of individual stair steps.',
+          },
+          requested_date: {
+            type: 'string',
+            description: 'Requested appointment date in YYYY-MM-DD format.',
+          },
+        },
+      },
+    ),
+  )
+  upsertTool(
+    flow,
+    buildCustomTool(
+      'tool-rabecca-book-prepared-slot',
+      'book_prepared_slot',
+      'Create the residential booking after quote_and_prepare_booking returned a slot and the caller selected one. This tool revalidates quote, minimum, date, address, selected slot, and required customer fields before creating the appointment.',
+      {
+        type: 'object',
+        properties: {
+          bedrooms_count: {
+            type: 'number',
+            description: 'Number of regular bedrooms or regular rooms.',
+          },
+          living_room_sqft: {
+            type: 'number',
+            description: 'Approximate square footage for one living room or open area, if provided.',
+          },
+          hall_count: {
+            type: 'number',
+            description: 'Number of halls, bathrooms, or closets to clean.',
+          },
+          stairs_count: {
+            type: 'number',
+            description: 'Number of individual stair steps.',
+          },
+          requested_date: {
+            type: 'string',
+            description: 'Appointment date in YYYY-MM-DD format.',
+          },
+          selected_start_time: {
+            type: 'string',
+            description: 'Selected appointment start time in HH:MM 24-hour format.',
+          },
+          customer: {
+            type: 'object',
+            description: 'Customer name, phone, and email.',
+            properties: {
+              name: { type: 'string' },
+              phone: { type: 'string' },
+              email: { type: 'string' },
+            },
+            required: ['name', 'phone', 'email'],
+          },
+          address: {
+            type: 'string',
+            description: 'Full service address including street, city, state, and ZIP.',
+          },
+        },
+        required: [
+          'requested_date',
+          'selected_start_time',
+          'customer',
+          'address',
+        ],
+      },
+    ),
+  )
   upsertTool(
     flow,
     buildCustomTool(
@@ -739,6 +837,8 @@ function addExplicitToolNodes(flow) {
   )
 
   const serviceCatalogToolId = findToolId(flow, 'get_service_catalog')
+  const quotePrepareToolId = findToolId(flow, 'quote_and_prepare_booking')
+  const bookPreparedToolId = findToolId(flow, 'book_prepared_slot')
   const slotsToolId = findToolId(flow, 'get_calendar_slots')
   const bookingToolId = findToolId(flow, 'create_booking')
   const estimateToolId = findToolId(flow, 'create_estimate')
@@ -746,6 +846,8 @@ function addExplicitToolNodes(flow) {
   const scheduleRecleanToolId = findToolId(flow, 'schedule_reclean')
   const notifyToolId = findToolId(flow, 'notify_admin')
   const serviceCatalogNodeId = findFunctionNodeId(flow, 'get_service_catalog')
+  const quotePrepareNodeId = findFunctionNodeId(flow, 'quote_and_prepare_booking')
+  const bookPreparedNodeId = findFunctionNodeId(flow, 'book_prepared_slot')
   const slotsNodeId = findFunctionNodeId(flow, 'get_calendar_slots')
   const bookingNodeId = findFunctionNodeId(flow, 'create_booking')
   const estimateNodeId = findFunctionNodeId(flow, 'create_estimate')
@@ -803,6 +905,29 @@ function addExplicitToolNodes(flow) {
     displayPosition: { x: 1060, y: 606 },
     endAfterMessage: false,
   })
+
+  if (quotePrepareToolId) {
+    upsertFunctionNode(flow, {
+      id: quotePrepareNodeId,
+      name: 'Tool: Quote And Prepare Booking',
+      toolId: quotePrepareToolId,
+      nextNodeId: 'node-1777681751263',
+      elseNodeId: 'node-1777681468014',
+      instruction: 'Preparing the quote, minimum check, and real availability.',
+      displayPosition: { x: 1260, y: -186 },
+    })
+  }
+  if (bookPreparedToolId) {
+    upsertFunctionNode(flow, {
+      id: bookPreparedNodeId,
+      name: 'Tool: Book Prepared Slot',
+      toolId: bookPreparedToolId,
+      nextNodeId: bookingConfirmedNodeId,
+      elseNodeId: 'node-1777681751263',
+      instruction: 'Creating the confirmed residential booking.',
+      displayPosition: { x: 1880, y: -330 },
+    })
+  }
 
   if (serviceCatalogToolId) {
     upsertFunctionNode(flow, {
@@ -903,9 +1028,10 @@ function addExplicitToolNodes(flow) {
   upsertEdgeToNode(
     flow,
     'Residential Intake',
-    serviceCatalogNodeId,
-    'Customer needs services, service IDs, or pricing details from the service catalog',
+    quotePrepareNodeId,
+    'Customer has residential service details and needs a quote, minimum check, or appointment availability',
   )
+  removeEdgeToNode(flow, 'Residential Intake', serviceCatalogNodeId)
   upsertEdgeToNode(
     flow,
     'Quote and Scheduling',
@@ -915,9 +1041,10 @@ function addExplicitToolNodes(flow) {
   upsertEdgeToNode(
     flow,
     'Quote and Scheduling',
-    bookingNodeId,
+    bookPreparedNodeId,
     'Customer has chosen an available slot and all required booking details are collected',
   )
+  removeEdgeToNode(flow, 'Quote and Scheduling', bookingNodeId)
   upsertEdgeToNode(
     flow,
     'Quote and Scheduling',
@@ -1037,12 +1164,12 @@ function buildSelfServeSandboxFlow(flow) {
   updateNodeInstruction(
     nextFlow,
     'Residential Intake',
-    'Handle residential quote-first intake. Ask one question at a time. First ask what they need cleaned. If they mention flood restoration, active water damage, water extraction, burst pipes, sewage backup, flooded basement, standing water, or emergency drying, route to Flood / Water Damage Transfer and do not quote or schedule as carpet cleaning. For normal pricing, collect only job details: bedrooms, large open-room square footage only when needed, stairs, pet urine or odor concerns, upholstery/rugs/tile if applicable. Once you have enough details to price, you MUST call get_service_catalog — you do not know any prices and must not guess or calculate them. Quote the price from the tool response before asking for name, phone, email, or address. Only collect personal/contact/address details after the customer wants availability or wants to book.',
+    'Handle residential quote-first intake. Ask one question at a time. First ask what they need cleaned. If they mention flood restoration, active water damage, water extraction, burst pipes, sewage backup, flooded basement, standing water, or emergency drying, route to Flood / Water Damage Transfer and do not quote or schedule as carpet cleaning. For normal residential pricing or scheduling, collect only countable job details first: bedrooms, large open-room square footage only when needed, halls/closets/bathrooms, stairs, pet urine or odor concerns, upholstery/rugs/tile if applicable. Once you have enough countable details, call quote_and_prepare_booking. Do not quote from memory and do not call separate catalog/calendar tools for normal residential booking.',
   )
   updateNodeInstruction(
     nextFlow,
     'Quote and Scheduling',
-    'Present the price from get_service_catalog (already called in Residential Intake). Say the estimate is based on what they described. If the customer only wanted a price, answer and ask if they want to check availability. If they are ready to schedule, reuse any details the customer already provided and ask only for missing required booking fields: name, phone, email, full address, city, ZIP, and preferred date/time. Do not repeatedly reconfirm details the customer already confirmed. You MUST call get_calendar_slots before offering any times — never invent or assume availability. Offer 2 or 3 slots ONLY from the tool response. After the customer chooses a slot, you MUST call create_booking. NEVER say the customer is booked unless create_booking returned success in this conversation. If the booking tool fails, explain the issue and offer an available alternative from the tool response.',
+    'Use the result from quote_and_prepare_booking as the source of truth. Read its caller_script when helpful. If it says the job is below the minimum, explain the minimum and ask whether they want to add another service; do not offer to book yet. If it returns slots, offer only those slots. Reuse any name, phone, email, address, date, and service details the customer already provided. After the customer chooses one returned slot and all required fields are collected, call book_prepared_slot. NEVER say the customer is booked unless book_prepared_slot returned success in this conversation. If book_prepared_slot fails, read the failure/next step and do not say booked.',
   )
   updateNodeInstruction(
     nextFlow,

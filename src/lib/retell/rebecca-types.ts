@@ -1,4 +1,6 @@
 export type RetellFunctionName =
+  | 'quote_and_prepare_booking'
+  | 'book_prepared_slot'
   | 'get_service_catalog'
   | 'get_calendar_slots'
   | 'create_booking'

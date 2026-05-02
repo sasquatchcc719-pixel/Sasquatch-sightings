@@ -36,6 +36,24 @@ type BookingLineItemInput = {
   quantity?: number
 }
 
+type CatalogItem = {
+  id: string
+  name: string
+  slug: string
+  category: string
+  base_price: number
+  pricing_unit: string | null
+  default_duration_minutes: number | null
+}
+
+type PreparedLineItem = {
+  service_id: string
+  service_name: string
+  quantity: number
+  unit_price: number
+  total: number
+}
+
 type PriorAppointmentRow = {
   id: string
   customer_id: string
@@ -266,6 +284,174 @@ function parseAddressString(value: string): RebeccaAddressArgs {
   }
 }
 
+function positiveIntegerArg(
+  args: Record<string, unknown>,
+  keys: string[],
+): number {
+  for (const key of keys) {
+    const value = numberArg(args, key)
+    if (value && value > 0) return Math.floor(value)
+  }
+  return 0
+}
+
+async function loadCoreResidentialCatalog(
+  supabase: SupabaseClient,
+): Promise<CatalogItem[]> {
+  const { data, error } = await supabase
+    .from('service_catalog_items')
+    .select(
+      'id, name, slug, category, base_price, pricing_unit, default_duration_minutes',
+    )
+    .eq('is_active', true)
+    .in('slug', [
+      'regular-size-room-100-to-200-sqft',
+      'hall-bathroom-closet-carpet-cleaning-30-to-100-sqft',
+      'step-carpet-cleaning-per-step-charge',
+      'sasquatch-size-room-200-to-400-sqft',
+      'monster-size-room-400-to-600-sqft',
+    ])
+
+  if (error) throw error
+  return (data || []) as CatalogItem[]
+}
+
+function catalogBySlug(
+  catalog: CatalogItem[],
+  slug: string,
+): CatalogItem | null {
+  return catalog.find((item) => item.slug === slug) || null
+}
+
+function addPreparedLineItem(
+  items: PreparedLineItem[],
+  catalogItem: CatalogItem | null,
+  quantity: number,
+) {
+  if (!catalogItem || quantity <= 0) return
+  const unitPrice = Number(catalogItem.base_price || 0)
+  items.push({
+    service_id: catalogItem.id,
+    service_name: catalogItem.name,
+    quantity,
+    unit_price: unitPrice,
+    total: unitPrice * quantity,
+  })
+}
+
+function roomSlugForSquareFeet(squareFeet: number): string {
+  if (squareFeet >= 400) return 'monster-size-room-400-to-600-sqft'
+  if (squareFeet >= 200) return 'sasquatch-size-room-200-to-400-sqft'
+  return 'regular-size-room-100-to-200-sqft'
+}
+
+async function prepareResidentialBookingQuote(
+  args: Record<string, unknown>,
+  context: RebeccaToolContext,
+): Promise<
+  | {
+      ok: true
+      appointmentDate: string | null
+      lineItems: PreparedLineItem[]
+      subtotal: number
+      minimum: number
+      meetsMinimum: boolean
+      slots: Array<{ start_time: string; end_time: string }>
+      missingFields: string[]
+    }
+  | { ok: false; message: string }
+> {
+  const catalog = await loadCoreResidentialCatalog(context.supabase)
+  const lineItems: PreparedLineItem[] = []
+  const regularRoom = catalogBySlug(
+    catalog,
+    'regular-size-room-100-to-200-sqft',
+  )
+  const hall = catalogBySlug(
+    catalog,
+    'hall-bathroom-closet-carpet-cleaning-30-to-100-sqft',
+  )
+  const steps = catalogBySlug(catalog, 'step-carpet-cleaning-per-step-charge')
+
+  const bedrooms = positiveIntegerArg(args, [
+    'bedrooms_count',
+    'bedroom_count',
+    'regular_room_count',
+    'rooms_count',
+  ])
+  const halls = positiveIntegerArg(args, [
+    'hall_count',
+    'hallway_count',
+    'bathroom_count',
+    'closet_count',
+  ])
+  const stepCount = positiveIntegerArg(args, ['stairs_count', 'step_count'])
+  const livingRoomSquareFeet = numberArg(args, 'living_room_sqft')
+
+  addPreparedLineItem(lineItems, regularRoom, bedrooms)
+  addPreparedLineItem(lineItems, hall, halls)
+  addPreparedLineItem(lineItems, steps, stepCount)
+
+  if (livingRoomSquareFeet && livingRoomSquareFeet > 0) {
+    addPreparedLineItem(
+      lineItems,
+      catalogBySlug(catalog, roomSlugForSquareFeet(livingRoomSquareFeet)),
+      1,
+    )
+  }
+
+  const requestedDate =
+    stringArg(args, 'requested_date') || stringArg(args, 'appointment_date')
+  let appointmentDate: string | null = null
+  if (requestedDate) {
+    const normalizedDate = normalizeRequestedDate(requestedDate)
+    if (!normalizedDate.ok) return normalizedDate
+    appointmentDate = normalizedDate.date
+  }
+
+  if (lineItems.length === 0) {
+    return {
+      ok: false,
+      message:
+        'I need at least one countable residential service, like bedrooms_count, living_room_sqft, hall_count, or stairs_count.',
+    }
+  }
+
+  const subtotal = lineItems.reduce((sum, item) => sum + item.total, 0)
+  const minimum = 150
+  const missingFields = []
+  if (!appointmentDate) missingFields.push('appointment date')
+
+  let slots: Array<{ start_time: string; end_time: string }> = []
+  if (appointmentDate && subtotal >= minimum) {
+    const bundle = await loadAvailabilityBundle(
+      context.supabase,
+      appointmentDate,
+    )
+    slots = getAvailableSlots({
+      date: appointmentDate,
+      requiredMinutes: applyAppointmentBuffer(
+        calculateAppointmentDurationFromTotal(subtotal),
+      ),
+      templates: bundle.templates,
+      overrides: bundle.overrides,
+      appointments: bundle.appointments,
+      maxResults: 3,
+    })
+  }
+
+  return {
+    ok: true,
+    appointmentDate,
+    lineItems,
+    subtotal,
+    minimum,
+    meetsMinimum: subtotal >= minimum,
+    slots,
+    missingFields,
+  }
+}
+
 function response(
   success: boolean,
   message: string,
@@ -325,6 +511,128 @@ async function loadAvailabilityBundle(
     appointments: (appointmentsResult.data ||
       []) as ExistingAppointmentWindow[],
   }
+}
+
+async function quoteAndPrepareBooking(
+  args: Record<string, unknown>,
+  context: RebeccaToolContext,
+): Promise<RetellFunctionResponse> {
+  const prepared = await prepareResidentialBookingQuote(args, context)
+  if (!prepared.ok) return response(false, prepared.message)
+
+  const dollars = prepared.subtotal.toFixed(2).replace(/\.00$/, '')
+  if (!prepared.meetsMinimum) {
+    return response(true, `Estimated total is $${dollars}.`, {
+      quote_total: prepared.subtotal,
+      minimum_booking_amount: prepared.minimum,
+      meets_minimum: false,
+      can_offer_slots: false,
+      line_items: prepared.lineItems,
+      missing_fields: prepared.missingFields,
+      caller_script: `The estimate is $${dollars}. Our minimum booking amount is $${prepared.minimum}, so I cannot finalize this appointment yet. Would you like to add another area, hallway, stairs, or deodorizer to meet the minimum?`,
+    })
+  }
+
+  return response(true, `Estimated total is $${dollars}.`, {
+    quote_total: prepared.subtotal,
+    minimum_booking_amount: prepared.minimum,
+    meets_minimum: true,
+    can_offer_slots: prepared.slots.length > 0,
+    appointment_date: prepared.appointmentDate,
+    line_items: prepared.lineItems,
+    missing_fields: prepared.missingFields,
+    slots: prepared.slots,
+    caller_script:
+      prepared.slots.length > 0
+        ? `The estimate is $${dollars}. I found these available windows: ${prepared.slots
+            .map((slot) => `${slot.start_time} to ${slot.end_time}`)
+            .join(', ')}. Which one works best?`
+        : `The estimate is $${dollars}, but I do not see any available openings for that date. Ask if they want another day.`,
+  })
+}
+
+async function bookPreparedSlot(
+  args: Record<string, unknown>,
+  context: RebeccaToolContext,
+): Promise<RetellFunctionResponse> {
+  const prepared = await prepareResidentialBookingQuote(args, context)
+  if (!prepared.ok) return response(false, prepared.message)
+  if (!prepared.meetsMinimum) {
+    return response(
+      false,
+      `Booking was NOT created: this job totals $${prepared.subtotal.toFixed(
+        2,
+      )}, below the $${prepared.minimum} minimum. Do not say the caller is booked. Ask if they want to add another service.`,
+      {
+        quote_total: prepared.subtotal,
+        minimum_booking_amount: prepared.minimum,
+        line_items: prepared.lineItems,
+      },
+    )
+  }
+
+  const appointmentDate = prepared.appointmentDate
+  const startTime =
+    stringArg(args, 'selected_start_time') || stringArg(args, 'start_time')
+  const customer = customerArgs(args)
+  const address = addressArgs(args)
+  const missingFields = [
+    !appointmentDate ? 'appointment date' : '',
+    !startTime ? 'selected start time' : '',
+    !customer.first_name || !customer.last_name ? 'customer full name' : '',
+    !customer.email ? 'customer email' : '',
+    !customer.phone && !context.callerPhone ? 'customer phone' : '',
+    !address.street_1 ? 'street address' : '',
+    !address.city ? 'city' : '',
+    !address.zip_code ? 'zip code' : '',
+  ].filter(Boolean)
+
+  if (missingFields.length > 0 || !appointmentDate) {
+    return response(
+      false,
+      'Booking was NOT created: missing required fields.',
+      {
+        missing_fields: missingFields,
+        caller_script: `I still need ${missingFields.join(
+          ', ',
+        )} before I can book that.`,
+      },
+    )
+  }
+
+  const result = await createAiStyleBooking({
+    supabase: context.supabase,
+    customer: {
+      ...customer,
+      phone: customer.phone || context.callerPhone || '',
+    },
+    address,
+    appointment_date: appointmentDate,
+    start_time: startTime,
+    line_items: prepared.lineItems.map((item) => ({
+      service_id: item.service_id,
+      quantity: item.quantity,
+    })),
+    booking_mode: 'direct',
+    booking_channel: REBECCA_RETELL_CONFIG.bookingChannel,
+    source_label: REBECCA_RETELL_CONFIG.sourceLabel,
+    lead_source: 'retell_rabecca',
+    actor_label: REBECCA_RETELL_CONFIG.actorLabel,
+    admin_heading: REBECCA_RETELL_CONFIG.adminHeading,
+  })
+
+  if (!result.ok) {
+    return response(false, `Booking was NOT created: ${result.error}`, {
+      quote_total: prepared.subtotal,
+      line_items: prepared.lineItems,
+      caller_script: `I could not finalize that booking: ${result.error}`,
+    })
+  }
+
+  return response(true, result.message, {
+    ...result,
+    caller_script: `You're all set for ${result.appointment_date} at ${result.start_time}. You'll receive confirmation with the details.`,
+  })
 }
 
 async function getServiceCatalog(
@@ -1072,6 +1380,10 @@ export async function executeRebeccaRetellTool(
   context: RebeccaToolContext,
 ): Promise<RetellFunctionResponse> {
   switch (name) {
+    case 'quote_and_prepare_booking':
+      return quoteAndPrepareBooking(args, context)
+    case 'book_prepared_slot':
+      return bookPreparedSlot(args, context)
     case 'get_service_catalog':
       return getServiceCatalog(args, context)
     case 'get_calendar_slots':

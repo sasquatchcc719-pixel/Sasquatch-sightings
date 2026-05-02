@@ -9,6 +9,8 @@ import type {
 import { verifyRetellSignature } from '@/lib/retell/verify'
 
 const SUPPORTED_FUNCTIONS = new Set<RetellFunctionName>([
+  'quote_and_prepare_booking',
+  'book_prepared_slot',
   'get_service_catalog',
   'get_calendar_slots',
   'create_booking',
@@ -57,6 +59,10 @@ function inferFunctionName(
     return 'list_caller_appointments'
   }
   if ('line_items' in args) return 'create_booking'
+  if ('selected_start_time' in args) return 'book_prepared_slot'
+  if ('bedrooms_count' in args || 'requested_date' in args) {
+    return 'quote_and_prepare_booking'
+  }
   if ('job_description' in args || 'visit_duration_minutes' in args) {
     return 'create_estimate'
   }
