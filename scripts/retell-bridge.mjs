@@ -792,7 +792,7 @@ function addExplicitToolNodes(flow) {
       id: serviceCatalogNodeId,
       name: 'Tool: Get Service Catalog',
       toolId: serviceCatalogToolId,
-      nextNodeId: 'node-1777681468014',
+      nextNodeId: 'node-1777681751263',
       elseNodeId: 'node-1777681468014',
       instruction: 'Checking Sasquatch service options.',
       displayPosition: { x: 1260, y: -30 },
@@ -1025,7 +1025,7 @@ function buildSelfServeSandboxFlow(flow) {
   updateNodeInstruction(
     nextFlow,
     'Quote and Scheduling',
-    'Present the price from get_service_catalog (already called in Residential Intake). Say the estimate is based on what they described. If the customer only wanted a price, answer and ask if they want to check availability. If they are ready to schedule, collect name, phone, email, full address, city, ZIP, and preferred date/time. You MUST call get_calendar_slots before offering any times — never invent or assume availability. Offer 2 or 3 slots ONLY from the tool response. After the customer chooses a slot, you MUST call create_booking. NEVER say the customer is booked unless create_booking returned success in this conversation. If the booking tool fails, explain the issue and offer an available alternative from the tool response.',
+    'Present the price from get_service_catalog (already called in Residential Intake). Say the estimate is based on what they described. If the customer only wanted a price, answer and ask if they want to check availability. If they are ready to schedule, reuse any details the customer already provided and ask only for missing required booking fields: name, phone, email, full address, city, ZIP, and preferred date/time. Do not repeatedly reconfirm details the customer already confirmed. You MUST call get_calendar_slots before offering any times — never invent or assume availability. Offer 2 or 3 slots ONLY from the tool response. After the customer chooses a slot, you MUST call create_booking. NEVER say the customer is booked unless create_booking returned success in this conversation. If the booking tool fails, explain the issue and offer an available alternative from the tool response.',
   )
   updateNodeInstruction(
     nextFlow,
