@@ -136,6 +136,11 @@ function fmt(n: number) {
   }).format(n)
 }
 
+function timeToMinutes(value: string): number {
+  const [h, m] = String(value).slice(0, 5).split(':').map(Number)
+  return (h || 0) * 60 + (m || 0)
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function RecurringVisitDetail({
@@ -153,6 +158,14 @@ export default function RecurringVisitDetail({
   const [lineItems, setLineItems] = useState<LocalLineItem[]>([])
   const [editingLines, setEditingLines] = useState(false)
   const [savingLines, setSavingLines] = useState(false)
+  const [scheduleForm, setScheduleForm] = useState({
+    appointment_date: '',
+    start_time: '',
+    end_time: '',
+  })
+  const [savingSchedule, setSavingSchedule] = useState(false)
+  const [scheduleMessage, setScheduleMessage] = useState<string | null>(null)
+  const [scheduleError, setScheduleError] = useState<string | null>(null)
   const [visitNotes, setVisitNotes] = useState('')
   const [actionLoading, setActionLoading] = useState<string | null>(null)
 
@@ -180,6 +193,11 @@ export default function RecurringVisitDetail({
       setData(d)
       setStatus(d.appointment.status)
       setVisitNotes(d.appointment.internal_notes ?? '')
+      setScheduleForm({
+        appointment_date: d.appointment.appointment_date,
+        start_time: String(d.appointment.start_time).slice(0, 5),
+        end_time: String(d.appointment.end_time).slice(0, 5),
+      })
       setLineItems(
         (d.appointment.ops_appointment_line_items || []).map((l) => ({
           id: l.id,
@@ -244,6 +262,53 @@ export default function RecurringVisitDetail({
       throw new Error(d.error || 'Update failed')
     }
     return res.json()
+  }
+
+  const handleSaveSchedule = async () => {
+    setSavingSchedule(true)
+    setScheduleError(null)
+    setScheduleMessage(null)
+    try {
+      if (!scheduleForm.appointment_date) {
+        throw new Error('Pick a new date for this visit.')
+      }
+      if (!scheduleForm.start_time || !scheduleForm.end_time) {
+        throw new Error('Start and end time are required.')
+      }
+      if (
+        timeToMinutes(scheduleForm.end_time) <=
+        timeToMinutes(scheduleForm.start_time)
+      ) {
+        throw new Error('End time must be after start time.')
+      }
+
+      const result = (await patchAppointment(scheduleForm)) as {
+        appointment?: Partial<VisitData['appointment']>
+      }
+
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              appointment: {
+                ...current.appointment,
+                ...result.appointment,
+                appointment_date: scheduleForm.appointment_date,
+                start_time: scheduleForm.start_time,
+                end_time: scheduleForm.end_time,
+              },
+            }
+          : current,
+      )
+      setScheduleMessage('Schedule updated for this visit only.')
+      router.refresh()
+    } catch (e) {
+      setScheduleError(
+        e instanceof Error ? e.message : 'Failed to update schedule',
+      )
+    } finally {
+      setSavingSchedule(false)
+    }
   }
 
   const handleOnMyWay = async () => {
@@ -477,6 +542,93 @@ export default function RecurringVisitDetail({
             </div>
           )}
         </div>
+      </Card>
+
+      {/* ── Schedule Change ───────────────────────────────── */}
+      <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
+        <div className="mb-4">
+          <h2 className="text-lg font-semibold">Schedule Change</h2>
+          <p className="text-muted-foreground mt-1 text-sm">
+            Move this individual recurring visit without changing the rest of
+            the series.
+          </p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <label className="block">
+            <span className="text-muted-foreground mb-1 block text-xs font-medium">
+              Date
+            </span>
+            <input
+              type="date"
+              className="border-input bg-background h-10 w-full rounded-lg border px-3 text-sm"
+              value={scheduleForm.appointment_date}
+              onChange={(event) => {
+                setScheduleMessage(null)
+                setScheduleError(null)
+                setScheduleForm((current) => ({
+                  ...current,
+                  appointment_date: event.target.value,
+                }))
+              }}
+            />
+          </label>
+          <label className="block">
+            <span className="text-muted-foreground mb-1 block text-xs font-medium">
+              Start Time
+            </span>
+            <input
+              type="time"
+              className="border-input bg-background h-10 w-full rounded-lg border px-3 text-sm"
+              value={scheduleForm.start_time}
+              onChange={(event) => {
+                setScheduleMessage(null)
+                setScheduleError(null)
+                setScheduleForm((current) => ({
+                  ...current,
+                  start_time: event.target.value,
+                }))
+              }}
+            />
+          </label>
+          <label className="block">
+            <span className="text-muted-foreground mb-1 block text-xs font-medium">
+              End Time
+            </span>
+            <input
+              type="time"
+              className="border-input bg-background h-10 w-full rounded-lg border px-3 text-sm"
+              value={scheduleForm.end_time}
+              onChange={(event) => {
+                setScheduleMessage(null)
+                setScheduleError(null)
+                setScheduleForm((current) => ({
+                  ...current,
+                  end_time: event.target.value,
+                }))
+              }}
+            />
+          </label>
+        </div>
+        {scheduleError && (
+          <p className="text-destructive mt-3 text-sm">{scheduleError}</p>
+        )}
+        {scheduleMessage && (
+          <p className="mt-3 text-sm text-emerald-400">{scheduleMessage}</p>
+        )}
+        {isBatch && (
+          <p className="text-muted-foreground mt-3 text-xs">
+            For monthly batch invoices, the visit is included based on the
+            scheduled month it is completed in.
+          </p>
+        )}
+        <Button
+          className="mt-4 w-full gap-2 sm:w-auto"
+          onClick={() => void handleSaveSchedule()}
+          disabled={savingSchedule}
+        >
+          {savingSchedule && <Loader2 className="h-4 w-4 animate-spin" />}
+          {savingSchedule ? 'Saving Schedule…' : 'Save Schedule Change'}
+        </Button>
       </Card>
 
       {/* ── Standing Instructions ─────────────────────────── */}
