@@ -164,6 +164,7 @@ export default function RecurringVisitDetail({
     end_time: '',
   })
   const [savingSchedule, setSavingSchedule] = useState(false)
+  const [notifyingSchedule, setNotifyingSchedule] = useState(false)
   const [scheduleMessage, setScheduleMessage] = useState<string | null>(null)
   const [scheduleError, setScheduleError] = useState<string | null>(null)
   const [visitNotes, setVisitNotes] = useState('')
@@ -308,6 +309,45 @@ export default function RecurringVisitDetail({
       )
     } finally {
       setSavingSchedule(false)
+    }
+  }
+
+  const handleNotifyScheduleChange = async () => {
+    setNotifyingSchedule(true)
+    setScheduleError(null)
+    setScheduleMessage(null)
+    try {
+      const saved = data?.appointment
+      if (
+        !saved ||
+        saved.appointment_date !== scheduleForm.appointment_date ||
+        String(saved.start_time).slice(0, 5) !== scheduleForm.start_time ||
+        String(saved.end_time).slice(0, 5) !== scheduleForm.end_time
+      ) {
+        throw new Error(
+          'Save the schedule change before notifying the customer.',
+        )
+      }
+
+      const res = await fetch(
+        `/api/admin/ops/appointments/${appointmentId}/notify`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ event: 'job_rescheduled' }),
+        },
+      )
+      if (!res.ok) {
+        const d = await res.json()
+        throw new Error(d.error || 'Failed to notify customer')
+      }
+      setScheduleMessage('Customer notified of the schedule change.')
+    } catch (e) {
+      setScheduleError(
+        e instanceof Error ? e.message : 'Failed to notify customer',
+      )
+    } finally {
+      setNotifyingSchedule(false)
     }
   }
 
@@ -621,14 +661,27 @@ export default function RecurringVisitDetail({
             scheduled month it is completed in.
           </p>
         )}
-        <Button
-          className="mt-4 w-full gap-2 sm:w-auto"
-          onClick={() => void handleSaveSchedule()}
-          disabled={savingSchedule}
-        >
-          {savingSchedule && <Loader2 className="h-4 w-4 animate-spin" />}
-          {savingSchedule ? 'Saving Schedule…' : 'Save Schedule Change'}
-        </Button>
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+          <Button
+            className="w-full gap-2 sm:w-auto"
+            onClick={() => void handleSaveSchedule()}
+            disabled={savingSchedule || notifyingSchedule}
+          >
+            {savingSchedule && <Loader2 className="h-4 w-4 animate-spin" />}
+            {savingSchedule ? 'Saving Schedule…' : 'Save Schedule Change'}
+          </Button>
+          <Button
+            variant="outline"
+            className="w-full gap-2 sm:w-auto"
+            onClick={() => void handleNotifyScheduleChange()}
+            disabled={savingSchedule || notifyingSchedule}
+          >
+            {notifyingSchedule && <Loader2 className="h-4 w-4 animate-spin" />}
+            {notifyingSchedule
+              ? 'Notifying Customer…'
+              : 'Notify Customer of Change'}
+          </Button>
+        </div>
       </Card>
 
       {/* ── Standing Instructions ─────────────────────────── */}
