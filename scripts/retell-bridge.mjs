@@ -1038,6 +1038,7 @@ function addExplicitToolNodes(flow) {
     slotsNodeId,
     'Customer has chosen services and wants available appointment times',
   )
+  removeEdgeToNode(flow, 'Quote and Scheduling', slotsNodeId)
   upsertEdgeToNode(
     flow,
     'Quote and Scheduling',
