@@ -224,60 +224,78 @@ export function getAvailableSlots(params: {
   const slots: SlotOption[] = []
   const seen = new Set<number>()
 
+  function trySlot(
+    blockStart: number,
+    windowStart: number,
+    windowEnd: number,
+  ): boolean {
+    if (minStartMinutes !== undefined && blockStart < minStartMinutes) {
+      return false
+    }
+    if (blockStart < windowStart) return false
+    if (blockStart + requiredMinutes > windowEnd) return false
+    if (seen.has(blockStart)) return false
+    seen.add(blockStart)
+
+    const slotEnd = blockStart + requiredMinutes
+
+    const blockedByOverride = dayOverrides.some((override) => {
+      if (!override.is_available) {
+        if (!override.start_time || !override.end_time) {
+          return true
+        }
+
+        return overlaps(
+          blockStart,
+          slotEnd,
+          timeToMinutes(override.start_time),
+          timeToMinutes(override.end_time),
+        )
+      }
+
+      return false
+    })
+
+    if (blockedByOverride) return false
+
+    const clashesWithAppointment = blockedWindows.some((busy) =>
+      overlaps(blockStart, slotEnd, busy.start, busy.end),
+    )
+
+    if (clashesWithAppointment) return false
+
+    slots.push({
+      start_time: minutesToTime(blockStart),
+      end_time: minutesToTime(slotEnd),
+    })
+
+    return true
+  }
+
   for (const template of dayTemplates) {
     const windowStart = timeToMinutes(template.start_time)
     const windowEnd = timeToMinutes(template.end_time)
 
+    // Fixed 2-hour grid starts
     for (const blockStart of BLOCK_STARTS_MINUTES) {
-      if (minStartMinutes !== undefined && blockStart < minStartMinutes) {
+      trySlot(blockStart, windowStart, windowEnd)
+      if (slots.length >= maxResults) return slots
+    }
+
+    // Gap-fill: offer starts right after each appointment ends, rounded
+    // up to the nearest 30-minute mark so the calendar stays tidy.
+    for (const busy of blockedWindows) {
+      const gapStart = Math.ceil(busy.end / 30) * 30
+      if (gapStart >= windowEnd) continue
+      if ((BLOCK_STARTS_MINUTES as readonly number[]).includes(gapStart))
         continue
-      }
-      if (blockStart < windowStart) continue
-      if (blockStart + requiredMinutes > windowEnd) continue
-      if (seen.has(blockStart)) continue
-      seen.add(blockStart)
-
-      const slotEnd = blockStart + requiredMinutes
-
-      const blockedByOverride = dayOverrides.some((override) => {
-        if (!override.is_available) {
-          if (!override.start_time || !override.end_time) {
-            return true
-          }
-
-          return overlaps(
-            blockStart,
-            slotEnd,
-            timeToMinutes(override.start_time),
-            timeToMinutes(override.end_time),
-          )
-        }
-
-        return false
-      })
-
-      if (blockedByOverride) {
-        continue
-      }
-
-      const clashesWithAppointment = blockedWindows.some((busy) =>
-        overlaps(blockStart, slotEnd, busy.start, busy.end),
-      )
-
-      if (clashesWithAppointment) {
-        continue
-      }
-
-      slots.push({
-        start_time: minutesToTime(blockStart),
-        end_time: minutesToTime(slotEnd),
-      })
-
-      if (slots.length >= maxResults) {
-        return slots
-      }
+      trySlot(gapStart, windowStart, windowEnd)
+      if (slots.length >= maxResults) return slots
     }
   }
 
+  slots.sort(
+    (a, b) => timeToMinutes(a.start_time) - timeToMinutes(b.start_time),
+  )
   return slots
 }
