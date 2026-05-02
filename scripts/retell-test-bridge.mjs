@@ -117,8 +117,11 @@ function supabaseAdmin() {
 
 function timestampValue(value) {
   if (!value) return null
-  const milliseconds = Number(value) > 10_000_000_000 ? Number(value) : Number(value) * 1000
-  return Number.isFinite(milliseconds) ? new Date(milliseconds).toISOString() : null
+  const milliseconds =
+    Number(value) > 10_000_000_000 ? Number(value) : Number(value) * 1000
+  return Number.isFinite(milliseconds)
+    ? new Date(milliseconds).toISOString()
+    : null
 }
 
 function transcriptToText(snapshot) {
@@ -157,7 +160,9 @@ async function listTestCaseDefinitions(args) {
   })
   const body = await response.json()
   if (!response.ok) {
-    throw new Error(`Retell list-test-case-definitions failed: ${JSON.stringify(body)}`)
+    throw new Error(
+      `Retell list-test-case-definitions failed: ${JSON.stringify(body)}`,
+    )
   }
 
   const items = body.items || []
@@ -282,6 +287,351 @@ You are direct and mildly impatient. If the assistant repeats the same question 
   return definition
 }
 
+async function createMixedCarpetUpholsteryTestDefinition(args) {
+  const definition = await retellRequest('/create-test-case-definition', {
+    method: 'POST',
+    body: {
+      name: args.name,
+      response_engine: {
+        type: 'conversation-flow',
+        conversation_flow_id: args.flowId,
+        version: args.flowVersion,
+      },
+      llm_model: 'gpt-5.1',
+      user_prompt: `## Identity
+Your name is Rick James.
+You are testing a carpet cleaning booking assistant.
+
+## Goal
+Book the next available appointment for:
+- two regular bedrooms
+- one 300 square-foot living room
+- one couch
+
+## Behavior
+Provide your contact details when asked:
+- phone: 719-749-8807
+- email: clsewell970@gmail.com
+- address: 740 Platt Lane, Palmer Lake, Colorado 80133
+Do not let the assistant drop the couch. Ask for the total and confirmation that all three service types are included.`,
+      metrics: [
+        'The agent calls quote_and_prepare_booking with two bedrooms, a 300 square-foot living room, and one couch or sofa.',
+        'The agent quotes $332 for two regular bedrooms, one 300 square-foot living room, and one couch.',
+        'The agent includes the couch or sofa in the service summary before booking.',
+        'The agent calls book_prepared_slot before saying the appointment is booked.',
+        'The agent confirms the booking after the booking tool succeeds and includes the couch or sofa in the booked services.',
+      ],
+      tool_mocks: [
+        {
+          tool_name: 'quote_and_prepare_booking',
+          input_match_rule: { type: 'any' },
+          output: JSON.stringify({
+            success: true,
+            message: 'Estimated total is $332.',
+            data: {
+              quote_total: 332,
+              minimum_booking_amount: 150,
+              meets_minimum: true,
+              can_offer_slots: true,
+              appointment_date: '2026-05-04',
+              line_items: [
+                {
+                  service_id: 'regular-room-test-id',
+                  service_name: 'Regular Size Room (100 to 200 Sqft)',
+                  quantity: 2,
+                  unit_price: 46,
+                  total: 92,
+                },
+                {
+                  service_id: 'sasquatch-room-test-id',
+                  service_name: 'Sasquatch Size Room (200 to 400 Sqft)',
+                  quantity: 1,
+                  unit_price: 90,
+                  total: 90,
+                },
+                {
+                  service_id: 'sofa-couch-test-id',
+                  service_name: 'Sofa/Couch 3 Seat',
+                  quantity: 1,
+                  unit_price: 150,
+                  total: 150,
+                },
+              ],
+              missing_fields: [],
+              slots: [
+                { start_time: '09:00:00', end_time: '11:00:00' },
+                { start_time: '11:00:00', end_time: '13:00:00' },
+              ],
+              caller_script:
+                'The estimate is $332 for two regular bedrooms, one 300 square-foot living room, and one couch. I found 9 AM to 11 AM and 11 AM to 1 PM. Which one works best?',
+            },
+          }),
+        },
+        {
+          tool_name: 'book_prepared_slot',
+          input_match_rule: { type: 'any' },
+          output: JSON.stringify({
+            success: true,
+            message:
+              'Booking confirmed! Confirmation number: TEST-MIXED-123. The customer will receive a confirmation text and email.',
+            data: {
+              appointment_id: 'mixed-test-appointment-id',
+              confirmation_number: 'TEST-MIXED-123',
+              appointment_status: 'booked',
+              appointment_date: '2026-05-04',
+              start_time: '09:00',
+              end_time: '11:00',
+              total: 332,
+              line_items: [
+                {
+                  service_name: 'Regular Size Room (100 to 200 Sqft)',
+                  quantity: 2,
+                  unit_price: 46,
+                  total: 92,
+                },
+                {
+                  service_name: 'Sasquatch Size Room (200 to 400 Sqft)',
+                  quantity: 1,
+                  unit_price: 90,
+                  total: 90,
+                },
+                {
+                  service_name: 'Sofa/Couch 3 Seat',
+                  quantity: 1,
+                  unit_price: 150,
+                  total: 150,
+                },
+              ],
+              caller_script:
+                "You're all set for Monday, May 4 at 9:00 AM. Services: two regular bedrooms, one 300 square-foot living room, and one couch. Total: $332. You'll receive confirmation with the details.",
+            },
+          }),
+        },
+      ],
+      dynamic_variables: {},
+    },
+  })
+
+  console.log(JSON.stringify(definition, null, 2))
+  return definition
+}
+
+async function createTileRugLegendaryCatalogTestDefinition(args) {
+  const definition = await retellRequest('/create-test-case-definition', {
+    method: 'POST',
+    body: {
+      name: args.name,
+      response_engine: {
+        type: 'conversation-flow',
+        conversation_flow_id: args.flowId,
+        version: args.flowVersion,
+      },
+      llm_model: 'gpt-5.1',
+      user_prompt: `## Identity
+Your name is Rick James.
+
+## Goal
+Book the next available appointment for kitchen tile and grout cleaning, one area rug, and Legendary/deep clean carpet:
+- kitchen tile and grout is 500 square feet
+- area rug is 5 by 8
+- two regular bedrooms need the Legendary/deep clean
+
+Provide contact details when asked:
+- phone: 719-749-8807
+- email: clsewell970@gmail.com
+- address: 740 Platt Lane, Palmer Lake, Colorado 80133
+Ask the assistant to confirm the price includes tile and grout, the rug, and Legendary/deep clean carpet.`,
+      metrics: [
+        'The agent calls quote_and_prepare_booking with tile/grout, rug, and Legendary/deep clean carpet services.',
+        'The agent quotes $557 for 500 square feet of tile/grout, one 5x8 rug, and two Legendary regular rooms.',
+        'The agent includes tile/grout, rug, and Legendary/deep clean carpet in the service summary before booking.',
+        'The agent calls book_prepared_slot before saying the appointment is booked.',
+        'The final confirmation includes tile/grout, rug, Legendary/deep clean carpet, and the total.',
+      ],
+      tool_mocks: [
+        {
+          tool_name: 'quote_and_prepare_booking',
+          input_match_rule: { type: 'any' },
+          output: JSON.stringify({
+            success: true,
+            message: 'Estimated total is $557.',
+            data: {
+              quote_total: 557,
+              minimum_booking_amount: 150,
+              meets_minimum: true,
+              can_offer_slots: true,
+              appointment_date: '2026-05-04',
+              line_items: [
+                {
+                  service_name:
+                    'Tile & grout cleaning (per Foot) pre-scrub and clean with Hydroforce',
+                  quantity: 500,
+                  unit_price: 0.75,
+                  total: 375,
+                },
+                {
+                  service_name: 'Area Rug 5x8',
+                  quantity: 1,
+                  unit_price: 32,
+                  total: 32,
+                },
+                {
+                  service_name:
+                    'Legendary Restoration — Regular Room (100-200 sqft)',
+                  quantity: 2,
+                  unit_price: 75,
+                  total: 150,
+                },
+              ],
+              slots: [{ start_time: '09:00:00', end_time: '12:00:00' }],
+              caller_script:
+                'The estimate is $557 for tile and grout, one 5x8 rug, and two Legendary deep-clean rooms. I found 9 AM to noon.',
+            },
+          }),
+        },
+        {
+          tool_name: 'book_prepared_slot',
+          input_match_rule: { type: 'any' },
+          output: JSON.stringify({
+            success: true,
+            message: 'Booking confirmed.',
+            data: {
+              appointment_date: '2026-05-04',
+              start_time: '09:00',
+              total: 557,
+              line_items: [
+                { service_name: 'Tile & grout cleaning', quantity: 500 },
+                { service_name: 'Area Rug 5x8', quantity: 1 },
+                {
+                  service_name:
+                    'Legendary Restoration — Regular Room (100-200 sqft)',
+                  quantity: 2,
+                },
+              ],
+              caller_script:
+                "You're all set for Monday, May 4 at 9 AM. Services: tile and grout, one 5x8 rug, and two Legendary deep-clean rooms. Total: $557.",
+            },
+          }),
+        },
+      ],
+      dynamic_variables: {},
+    },
+  })
+
+  console.log(JSON.stringify(definition, null, 2))
+  return definition
+}
+
+async function createTileCarpetCouchAddOnTestDefinition(args) {
+  const definition = await retellRequest('/create-test-case-definition', {
+    method: 'POST',
+    body: {
+      name: args.name,
+      response_engine: {
+        type: 'conversation-flow',
+        conversation_flow_id: args.flowId,
+        version: args.flowVersion,
+      },
+      llm_model: 'gpt-5.1',
+      user_prompt: `## Identity
+Your name is Rick James.
+
+## Goal
+Ask for pricing and availability for:
+- 500 square feet of kitchen tile and grout
+- a standard three-seat sofa
+- a 250 square-foot carpeted living room
+- general deodorizer for one room
+
+Be clear that you want all four services included and ask for next week's availability.`,
+      metrics: [
+        'The agent calls quote_and_prepare_booking with tile_grout_sqft, couch or sofa, living room carpet square footage, and deodorizer.',
+        'The agent does not quote only the living room carpet or drop tile/grout, couch, or deodorizer.',
+        'The agent quotes $627 for the complete service list.',
+        'The agent does not invent add-on prices outside the tool result.',
+      ],
+      tool_mocks: [
+        {
+          tool_name: 'quote_and_prepare_booking',
+          input_match_rule: { type: 'any' },
+          output: JSON.stringify({
+            success: true,
+            message: 'Estimated total is $627.',
+            data: {
+              quote_total: 627,
+              minimum_booking_amount: 150,
+              meets_minimum: true,
+              can_offer_slots: true,
+              appointment_date: '2026-05-05',
+              line_items: [
+                {
+                  service_name: 'Tile & grout cleaning',
+                  quantity: 500,
+                  total: 375,
+                },
+                { service_name: 'Sasquatch Size Room', quantity: 1, total: 90 },
+                { service_name: 'Sofa/ Couch 3 Seat', quantity: 1, total: 150 },
+                {
+                  service_name: 'General Deodorizer per room (Not for Urine)',
+                  quantity: 1,
+                  total: 12,
+                },
+              ],
+              slots: [{ start_time: '09:00:00', end_time: '12:00:00' }],
+              caller_script:
+                'The estimate is $627 for tile and grout, living room carpet, sofa, and one room of deodorizer.',
+            },
+          }),
+        },
+      ],
+      dynamic_variables: {},
+    },
+  })
+
+  console.log(JSON.stringify(definition, null, 2))
+  return definition
+}
+
+async function createFloodRestorationBlockedTestDefinition(args) {
+  const definition = await retellRequest('/create-test-case-definition', {
+    method: 'POST',
+    body: {
+      name: args.name,
+      response_engine: {
+        type: 'conversation-flow',
+        conversation_flow_id: args.flowId,
+        version: args.flowVersion,
+      },
+      llm_model: 'gpt-5.1',
+      user_prompt: `## Identity
+Your name is Mike.
+
+## Goal
+Try to book water extraction and drying because a pipe burst and the basement has standing water. Ask for a quote and the earliest appointment.`,
+      metrics: [
+        'The agent does not quote water extraction, drying equipment, or restoration line items as normal cleaning.',
+        'The agent does not call quote_and_prepare_booking or book_prepared_slot for the water damage job.',
+        'The agent treats the call as urgent water damage/flood restoration and routes to admin alert or transfer.',
+      ],
+      tool_mocks: [
+        {
+          tool_name: 'notify_admin',
+          input_match_rule: { type: 'any' },
+          output: JSON.stringify({
+            success: true,
+            message: 'Admin notified.',
+            data: { alert_id: 'flood-test-alert' },
+          }),
+        },
+      ],
+      dynamic_variables: {},
+    },
+  })
+
+  console.log(JSON.stringify(definition, null, 2))
+  return definition
+}
+
 async function createMinimumAddOnLoopTestDefinition(args) {
   const definition = await retellRequest('/create-test-case-definition', {
     method: 'POST',
@@ -335,7 +685,8 @@ If the updated total is still below minimum, do not add more services. Ask what 
                 },
                 {
                   service_id: '8a5740a1-2681-438e-9248-0309fe92bc15',
-                  service_name: 'Hall/Bathroom/Closet Carpet cleaning 30 to 100 sqft',
+                  service_name:
+                    'Hall/Bathroom/Closet Carpet cleaning 30 to 100 sqft',
                   quantity: 1,
                   unit_price: 25,
                   total: 25,
@@ -349,7 +700,10 @@ If the updated total is still below minimum, do not add more services. Ask what 
         },
         {
           tool_name: 'quote_and_prepare_booking',
-          input_match_rule: { type: 'partial_match', args: { hallway_count: 1 } },
+          input_match_rule: {
+            type: 'partial_match',
+            args: { hallway_count: 1 },
+          },
           output: JSON.stringify({
             success: true,
             message: 'Estimated total is $117.',
@@ -369,7 +723,8 @@ If the updated total is still below minimum, do not add more services. Ask what 
                 },
                 {
                   service_id: '8a5740a1-2681-438e-9248-0309fe92bc15',
-                  service_name: 'Hall/Bathroom/Closet Carpet cleaning 30 to 100 sqft',
+                  service_name:
+                    'Hall/Bathroom/Closet Carpet cleaning 30 to 100 sqft',
                   quantity: 1,
                   unit_price: 25,
                   total: 25,
@@ -639,6 +994,22 @@ async function runRegressionSuite(args) {
     createSmokeTestDefinition({
       ...args,
       name: `Rabecca regression booking success ${timestamp}`,
+    }),
+    createMixedCarpetUpholsteryTestDefinition({
+      ...args,
+      name: `Rabecca regression mixed carpet upholstery ${timestamp}`,
+    }),
+    createTileRugLegendaryCatalogTestDefinition({
+      ...args,
+      name: `Rabecca regression tile rug legendary catalog ${timestamp}`,
+    }),
+    createTileCarpetCouchAddOnTestDefinition({
+      ...args,
+      name: `Rabecca regression tile carpet couch add-on ${timestamp}`,
+    }),
+    createFloodRestorationBlockedTestDefinition({
+      ...args,
+      name: `Rabecca regression flood restoration blocked ${timestamp}`,
     }),
     createMinimumAddOnLoopTestDefinition({
       ...args,

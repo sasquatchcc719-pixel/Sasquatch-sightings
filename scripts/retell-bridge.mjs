@@ -199,8 +199,9 @@ function findFlowForAgent(flows, agent) {
   const flowId = getAgentFlowId(agent)
   if (!flowId) return null
   return (
-    flows.find((flow) => flow.conversation_flow_id === flowId || flow.id === flowId) ||
-    null
+    flows.find(
+      (flow) => flow.conversation_flow_id === flowId || flow.id === flowId,
+    ) || null
   )
 }
 
@@ -218,7 +219,9 @@ function collectTools(agent, flow) {
     )
   }
   if (Array.isArray(flow?.tools)) {
-    tools.push(...flow.tools.map((tool) => ({ source: 'conversation_flow', ...tool })))
+    tools.push(
+      ...flow.tools.map((tool) => ({ source: 'conversation_flow', ...tool })),
+    )
   }
   return tools
 }
@@ -250,16 +253,22 @@ function buildSummary({ agent, flow, tools, agents, flows }) {
     lines.push(`- Name: ${getAgentName(agent)}`)
     lines.push(`- Agent ID: ${agent.agent_id || agent.id || 'unknown'}`)
     lines.push(`- Version: ${agent.version || 'unknown'}`)
-    lines.push(`- Conversation Flow ID: ${getAgentFlowId(agent) || 'not found'}`)
+    lines.push(
+      `- Conversation Flow ID: ${getAgentFlowId(agent) || 'not found'}`,
+    )
   } else {
     lines.push('- No Rabecca/Rebeccca-matching agent found.')
   }
 
   lines.push('', '## Matched Conversation Flow', '')
   if (flow) {
-    lines.push(`- Flow ID: ${flow.conversation_flow_id || flow.id || 'unknown'}`)
+    lines.push(
+      `- Flow ID: ${flow.conversation_flow_id || flow.id || 'unknown'}`,
+    )
     lines.push(`- Version: ${flow.version || 'unknown'}`)
-    lines.push(`- Nodes: ${Array.isArray(flow.nodes) ? flow.nodes.length : 'unknown'}`)
+    lines.push(
+      `- Nodes: ${Array.isArray(flow.nodes) ? flow.nodes.length : 'unknown'}`,
+    )
     lines.push(`- Tools: ${Array.isArray(flow.tools) ? flow.tools.length : 0}`)
   } else {
     lines.push('- No conversation flow found from the matched agent.')
@@ -433,9 +442,12 @@ For pricing, collect only job details first:
 - square footage only for large open rooms like living rooms, basements, great rooms, lofts, or open-concept spaces
 - stairs and number of steps
 - pet urine or odor concerns
-- upholstery, rugs, or tile if applicable
+- upholstery type and count if applicable, such as couch/sofa count, loveseat count, recliner count, or sectional seat count
+- tile/grout square footage if applicable
+- rug size or square footage if applicable
+- whether carpet is standard cleaning or Legendary/deep clean
 
-After collecting job details, call get_service_catalog to look up the actual prices. Then tell the customer the price based ONLY on the tool response. Do not require name, phone, email, or address before quoting.
+After collecting job details, call quote_and_prepare_booking to get actual prices and minimum status. Then tell the customer the price based ONLY on the tool response. Do not require name, phone, email, or address before quoting.
 If the customer changes the job details after the quote, call quote_and_prepare_booking again before answering. Do not calculate the updated quote yourself.
 
 Only after the customer wants availability or wants to book, collect:
@@ -446,7 +458,7 @@ Bedroom rule:
 Treat each bedroom as one regular room unless the customer says it is unusually large. Do not ask square footage for every bedroom.
 
 Scheduling:
-When the customer is ready to schedule, call get_calendar_slots and offer 2 or 3 slots from the tool response. NEVER offer times that did not come from the tool. After the customer chooses a slot, call create_booking. If create_booking succeeds, confirm the appointment. If it fails, explain the issue and offer an available alternative if the tool provided one.
+When the customer wants availability, call quote_and_prepare_booking with the complete service list and requested date. Offer only slots returned by quote_and_prepare_booking. After the customer chooses a slot, call book_prepared_slot with the same complete service list, selected slot, customer, and address. If book_prepared_slot succeeds, confirm the appointment with the date, time, total, and service list from the tool result. If it fails, explain the issue and offer an available alternative only if the tool provided one.
 
 Commercial:
 Do not quote commercial work using residential pricing. Collect business/contact details, site address, rough square footage, floor type, timeline, and whether it is one-time or recurring. Then call create_estimate to schedule the estimate visit.
@@ -658,7 +670,9 @@ function upsertEdgeToNode(flow, fromNodeName, toNodeId, prompt) {
   }
 
   const edges = Array.isArray(node.edges) ? node.edges : []
-  const existingIndex = edges.findIndex((edge) => edge.destination_node_id === toNodeId)
+  const existingIndex = edges.findIndex(
+    (edge) => edge.destination_node_id === toNodeId,
+  )
   if (existingIndex >= 0) {
     edges[existingIndex] = nextEdge
   } else {
@@ -670,7 +684,9 @@ function upsertEdgeToNode(flow, fromNodeName, toNodeId, prompt) {
 function removeEdgeToNode(flow, fromNodeName, toNodeId) {
   const node = flow.nodes?.find((item) => item.name === fromNodeName)
   if (!node || !Array.isArray(node.edges)) return
-  node.edges = node.edges.filter((edge) => edge.destination_node_id !== toNodeId)
+  node.edges = node.edges.filter(
+    (edge) => edge.destination_node_id !== toNodeId,
+  )
 }
 
 function removeBrokenOrphanEdges(flow) {
@@ -686,6 +702,133 @@ function removeBrokenOrphanEdges(flow) {
   }
 }
 
+function rabeccaQuoteToolProperties() {
+  return {
+    line_items: {
+      type: 'array',
+      description:
+        'Optional catalog-backed service lines. Use catalog_slug, service_name, or service_id plus quantity or square_feet. Allowed normal services include carpet, Legendary deep clean, tile/grout, rugs, upholstery, deodorizer/treatments, and normal add-ons. Do not use for flood/water restoration.',
+      items: {
+        type: 'object',
+        properties: {
+          catalog_slug: { type: 'string' },
+          service_name: { type: 'string' },
+          service_id: { type: 'string' },
+          quantity: { type: 'number' },
+          square_feet: { type: 'number' },
+        },
+      },
+    },
+    bedrooms_count: {
+      type: 'number',
+      description: 'Number of regular bedrooms or regular rooms.',
+    },
+    living_room_sqft: {
+      type: 'number',
+      description:
+        'Approximate square footage for one standard carpeted living room or open area.',
+    },
+    tile_grout_sqft: {
+      type: 'number',
+      description: 'Square footage for residential tile and grout cleaning.',
+    },
+    rug_sqft: {
+      type: 'number',
+      description:
+        'Square footage for a custom-size area rug when the preset rug size is unknown.',
+    },
+    rug_3x5_count: { type: 'number', description: 'Number of 3x5 rugs.' },
+    runner_2_5x8_count: {
+      type: 'number',
+      description: 'Number of 2.5x8 runner rugs.',
+    },
+    rug_4x6_count: { type: 'number', description: 'Number of 4x6 rugs.' },
+    rug_5x6_count: { type: 'number', description: 'Number of 5x6 rugs.' },
+    rug_5x8_count: { type: 'number', description: 'Number of 5x8 rugs.' },
+    rug_8x11_count: { type: 'number', description: 'Number of 8x11 rugs.' },
+    rug_11x14_count: { type: 'number', description: 'Number of 11x14 rugs.' },
+    legendary_regular_room_count: {
+      type: 'number',
+      description: 'Number of Legendary/deep clean regular rooms.',
+    },
+    legendary_room_sqft: {
+      type: 'number',
+      description:
+        'Square footage for one Legendary/deep clean carpeted room or open area.',
+    },
+    legendary_hall_count: {
+      type: 'number',
+      description: 'Number of Legendary/deep clean small halls or closets.',
+    },
+    legendary_step_count: {
+      type: 'number',
+      description: 'Number of Legendary/deep clean stair steps or landings.',
+    },
+    couch_count: {
+      type: 'number',
+      description: 'Number of standard fabric three-seat sofas or couches.',
+    },
+    loveseat_count: {
+      type: 'number',
+      description: 'Number of standard fabric loveseats.',
+    },
+    recliner_count: {
+      type: 'number',
+      description: 'Number of standard fabric chairs or recliners.',
+    },
+    sectional_seat_count: {
+      type: 'number',
+      description: 'Number of seats/cushion sections for a fabric sectional.',
+    },
+    leather_chair_count: {
+      type: 'number',
+      description: 'Number of leather chairs.',
+    },
+    leather_loveseat_count: {
+      type: 'number',
+      description: 'Number of leather loveseats.',
+    },
+    leather_sofa_count: {
+      type: 'number',
+      description: 'Number of leather sofas.',
+    },
+    leather_sectional_seat_count: {
+      type: 'number',
+      description: 'Number of leather sectional seats.',
+    },
+    dining_chair_count: {
+      type: 'number',
+      description: 'Number of dining chairs.',
+    },
+    ottoman_count: { type: 'number', description: 'Number of ottomans.' },
+    mattress_count: { type: 'number', description: 'Number of mattresses.' },
+    deodorizer_room_count: {
+      type: 'number',
+      description: 'Number of rooms getting general deodorizer.',
+    },
+    urine_treatment_room_count: {
+      type: 'number',
+      description: 'Number of rooms getting urine eliminator treatment.',
+    },
+    pre_vacuuming_room_count: {
+      type: 'number',
+      description: 'Number of rooms getting pre-vacuuming.',
+    },
+    hall_count: {
+      type: 'number',
+      description: 'Number of halls, bathrooms, or closets to clean.',
+    },
+    stairs_count: {
+      type: 'number',
+      description: 'Number of individual stair steps.',
+    },
+    requested_date: {
+      type: 'string',
+      description: 'Requested appointment date in YYYY-MM-DD format.',
+    },
+  }
+}
+
 function addExplicitToolNodes(flow) {
   upsertTool(
     flow,
@@ -695,28 +838,7 @@ function addExplicitToolNodes(flow) {
       'Deterministically quote a residential job, validate minimum booking rules, normalize the requested date, and return real available slots only when the job meets the minimum. Use this for normal residential quote and scheduling before attempting to book.',
       {
         type: 'object',
-        properties: {
-          bedrooms_count: {
-            type: 'number',
-            description: 'Number of regular bedrooms or regular rooms.',
-          },
-          living_room_sqft: {
-            type: 'number',
-            description: 'Approximate square footage for one living room or open area, if provided.',
-          },
-          hall_count: {
-            type: 'number',
-            description: 'Number of halls, bathrooms, or closets to clean.',
-          },
-          stairs_count: {
-            type: 'number',
-            description: 'Number of individual stair steps.',
-          },
-          requested_date: {
-            type: 'string',
-            description: 'Requested appointment date in YYYY-MM-DD format.',
-          },
-        },
+        properties: rabeccaQuoteToolProperties(),
       },
     ),
   )
@@ -729,29 +851,11 @@ function addExplicitToolNodes(flow) {
       {
         type: 'object',
         properties: {
-          bedrooms_count: {
-            type: 'number',
-            description: 'Number of regular bedrooms or regular rooms.',
-          },
-          living_room_sqft: {
-            type: 'number',
-            description: 'Approximate square footage for one living room or open area, if provided.',
-          },
-          hall_count: {
-            type: 'number',
-            description: 'Number of halls, bathrooms, or closets to clean.',
-          },
-          stairs_count: {
-            type: 'number',
-            description: 'Number of individual stair steps.',
-          },
-          requested_date: {
-            type: 'string',
-            description: 'Appointment date in YYYY-MM-DD format.',
-          },
+          ...rabeccaQuoteToolProperties(),
           selected_start_time: {
             type: 'string',
-            description: 'Selected appointment start time in HH:MM 24-hour format.',
+            description:
+              'Selected appointment start time in HH:MM 24-hour format.',
           },
           customer: {
             type: 'object',
@@ -761,11 +865,13 @@ function addExplicitToolNodes(flow) {
               name: { type: 'string' },
               phone: {
                 type: 'string',
-                description: 'Best callback number, preferably 10 digits or E.164.',
+                description:
+                  'Best callback number, preferably 10 digits or E.164.',
               },
               email: {
                 type: 'string',
-                description: 'Normal email format, not spaced-out spoken words.',
+                description:
+                  'Normal email format, not spaced-out spoken words.',
               },
             },
             required: ['name', 'phone', 'email'],
@@ -824,7 +930,8 @@ function addExplicitToolNodes(flow) {
           },
           service_address: {
             type: 'string',
-            description: 'Service address where the original cleaning happened.',
+            description:
+              'Service address where the original cleaning happened.',
           },
           original_service_date: {
             type: 'string',
@@ -864,7 +971,8 @@ function addExplicitToolNodes(flow) {
           },
           duration_minutes: {
             type: 'number',
-            description: 'Optional reclean duration. Use 120 unless the job clearly needs longer.',
+            description:
+              'Optional reclean duration. Use 120 unless the job clearly needs longer.',
           },
           customer_name: {
             type: 'string',
@@ -880,7 +988,8 @@ function addExplicitToolNodes(flow) {
           },
           service_address: {
             type: 'string',
-            description: 'Service address where the original cleaning happened.',
+            description:
+              'Service address where the original cleaning happened.',
           },
           original_service_date: {
             type: 'string',
@@ -903,12 +1012,18 @@ function addExplicitToolNodes(flow) {
   const scheduleRecleanToolId = findToolId(flow, 'schedule_reclean')
   const notifyToolId = findToolId(flow, 'notify_admin')
   const serviceCatalogNodeId = findFunctionNodeId(flow, 'get_service_catalog')
-  const quotePrepareNodeId = findFunctionNodeId(flow, 'quote_and_prepare_booking')
+  const quotePrepareNodeId = findFunctionNodeId(
+    flow,
+    'quote_and_prepare_booking',
+  )
   const bookPreparedNodeId = findFunctionNodeId(flow, 'book_prepared_slot')
   const slotsNodeId = findFunctionNodeId(flow, 'get_calendar_slots')
   const bookingNodeId = findFunctionNodeId(flow, 'create_booking')
   const estimateNodeId = findFunctionNodeId(flow, 'create_estimate')
-  const appointmentLookupNodeId = findFunctionNodeId(flow, 'list_caller_appointments')
+  const appointmentLookupNodeId = findFunctionNodeId(
+    flow,
+    'list_caller_appointments',
+  )
   const scheduleRecleanNodeId = findFunctionNodeId(flow, 'schedule_reclean')
   const notifyNodeId = findFunctionNodeId(flow, 'notify_admin')
   const bookingConfirmedNodeId = 'node-rabecca-booking-confirmed'
@@ -929,7 +1044,7 @@ function addExplicitToolNodes(flow) {
     id: bookingConfirmedNodeId,
     name: 'Booking Confirmed',
     instruction:
-      'Only enter this node after book_prepared_slot returned success. Say: "You are all set. Your appointment is booked for the confirmed date and time. You will receive confirmation with the details." Then end the call.',
+      'Only enter this node after book_prepared_slot returned success. Use the tool result caller_script when available. Confirm the appointment date/time, total, and a brief service list from the booked line_items, including upholstery such as couch/sofa when present. Then end the call.',
     displayPosition: { x: 2140, y: -186 },
   })
 
@@ -1042,7 +1157,8 @@ function addExplicitToolNodes(flow) {
       toolId: slotsToolId,
       nextNodeId: recleanIntakeNodeId,
       elseNodeId: recleanIntakeNodeId,
-      instruction: 'Checking real appointment availability for a no-charge reclean.',
+      instruction:
+        'Checking real appointment availability for a no-charge reclean.',
       displayPosition: { x: 1660, y: 298 },
     })
   }
@@ -1097,7 +1213,8 @@ function addExplicitToolNodes(flow) {
       toolId: notifyToolId,
       nextNodeId: adminFollowupNodeId,
       elseNodeId: 'node-1777682450750',
-      instruction: 'Notifying the team about an exception or unsupported request.',
+      instruction:
+        'Notifying the team about an exception or unsupported request.',
       displayPosition: { x: 1660, y: 534 },
     })
     upsertFunctionNode(flow, {
@@ -1106,7 +1223,8 @@ function addExplicitToolNodes(flow) {
       toolId: notifyToolId,
       nextNodeId: floodTransferNodeId,
       elseNodeId: floodTransferNodeId,
-      instruction: 'Sending Charles an urgent flood restoration / water damage alert before transfer.',
+      instruction:
+        'Sending Charles an urgent flood restoration / water damage alert before transfer.',
       displayPosition: { x: 1420, y: 606 },
     })
     upsertTransferCallNode(flow, {
@@ -1262,7 +1380,9 @@ function completePlaceholderEdges(flow) {
 }
 
 function routeResidentialQuoteEdgesToTool(flow, quotePrepareNodeId) {
-  const residentialNode = flow.nodes?.find((node) => node.name === 'Residential Intake')
+  const residentialNode = flow.nodes?.find(
+    (node) => node.name === 'Residential Intake',
+  )
   if (!residentialNode || !quotePrepareNodeId) return
 
   for (const edge of residentialNode.edges || []) {
@@ -1290,8 +1410,12 @@ function prioritizeEdge(flow, fromNodeName, firstDestinationNodeId) {
   if (!node || !Array.isArray(node.edges)) return
 
   node.edges = [
-    ...node.edges.filter((edge) => edge.destination_node_id === firstDestinationNodeId),
-    ...node.edges.filter((edge) => edge.destination_node_id !== firstDestinationNodeId),
+    ...node.edges.filter(
+      (edge) => edge.destination_node_id === firstDestinationNodeId,
+    ),
+    ...node.edges.filter(
+      (edge) => edge.destination_node_id !== firstDestinationNodeId,
+    ),
   ]
 }
 
@@ -1326,7 +1450,7 @@ function buildSelfServeSandboxFlow(flow) {
   updateNodeInstruction(
     nextFlow,
     'Residential Intake',
-    'Handle residential quote-first intake. Ask one question at a time. First ask what they need cleaned. If they mention flood restoration, active water damage, water extraction, burst pipes, sewage backup, flooded basement, standing water, or emergency drying, route to Flood / Water Damage Transfer and do not quote or schedule as carpet cleaning. For normal residential pricing or scheduling, collect only countable job details first: bedrooms, large open-room square footage only when needed, halls/closets/bathrooms, stairs, pet urine or odor concerns, upholstery/rugs/tile if applicable. Once you have enough countable details, call quote_and_prepare_booking. Do not quote from memory and do not call separate catalog/calendar tools for normal residential booking.',
+    'Handle residential quote-first intake. Ask one question at a time. First ask what they need cleaned. If they mention flood restoration, active water damage, water extraction, burst pipes, sewage backup, flooded basement, standing water, or emergency drying, route to Flood / Water Damage Transfer and do not quote or schedule as normal cleaning. For normal pricing or scheduling, collect only service details first: standard or Legendary/deep carpet rooms and large-room square footage, halls/closets/bathrooms, stairs, tile/grout square footage, rug size or square footage, upholstery type/count, pet urine or odor concerns, deodorizer, and normal add-ons. Once you have enough details, call quote_and_prepare_booking with the complete service list. Do not quote from memory and do not call separate catalog/calendar tools for normal booking.',
   )
   updateNodeInstruction(
     nextFlow,
@@ -1362,9 +1486,9 @@ function buildSelfServeSandboxFlow(flow) {
   for (const tool of nextFlow.tools || []) {
     if (tool.name === 'get_service_catalog') {
       tool.description =
-        'Retrieve Sasquatch Carpet Cleaning services and pricing. Use before quoting, answering service questions, or preparing booking line items.'
+        'Retrieve Sasquatch Carpet Cleaning service names and pricing for general service questions only. For live quotes, minimum status, availability, or booking, use quote_and_prepare_booking instead.'
       tool.parameters.properties.category.description =
-        "Optional Sasquatch service category filter, such as carpet, upholstery, rug, tile, stairs, or commercial."
+        'Optional Sasquatch service category filter, such as carpet, Legendary, upholstery, rug, tile, or deodorizer. Flood/water restoration is not self-bookable.'
     }
     if (tool.name === 'create_booking') {
       tool.description =
@@ -1405,7 +1529,8 @@ function buildSelfServeSandboxFlow(flow) {
           },
           service_address: {
             type: 'string',
-            description: 'Service address or affected property address, if known.',
+            description:
+              'Service address or affected property address, if known.',
           },
           urgency: {
             type: 'string',
@@ -1428,8 +1553,15 @@ function buildSelfServeSandboxFlow(flow) {
   }
 
   addExplicitToolNodes(nextFlow)
-  routeResidentialQuoteEdgesToTool(nextFlow, findFunctionNodeId(nextFlow, 'quote_and_prepare_booking'))
-  prioritizeEdge(nextFlow, 'Complaint / Reclean Intake', findFunctionNodeId(nextFlow, 'schedule_reclean'))
+  routeResidentialQuoteEdgesToTool(
+    nextFlow,
+    findFunctionNodeId(nextFlow, 'quote_and_prepare_booking'),
+  )
+  prioritizeEdge(
+    nextFlow,
+    'Complaint / Reclean Intake',
+    findFunctionNodeId(nextFlow, 'schedule_reclean'),
+  )
   completePlaceholderEdges(nextFlow)
   removeBrokenOrphanEdges(nextFlow)
   removeDuplicateEdgeIds(nextFlow)
@@ -1464,7 +1596,10 @@ async function exportRetellConfig(args) {
   const outDir = path.resolve(args.outDir)
   await mkdir(outDir, { recursive: true })
   await writeFile(path.join(outDir, 'agents.json'), stableJson(agents))
-  await writeFile(path.join(outDir, 'conversation-flows.json'), stableJson(flows))
+  await writeFile(
+    path.join(outDir, 'conversation-flows.json'),
+    stableJson(flows),
+  )
   await writeFile(path.join(outDir, 'agent.json'), stableJson(agent))
   await writeFile(path.join(outDir, 'conversation-flow.json'), stableJson(flow))
   await writeFile(path.join(outDir, 'tools.json'), stableJson(tools))
@@ -1493,7 +1628,9 @@ async function cloneRetellAgent(args) {
   const flow = findFlowForAgent(flows, agent)
 
   if (!agent || !flow) {
-    throw new Error('Could not find a matching Rabecca agent and flow to clone.')
+    throw new Error(
+      'Could not find a matching Rabecca agent and flow to clone.',
+    )
   }
 
   const flowPayload = buildCloneFlowPayload(flow)
@@ -1508,7 +1645,10 @@ async function cloneRetellAgent(args) {
 
   const outDir = path.resolve(args.outDir)
   await mkdir(outDir, { recursive: true })
-  await writeFile(path.join(outDir, 'clone-flow-payload.json'), stableJson(flowPayload))
+  await writeFile(
+    path.join(outDir, 'clone-flow-payload.json'),
+    stableJson(flowPayload),
+  )
   await writeFile(
     path.join(outDir, 'clone-agent-payload.dry-run.json'),
     stableJson(dryRunAgentPayload),
@@ -1525,15 +1665,28 @@ async function cloneRetellAgent(args) {
     method: 'POST',
     body: flowPayload,
   })
-  const agentPayload = buildCloneAgentPayload(agent, createdFlow, args.cloneName)
+  const agentPayload = buildCloneAgentPayload(
+    agent,
+    createdFlow,
+    args.cloneName,
+  )
   const createdAgent = await retellRequest(apiKey, '/create-agent', {
     method: 'POST',
     body: agentPayload,
   })
 
-  await writeFile(path.join(outDir, 'created-flow.json'), stableJson(createdFlow))
-  await writeFile(path.join(outDir, 'created-agent.json'), stableJson(createdAgent))
-  await writeFile(path.join(outDir, 'clone-agent-payload.json'), stableJson(agentPayload))
+  await writeFile(
+    path.join(outDir, 'created-flow.json'),
+    stableJson(createdFlow),
+  )
+  await writeFile(
+    path.join(outDir, 'created-agent.json'),
+    stableJson(createdAgent),
+  )
+  await writeFile(
+    path.join(outDir, 'clone-agent-payload.json'),
+    stableJson(agentPayload),
+  )
 
   console.log('Created Retell sandbox clone.')
   console.log(`Sandbox agent: ${getAgentName(createdAgent)}`)
@@ -1564,7 +1717,10 @@ async function rewriteSandboxV1(args) {
   const payload = buildSelfServeSandboxFlow(flow)
   const outDir = path.resolve(args.outDir)
   await mkdir(outDir, { recursive: true })
-  await writeFile(path.join(outDir, 'rewrite-sandbox-v1-payload.json'), stableJson(payload))
+  await writeFile(
+    path.join(outDir, 'rewrite-sandbox-v1-payload.json'),
+    stableJson(payload),
+  )
 
   if (!args.execute) {
     console.log('Dry run only. No Retell changes were made.')
@@ -1574,11 +1730,18 @@ async function rewriteSandboxV1(args) {
     return
   }
 
-  const updatedFlow = await retellRequest(apiKey, `/update-conversation-flow/${flowId}`, {
-    method: 'PATCH',
-    body: payload,
-  })
-  await writeFile(path.join(outDir, 'updated-flow.json'), stableJson(updatedFlow))
+  const updatedFlow = await retellRequest(
+    apiKey,
+    `/update-conversation-flow/${flowId}`,
+    {
+      method: 'PATCH',
+      body: payload,
+    },
+  )
+  await writeFile(
+    path.join(outDir, 'updated-flow.json'),
+    stableJson(updatedFlow),
+  )
   console.log(`Updated sandbox flow: ${flowId}`)
 }
 

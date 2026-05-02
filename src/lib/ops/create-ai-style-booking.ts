@@ -283,11 +283,13 @@ export async function createAiStyleBooking(
 
   const appointmentLines = lineItems.map((item) => ({
     appointment_id: appointment.id,
+    service_catalog_item_id: item.service_catalog_item_id,
     name_snapshot: item.name_snapshot,
     quantity: item.quantity,
     unit_price: item.unit_price,
     duration_minutes: item.duration_minutes,
     line_total: item.unit_price * item.quantity,
+    pricing_unit_snapshot: item.pricing_unit,
   }))
 
   await supabase.from('ops_appointment_line_items').insert(appointmentLines)

@@ -34,6 +34,8 @@ type BookingLineItemInput = {
   catalog_slug?: string
   service_name?: string
   quantity?: number
+  square_feet?: number
+  sqft?: number
 }
 
 type CatalogItem = {
@@ -49,6 +51,9 @@ type CatalogItem = {
 type PreparedLineItem = {
   service_id: string
   service_name: string
+  catalog_slug: string
+  category: string
+  pricing_unit: string
   quantity: number
   unit_price: number
   total: number
@@ -348,7 +353,37 @@ function positiveIntegerArg(
   return 0
 }
 
-async function loadCoreResidentialCatalog(
+const RABECCA_BOOKABLE_CATEGORIES = [
+  'Carpet Cleaning',
+  'Legendary Restoration Clean',
+  'Upholstery Cleaning',
+  'rug cleaning',
+  'Hard Surface',
+  'Carpet Deodorizer',
+  'Checkout Upsells',
+]
+
+const RABECCA_BLOCKED_CATALOG_SLUGS = new Set([
+  'card-fee',
+  'commercial-carpet-cleaning',
+  'commercial-deodorizer-per-sqft',
+  'custom-amount',
+  'discount',
+  'gratuity',
+  'low-moisture-encapsulation-cleaning-lvm-bonnet',
+  'mileage-travel',
+])
+
+function isRabeccaBookableCatalogItem(
+  item: Pick<CatalogItem, 'category' | 'slug'>,
+) {
+  return (
+    RABECCA_BOOKABLE_CATEGORIES.includes(item.category) &&
+    !RABECCA_BLOCKED_CATALOG_SLUGS.has(item.slug)
+  )
+}
+
+async function loadRabeccaBookableCatalog(
   supabase: SupabaseClient,
 ): Promise<CatalogItem[]> {
   const { data, error } = await supabase
@@ -357,16 +392,10 @@ async function loadCoreResidentialCatalog(
       'id, name, slug, category, base_price, pricing_unit, default_duration_minutes',
     )
     .eq('is_active', true)
-    .in('slug', [
-      'regular-size-room-100-to-200-sqft',
-      'hall-bathroom-closet-carpet-cleaning-30-to-100-sqft',
-      'step-carpet-cleaning-per-step-charge',
-      'sasquatch-size-room-200-to-400-sqft',
-      'monster-size-room-400-to-600-sqft',
-    ])
+    .in('category', RABECCA_BOOKABLE_CATEGORIES)
 
   if (error) throw error
-  return (data || []) as CatalogItem[]
+  return ((data || []) as CatalogItem[]).filter(isRabeccaBookableCatalogItem)
 }
 
 function catalogBySlug(
@@ -376,26 +405,115 @@ function catalogBySlug(
   return catalog.find((item) => item.slug === slug) || null
 }
 
+function catalogByName(
+  catalog: CatalogItem[],
+  includes: string[],
+  excludes: string[] = [],
+): CatalogItem | null {
+  return (
+    catalog.find((item) => {
+      const name = item.name.toLowerCase()
+      return (
+        includes.every((term) => name.includes(term)) &&
+        excludes.every((term) => !name.includes(term))
+      )
+    }) || null
+  )
+}
+
+function catalogBySlugOrName(
+  catalog: CatalogItem[],
+  input: BookingLineItemInput,
+): CatalogItem | null {
+  const id = input.service_id || input.catalog_item_id
+  if (id) return catalog.find((item) => item.id === id) || null
+  if (input.catalog_slug) return catalogBySlug(catalog, input.catalog_slug)
+  if (!input.service_name) return null
+  const normalized = normalizeLookup(input.service_name)
+  return (
+    catalog.find(
+      (item) =>
+        normalizeLookup(item.name) === normalized ||
+        normalizeLookup(item.slug) === normalized,
+    ) || null
+  )
+}
+
+function quantityForCatalogLine(
+  catalogItem: CatalogItem,
+  requestedQuantity: number,
+): number {
+  const pricingUnit = String(catalogItem.pricing_unit || '').toLowerCase()
+  if (pricingUnit.includes('sq')) {
+    return Math.max(1, Math.round(requestedQuantity))
+  }
+  return Math.max(1, Math.round(requestedQuantity))
+}
+
 function addPreparedLineItem(
   items: PreparedLineItem[],
   catalogItem: CatalogItem | null,
   quantity: number,
 ) {
   if (!catalogItem || quantity <= 0) return
+  if (!isRabeccaBookableCatalogItem(catalogItem)) return
   const unitPrice = Number(catalogItem.base_price || 0)
+  const normalizedQuantity = quantityForCatalogLine(catalogItem, quantity)
   items.push({
     service_id: catalogItem.id,
     service_name: catalogItem.name,
-    quantity,
+    catalog_slug: catalogItem.slug,
+    category: catalogItem.category,
+    pricing_unit: catalogItem.pricing_unit || 'fixed',
+    quantity: normalizedQuantity,
     unit_price: unitPrice,
-    total: unitPrice * quantity,
+    total: unitPrice * normalizedQuantity,
   })
 }
 
 function roomSlugForSquareFeet(squareFeet: number): string {
+  if (squareFeet > 800) return 'oversized-room-carpet-cleaning-800-plus-sqft'
+  if (squareFeet >= 600) return 'jumbo-humungous-room-600-to800-sqft'
   if (squareFeet >= 400) return 'monster-size-room-400-to-600-sqft'
   if (squareFeet >= 200) return 'sasquatch-size-room-200-to-400-sqft'
   return 'regular-size-room-100-to-200-sqft'
+}
+
+function legendarySlugForSquareFeet(squareFeet: number): string {
+  if (squareFeet >= 600) return 'legendary-jumbo'
+  if (squareFeet >= 400) return 'legendary-monster'
+  if (squareFeet >= 200) return 'legendary-sasquatch'
+  if (squareFeet >= 100) return 'legendary-regular'
+  return 'legendary-hall'
+}
+
+function numberArgFromKeys(
+  args: Record<string, unknown>,
+  keys: string[],
+): number | null {
+  for (const key of keys) {
+    const value = numberArg(args, key)
+    if (value && value > 0) return value
+  }
+  return null
+}
+
+function addPreparedLineItemsFromRawInputs(
+  items: PreparedLineItem[],
+  catalog: CatalogItem[],
+  rawItems: unknown,
+) {
+  if (!Array.isArray(rawItems)) return
+  for (const rawItem of rawItems) {
+    const input = asRecord(rawItem) as BookingLineItemInput
+    const catalogItem = catalogBySlugOrName(catalog, input)
+    const quantity =
+      numberArg(input as Record<string, unknown>, 'square_feet') ||
+      numberArg(input as Record<string, unknown>, 'sqft') ||
+      numberArg(input as Record<string, unknown>, 'quantity') ||
+      1
+    addPreparedLineItem(items, catalogItem, quantity)
+  }
 }
 
 async function prepareResidentialBookingQuote(
@@ -414,7 +532,7 @@ async function prepareResidentialBookingQuote(
     }
   | { ok: false; message: string }
 > {
-  const catalog = await loadCoreResidentialCatalog(context.supabase)
+  const catalog = await loadRabeccaBookableCatalog(context.supabase)
   const lineItems: PreparedLineItem[] = []
   const regularRoom = catalogBySlug(
     catalog,
@@ -425,6 +543,14 @@ async function prepareResidentialBookingQuote(
     'hall-bathroom-closet-carpet-cleaning-30-to-100-sqft',
   )
   const steps = catalogBySlug(catalog, 'step-carpet-cleaning-per-step-charge')
+  const sofa = catalogByName(catalog, ['sofa'], ['leather', 'sectional'])
+  const loveseat = catalogByName(catalog, ['love'], ['leather'])
+  const recliner = catalogByName(catalog, ['recliner'], ['leather'])
+  const sectional = catalogByName(catalog, ['sectional'], ['leather'])
+  const leatherChair = catalogBySlug(catalog, 'leather-cleaning-chair')
+  const leatherLoveseat = catalogBySlug(catalog, 'leather-cleaning-love-seat')
+  const leatherSofa = catalogBySlug(catalog, 'leather-cleaning-sofa')
+  const leatherSectional = catalogBySlug(catalog, 'sectional-leather')
 
   const bedrooms = positiveIntegerArg(args, [
     'bedrooms_count',
@@ -440,16 +566,187 @@ async function prepareResidentialBookingQuote(
   ])
   const stepCount = positiveIntegerArg(args, ['stairs_count', 'step_count'])
   const livingRoomSquareFeet = numberArg(args, 'living_room_sqft')
+  const couchCount = positiveIntegerArg(args, [
+    'couch_count',
+    'sofa_count',
+    'three_seat_sofa_count',
+  ])
+  const loveseatCount = positiveIntegerArg(args, ['loveseat_count'])
+  const reclinerCount = positiveIntegerArg(args, ['recliner_count'])
+  const sectionalSeats = positiveIntegerArg(args, [
+    'sectional_seat_count',
+    'sectional_seats',
+  ])
+  const leatherChairCount = positiveIntegerArg(args, ['leather_chair_count'])
+  const leatherLoveseatCount = positiveIntegerArg(args, [
+    'leather_loveseat_count',
+  ])
+  const leatherSofaCount = positiveIntegerArg(args, ['leather_sofa_count'])
+  const leatherSectionalSeats = positiveIntegerArg(args, [
+    'leather_sectional_seat_count',
+    'leather_sectional_seats',
+  ])
+  const diningChairCount = positiveIntegerArg(args, ['dining_chair_count'])
+  const ottomanCount = positiveIntegerArg(args, ['ottoman_count'])
+  const mattressCount = positiveIntegerArg(args, ['mattress_count'])
+  const tileGroutSquareFeet = numberArgFromKeys(args, [
+    'tile_grout_sqft',
+    'tile_sqft',
+    'grout_sqft',
+    'hard_surface_sqft',
+  ])
+  const customRugSquareFeet = numberArgFromKeys(args, [
+    'rug_sqft',
+    'area_rug_sqft',
+    'custom_rug_sqft',
+  ])
+  const legendaryRooms = positiveIntegerArg(args, [
+    'legendary_regular_room_count',
+    'deep_clean_regular_room_count',
+  ])
+  const legendaryHallCount = positiveIntegerArg(args, [
+    'legendary_hall_count',
+    'deep_clean_hall_count',
+  ])
+  const legendaryStepCount = positiveIntegerArg(args, [
+    'legendary_stairs_count',
+    'legendary_step_count',
+    'deep_clean_step_count',
+  ])
+  const legendarySquareFeet = numberArgFromKeys(args, [
+    'legendary_room_sqft',
+    'deep_clean_room_sqft',
+  ])
+  const generalDeodorizerRooms = positiveIntegerArg(args, [
+    'deodorizer_room_count',
+    'general_deodorizer_room_count',
+  ])
+  const urineTreatmentRooms = positiveIntegerArg(args, [
+    'urine_treatment_room_count',
+    'pet_treatment_room_count',
+  ])
+  const preVacuumingRooms = positiveIntegerArg(args, [
+    'pre_vacuuming_room_count',
+  ])
 
+  addPreparedLineItemsFromRawInputs(lineItems, catalog, args.line_items)
   addPreparedLineItem(lineItems, regularRoom, bedrooms)
   addPreparedLineItem(lineItems, hall, halls)
   addPreparedLineItem(lineItems, steps, stepCount)
+  addPreparedLineItem(lineItems, sofa, couchCount)
+  addPreparedLineItem(lineItems, loveseat, loveseatCount)
+  addPreparedLineItem(lineItems, recliner, reclinerCount)
+  addPreparedLineItem(lineItems, sectional, sectionalSeats)
+  addPreparedLineItem(lineItems, leatherChair, leatherChairCount)
+  addPreparedLineItem(lineItems, leatherLoveseat, leatherLoveseatCount)
+  addPreparedLineItem(lineItems, leatherSofa, leatherSofaCount)
+  addPreparedLineItem(lineItems, leatherSectional, leatherSectionalSeats)
+  addPreparedLineItem(
+    lineItems,
+    catalogBySlug(catalog, 'dining-chair'),
+    diningChairCount,
+  )
+  addPreparedLineItem(
+    lineItems,
+    catalogBySlug(catalog, 'ottoman'),
+    ottomanCount,
+  )
+  addPreparedLineItem(
+    lineItems,
+    catalogBySlug(catalog, 'mattress-cleaning'),
+    mattressCount,
+  )
+  addPreparedLineItem(
+    lineItems,
+    catalogBySlug(
+      catalog,
+      'tile-grout-cleaning-per-foot-pre-scrub-and-clean-with-hydroforce',
+    ),
+    tileGroutSquareFeet || 0,
+  )
+  addPreparedLineItem(
+    lineItems,
+    catalogBySlug(catalog, 'rug-cleaning-per-foot'),
+    customRugSquareFeet || 0,
+  )
+  addPreparedLineItem(
+    lineItems,
+    catalogBySlug(catalog, 'rug-3x5'),
+    positiveIntegerArg(args, ['rug_3x5_count']),
+  )
+  addPreparedLineItem(
+    lineItems,
+    catalogBySlug(catalog, 'runner-2-5x8'),
+    positiveIntegerArg(args, ['runner_2_5x8_count', 'runner_rug_count']),
+  )
+  addPreparedLineItem(
+    lineItems,
+    catalogBySlug(catalog, 'rug-4x6-wool-or-polyester'),
+    positiveIntegerArg(args, ['rug_4x6_count']),
+  )
+  addPreparedLineItem(
+    lineItems,
+    catalogBySlug(catalog, 'rug-5x6'),
+    positiveIntegerArg(args, ['rug_5x6_count']),
+  )
+  addPreparedLineItem(
+    lineItems,
+    catalogBySlug(catalog, 'area-rug-8x5'),
+    positiveIntegerArg(args, ['rug_5x8_count', 'area_rug_5x8_count']),
+  )
+  addPreparedLineItem(
+    lineItems,
+    catalogBySlug(catalog, 'rug-8x11wool-or-polyester'),
+    positiveIntegerArg(args, ['rug_8x11_count']),
+  )
+  addPreparedLineItem(
+    lineItems,
+    catalogBySlug(catalog, 'rug-11x14'),
+    positiveIntegerArg(args, ['rug_11x14_count']),
+  )
+  addPreparedLineItem(
+    lineItems,
+    catalogBySlug(catalog, 'legendary-regular'),
+    legendaryRooms,
+  )
+  addPreparedLineItem(
+    lineItems,
+    catalogBySlug(catalog, 'legendary-hall'),
+    legendaryHallCount,
+  )
+  addPreparedLineItem(
+    lineItems,
+    catalogBySlug(catalog, 'legendary-step'),
+    legendaryStepCount,
+  )
+  if (legendarySquareFeet && legendarySquareFeet > 0) {
+    addPreparedLineItem(
+      lineItems,
+      catalogBySlug(catalog, legendarySlugForSquareFeet(legendarySquareFeet)),
+      legendarySquareFeet > 800 ? legendarySquareFeet : 1,
+    )
+  }
+  addPreparedLineItem(
+    lineItems,
+    catalogBySlug(catalog, 'general-deodorizer-per-room-not-for-urine'),
+    generalDeodorizerRooms,
+  )
+  addPreparedLineItem(
+    lineItems,
+    catalogBySlug(catalog, 'pet-urine-injection-treatment-with-bio-release'),
+    urineTreatmentRooms,
+  )
+  addPreparedLineItem(
+    lineItems,
+    catalogBySlug(catalog, 'pre-vacuuming'),
+    preVacuumingRooms,
+  )
 
   if (livingRoomSquareFeet && livingRoomSquareFeet > 0) {
     addPreparedLineItem(
       lineItems,
       catalogBySlug(catalog, roomSlugForSquareFeet(livingRoomSquareFeet)),
-      1,
+      livingRoomSquareFeet > 800 ? livingRoomSquareFeet : 1,
     )
   }
 
@@ -466,7 +763,7 @@ async function prepareResidentialBookingQuote(
     return {
       ok: false,
       message:
-        'I need at least one countable residential service, like bedrooms_count, living_room_sqft, hall_count, or stairs_count.',
+        'I need at least one bookable service, like bedrooms_count, living_room_sqft, tile_grout_sqft, rug_sqft, couch_count, legendary_room_sqft, or line_items.',
     }
   }
 
@@ -701,14 +998,20 @@ async function bookPreparedSlot(
     })
   }
 
+  const serviceSummary = prepared.lineItems
+    .map((item) => `${item.quantity} ${item.service_name}`)
+    .join(', ')
+
   return response(true, result.message, {
     ...result,
+    quote_total: prepared.subtotal,
+    line_items: prepared.lineItems,
     normalized_customer: {
       ...customer,
       phone: customer.phone || context.callerPhone || '',
     },
     normalized_address: address,
-    caller_script: `You're all set for ${result.appointment_date} at ${result.start_time}. You'll receive confirmation with the details.`,
+    caller_script: `You're all set for ${result.appointment_date} at ${result.start_time}. Services: ${serviceSummary}. Total: $${prepared.subtotal}. You'll receive confirmation with the details.`,
   })
 }
 
@@ -737,7 +1040,9 @@ async function getServiceCatalog(
   if (error) throw error
 
   return response(true, 'Loaded active service catalog.', {
-    services: data || [],
+    services: ((data || []) as CatalogItem[]).filter(
+      isRabeccaBookableCatalogItem,
+    ),
   })
 }
 
@@ -1176,26 +1481,45 @@ async function resolveBookingLineItems(
     .map((item) => item.service_name)
     .filter(Boolean) as string[]
 
+  let allowedDirectIds = new Set<string>()
+  if (directIds.length > 0) {
+    const { data, error } = await supabase
+      .from('service_catalog_items')
+      .select('id, slug, category')
+      .in('id', directIds)
+      .eq('is_active', true)
+    if (error) throw error
+    allowedDirectIds = new Set(
+      (data || [])
+        .filter(isRabeccaBookableCatalogItem)
+        .map((row) => String(row.id)),
+    )
+  }
+
   let slugToId = new Map<string, string>()
   if (slugs.length > 0) {
     const { data, error } = await supabase
       .from('service_catalog_items')
-      .select('id, slug')
+      .select('id, slug, category')
       .in('slug', slugs)
       .eq('is_active', true)
     if (error) throw error
-    slugToId = new Map((data || []).map((row) => [String(row.slug), row.id]))
+    slugToId = new Map(
+      (data || [])
+        .filter(isRabeccaBookableCatalogItem)
+        .map((row) => [String(row.slug), row.id]),
+    )
   }
 
   let nameToId = new Map<string, string>()
   if (names.length > 0) {
     const { data, error } = await supabase
       .from('service_catalog_items')
-      .select('id, name, slug')
+      .select('id, name, slug, category')
       .eq('is_active', true)
     if (error) throw error
     nameToId = new Map(
-      (data || []).flatMap((row) => [
+      (data || []).filter(isRabeccaBookableCatalogItem).flatMap((row) => [
         [normalizeLookup(String(row.name || '')), row.id],
         [normalizeLookup(String(row.slug || '')), row.id],
       ]),
@@ -1204,17 +1528,23 @@ async function resolveBookingLineItems(
 
   const resolved = inputs
     .map((item) => {
+      const directId = item.service_id || item.catalog_item_id
       const serviceId =
-        item.service_id ||
-        item.catalog_item_id ||
-        (item.catalog_slug ? slugToId.get(item.catalog_slug) : undefined) ||
-        (item.service_name
-          ? nameToId.get(normalizeLookup(item.service_name))
-          : undefined)
+        directId && allowedDirectIds.has(directId)
+          ? directId
+          : (item.catalog_slug ? slugToId.get(item.catalog_slug) : undefined) ||
+            (item.service_name
+              ? nameToId.get(normalizeLookup(item.service_name))
+              : undefined)
       if (!serviceId) return null
       return {
         service_id: serviceId,
-        quantity: Math.max(1, Math.round(Number(item.quantity || 1))),
+        quantity: Math.max(
+          1,
+          Math.round(
+            Number(item.square_feet || item.sqft || item.quantity || 1),
+          ),
+        ),
       }
     })
     .filter(Boolean) as Array<{ service_id: string; quantity: number }>
@@ -1241,13 +1571,17 @@ async function validateRequestedSlotAvailable(
   const serviceIds = params.lineItems.map((item) => item.service_id)
   const { data, error } = await supabase
     .from('service_catalog_items')
-    .select('id, base_price')
+    .select('id, slug, category, base_price')
     .in('id', serviceIds)
     .eq('is_active', true)
 
   if (error) throw error
 
-  const catalogById = new Map((data || []).map((item) => [item.id, item]))
+  const catalogById = new Map(
+    (data || [])
+      .filter(isRabeccaBookableCatalogItem)
+      .map((item) => [item.id, item]),
+  )
   const subtotal = params.lineItems.reduce((sum, item) => {
     const catalogItem = catalogById.get(item.service_id)
     return sum + Number(catalogItem?.base_price || 0) * item.quantity
