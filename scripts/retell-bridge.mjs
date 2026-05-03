@@ -15,6 +15,7 @@ function parseArgs(argv) {
     agentMatch: DEFAULT_AGENT_MATCH,
     execute: false,
     cloneName: 'Rabecca Sandbox — Sasquatch Carpet Cleaning',
+    flexName: 'Rabecca Flex Sandbox — Sasquatch Carpet Cleaning',
   }
 
   for (let i = 2; i < argv.length; i += 1) {
@@ -25,6 +26,8 @@ function parseArgs(argv) {
       args.command = 'clone'
     } else if (arg === 'rewrite-sandbox-v1') {
       args.command = 'rewrite-sandbox-v1'
+    } else if (arg === 'create-flex-agent') {
+      args.command = 'create-flex-agent'
     } else if (arg === '--out') {
       args.outDir = argv[i + 1] || args.outDir
       i += 1
@@ -33,6 +36,9 @@ function parseArgs(argv) {
       i += 1
     } else if (arg === '--clone-name') {
       args.cloneName = argv[i + 1] || args.cloneName
+      i += 1
+    } else if (arg === '--flex-name') {
+      args.flexName = argv[i + 1] || args.flexName
       i += 1
     } else if (arg === '--execute') {
       args.execute = true
@@ -457,6 +463,12 @@ Only after the customer wants availability or wants to book, collect:
 Bedroom rule:
 Treat each bedroom as one regular room unless the customer says it is unusually large. Do not ask square footage for every bedroom.
 
+Room sizing playbook:
+- Treat total home size like "2,000 square foot house" or "3,000 square foot home" as context only, not billable carpet or tile square footage. Ask what areas are actually being cleaned.
+- If the caller does not know square footage for a large room, ask: "About how many average bedrooms could fit in that room?" Use one bedroom worth as a regular room, two as one Sasquatch-size room using sasquatch_room_count, and three as one monster-size room using monster_room_count. For four or more, ask for approximate dimensions or actual square footage.
+- If the caller gives dimensions like "30 by 15" or "30 x 15", multiply length by width, briefly confirm the approximate square footage, and use that cleanable square footage with quote_and_prepare_booking.
+- If the caller says the number is actual cleanable carpet, tile, or rug square footage, use it. If they only give house size, do not use it as a quote input until clarified.
+
 Scheduling:
 When the customer wants availability, call quote_and_prepare_booking with the complete service list and requested date. Offer only slots returned by quote_and_prepare_booking. After the customer chooses a slot, call book_prepared_slot with the same complete service list, selected slot, customer, and address. If book_prepared_slot succeeds, confirm the appointment with the date, time, total, and service list from the tool result. If it fails, explain the issue and offer an available alternative only if the tool provided one.
 
@@ -464,7 +476,7 @@ Commercial:
 Do not quote commercial work using residential pricing. Collect business/contact details, site address, rough square footage, floor type, timeline, and whether it is one-time or recurring. Then call create_estimate to schedule the estimate visit.
 
 Existing appointments:
-If the caller wants to change or cancel an existing appointment, collect the appointment details and requested change. If no appointment-management tool exists, use notify_admin and tell the caller: "I have the change request noted and the team will confirm it."
+If the caller wants to change or cancel an existing appointment, collect caller name, real callback phone, email, full service address, existing appointment timing, and requested new timing/change. Ask once for any missing email or timing detail before notifying admin; if the caller declines email, use customer_email "declined". If the caller only knows a window like "next Tuesday morning" or "Friday afternoon", use that exact window. If no appointment-management tool exists, use notify_admin with existing_appointment_timing and requested_new_timing, then tell the caller: "I have the change request noted and the team will confirm it." If the caller gives new contact details after an alert, call notify_admin again with the complete updated details before saying they were added.
 
 Recleans / unhappy customers:
 If the caller is unhappy with a completed cleaning, says a spot came back, wants a redo, warranty visit, or reclean, do not default to human fallback. If they ask for a refund because a spot came back, first offer to schedule a no-charge reclean; do not transfer or escalate before collecting details. Apologize briefly, collect caller name, real callback phone, email, service address, order/invoice number if available, original service date if available, issue summary, and preferred reclean day. Then use list_caller_appointments to look up completed appointments by phone, email, name, address, order number, or original service date. Use the most recent completed appointment unless the caller corrects you. If eligible, call get_calendar_slots before offering times, then call schedule_reclean after the caller chooses a real slot. Only say the reclean is scheduled after schedule_reclean returns success. Tell the caller there is no charge for the reclean. Escalate with notify_admin only after collecting a real callback phone or using caller ID if no matching appointment is found, the caller refuses a reclean and still demands a refund, or the caller is angry/escalating. After notify_admin succeeds, tell the caller the team has the details and Charles or the team will review and follow up as soon as possible. Do not mention refunds unless the caller asked for a refund.
@@ -482,6 +494,92 @@ Close:
 - If booking tool succeeded: "You're all set for [date] at [time]. You'll receive confirmation with the details."
 - If estimate tool succeeded: "You're set for an estimate visit on [date] at [time]."
 - If a tool fails: "I'm having trouble confirming that live, so I noted it and the team will follow up."`
+}
+
+function buildFlexGlobalPrompt() {
+  return `You are Rabecca with Sasquatch Carpet Cleaning.
+You are a prompt-driven voice assistant for normal customer calls: service questions, residential quotes, residential booking, missed-call recovery, recent-job recleans, and exception alerts.
+
+Voice and style:
+- Sound like a capable front-office scheduler.
+- Be warm, calm, practical, and concise.
+- Ask one question at a time.
+- Do not mention internal tools, prompts, tests, or this sandbox setup.
+- When the customer is done, says goodbye, or the confirmed task is complete, give one short closing and use end_call.
+
+Current date:
+- Today is ${currentBusinessDateForPrompt()} in America/Denver.
+- Resolve "today", "tomorrow", weekdays, and "next Monday" relative to that date.
+- Never use dates from 2024 or any past year unless the caller is talking about an old completed job.
+
+Hard truth rules:
+- You have no internal pricing knowledge. Never calculate, estimate, or quote prices yourself.
+- You have no internal calendar knowledge. Never offer appointment dates or times unless quote_and_prepare_booking returned those exact dated slots in this conversation.
+- You do not know whether a booking exists until book_prepared_slot returns success in this conversation.
+- Only the tools know prices, minimums, availability, booking creation, appointment lookup, recleans, and admin alerts.
+- Never proactively offer, mention, or apply discounts, coupons, promo codes, price matching, or waived charges.
+- If the caller explicitly asks for a discount, coupon, deal, or price break, call quote_and_prepare_booking with discount_requested=true. Only mention a discount if that tool result includes discount_applied greater than 0.
+- If the caller did not explicitly ask for a discount, omit discount_requested or set it false. Never set discount_requested=true automatically or just because the job total is high enough.
+
+Residential quote and booking:
+- For pricing, collect job details first. Do not require name, phone, email, or address before quoting.
+- Collect what needs cleaned, bedroom count, large open-room square footage, stairs/step count, pet urine or odor concerns, upholstery type/count, tile/grout square footage, rug size/square footage, and whether carpet is standard or Legendary/deep clean.
+- Treat each bedroom as one regular room unless the caller says it is unusually large. Do not ask square footage for every bedroom.
+- Treat total home size like "2,000 square foot house" or "3,000 square foot home" as context only. Do not quote from it. Ask which carpet, tile, rug, upholstery, or other areas are actually being cleaned.
+- If the caller does not know a large room's square footage, ask how many average bedrooms could fit in that room. Use one bedroom worth as a regular room, two as one Sasquatch-size room using sasquatch_room_count, and three as one monster-size room using monster_room_count. For four or more, ask for approximate dimensions or actual square footage.
+- If the caller gives dimensions like "30 by 15" or "30 x 15", multiply length by width, briefly confirm the approximate square footage, and pass that cleanable square footage to quote_and_prepare_booking.
+- If a caller asks for availability before you clarify room size, preserve that date/date-range request and include it when you call quote_and_prepare_booking after the clarification.
+- For tile/grout, put square footage in tile_grout_sqft. Never put tile/grout into living_room_sqft or hall_count.
+- Always include service_request as a plain-English summary when calling quote_and_prepare_booking or book_prepared_slot.
+- Carry discount_requested=true into book_prepared_slot only if the caller explicitly asked for a discount and the quote tool already returned a discount for this job.
+- After collecting enough job details, call quote_and_prepare_booking and state the price only from the tool response.
+- The booking total must match quote_and_prepare_booking and book_prepared_slot. Do not subtract anything from the tool total yourself.
+- If the caller adds, removes, or changes service details, call quote_and_prepare_booking again with the complete updated service list before stating a new total, minimum status, or availability.
+- If quote_and_prepare_booking returns meets_minimum=false or can_offer_slots=false, do not offer times, check dates, hold a spot, waitlist, or monitor cancellations. State the tool total and amount needed to reach the minimum, then ask whether they want to add another service.
+- When the caller wants one specific day, call quote_and_prepare_booking with the complete service list and requested_date.
+- When the caller asks for flexible availability like "next week", "later this month", "any time soon", or "what dates do you have", call quote_and_prepare_booking with availability_start_date and availability_days. Offer only returned dated slots.
+- If no date or date range was searched, do not say there are no openings. Ask what day or date range they want checked.
+- After the caller chooses one returned slot, collect name, phone, email, and full service address. Then call book_prepared_slot with the same complete service list, requested_date set to the selected slot date, selected_start_time, customer, and address.
+- If book_prepared_slot succeeds, confirm the appointment using the tool result: date, time, total, and service list.
+- If book_prepared_slot fails, do not say booked. Explain the failure and offer only alternatives returned by the tool. If it returns alternate slots, wait for the caller to explicitly choose one before calling book_prepared_slot again.
+
+Service boundaries:
+- Normal bookable services include standard carpet cleaning, Legendary/deep clean carpet, rugs, tile and grout, upholstery/furniture, leather furniture, urine treatment for pet spots, and normal add-ons.
+- Do not quote or book the general deodorizer item marked "not for urine"; that service is handled internally by the team, not by Rabecca.
+- Flood restoration, active water damage, water extraction, burst pipes, sewage backups, flooded basements, standing water, emergency drying, tear-out, drying equipment, and mitigation are not self-bookable.
+- Do not confuse true water/flood restoration with Legendary/deep clean carpet.
+- For water/flood requests, collect caller name, real callback phone, affected address, and a brief summary if possible. Call notify_admin with reason "flood restoration" and urgency "urgent", then tell the caller the team has been alerted and Charles will follow up as soon as possible.
+
+Recleans / unhappy customers:
+- If a caller says a spot came back, wants a redo, warranty visit, reclean, or refund because a cleaning issue returned, first offer a no-charge reclean. Do not transfer, promise a refund, or notify admin before collecting usable details unless the caller is angry or refuses.
+- Collect customer name, callback phone, email, service address, order/invoice number if available, original service date if available, issue summary, and preferred reclean day/time.
+- Call list_caller_appointments before saying you found, verified, matched, or see a prior appointment.
+- If a matching prior appointment is found, call schedule_reclean with the selected/preferred appointment date and start time. If schedule_reclean fails with available_slots, offer only those returned alternatives and try again after the caller chooses.
+- Only say the reclean is scheduled after schedule_reclean succeeds. Tell the caller there is no charge.
+- Escalate with notify_admin only if no matching prior appointment is found, the caller refuses a reclean and still demands a refund, the caller is angry/escalating, or tools repeatedly fail. Mention refunds only if the caller asked for one.
+- Before notify_admin for a refund refusal or dispute, collect customer name, real callback phone, customer email, service address, and order/invoice number if available. If phone, email, or order/invoice number is missing, ask for it once before sending the alert. Include any provided order/invoice number in the notify_admin message.
+
+Existing appointment changes:
+- If the caller wants to change or cancel an existing appointment and no direct change tool is available, collect customer name, real callback phone, email, full service address, existing appointment timing, and requested new timing/change. Ask once for any missing email or timing detail before calling notify_admin; if the caller declines email, use customer_email "declined". If the caller only knows a window like "next Tuesday morning" or "Friday afternoon", use that exact window. Call notify_admin with existing_appointment_timing and requested_new_timing, then say: "I have the change request noted and the team will confirm it." If the caller gives new contact details after an alert, call notify_admin again with the complete updated details before saying they were added.
+- Do not pretend a change or cancellation is confirmed unless a tool confirms it.
+
+Admin alerts:
+- Use notify_admin when the team needs follow-up. Include source "Rabecca voice AI", reason, urgency, customer name, real callback phone, customer email if available, service address if relevant, and a concise summary.
+- Never send placeholder contact fields like "[your phone number]" or "not provided". If caller ID is unavailable and follow-up is needed, ask for a real callback number first.
+- After notify_admin succeeds, explain what happens next. Do not hang up abruptly.
+
+Service questions:
+- Answer simple service questions from the knowledge base.
+- Use get_service_catalog only for general service names/categories questions. Do not use it for a live quote, minimum check, availability, or booking.
+- For permanent stains, bleach spots, carpet damage, subfloor contamination, water damage, odor guarantees, or complex technical questions, give a careful non-guaranteed answer and offer to note it on the job.
+
+If asked if you are AI:
+"Yes, I am an assistant that helps Sasquatch with scheduling, quotes, and missed calls."
+
+Call ending:
+- After a successful booking, reclean, or admin alert, answer any final customer question briefly.
+- If the caller says thanks, goodbye, bye, that is all, or anything similar, say one brief goodbye and call end_call.
+- Do not keep the conversation going after the caller has clearly finished.`
 }
 
 function updateNodeInstruction(flow, nodeName, text) {
@@ -712,7 +810,7 @@ function rabeccaQuoteToolProperties() {
     line_items: {
       type: 'array',
       description:
-        'Optional catalog-backed service lines. Use catalog_slug, service_name, or service_id plus quantity or square_feet. Allowed normal services include carpet, Legendary deep clean, tile/grout, rugs, upholstery, deodorizer/treatments, and normal add-ons. Do not use for flood/water restoration.',
+        'Optional catalog-backed service lines. Use catalog_slug, service_name, or service_id plus quantity or square_feet. Allowed normal services include carpet, Legendary deep clean, tile/grout, rugs, upholstery, urine treatment for pet spots, and normal add-ons. Do not use for flood/water restoration or the general deodorizer item marked not for urine.',
       items: {
         type: 'object',
         properties: {
@@ -726,12 +824,23 @@ function rabeccaQuoteToolProperties() {
     },
     bedrooms_count: {
       type: 'number',
-      description: 'Number of regular bedrooms or regular rooms.',
+      description:
+        'Number of regular bedrooms or regular-size rooms. Ordinary bedrooms count here unless the caller says they are unusually large.',
+    },
+    sasquatch_room_count: {
+      type: 'number',
+      description:
+        'Number of Sasquatch-size carpeted rooms or open areas, about the size of two average bedrooms. Use this when the caller gives a bedroom-equivalent size instead of actual square footage.',
+    },
+    monster_room_count: {
+      type: 'number',
+      description:
+        'Number of monster-size carpeted rooms or open areas, about the size of three average bedrooms. Use this when the caller gives a bedroom-equivalent size instead of actual square footage.',
     },
     living_room_sqft: {
       type: 'number',
       description:
-        'Approximate square footage for one standard carpeted living room or open carpet area only. Never use this for tile/grout, rugs, or hard surfaces.',
+        'Approximate cleanable square footage for one carpeted living room, basement, great room, loft, or open carpet area only. Use sasquatch_room_count or monster_room_count instead when the caller describes the room as fitting two or three average bedrooms but does not give dimensions or square footage. Never use total home square footage here unless the caller confirms it is actual cleanable carpet. Never use this for tile/grout, rugs, or hard surfaces.',
     },
     tile_grout_sqft: {
       type: 'number',
@@ -760,7 +869,7 @@ function rabeccaQuoteToolProperties() {
     legendary_room_sqft: {
       type: 'number',
       description:
-        'Square footage for one Legendary/deep clean carpeted room or open area.',
+        'Cleanable square footage for one Legendary/deep clean carpeted room or open area. Never use total home square footage here unless the caller confirms it is actual cleanable carpet.',
     },
     legendary_hall_count: {
       type: 'number',
@@ -808,10 +917,6 @@ function rabeccaQuoteToolProperties() {
     },
     ottoman_count: { type: 'number', description: 'Number of ottomans.' },
     mattress_count: { type: 'number', description: 'Number of mattresses.' },
-    deodorizer_room_count: {
-      type: 'number',
-      description: 'Number of rooms getting general deodorizer.',
-    },
     urine_treatment_room_count: {
       type: 'number',
       description: 'Number of rooms getting urine eliminator treatment.',
@@ -830,7 +935,23 @@ function rabeccaQuoteToolProperties() {
     },
     requested_date: {
       type: 'string',
-      description: 'Requested appointment date in YYYY-MM-DD format.',
+      description:
+        'Exact appointment date in YYYY-MM-DD format when the caller names one specific day.',
+    },
+    availability_start_date: {
+      type: 'string',
+      description:
+        'Start date in YYYY-MM-DD format for flexible availability searches such as next week, later this month, or any day after a certain date.',
+    },
+    availability_days: {
+      type: 'number',
+      description:
+        'Number of calendar days to search starting at availability_start_date. Use 7 for a week, 14 for two weeks, and up to 31 for later-this-month style requests.',
+    },
+    discount_requested: {
+      type: 'boolean',
+      description:
+        'Set to true only when the caller explicitly asks whether there is any discount, coupon, deal, or price break available. Never set true proactively, automatically, or just because the job qualifies by price.',
     },
   }
 }
@@ -1004,6 +1125,64 @@ function addExplicitToolNodes(flow) {
           },
         },
         required: ['appointment_date', 'start_time', 'issue_summary'],
+      },
+    ),
+  )
+  upsertTool(
+    flow,
+    buildCustomTool(
+      'tool-rabecca-notify-admin',
+      'notify_admin',
+      'Notify Charles through Rabecca voice AI alerts. Use only for exceptions, appointment change requests, disputes, urgent issues, flood restoration, or repeated tool failures. Include real contact details so Charles can act on the alert; do not send placeholder phone numbers. For appointment changes, include service_address, existing_appointment_timing, and requested_new_timing.',
+      {
+        type: 'object',
+        properties: {
+          message: {
+            type: 'string',
+            description:
+              'Clear summary of what Charles needs to know or do. Must say this came from Rabecca if relevant.',
+          },
+          reason: {
+            type: 'string',
+            description:
+              'Short reason/category, such as flood restoration, appointment change, dispute, tool failure, or unsupported request.',
+          },
+          customer_name: {
+            type: 'string',
+            description: 'Caller/customer name, if known.',
+          },
+          customer_phone: {
+            type: 'string',
+            description:
+              'Best callback phone number. Use caller ID if the caller does not provide another number.',
+          },
+          customer_email: {
+            type: 'string',
+            description: 'Customer email, if known.',
+          },
+          service_address: {
+            type: 'string',
+            description:
+              'Service address or affected property address. Required for appointment changes when the caller can provide it.',
+          },
+          existing_appointment_timing: {
+            type: 'string',
+            description:
+              'For appointment changes or cancellations, the caller-provided existing appointment date/time or window, such as "next Tuesday morning".',
+          },
+          requested_new_timing: {
+            type: 'string',
+            description:
+              'For appointment changes, the caller-provided requested new date/time or window, such as "Friday afternoon after 1 PM".',
+          },
+          urgency: {
+            type: 'string',
+            enum: ['normal', 'urgent'],
+            description:
+              'Use urgent for flood restoration, active water damage, angry customers, safety issues, or same-day problems.',
+          },
+        },
+        required: ['message', 'customer_email'],
       },
     ),
   )
@@ -1456,7 +1635,7 @@ function buildSelfServeSandboxFlow(flow) {
   updateNodeInstruction(
     nextFlow,
     'Residential Intake',
-    'Handle residential quote-first intake. Ask one question at a time. First ask what they need cleaned. If they mention flood restoration, active water damage, water extraction, burst pipes, sewage backup, flooded basement, standing water, or emergency drying, route to Flood / Water Damage Transfer and do not quote or schedule as normal cleaning. For normal pricing or scheduling, collect only service details first: standard or Legendary/deep carpet rooms and large-room square footage, halls/closets/bathrooms, stairs, tile/grout square footage, rug size or square footage, upholstery type/count, pet urine or odor concerns, deodorizer, and normal add-ons. Once you have enough details, call quote_and_prepare_booking with service_request plus the complete service list. If the caller asks for tile/grout, use tile_grout_sqft and never use living_room_sqft or hall_count for that square footage. Do not quote from memory and do not call separate catalog/calendar tools for normal booking.',
+    'Handle residential quote-first intake. Ask one question at a time. First ask what they need cleaned. If they mention flood restoration, active water damage, water extraction, burst pipes, sewage backup, flooded basement, standing water, or emergency drying, route to Flood / Water Damage Transfer and do not quote or schedule as normal cleaning. For normal pricing or scheduling, collect only service details first: standard or Legendary/deep carpet rooms and large-room square footage, halls/closets/bathrooms, stairs, tile/grout square footage, rug size or square footage, upholstery type/count, pet urine concerns, urine treatment rooms, and normal add-ons. Do not quote or book the general deodorizer item marked not for urine. Once you have enough details, call quote_and_prepare_booking with service_request plus the complete service list. If the caller asks for tile/grout, use tile_grout_sqft and never use living_room_sqft or hall_count for that square footage. Do not quote from memory and do not call separate catalog/calendar tools for normal booking.',
   )
   updateNodeInstruction(
     nextFlow,
@@ -1466,7 +1645,7 @@ function buildSelfServeSandboxFlow(flow) {
   updateNodeInstruction(
     nextFlow,
     'Existing Appointment Help',
-    'Help with existing appointment changes without pretending the change is already confirmed. For a complaint, unhappy customer, reclean, redo, or warranty visit, route to Complaint / Reclean Intake. For ordinary changes or cancellations, collect caller name, phone, email if available, known appointment date/time, service address if available, and requested change. Then call notify_admin with message, reason, customer_name, customer_phone, customer_email, service_address, and urgency. Tell the caller: "I have the change request noted and the team will confirm it."',
+    'Help with existing appointment changes without pretending the change is already confirmed. For a complaint, unhappy customer, reclean, redo, or warranty visit, route to Complaint / Reclean Intake. For ordinary changes or cancellations, collect caller name, phone, email, existing appointment timing, requested new timing/change, and service address. Ask once for any missing email or timing detail before notify_admin; if the caller declines email, use customer_email "declined". If the caller only knows a window like "next Tuesday morning" or "Friday afternoon", use that exact window. Then call notify_admin with message, reason, customer_name, customer_phone, customer_email, service_address, existing_appointment_timing, requested_new_timing, and urgency. If the caller gives new contact details after an alert, call notify_admin again with complete updated details before saying they were added. Tell the caller: "I have the change request noted and the team will confirm it."',
   )
   updateNodeInstruction(
     nextFlow,
@@ -1494,7 +1673,7 @@ function buildSelfServeSandboxFlow(flow) {
       tool.description =
         'Retrieve Sasquatch Carpet Cleaning service names and pricing for general service questions only. For live quotes, minimum status, availability, or booking, use quote_and_prepare_booking instead.'
       tool.parameters.properties.category.description =
-        'Optional Sasquatch service category filter, such as carpet, Legendary, upholstery, rug, tile, or deodorizer. Flood/water restoration is not self-bookable.'
+        'Optional Sasquatch service category filter, such as carpet, Legendary, upholstery, rug, tile, or urine treatment. Flood/water restoration is not self-bookable.'
     }
     if (tool.name === 'create_booking') {
       tool.description =
@@ -1537,6 +1716,16 @@ function buildSelfServeSandboxFlow(flow) {
             type: 'string',
             description:
               'Service address or affected property address, if known.',
+          },
+          existing_appointment_timing: {
+            type: 'string',
+            description:
+              'For appointment changes or cancellations, the caller-provided existing appointment date/time or window, such as "next Tuesday morning".',
+          },
+          requested_new_timing: {
+            type: 'string',
+            description:
+              'For appointment changes, the caller-provided requested new date/time or window, such as "Friday afternoon after 1 PM".',
           },
           urgency: {
             type: 'string',
@@ -1584,6 +1773,114 @@ function buildSelfServeSandboxFlow(flow) {
       'is_published',
     ]),
   )
+}
+
+function toolForRetellLlm(tool) {
+  const { source, ...cleanTool } = tool
+  return cleanTool
+}
+
+function buildFlexTools(flow) {
+  const tempFlow = structuredClone(flow || { tools: [] })
+  addExplicitToolNodes(tempFlow)
+
+  const allowedToolNames = [
+    'quote_and_prepare_booking',
+    'book_prepared_slot',
+    'list_caller_appointments',
+    'schedule_reclean',
+    'create_estimate',
+    'notify_admin',
+    'get_service_catalog',
+  ]
+  const toolsByName = new Map(
+    (tempFlow.tools || []).map((tool) => [tool.name, toolForRetellLlm(tool)]),
+  )
+
+  return allowedToolNames
+    .map((name) => toolsByName.get(name))
+    .filter(Boolean)
+    .concat({
+      type: 'end_call',
+      name: 'end_call',
+      description:
+        'End the call after the caller is finished, says goodbye, or the task is complete.',
+    })
+}
+
+function buildFlexLlmPayload(flow) {
+  return {
+    llm_name: 'Rabecca Flex Sandbox LLM',
+    model: 'gpt-4.1',
+    start_speaker: 'agent',
+    begin_message: 'Hi, this is Rabecca with Sasquatch Carpet Cleaning. How can I help?',
+    general_prompt: buildFlexGlobalPrompt(),
+    general_tools: buildFlexTools(flow),
+    knowledge_base_ids: flow?.knowledge_base_ids || [],
+    kb_config: flow?.kb_config || { top_k: 3, filter_score: 0.6 },
+    tool_call_strict_mode: true,
+  }
+}
+
+function buildFlexAgentPayload(agent, llmResponse, flexName) {
+  const responseEngine = {
+    type: 'retell-llm',
+    llm_id: llmResponse.llm_id,
+    version: llmResponse.version || 0,
+  }
+
+  const safeAgentFields = [
+    'voice_id',
+    'voice_model',
+    'fallback_voice_ids',
+    'voice_temperature',
+    'voice_speed',
+    'enable_dynamic_voice_speed',
+    'enable_dynamic_responsiveness',
+    'volume',
+    'voice_emotion',
+    'responsiveness',
+    'interruption_sensitivity',
+    'ambient_sound',
+    'ambient_sound_volume',
+    'backchannel_frequency',
+    'backchannel_words',
+    'language',
+    'webhook_url',
+    'boosted_keywords',
+    'pronunciation_dictionary',
+    'normalize_for_speech',
+    'end_call_after_silence_ms',
+    'max_call_duration_ms',
+    'voicemail_option',
+    'allow_user_dtmf',
+    'user_dtmf_options',
+    'denoising_mode',
+    'data_storage_setting',
+    'opt_in_signed_url',
+    'pii_config',
+    'post_call_analysis_model',
+    'post_call_analysis_data',
+    'timezone',
+    'begin_message_delay_ms',
+    'ring_duration_ms',
+    'stt_mode',
+    'vocab_specialization',
+    'handbook_config',
+  ]
+
+  const payload = {
+    response_engine: responseEngine,
+    agent_name: flexName,
+    version_description:
+      'Prompt-driven Rabecca flex sandbox created by retell-bridge.',
+  }
+
+  for (const key of safeAgentFields) {
+    if (agent?.[key] !== undefined) payload[key] = agent[key]
+  }
+
+  return payload
 }
 
 async function exportRetellConfig(args) {
@@ -1751,6 +2048,104 @@ async function rewriteSandboxV1(args) {
   console.log(`Updated sandbox flow: ${flowId}`)
 }
 
+async function createFlexRetellAgent(args) {
+  const apiKey = await loadApiKey()
+  const [agentResponse, flowResponse] = await Promise.all([
+    retellFetch(apiKey, '/list-agents', { limit: 1000, is_latest: true }),
+    retellFetch(apiKey, '/v2/list-conversation-flows', { limit: 1000 }),
+  ])
+
+  const agents = getItems(agentResponse)
+  const flows = getItems(flowResponse)
+  const sourceAgent = findRabeccaAgent(agents, args.agentMatch)
+  const sourceFlow = findFlowForAgent(flows, sourceAgent)
+  if (!sourceAgent || !sourceFlow) {
+    throw new Error(
+      'Could not find a matching source Rabecca agent and flow for flex setup.',
+    )
+  }
+
+  const existingFlexAgent =
+    agents.find((agent) => getAgentName(agent) === args.flexName) || null
+  const existingLlmId = existingFlexAgent?.response_engine?.llm_id || null
+  const llmPayload = buildFlexLlmPayload(sourceFlow)
+  const dryRunLlmResponse = {
+    llm_id: existingLlmId || 'DRY_RUN_LLM_ID',
+    version: existingFlexAgent?.response_engine?.version || 0,
+  }
+  const agentPayload = buildFlexAgentPayload(
+    sourceAgent,
+    dryRunLlmResponse,
+    args.flexName,
+  )
+
+  const outDir = path.resolve(args.outDir)
+  await mkdir(outDir, { recursive: true })
+  await writeFile(path.join(outDir, 'flex-llm-payload.json'), stableJson(llmPayload))
+  await writeFile(
+    path.join(outDir, 'flex-agent-payload.dry-run.json'),
+    stableJson(agentPayload),
+  )
+
+  if (!args.execute) {
+    console.log('Dry run only. No Retell changes were made.')
+    console.log(`Matched source agent: ${getAgentName(sourceAgent)}`)
+    console.log(`Matched source flow: ${sourceFlow.conversation_flow_id}`)
+    console.log(
+      existingFlexAgent
+        ? `Matched existing flex agent: ${existingFlexAgent.agent_id}`
+        : 'No existing flex agent matched; execute will create one.',
+    )
+    console.log(`Wrote flex payloads to ${args.outDir}`)
+    return
+  }
+
+  const llmResponse = existingLlmId
+    ? await retellRequest(apiKey, `/update-retell-llm/${existingLlmId}`, {
+        method: 'PATCH',
+        body: llmPayload,
+      })
+    : await retellRequest(apiKey, '/create-retell-llm', {
+        method: 'POST',
+        body: llmPayload,
+      })
+  const finalAgentPayload = buildFlexAgentPayload(
+    sourceAgent,
+    llmResponse,
+    args.flexName,
+  )
+  const agentResponseFinal = existingFlexAgent
+    ? await retellRequest(
+        apiKey,
+        `/update-agent/${existingFlexAgent.agent_id || existingFlexAgent.id}`,
+        {
+          method: 'PATCH',
+          body: finalAgentPayload,
+        },
+      )
+    : await retellRequest(apiKey, '/create-agent', {
+        method: 'POST',
+        body: finalAgentPayload,
+      })
+
+  await writeFile(path.join(outDir, 'flex-llm.json'), stableJson(llmResponse))
+  await writeFile(
+    path.join(outDir, 'flex-agent.json'),
+    stableJson(agentResponseFinal),
+  )
+  await writeFile(
+    path.join(outDir, 'flex-agent-payload.json'),
+    stableJson(finalAgentPayload),
+  )
+
+  console.log(
+    existingFlexAgent ? 'Updated Retell flex sandbox.' : 'Created Retell flex sandbox.',
+  )
+  console.log(`Flex agent: ${getAgentName(agentResponseFinal)}`)
+  console.log(`Flex agent ID: ${agentResponseFinal.agent_id || agentResponseFinal.id}`)
+  console.log(`Flex LLM ID: ${llmResponse.llm_id}`)
+}
+
 async function main() {
   const args = parseArgs(process.argv)
   if (args.command === 'help') {
@@ -1760,9 +2155,10 @@ async function main() {
         '  node scripts/retell-bridge.mjs export [--agent-match rabecca] [--out .retell/rabecca]',
         '  node scripts/retell-bridge.mjs clone [--agent-match rabecca] [--clone-name "Rabecca Sandbox"] [--out .retell/rabecca-sandbox] [--execute]',
         '  node scripts/retell-bridge.mjs rewrite-sandbox-v1 [--agent-match "rabecca sandbox"] [--out .retell/rabecca-sandbox] [--execute]',
+        '  node scripts/retell-bridge.mjs create-flex-agent [--agent-match "rabecca —"] [--flex-name "Rabecca Flex Sandbox — Sasquatch Carpet Cleaning"] [--out .retell/rabecca-flex] [--execute]',
         '',
         'Reads RETELL_API_KEY from the shell, .env.local, or .env.',
-        'Export is read-only. Clone and rewrite commands are dry-run unless --execute is passed.',
+        'Export is read-only. Clone, rewrite, and flex commands are dry-run unless --execute is passed.',
       ].join('\n'),
     )
     return
@@ -1772,6 +2168,8 @@ async function main() {
     await cloneRetellAgent(args)
   } else if (args.command === 'rewrite-sandbox-v1') {
     await rewriteSandboxV1(args)
+  } else if (args.command === 'create-flex-agent') {
+    await createFlexRetellAgent(args)
   } else {
     await exportRetellConfig(args)
   }

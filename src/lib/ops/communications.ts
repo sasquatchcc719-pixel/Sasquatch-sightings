@@ -102,6 +102,9 @@ type AppointmentWithRelations = {
   status?: string | null
 }
 
+const TEMP_SUPPRESS_CUSTOMER_COMMS_MARKER =
+  'TEMP_SUPPRESS_CUSTOMER_COMMS_EVAN_COX_RECLEAN_TEST'
+
 const APPOINTMENT_SELECT = `
   id,
   customer_id,
@@ -475,6 +478,11 @@ export async function sendOpsLifecycleCommunications(params: {
     params.appointmentId,
   )
   if (!appointment || !context) return { sent: [] }
+  if (
+    appointment.internal_notes?.includes(TEMP_SUPPRESS_CUSTOMER_COMMS_MARKER)
+  ) {
+    return { sent: [] }
+  }
 
   const templates = await getTemplatesForEvent(supabase, params.event)
   if (templates.length === 0) return { sent: [] }
@@ -850,6 +858,12 @@ export async function sendDayBeforeReminderSms(params?: {
   let skippedTemplateDisabled = 0
 
   for (const appointment of appointments) {
+    if (
+      appointment.internal_notes?.includes(TEMP_SUPPRESS_CUSTOMER_COMMS_MARKER)
+    ) {
+      continue
+    }
+
     const customer = unwrapRelation(appointment.ops_customers)
     const customerPhone = customer?.phone?.trim() || ''
     if (!customerPhone) {

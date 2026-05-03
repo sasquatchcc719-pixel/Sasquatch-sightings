@@ -8,12 +8,16 @@ import {
   timeToMinutes,
   type ExistingAppointmentWindow,
 } from '@/lib/ops/availability'
-import { createAiStyleBooking } from '@/lib/ops/create-ai-style-booking'
+import {
+  calculateAiStyleBookingDiscount,
+  createAiStyleBooking,
+} from '@/lib/ops/create-ai-style-booking'
 import { createAiStyleEstimate } from '@/lib/ops/create-ai-style-estimate'
 import { opsPhoneLookupVariants } from '@/lib/ops/phone'
 import { sendAdminSMS } from '@/lib/twilio'
 import { sendTelegramNotification } from '@/lib/telegram'
 import { REBECCA_RETELL_CONFIG } from '@/lib/retell/rebecca-config'
+import { getAgentPromoSettings } from '@/lib/agent-auth'
 import { Resend } from 'resend'
 import type {
   RebeccaAddressArgs,
@@ -47,6 +51,16 @@ type CatalogItem = {
   pricing_unit: string | null
   default_duration_minutes: number | null
 }
+
+type DatedSlotOption = {
+  date: string
+  start_time: string
+  end_time: string
+}
+
+const TEMP_EVAN_COX_RECLEAN_SUPPRESS_COMMS_MARKER =
+  'TEMP_SUPPRESS_CUSTOMER_COMMS_EVAN_COX_RECLEAN_TEST'
+const MINIMUM_SAME_DAY_LEAD_MINUTES = 60
 
 type PreparedLineItem = {
   service_id: string
@@ -135,6 +149,13 @@ function numberArg(args: Record<string, unknown>, key: string): number | null {
   return null
 }
 
+function booleanArg(args: Record<string, unknown>, key: string): boolean {
+  const value = args[key]
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'string') return /^(true|yes|y|1)$/i.test(value.trim())
+  return false
+}
+
 function firstRelated<T>(value: T | T[] | null | undefined): T | null {
   if (Array.isArray(value)) return value[0] || null
   return value || null
@@ -199,6 +220,22 @@ function businessDateParts(date = new Date()): {
   }
 }
 
+function currentMountainTimeMinutes(date = new Date()): number {
+  const currentTime = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'America/Denver',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date)
+  return timeToMinutes(currentTime)
+}
+
+function minStartMinutesForDate(date: string): number | undefined {
+  return date === todayIsoDate()
+    ? currentMountainTimeMinutes() + MINIMUM_SAME_DAY_LEAD_MINUTES
+    : undefined
+}
+
 function isValidIsoDate(value: string): boolean {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
   if (!match) return false
@@ -210,6 +247,12 @@ function isValidIsoDate(value: string): boolean {
     parsed.getUTCMonth() + 1 === Number(month) &&
     parsed.getUTCDate() === Number(day)
   )
+}
+
+function addDaysIso(value: string, days: number): string {
+  const date = new Date(`${value}T12:00:00Z`)
+  date.setUTCDate(date.getUTCDate() + days)
+  return date.toISOString().slice(0, 10)
 }
 
 function normalizeRequestedDate(value: string):
@@ -369,6 +412,7 @@ const RABECCA_BLOCKED_CATALOG_SLUGS = new Set([
   'commercial-deodorizer-per-sqft',
   'custom-amount',
   'discount',
+  'general-deodorizer-per-room-not-for-urine',
   'gratuity',
   'low-moisture-encapsulation-cleaning-lvm-bonnet',
   'mileage-travel',
@@ -538,7 +582,9 @@ async function prepareResidentialBookingQuote(
       subtotal: number
       minimum: number
       meetsMinimum: boolean
-      slots: Array<{ start_time: string; end_time: string }>
+      slots: DatedSlotOption[]
+      availabilityStartDate: string | null
+      availabilityDays: number
       missingFields: string[]
     }
   | { ok: false; message: string }
@@ -574,6 +620,16 @@ async function prepareResidentialBookingQuote(
     'bedroom_count',
     'regular_room_count',
     'rooms_count',
+  ])
+  const sasquatchRooms = positiveIntegerArg(args, [
+    'sasquatch_room_count',
+    'large_room_count',
+    'large_carpet_room_count',
+  ])
+  const monsterRooms = positiveIntegerArg(args, [
+    'monster_room_count',
+    'extra_large_room_count',
+    'extra_large_carpet_room_count',
   ])
   const halls = positiveIntegerArg(args, [
     'hall_count',
@@ -642,10 +698,6 @@ async function prepareResidentialBookingQuote(
     'legendary_room_sqft',
     'deep_clean_room_sqft',
   ])
-  const generalDeodorizerRooms = positiveIntegerArg(args, [
-    'deodorizer_room_count',
-    'general_deodorizer_room_count',
-  ])
   const urineTreatmentRooms = positiveIntegerArg(args, [
     'urine_treatment_room_count',
     'pet_treatment_room_count',
@@ -656,6 +708,16 @@ async function prepareResidentialBookingQuote(
 
   addPreparedLineItemsFromRawInputs(lineItems, catalog, args.line_items)
   addPreparedLineItem(lineItems, regularRoom, bedrooms)
+  addPreparedLineItem(
+    lineItems,
+    catalogBySlug(catalog, 'sasquatch-size-room-200-to-400-sqft'),
+    sasquatchRooms,
+  )
+  addPreparedLineItem(
+    lineItems,
+    catalogBySlug(catalog, 'monster-size-room-400-to-600-sqft'),
+    monsterRooms,
+  )
   addPreparedLineItem(lineItems, hall, carpetHalls)
   addPreparedLineItem(lineItems, steps, stepCount)
   addPreparedLineItem(lineItems, sofa, couchCount)
@@ -753,11 +815,6 @@ async function prepareResidentialBookingQuote(
   }
   addPreparedLineItem(
     lineItems,
-    catalogBySlug(catalog, 'general-deodorizer-per-room-not-for-urine'),
-    generalDeodorizerRooms,
-  )
-  addPreparedLineItem(
-    lineItems,
     catalogBySlug(catalog, 'pet-urine-injection-treatment-with-bio-release'),
     urineTreatmentRooms,
   )
@@ -777,42 +834,63 @@ async function prepareResidentialBookingQuote(
 
   const requestedDate =
     stringArg(args, 'requested_date') || stringArg(args, 'appointment_date')
+  const requestedAvailabilityStart =
+    stringArg(args, 'availability_start_date') ||
+    stringArg(args, 'search_start_date')
   let appointmentDate: string | null = null
   if (requestedDate) {
     const normalizedDate = normalizeRequestedDate(requestedDate)
     if (!normalizedDate.ok) return normalizedDate
     appointmentDate = normalizedDate.date
   }
+  let availabilityStartDate = appointmentDate
+  if (requestedAvailabilityStart) {
+    const normalizedDate = normalizeRequestedDate(requestedAvailabilityStart)
+    if (!normalizedDate.ok) return normalizedDate
+    availabilityStartDate = normalizedDate.date
+  }
 
   if (lineItems.length === 0) {
     return {
       ok: false,
       message:
-        'I need at least one bookable service, like bedrooms_count, living_room_sqft, tile_grout_sqft, rug_sqft, couch_count, legendary_room_sqft, or line_items.',
+        'I need at least one bookable service, like bedrooms_count, sasquatch_room_count, living_room_sqft, tile_grout_sqft, rug_sqft, couch_count, legendary_room_sqft, or line_items.',
     }
   }
 
   const subtotal = lineItems.reduce((sum, item) => sum + item.total, 0)
   const minimum = 150
   const missingFields = []
-  if (!appointmentDate) missingFields.push('appointment date')
+  if (!appointmentDate && !availabilityStartDate)
+    missingFields.push('appointment date')
 
-  let slots: Array<{ start_time: string; end_time: string }> = []
-  if (appointmentDate && subtotal >= minimum) {
-    const bundle = await loadAvailabilityBundle(
-      context.supabase,
-      appointmentDate,
-    )
-    slots = getAvailableSlots({
-      date: appointmentDate,
-      requiredMinutes: applyAppointmentBuffer(
-        calculateAppointmentDurationFromTotal(subtotal),
-      ),
-      templates: bundle.templates,
-      overrides: bundle.overrides,
-      appointments: bundle.appointments,
-      maxResults: 3,
-    })
+  const rawAvailabilityDays =
+    numberArg(args, 'availability_days') || numberArg(args, 'search_days') || 1
+  const availabilityDays = Math.max(
+    1,
+    Math.min(Math.floor(rawAvailabilityDays), 31),
+  )
+  const requiredMinutes = applyAppointmentBuffer(
+    calculateAppointmentDurationFromTotal(subtotal),
+  )
+
+  let slots: DatedSlotOption[] = []
+  if (availabilityStartDate && subtotal >= minimum) {
+    for (let dayOffset = 0; dayOffset < availabilityDays; dayOffset += 1) {
+      const date = addDaysIso(availabilityStartDate, dayOffset)
+      const bundle = await loadAvailabilityBundle(context.supabase, date)
+      const daySlots = getAvailableSlots({
+        date,
+        requiredMinutes,
+        templates: bundle.templates,
+        overrides: bundle.overrides,
+        appointments: bundle.appointments,
+        minStartMinutes: minStartMinutesForDate(date),
+        maxResults: Math.max(1, 5 - slots.length),
+      })
+      slots.push(...daySlots.map((slot) => ({ date, ...slot })))
+      if (slots.length >= 5) break
+    }
   }
 
   return {
@@ -823,6 +901,8 @@ async function prepareResidentialBookingQuote(
     minimum,
     meetsMinimum: subtotal >= minimum,
     slots,
+    availabilityStartDate,
+    availabilityDays,
     missingFields,
   }
 }
@@ -833,6 +913,20 @@ function response(
   data?: unknown,
 ): RetellFunctionResponse {
   return { success, message, ...(data === undefined ? {} : { data }) }
+}
+
+async function requestedRabeccaDiscount(
+  args: Record<string, unknown>,
+  subtotal: number,
+): Promise<number> {
+  if (!booleanArg(args, 'discount_requested')) return 0
+  const promo = await getAgentPromoSettings()
+  return calculateAiStyleBookingDiscount({
+    booking_channel: REBECCA_RETELL_CONFIG.bookingChannel,
+    subtotal,
+    promo,
+    discount_requested: true,
+  })
 }
 
 function escapeHtml(value: string): string {
@@ -869,22 +963,42 @@ async function loadAvailabilityBundle(
   overrides: Parameters<typeof getAvailableSlots>[0]['overrides']
   appointments: ExistingAppointmentWindow[]
 }> {
-  const [templatesResult, overridesResult, appointmentsResult] =
-    await Promise.all([
-      supabase.from('availability_templates').select('*').eq('is_active', true),
-      supabase
-        .from('availability_overrides')
-        .select('*')
-        .eq('override_date', date),
-      supabase
-        .from('ops_appointments')
-        .select('appointment_date, start_time, end_time, status')
-        .eq('appointment_date', date),
-    ])
+  const [
+    templatesResult,
+    overridesResult,
+    appointmentsResult,
+    calendarEventsResult,
+  ] = await Promise.all([
+    supabase.from('availability_templates').select('*').eq('is_active', true),
+    supabase
+      .from('availability_overrides')
+      .select('*')
+      .eq('override_date', date),
+    supabase
+      .from('ops_appointments')
+      .select('appointment_date, start_time, end_time, status')
+      .eq('appointment_date', date),
+    supabase
+      .from('ops_calendar_events')
+      .select('start_date, end_date, start_time, end_time, is_all_day')
+      .lte('start_date', date)
+      .gte('end_date', date),
+  ])
 
   if (templatesResult.error) throw templatesResult.error
   if (overridesResult.error) throw overridesResult.error
   if (appointmentsResult.error) throw appointmentsResult.error
+  if (calendarEventsResult.error) throw calendarEventsResult.error
+
+  const calendarEventWindows: ExistingAppointmentWindow[] = (
+    calendarEventsResult.data || []
+  ).map((event) => ({
+    appointment_date: date,
+    start_time:
+      event.is_all_day || !event.start_time ? '00:00:00' : event.start_time,
+    end_time: event.is_all_day || !event.end_time ? '23:59:00' : event.end_time,
+    status: 'booked',
+  }))
 
   return {
     templates:
@@ -892,8 +1006,10 @@ async function loadAvailabilityBundle(
         ? templatesResult.data
         : DEFAULT_FALLBACK_AVAILABILITY_TEMPLATES,
     overrides: overridesResult.data || [],
-    appointments: (appointmentsResult.data ||
-      []) as ExistingAppointmentWindow[],
+    appointments: [
+      ...((appointmentsResult.data || []) as ExistingAppointmentWindow[]),
+      ...calendarEventWindows,
+    ],
   }
 }
 
@@ -904,24 +1020,51 @@ async function quoteAndPrepareBooking(
   const prepared = await prepareResidentialBookingQuote(args, context)
   if (!prepared.ok) return response(false, prepared.message)
 
-  const dollars = prepared.subtotal.toFixed(2).replace(/\.00$/, '')
+  const discountAmount = await requestedRabeccaDiscount(args, prepared.subtotal)
+  const total = prepared.subtotal - discountAmount
+  const dollars = total.toFixed(2).replace(/\.00$/, '')
+  const subtotalDollars = prepared.subtotal.toFixed(2).replace(/\.00$/, '')
+  const discountDollars = discountAmount.toFixed(2).replace(/\.00$/, '')
+  const discountScript =
+    discountAmount > 0
+      ? ` I applied the requested $${discountDollars} discount, so the total is $${dollars}.`
+      : ''
+  const availabilityEndDate = prepared.availabilityStartDate
+    ? addDaysIso(prepared.availabilityStartDate, prepared.availabilityDays - 1)
+    : null
+  const searchedRangeLabel =
+    prepared.availabilityStartDate && availabilityEndDate
+      ? prepared.availabilityDays > 1
+        ? `${prepared.availabilityStartDate} through ${availabilityEndDate}`
+        : prepared.availabilityStartDate
+      : ''
+  const slotSummary = prepared.slots
+    .map((slot) => `${slot.date} from ${slot.start_time} to ${slot.end_time}`)
+    .join(', ')
+  const noSlotsScript = searchedRangeLabel
+    ? `The estimate is $${subtotalDollars}.${discountScript} I do not see any available openings for ${searchedRangeLabel}. Ask if another date range works.`
+    : `The estimate is $${subtotalDollars}.${discountScript} What day or date range would you like me to check?`
   if (!prepared.meetsMinimum) {
     const amountNeeded = prepared.minimum - prepared.subtotal
     const amountNeededDollars = amountNeeded.toFixed(2).replace(/\.00$/, '')
-    return response(true, `Estimated total is $${dollars}.`, {
+    return response(true, `Estimated total is $${subtotalDollars}.`, {
       quote_total: prepared.subtotal,
+      discount_applied: 0,
+      total: prepared.subtotal,
       minimum_booking_amount: prepared.minimum,
       amount_needed_to_minimum: amountNeeded,
       meets_minimum: false,
       can_offer_slots: false,
       line_items: prepared.lineItems,
       missing_fields: prepared.missingFields,
-      caller_script: `The updated estimate is $${dollars}. That is $${amountNeededDollars} below our $${prepared.minimum} minimum, so I cannot check appointment availability or finalize a booking yet. Would you like to add another area, stairs, deodorizer, or another service to meet the minimum?`,
+      caller_script: `The updated estimate is $${subtotalDollars}. That is $${amountNeededDollars} below our $${prepared.minimum} minimum, so I cannot check appointment availability or finalize a booking yet. Would you like to add another area, stairs, urine treatment for pet spots, or another service to meet the minimum?`,
     })
   }
 
   return response(true, `Estimated total is $${dollars}.`, {
     quote_total: prepared.subtotal,
+    discount_applied: discountAmount,
+    total,
     minimum_booking_amount: prepared.minimum,
     meets_minimum: true,
     can_offer_slots: prepared.slots.length > 0,
@@ -929,12 +1072,12 @@ async function quoteAndPrepareBooking(
     line_items: prepared.lineItems,
     missing_fields: prepared.missingFields,
     slots: prepared.slots,
+    availability_start_date: prepared.availabilityStartDate,
+    availability_days: prepared.availabilityDays,
     caller_script:
       prepared.slots.length > 0
-        ? `The estimate is $${dollars}. I found these available windows: ${prepared.slots
-            .map((slot) => `${slot.start_time} to ${slot.end_time}`)
-            .join(', ')}. Which one works best?`
-        : `The estimate is $${dollars}, but I do not see any available openings for that date. Ask if they want another day.`,
+        ? `The estimate is $${subtotalDollars}.${discountScript} I found these available windows: ${slotSummary}. Which one works best?`
+        : noSlotsScript,
   })
 }
 
@@ -1032,6 +1175,7 @@ async function bookPreparedSlot(
     lead_source: 'retell_rabecca',
     actor_label: REBECCA_RETELL_CONFIG.actorLabel,
     admin_heading: REBECCA_RETELL_CONFIG.adminHeading,
+    discount_requested: booleanArg(args, 'discount_requested'),
   })
 
   if (!result.ok) {
@@ -1051,6 +1195,11 @@ async function bookPreparedSlot(
     .map((item) => `${item.quantity} ${item.service_name}`)
     .join(', ')
 
+  const discountSummary =
+    result.discount_applied > 0
+      ? ` Discount applied: $${result.discount_applied}.`
+      : ''
+
   return response(true, result.message, {
     ...result,
     quote_total: prepared.subtotal,
@@ -1060,7 +1209,7 @@ async function bookPreparedSlot(
       phone: customer.phone || context.callerPhone || '',
     },
     normalized_address: address,
-    caller_script: `You're all set for ${result.appointment_date} at ${result.start_time}. Services: ${serviceSummary}. Total: $${prepared.subtotal}. You'll receive confirmation with the details.`,
+    caller_script: `You're all set for ${result.appointment_date} at ${result.start_time}. Services: ${serviceSummary}.${discountSummary} Total: $${result.total}. You'll receive confirmation with the details.`,
   })
 }
 
@@ -1118,6 +1267,7 @@ async function getCalendarSlots(
     templates: bundle.templates,
     overrides: bundle.overrides,
     appointments: bundle.appointments,
+    minStartMinutes: minStartMinutesForDate(date),
     maxResults: 8,
   })
 
@@ -1129,6 +1279,38 @@ async function getCalendarSlots(
     required_minutes: applyAppointmentBuffer(requiredMinutes),
     slots,
   })
+}
+
+async function findAvailableSlotsAcrossDates(
+  supabase: SupabaseClient,
+  params: {
+    startDate: string
+    days: number
+    requiredMinutes: number
+    maxResults: number
+  },
+): Promise<DatedSlotOption[]> {
+  const slots: DatedSlotOption[] = []
+  const days = Math.max(1, Math.min(Math.floor(params.days), 31))
+
+  for (let dayOffset = 0; dayOffset < days; dayOffset += 1) {
+    const date = addDaysIso(params.startDate, dayOffset)
+    const bundle = await loadAvailabilityBundle(supabase, date)
+    const daySlots = getAvailableSlots({
+      date,
+      requiredMinutes: params.requiredMinutes,
+      templates: bundle.templates,
+      overrides: bundle.overrides,
+      appointments: bundle.appointments,
+      minStartMinutes: minStartMinutesForDate(date),
+      maxResults: Math.max(1, params.maxResults - slots.length),
+    })
+
+    slots.push(...daySlots.map((slot) => ({ date, ...slot })))
+    if (slots.length >= params.maxResults) break
+  }
+
+  return slots
 }
 
 async function findRecentCompletedAppointments(
@@ -1652,6 +1834,7 @@ async function validateRequestedSlotAvailable(
     templates: bundle.templates,
     overrides: bundle.overrides,
     appointments: bundle.appointments,
+    minStartMinutes: minStartMinutesForDate(normalizedDate.date),
     maxResults: 8,
   })
   const requestedStartMinutes = timeToMinutes(normalizedStart)
@@ -1842,6 +2025,7 @@ async function scheduleReclean(
     templates: bundle.templates,
     overrides: bundle.overrides,
     appointments: bundle.appointments,
+    minStartMinutes: minStartMinutesForDate(appointmentDate),
     maxResults: 8,
   })
   const normalizedStart = startTime.length === 5 ? `${startTime}:00` : startTime
@@ -1850,13 +2034,37 @@ async function scheduleReclean(
   )
 
   if (!requestedSlot) {
+    const sameDateSlots = slots.map((slot) => ({
+      date: appointmentDate,
+      ...slot,
+    }))
+    const alternateSlots =
+      sameDateSlots.length > 0
+        ? sameDateSlots
+        : await findAvailableSlotsAcrossDates(context.supabase, {
+            startDate: addDaysIso(appointmentDate, 1),
+            days: 14,
+            requiredMinutes,
+            maxResults: 5,
+          })
+    const callerScript =
+      alternateSlots.length > 0
+        ? `That reclean time is not available. I can offer ${alternateSlots
+            .map(
+              (slot) =>
+                `${slot.date} from ${slot.start_time} to ${slot.end_time}`,
+            )
+            .join(', ')} instead.`
+        : 'That reclean time is not available, and I do not see another reclean opening in the next two weeks. Notify admin for follow-up.'
+
     return response(
       false,
       'That reclean time is not available. Offer one of the returned available slots instead and do not say the reclean is scheduled.',
       {
         appointment_date: appointmentDate,
         requested_start_time: startTime,
-        available_slots: slots,
+        available_slots: alternateSlots,
+        caller_script: callerScript,
       },
     )
   }
@@ -1867,10 +2075,15 @@ async function scheduleReclean(
     customer?.full_name ||
     [customer?.first_name, customer?.last_name].filter(Boolean).join(' ') ||
     'Customer'
+  const suppressCustomerCommsForEvanTest =
+    normalizeLookup(customerName) === 'evan cox'
   const internalNotes = [
     `Reclean / warranty redo scheduled by Rabecca voice AI.`,
     `Original appointment: ${original.id} on ${original.appointment_date} at ${original.start_time}.`,
     `Complaint summary: ${issueSummary}`,
+    suppressCustomerCommsForEvanTest
+      ? TEMP_EVAN_COX_RECLEAN_SUPPRESS_COMMS_MARKER
+      : null,
     context.callId ? `Retell call ID: ${context.callId}` : null,
   ]
     .filter(Boolean)
@@ -1999,6 +2212,11 @@ async function notifyAdmin(
   const serviceAddress = nonPlaceholderContact(
     stringArg(args, 'service_address'),
   )
+  const existingAppointmentTiming = stringArg(
+    args,
+    'existing_appointment_timing',
+  )
+  const requestedNewTiming = stringArg(args, 'requested_new_timing')
   const urgency = stringArg(args, 'urgency') || 'normal'
   const source = 'Rabecca voice AI'
 
@@ -2011,6 +2229,8 @@ async function notifyAdmin(
     contactLine('Phone', customerPhone),
     contactLine('Email', customerEmail),
     contactLine('Address', serviceAddress),
+    contactLine('Existing appointment timing', existingAppointmentTiming),
+    contactLine('Requested new timing', requestedNewTiming),
     '',
     'Message:',
     message,
@@ -2040,6 +2260,8 @@ async function notifyAdmin(
   <tr><td><strong>Phone</strong></td><td>${escapeHtml(customerPhone || 'Not provided')}</td></tr>
   <tr><td><strong>Email</strong></td><td>${escapeHtml(customerEmail || 'Not provided')}</td></tr>
   <tr><td><strong>Address</strong></td><td>${escapeHtml(serviceAddress || 'Not provided')}</td></tr>
+  <tr><td><strong>Existing appointment timing</strong></td><td>${escapeHtml(existingAppointmentTiming || 'Not provided')}</td></tr>
+  <tr><td><strong>Requested new timing</strong></td><td>${escapeHtml(requestedNewTiming || 'Not provided')}</td></tr>
 </table>
 <h3>Message</h3>
 <pre style="background:#f4f4f4;padding:12px;border-radius:4px;white-space:pre-wrap;">${escapeHtml(message)}</pre>

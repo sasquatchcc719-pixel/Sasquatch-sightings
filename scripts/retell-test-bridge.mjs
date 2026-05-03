@@ -36,6 +36,8 @@ function parseArgs(argv) {
     command: argv[2] || 'help',
     flowId: DEFAULT_FLOW_ID,
     flowVersion: 0,
+    llmId: '',
+    llmVersion: 0,
     limit: 50,
     testCaseIds: [],
     batchId: '',
@@ -50,6 +52,12 @@ function parseArgs(argv) {
       i += 1
     } else if (arg === '--flow-version') {
       args.flowVersion = Number(argv[i + 1] || args.flowVersion)
+      i += 1
+    } else if (arg === '--llm-id') {
+      args.llmId = argv[i + 1] || args.llmId
+      i += 1
+    } else if (arg === '--llm-version') {
+      args.llmVersion = Number(argv[i + 1] || args.llmVersion)
       i += 1
     } else if (arg === '--limit') {
       args.limit = Number(argv[i + 1] || args.limit)
@@ -71,6 +79,26 @@ function parseArgs(argv) {
 
   args.testCaseIds = args.testCaseIds.filter(Boolean)
   return args
+}
+
+function responseEngine(args) {
+  if (args.llmId) {
+    return {
+      type: 'retell-llm',
+      llm_id: args.llmId,
+      version: args.llmVersion,
+    }
+  }
+
+  return {
+    type: 'conversation-flow',
+    conversation_flow_id: args.flowId,
+    version: args.flowVersion,
+  }
+}
+
+function responseEngineId(args) {
+  return args.llmId || args.flowId
 }
 
 async function retellRequest(pathname, options = {}) {
@@ -151,8 +179,13 @@ function transcriptToText(snapshot) {
 
 async function listTestCaseDefinitions(args) {
   const url = new URL(`${API_BASE}/v2/list-test-case-definitions`)
-  url.searchParams.set('type', 'conversation-flow')
-  url.searchParams.set('conversation_flow_id', args.flowId)
+  if (args.llmId) {
+    url.searchParams.set('type', 'retell-llm')
+    url.searchParams.set('llm_id', args.llmId)
+  } else {
+    url.searchParams.set('type', 'conversation-flow')
+    url.searchParams.set('conversation_flow_id', args.flowId)
+  }
   url.searchParams.set('limit', String(args.limit))
 
   const response = await fetch(url, {
@@ -184,11 +217,7 @@ async function createBatchTest(args) {
     method: 'POST',
     body: {
       test_case_definition_ids: testCaseIds,
-      response_engine: {
-        type: 'conversation-flow',
-        conversation_flow_id: args.flowId,
-        version: args.flowVersion,
-      },
+      response_engine: responseEngine(args),
     },
   })
 
@@ -200,11 +229,7 @@ async function createSmokeTestDefinition(args) {
     method: 'POST',
     body: {
       name: args.name,
-      response_engine: {
-        type: 'conversation-flow',
-        conversation_flow_id: args.flowId,
-        version: args.flowVersion,
-      },
+      response_engine: responseEngine(args),
       llm_model: 'gpt-5.1',
       user_prompt: `## Identity
 Your name is Rick James.
@@ -287,16 +312,123 @@ You are direct and mildly impatient. If the assistant repeats the same question 
   return definition
 }
 
+async function createUnavailableSlotGuardTestDefinition(args) {
+  const definition = await retellRequest('/create-test-case-definition', {
+    method: 'POST',
+    body: {
+      name: args.name,
+      response_engine: responseEngine(args),
+      llm_model: 'gpt-5.1',
+      user_prompt: `## Identity
+Your name is Donna.
+You are testing a carpet cleaning booking assistant.
+
+## Goal
+Book four regular bedrooms of carpet cleaning for Sunday, May 3, 2026 at 9:00 AM.
+Provide your contact details when asked:
+- phone: 719-749-8807
+- email: donna.calendar@example.com
+- address: 740 Platt Lane, Palmer Lake, Colorado 80133
+
+## Behavior
+If the assistant says 9:00 AM is available, choose it. If the final booking tool says that time is no longer available, ask what other time is open and accept 11:00 AM if offered.`,
+      metrics: [
+        'The agent calls quote_and_prepare_booking before offering a residential appointment time.',
+        'The agent calls book_prepared_slot before saying the job is booked.',
+        'When book_prepared_slot returns failure for the selected time, the agent does not say the customer is booked.',
+        'The agent offers the returned alternate 11:00 AM slot after the booking tool rejects 9:00 AM.',
+      ],
+      tool_mocks: [
+        {
+          tool_name: 'quote_and_prepare_booking',
+          input_match_rule: { type: 'any' },
+          output: JSON.stringify({
+            success: true,
+            message: 'Estimated total is $184.',
+            data: {
+              quote_total: 184,
+              minimum_booking_amount: 150,
+              meets_minimum: true,
+              can_offer_slots: true,
+              appointment_date: '2026-05-03',
+              line_items: [
+                {
+                  service_id: 'a6994150-dfb5-4bf9-822b-40b0511a0539',
+                  service_name: 'Regular Size Room (100 to 200 Sqft)',
+                  quantity: 4,
+                  unit_price: 46,
+                  total: 184,
+                },
+              ],
+              slots: [{ start_time: '09:00:00', end_time: '11:00:00' }],
+              caller_script:
+                'The estimate is $184. I found this available window: 09:00:00 to 11:00:00. Which one works best?',
+            },
+          }),
+        },
+        {
+          tool_name: 'book_prepared_slot',
+          input_match_rule: {
+            type: 'partial_match',
+            args: { selected_start_time: '09:00' },
+          },
+          output: JSON.stringify({
+            success: false,
+            message:
+              'Booking was NOT created: That appointment time is no longer available. Offer one of the returned available slots instead and do not say the customer is booked.',
+            data: {
+              appointment_date: '2026-05-03',
+              requested_start_time: '09:00',
+              available_slots: [
+                { start_time: '11:00:00', end_time: '13:00:00' },
+              ],
+              caller_script:
+                'That time is no longer available. I can offer 11:00:00 to 13:00:00 instead.',
+            },
+          }),
+        },
+        {
+          tool_name: 'book_prepared_slot',
+          input_match_rule: {
+            type: 'partial_match',
+            args: { selected_start_time: '11:00' },
+          },
+          output: JSON.stringify({
+            success: true,
+            message: 'Appointment booked.',
+            data: {
+              appointment_id: 'calendar-guard-success',
+              appointment_date: '2026-05-03',
+              start_time: '11:00:00',
+              end_time: '13:00:00',
+              quote_total: 184,
+              line_items: [
+                {
+                  service_name: 'Regular Size Room (100 to 200 Sqft)',
+                  quantity: 4,
+                  total: 184,
+                },
+              ],
+              caller_script:
+                'You are all set for 2026-05-03 at 11:00:00. The total is $184.',
+            },
+          }),
+        },
+      ],
+      dynamic_variables: {},
+    },
+  })
+
+  console.log(JSON.stringify(definition, null, 2))
+  return definition
+}
+
 async function createMixedCarpetUpholsteryTestDefinition(args) {
   const definition = await retellRequest('/create-test-case-definition', {
     method: 'POST',
     body: {
       name: args.name,
-      response_engine: {
-        type: 'conversation-flow',
-        conversation_flow_id: args.flowId,
-        version: args.flowVersion,
-      },
+      response_engine: responseEngine(args),
       llm_model: 'gpt-5.1',
       user_prompt: `## Identity
 Your name is Rick James.
@@ -320,6 +452,7 @@ Do not let the assistant drop the couch. Ask for the total and confirmation that
         'The agent includes the couch or sofa in the service summary before booking.',
         'The agent calls book_prepared_slot before saying the appointment is booked.',
         'The agent confirms the booking after the booking tool succeeds and includes the couch or sofa in the booked services.',
+        'The agent does not mention or apply any discount unless the booking tool explicitly includes one.',
       ],
       tool_mocks: [
         {
@@ -421,11 +554,7 @@ async function createTileRugLegendaryCatalogTestDefinition(args) {
     method: 'POST',
     body: {
       name: args.name,
-      response_engine: {
-        type: 'conversation-flow',
-        conversation_flow_id: args.flowId,
-        version: args.flowVersion,
-      },
+      response_engine: responseEngine(args),
       llm_model: 'gpt-5.1',
       user_prompt: `## Identity
 Your name is Rick James.
@@ -527,11 +656,7 @@ async function createTileCarpetCouchAddOnTestDefinition(args) {
     method: 'POST',
     body: {
       name: args.name,
-      response_engine: {
-        type: 'conversation-flow',
-        conversation_flow_id: args.flowId,
-        version: args.flowVersion,
-      },
+      response_engine: responseEngine(args),
       llm_model: 'gpt-5.1',
       user_prompt: `## Identity
 Your name is Rick James.
@@ -541,14 +666,20 @@ Ask for pricing and availability for:
 - 500 square feet of kitchen tile and grout
 - a standard three-seat sofa
 - a 250 square-foot carpeted living room
-- general deodorizer for one room
+- urine treatment for one room with a pet spot
 
-Be clear that you want all four services included and ask for next week's availability.`,
+Be clear that you want all four services included and ask for next week's availability.
+
+## Behavior
+You only want the quote and available time window in this test. Do not provide booking contact details, and do not try to finalize the appointment. Once the assistant quotes all four services and gives availability, say thanks and end the call.`,
       metrics: [
-        'The agent calls quote_and_prepare_booking with tile_grout_sqft, couch or sofa, living room carpet square footage, and deodorizer.',
-        'The agent does not quote only the living room carpet or drop tile/grout, couch, or deodorizer.',
-        'The agent quotes $627 for the complete service list.',
+        'The agent calls quote_and_prepare_booking with tile_grout_sqft, couch or sofa, living room carpet square footage, urine_treatment_room_count, availability_start_date, and availability_days.',
+        'The agent does not quote only the living room carpet or drop tile/grout, couch, or urine treatment.',
+        'The agent quotes $640 for the complete service list.',
+        'The agent does not quote or book the general deodorizer item marked not for urine.',
+        'The agent offers only the dated availability returned by the tool and does not claim next week is unavailable.',
         'The agent does not invent add-on prices outside the tool result.',
+        'When the user says thanks and ends the call, the agent gives one short goodbye and calls end_call.',
       ],
       tool_mocks: [
         {
@@ -556,13 +687,15 @@ Be clear that you want all four services included and ask for next week's availa
           input_match_rule: { type: 'any' },
           output: JSON.stringify({
             success: true,
-            message: 'Estimated total is $627.',
+            message: 'Estimated total is $640.',
             data: {
-              quote_total: 627,
+              quote_total: 640,
               minimum_booking_amount: 150,
               meets_minimum: true,
               can_offer_slots: true,
-              appointment_date: '2026-05-05',
+              appointment_date: null,
+              availability_start_date: '2026-05-04',
+              availability_days: 7,
               line_items: [
                 {
                   service_name: 'Tile & grout cleaning',
@@ -572,14 +705,20 @@ Be clear that you want all four services included and ask for next week's availa
                 { service_name: 'Sasquatch Size Room', quantity: 1, total: 90 },
                 { service_name: 'Sofa/ Couch 3 Seat', quantity: 1, total: 150 },
                 {
-                  service_name: 'General Deodorizer per room (Not for Urine)',
+                  service_name: 'Urine Eliminator Treatment',
                   quantity: 1,
-                  total: 12,
+                  total: 25,
                 },
               ],
-              slots: [{ start_time: '09:00:00', end_time: '12:00:00' }],
+              slots: [
+                {
+                  date: '2026-05-05',
+                  start_time: '09:00:00',
+                  end_time: '12:00:00',
+                },
+              ],
               caller_script:
-                'The estimate is $627 for tile and grout, living room carpet, sofa, and one room of deodorizer.',
+                'The estimate is $640. I found 2026-05-05 from 09:00:00 to 12:00:00.',
             },
           }),
         },
@@ -597,11 +736,7 @@ async function createTileOnlyQuoteCorrectionTestDefinition(args) {
     method: 'POST',
     body: {
       name: args.name,
-      response_engine: {
-        type: 'conversation-flow',
-        conversation_flow_id: args.flowId,
-        version: args.flowVersion,
-      },
+      response_engine: responseEngine(args),
       llm_model: 'gpt-5.1',
       user_prompt: `## Identity
 Your name is Rick James.
@@ -657,11 +792,7 @@ async function createFloodRestorationBlockedTestDefinition(args) {
     method: 'POST',
     body: {
       name: args.name,
-      response_engine: {
-        type: 'conversation-flow',
-        conversation_flow_id: args.flowId,
-        version: args.flowVersion,
-      },
+      response_engine: responseEngine(args),
       llm_model: 'gpt-5.1',
       user_prompt: `## Identity
 Your name is Mike.
@@ -697,11 +828,7 @@ async function createMinimumAddOnLoopTestDefinition(args) {
     method: 'POST',
     body: {
       name: args.name,
-      response_engine: {
-        type: 'conversation-flow',
-        conversation_flow_id: args.flowId,
-        version: args.flowVersion,
-      },
+      response_engine: responseEngine(args),
       llm_model: 'gpt-5.1',
       user_prompt: `## Identity
 Your name is Mike.
@@ -754,7 +881,7 @@ If the updated total is still below minimum, do not add more services. Ask what 
               ],
               missing_fields: [],
               caller_script:
-                'The updated estimate is $117. That is $33 below our $150 minimum, so I cannot check appointment availability or finalize a booking yet. Would you like to add another area, stairs, deodorizer, or another service to meet the minimum?',
+                'The updated estimate is $117. That is $33 below our $150 minimum, so I cannot check appointment availability or finalize a booking yet. Would you like to add another area, stairs, urine treatment for pet spots, or another service to meet the minimum?',
             },
           }),
         },
@@ -792,7 +919,7 @@ If the updated total is still below minimum, do not add more services. Ask what 
               ],
               missing_fields: [],
               caller_script:
-                'The updated estimate is $117. That is $33 below our $150 minimum, so I cannot check appointment availability or finalize a booking yet. Would you like to add another area, stairs, deodorizer, or another service to meet the minimum?',
+                'The updated estimate is $117. That is $33 below our $150 minimum, so I cannot check appointment availability or finalize a booking yet. Would you like to add another area, stairs, urine treatment for pet spots, or another service to meet the minimum?',
             },
           }),
         },
@@ -819,7 +946,7 @@ If the updated total is still below minimum, do not add more services. Ask what 
               ],
               missing_fields: [],
               caller_script:
-                'The updated estimate is $92. That is $58 below our $150 minimum, so I cannot check appointment availability or finalize a booking yet. Would you like to add another area, stairs, deodorizer, or another service to meet the minimum?',
+                'The updated estimate is $92. That is $58 below our $150 minimum, so I cannot check appointment availability or finalize a booking yet. Would you like to add another area, stairs, urine treatment for pet spots, or another service to meet the minimum?',
             },
           }),
         },
@@ -837,11 +964,7 @@ async function createRecleanRefundTestDefinition(args) {
     method: 'POST',
     body: {
       name: args.name,
-      response_engine: {
-        type: 'conversation-flow',
-        conversation_flow_id: args.flowId,
-        version: args.flowVersion,
-      },
+      response_engine: responseEngine(args),
       llm_model: 'gpt-5.1',
       user_prompt: `## Identity
 Your name is Mike.
@@ -863,7 +986,7 @@ Ask for the earliest available reclean appointment and choose Tuesday, May 5, 20
         'The agent offers a no-charge reclean for the spot that came back.',
         'The agent collects or uses caller contact details and the order number before scheduling.',
         'The agent calls list_caller_appointments before scheduling the reclean.',
-        'The agent calls schedule_reclean before saying the reclean is scheduled.',
+        'The agent calls schedule_reclean before saying the reclean is scheduled, and does not say scheduled if that tool fails.',
         'The agent confirms the no-charge reclean only after schedule_reclean succeeds.',
       ],
       tool_mocks: [
@@ -954,11 +1077,7 @@ async function createRefundRefusalFollowupTestDefinition(args) {
     method: 'POST',
     body: {
       name: args.name,
-      response_engine: {
-        type: 'conversation-flow',
-        conversation_flow_id: args.flowId,
-        version: args.flowVersion,
-      },
+      response_engine: responseEngine(args),
       llm_model: 'gpt-5.1',
       user_prompt: `## Identity
 Your name is Mike.
@@ -1002,6 +1121,560 @@ After the assistant says the team has the details, no refund is guaranteed on th
   return definition
 }
 
+async function createAutonomousSmokeDefinition(args, scenario) {
+  const definition = await retellRequest('/create-test-case-definition', {
+    method: 'POST',
+    body: {
+      name: args.name,
+      response_engine: responseEngine(args),
+      llm_model: 'gpt-5.1',
+      user_prompt: scenario.user_prompt,
+      metrics: scenario.metrics,
+      tool_mocks: scenario.tool_mocks,
+      dynamic_variables: {},
+    },
+  })
+
+  console.log(JSON.stringify(definition, null, 2))
+  return definition
+}
+
+function autonomousSmokeScenarios(timestamp) {
+  return [
+    {
+      name: `Rabecca autonomous flexible mixed booking ${timestamp}`,
+      user_prompt: `## Identity
+Your name is Alicia.
+
+## Goal
+Book tile and grout cleaning for 450 square feet plus one standard sofa. You are flexible, but want the earliest opening next week.
+
+## Behavior
+Ask for price and next week's availability first. If the assistant offers Wednesday May 6 at 11:00 AM, accept it. Provide contact details when asked:
+- phone: 719-555-0184
+- email: alicia.flex@example.com
+- address: 55 Oak Ridge Road, Monument, CO 80132
+End the conversation after the booking is confirmed.`,
+      metrics: [
+        'The agent calls quote_and_prepare_booking with tile_grout_sqft, sofa/couch, availability_start_date, and availability_days.',
+        'The agent quotes $487.50 from the tool and offers only the dated slot returned by the tool.',
+        'The agent calls book_prepared_slot before saying the appointment is booked.',
+        'The agent confirms the booking only after book_prepared_slot succeeds and includes tile/grout plus sofa.',
+        'The agent calls end_call after the customer is done.',
+      ],
+      tool_mocks: [
+        {
+          tool_name: 'quote_and_prepare_booking',
+          input_match_rule: { type: 'any' },
+          output: JSON.stringify({
+            success: true,
+            message: 'Estimated total is $487.50.',
+            data: {
+              quote_total: 487.5,
+              discount_applied: 0,
+              total: 487.5,
+              minimum_booking_amount: 150,
+              meets_minimum: true,
+              can_offer_slots: true,
+              availability_start_date: '2026-05-04',
+              availability_days: 7,
+              line_items: [
+                { service_name: 'Tile & grout cleaning', quantity: 450, total: 337.5 },
+                { service_name: 'Sofa/ Couch 3 Seat', quantity: 1, total: 150 },
+              ],
+              slots: [
+                {
+                  date: '2026-05-06',
+                  start_time: '11:00:00',
+                  end_time: '14:00:00',
+                },
+              ],
+              caller_script:
+                'The estimate is $487.50. I found Wednesday May 6 from 11:00 AM to 2:00 PM.',
+            },
+          }),
+        },
+        {
+          tool_name: 'book_prepared_slot',
+          input_match_rule: { type: 'any' },
+          output: JSON.stringify({
+            success: true,
+            message: 'Appointment booked.',
+            data: {
+              appointment_id: 'auto-flex-booking',
+              appointment_date: '2026-05-06',
+              start_time: '11:00:00',
+              end_time: '14:00:00',
+              total: 487.5,
+              line_items: [
+                { service_name: 'Tile & grout cleaning', quantity: 450, total: 337.5 },
+                { service_name: 'Sofa/ Couch 3 Seat', quantity: 1, total: 150 },
+              ],
+              caller_script:
+                'You are all set for 2026-05-06 at 11:00:00. Total: $487.50.',
+            },
+          }),
+        },
+      ],
+    },
+    {
+      name: `Rabecca autonomous requested discount ${timestamp}`,
+      user_prompt: `## Identity
+Your name is Ben.
+
+## Goal
+Get a quote for 400 square feet of tile and grout cleaning. After hearing the price, ask if there are any discounts or deals available.
+
+## Behavior
+You only want the quote and discount answer. Do not book. After the assistant answers the discount question, say thanks and end the call.`,
+      metrics: [
+        'The first quote does not mention or apply a discount before the caller asks.',
+        'After the caller asks for a discount, the agent calls quote_and_prepare_booking with discount_requested=true.',
+        'The agent only mentions the $20 discount after the tool returns discount_applied greater than 0.',
+        'The agent states the discounted total as $280 and does not invent any other discount.',
+        'The agent calls end_call after the customer says thanks.',
+      ],
+      tool_mocks: [
+        {
+          tool_name: 'quote_and_prepare_booking',
+          input_match_rule: {
+            type: 'partial_match',
+            args: { discount_requested: true },
+          },
+          output: JSON.stringify({
+            success: true,
+            message: 'Estimated total is $280.',
+            data: {
+              quote_total: 300,
+              discount_applied: 20,
+              total: 280,
+              minimum_booking_amount: 150,
+              meets_minimum: true,
+              can_offer_slots: false,
+              line_items: [
+                { service_name: 'Tile & grout cleaning', quantity: 400, total: 300 },
+              ],
+              slots: [],
+              caller_script:
+                'The estimate is $300. I applied the requested $20 discount, so the total is $280.',
+            },
+          }),
+        },
+        {
+          tool_name: 'quote_and_prepare_booking',
+          input_match_rule: { type: 'any' },
+          output: JSON.stringify({
+            success: true,
+            message: 'Estimated total is $300.',
+            data: {
+              quote_total: 300,
+              discount_applied: 0,
+              total: 300,
+              minimum_booking_amount: 150,
+              meets_minimum: true,
+              can_offer_slots: false,
+              line_items: [
+                { service_name: 'Tile & grout cleaning', quantity: 400, total: 300 },
+              ],
+              slots: [],
+              caller_script:
+                'The estimate is $300. What day or date range would you like me to check?',
+            },
+          }),
+        },
+      ],
+    },
+    {
+      name: `Rabecca autonomous below minimum pressure ${timestamp}`,
+      user_prompt: `## Identity
+Your name is Carol.
+
+## Goal
+Try to book two regular bedrooms only. When told it is below the minimum, ask for a waitlist, cancellation list, or exception because you do not want to add anything.
+
+## Behavior
+Do not accept add-ons. You want to know whether the assistant will hold a spot anyway. End once the assistant clearly says it cannot book or waitlist below minimum.`,
+      metrics: [
+        'The agent quotes $92 for two regular bedrooms from quote_and_prepare_booking.',
+        'The agent says the job is below the $150 minimum and $58 short.',
+        'The agent does not offer appointment times, a hold, waitlist, cancellation monitoring, or an exception.',
+        'The agent gives a clear next step without looping.',
+        'The agent calls end_call after the customer is done.',
+      ],
+      tool_mocks: [
+        {
+          tool_name: 'quote_and_prepare_booking',
+          input_match_rule: { type: 'any' },
+          output: JSON.stringify({
+            success: true,
+            message: 'Estimated total is $92.',
+            data: {
+              quote_total: 92,
+              minimum_booking_amount: 150,
+              amount_needed_to_minimum: 58,
+              meets_minimum: false,
+              can_offer_slots: false,
+              line_items: [
+                { service_name: 'Regular Size Room (100 to 200 Sqft)', quantity: 2, total: 92 },
+              ],
+              missing_fields: [],
+              caller_script:
+                'The updated estimate is $92. That is $58 below our $150 minimum, so I cannot check appointment availability or finalize a booking yet.',
+            },
+          }),
+        },
+      ],
+    },
+    {
+      name: `Rabecca autonomous commercial estimate ${timestamp}`,
+      user_prompt: `## Identity
+Your name is Danielle.
+
+## Goal
+Schedule an estimate for a 6,000 square foot office carpet cleaning at Pine Creek Dental. It is commercial, recurring quarterly if the first cleaning goes well.
+
+## Behavior
+Provide details when asked:
+- phone: 719-555-7722
+- email: danielle@pinecreek.example
+- address: 801 Corporate Center Drive, Colorado Springs, CO 80921
+- preferred estimate time: Friday May 8, 2026 at 10:00 AM
+Do not accept a residential quote; you want an estimate visit.`,
+      metrics: [
+        'The agent does not quote commercial work using residential pricing.',
+        'The agent collects business/contact details, site address, square footage, floor type or service type, timeline, and recurring intent.',
+        'The agent calls create_estimate before saying the estimate visit is scheduled.',
+        'The agent only says the estimate is scheduled after create_estimate succeeds.',
+        'The agent calls end_call after the customer is done.',
+      ],
+      tool_mocks: [
+        {
+          tool_name: 'create_estimate',
+          input_match_rule: { type: 'any' },
+          output: JSON.stringify({
+            success: true,
+            message: 'Estimate scheduled.',
+            data: {
+              estimate_id: 'auto-commercial-estimate',
+              appointment_date: '2026-05-08',
+              start_time: '10:00:00',
+              caller_script:
+                'You are set for an estimate visit on 2026-05-08 at 10:00 AM.',
+            },
+          }),
+        },
+      ],
+    },
+    {
+      name: `Rabecca autonomous appointment change ${timestamp}`,
+      user_prompt: `## Identity
+Your name is Evelyn.
+
+## Goal
+You have an appointment next Tuesday morning and need to move it to Friday afternoon. You do not know the confirmation number.
+
+## Behavior
+Provide contact details when asked:
+- phone: 719-555-1313
+- email: evelyn.change@example.com
+- address: 12 Willow Trail, Monument, CO 80132
+You need the team to follow up. End after the assistant confirms the request was sent, but do not let the assistant claim the appointment was actually changed.`,
+      metrics: [
+        'The agent does not say the appointment change is confirmed.',
+        'The agent collects real callback phone, email, address, existing appointment timing, and requested new timing.',
+        'The agent calls notify_admin with the change request and real contact details.',
+        'The agent tells the caller the team will confirm the change.',
+        'The agent calls end_call after the customer is done.',
+      ],
+      tool_mocks: [
+        {
+          tool_name: 'notify_admin',
+          input_match_rule: { type: 'any' },
+          output: JSON.stringify({
+            success: true,
+            message: 'Admin notification sent.',
+          }),
+        },
+      ],
+    },
+    {
+      name: `Rabecca autonomous rugs and leather quote ${timestamp}`,
+      user_prompt: `## Identity
+Your name is Frank.
+
+## Goal
+Get a quote and next-week availability for two 8x11 rugs and one leather sofa.
+
+## Behavior
+You only want pricing and available windows. Do not book. After the assistant quotes the rugs and leather sofa and offers a real returned window, say thanks and end the call.`,
+      metrics: [
+        'The agent calls quote_and_prepare_booking with two 8x11 rugs and one leather sofa.',
+        'The agent does not treat leather sofa as a standard fabric sofa.',
+        'The agent quotes $390 from the tool and does not invent rug or leather pricing.',
+        'The agent offers only the dated availability returned by the tool.',
+        'The agent calls end_call after the customer says thanks.',
+      ],
+      tool_mocks: [
+        {
+          tool_name: 'quote_and_prepare_booking',
+          input_match_rule: { type: 'any' },
+          output: JSON.stringify({
+            success: true,
+            message: 'Estimated total is $390.',
+            data: {
+              quote_total: 390,
+              discount_applied: 0,
+              total: 390,
+              minimum_booking_amount: 150,
+              meets_minimum: true,
+              can_offer_slots: true,
+              availability_start_date: '2026-05-04',
+              availability_days: 7,
+              line_items: [
+                { service_name: 'Rug 8x11 wool or polyester', quantity: 2, total: 240 },
+                { service_name: 'Leather Cleaning Sofa', quantity: 1, total: 150 },
+              ],
+              slots: [
+                {
+                  date: '2026-05-07',
+                  start_time: '13:00:00',
+                  end_time: '15:00:00',
+                },
+              ],
+              caller_script:
+                'The estimate is $390. I found 2026-05-07 from 13:00:00 to 15:00:00.',
+            },
+          }),
+        },
+      ],
+    },
+    {
+      name: `Rabecca autonomous pet stairs booking ${timestamp}`,
+      user_prompt: `## Identity
+Your name is Grace.
+
+## Goal
+Book cleaning for a 300 square-foot carpeted living room, 13 stairs, and urine treatment in one room for Monday May 4, 2026.
+
+## Behavior
+If the assistant offers 3:00 PM to 5:00 PM, accept it. Provide contact details when asked:
+- phone: 719-555-4499
+- email: grace.pet@example.com
+- address: 9 Spruce Valley Lane, Monument, CO 80132
+End after the booking is confirmed.`,
+      metrics: [
+        'The agent calls quote_and_prepare_booking with living_room_sqft, stairs_count, and urine_treatment_room_count.',
+        'The agent quotes $167 from the tool and includes all three services.',
+        'The agent calls book_prepared_slot before saying the appointment is booked.',
+        'The final booking confirmation includes the living room, stairs, urine treatment, and $167 total.',
+        'The agent calls end_call after the customer is done.',
+      ],
+      tool_mocks: [
+        {
+          tool_name: 'quote_and_prepare_booking',
+          input_match_rule: { type: 'any' },
+          output: JSON.stringify({
+            success: true,
+            message: 'Estimated total is $167.',
+            data: {
+              quote_total: 167,
+              discount_applied: 0,
+              total: 167,
+              minimum_booking_amount: 150,
+              meets_minimum: true,
+              can_offer_slots: true,
+              appointment_date: '2026-05-04',
+              line_items: [
+                { service_name: 'Sasquatch Size Room', quantity: 1, total: 90 },
+                { service_name: 'Step Carpet Cleaning (Per Step Charge)', quantity: 13, total: 52 },
+                { service_name: 'Urine Eliminator Treatment', quantity: 1, total: 25 },
+              ],
+              slots: [
+                {
+                  date: '2026-05-04',
+                  start_time: '15:00:00',
+                  end_time: '17:00:00',
+                },
+              ],
+              caller_script:
+                'The estimate is $167. I found 2026-05-04 from 15:00:00 to 17:00:00.',
+            },
+          }),
+        },
+        {
+          tool_name: 'book_prepared_slot',
+          input_match_rule: { type: 'any' },
+          output: JSON.stringify({
+            success: true,
+            message: 'Appointment booked.',
+            data: {
+              appointment_id: 'auto-pet-stairs-booking',
+              appointment_date: '2026-05-04',
+              start_time: '15:00:00',
+              end_time: '17:00:00',
+              total: 167,
+              line_items: [
+                { service_name: 'Sasquatch Size Room', quantity: 1, total: 90 },
+                { service_name: 'Step Carpet Cleaning (Per Step Charge)', quantity: 13, total: 52 },
+                { service_name: 'Urine Eliminator Treatment', quantity: 1, total: 25 },
+              ],
+              caller_script:
+                'You are all set for 2026-05-04 at 15:00:00. Total: $167.',
+            },
+          }),
+        },
+      ],
+    },
+    {
+      name: `Rabecca autonomous whole-house sqft qualifier ${timestamp}`,
+      user_prompt: `## Identity
+Your name is Tyler.
+
+## Goal
+You want a quote and next-week availability. Start by saying your house is roughly 3,000 square feet, you need the carpets cleaned, and you also have one sofa.
+
+## Behavior
+The 3,000 square feet is the total home size, not the carpet square footage. If the assistant asks what carpeted areas or actual carpet square footage need cleaning, clarify that it is three bedrooms and a living room that feels like about two average bedrooms, plus one sofa. Do not provide booking contact details. End after the assistant gives a quote and real availability.`,
+      metrics: [
+        'The agent treats the 3,000 square foot house size as context and asks a qualifying question before quoting.',
+        'The agent does not call quote_and_prepare_booking with 3000 as carpet, living room, room, tile, or rug square footage.',
+        'After clarification, the agent calls quote_and_prepare_booking with bedrooms_count, a large-room carpet input based on the bedroom-equivalent answer, couch or sofa, availability_start_date, and availability_days.',
+        'The agent quotes only the tool result and offers only the returned dated availability.',
+        'The agent calls end_call after the customer is done.',
+      ],
+      tool_mocks: [
+        {
+          tool_name: 'quote_and_prepare_booking',
+          input_match_rule: { type: 'any' },
+          output: JSON.stringify({
+            success: true,
+            message: 'Estimated total is $378.',
+            data: {
+              quote_total: 378,
+              discount_applied: 0,
+              total: 378,
+              minimum_booking_amount: 150,
+              meets_minimum: true,
+              can_offer_slots: true,
+              availability_start_date: '2026-05-04',
+              availability_days: 7,
+              line_items: [
+                { service_name: 'Regular Size Room (100 to 200 Sqft)', quantity: 3, total: 138 },
+                { service_name: 'Sasquatch Size Room (200 to 400 Sqft)', quantity: 1, total: 90 },
+                { service_name: 'Sofa/ Couch 3 Seat', quantity: 1, total: 150 },
+              ],
+              slots: [
+                {
+                  date: '2026-05-06',
+                  start_time: '12:00:00',
+                  end_time: '15:00:00',
+                },
+              ],
+              caller_script:
+                'The estimate is $378. I found Wednesday May 6 from noon to 3:00 PM.',
+            },
+          }),
+        },
+      ],
+    },
+    {
+      name: `Rabecca autonomous room dimensions sizing ${timestamp}`,
+      user_prompt: `## Identity
+Your name is Dana.
+
+## Goal
+You want a quote and next-week availability for carpet cleaning in a living room that is roughly 30 by 15, plus 12 stairs.
+
+## Behavior
+If the assistant confirms that 30 by 15 is about 450 square feet, agree. Do not provide booking contact details. End after the assistant gives a quote and real availability.`,
+      metrics: [
+        'The agent understands 30 by 15 as about 450 square feet of cleanable carpet.',
+        'The agent calls quote_and_prepare_booking with living_room_sqft around 450, stairs_count 12, availability_start_date, and availability_days.',
+        'The agent quotes only the tool result and offers only the returned dated availability.',
+        'The agent calls end_call after the customer is done.',
+      ],
+      tool_mocks: [
+        {
+          tool_name: 'quote_and_prepare_booking',
+          input_match_rule: { type: 'any' },
+          output: JSON.stringify({
+            success: true,
+            message: 'Estimated total is $186.',
+            data: {
+              quote_total: 186,
+              discount_applied: 0,
+              total: 186,
+              minimum_booking_amount: 150,
+              meets_minimum: true,
+              can_offer_slots: true,
+              availability_start_date: '2026-05-04',
+              availability_days: 7,
+              line_items: [
+                { service_name: 'Monster Size Room (400 to 600 Sqft)', quantity: 1, total: 138 },
+                { service_name: 'Step Carpet Cleaning (Per Step Charge)', quantity: 12, total: 48 },
+              ],
+              slots: [
+                {
+                  date: '2026-05-07',
+                  start_time: '09:00:00',
+                  end_time: '11:00:00',
+                },
+              ],
+              caller_script:
+                'The estimate is $186. I found Thursday May 7 from 9:00 AM to 11:00 AM.',
+            },
+          }),
+        },
+      ],
+    },
+    {
+      name: `Rabecca autonomous sewage backup urgent ${timestamp}`,
+      user_prompt: `## Identity
+Your name is Henry.
+
+## Goal
+You have a sewage backup with standing water in the basement and wet carpet. You want emergency help and ask for a price and earliest appointment.
+
+## Behavior
+Provide contact details when asked:
+- phone: 719-555-9000
+- email: henry.water@example.com
+- address: 44 Mesa View Drive, Colorado Springs, CO 80921
+Do not accept a normal carpet cleaning quote. End after the assistant says the team has been alerted or Charles will follow up.`,
+      metrics: [
+        'The agent does not call quote_and_prepare_booking or book_prepared_slot for sewage backup or standing water.',
+        'The agent treats the call as urgent water damage or flood restoration.',
+        'The agent collects real callback details and affected address before or while alerting the team.',
+        'The agent calls notify_admin with urgency urgent and a flood/water damage reason.',
+        'The agent calls end_call after the customer is done.',
+      ],
+      tool_mocks: [
+        {
+          tool_name: 'notify_admin',
+          input_match_rule: { type: 'any' },
+          output: JSON.stringify({
+            success: true,
+            message: 'Urgent admin notification sent.',
+          }),
+        },
+      ],
+    },
+  ]
+}
+
+async function runAutonomousSmokeSuite(args) {
+  const timestamp = new Date().toISOString()
+  const definitions = await Promise.all(
+    autonomousSmokeScenarios(timestamp).map((scenario) =>
+      createAutonomousSmokeDefinition(
+        { ...args, name: scenario.name },
+        scenario,
+      ),
+    ),
+  )
+  await runTestDefinitions(args, definitions)
+}
+
 async function waitForRun(batchId, timeoutMs = 120_000) {
   const started = Date.now()
   let latestRuns = []
@@ -1024,11 +1697,7 @@ async function runTestDefinitions(args, definitions) {
       test_case_definition_ids: definitions.map(
         (definition) => definition.test_case_definition_id,
       ),
-      response_engine: {
-        type: 'conversation-flow',
-        conversation_flow_id: args.flowId,
-        version: args.flowVersion,
-      },
+      response_engine: responseEngine(args),
     },
   })
 
@@ -1054,6 +1723,10 @@ async function runRegressionSuite(args) {
     createSmokeTestDefinition({
       ...args,
       name: `Rabecca regression booking success ${timestamp}`,
+    }),
+    createUnavailableSlotGuardTestDefinition({
+      ...args,
+      name: `Rabecca regression unavailable slot guard ${timestamp}`,
     }),
     createMixedCarpetUpholsteryTestDefinition({
       ...args,
@@ -1121,7 +1794,7 @@ async function importTestRun(args) {
   const payload = {
     call_id: callId,
     caller_phone: null,
-    agent_id: args.flowId,
+    agent_id: responseEngineId(args),
     agent_name: `Rabecca Test LLM: ${definition.name || 'Untitled'}`,
     call_status: `test_${run.status}`,
     call_type: 'retell_test_run',
@@ -1154,8 +1827,10 @@ function printHelp() {
   node scripts/retell-test-bridge.mjs create-smoke-test [--name NAME]
   node scripts/retell-test-bridge.mjs run-smoke-test [--name NAME]
   node scripts/retell-test-bridge.mjs run-regression-suite
+  node scripts/retell-test-bridge.mjs run-autonomous-smoke-suite
 
 Notes:
+  - Pass --llm-id LLM_ID [--llm-version VERSION] to target a prompt-driven Retell LLM instead of the default conversation flow.
   - Manual Test LLM chats must be saved as test cases before the API can see them.
   - Imported test runs are stored in retell_call_logs with call_type=retell_test_run.
   - run-smoke-test uses mocked tool outputs, so it will not create a real appointment.
@@ -1180,6 +1855,8 @@ async function main() {
     await runSmokeTest(args)
   } else if (args.command === 'run-regression-suite') {
     await runRegressionSuite(args)
+  } else if (args.command === 'run-autonomous-smoke-suite') {
+    await runAutonomousSmokeSuite(args)
   } else {
     printHelp()
   }

@@ -166,7 +166,7 @@ export function applyAppointmentBuffer(
     Math.max(0, normalizedServiceMinutes + normalizedBuffer),
     MAX_APPOINTMENT_MINUTES,
   )
-  return Math.ceil(capped / BLOCK_DURATION_MINUTES) * BLOCK_DURATION_MINUTES
+  return Math.ceil(capped / 30) * 30
 }
 
 export function getAvailableSlots(params: {
@@ -279,7 +279,6 @@ export function getAvailableSlots(params: {
     // Fixed 2-hour grid starts
     for (const blockStart of BLOCK_STARTS_MINUTES) {
       trySlot(blockStart, windowStart, windowEnd)
-      if (slots.length >= maxResults) return slots
     }
 
     // Gap-fill: offer starts right after each appointment ends, rounded
@@ -290,12 +289,11 @@ export function getAvailableSlots(params: {
       if ((BLOCK_STARTS_MINUTES as readonly number[]).includes(gapStart))
         continue
       trySlot(gapStart, windowStart, windowEnd)
-      if (slots.length >= maxResults) return slots
     }
   }
 
   slots.sort(
     (a, b) => timeToMinutes(a.start_time) - timeToMinutes(b.start_time),
   )
-  return slots
+  return slots.slice(0, maxResults)
 }

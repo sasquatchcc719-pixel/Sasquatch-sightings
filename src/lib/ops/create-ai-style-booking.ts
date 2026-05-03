@@ -49,6 +49,8 @@ export type CreateAiStyleBookingInput = {
   actor_label: string
   /** Admin SMS / OneSignal heading prefix */
   admin_heading: string
+  /** Rabecca may apply the AI promo only when the caller explicitly asks. */
+  discount_requested?: boolean
 }
 
 export type CreateAiStyleBookingSuccess = {
@@ -70,6 +72,24 @@ export type CreateAiStyleBookingFailure = {
   error: string
 }
 
+export function calculateAiStyleBookingDiscount(params: {
+  booking_channel: CreateAiStyleBookingInput['booking_channel']
+  subtotal: number
+  promo: { enabled: boolean; discount: number; minimum: number }
+  discount_requested?: boolean
+}): number {
+  if (
+    params.booking_channel === 'retell_rabecca' &&
+    !params.discount_requested
+  ) {
+    return 0
+  }
+  if (params.promo.enabled && params.subtotal >= params.promo.minimum) {
+    return params.promo.discount
+  }
+  return 0
+}
+
 export async function createAiStyleBooking(
   input: CreateAiStyleBookingInput,
 ): Promise<CreateAiStyleBookingSuccess | CreateAiStyleBookingFailure> {
@@ -86,6 +106,7 @@ export async function createAiStyleBooking(
     lead_source: leadSource,
     actor_label: actorLabel,
     admin_heading: adminHeading,
+    discount_requested: discountRequested = false,
   } = input
 
   const firstName = customer.first_name.trim()
@@ -178,10 +199,12 @@ export async function createAiStyleBooking(
   }
 
   const promo = await getAgentPromoSettings()
-  let discountAmount = 0
-  if (promo.enabled && subtotal >= promo.minimum) {
-    discountAmount = promo.discount
-  }
+  const discountAmount = calculateAiStyleBookingDiscount({
+    booking_channel: bookingChannel,
+    subtotal,
+    promo,
+    discount_requested: discountRequested,
+  })
   const total = Math.max(0, subtotal - discountAmount)
 
   // Calculate duration based on dollar amount (simple tier system)
