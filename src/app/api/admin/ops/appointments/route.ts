@@ -8,7 +8,6 @@ import {
 import {
   applyAppointmentBuffer,
   calculateAppointmentDurationFromTotal,
-  getAvailableSlots,
 } from '@/lib/ops/availability'
 import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
 import { enrollCustomerInDrip } from '@/lib/ops/drip-campaign'
@@ -183,48 +182,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const [templatesResult, overridesResult, appointmentsResult] =
-      await Promise.all([
-        supabase
-          .from('availability_templates')
-          .select('*')
-          .eq('is_active', true),
-        supabase
-          .from('availability_overrides')
-          .select('*')
-          .eq('override_date', appointmentDate),
-        supabase
-          .from('ops_appointments')
-          .select('appointment_date, start_time, end_time, status')
-          .eq('appointment_date', appointmentDate),
-      ])
-
-    if (templatesResult.error) throw templatesResult.error
-    if (overridesResult.error) throw overridesResult.error
-    if (appointmentsResult.error) throw appointmentsResult.error
-
-    const slots = getAvailableSlots({
-      date: appointmentDate,
-      requiredMinutes: totalMinutesWithBuffer,
-      templates: templatesResult.data || [],
-      overrides: overridesResult.data || [],
-      appointments: appointmentsResult.data || [],
-      maxResults: 500,
-    })
-
-    const normalizedStart = `${startTime}:00`.slice(0, 8)
-    const canBookRequestedTime = slots.some(
-      (slot) => slot.start_time === normalizedStart,
-    )
-    if (!canBookRequestedTime) {
-      return NextResponse.json(
-        {
-          error:
-            'That time is not available anymore. Pick an open slot and try again.',
-        },
-        { status: 409 },
-      )
-    }
+    // Admin bookings can override availability constraints.
+    // The calendar UI shows conflicts visually; trust the admin's judgment.
 
     let customerId: string
     const bodyCustomerId = body.customer_id

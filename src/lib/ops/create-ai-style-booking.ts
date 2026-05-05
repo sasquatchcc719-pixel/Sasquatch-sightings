@@ -15,6 +15,7 @@ import {
 } from '@/lib/quickbooks'
 import { resolveOpsCustomer } from '@/lib/ops/customers'
 import { resolveServiceAddress } from '@/lib/ops/addresses'
+import { checkServiceArea } from '@/lib/service-area'
 
 export type AiStyleBookingLineRequest = {
   service_id: string
@@ -45,6 +46,9 @@ export type CreateAiStyleBookingInput = {
   source_label: string
   /** ops_appointments.lead_source */
   lead_source: string
+  referrer_name?: string | null
+  referrer_type?: string | null
+  lead_notes?: string | null
   /** Used in status events / QB notes */
   actor_label: string
   /** Admin SMS / OneSignal heading prefix */
@@ -70,6 +74,80 @@ export type CreateAiStyleBookingSuccess = {
 export type CreateAiStyleBookingFailure = {
   ok: false
   error: string
+}
+
+const REBECCA_RETELL_CHANNEL_LEAD_SOURCE = 'retell_rabecca'
+
+function normalizePartnerLookup(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+async function linkPartnerReferralIfMatched(params: {
+  supabase: SupabaseClient
+  referrerName: string
+  referrerType: string | null
+  customerName: string
+  customerPhone: string
+  leadSource: string
+  notes: string | null
+}) {
+  const referrerLookup = normalizePartnerLookup(params.referrerName)
+  if (!referrerLookup) return
+
+  const { data: partners, error } = await params.supabase
+    .from('partners')
+    .select('id, name, company_name, backlink_verified')
+    .limit(200)
+
+  if (error) {
+    console.error('[createAiStyleBooking] partner lookup:', error)
+    return
+  }
+
+  const matchedPartner = (partners || []).find((partner) => {
+    const names = [partner.name, partner.company_name]
+      .map((value) => normalizePartnerLookup(String(value || '')))
+      .filter(Boolean)
+    return names.some(
+      (name) => name === referrerLookup || name.includes(referrerLookup),
+    )
+  })
+
+  if (!matchedPartner) return
+
+  const creditAmount = matchedPartner.backlink_verified ? 25 : 20
+  const referralNotes = [
+    params.notes,
+    `Captured via ${params.leadSource}.`,
+    params.referrerType ? `Referrer type: ${params.referrerType}.` : '',
+  ]
+    .filter(Boolean)
+    .join('\n')
+
+  await Promise.allSettled([
+    params.supabase.from('referrals').insert({
+      partner_id: matchedPartner.id,
+      client_name: params.customerName,
+      client_phone: params.customerPhone,
+      notes: referralNotes || null,
+      status: 'booked',
+      credit_amount: creditAmount,
+      booked_via_link: false,
+    }),
+    params.supabase.from('leads').insert({
+      source: 'partner',
+      name: params.customerName,
+      phone: params.customerPhone,
+      notes: referralNotes || null,
+      partner_id: matchedPartner.id,
+      status: 'scheduled',
+      contacted_at: new Date().toISOString(),
+      scheduled_at: new Date().toISOString(),
+    }),
+  ])
 }
 
 export function calculateAiStyleBookingDiscount(params: {
@@ -104,6 +182,9 @@ export async function createAiStyleBooking(
     booking_channel: bookingChannel,
     source_label: sourceLabel,
     lead_source: leadSource,
+    referrer_name: referrerNameRaw = null,
+    referrer_type: referrerTypeRaw = null,
+    lead_notes: leadNotesRaw = null,
     actor_label: actorLabel,
     admin_heading: adminHeading,
     discount_requested: discountRequested = false,
@@ -118,6 +199,10 @@ export async function createAiStyleBooking(
   const state = address.state.trim() || 'CO'
   const zipCode = address.zip_code.trim()
   const startTime = startTimeRaw.trim()
+  const referrerName = (referrerNameRaw || '').trim() || null
+  const referrerType = (referrerTypeRaw || '').trim() || null
+  const leadNotes = (leadNotesRaw || '').trim() || null
+  const normalizedLeadSource = leadSource.trim()
 
   if (!firstName || !lastName || !email || !phone) {
     return {
@@ -133,6 +218,28 @@ export async function createAiStyleBooking(
   }
   if (!requestedItems.length) {
     return { ok: false, error: 'At least one line item is required' }
+  }
+  if (!normalizedLeadSource) {
+    return { ok: false, error: 'Lead source is required' }
+  }
+  if (
+    bookingChannel === 'retell_rabecca' &&
+    normalizedLeadSource.toLowerCase() === REBECCA_RETELL_CHANNEL_LEAD_SOURCE
+  ) {
+    return {
+      ok: false,
+      error:
+        'Lead source must be where the customer heard about Sasquatch, not Rabecca voice AI.',
+    }
+  }
+
+  // Validate service area
+  const serviceAreaCheck = checkServiceArea(zipCode)
+  if (!serviceAreaCheck.allowed) {
+    return {
+      ok: false,
+      error: serviceAreaCheck.message,
+    }
   }
 
   const serviceIds = requestedItems.map((item) => item.service_id)
@@ -172,7 +279,7 @@ export async function createAiStyleBooking(
       }
     })
     .filter(Boolean) as Array<{
-    service_catalog_item_id: string
+    service_catalog_item_id: string | null
     name_snapshot: string
     catalog_slug: string
     quantity: number
@@ -185,10 +292,23 @@ export async function createAiStyleBooking(
     return { ok: false, error: 'None of the requested services are available' }
   }
 
-  const subtotal = lineItems.reduce(
+  const serviceSubtotal = lineItems.reduce(
     (sum, item) => sum + item.unit_price * item.quantity,
     0,
   )
+  const travelCharge = serviceAreaCheck.travelCharge
+  const subtotal = serviceSubtotal + travelCharge
+  if (travelCharge > 0) {
+    lineItems.push({
+      service_catalog_item_id: null,
+      name_snapshot: 'Mileage/ Travel',
+      catalog_slug: 'mileage-travel',
+      quantity: 1,
+      unit_price: travelCharge,
+      duration_minutes: 0,
+      pricing_unit: 'fixed',
+    })
+  }
 
   const MINIMUM_BOOKING_AMOUNT = 150
   if (subtotal < MINIMUM_BOOKING_AMOUNT) {
@@ -209,7 +329,8 @@ export async function createAiStyleBooking(
 
   // Calculate duration based on dollar amount (simple tier system)
   // $0-300 = 2hr, $301-600 = 3hr, $601+ = 4hr
-  const appointmentDuration = calculateAppointmentDurationFromTotal(subtotal)
+  const appointmentDuration =
+    calculateAppointmentDurationFromTotal(serviceSubtotal)
   const buffered = applyAppointmentBuffer(appointmentDuration)
   const [sh, sm] = startTime.split(':').map(Number)
   const endTotal = sh * 60 + sm + buffered
@@ -263,7 +384,7 @@ export async function createAiStyleBooking(
       quoted_total: total,
       booking_channel: bookingChannel,
       source: sourceLabel,
-      lead_source: leadSource,
+      lead_source: normalizedLeadSource,
       // Harry / AI flows are always service appointments. Estimates are an
       // admin-only workflow today.
       kind: 'service',
@@ -365,6 +486,10 @@ export async function createAiStyleBooking(
     `${street1}, ${city}, ${state} ${zipCode}`,
     `${appointmentDate} at ${startTime.slice(0, 5)}`,
     `Source: ${sourceLabel}`,
+    `Lead source: ${normalizedLeadSource}`,
+    ...(travelCharge > 0
+      ? [`Travel-charge area: $${travelCharge.toFixed(2)} travel fee`]
+      : []),
     ...(discountAmount > 0
       ? [`AI promo discount: -$${discountAmount.toFixed(2)}`]
       : []),
@@ -383,10 +508,22 @@ export async function createAiStyleBooking(
       appointmentDate,
       startTime: startTime.slice(0, 5),
       total,
-      leadSource: leadSource,
+      leadSource: normalizedLeadSource,
       services: lineItems.map((item) => item.name_snapshot),
     }),
   ])
+
+  if (referrerName) {
+    await linkPartnerReferralIfMatched({
+      supabase,
+      referrerName,
+      referrerType,
+      customerName: fullName,
+      customerPhone: phone,
+      leadSource: normalizedLeadSource,
+      notes: leadNotes,
+    })
+  }
 
   // Schedule 30-minute job reminder
   if (appointmentStatus === 'booked') {
