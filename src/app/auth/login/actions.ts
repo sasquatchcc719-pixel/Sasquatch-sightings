@@ -27,7 +27,6 @@ export async function loginAction(
 
   const userId = data.user.id
 
-  // Use admin client for role lookup (RLS not yet active for freshly-signed-in session)
   const admin = createAdminClient()
 
   const { data: staffUser } = await admin

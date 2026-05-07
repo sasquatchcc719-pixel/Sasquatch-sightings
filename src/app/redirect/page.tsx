@@ -1,28 +1,44 @@
 import { redirect } from 'next/navigation'
-import { getUserWithRole } from '@/lib/auth'
+import { createClient, createAdminClient } from '@/supabase/server'
 
 export default async function RedirectPage() {
-  const { user, role } = await getUserWithRole()
+  const supabase = await createClient()
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
 
   if (!user) {
     redirect('/auth/login')
   }
 
-  if (role === 'tech') {
+  // Use admin client for role lookup to avoid RLS timing issues
+  const admin = createAdminClient()
+
+  const { data: staffUser } = await admin
+    .from('staff_users')
+    .select('role')
+    .eq('user_id', user.id)
+    .eq('is_active', true)
+    .maybeSingle()
+
+  if (staffUser?.role === 'tech') {
     redirect('/tech')
   }
 
-  if (role === 'partner') {
-    redirect('/partners')
-  }
-
-  if (role === 'owner' || role === 'dispatcher' || role === 'marketing') {
+  if (staffUser?.role) {
     redirect('/admin/operations')
   }
 
-  if (role === 'admin') {
-    redirect('/admin')
+  const { data: partner } = await admin
+    .from('partners')
+    .select('role')
+    .eq('user_id', user.id)
+    .maybeSingle()
+
+  if (partner?.role === 'partner') {
+    redirect('/partners')
   }
 
-  redirect('/auth/login')
+  redirect('/admin')
 }
