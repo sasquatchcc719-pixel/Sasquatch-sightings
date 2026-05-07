@@ -57,6 +57,8 @@ export type CreateAiStyleBookingInput = {
   admin_heading: string
   /** Rabecca may apply the AI promo only when the caller explicitly asks. */
   discount_requested?: boolean
+  /** Customer explicitly agreed to pay the $150 minimum even when catalog lines price lower. */
+  accepted_minimum_charge?: boolean
 }
 
 export type CreateAiStyleBookingSuccess = {
@@ -79,6 +81,7 @@ export type CreateAiStyleBookingFailure = {
 }
 
 const REBECCA_RETELL_CHANNEL_LEAD_SOURCE = 'retell_rabecca'
+export const GOOGLE_LSA_LEAD_RECOVERY_AMOUNT = 40
 
 function normalizePartnerLookup(value: string): string {
   return value
@@ -190,6 +193,7 @@ export async function createAiStyleBooking(
     actor_label: actorLabel,
     admin_heading: adminHeading,
     discount_requested: discountRequested = false,
+    accepted_minimum_charge: acceptedMinimumCharge = false,
   } = input
 
   const firstName = customer.first_name.trim()
@@ -294,12 +298,43 @@ export async function createAiStyleBooking(
     return { ok: false, error: 'None of the requested services are available' }
   }
 
-  const serviceSubtotal = lineItems.reduce(
+  let serviceSubtotal = lineItems.reduce(
     (sum, item) => sum + item.unit_price * item.quantity,
     0,
   )
   const travelCharge = serviceAreaCheck.travelCharge
-  const subtotal = serviceSubtotal + travelCharge
+  const googleLsaCharge =
+    bookingChannel === 'lsa_sms' ? GOOGLE_LSA_LEAD_RECOVERY_AMOUNT : 0
+  const MINIMUM_BOOKING_AMOUNT = 150
+  const subtotalBeforeMinimum = serviceSubtotal + googleLsaCharge + travelCharge
+  const minimumAdjustment =
+    acceptedMinimumCharge && subtotalBeforeMinimum < MINIMUM_BOOKING_AMOUNT
+      ? MINIMUM_BOOKING_AMOUNT - subtotalBeforeMinimum
+      : 0
+  if (minimumAdjustment > 0) {
+    lineItems.push({
+      service_catalog_item_id: null,
+      name_snapshot: 'Minimum Dispatch Adjustment',
+      catalog_slug: 'minimum-dispatch-adjustment',
+      quantity: 1,
+      unit_price: minimumAdjustment,
+      duration_minutes: 0,
+      pricing_unit: 'fixed',
+    })
+    serviceSubtotal += minimumAdjustment
+  }
+  if (googleLsaCharge > 0) {
+    lineItems.push({
+      service_catalog_item_id: null,
+      name_snapshot: 'Google LSA Lead Charge',
+      catalog_slug: 'google-lsa-lead-charge',
+      quantity: 1,
+      unit_price: googleLsaCharge,
+      duration_minutes: 0,
+      pricing_unit: 'fixed',
+    })
+  }
+  const subtotal = serviceSubtotal + googleLsaCharge + travelCharge
   if (travelCharge > 0) {
     lineItems.push({
       service_catalog_item_id: null,
@@ -312,7 +347,6 @@ export async function createAiStyleBooking(
     })
   }
 
-  const MINIMUM_BOOKING_AMOUNT = 150
   if (subtotal < MINIMUM_BOOKING_AMOUNT) {
     return {
       ok: false,

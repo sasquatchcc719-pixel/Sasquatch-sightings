@@ -8,7 +8,10 @@ import {
   getAvailableSlots,
   type ExistingAppointmentWindow,
 } from '@/lib/ops/availability'
-import { createAiStyleBooking } from '@/lib/ops/create-ai-style-booking'
+import {
+  createAiStyleBooking,
+  GOOGLE_LSA_LEAD_RECOVERY_AMOUNT,
+} from '@/lib/ops/create-ai-style-booking'
 import { createAiStyleEstimate } from '@/lib/ops/create-ai-style-estimate'
 import { createSlotToken, verifySlotToken } from '@/lib/ops/slot-token'
 import { resyncInvoiceToQuickBooks } from '@/lib/quickbooks-api'
@@ -395,6 +398,11 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
             type: 'string',
             description:
               'How the customer heard about Sasquatch Carpet Cleaning. Always required — ask before booking if not already known. Examples: Google, Nextdoor, Facebook, Yelp, ChatGPT, Gemini, Claude, Grok, Perplexity, Saw truck/vehicle wrap, Word of mouth / Referral, Repeat customer, Google LSA, NFC Card, Other.',
+          },
+          accepted_minimum_charge: {
+            type: 'boolean',
+            description:
+              'Set true only when the calculated services are below the $150 minimum and the customer explicitly agreed to pay the $150 minimum anyway.',
           },
           street_1: { type: 'string' },
           city: { type: 'string' },
@@ -1061,6 +1069,7 @@ export async function executeHarrySmsTool(
         const startTime = String(args.start_time || '').trim()
         const slotToken = String(args.slot_token || '').trim()
         const lineItems = Array.isArray(args.line_items) ? args.line_items : []
+        const acceptedMinimumCharge = args.accepted_minimum_charge === true
 
         // For Google LSA relay conversations, Harry must collect the real customer phone
         const rawCustomerPhone = String(args.customer_phone || '').trim()
@@ -1162,14 +1171,20 @@ export async function executeHarrySmsTool(
           .eq('is_active', true)
 
         const BOOK_MIN_TOTAL = 150
+        const isLsa = ctx.isLsaRelay === true
         const preTotal = (catalogRows || []).reduce((sum, row) => {
           const qty =
             parsedLineItems.find((p) => p.service_id === row.id)?.quantity ?? 1
           return sum + Number(row.base_price || 0) * qty
         }, 0)
-        if (preTotal < BOOK_MIN_TOTAL) {
+        const preTotalWithAutomaticCharges =
+          preTotal + (isLsa ? GOOGLE_LSA_LEAD_RECOVERY_AMOUNT : 0)
+        if (
+          preTotalWithAutomaticCharges < BOOK_MIN_TOTAL &&
+          !acceptedMinimumCharge
+        ) {
           return JSON.stringify({
-            error: `Job total of $${preTotal.toFixed(2)} is below the $${BOOK_MIN_TOTAL} minimum. Please add more services or increase quantities.`,
+            error: `Job total of $${preTotalWithAutomaticCharges.toFixed(2)} is below the $${BOOK_MIN_TOTAL} minimum. If the customer explicitly agrees to pay the $${BOOK_MIN_TOTAL} minimum anyway, call book_new_job again with accepted_minimum_charge: true.`,
           })
         }
 
@@ -1229,7 +1244,6 @@ export async function executeHarrySmsTool(
             ? 'request'
             : 'direct'
 
-        const isLsa = ctx.isLsaRelay === true
         const providedLeadSource = String(args.lead_source || '').trim()
         const resolvedLeadSource =
           providedLeadSource || (isLsa ? 'Google LSA' : 'Harry SMS Assistant')
@@ -1267,6 +1281,7 @@ export async function executeHarrySmsTool(
           lead_source: resolvedLeadSource,
           actor_label: isLsa ? 'Harry LSA' : 'Harry SMS',
           admin_heading: isLsa ? 'Google LSA booking' : 'Harry SMS booking',
+          accepted_minimum_charge: acceptedMinimumCharge,
         })
 
         if (!result.ok) {

@@ -104,6 +104,10 @@ type AppointmentWithRelations = {
 
 const TEMP_SUPPRESS_CUSTOMER_COMMS_MARKER =
   'TEMP_SUPPRESS_CUSTOMER_COMMS_EVAN_COX_RECLEAN_TEST'
+const CUSTOMER_HIDDEN_LINE_ITEMS = new Set([
+  'Google LSA Lead Charge',
+  'Minimum Dispatch Adjustment',
+])
 
 const APPOINTMENT_SELECT = `
   id,
@@ -244,6 +248,9 @@ async function getAppointmentContext(
     customer?.first_name ||
     customer?.full_name?.split(' ').filter(Boolean)[0] ||
     'there'
+  const customerVisibleLineItems = appointment.ops_appointment_line_items
+    ?.map((item) => item.name_snapshot)
+    .filter((name) => name && !CUSTOMER_HIDDEN_LINE_ITEMS.has(name))
   const context: TemplateContext = {
     first_name: firstName,
     full_name: customer?.full_name || '',
@@ -253,10 +260,7 @@ async function getAppointmentContext(
     start_time: toLocalTimeString(String(appointment.start_time)),
     end_time: toLocalTimeString(String(appointment.end_time)),
     service_summary:
-      appointment.ops_appointment_line_items
-        ?.map((item) => item.name_snapshot)
-        .filter(Boolean)
-        .join(', ') || 'Service appointment',
+      customerVisibleLineItems?.join(', ') || 'Service appointment',
     address_line: address
       ? `${address.street_1}, ${address.city}, ${address.state} ${address.zip_code}`
       : '',
@@ -268,10 +272,7 @@ async function getAppointmentContext(
         ?.map((item) => item.notes?.trim())
         .filter(Boolean)
         .join('; ') ||
-      appointment.ops_appointment_line_items
-        ?.map((item) => item.name_snapshot)
-        .filter(Boolean)
-        .join(', ') ||
+      customerVisibleLineItems?.join(', ') ||
       'Scheduled service area',
   }
 
