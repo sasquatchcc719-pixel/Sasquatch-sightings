@@ -1,6 +1,6 @@
 'use server'
 
-import { createClient } from '@/supabase/server'
+import { createClient, createAdminClient } from '@/supabase/server'
 import { redirect } from 'next/navigation'
 
 export async function loginAction(formData: FormData) {
@@ -13,7 +13,7 @@ export async function loginAction(formData: FormData) {
 
   const supabase = await createClient()
 
-  const { error } = await supabase.auth.signInWithPassword({
+  const { data, error } = await supabase.auth.signInWithPassword({
     email,
     password,
   })
@@ -22,11 +22,15 @@ export async function loginAction(formData: FormData) {
     return { error: error.message }
   }
 
-  // Session cookies are now set server-side. Determine destination.
-  const { data: staffUser } = await supabase
+  const userId = data.user.id
+
+  // Use admin client for role lookup (RLS not yet active for freshly-signed-in session)
+  const admin = createAdminClient()
+
+  const { data: staffUser } = await admin
     .from('staff_users')
     .select('role')
-    .eq('user_id', (await supabase.auth.getUser()).data.user!.id)
+    .eq('user_id', userId)
     .eq('is_active', true)
     .maybeSingle()
 
@@ -38,10 +42,10 @@ export async function loginAction(formData: FormData) {
     redirect('/admin/operations')
   }
 
-  const { data: partner } = await supabase
+  const { data: partner } = await admin
     .from('partners')
     .select('role')
-    .eq('user_id', (await supabase.auth.getUser()).data.user!.id)
+    .eq('user_id', userId)
     .maybeSingle()
 
   if (partner?.role === 'partner') {
