@@ -31,11 +31,19 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  // Create Supabase client
+  // Only check auth for protected routes
+  const isProtected =
+    pathname.startsWith('/admin') ||
+    pathname.startsWith('/partners') ||
+    pathname.startsWith('/tech') ||
+    pathname === '/redirect'
+
+  if (!isProtected) {
+    return NextResponse.next()
+  }
+
   let response = NextResponse.next({
-    request: {
-      headers: request.headers,
-    },
+    request: { headers: request.headers },
   })
 
   const supabase = createServerClient(
@@ -47,13 +55,11 @@ export async function middleware(request: NextRequest) {
           return request.cookies.getAll()
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
+          cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value),
           )
           response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
+            request: { headers: request.headers },
           })
           cookiesToSet.forEach(({ name, value, options }) =>
             response.cookies.set(name, value, options),
@@ -63,85 +69,23 @@ export async function middleware(request: NextRequest) {
     },
   )
 
-  // Get user session
   const {
     data: { user },
   } = await supabase.auth.getUser()
 
-  console.log('[Middleware] Path:', pathname)
-  console.log('[Middleware] User:', user?.email || 'not logged in')
+  // Allow /partners/register without auth
+  if (pathname === '/partners/register') {
+    return response
+  }
 
-  // If not logged in and trying to access protected routes
-  if (
-    !user &&
-    (pathname.startsWith('/admin') ||
-      pathname.startsWith('/partners') ||
-      pathname.startsWith('/tech'))
-  ) {
-    // Allow /partners/register without auth
-    if (pathname === '/partners/register') {
-      return response
-    }
-    console.log('[Middleware] No user, redirecting to login')
+  // If not logged in on a protected route, redirect to login
+  if (!user) {
     return NextResponse.redirect(new URL('/auth/login', request.url))
   }
 
-  // If logged in, check role for protected routes
-  if (user) {
-    // Prefer internal staff role, then partner role, then fall back to legacy admin.
-    const { data: staffUser, error: staffError } = await supabase
-      .from('staff_users')
-      .select('role')
-      .eq('user_id', user.id)
-      .eq('is_active', true)
-      .maybeSingle()
-
-    if (
-      staffError &&
-      !staffError.message.toLowerCase().includes('staff_users')
-    ) {
-      console.error(
-        '[Middleware] staff_users lookup failed:',
-        staffError.message,
-      )
-    }
-
-    const { data: partner, error } = await supabase
-      .from('partners')
-      .select('role')
-      .eq('user_id', user.id)
-      .single()
-
-    console.log('[Middleware] Partner record:', partner)
-    console.log('[Middleware] Partner error:', error?.message)
-
-    // Determine role with admin fallback for legacy users.
-    // The strict role enforcement happens in the layouts (admin/layout.tsx,
-    // tech/layout.tsx, etc) where session cookies are reliably available.
-    const userRole = staffUser?.role || partner?.role || 'admin'
-    console.log('[Middleware] Determined role:', userRole)
-
-    // PROTECT /admin/* routes - never allow partners
-    if (pathname.startsWith('/admin')) {
-      if (userRole === 'partner') {
-        console.log(
-          '[Middleware] Partner trying to access /admin, redirecting to /partners',
-        )
-        return NextResponse.redirect(new URL('/partners', request.url))
-      }
-    }
-
-    // PROTECT /partners route - only partners allowed (except /partners/register)
-    if (pathname.startsWith('/partners') && pathname !== '/partners/register') {
-      if (userRole !== 'partner') {
-        console.log(
-          '[Middleware] Non-partner trying to access /partners, redirecting',
-        )
-        return NextResponse.redirect(new URL('/admin', request.url))
-      }
-    }
-  }
-
+  // Role-based access control happens in the layouts (admin/layout.tsx,
+  // tech/layout.tsx, partners/layout.tsx) where we can do DB queries
+  // safely without timing out the middleware.
   return response
 }
 
