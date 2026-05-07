@@ -19,13 +19,9 @@ export function LoginForm({
   className,
   ...props
 }: React.ComponentPropsWithoutRef<'div'>) {
-  const [state, formAction, isPending] = useActionState(
-    async (_prev: { error: string }, formData: FormData) => {
-      const result = await loginAction(formData)
-      return result ?? { error: '' }
-    },
-    { error: '' },
-  )
+  const [state, formAction, isPending] = useActionState(loginAction, {
+    error: '',
+  })
 
   return (
     <div className={cn('flex flex-col gap-6', className)} {...props}>
