@@ -12,7 +12,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    await requireAnyRole(['admin', 'owner', 'dispatcher', 'tech'])
+    await requireAnyRole(['admin', 'owner', 'dispatcher'])
     const supabase = createAdminClient()
     const { id: appointmentId } = await params
     const body = await request.json()

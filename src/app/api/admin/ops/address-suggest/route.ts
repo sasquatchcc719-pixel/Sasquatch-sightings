@@ -117,7 +117,7 @@ async function fetchKnownLocalAddresses(q: string): Promise<Suggestion[]> {
 
 export async function GET(request: NextRequest) {
   try {
-    await requireAnyRole(['admin', 'owner', 'dispatcher', 'tech', 'marketing'])
+    await requireAnyRole(['admin', 'owner', 'dispatcher', 'marketing'])
   } catch {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }

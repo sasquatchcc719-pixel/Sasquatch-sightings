@@ -7,7 +7,7 @@ const TEMPLATE_ORDER = OPS_TEMPLATE_KEYS
 
 export async function GET() {
   try {
-    await requireAnyRole(['admin', 'owner', 'dispatcher', 'tech', 'marketing'])
+    await requireAnyRole(['admin', 'owner', 'dispatcher', 'marketing'])
     const supabase = createAdminClient()
 
     const { data, error } = await supabase
@@ -31,7 +31,7 @@ export async function GET() {
 
 export async function PUT(request: NextRequest) {
   try {
-    await requireAnyRole(['admin', 'owner', 'dispatcher', 'tech'])
+    await requireAnyRole(['admin', 'owner', 'dispatcher'])
     const supabase = createAdminClient()
     const body = await request.json()
 

@@ -74,7 +74,9 @@ export async function middleware(request: NextRequest) {
   // If not logged in and trying to access protected routes
   if (
     !user &&
-    (pathname.startsWith('/admin') || pathname.startsWith('/partners'))
+    (pathname.startsWith('/admin') ||
+      pathname.startsWith('/partners') ||
+      pathname.startsWith('/tech'))
   ) {
     // Allow /partners/register without auth
     if (pathname === '/partners/register') {
@@ -113,13 +115,22 @@ export async function middleware(request: NextRequest) {
     console.log('[Middleware] Partner record:', partner)
     console.log('[Middleware] Partner error:', error?.message)
 
-    // Determine role:
-    // - If partner record exists, use its role
-    // - If NO partner record, this is a legacy admin (before Partner Portal)
-    const userRole = staffUser?.role || partner?.role || 'admin'
+    // Determine role - fail closed (no fallback to admin)
+    const userRole = staffUser?.role || partner?.role || null
     console.log('[Middleware] Determined role:', userRole)
 
-    // PROTECT /admin/* routes - allow internal ops roles, but never partners.
+    // PROTECT /tech routes - only tech, owner, and admin allowed
+    if (pathname.startsWith('/tech')) {
+      if (!userRole || (userRole !== 'tech' && userRole !== 'owner')) {
+        console.log('[Middleware] Non-tech user trying /tech, redirecting')
+        if (userRole === 'partner') {
+          return NextResponse.redirect(new URL('/partners', request.url))
+        }
+        return NextResponse.redirect(new URL('/admin', request.url))
+      }
+    }
+
+    // PROTECT /admin/* routes - only owner, dispatcher, marketing allowed
     if (pathname.startsWith('/admin')) {
       if (userRole === 'partner') {
         console.log(
@@ -127,14 +138,29 @@ export async function middleware(request: NextRequest) {
         )
         return NextResponse.redirect(new URL('/partners', request.url))
       }
+      if (userRole === 'tech') {
+        console.log(
+          '[Middleware] Tech trying to access /admin, redirecting to /tech',
+        )
+        return NextResponse.redirect(new URL('/tech', request.url))
+      }
+      if (!userRole) {
+        console.log(
+          '[Middleware] Unknown role trying /admin, redirecting to login',
+        )
+        return NextResponse.redirect(new URL('/auth/login', request.url))
+      }
     }
 
     // PROTECT /partners route - only partners allowed (except /partners/register)
     if (pathname.startsWith('/partners') && pathname !== '/partners/register') {
       if (userRole !== 'partner') {
         console.log(
-          '[Middleware] Admin trying to access /partners, redirecting to /admin',
+          '[Middleware] Non-partner trying to access /partners, redirecting',
         )
+        if (userRole === 'tech') {
+          return NextResponse.redirect(new URL('/tech', request.url))
+        }
         return NextResponse.redirect(new URL('/admin', request.url))
       }
     }

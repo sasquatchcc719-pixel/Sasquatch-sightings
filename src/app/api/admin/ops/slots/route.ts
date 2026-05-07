@@ -10,7 +10,7 @@ import {
 
 export async function GET(request: NextRequest) {
   try {
-    await requireAnyRole(['admin', 'owner', 'dispatcher', 'tech', 'marketing'])
+    await requireAnyRole(['admin', 'owner', 'dispatcher', 'marketing'])
     const supabase = createAdminClient()
     const { searchParams } = new URL(request.url)
     const date = searchParams.get('date')

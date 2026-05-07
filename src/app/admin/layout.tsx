@@ -32,19 +32,18 @@ export default async function AdminLayout({ children }: AdminLayoutProps) {
     redirect('/auth/login')
   }
 
-  // CRITICAL: Partners must NOT access admin routes
-  // Allow internal staff roles here; individual pages/APIs can still enforce stricter access.
-  if (role === 'partner' || !role) {
-    console.log(
-      '[AdminLayout] User is not an internal ops role (role:',
-      role,
-      '), redirecting to /partners',
-    )
+  // Tech users go to the tech portal
+  if (role === 'tech') {
+    redirect('/tech')
+  }
+
+  // Partners and unknown roles do not belong here
+  if (role === 'partner') {
     redirect('/partners')
   }
 
-  if (role === 'tech') {
-    redirect('/tech')
+  if (!role || !['owner', 'dispatcher', 'marketing'].includes(role)) {
+    redirect('/auth/login')
   }
 
   console.log('[AdminLayout] Access granted - internal ops role:', role)

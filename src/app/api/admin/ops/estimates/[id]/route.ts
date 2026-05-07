@@ -98,7 +98,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    await requireAnyRole(['admin', 'owner', 'dispatcher', 'marketing', 'tech'])
+    await requireAnyRole(['admin', 'owner', 'dispatcher', 'marketing'])
     const supabase = createAdminClient()
     const { id } = await params
 
@@ -296,8 +296,7 @@ export async function PATCH(
                 ? computedQty
                 : 1
         } else {
-          quantity =
-            providedQty != null && providedQty > 0 ? providedQty : 1
+          quantity = providedQty != null && providedQty > 0 ? providedQty : 1
         }
 
         const unitPrice = Number(item.unit_price ?? 0)

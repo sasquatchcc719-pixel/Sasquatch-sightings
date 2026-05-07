@@ -60,13 +60,14 @@ export function LoginForm({
         .from('partners')
         .select('role')
         .eq('user_id', data.user.id)
-        .single()
+        .maybeSingle()
 
-      // Route based on role
       if (partner?.role === 'partner') {
         router.push('/partners')
+      } else if (partner?.role === 'admin') {
+        router.push('/admin')
       } else {
-        // Admin or legacy user without partner record
+        // No recognized role - middleware will handle redirect
         router.push('/admin')
       }
     } catch (error: unknown) {

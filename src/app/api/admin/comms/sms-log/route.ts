@@ -6,7 +6,7 @@ import { createAdminClient } from '@/supabase/server'
 /** Outbound Operations / lifecycle SMS (Twilio), stored in sms_logs with message_type ops_* */
 export async function GET(request: NextRequest) {
   try {
-    await requireAnyRole(['admin', 'owner', 'dispatcher', 'tech', 'marketing'])
+    await requireAnyRole(['admin', 'owner', 'dispatcher', 'marketing'])
 
     const { searchParams } = new URL(request.url)
     const limit = Math.min(Number(searchParams.get('limit') || 50), 200)

@@ -4,7 +4,7 @@ import { createAdminClient } from '@/supabase/server'
 
 export async function GET(request: NextRequest) {
   try {
-    await requireAnyRole(['admin', 'owner', 'dispatcher', 'tech', 'marketing'])
+    await requireAnyRole(['admin', 'owner', 'dispatcher', 'marketing'])
 
     const { searchParams } = new URL(request.url)
     const limit = Math.min(Number(searchParams.get('limit') || 50), 200)

@@ -104,12 +104,10 @@ export async function getUserWithRole(): Promise<{
     }
   }
 
-  // No partner record - check if this is an existing admin user
-  // For now, users without partner records but with auth are considered admins
-  // (backward compatibility with existing admin users)
+  // No staff or partner record - deny privileged access
   return {
     user: { id: user.id, email: user.email || '' },
-    role: 'admin',
+    role: null,
     partner: null,
     staff: null,
   }

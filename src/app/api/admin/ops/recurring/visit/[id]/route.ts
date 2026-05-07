@@ -10,7 +10,7 @@ type Params = { params: Promise<{ id: string }> }
  */
 export async function GET(_request: NextRequest, { params }: Params) {
   try {
-    await requireAnyRole(['admin', 'owner', 'dispatcher', 'tech'])
+    await requireAnyRole(['admin', 'owner', 'dispatcher'])
     const { id } = await params
     const supabase = createAdminClient()
 
