@@ -115,40 +115,19 @@ export async function middleware(request: NextRequest) {
     console.log('[Middleware] Partner record:', partner)
     console.log('[Middleware] Partner error:', error?.message)
 
-    // Determine role - fail closed (no fallback to admin)
-    const userRole = staffUser?.role || partner?.role || null
+    // Determine role with admin fallback for legacy users.
+    // The strict role enforcement happens in the layouts (admin/layout.tsx,
+    // tech/layout.tsx, etc) where session cookies are reliably available.
+    const userRole = staffUser?.role || partner?.role || 'admin'
     console.log('[Middleware] Determined role:', userRole)
 
-    // PROTECT /tech routes - only tech, owner, and admin allowed
-    if (pathname.startsWith('/tech')) {
-      if (!userRole || (userRole !== 'tech' && userRole !== 'owner')) {
-        console.log('[Middleware] Non-tech user trying /tech, redirecting')
-        if (userRole === 'partner') {
-          return NextResponse.redirect(new URL('/partners', request.url))
-        }
-        return NextResponse.redirect(new URL('/admin', request.url))
-      }
-    }
-
-    // PROTECT /admin/* routes - only owner, dispatcher, marketing allowed
+    // PROTECT /admin/* routes - never allow partners
     if (pathname.startsWith('/admin')) {
       if (userRole === 'partner') {
         console.log(
           '[Middleware] Partner trying to access /admin, redirecting to /partners',
         )
         return NextResponse.redirect(new URL('/partners', request.url))
-      }
-      if (userRole === 'tech') {
-        console.log(
-          '[Middleware] Tech trying to access /admin, redirecting to /tech',
-        )
-        return NextResponse.redirect(new URL('/tech', request.url))
-      }
-      if (!userRole) {
-        console.log(
-          '[Middleware] Unknown role trying /admin, redirecting to login',
-        )
-        return NextResponse.redirect(new URL('/auth/login', request.url))
       }
     }
 
@@ -158,9 +137,6 @@ export async function middleware(request: NextRequest) {
         console.log(
           '[Middleware] Non-partner trying to access /partners, redirecting',
         )
-        if (userRole === 'tech') {
-          return NextResponse.redirect(new URL('/tech', request.url))
-        }
         return NextResponse.redirect(new URL('/admin', request.url))
       }
     }

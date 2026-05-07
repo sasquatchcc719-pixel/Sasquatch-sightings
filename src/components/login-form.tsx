@@ -31,17 +31,43 @@ export function LoginForm({
     setError(null)
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
       if (error) throw error
 
-      // Small delay to ensure cookies are fully written by the browser client
-      await new Promise((resolve) => setTimeout(resolve, 200))
+      // Quick role check using the just-authenticated client
+      const { data: staffUser } = await supabase
+        .from('staff_users')
+        .select('role')
+        .eq('user_id', data.user.id)
+        .eq('is_active', true)
+        .maybeSingle()
 
-      // Full page navigation so the server can read session cookies
-      window.location.href = '/redirect'
+      if (staffUser?.role === 'tech') {
+        window.location.href = '/tech'
+        return
+      }
+
+      if (staffUser?.role) {
+        window.location.href = '/admin/operations'
+        return
+      }
+
+      const { data: partner } = await supabase
+        .from('partners')
+        .select('role')
+        .eq('user_id', data.user.id)
+        .maybeSingle()
+
+      if (partner?.role === 'partner') {
+        window.location.href = '/partners'
+        return
+      }
+
+      // Default for admin/legacy users
+      window.location.href = '/admin'
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : 'An error occurred')
     } finally {

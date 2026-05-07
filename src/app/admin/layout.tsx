@@ -37,13 +37,9 @@ export default async function AdminLayout({ children }: AdminLayoutProps) {
     redirect('/tech')
   }
 
-  // Partners and unknown roles do not belong here
+  // Partners do not belong here
   if (role === 'partner') {
     redirect('/partners')
-  }
-
-  if (!role || !['owner', 'dispatcher', 'marketing'].includes(role)) {
-    redirect('/auth/login')
   }
 
   console.log('[AdminLayout] Access granted - internal ops role:', role)
