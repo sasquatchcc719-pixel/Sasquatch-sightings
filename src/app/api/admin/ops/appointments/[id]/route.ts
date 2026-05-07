@@ -15,6 +15,7 @@ import {
   resyncInvoiceToQuickBooks,
   syncAppointmentToQuickBooks,
 } from '@/lib/quickbooks-api'
+import { ensureInvoiceQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
 import { recordRevenueFromOpsInvoice } from '@/lib/ops/revenue-from-invoice'
 import { sendCustomerSMS } from '@/lib/twilio'
 import { Resend } from 'resend'
@@ -563,13 +564,10 @@ export async function PATCH(
           changed_by: access.id,
           notes: 'Job completed from operations',
         })
+      }
 
-        await supabase.from('ops_quickbooks_sync_jobs').insert({
-          entity_type: 'invoice',
-          entity_id: inv.id,
-          status: getQuickBooksSyncStatus(),
-          payload: { invoice_id: inv.id },
-        })
+      if (inv?.id) {
+        await ensureInvoiceQuickBooksSyncJob(supabase, inv.id)
       }
 
       void syncAppointmentToQuickBooks(id).catch((qbErr) =>

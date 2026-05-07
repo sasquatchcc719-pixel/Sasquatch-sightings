@@ -191,6 +191,8 @@ When the user corrects your approach, append a one-line rule here before ending 
 
 - Keep each AI agent's orchestration layer isolated; reuse shared low-level business primitives, not another agent's executor or wrapper.
 - For Rabecca repairs, update all affected surfaces together: backend tools, Retell flow/tool wiring, and `docs/RABECCA-VOICE-KNOWLEDGE.md` / Retell knowledge base.
+- Do not ask Chuck to set environment variables; he provides account-side credentials/tokens when required, and the agent sets Vercel/local env vars.
+- Ranger and dashboard surfaces should look polished, high-tech, and visually impressive, not merely functional admin CRUD screens.
 
 ---
 

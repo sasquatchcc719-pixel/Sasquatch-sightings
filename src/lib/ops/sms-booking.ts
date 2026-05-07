@@ -1,6 +1,7 @@
 import type { createAdminClient } from '@/supabase/server'
 import {
   applyAppointmentBuffer,
+  calendarEventsToAppointmentWindows,
   calculateLineItemDurationMinutes,
   getAvailableSlots,
 } from '@/lib/ops/availability'
@@ -94,13 +95,21 @@ export async function buildSmsSlotOffer(params: {
 
   for (let offset = 1; offset <= 7; offset += 1) {
     const targetDate = formatDate(addDays(new Date(), offset))
-    const { data: appointments, error: appointmentsError } =
-      await params.supabase
+    const [appointmentsResult, eventsResult] = await Promise.all([
+      params.supabase
         .from('ops_appointments')
         .select('appointment_date, start_time, end_time, status')
-        .eq('appointment_date', targetDate)
+        .eq('appointment_date', targetDate),
+      params.supabase
+        .from('ops_calendar_events')
+        .select(
+          'event_kind, start_date, end_date, start_time, end_time, is_all_day',
+        )
+        .lte('start_date', targetDate)
+        .gte('end_date', targetDate),
+    ])
 
-    if (appointmentsError) {
+    if (appointmentsResult.error || eventsResult.error) {
       continue
     }
 
@@ -109,7 +118,13 @@ export async function buildSmsSlotOffer(params: {
       requiredMinutes,
       templates: templatesResult.data || [],
       overrides: overridesResult.data || [],
-      appointments: appointments || [],
+      appointments: [
+        ...(appointmentsResult.data || []),
+        ...calendarEventsToAppointmentWindows(
+          targetDate,
+          eventsResult.data || [],
+        ),
+      ],
       maxResults: 3 - slotLabels.length,
     })
 

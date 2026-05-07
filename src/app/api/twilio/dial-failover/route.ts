@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 function getBaseUrl(): string {
-  const url =
-    process.env.VERCEL_URL ||
+  const url = (
     process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.VERCEL_URL ||
     'sightings.sasquatchcarpet.com'
+  ).trim()
   return url.startsWith('http') ? url : `https://${url}`
 }
 

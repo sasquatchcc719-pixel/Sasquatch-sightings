@@ -899,6 +899,11 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
                 <option value="Nextdoor">Nextdoor</option>
                 <option value="Facebook">Facebook</option>
                 <option value="Yelp">Yelp</option>
+                <option value="ChatGPT">ChatGPT</option>
+                <option value="Gemini">Gemini</option>
+                <option value="Claude">Claude</option>
+                <option value="Grok">Grok</option>
+                <option value="Perplexity">Perplexity</option>
                 <option value="Saw truck/vehicle wrap">
                   Saw truck/vehicle wrap
                 </option>

@@ -20,6 +20,15 @@ export type ExistingAppointmentWindow = {
   status: string
 }
 
+export type CalendarEventWindow = {
+  start_date: string
+  end_date: string
+  start_time: string | null
+  end_time: string | null
+  is_all_day: boolean
+  event_kind?: string | null
+}
+
 export type SlotOption = {
   start_time: string
   end_time: string
@@ -112,6 +121,27 @@ function overlaps(
   busyEnd: number,
 ): boolean {
   return startMinutes < busyEnd && endMinutes > busyStart
+}
+
+export function calendarEventsToAppointmentWindows(
+  date: string,
+  events: CalendarEventWindow[],
+): ExistingAppointmentWindow[] {
+  return events
+    .filter((event) => {
+      const isBlockingEvent = !event.event_kind || event.event_kind === 'block'
+      return (
+        isBlockingEvent && event.start_date <= date && event.end_date >= date
+      )
+    })
+    .map((event) => ({
+      appointment_date: date,
+      start_time:
+        event.is_all_day || !event.start_time ? '00:00:00' : event.start_time,
+      end_time:
+        event.is_all_day || !event.end_time ? '23:59:00' : event.end_time,
+      status: 'booked',
+    }))
 }
 
 /**

@@ -10,6 +10,7 @@ type QBStatus = {
   refreshTokenExpiresAt: string | null
   pending: number
   failed: number
+  stuck: number
   last_synced_at: string | null
 }
 
@@ -151,6 +152,14 @@ export function QuickBooksStatus() {
                 className={status.failed > 0 ? 'text-red-400' : 'text-white/40'}
               >
                 {status.failed}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span>Stuck invoices</span>
+              <span
+                className={status.stuck > 0 ? 'text-red-400' : 'text-white/40'}
+              >
+                {status.stuck}
               </span>
             </div>
             {status.last_synced_at && (

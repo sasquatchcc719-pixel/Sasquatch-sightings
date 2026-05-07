@@ -23,6 +23,10 @@ import { logChatMessage } from '@/lib/ai/logging'
 import { opsPhoneLookupVariants } from '@/lib/ops/phone'
 import { sendCancellationAlert, sendLSALeadNotification } from '@/lib/telegram'
 import { notifyNewCustomerMessage } from '@/lib/harry-command-bot'
+import {
+  buildApplicantReplyTelegramMessage,
+  sendRangerTelegramMessage,
+} from '@/lib/ranger/telegram'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -1312,6 +1316,73 @@ export async function POST(request: NextRequest) {
       .from('conversations')
       .update({ messages, updated_at: new Date().toISOString() })
       .eq('id', conversation.id)
+
+    const conversationMetadata =
+      (conversation.metadata as Record<string, unknown> | null) || {}
+    const rangerApplicantId =
+      typeof conversationMetadata.ranger_applicant_id === 'string'
+        ? conversationMetadata.ranger_applicant_id
+        : null
+
+    if (conversationMetadata.ranger_hiring && rangerApplicantId) {
+      const { data: rangerApplicant } = await supabase
+        .from('ranger_applicants')
+        .select('*')
+        .eq('id', rangerApplicantId)
+        .maybeSingle()
+
+      if (rangerApplicant) {
+        await supabase.from('ranger_messages').insert({
+          applicant_id: rangerApplicantId,
+          channel: 'sms',
+          direction: 'inbound',
+          subject: null,
+          body: messageBody,
+          external_message_id: twilioSid,
+          status: 'logged',
+          metadata: {
+            from: normalizedPhone,
+            to: toNumber || null,
+            conversationId: conversation.id,
+            handledBy: 'harry_sms_webhook',
+          },
+        })
+
+        await supabase.from('ranger_tasks').insert({
+          applicant_id: rangerApplicantId,
+          task_type: 'parse_gmail_reply',
+          status: 'pending',
+          priority: 'high',
+          payload: {
+            channel: 'sms',
+            messageId: twilioSid,
+            body: messageBody,
+          },
+        })
+
+        await supabase.from('ranger_audit_events').insert({
+          applicant_id: rangerApplicantId,
+          actor: 'harry-sms-webhook',
+          event_type: 'sms_reply_queued',
+          event_summary:
+            'Harry received a Ranger hiring SMS reply and queued it for Ranger.',
+          payload: { twilioSid, conversationId: conversation.id },
+        })
+
+        await sendRangerTelegramMessage({
+          text: buildApplicantReplyTelegramMessage({
+            applicant: rangerApplicant,
+            subject: 'SMS reply',
+            body: messageBody,
+          }),
+        })
+      }
+
+      console.log(
+        `[Ranger SMS] Routed applicant reply ${twilioSid} to Ranger applicant ${rangerApplicantId}; Harry auto-reply suppressed.`,
+      )
+      return emptyTwiml
+    }
 
     if (isAcknowledgmentOnlyMessage(messageBody)) {
       console.log('[SMS] Acknowledgment-only inbound detected, no reply sent')

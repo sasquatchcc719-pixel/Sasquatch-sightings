@@ -1285,6 +1285,126 @@ You only want the quote and discount answer. Do not book. After the assistant an
       ],
     },
     {
+      name: `Rabecca autonomous returning customer booking ${timestamp}`,
+      user_prompt: `## Identity
+Your name is Sarah Williams.
+
+## Goal
+You want to book three bedrooms and 12 stairs for next week. You are a previous customer, but do not mention that until asked.
+
+## Behavior
+Ask for a quote and next week's availability first. If the assistant asks whether you have used Sasquatch Carpet Cleaning before, say yes, under Sarah Williams. If the assistant finds your saved details and asks you to confirm them, say yes, nothing has changed. If offered Tuesday May 5 at 1:00 PM, accept it. Do not volunteer your phone, email, or address unless the assistant fails to find your profile and asks directly. End after the booking is confirmed.`,
+      metrics: [
+        'The agent asks whether the caller has used Sasquatch Carpet Cleaning before instead of collecting every contact field from scratch.',
+        'The agent calls lookup_customer_profile after the caller says they are a previous customer.',
+        'The agent confirms the saved phone, email, and service address instead of asking the caller to repeat all contact details.',
+        'The agent calls quote_and_prepare_booking for three bedrooms and 12 stairs and offers only the returned dated slot.',
+        'The agent calls book_prepared_slot using the confirmed saved customer details before saying the appointment is booked.',
+        'The agent calls end_call after the customer is done.',
+      ],
+      tool_mocks: [
+        {
+          tool_name: 'lookup_customer_profile',
+          input_match_rule: { type: 'any' },
+          output: JSON.stringify({
+            success: true,
+            message: 'Found 1 customer profile match.',
+            data: {
+              match_count: 1,
+              recommended_customer: {
+                id: 'customer-sarah-williams',
+                customer_name: 'Sarah Williams',
+                first_name: 'Sarah',
+                last_name: 'Williams',
+                email: 'sarah.williams@example.com',
+                phone: '+17195550122',
+                addresses: [
+                  {
+                    id: 'address-sarah-williams',
+                    street_1: '22 Aspen Grove Lane',
+                    city: 'Monument',
+                    state: 'CO',
+                    zip_code: '80132',
+                    formatted: '22 Aspen Grove Lane, Monument, CO, 80132',
+                  },
+                ],
+                preferred_address: {
+                  id: 'address-sarah-williams',
+                  street_1: '22 Aspen Grove Lane',
+                  city: 'Monument',
+                  state: 'CO',
+                  zip_code: '80132',
+                  formatted: '22 Aspen Grove Lane, Monument, CO, 80132',
+                },
+              },
+            },
+          }),
+        },
+        {
+          tool_name: 'quote_and_prepare_booking',
+          input_match_rule: { type: 'any' },
+          output: JSON.stringify({
+            success: true,
+            message: 'Estimated total is $186.',
+            data: {
+              quote_total: 186,
+              discount_applied: 0,
+              total: 186,
+              minimum_booking_amount: 150,
+              meets_minimum: true,
+              can_offer_slots: true,
+              availability_start_date: '2026-05-04',
+              availability_days: 7,
+              line_items: [
+                { service_name: 'Regular Size Room (100 to 200 Sqft)', quantity: 3, total: 138 },
+                { service_name: 'Step Carpet Cleaning (Per Step Charge)', quantity: 12, total: 48 },
+              ],
+              slots: [
+                {
+                  date: '2026-05-05',
+                  start_time: '13:00:00',
+                  end_time: '15:00:00',
+                },
+              ],
+              caller_script:
+                'The estimate is $186. I found Tuesday May 5 from 1:00 PM to 3:00 PM.',
+            },
+          }),
+        },
+        {
+          tool_name: 'book_prepared_slot',
+          input_match_rule: {
+            type: 'partial_match',
+            args: {
+              selected_start_time: '13:00:00',
+              customer: {
+                name: 'Sarah Williams',
+                phone: '+17195550122',
+                email: 'sarah.williams@example.com',
+              },
+            },
+          },
+          output: JSON.stringify({
+            success: true,
+            message: 'Appointment booked.',
+            data: {
+              appointment_id: 'auto-returning-customer-booking',
+              appointment_date: '2026-05-05',
+              start_time: '13:00:00',
+              end_time: '15:00:00',
+              total: 186,
+              line_items: [
+                { service_name: 'Regular Size Room (100 to 200 Sqft)', quantity: 3, total: 138 },
+                { service_name: 'Step Carpet Cleaning (Per Step Charge)', quantity: 12, total: 48 },
+              ],
+              caller_script:
+                'You are all set for 2026-05-05 at 13:00:00. Total: $186.',
+            },
+          }),
+        },
+      ],
+    },
+    {
       name: `Rabecca autonomous below minimum pressure ${timestamp}`,
       user_prompt: `## Identity
 Your name is Carol.

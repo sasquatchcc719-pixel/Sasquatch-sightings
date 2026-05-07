@@ -16,10 +16,11 @@ const SETTINGS = {
 }
 
 function getBaseUrl(): string {
-  const url =
-    process.env.VERCEL_URL ||
+  const url = (
     process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.VERCEL_URL ||
     'sightings.sasquatchcarpet.com'
+  ).trim()
   return url.startsWith('http') ? url : `https://${url}`
 }
 
@@ -75,32 +76,12 @@ export async function POST(request: NextRequest) {
       `[Call Router] MT Time: ${weekdayStr} ${hour}:00, isBusinessDay: ${isBusinessDay}, isBusinessHours: ${isBusinessHours}`,
     )
 
-    // Check if the caller is one of the owners (simulring numbers)
-    // If so, provide the ability to dial out as the business
-    const isOwnerCalling = [
-      routingConfig.primaryForwardNumber,
-      routingConfig.failoverForwardNumber,
-    ].includes(callerPhone)
-
     let twimlResponse
 
     const baseUrl = getBaseUrl()
     const afterHoursUrl = `${baseUrl}/api/twilio/call-after-hours`
-    const whisperUrl = `${baseUrl}/api/twilio/whisper`
-    const outboundDialUrl = `${baseUrl}/api/twilio/outbound-dial`
 
-    if (isOwnerCalling) {
-      console.log(
-        `[Call Router] Owner calling (${callerPhone}) - initiating outbound dial flow`,
-      )
-      twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Gather action="${outboundDialUrl}" numDigits="11" timeout="10">
-    <Say>Welcome back. Enter the number you wish to call, starting with 1.</Say>
-  </Gather>
-  <Say>We didn't receive any input. Goodbye.</Say>
-</Response>`
-    } else if (routingConfig.temporaryOpenLineMode) {
+    if (routingConfig.temporaryOpenLineMode) {
       console.log('[Call Router] Temporary open line mode active - direct ring')
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -109,21 +90,15 @@ export async function POST(request: NextRequest) {
     <Client>admin_charles</Client>
   </Dial>
 </Response>`
-    } else if (isBusinessHours) {
-      // IVR: two keys are the same routing (primary + softphone) — human/bot gate; no key -> voicemail
+    } else {
+      // Rabecca handles scheduling 24/7. Press 2 still rings Charles/admin.
       const ivrMenuUrl = `${baseUrl}/api/twilio/ivr-menu`
 
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather action="${ivrMenuUrl}" numDigits="1" timeout="10">
-    <Say>Thank you for calling Sasquatch Carpet Cleaning. To connect your call, press 1 or press 2.</Say>
+    <Say>Thank you for calling Sasquatch Carpet Cleaning. For scheduling, press 1. For Charles or technical help, press 2.</Say>
   </Gather>
-  <Redirect method="POST">${afterHoursUrl}</Redirect>
-</Response>`
-    } else {
-      console.log(`[Call Router] After hours - redirecting to voicemail flow`)
-      twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
   <Redirect method="POST">${afterHoursUrl}</Redirect>
 </Response>`
     }

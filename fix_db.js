@@ -6,9 +6,14 @@
 
 const { createClient } = require('@supabase/supabase-js')
 
-const SUPABASE_URL = 'https://zoabgmsbvzcqpzlrhsfz.supabase.co'
-const SERVICE_KEY =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpvYWJnbXNidnpjcXB6bHJoc2Z6Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2ODE4NDU0OSwiZXhwIjoyMDgzNzYwNTQ5fQ.kFwGJZB1ah2Rxr81yRdePlF8MGLrmQBRWupiE6ePdWE'
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL
+const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+if (!SUPABASE_URL || !SERVICE_KEY) {
+  throw new Error(
+    'Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY',
+  )
+}
 
 const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
   auth: {

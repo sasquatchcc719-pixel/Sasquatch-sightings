@@ -13,7 +13,13 @@ export async function GET() {
     const supabase = createAdminClient()
     const connectionStatus = await getQBConnectionStatus()
 
-    const [pendingResult, failedResult, syncedResult] = await Promise.all([
+    const [
+      pendingResult,
+      failedResult,
+      syncedResult,
+      eligibleInvoicesResult,
+      pendingInvoiceJobsResult,
+    ] = await Promise.all([
       supabase
         .from('ops_quickbooks_sync_jobs')
         .select('*', { count: 'exact', head: true })
@@ -29,13 +35,46 @@ export async function GET() {
         .order('updated_at', { ascending: false })
         .limit(1)
         .maybeSingle(),
+      supabase
+        .from('ops_invoices')
+        .select(
+          `
+          id,
+          payment_method,
+          status,
+          ops_appointments!inner ( status, kind )
+        `,
+        )
+        .is('quickbooks_invoice_id', null)
+        .in('status', ['ready', 'sent', 'paid']),
+      supabase
+        .from('ops_quickbooks_sync_jobs')
+        .select('entity_id')
+        .eq('entity_type', 'invoice')
+        .eq('status', 'pending'),
     ])
+
+    const pendingInvoiceIds = new Set(
+      (pendingInvoiceJobsResult.data || []).map((row) => row.entity_id),
+    )
+    const stuckInvoices = (eligibleInvoicesResult.data || []).filter((row) => {
+      const appointment = Array.isArray(row.ops_appointments)
+        ? row.ops_appointments[0]
+        : row.ops_appointments
+      return (
+        appointment?.kind !== 'estimate' &&
+        (appointment?.status === 'completed' || row.status === 'paid') &&
+        row.payment_method !== 'cash' &&
+        !pendingInvoiceIds.has(row.id)
+      )
+    })
 
     return NextResponse.json(
       {
         ...connectionStatus,
         pending: pendingResult.count || 0,
         failed: failedResult.count || 0,
+        stuck: stuckInvoices.length,
         last_synced_at: syncedResult.data?.updated_at || null,
       },
       {

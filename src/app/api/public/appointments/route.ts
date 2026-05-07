@@ -9,6 +9,7 @@ import { createAdminClient } from '@/supabase/server'
 import {
   applyAppointmentBuffer,
   calculateAppointmentDurationFromTotal,
+  calendarEventsToAppointmentWindows,
   getAvailableSlots,
   timeToMinutes,
 } from '@/lib/ops/availability'
@@ -131,6 +132,17 @@ export async function POST(request: NextRequest) {
         { error: 'At least one service is required' },
         { status: 400, headers: CORS },
       )
+    }
+
+    if (serviceAreaCheck.travelCharge > 0) {
+      lineItems.push({
+        name_snapshot: 'Mileage/ Travel',
+        quantity: 1,
+        unit_price: serviceAreaCheck.travelCharge,
+        duration_minutes: 0,
+        pricing_unit: 'fixed',
+        category: 'Travel',
+      })
     }
 
     // Hydrate pricing_unit from the catalog for any items that provided a
@@ -327,7 +339,7 @@ export async function POST(request: NextRequest) {
         ? timeToMinutes(currentTimeMT) + MINIMUM_SAME_DAY_LEAD_MINUTES
         : undefined
 
-    const [templatesResult, overridesResult, appointmentsResult] =
+    const [templatesResult, overridesResult, appointmentsResult, eventsResult] =
       await Promise.all([
         supabase
           .from('availability_templates')
@@ -341,6 +353,13 @@ export async function POST(request: NextRequest) {
           .from('ops_appointments')
           .select('appointment_date, start_time, end_time, status')
           .eq('appointment_date', appointmentDate),
+        supabase
+          .from('ops_calendar_events')
+          .select(
+            'event_kind, start_date, end_date, start_time, end_time, is_all_day',
+          )
+          .lte('start_date', appointmentDate)
+          .gte('end_date', appointmentDate),
       ])
 
     const availableSlots = getAvailableSlots({
@@ -348,7 +367,13 @@ export async function POST(request: NextRequest) {
       requiredMinutes: buffered,
       templates: templatesResult.data || [],
       overrides: overridesResult.data || [],
-      appointments: appointmentsResult.data || [],
+      appointments: [
+        ...(appointmentsResult.data || []),
+        ...calendarEventsToAppointmentWindows(
+          appointmentDate,
+          eventsResult.data || [],
+        ),
+      ],
       minStartMinutes,
       maxResults: 8,
     })
@@ -368,7 +393,6 @@ export async function POST(request: NextRequest) {
     }
 
     // --- Determine appointment status ---
-    // If location requires travel approval, set to pending_approval instead of booked
     const appointmentStatus = serviceAreaCheck.requiresApproval
       ? 'pending_approval'
       : 'booked'
@@ -462,7 +486,9 @@ export async function POST(request: NextRequest) {
     const syncStatus = getQuickBooksSyncStatus()
     const statusNotes = serviceAreaCheck.requiresApproval
       ? 'Appointment created via sasquatch.com booking widget (pending approval for extended service area)'
-      : 'Appointment created via sasquatch.com booking widget'
+      : serviceAreaCheck.travelCharge > 0
+        ? `Appointment created via sasquatch.com booking widget ($${serviceAreaCheck.travelCharge} travel fee applied)`
+        : 'Appointment created via sasquatch.com booking widget'
 
     await Promise.all([
       supabase.from('ops_appointment_status_events').insert({
@@ -521,8 +547,8 @@ export async function POST(request: NextRequest) {
       `${serviceNames}`,
       `${street1}, ${city}, ${state} ${zipCode}`,
       `${appointmentDate} at ${startTime.slice(0, 5)}`,
-      ...(serviceAreaCheck.requiresApproval
-        ? ['⚠️ Extended service area - confirm travel fee']
+      ...(serviceAreaCheck.travelCharge > 0
+        ? [`Travel-charge area - $${serviceAreaCheck.travelCharge} travel fee`]
         : []),
     ].join('\n')
 
@@ -552,7 +578,7 @@ export async function POST(request: NextRequest) {
           html: `
 <div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;">
   <h2 style="color:${appointmentStatus === 'pending_approval' ? '#f59e0b' : '#16a34a'};margin:0 0 16px;">New Job Booked${statusLabel}</h2>
-  ${serviceAreaCheck.requiresApproval ? '<p style="color:#f59e0b;font-weight:600;margin:0 0 12px;">⚠️ Extended service area - confirm travel fee with customer</p>' : ''}
+  ${serviceAreaCheck.travelCharge > 0 ? `<p style="color:#f59e0b;font-weight:600;margin:0 0 12px;">Travel-charge area - $${serviceAreaCheck.travelCharge} travel fee applied</p>` : ''}
   <table style="font-size:14px;line-height:1.6;">
     <tr><td style="color:#6b7280;padding-right:12px;">Customer</td><td><strong>${fullName}</strong></td></tr>
     <tr><td style="color:#6b7280;padding-right:12px;">Phone</td><td>${phone}</td></tr>

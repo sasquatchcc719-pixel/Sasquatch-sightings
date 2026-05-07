@@ -22,6 +22,7 @@ type SyncJob = {
   entity_type: 'customer' | 'invoice' | 'batch_invoice'
   entity_id: string
   payload: Record<string, unknown>
+  sync_attempts?: number | null
 }
 
 export async function GET(request: NextRequest) {
@@ -63,7 +64,7 @@ export async function GET(request: NextRequest) {
     // Fetch customer jobs first — invoices depend on customers being synced
     const { data: customerJobs, error: customerJobsError } = await supabase
       .from('ops_quickbooks_sync_jobs')
-      .select('id, entity_type, entity_id, payload')
+      .select('id, entity_type, entity_id, payload, sync_attempts')
       .eq('status', 'pending')
       .eq('entity_type', 'customer')
       .order('created_at', { ascending: true })
@@ -73,7 +74,7 @@ export async function GET(request: NextRequest) {
 
     const { data: invoiceJobs, error: invoiceJobsError } = await supabase
       .from('ops_quickbooks_sync_jobs')
-      .select('id, entity_type, entity_id, payload')
+      .select('id, entity_type, entity_id, payload, sync_attempts')
       .eq('status', 'pending')
       .eq('entity_type', 'invoice')
       .order('created_at', { ascending: true })
@@ -83,7 +84,7 @@ export async function GET(request: NextRequest) {
 
     const { data: batchInvoiceJobs, error: batchJobsError } = await supabase
       .from('ops_quickbooks_sync_jobs')
-      .select('id, entity_type, entity_id, payload')
+      .select('id, entity_type, entity_id, payload, sync_attempts')
       .eq('status', 'pending')
       .eq('entity_type', 'batch_invoice')
       .order('created_at', { ascending: true })
@@ -109,6 +110,16 @@ export async function GET(request: NextRequest) {
     }
 
     for (const job of jobs as SyncJob[]) {
+      const attemptCount = Number(job.sync_attempts || 0) + 1
+      await supabase
+        .from('ops_quickbooks_sync_jobs')
+        .update({
+          sync_attempts: attemptCount,
+          last_attempted_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', job.id)
+
       try {
         if (job.entity_type === 'customer') {
           const payload = job.payload as {
@@ -181,6 +192,13 @@ export async function GET(request: NextRequest) {
                 updated_at: new Date().toISOString(),
               })
               .eq('id', job.id)
+            await supabase
+              .from('ops_invoices')
+              .update({
+                sync_status: 'held',
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', invoiceId)
             results.synced++
             continue
           }
@@ -189,13 +207,12 @@ export async function GET(request: NextRequest) {
             await supabase
               .from('ops_quickbooks_sync_jobs')
               .update({
-                status: 'synced',
+                status: 'held',
                 error_message:
-                  'skipped: invoice still draft (syncs when job completes)',
+                  'deferred: invoice still draft (syncs when job completes)',
                 updated_at: new Date().toISOString(),
               })
               .eq('id', job.id)
-            results.synced++
             continue
           }
 
@@ -260,6 +277,7 @@ export async function GET(request: NextRequest) {
             .update({
               quickbooks_invoice_id: qbInvoiceId,
               sync_status: 'synced',
+              last_synced_at: new Date().toISOString(),
             })
             .eq('id', invoiceId)
         } else if (job.entity_type === 'batch_invoice') {
@@ -292,7 +310,11 @@ export async function GET(request: NextRequest) {
         // Mark job synced
         await supabase
           .from('ops_quickbooks_sync_jobs')
-          .update({ status: 'synced', updated_at: new Date().toISOString() })
+          .update({
+            status: 'synced',
+            error_message: null,
+            updated_at: new Date().toISOString(),
+          })
           .eq('id', job.id)
 
         results.synced++

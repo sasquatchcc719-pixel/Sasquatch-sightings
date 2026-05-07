@@ -29,6 +29,7 @@ import {
   ClipboardList,
   Ruler,
   Tag,
+  UserRoundSearch,
 } from 'lucide-react'
 
 interface NavTab {
@@ -251,6 +252,13 @@ export function AdminNavigation() {
       icon: Phone,
       active: pathname === '/admin/rabecca',
       description: 'Voice agent tool logs and booking audit trail',
+    },
+    {
+      name: 'Ranger Hiring',
+      href: '/admin/ranger',
+      icon: UserRoundSearch,
+      active: pathname === '/admin/ranger',
+      description: 'Hiring agent pipeline, Candidate Reports, and approvals',
     },
     {
       name: 'AI Chats',

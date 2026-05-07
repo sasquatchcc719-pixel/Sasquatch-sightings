@@ -13,12 +13,24 @@ const SUPPORTED_FUNCTIONS = new Set<RetellFunctionName>([
   'book_prepared_slot',
   'get_service_catalog',
   'get_calendar_slots',
+  'lookup_customer_profile',
   'create_booking',
   'create_estimate',
   'list_caller_appointments',
   'schedule_reclean',
   'notify_admin',
 ])
+
+function hasValidFunctionSecret(request: NextRequest): boolean {
+  const expected = process.env.RETELL_FUNCTION_SECRET?.trim()
+  if (!expected) return false
+
+  const provided =
+    request.nextUrl.searchParams.get('secret') ||
+    request.headers.get('x-retell-function-secret')
+
+  return provided?.trim() === expected
+}
 
 function isSupportedFunction(value: unknown): value is RetellFunctionName {
   return (
@@ -38,6 +50,42 @@ function requestArgs(payload: RetellFunctionRequest): Record<string, unknown> {
     return asRecord(payload.args || payload.arguments)
   }
   return asRecord(payload)
+}
+
+function payloadString(
+  payload: RetellFunctionRequest,
+  key: string,
+): string | undefined {
+  const record = payload as Record<string, unknown>
+  const value = record[key]
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+function getPayloadCallId(payload: RetellFunctionRequest): string | undefined {
+  return (
+    payload.call?.call_id ||
+    payloadString(payload, 'call_id') ||
+    payloadString(payload, 'retell_call_id')
+  )
+}
+
+function getPayloadCallerPhone(
+  payload: RetellFunctionRequest,
+  args: Record<string, unknown>,
+): string | undefined {
+  const argPhone =
+    typeof args.lookup_phone === 'string' && args.lookup_phone.trim()
+      ? args.lookup_phone.trim()
+      : typeof args.customer_phone === 'string' && args.customer_phone.trim()
+        ? args.customer_phone.trim()
+        : undefined
+
+  return (
+    payload.call?.from_number ||
+    payloadString(payload, 'from_number') ||
+    payloadString(payload, 'caller_phone') ||
+    argPhone
+  )
 }
 
 function inferFunctionName(
@@ -60,6 +108,9 @@ function inferFunctionName(
   }
   if ('line_items' in args) return 'create_booking'
   if ('selected_start_time' in args) return 'book_prepared_slot'
+  if ('customer_name' in args || 'lookup_email' in args) {
+    return 'lookup_customer_profile'
+  }
   if ('bedrooms_count' in args || 'requested_date' in args) {
     return 'quote_and_prepare_booking'
   }
@@ -122,6 +173,16 @@ export async function POST(request: NextRequest) {
     )
   }
 
+  if (
+    !verifyRetellSignature({ rawBody, signature }) &&
+    !hasValidFunctionSecret(request)
+  ) {
+    return NextResponse.json(
+      { success: false, message: 'Invalid Retell signature.' },
+      { status: 401 },
+    )
+  }
+
   let payload: RetellFunctionRequest
   try {
     payload = JSON.parse(rawBody) as RetellFunctionRequest
@@ -134,18 +195,15 @@ export async function POST(request: NextRequest) {
 
   const args = requestArgs(payload)
   const functionName = inferFunctionName(payload, args, request)
-  if (signature && !verifyRetellSignature({ rawBody, signature })) {
-    console.warn(
-      '[retell/functions] Ignoring invalid Retell signature on custom function call.',
-    )
-  }
+  const callId = getPayloadCallId(payload)
+  const callerPhone = getPayloadCallerPhone(payload, args)
 
   if (!functionName) {
     await writeRetellToolLog({
       functionName: 'unknown',
       args,
-      callId: payload.call?.call_id,
-      callerPhone: payload.call?.from_number,
+      callId,
+      callerPhone,
       success: false,
       httpStatus: 400,
       responseBody: {
@@ -164,15 +222,15 @@ export async function POST(request: NextRequest) {
     const supabase = createAdminClient()
     const result = await executeRebeccaRetellTool(functionName, args, {
       supabase,
-      callId: payload.call?.call_id,
-      callerPhone: payload.call?.from_number,
+      callId,
+      callerPhone,
     })
     const status = result.success ? 200 : 400
     await writeRetellToolLog({
       functionName,
       args,
-      callId: payload.call?.call_id,
-      callerPhone: payload.call?.from_number,
+      callId,
+      callerPhone,
       success: result.success,
       httpStatus: status,
       responseBody: result,
@@ -185,8 +243,8 @@ export async function POST(request: NextRequest) {
     await writeRetellToolLog({
       functionName,
       args: asRecord(payload.args || payload.arguments),
-      callId: payload.call?.call_id,
-      callerPhone: payload.call?.from_number,
+      callId,
+      callerPhone,
       success: false,
       httpStatus: 500,
       errorMessage: error instanceof Error ? error.message : 'Unknown error',

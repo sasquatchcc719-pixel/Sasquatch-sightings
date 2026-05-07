@@ -15,7 +15,7 @@ function parseArgs(argv) {
     agentMatch: DEFAULT_AGENT_MATCH,
     execute: false,
     cloneName: 'Rabecca Sandbox — Sasquatch Carpet Cleaning',
-    flexName: 'Rabecca Flex Sandbox — Sasquatch Carpet Cleaning',
+    flexName: 'Rabecca — Sasquatch Carpet Cleaning',
   }
 
   for (let i = 2; i < argv.length; i += 1) {
@@ -431,10 +431,14 @@ Core rules:
 
 Tool rules (mandatory, not optional):
 - For normal residential quote and scheduling, use quote_and_prepare_booking first. It returns the quote, minimum status, missing fields, and real slots.
+- Before checking availability or offering appointment slots, collect the service ZIP code. The tool will reject outside-area ZIPs and add a flat $40 travel charge for travel-charge ZIPs.
 - If the caller adds, removes, or changes any service after a quote, immediately call quote_and_prepare_booking again with the complete updated service list before stating the new total, minimum status, or availability answer.
 - For normal residential booking, use book_prepared_slot after the caller chooses one of the returned slots. Only say booked after this tool returns success.
+- Before final booking or estimate scheduling, ask how the caller heard about Sasquatch and pass the real answer as lead_source. Never use Rabecca, Retell, or voice AI as lead_source. If they say referral, realtor, or real estate agent, ask who referred them and pass referrer_name.
+- When a caller is ready to check availability or book, call lookup_customer_profile with no lookup fields before asking for their name or asking whether they have used Sasquatch before. This lets the backend use caller ID. If one matched profile is found, confirm its saved name, phone, email, and service address before reusing them.
 - If quote_and_prepare_booking returns meets_minimum=false or can_offer_slots=false, do not offer dates or times. State the updated total, the amount still needed to meet the minimum, and ask what service they want to add.
 - Use get_service_catalog only for general service questions outside normal residential quote-and-book flow.
+- Use lookup_customer_profile for returning-customer contact/profile lookup in normal quote or booking flows. Never use list_caller_appointments for normal returning-customer booking contact lookup.
 - Use get_calendar_slots only for recleans or special non-residential scheduling paths that are not handled by quote_and_prepare_booking.
 - Use create_estimate for commercial jobs or complex work that needs an on-site quote.
 - Use notify_admin only when the request cannot be handled by the available tools. When using notify_admin, include message, reason, customer_name, customer_phone, customer_email, service_address, and urgency whenever available. These alerts are sent as Rabecca voice AI notifications, so the message must contain enough contact information for Charles to act on it.
@@ -459,6 +463,10 @@ If the customer changes the job details after the quote, call quote_and_prepare_
 Only after the customer wants availability or wants to book, collect:
 - name, phone, email, full service address, city, ZIP
 - preferred date or time
+- how they heard about Sasquatch; if referral/realtor/real estate agent, ask who referred them
+
+Returning customers:
+When a caller is ready to check availability or book, call lookup_customer_profile first with no lookup fields before asking for their name or asking "Have you used Sasquatch Carpet Cleaning before?" The backend will use caller ID when available. If it returns one likely match, confirm the saved name, phone, email, and address. If the caller confirms nothing changed, reuse those confirmed details for book_prepared_slot. Do not ask them to repeat confirmed details. If no match is returned, then ask "Have you used Sasquatch Carpet Cleaning before?" If multiple matches are returned, ask only for the missing detail needed to identify or complete the booking, such as their name or address.
 
 Bedroom rule:
 Treat each bedroom as one regular room unless the customer says it is unusually large. Do not ask square footage for every bedroom.
@@ -529,17 +537,19 @@ Residential quote and booking:
 - If the caller does not know a large room's square footage, ask how many average bedrooms could fit in that room. Use one bedroom worth as a regular room, two as one Sasquatch-size room using sasquatch_room_count, and three as one monster-size room using monster_room_count. For four or more, ask for approximate dimensions or actual square footage.
 - If the caller gives dimensions like "30 by 15" or "30 x 15", multiply length by width, briefly confirm the approximate square footage, and pass that cleanable square footage to quote_and_prepare_booking.
 - If a caller asks for availability before you clarify room size, preserve that date/date-range request and include it when you call quote_and_prepare_booking after the clarification.
+- Before checking availability or offering times, collect the service ZIP code. The tool will decline outside-area ZIPs and include a flat $40 travel charge for travel-charge ZIPs.
 - For tile/grout, put square footage in tile_grout_sqft. Never put tile/grout into living_room_sqft or hall_count.
 - Always include service_request as a plain-English summary when calling quote_and_prepare_booking or book_prepared_slot.
 - Carry discount_requested=true into book_prepared_slot only if the caller explicitly asked for a discount and the quote tool already returned a discount for this job.
 - After collecting enough job details, call quote_and_prepare_booking and state the price only from the tool response.
 - The booking total must match quote_and_prepare_booking and book_prepared_slot. Do not subtract anything from the tool total yourself.
 - If the caller adds, removes, or changes service details, call quote_and_prepare_booking again with the complete updated service list before stating a new total, minimum status, or availability.
+- When a caller is ready to check availability or book, call lookup_customer_profile first with no lookup fields before asking for their name or asking whether they have used Sasquatch before. The backend will use caller ID when available. If it returns one likely match, confirm the saved name, phone, email, and address. If the caller confirms nothing changed, reuse those confirmed details for book_prepared_slot. If there is no match, then ask "Have you used Sasquatch Carpet Cleaning before?" If there is more than one possible match, ask only for the missing detail needed to identify or complete the booking, such as their name or address.
 - If quote_and_prepare_booking returns meets_minimum=false or can_offer_slots=false, do not offer times, check dates, hold a spot, waitlist, or monitor cancellations. State the tool total and amount needed to reach the minimum, then ask whether they want to add another service.
 - When the caller wants one specific day, call quote_and_prepare_booking with the complete service list and requested_date.
 - When the caller asks for flexible availability like "next week", "later this month", "any time soon", or "what dates do you have", call quote_and_prepare_booking with availability_start_date and availability_days. Offer only returned dated slots.
 - If no date or date range was searched, do not say there are no openings. Ask what day or date range they want checked.
-- After the caller chooses one returned slot, collect name, phone, email, and full service address. Then call book_prepared_slot with the same complete service list, requested_date set to the selected slot date, selected_start_time, customer, and address.
+- After the caller chooses one returned slot, collect name, phone, email, full service address, and how they heard about Sasquatch unless lookup_customer_profile already returned saved customer/address details and the caller confirmed they are still current. If they say referral, realtor, or real estate agent, ask who referred them. Then call book_prepared_slot with the same complete service list, requested_date set to the selected slot date, selected_start_time, customer, address, lead_source, and any referrer details.
 - If book_prepared_slot succeeds, confirm the appointment using the tool result: date, time, total, and service list.
 - If book_prepared_slot fails, do not say booked. Explain the failure and offer only alternatives returned by the tool. If it returns alternate slots, wait for the caller to explicitly choose one before calling book_prepared_slot again.
 
@@ -553,6 +563,7 @@ Service boundaries:
 Recleans / unhappy customers:
 - If a caller says a spot came back, wants a redo, warranty visit, reclean, or refund because a cleaning issue returned, first offer a no-charge reclean. Do not transfer, promise a refund, or notify admin before collecting usable details unless the caller is angry or refuses.
 - Collect customer name, callback phone, email, service address, order/invoice number if available, original service date if available, issue summary, and preferred reclean day/time.
+- Use list_caller_appointments only for recleans, warranty redos, refund/dispute calls about prior work, or appointment-related lookup. Do not use it just to find saved contact details for a normal new booking.
 - Call list_caller_appointments before saying you found, verified, matched, or see a prior appointment.
 - If a matching prior appointment is found, call schedule_reclean with the selected/preferred appointment date and start time. If schedule_reclean fails with available_slots, offer only those returned alternatives and try again after the caller chooses.
 - Only say the reclean is scheduled after schedule_reclean succeeds. Tell the caller there is no charge.
@@ -560,7 +571,7 @@ Recleans / unhappy customers:
 - Before notify_admin for a refund refusal or dispute, collect customer name, real callback phone, customer email, service address, and order/invoice number if available. If phone, email, or order/invoice number is missing, ask for it once before sending the alert. Include any provided order/invoice number in the notify_admin message.
 
 Existing appointment changes:
-- If the caller wants to change or cancel an existing appointment and no direct change tool is available, collect customer name, real callback phone, email, full service address, existing appointment timing, and requested new timing/change. Ask once for any missing email or timing detail before calling notify_admin; if the caller declines email, use customer_email "declined". If the caller only knows a window like "next Tuesday morning" or "Friday afternoon", use that exact window. Call notify_admin with existing_appointment_timing and requested_new_timing, then say: "I have the change request noted and the team will confirm it." If the caller gives new contact details after an alert, call notify_admin again with the complete updated details before saying they were added.
+- If the caller wants to change or cancel an existing appointment and no direct change tool is available, collect customer name, real callback phone, email, full service address, existing appointment timing, and requested new timing/change. Ask once for any missing email or timing detail before calling notify_admin; if the caller declines email, use customer_email "declined". If the caller only knows a window like "next Tuesday morning" or "Friday afternoon", use that exact window. Call notify_admin with existing_appointment_timing and requested_new_timing, then say exactly: "I have the change request noted and the team will confirm it." Do not say "you are all set" or imply the appointment was changed. If the caller gives new contact details after an alert, call notify_admin again with the complete updated details before saying they were added.
 - Do not pretend a change or cancellation is confirmed unless a tool confirms it.
 
 Admin alerts:
@@ -593,6 +604,13 @@ function findToolId(flow, toolName) {
 }
 
 function buildCustomTool(toolId, name, description, parameters) {
+  const functionUrl = new URL(
+    'https://sightings.sasquatchcarpet.com/api/retell/functions',
+  )
+  if (process.env.RETELL_FUNCTION_SECRET) {
+    functionUrl.searchParams.set('secret', process.env.RETELL_FUNCTION_SECRET)
+  }
+
   return {
     headers: {},
     parameter_type: 'json',
@@ -601,7 +619,7 @@ function buildCustomTool(toolId, name, description, parameters) {
     description,
     enable_typing_sound: false,
     type: 'custom',
-    url: 'https://sightings.sasquatchcarpet.com/api/retell/functions',
+    url: functionUrl.toString(),
     tool_id: toolId,
     args_at_root: false,
     timeout_ms: 120000,
@@ -933,6 +951,16 @@ function rabeccaQuoteToolProperties() {
       type: 'number',
       description: 'Number of individual stair steps.',
     },
+    zip_code: {
+      type: 'string',
+      description:
+        'Service ZIP code. Required before checking availability or offering slots because some ZIP codes are outside the service area or have a flat $40 travel charge.',
+    },
+    city: {
+      type: 'string',
+      description:
+        'Service city if the caller provides it. Use with zip_code when checking availability.',
+    },
     requested_date: {
       type: 'string',
       description:
@@ -952,6 +980,31 @@ function rabeccaQuoteToolProperties() {
       type: 'boolean',
       description:
         'Set to true only when the caller explicitly asks whether there is any discount, coupon, deal, or price break available. Never set true proactively, automatically, or just because the job qualifies by price.',
+    },
+  }
+}
+
+function leadSourceToolProperties() {
+  return {
+    lead_source: {
+      type: 'string',
+      description:
+        'Required real marketing source: Google, repeat customer, referral, realtor, yard sign, truck, website, etc. Never use retell_rabecca, Rabecca, or voice AI here.',
+    },
+    referrer_name: {
+      type: 'string',
+      description:
+        'Required when lead_source is referral, realtor, real estate agent, or referred by someone. Ask who referred them so the team can give credit.',
+    },
+    referrer_type: {
+      type: 'string',
+      description:
+        'Optional referrer category such as Realtor, real estate agent, customer, property manager, or partner.',
+    },
+    lead_notes: {
+      type: 'string',
+      description:
+        'Optional short notes about the source, for example "caller said their realtor Tom referred them."',
     },
   }
 }
@@ -979,6 +1032,7 @@ function addExplicitToolNodes(flow) {
         type: 'object',
         properties: {
           ...rabeccaQuoteToolProperties(),
+          ...leadSourceToolProperties(),
           selected_start_time: {
             type: 'string',
             description:
@@ -1014,7 +1068,36 @@ function addExplicitToolNodes(flow) {
           'selected_start_time',
           'customer',
           'address',
+          'lead_source',
         ],
+      },
+    ),
+  )
+  upsertTool(
+    flow,
+    buildCustomTool(
+      'tool-rabecca-lookup-customer-profile',
+      'lookup_customer_profile',
+      'Look up a returning customer profile by caller ID phone, provided phone, email, or name. In normal residential booking flows, call this with no lookup fields as soon as the caller wants availability or booking so the backend can use caller ID before asking for name, phone, email, or address.',
+      {
+        type: 'object',
+        properties: {
+          customer_name: {
+            type: 'string',
+            description:
+              'Customer full name if the caller provides it, for example "Sarah Williams".',
+          },
+          lookup_phone: {
+            type: 'string',
+            description:
+              'Phone number to look up. If omitted, the backend uses caller ID when available.',
+          },
+          lookup_email: {
+            type: 'string',
+            description:
+              'Email address to look up if the caller provides it. Convert spoken email to normal format when possible.',
+          },
+        },
       },
     ),
   )
@@ -1640,7 +1723,7 @@ function buildSelfServeSandboxFlow(flow) {
   updateNodeInstruction(
     nextFlow,
     'Quote and Scheduling',
-    'Use the result from quote_and_prepare_booking as the source of truth. Read its caller_script when helpful. If it says the job is below the minimum, state the updated total and the amount still needed. Do not offer dates, times, a waitlist, cancellation holds, or say you are checking availability while meets_minimum=false or can_offer_slots=false. If the caller asks for the earliest date, a cancellation, or a waitlist while below minimum, say you cannot check, hold, waitlist, or notify for appointment availability until the job reaches the $150 minimum, then give the options: add enough service to meet the minimum, combine it with another area/service, or stop there and call back if the scope changes. If the caller adds another service, call quote_and_prepare_booking again with all previous services plus the added service. If it returns slots, offer only those slots. Reuse any name, phone, email, address, date, and service details the customer already provided. Before calling book_prepared_slot, confirm one concise summary if any contact details were spoken unclearly: service, selected slot, customer name, phone, email, and full address. Convert spelled-out email into normal email format before sending the tool. After the customer chooses one returned slot and all required fields are collected, call book_prepared_slot. NEVER say the customer is booked unless book_prepared_slot returned success in this conversation. If book_prepared_slot fails, read the failure/next step and do not say booked.',
+    'Use the result from quote_and_prepare_booking as the source of truth. Read its caller_script when helpful. Collect service ZIP before checking availability; the tool rejects outside-area ZIPs and includes a flat $40 travel charge for travel-charge ZIPs. If it says the job is below the minimum, state the updated total and the amount still needed. Do not offer dates, times, a waitlist, cancellation holds, or say you are checking availability while meets_minimum=false or can_offer_slots=false. If the caller asks for the earliest date, a cancellation, or a waitlist while below minimum, say you cannot check, hold, waitlist, or notify for appointment availability until the job reaches the $150 minimum, then give the options: add enough service to meet the minimum, combine it with another area/service, or stop there and call back if the scope changes. If the caller adds another service, call quote_and_prepare_booking again with all previous services plus the added service. If it returns slots, offer only those slots. Reuse any name, phone, email, address, date, and service details the customer already provided. Before calling book_prepared_slot, confirm one concise summary if any contact details were spoken unclearly: service, selected slot, customer name, phone, email, full address, and how they heard about Sasquatch. If they say referral, realtor, or real estate agent, ask who referred them. Convert spelled-out email into normal email format before sending the tool. After the customer chooses one returned slot and all required fields are collected, call book_prepared_slot with lead_source and any referrer details. NEVER say the customer is booked unless book_prepared_slot returned success in this conversation. If book_prepared_slot fails, read the failure/next step and do not say booked.',
   )
   updateNodeInstruction(
     nextFlow,
@@ -1650,7 +1733,7 @@ function buildSelfServeSandboxFlow(flow) {
   updateNodeInstruction(
     nextFlow,
     'Commercial Intake',
-    'Handle commercial jobs by scheduling an estimate visit. Do not quote commercial work with residential pricing. If they mention flood restoration, active water damage, water extraction, burst pipes, sewage backup, flooded basement, standing water, or emergency drying, route to Flood / Water Damage Transfer. Otherwise collect business name, contact name, phone, email, site address, approximate square footage, floor type, timeline, and whether it is one-time or recurring. Ask for a preferred estimate date/time, call get_calendar_slots if needed, then call create_estimate. Only say the estimate is scheduled after create_estimate succeeds.',
+    'Handle commercial jobs by scheduling an estimate visit. Do not quote commercial work with residential pricing. If they mention flood restoration, active water damage, water extraction, burst pipes, sewage backup, flooded basement, standing water, or emergency drying, route to Flood / Water Damage Transfer. Otherwise collect business name, contact name, phone, email, site address, approximate square footage, floor type, timeline, whether it is one-time or recurring, and how they heard about Sasquatch. If they say referral, realtor, or real estate agent, ask who referred them. Ask for a preferred estimate date/time, call get_calendar_slots if needed, then call create_estimate with lead_source and any referrer details. Only say the estimate is scheduled after create_estimate succeeds.',
   )
   updateNodeInstruction(
     nextFlow,
@@ -1677,11 +1760,27 @@ function buildSelfServeSandboxFlow(flow) {
     }
     if (tool.name === 'create_booking') {
       tool.description =
-        'Create a confirmed residential cleaning appointment after the customer has confirmed services, time, contact info, and full address.'
+        'Create a confirmed residential cleaning appointment after the customer has confirmed services, time, contact info, full address, and real lead source. Never use Rabecca, Retell, or voice AI as lead_source.'
+      tool.parameters = tool.parameters || { type: 'object', properties: {} }
+      tool.parameters.properties = {
+        ...(tool.parameters.properties || {}),
+        ...leadSourceToolProperties(),
+      }
+      tool.parameters.required = Array.from(
+        new Set([...(tool.parameters.required || []), 'lead_source']),
+      )
     }
     if (tool.name === 'create_estimate') {
       tool.description =
-        'Schedule an on-site estimate visit for commercial jobs or complex work that should not be quoted over the phone.'
+        'Schedule an on-site estimate visit for commercial jobs or complex work that should not be quoted over the phone. Include the real lead_source and referrer details when applicable.'
+      tool.parameters = tool.parameters || { type: 'object', properties: {} }
+      tool.parameters.properties = {
+        ...(tool.parameters.properties || {}),
+        ...leadSourceToolProperties(),
+      }
+      tool.parameters.required = Array.from(
+        new Set([...(tool.parameters.required || []), 'lead_source']),
+      )
     }
     if (tool.name === 'notify_admin') {
       tool.description =
@@ -1787,6 +1886,7 @@ function buildFlexTools(flow) {
   const allowedToolNames = [
     'quote_and_prepare_booking',
     'book_prepared_slot',
+    'lookup_customer_profile',
     'list_caller_appointments',
     'schedule_reclean',
     'create_estimate',

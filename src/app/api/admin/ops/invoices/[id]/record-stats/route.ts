@@ -5,6 +5,7 @@ import { recordRevenueFromOpsInvoice } from '@/lib/ops/revenue-from-invoice'
 import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
 import { getQuickBooksSyncStatus } from '@/lib/quickbooks'
 import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
+import { ensureInvoiceQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -105,6 +106,8 @@ export async function POST(request: NextRequest, { params }: Params) {
           })
           .eq('id', invoiceId)
       }
+
+      await ensureInvoiceQuickBooksSyncJob(supabase, invoiceId)
 
       void syncAppointmentToQuickBooks(inv.appointment_id).catch((qbErr) =>
         console.error('[record-stats] QB sync:', qbErr),

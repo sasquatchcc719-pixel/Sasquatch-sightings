@@ -217,6 +217,12 @@ Options (pass exactly as shown):
 - Nextdoor
 - Facebook
 - Yelp
+- ChatGPT
+- Gemini
+- Claude
+- Grok
+- Perplexity
+- Saw truck/vehicle wrap
 - Word of mouth / Referral
 - Repeat customer
 - Other

@@ -8,6 +8,7 @@ import {
   timeToMinutes,
   type ExistingAppointmentWindow,
 } from '@/lib/ops/availability'
+import { createSlotToken, verifySlotToken } from '@/lib/ops/slot-token'
 import {
   calculateAiStyleBookingDiscount,
   createAiStyleBooking,
@@ -25,6 +26,7 @@ import type {
   RetellFunctionName,
   RetellFunctionResponse,
 } from '@/lib/retell/rebecca-types'
+import { checkServiceArea } from '@/lib/service-area'
 
 type RebeccaToolContext = {
   supabase: SupabaseClient
@@ -71,6 +73,13 @@ type PreparedLineItem = {
   quantity: number
   unit_price: number
   total: number
+}
+
+type LeadSourceArgs = {
+  lead_source: string
+  referrer_name: string | null
+  referrer_type: string | null
+  lead_notes: string | null
 }
 
 type PriorAppointmentRow = {
@@ -126,6 +135,38 @@ type PriorAppointmentRow = {
     duration_minutes: number | null
     line_total: number | null
   }> | null
+}
+
+type CustomerProfileRow = {
+  id: string
+  full_name: string | null
+  first_name: string | null
+  last_name: string | null
+  email: string | null
+  phone: string | null
+  business_name: string | null
+}
+
+type ServiceAddressRow = {
+  id: string
+  customer_id: string
+  label: string | null
+  street_1: string | null
+  street_2: string | null
+  city: string | null
+  state: string | null
+  zip_code: string | null
+}
+
+type CustomerAppointmentSummaryRow = {
+  id: string
+  customer_id: string
+  service_address_id: string
+  appointment_date: string
+  start_time: string
+  end_time: string
+  status: string
+  quoted_total: number | null
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -354,6 +395,27 @@ function appointmentLookupStatuses(args: Record<string, unknown>): string[] {
   return ['completed', 'booked', 'confirmed']
 }
 
+function customerDisplayName(customer: CustomerProfileRow): string {
+  return (
+    customer.full_name ||
+    [customer.first_name, customer.last_name].filter(Boolean).join(' ') ||
+    customer.business_name ||
+    'Customer'
+  )
+}
+
+function serviceAddressDisplay(address: ServiceAddressRow): string {
+  return [
+    address.street_1,
+    address.street_2,
+    address.city,
+    address.state,
+    address.zip_code,
+  ]
+    .filter(Boolean)
+    .join(', ')
+}
+
 function normalizeServiceCity(city: string, zipCode: string): string {
   const value = city.trim()
   const compact = value.toLowerCase().replace(/[^a-z]/g, '')
@@ -580,6 +642,8 @@ async function prepareResidentialBookingQuote(
       appointmentDate: string | null
       lineItems: PreparedLineItem[]
       subtotal: number
+      travelCharge: number
+      totalBeforeDiscount: number
       minimum: number
       meetsMinimum: boolean
       slots: DatedSlotOption[]
@@ -859,10 +923,23 @@ async function prepareResidentialBookingQuote(
   }
 
   const subtotal = lineItems.reduce((sum, item) => sum + item.total, 0)
+  const address = addressArgs(args)
+  const serviceAreaCheck = address.zip_code
+    ? checkServiceArea(address.zip_code)
+    : null
+  if (serviceAreaCheck && !serviceAreaCheck.allowed) {
+    return {
+      ok: false,
+      message: serviceAreaCheck.message,
+    }
+  }
+  const travelCharge = serviceAreaCheck?.travelCharge || 0
+  const totalBeforeDiscount = subtotal + travelCharge
   const minimum = 150
   const missingFields = []
   if (!appointmentDate && !availabilityStartDate)
     missingFields.push('appointment date')
+  if (availabilityStartDate && !address.zip_code) missingFields.push('zip code')
 
   const rawAvailabilityDays =
     numberArg(args, 'availability_days') || numberArg(args, 'search_days') || 1
@@ -875,7 +952,11 @@ async function prepareResidentialBookingQuote(
   )
 
   let slots: DatedSlotOption[] = []
-  if (availabilityStartDate && subtotal >= minimum) {
+  if (
+    availabilityStartDate &&
+    totalBeforeDiscount >= minimum &&
+    address.zip_code
+  ) {
     for (let dayOffset = 0; dayOffset < availabilityDays; dayOffset += 1) {
       const date = addDaysIso(availabilityStartDate, dayOffset)
       const bundle = await loadAvailabilityBundle(context.supabase, date)
@@ -898,9 +979,20 @@ async function prepareResidentialBookingQuote(
     appointmentDate,
     lineItems,
     subtotal,
+    travelCharge,
+    totalBeforeDiscount,
     minimum,
-    meetsMinimum: subtotal >= minimum,
-    slots,
+    meetsMinimum: totalBeforeDiscount >= minimum,
+    slots: slots.map((slot) => ({
+      ...slot,
+      slot_token: createSlotToken({
+        date: slot.date,
+        startTime: slot.start_time,
+        endTime: slot.end_time,
+        requiredMinutes,
+        ownerKey: context.callId || context.callerPhone || 'retell_rabecca',
+      }),
+    })),
     availabilityStartDate,
     availabilityDays,
     missingFields,
@@ -1020,11 +1112,20 @@ async function quoteAndPrepareBooking(
   const prepared = await prepareResidentialBookingQuote(args, context)
   if (!prepared.ok) return response(false, prepared.message)
 
-  const discountAmount = await requestedRabeccaDiscount(args, prepared.subtotal)
-  const total = prepared.subtotal - discountAmount
+  const discountAmount = await requestedRabeccaDiscount(
+    args,
+    prepared.totalBeforeDiscount,
+  )
+  const total = prepared.totalBeforeDiscount - discountAmount
   const dollars = total.toFixed(2).replace(/\.00$/, '')
-  const subtotalDollars = prepared.subtotal.toFixed(2).replace(/\.00$/, '')
+  const subtotalDollars = prepared.totalBeforeDiscount
+    .toFixed(2)
+    .replace(/\.00$/, '')
   const discountDollars = discountAmount.toFixed(2).replace(/\.00$/, '')
+  const travelChargeScript =
+    prepared.travelCharge > 0
+      ? ` That includes a flat $${prepared.travelCharge} travel charge for that ZIP code.`
+      : ''
   const discountScript =
     discountAmount > 0
       ? ` I applied the requested $${discountDollars} discount, so the total is $${dollars}.`
@@ -1042,27 +1143,47 @@ async function quoteAndPrepareBooking(
     .map((slot) => `${slot.date} from ${slot.start_time} to ${slot.end_time}`)
     .join(', ')
   const noSlotsScript = searchedRangeLabel
-    ? `The estimate is $${subtotalDollars}.${discountScript} I do not see any available openings for ${searchedRangeLabel}. Ask if another date range works.`
-    : `The estimate is $${subtotalDollars}.${discountScript} What day or date range would you like me to check?`
+    ? `The estimate is $${subtotalDollars}.${travelChargeScript}${discountScript} I do not see any available openings for ${searchedRangeLabel}. Ask if another date range works.`
+    : `The estimate is $${subtotalDollars}.${travelChargeScript}${discountScript} What day or date range would you like me to check?`
   if (!prepared.meetsMinimum) {
-    const amountNeeded = prepared.minimum - prepared.subtotal
+    const amountNeeded = prepared.minimum - prepared.totalBeforeDiscount
     const amountNeededDollars = amountNeeded.toFixed(2).replace(/\.00$/, '')
     return response(true, `Estimated total is $${subtotalDollars}.`, {
-      quote_total: prepared.subtotal,
+      quote_total: prepared.totalBeforeDiscount,
+      service_subtotal: prepared.subtotal,
+      travel_charge: prepared.travelCharge,
       discount_applied: 0,
-      total: prepared.subtotal,
+      total: prepared.totalBeforeDiscount,
       minimum_booking_amount: prepared.minimum,
       amount_needed_to_minimum: amountNeeded,
       meets_minimum: false,
       can_offer_slots: false,
       line_items: prepared.lineItems,
       missing_fields: prepared.missingFields,
-      caller_script: `The updated estimate is $${subtotalDollars}. That is $${amountNeededDollars} below our $${prepared.minimum} minimum, so I cannot check appointment availability or finalize a booking yet. Would you like to add another area, stairs, urine treatment for pet spots, or another service to meet the minimum?`,
+      caller_script: `The updated estimate is $${subtotalDollars}.${travelChargeScript} That is $${amountNeededDollars} below our $${prepared.minimum} minimum, so I cannot check appointment availability or finalize a booking yet. Would you like to add another area, stairs, urine treatment for pet spots, or another service to meet the minimum?`,
+    })
+  }
+
+  if (prepared.missingFields.includes('zip code')) {
+    return response(true, `Estimated total is $${subtotalDollars}.`, {
+      quote_total: prepared.totalBeforeDiscount,
+      service_subtotal: prepared.subtotal,
+      travel_charge: prepared.travelCharge,
+      discount_applied: discountAmount,
+      total,
+      minimum_booking_amount: prepared.minimum,
+      meets_minimum: true,
+      can_offer_slots: false,
+      line_items: prepared.lineItems,
+      missing_fields: prepared.missingFields,
+      caller_script: `The estimate is $${subtotalDollars}.${travelChargeScript}${discountScript} I need the service ZIP code before I can check availability or offer appointment times.`,
     })
   }
 
   return response(true, `Estimated total is $${dollars}.`, {
-    quote_total: prepared.subtotal,
+    quote_total: prepared.totalBeforeDiscount,
+    service_subtotal: prepared.subtotal,
+    travel_charge: prepared.travelCharge,
     discount_applied: discountAmount,
     total,
     minimum_booking_amount: prepared.minimum,
@@ -1076,7 +1197,7 @@ async function quoteAndPrepareBooking(
     availability_days: prepared.availabilityDays,
     caller_script:
       prepared.slots.length > 0
-        ? `The estimate is $${subtotalDollars}.${discountScript} I found these available windows: ${slotSummary}. Which one works best?`
+        ? `The estimate is $${subtotalDollars}.${travelChargeScript}${discountScript} I found these available windows: ${slotSummary}. Which one works best?`
         : noSlotsScript,
   })
 }
@@ -1090,11 +1211,13 @@ async function bookPreparedSlot(
   if (!prepared.meetsMinimum) {
     return response(
       false,
-      `Booking was NOT created: this job totals $${prepared.subtotal.toFixed(
+      `Booking was NOT created: this job totals $${prepared.totalBeforeDiscount.toFixed(
         2,
       )}, below the $${prepared.minimum} minimum. Do not say the caller is booked. Ask if they want to add another service.`,
       {
-        quote_total: prepared.subtotal,
+        quote_total: prepared.totalBeforeDiscount,
+        service_subtotal: prepared.subtotal,
+        travel_charge: prepared.travelCharge,
         minimum_booking_amount: prepared.minimum,
         line_items: prepared.lineItems,
       },
@@ -1104,17 +1227,22 @@ async function bookPreparedSlot(
   const appointmentDate = prepared.appointmentDate
   const startTime =
     stringArg(args, 'selected_start_time') || stringArg(args, 'start_time')
+  const slotToken = stringArg(args, 'slot_token')
   const customer = customerArgs(args)
   const address = addressArgs(args)
+  const leadSource = leadSourceArgs(args)
+  const missingLeadSource = leadSourceMissingReason(leadSource)
   const missingFields = [
     !appointmentDate ? 'appointment date' : '',
     !startTime ? 'selected start time' : '',
+    !slotToken ? 'slot token from get_calendar_slots' : '',
     !customer.first_name || !customer.last_name ? 'customer full name' : '',
     !customer.email ? 'customer email' : '',
     !customer.phone && !context.callerPhone ? 'customer phone' : '',
     !address.street_1 ? 'street address' : '',
     !address.city ? 'city' : '',
     !address.zip_code ? 'zip code' : '',
+    missingLeadSource,
   ].filter(Boolean)
 
   if (missingFields.length > 0 || !appointmentDate) {
@@ -1127,9 +1255,46 @@ async function bookPreparedSlot(
         normalized_address: address,
         caller_script: `I still need ${missingFields.join(
           ', ',
-        )} before I can book that.`,
+        )} before I can book that. Ask how they heard about Sasquatch; if it was a referral, ask who referred them.`,
       },
     )
+  }
+
+  const selectedSlot = prepared.slots.find(
+    (slot) =>
+      slot.date === appointmentDate &&
+      timeToMinutes(slot.start_time) === timeToMinutes(startTime),
+  )
+  if (!selectedSlot) {
+    return response(
+      false,
+      'Booking was NOT created: selected time is not in the prepared available slots.',
+      {
+        appointment_date: appointmentDate,
+        requested_start_time: startTime,
+        available_slots: prepared.slots,
+        caller_script:
+          'That time is not in the available slots I just checked. Offer one of the returned slots instead.',
+      },
+    )
+  }
+  const slotTokenCheck = verifySlotToken(slotToken, {
+    date: appointmentDate,
+    startTime: selectedSlot.start_time,
+    endTime: selectedSlot.end_time,
+    requiredMinutes: applyAppointmentBuffer(
+      calculateAppointmentDurationFromTotal(prepared.subtotal),
+    ),
+    ownerKey: context.callId || context.callerPhone || 'retell_rabecca',
+  })
+  if (!slotTokenCheck.ok) {
+    return response(false, `Booking was NOT created: ${slotTokenCheck.error}`, {
+      appointment_date: appointmentDate,
+      requested_start_time: startTime,
+      available_slots: prepared.slots,
+      caller_script:
+        'I need to check live calendar availability again before booking. Call get_calendar_slots and use the returned slot_token.',
+    })
   }
 
   const slotCheck = await validateRequestedSlotAvailable(context.supabase, {
@@ -1144,7 +1309,7 @@ async function bookPreparedSlot(
     return response(false, `Booking was NOT created: ${slotCheck.message}`, {
       appointment_date: appointmentDate,
       requested_start_time: startTime,
-      quote_total: prepared.subtotal,
+      quote_total: prepared.totalBeforeDiscount,
       line_items: prepared.lineItems,
       available_slots: slotCheck.slots,
       caller_script:
@@ -1172,7 +1337,10 @@ async function bookPreparedSlot(
     booking_mode: 'direct',
     booking_channel: REBECCA_RETELL_CONFIG.bookingChannel,
     source_label: REBECCA_RETELL_CONFIG.sourceLabel,
-    lead_source: 'retell_rabecca',
+    lead_source: leadSource.lead_source,
+    referrer_name: leadSource.referrer_name,
+    referrer_type: leadSource.referrer_type,
+    lead_notes: leadSource.lead_notes,
     actor_label: REBECCA_RETELL_CONFIG.actorLabel,
     admin_heading: REBECCA_RETELL_CONFIG.adminHeading,
     discount_requested: booleanArg(args, 'discount_requested'),
@@ -1180,7 +1348,8 @@ async function bookPreparedSlot(
 
   if (!result.ok) {
     return response(false, `Booking was NOT created: ${result.error}`, {
-      quote_total: prepared.subtotal,
+      quote_total: prepared.totalBeforeDiscount,
+      travel_charge: prepared.travelCharge,
       line_items: prepared.lineItems,
       normalized_customer: {
         ...customer,
@@ -1202,7 +1371,8 @@ async function bookPreparedSlot(
 
   return response(true, result.message, {
     ...result,
-    quote_total: prepared.subtotal,
+    quote_total: prepared.totalBeforeDiscount,
+    travel_charge: prepared.travelCharge,
     line_items: prepared.lineItems,
     normalized_customer: {
       ...customer,
@@ -1210,6 +1380,157 @@ async function bookPreparedSlot(
     },
     normalized_address: address,
     caller_script: `You're all set for ${result.appointment_date} at ${result.start_time}. Services: ${serviceSummary}.${discountSummary} Total: $${result.total}. You'll receive confirmation with the details.`,
+  })
+}
+
+async function lookupCustomerProfile(
+  args: Record<string, unknown>,
+  context: RebeccaToolContext,
+): Promise<RetellFunctionResponse> {
+  const customer = asRecord(args.customer)
+  const lookupName =
+    stringArg(args, 'customer_name') ||
+    stringArg(args, 'name') ||
+    stringArg(customer, 'name') ||
+    stringArg(customer, 'full_name')
+  const lookupEmail =
+    normalizeSpokenEmail(stringArg(args, 'lookup_email')) ||
+    normalizeSpokenEmail(stringArg(args, 'customer_email')) ||
+    normalizeSpokenEmail(stringArg(args, 'email')) ||
+    normalizeSpokenEmail(stringArg(customer, 'email'))
+  const lookupPhone =
+    stringArg(args, 'lookup_phone') ||
+    stringArg(args, 'customer_phone') ||
+    stringArg(args, 'phone') ||
+    stringArg(customer, 'phone') ||
+    context.callerPhone ||
+    ''
+
+  const customerIds = new Set<string>()
+  if (lookupPhone) {
+    const variants = opsPhoneLookupVariants(normalizePhone(lookupPhone))
+    if (variants.length > 0) {
+      const { data, error } = await context.supabase
+        .from('ops_customers')
+        .select('id')
+        .in('phone', variants)
+        .limit(10)
+      if (error) throw error
+      for (const row of data || []) customerIds.add(row.id)
+    }
+  }
+
+  if (lookupEmail) {
+    const { data, error } = await context.supabase
+      .from('ops_customers')
+      .select('id')
+      .ilike('email', lookupEmail)
+      .limit(10)
+    if (error) throw error
+    for (const row of data || []) customerIds.add(row.id)
+  }
+
+  if (lookupName) {
+    const compactName = lookupName.replace(/[%,]/g, ' ').trim()
+    const { data, error } = await context.supabase
+      .from('ops_customers')
+      .select('id')
+      .ilike('full_name', `%${compactName}%`)
+      .limit(10)
+    if (error) throw error
+    for (const row of data || []) customerIds.add(row.id)
+  }
+
+  if (customerIds.size === 0) {
+    return response(false, 'No existing customer profile was found.', {
+      match_count: 0,
+      caller_script:
+        'I do not see a matching customer profile yet, so I will collect the booking contact details.',
+    })
+  }
+
+  const ids = Array.from(customerIds)
+  const { data: customers, error: customersError } = await context.supabase
+    .from('ops_customers')
+    .select('id, full_name, first_name, last_name, email, phone, business_name')
+    .in('id', ids)
+    .order('updated_at', { ascending: false })
+    .limit(5)
+  if (customersError) throw customersError
+
+  const profiles = (customers || []) as CustomerProfileRow[]
+  const profileIds = profiles.map((profile) => profile.id)
+  const [
+    { data: addresses, error: addressesError },
+    { data: appointments, error: appointmentsError },
+  ] = await Promise.all([
+    context.supabase
+      .from('ops_service_addresses')
+      .select(
+        'id, customer_id, label, street_1, street_2, city, state, zip_code',
+      )
+      .in('customer_id', profileIds)
+      .order('updated_at', { ascending: false }),
+    context.supabase
+      .from('ops_appointments')
+      .select(
+        'id, customer_id, service_address_id, appointment_date, start_time, end_time, status, quoted_total',
+      )
+      .in('customer_id', profileIds)
+      .order('appointment_date', { ascending: false })
+      .order('start_time', { ascending: false })
+      .limit(20),
+  ])
+  if (addressesError) throw addressesError
+  if (appointmentsError) throw appointmentsError
+
+  const addressRows = (addresses || []) as ServiceAddressRow[]
+  const appointmentRows = (appointments ||
+    []) as CustomerAppointmentSummaryRow[]
+  const summaries = profiles.map((profile) => {
+    const profileAddresses = addressRows
+      .filter((address) => address.customer_id === profile.id)
+      .map((address) => ({
+        id: address.id,
+        label: address.label,
+        street_1: address.street_1,
+        street_2: address.street_2,
+        city: address.city,
+        state: address.state,
+        zip_code: address.zip_code,
+        formatted: serviceAddressDisplay(address),
+      }))
+    const recentAppointment =
+      appointmentRows.find(
+        (appointment) => appointment.customer_id === profile.id,
+      ) || null
+
+    return {
+      id: profile.id,
+      customer_name: customerDisplayName(profile),
+      first_name: profile.first_name,
+      last_name: profile.last_name,
+      email: profile.email,
+      phone: profile.phone,
+      business_name: profile.business_name,
+      addresses: profileAddresses,
+      preferred_address: profileAddresses[0] || null,
+      most_recent_appointment: recentAppointment,
+    }
+  })
+
+  const recommended = summaries[0] || null
+  const recommendedAddress = recommended?.preferred_address
+  const callerScript =
+    summaries.length === 1 && recommended
+      ? `I found your customer profile. Please confirm I should use ${recommended.customer_name}, phone ${recommended.phone || 'not on file'}, email ${recommended.email || 'not on file'}, and address ${recommendedAddress?.formatted || 'not on file'}.`
+      : `I found ${summaries.length} possible customer profiles. Ask which one is theirs before using saved contact details.`
+
+  return response(true, `Found ${summaries.length} customer profile match.`, {
+    match_count: summaries.length,
+    recommended_customer: recommended,
+    customers: summaries,
+    caller_script: callerScript,
   })
 }
 
@@ -1277,7 +1598,16 @@ async function getCalendarSlots(
       ? { normalized_from_date: normalizedDate.normalizedFrom }
       : {}),
     required_minutes: applyAppointmentBuffer(requiredMinutes),
-    slots,
+    slots: slots.map((slot) => ({
+      ...slot,
+      slot_token: createSlotToken({
+        date,
+        startTime: slot.start_time,
+        endTime: slot.end_time,
+        requiredMinutes: applyAppointmentBuffer(requiredMinutes),
+        ownerKey: context.callId || context.callerPhone || 'retell_rabecca',
+      }),
+    })),
   })
 }
 
@@ -1793,7 +2123,11 @@ async function validateRequestedSlotAvailable(
     lineItems: Array<{ service_id: string; quantity: number }>
   },
 ): Promise<
-  | { ok: true }
+  | {
+      ok: true
+      requiredMinutes: number
+      slot: { start_time: string; end_time: string }
+    }
   | {
       ok: false
       message: string
@@ -1842,7 +2176,9 @@ async function validateRequestedSlotAvailable(
     (slot) => timeToMinutes(slot.start_time) === requestedStartMinutes,
   )
 
-  if (requestedSlot) return { ok: true }
+  if (requestedSlot) {
+    return { ok: true, requiredMinutes, slot: requestedSlot }
+  }
 
   return {
     ok: false,
@@ -1892,10 +2228,80 @@ function addressArgs(args: Record<string, unknown>): RebeccaAddressArgs {
   }
 }
 
+function leadSourceArgs(args: Record<string, unknown>): LeadSourceArgs {
+  const lead = {
+    ...asRecord(args.lead_capture),
+    ...asRecord(args.lead_attribution),
+  }
+  const howHeard =
+    stringArg(lead, 'lead_source') ||
+    stringArg(lead, 'how_heard') ||
+    stringArg(lead, 'how_did_you_hear') ||
+    stringArg(args, 'lead_source') ||
+    stringArg(args, 'how_heard') ||
+    stringArg(args, 'how_did_you_hear')
+  const referrerName =
+    stringArg(lead, 'referrer_name') ||
+    stringArg(lead, 'referral_name') ||
+    stringArg(lead, 'referred_by') ||
+    stringArg(args, 'referrer_name') ||
+    stringArg(args, 'referral_name') ||
+    stringArg(args, 'referred_by')
+  const referrerType =
+    stringArg(lead, 'referrer_type') ||
+    stringArg(args, 'referrer_type') ||
+    (/realtor|real estate/i.test(`${howHeard} ${referrerName}`)
+      ? 'Realtor'
+      : '')
+  const leadNotes =
+    stringArg(lead, 'lead_notes') ||
+    stringArg(lead, 'notes') ||
+    stringArg(args, 'lead_notes') ||
+    stringArg(args, 'notes')
+  const isReferral = /referr|realtor|real estate/i.test(howHeard)
+  const leadSource =
+    isReferral && referrerName ? `Referral - ${referrerName}` : howHeard
+
+  return {
+    lead_source: leadSource.trim(),
+    referrer_name: referrerName.trim() || null,
+    referrer_type: referrerType.trim() || null,
+    lead_notes: leadNotes.trim() || null,
+  }
+}
+
+function leadSourceMissingReason(leadSource: LeadSourceArgs): string {
+  const value = leadSource.lead_source.trim().toLowerCase()
+  if (!value || value === 'retell_rabecca') return 'lead source'
+  if (/^rabecca\b|voice ai|retell/.test(value)) return 'real lead source'
+  if (/^referr/.test(value) && !leadSource.referrer_name) {
+    return 'referrer name'
+  }
+  return ''
+}
+
 async function createBooking(
   args: Record<string, unknown>,
   context: RebeccaToolContext,
 ): Promise<RetellFunctionResponse> {
+  const address = addressArgs(args)
+  const serviceAreaCheck = address.zip_code
+    ? checkServiceArea(address.zip_code)
+    : null
+  if (serviceAreaCheck && !serviceAreaCheck.allowed) {
+    return response(false, serviceAreaCheck.message)
+  }
+
+  const leadSource = leadSourceArgs(args)
+  const missingLeadSource = leadSourceMissingReason(leadSource)
+  if (missingLeadSource) {
+    return response(false, 'Booking was NOT created: missing lead source.', {
+      missing_fields: [missingLeadSource],
+      caller_script:
+        'Before I can book that, how did you hear about Sasquatch? If it was a referral, who referred you?',
+    })
+  }
+
   const lineItems = await resolveBookingLineItems(
     context.supabase,
     args.line_items,
@@ -1909,6 +2315,7 @@ async function createBooking(
   if (!normalizedDate.ok) return response(false, normalizedDate.message)
   const appointmentDate = normalizedDate.date
   const startTime = stringArg(args, 'start_time')
+  const slotToken = stringArg(args, 'slot_token')
   const slotCheck = await validateRequestedSlotAvailable(context.supabase, {
     appointmentDate,
     startTime,
@@ -1921,18 +2328,44 @@ async function createBooking(
       available_slots: slotCheck.slots,
     })
   }
+  if (!slotToken) {
+    return response(false, 'Booking was NOT created: slot_token is required.', {
+      appointment_date: appointmentDate,
+      requested_start_time: startTime,
+      caller_script:
+        'I need to check live calendar availability again before booking. Call get_calendar_slots and use the returned slot_token.',
+    })
+  }
+  const slotTokenCheck = verifySlotToken(slotToken, {
+    date: appointmentDate,
+    startTime: slotCheck.slot.start_time,
+    endTime: slotCheck.slot.end_time,
+    requiredMinutes: slotCheck.requiredMinutes,
+    ownerKey: context.callId || context.callerPhone || 'retell_rabecca',
+  })
+  if (!slotTokenCheck.ok) {
+    return response(false, `Booking was NOT created: ${slotTokenCheck.error}`, {
+      appointment_date: appointmentDate,
+      requested_start_time: startTime,
+      caller_script:
+        'I need to check live calendar availability again before booking. Call get_calendar_slots and use the returned slot_token.',
+    })
+  }
 
   const result = await createAiStyleBooking({
     supabase: context.supabase,
     customer: customerArgs(args),
-    address: addressArgs(args),
+    address,
     appointment_date: appointmentDate,
     start_time: startTime,
     line_items: lineItems,
     booking_mode: 'direct',
     booking_channel: REBECCA_RETELL_CONFIG.bookingChannel,
     source_label: REBECCA_RETELL_CONFIG.sourceLabel,
-    lead_source: 'retell_rabecca',
+    lead_source: leadSource.lead_source,
+    referrer_name: leadSource.referrer_name,
+    referrer_type: leadSource.referrer_type,
+    lead_notes: leadSource.lead_notes,
     actor_label: REBECCA_RETELL_CONFIG.actorLabel,
     admin_heading: REBECCA_RETELL_CONFIG.adminHeading,
   })
@@ -1950,20 +2383,91 @@ async function createEstimate(
   args: Record<string, unknown>,
   context: RebeccaToolContext,
 ): Promise<RetellFunctionResponse> {
+  const leadSource = leadSourceArgs(args)
+  const missingLeadSource = leadSourceMissingReason(leadSource)
+  if (missingLeadSource) {
+    return response(false, 'Estimate was NOT created: missing lead source.', {
+      missing_fields: [missingLeadSource],
+      caller_script:
+        'Before I can schedule that estimate, how did you hear about Sasquatch? If it was a referral, who referred you?',
+    })
+  }
+
   const requestedAppointmentDate = stringArg(args, 'appointment_date')
   const normalizedDate = normalizeRequestedDate(requestedAppointmentDate)
   if (!normalizedDate.ok) return response(false, normalizedDate.message)
+  const appointmentDate = normalizedDate.date
+  const startTime = stringArg(args, 'start_time')
+  const slotToken = stringArg(args, 'slot_token')
+  const visitDurationMinutes = numberArg(args, 'visit_duration_minutes') || 60
+  const requiredMinutes = applyAppointmentBuffer(visitDurationMinutes)
+  const bundle = await loadAvailabilityBundle(context.supabase, appointmentDate)
+  const slots = getAvailableSlots({
+    date: appointmentDate,
+    requiredMinutes,
+    templates: bundle.templates,
+    overrides: bundle.overrides,
+    appointments: bundle.appointments,
+    minStartMinutes: minStartMinutesForDate(appointmentDate),
+    maxResults: 8,
+  })
+  const requestedSlot = slots.find(
+    (slot) => timeToMinutes(slot.start_time) === timeToMinutes(startTime),
+  )
+  if (!requestedSlot) {
+    return response(
+      false,
+      'Estimate was NOT created: that appointment time is no longer available.',
+      {
+        appointment_date: appointmentDate,
+        requested_start_time: startTime,
+        available_slots: slots,
+      },
+    )
+  }
+  if (!slotToken) {
+    return response(
+      false,
+      'Estimate was NOT created: slot_token is required.',
+      {
+        appointment_date: appointmentDate,
+        requested_start_time: startTime,
+        caller_script:
+          'I need to check live calendar availability again before booking. Call get_calendar_slots and use the returned slot_token.',
+      },
+    )
+  }
+  const slotTokenCheck = verifySlotToken(slotToken, {
+    date: appointmentDate,
+    startTime: requestedSlot.start_time,
+    endTime: requestedSlot.end_time,
+    requiredMinutes,
+    ownerKey: context.callId || context.callerPhone || 'retell_rabecca',
+  })
+  if (!slotTokenCheck.ok) {
+    return response(
+      false,
+      `Estimate was NOT created: ${slotTokenCheck.error}`,
+      {
+        appointment_date: appointmentDate,
+        requested_start_time: startTime,
+        caller_script:
+          'I need to check live calendar availability again before booking. Call get_calendar_slots and use the returned slot_token.',
+      },
+    )
+  }
 
   const result = await createAiStyleEstimate({
     supabase: context.supabase,
     customer: customerArgs(args),
     address: addressArgs(args),
-    appointment_date: normalizedDate.date,
-    start_time: stringArg(args, 'start_time'),
-    visit_duration_minutes: numberArg(args, 'visit_duration_minutes') || 60,
+    appointment_date: appointmentDate,
+    start_time: startTime,
+    visit_duration_minutes: visitDurationMinutes,
     job_description: stringArg(args, 'job_description') || null,
     booking_channel: REBECCA_RETELL_CONFIG.bookingChannel,
     source_label: REBECCA_RETELL_CONFIG.sourceLabel,
+    lead_source: leadSource.lead_source,
     actor_label: REBECCA_RETELL_CONFIG.actorLabel,
     admin_heading: REBECCA_RETELL_CONFIG.estimateAdminHeading,
   })
@@ -1981,6 +2485,7 @@ async function scheduleReclean(
   if (!normalizedDate.ok) return response(false, normalizedDate.message)
   const appointmentDate = normalizedDate.date
   const startTime = stringArg(args, 'start_time')
+  const slotToken = stringArg(args, 'slot_token')
   const issueSummary =
     stringArg(args, 'issue_summary') ||
     stringArg(args, 'complaint_summary') ||
@@ -1995,6 +2500,12 @@ async function scheduleReclean(
   }
   if (!/^\d{1,2}:\d{2}(?::\d{2})?$/.test(startTime)) {
     return response(false, 'start_time is required in HH:MM format.')
+  }
+  if (!slotToken) {
+    return response(
+      false,
+      'slot_token is required. Call get_calendar_slots before scheduling a reclean.',
+    )
   }
 
   const recentAppointments = await findRecentCompletedAppointments(
@@ -2065,6 +2576,26 @@ async function scheduleReclean(
         requested_start_time: startTime,
         available_slots: alternateSlots,
         caller_script: callerScript,
+      },
+    )
+  }
+  const slotTokenCheck = verifySlotToken(slotToken, {
+    date: appointmentDate,
+    startTime: requestedSlot.start_time,
+    endTime: requestedSlot.end_time,
+    requiredMinutes,
+    ownerKey: context.callId || context.callerPhone || 'retell_rabecca',
+  })
+  if (!slotTokenCheck.ok) {
+    return response(
+      false,
+      `Reclean was NOT scheduled: ${slotTokenCheck.error}`,
+      {
+        appointment_date: appointmentDate,
+        requested_start_time: startTime,
+        available_slots: slots,
+        caller_script:
+          'I need to check live calendar availability again before scheduling. Call get_calendar_slots and use the returned slot_token.',
       },
     )
   }
@@ -2328,6 +2859,8 @@ export async function executeRebeccaRetellTool(
       return getServiceCatalog(args, context)
     case 'get_calendar_slots':
       return getCalendarSlots(args, context)
+    case 'lookup_customer_profile':
+      return lookupCustomerProfile(args, context)
     case 'create_booking':
       return createBooking(args, context)
     case 'create_estimate':

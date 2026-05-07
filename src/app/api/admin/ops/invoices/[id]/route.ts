@@ -9,6 +9,7 @@ import {
   syncAppointmentToQuickBooks,
 } from '@/lib/quickbooks-api'
 import { generateInvoicePDF } from '@/lib/ops/pdf/generate'
+import { ensureInvoiceQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
 
 const INVOICE_SELECT = `
   *,
@@ -430,6 +431,7 @@ export async function PATCH(
     }
 
     if (current.appointment_id && !invoice.quickbooks_invoice_id) {
+      await ensureInvoiceQuickBooksSyncJob(supabase, id)
       void syncAppointmentToQuickBooks(current.appointment_id).catch((qbErr) =>
         console.error('[ops/invoices/:id][PATCH] QB sync:', qbErr),
       )

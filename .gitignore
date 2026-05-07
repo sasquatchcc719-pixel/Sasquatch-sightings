@@ -44,3 +44,4 @@ yarn-error.log*
 
 # Retell config exports and local bridge artifacts
 .retell/
+.firecrawl/

@@ -3,6 +3,7 @@ export type RetellFunctionName =
   | 'book_prepared_slot'
   | 'get_service_catalog'
   | 'get_calendar_slots'
+  | 'lookup_customer_profile'
   | 'create_booking'
   | 'create_estimate'
   | 'list_caller_appointments'

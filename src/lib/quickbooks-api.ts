@@ -104,6 +104,71 @@ export async function createQBCustomer(params: {
   return data.Customer.Id
 }
 
+type QBInvoiceMatch = {
+  id: string
+  docNumber: string | null
+  customerId: string | null
+  customerName: string | null
+  txnDate: string | null
+  total: number | null
+}
+
+function qbEscape(value: string): string {
+  return value.replace(/'/g, "\\'")
+}
+
+async function findQBInvoiceByDocNumber(
+  realmId: string,
+  accessToken: string,
+  docNumber: string,
+): Promise<QBInvoiceMatch | null> {
+  const query = encodeURIComponent(
+    `SELECT * FROM Invoice WHERE DocNumber = '${qbEscape(docNumber)}'`,
+  )
+  const res = await qbFetch(
+    realmId,
+    accessToken,
+    `/query?query=${query}&minorversion=65`,
+  )
+  if (!res.ok) return null
+
+  const data = await res.json()
+  const invoice = data?.QueryResponse?.Invoice?.[0]
+  if (!invoice?.Id) return null
+
+  return {
+    id: String(invoice.Id),
+    docNumber: invoice.DocNumber ? String(invoice.DocNumber) : null,
+    customerId: invoice.CustomerRef?.value
+      ? String(invoice.CustomerRef.value)
+      : null,
+    customerName: invoice.CustomerRef?.name
+      ? String(invoice.CustomerRef.name)
+      : null,
+    txnDate: invoice.TxnDate ? String(invoice.TxnDate) : null,
+    total:
+      invoice.TotalAmt !== undefined && invoice.TotalAmt !== null
+        ? Number(invoice.TotalAmt)
+        : null,
+  }
+}
+
+function centsMatch(left: number | null, right: number): boolean {
+  if (left === null || !Number.isFinite(left)) return false
+  return Math.round(left * 100) === Math.round(right * 100)
+}
+
+function sumInvoiceTotal(
+  lineItems: Array<{ line_total: number }>,
+  discountAmount?: number,
+): number {
+  const subtotal = lineItems.reduce(
+    (sum, item) => sum + Number(item.line_total || 0),
+    0,
+  )
+  return Number((subtotal - Number(discountAmount || 0)).toFixed(2))
+}
+
 export async function voidQBInvoice(qbInvoiceId: string): Promise<void> {
   const auth = await getValidQBAccessToken()
   if (!auth) throw new Error('QuickBooks not connected')
@@ -208,6 +273,32 @@ export async function createQBInvoice(params: {
   const auth = await getValidQBAccessToken()
   if (!auth) throw new Error('QuickBooks not connected')
 
+  const docNumber =
+    params.docNumber !== undefined && params.docNumber !== null
+      ? String(params.docNumber).trim()
+      : ''
+  const expectedTotal = sumInvoiceTotal(params.lineItems, params.discountAmount)
+
+  if (docNumber) {
+    const existing = await findQBInvoiceByDocNumber(
+      auth.realmId,
+      auth.accessToken,
+      docNumber,
+    )
+    if (existing) {
+      const sameInvoice =
+        existing.customerId === params.qbCustomerId &&
+        existing.txnDate === params.serviceDate &&
+        centsMatch(existing.total, expectedTotal)
+
+      if (sameInvoice) return existing.id
+
+      throw new Error(
+        `QB invoice DocNumber collision: ${docNumber} already belongs to ${existing.customerName || existing.customerId || 'another customer'} (${existing.txnDate || 'unknown date'}, $${existing.total ?? 'unknown'})`,
+      )
+    }
+  }
+
   const itemRefCache = new Map<string, { value: string; name: string } | null>()
   const lines: Record<string, unknown>[] = await Promise.all(
     params.lineItems.map(async (item) => {
@@ -240,11 +331,10 @@ export async function createQBInvoice(params: {
   if (params.discountAmount && params.discountAmount > 0) {
     lines.push({
       Amount: params.discountAmount,
-      DetailType: 'DiscountLineDetail' as 'SalesItemLineDetail',
+      DetailType: 'DiscountLineDetail',
       Description: 'Discount',
-      SalesItemLineDetail: {
-        Qty: 1,
-        UnitPrice: params.discountAmount,
+      DiscountLineDetail: {
+        PercentBased: false,
       },
     })
   }
@@ -255,9 +345,8 @@ export async function createQBInvoice(params: {
     Line: lines,
   }
 
-  if (params.docNumber !== undefined && params.docNumber !== null) {
-    const doc = String(params.docNumber).trim()
-    if (doc) body.DocNumber = doc
+  if (docNumber) {
+    body.DocNumber = docNumber
   }
 
   const res = await qbFetch(
@@ -732,7 +821,11 @@ export async function syncAppointmentToQuickBooks(appointmentId: string) {
 
         await supabase
           .from('ops_invoices')
-          .update({ quickbooks_invoice_id: qbInvoiceId, sync_status: 'synced' })
+          .update({
+            quickbooks_invoice_id: qbInvoiceId,
+            sync_status: 'synced',
+            last_synced_at: new Date().toISOString(),
+          })
           .eq('id', invoice.id)
 
         // Mark invoice queue row synced
@@ -904,6 +997,7 @@ export async function resyncInvoiceToQuickBooks(invoiceId: string) {
     .update({
       quickbooks_invoice_id: qbInvoiceId,
       sync_status: 'synced',
+      last_synced_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
     .eq('id', invoiceId)

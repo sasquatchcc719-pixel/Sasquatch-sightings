@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 import {
   applyAppointmentBuffer,
+  calendarEventsToAppointmentWindows,
   getAvailableSlots,
   timeToMinutes,
 } from '@/lib/ops/availability'
@@ -64,7 +65,7 @@ export async function GET(request: NextRequest) {
     )
 
     const supabase = createAdminClient()
-    const [templatesResult, overridesResult, appointmentsResult] =
+    const [templatesResult, overridesResult, appointmentsResult, eventsResult] =
       await Promise.all([
         supabase
           .from('availability_templates')
@@ -78,6 +79,13 @@ export async function GET(request: NextRequest) {
           .from('ops_appointments')
           .select('appointment_date, start_time, end_time, status')
           .eq('appointment_date', date),
+        supabase
+          .from('ops_calendar_events')
+          .select(
+            'event_kind, start_date, end_date, start_time, end_time, is_all_day',
+          )
+          .lte('start_date', date)
+          .gte('end_date', date),
       ])
 
     const slots = getAvailableSlots({
@@ -85,7 +93,10 @@ export async function GET(request: NextRequest) {
       requiredMinutes,
       templates: templatesResult.data || [],
       overrides: overridesResult.data || [],
-      appointments: appointmentsResult.data || [],
+      appointments: [
+        ...(appointmentsResult.data || []),
+        ...calendarEventsToAppointmentWindows(date, eventsResult.data || []),
+      ],
       minStartMinutes,
       maxResults: 8,
     })

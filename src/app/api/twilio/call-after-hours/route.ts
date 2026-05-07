@@ -190,10 +190,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Base URL for callbacks (this deployment; avoid hardcoded git branch URL)
-    const url =
-      process.env.VERCEL_URL ||
+    const url = (
       process.env.NEXT_PUBLIC_APP_URL ||
+      process.env.VERCEL_URL ||
       'sightings.sasquatchcarpet.com'
+    ).trim()
     const baseUrl = url.startsWith('http') ? url : `https://${url}`
     const voicemailUrl = `${baseUrl}/api/twilio/voicemail`
 

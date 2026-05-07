@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCallRoutingConfig } from '@/lib/twilio/call-routing-config'
 
 function getBaseUrl(): string {
-  const url =
-    process.env.VERCEL_URL ||
+  const url = (
     process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.VERCEL_URL ||
     'sightings.sasquatchcarpet.com'
+  ).trim()
   return url.startsWith('http') ? url : `https://${url}`
 }
 
@@ -20,19 +21,28 @@ export async function POST(request: NextRequest) {
 
     const baseUrl = getBaseUrl()
     const afterHoursUrl = `${baseUrl}/api/twilio/call-after-hours` // Voicemail
+    const rabeccaFallbackUrl = `${baseUrl}/api/twilio/rabecca-fallback`
 
     let twimlResponse
 
     if (digits === '1') {
-      // Same destination as 2: primary PSTN + softphone (IVR is anti-bot; different timeout knob only)
-      console.log(`[IVR Menu] Option 1 -> Dialing primary + browser`)
-      twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
+      if (routingConfig.rabeccaSipUri) {
+        console.log(`[IVR Menu] Option 1 -> Dialing Rabecca`)
+        twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial timeout="${routingConfig.ivrScheduleTimeoutSeconds}" action="${afterHoursUrl}" callerId="${callerPhone}" answerOnBridge="true">
-    <Number>${routingConfig.primaryForwardNumber}</Number>
-    <Client>admin_charles</Client>
+  <Dial timeout="${routingConfig.ivrScheduleTimeoutSeconds}" action="${rabeccaFallbackUrl}" callerId="${callerPhone}" answerOnBridge="true">
+    <Sip>${routingConfig.rabeccaSipUri}</Sip>
   </Dial>
 </Response>`
+      } else {
+        console.warn(
+          '[IVR Menu] Option 1 selected but REBECCA_RETELL_SIP_URI is not configured; falling back to human ring.',
+        )
+        twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Redirect method="POST">${rabeccaFallbackUrl}</Redirect>
+</Response>`
+      }
     } else if (digits === '2') {
       console.log(`[IVR Menu] Option 2 -> Dialing primary + browser`)
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>

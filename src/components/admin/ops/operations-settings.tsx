@@ -259,8 +259,8 @@ export function OperationsSettings() {
       <Card className="border-border/60 bg-card/80 p-6 shadow-sm backdrop-blur">
         <h3 className="text-lg font-semibold">AI Agent Booking API</h3>
         <p className="text-muted-foreground mt-1 text-sm">
-          Allow AI assistants like ChatGPT, Gemini, and Grok to check
-          availability, view pricing, and book jobs on your behalf.
+          Allow AI assistants like ChatGPT, Gemini, Claude, Grok, and Perplexity
+          to check availability, view pricing, and book jobs on your behalf.
         </p>
         <div className="mt-4">
           <AgentApiSettings />

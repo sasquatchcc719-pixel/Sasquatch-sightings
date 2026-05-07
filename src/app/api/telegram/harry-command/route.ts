@@ -152,8 +152,29 @@ type TelegramUpdate = {
   }
 }
 
+function normalizePayloadForHash(payload: unknown): unknown {
+  if (Array.isArray(payload)) {
+    return payload.map(normalizePayloadForHash)
+  }
+
+  if (payload && typeof payload === 'object') {
+    return Object.keys(payload as Record<string, unknown>)
+      .sort()
+      .reduce<Record<string, unknown>>((normalized, key) => {
+        normalized[key] = normalizePayloadForHash(
+          (payload as Record<string, unknown>)[key],
+        )
+        return normalized
+      }, {})
+  }
+
+  return payload
+}
+
 function hashPayload(payload: unknown): string {
-  return createHash('sha256').update(JSON.stringify(payload)).digest('hex')
+  return createHash('sha256')
+    .update(JSON.stringify(normalizePayloadForHash(payload)))
+    .digest('hex')
 }
 
 function getAllowedTelegramUserIds(): Set<string> {

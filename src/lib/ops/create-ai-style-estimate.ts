@@ -21,8 +21,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   applyAppointmentBuffer,
-  getAvailableSlots,
+  calendarEventsToAppointmentWindows,
   DEFAULT_FALLBACK_AVAILABILITY_TEMPLATES,
+  getAvailableSlots,
   type ExistingAppointmentWindow,
 } from '@/lib/ops/availability'
 import { sendAdminSMS } from '@/lib/twilio'
@@ -54,6 +55,8 @@ export type CreateAiStyleEstimateInput = {
   booking_channel: string
   /** Shown on the appointment row + admin notifications. */
   source_label: string
+  /** ops_appointments.lead_source */
+  lead_source?: string | null
   /** Status-event + admin heading actor. */
   actor_label: string
   admin_heading: string
@@ -86,7 +89,7 @@ async function loadAvailabilityBundle(
   overrides: Parameters<typeof getAvailableSlots>[0]['overrides']
   appointments: ExistingAppointmentWindow[]
 }> {
-  const [templatesResult, overridesResult, appointmentsResult] =
+  const [templatesResult, overridesResult, appointmentsResult, eventsResult] =
     await Promise.all([
       supabase.from('availability_templates').select('*').eq('is_active', true),
       supabase
@@ -97,6 +100,13 @@ async function loadAvailabilityBundle(
         .from('ops_appointments')
         .select('appointment_date, start_time, end_time, status')
         .eq('appointment_date', date),
+      supabase
+        .from('ops_calendar_events')
+        .select(
+          'event_kind, start_date, end_date, start_time, end_time, is_all_day',
+        )
+        .lte('start_date', date)
+        .gte('end_date', date),
     ])
 
   let templates = templatesResult.data || []
@@ -107,8 +117,10 @@ async function loadAvailabilityBundle(
   return {
     templates,
     overrides: overridesResult.data || [],
-    appointments: (appointmentsResult.data ||
-      []) as ExistingAppointmentWindow[],
+    appointments: [
+      ...((appointmentsResult.data || []) as ExistingAppointmentWindow[]),
+      ...calendarEventsToAppointmentWindows(date, eventsResult.data || []),
+    ],
   }
 }
 
@@ -142,6 +154,7 @@ export async function createAiStyleEstimate(
     job_description: jobDescription,
     booking_channel: bookingChannel,
     source_label: sourceLabel,
+    lead_source: leadSourceRaw = null,
     actor_label: actorLabel,
     admin_heading: adminHeading,
   } = input
@@ -156,6 +169,7 @@ export async function createAiStyleEstimate(
   const state = address.state.trim() || 'CO'
   const zipCode = address.zip_code.trim()
   const startTime = normClock5(startTimeRaw)
+  const leadSource = (leadSourceRaw || '').trim() || null
 
   if (!firstName || !lastName || !email || !phone) {
     return {
@@ -295,6 +309,7 @@ export async function createAiStyleEstimate(
       payment_status: 'unpaid',
       booking_channel: bookingChannel,
       source: sourceLabel,
+      lead_source: leadSource,
       kind: 'estimate',
       estimate_status: 'draft',
       quickbooks_sync_status: 'held',
@@ -331,6 +346,7 @@ export async function createAiStyleEstimate(
     `${appointmentDate} at ${startTime}`,
     `Contact: ${phone} · ${email}`,
     `Source: ${sourceLabel}`,
+    leadSource ? `Lead source: ${leadSource}` : '',
   ]
     .filter(Boolean)
     .join('\n')

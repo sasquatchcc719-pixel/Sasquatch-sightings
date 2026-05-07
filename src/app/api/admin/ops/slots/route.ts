@@ -3,6 +3,7 @@ import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import {
   applyAppointmentBuffer,
+  calendarEventsToAppointmentWindows,
   calculateLineItemDurationMinutes,
   getAvailableSlots,
 } from '@/lib/ops/availability'
@@ -76,7 +77,7 @@ export async function GET(request: NextRequest) {
       requiredMinutesWithBuffer = applyAppointmentBuffer(requiredMinutes)
     }
 
-    const [templatesResult, overridesResult, appointmentsResult] =
+    const [templatesResult, overridesResult, appointmentsResult, eventsResult] =
       await Promise.all([
         supabase
           .from('availability_templates')
@@ -90,18 +91,29 @@ export async function GET(request: NextRequest) {
           .from('ops_appointments')
           .select('appointment_date, start_time, end_time, status')
           .eq('appointment_date', date),
+        supabase
+          .from('ops_calendar_events')
+          .select(
+            'event_kind, start_date, end_date, start_time, end_time, is_all_day',
+          )
+          .lte('start_date', date)
+          .gte('end_date', date),
       ])
 
     if (templatesResult.error) throw templatesResult.error
     if (overridesResult.error) throw overridesResult.error
     if (appointmentsResult.error) throw appointmentsResult.error
+    if (eventsResult.error) throw eventsResult.error
 
     const slots = getAvailableSlots({
       date,
       requiredMinutes: requiredMinutesWithBuffer,
       templates: templatesResult.data || [],
       overrides: overridesResult.data || [],
-      appointments: appointmentsResult.data || [],
+      appointments: [
+        ...(appointmentsResult.data || []),
+        ...calendarEventsToAppointmentWindows(date, eventsResult.data || []),
+      ],
       maxResults: 8,
     })
 

@@ -222,7 +222,7 @@ export function AgentApiSettings() {
         </div>
         <p className="text-xs text-white/40">
           {settings?.ai_agent_api_enabled
-            ? 'AI agents (ChatGPT, Gemini, Grok) can view services, check availability, and book jobs.'
+            ? 'AI agents (ChatGPT, Gemini, Claude, Grok, Perplexity) can view services, check availability, and book jobs.'
             : 'API is off. AI agents cannot access your booking system.'}
         </p>
       </div>
@@ -355,7 +355,7 @@ export function AgentApiSettings() {
           <div className="space-y-2 rounded-md border border-white/10 bg-white/5 p-3">
             <div>
               <Label className="text-xs text-white/50">
-                Label (e.g. ChatGPT, Gemini)
+                Label (e.g. ChatGPT, Gemini, Claude, Grok, Perplexity)
               </Label>
               <Input
                 value={newKeyLabel}

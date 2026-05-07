@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type OpenAI from 'openai'
 import {
   applyAppointmentBuffer,
+  calendarEventsToAppointmentWindows,
   calculateLineItemDurationMinutes,
   DEFAULT_FALLBACK_AVAILABILITY_TEMPLATES,
   getAvailableSlots,
@@ -9,6 +10,7 @@ import {
 } from '@/lib/ops/availability'
 import { createAiStyleBooking } from '@/lib/ops/create-ai-style-booking'
 import { createAiStyleEstimate } from '@/lib/ops/create-ai-style-estimate'
+import { createSlotToken, verifySlotToken } from '@/lib/ops/slot-token'
 import { resyncInvoiceToQuickBooks } from '@/lib/quickbooks-api'
 
 /** Today's date in Mountain Time (YYYY-MM-DD). Avoids UTC rollover at 6 PM MDT. */
@@ -105,7 +107,7 @@ async function loadAvailabilityBundle(
   overrides: Parameters<typeof getAvailableSlots>[0]['overrides']
   appointments: ExistingAppointmentWindow[]
 }> {
-  const [templatesResult, overridesResult, appointmentsResult] =
+  const [templatesResult, overridesResult, appointmentsResult, eventsResult] =
     await Promise.all([
       supabase.from('availability_templates').select('*').eq('is_active', true),
       supabase
@@ -116,6 +118,13 @@ async function loadAvailabilityBundle(
         .from('ops_appointments')
         .select('id, appointment_date, start_time, end_time, status')
         .eq('appointment_date', date),
+      supabase
+        .from('ops_calendar_events')
+        .select(
+          'event_kind, start_date, end_date, start_time, end_time, is_all_day',
+        )
+        .lte('start_date', date)
+        .gte('end_date', date),
     ])
 
   // Self-heal: if no active templates exist, re-seed defaults so booking
@@ -149,14 +158,15 @@ async function loadAvailabilityBundle(
   return {
     templates,
     overrides: overridesResult.data || [],
-    appointments: rows.map(
-      ({ appointment_date, start_time, end_time, status }) => ({
+    appointments: [
+      ...rows.map(({ appointment_date, start_time, end_time, status }) => ({
         appointment_date,
         start_time,
         end_time,
         status,
-      }),
-    ),
+      })),
+      ...calendarEventsToAppointmentWindows(date, eventsResult.data || []),
+    ],
   }
 }
 
@@ -321,8 +331,18 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
           appointment_id: { type: 'string' },
           new_appointment_date: { type: 'string', description: 'YYYY-MM-DD' },
           new_start_time: { type: 'string', description: 'HH:MM (24h)' },
+          slot_token: {
+            type: 'string',
+            description:
+              'Required. Use the slot_token returned by get_calendar_slots for this exact date and time.',
+          },
         },
-        required: ['appointment_id', 'new_appointment_date', 'new_start_time'],
+        required: [
+          'appointment_id',
+          'new_appointment_date',
+          'new_start_time',
+          'slot_token',
+        ],
         additionalProperties: false,
       },
     },
@@ -374,7 +394,7 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
           lead_source: {
             type: 'string',
             description:
-              'How the customer heard about Sasquatch Carpet Cleaning. Always required — ask before booking if not already known. Examples: Google, Nextdoor, Facebook, Yelp, Saw truck/vehicle wrap, Word of mouth / Referral, Repeat customer, Google LSA, NFC Card, Other.',
+              'How the customer heard about Sasquatch Carpet Cleaning. Always required — ask before booking if not already known. Examples: Google, Nextdoor, Facebook, Yelp, ChatGPT, Gemini, Claude, Grok, Perplexity, Saw truck/vehicle wrap, Word of mouth / Referral, Repeat customer, Google LSA, NFC Card, Other.',
           },
           street_1: { type: 'string' },
           city: { type: 'string' },
@@ -382,6 +402,11 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
           zip_code: { type: 'string' },
           appointment_date: { type: 'string' },
           start_time: { type: 'string' },
+          slot_token: {
+            type: 'string',
+            description:
+              'Required. Use the slot_token returned by get_calendar_slots for this exact date and time.',
+          },
           line_items: {
             type: 'array',
             items: {
@@ -404,6 +429,7 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
           'zip_code',
           'appointment_date',
           'start_time',
+          'slot_token',
           'line_items',
         ],
         additionalProperties: false,
@@ -441,6 +467,11 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
           zip_code: { type: 'string' },
           appointment_date: { type: 'string', description: 'YYYY-MM-DD' },
           start_time: { type: 'string', description: 'HH:MM (24h)' },
+          slot_token: {
+            type: 'string',
+            description:
+              'Required. Use the slot_token returned by get_calendar_slots for this exact commercial walkthrough slot.',
+          },
           job_description: {
             type: 'string',
             description:
@@ -457,6 +488,7 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
           'zip_code',
           'appointment_date',
           'start_time',
+          'slot_token',
         ],
         additionalProperties: false,
       },
@@ -635,6 +667,13 @@ export async function executeHarrySmsTool(
           slots: slots.map((s) => ({
             start_time: s.start_time.slice(0, 5),
             end_time: s.end_time.slice(0, 5),
+            slot_token: createSlotToken({
+              date,
+              startTime: s.start_time,
+              endTime: s.end_time,
+              requiredMinutes,
+              ownerKey: ctx.customerPhoneE164,
+            }),
           })),
         })
       }
@@ -719,7 +758,8 @@ export async function executeHarrySmsTool(
         const appointmentId = String(args.appointment_id || '').trim()
         const newDate = String(args.new_appointment_date || '').trim()
         const newStartRaw = String(args.new_start_time || '').trim()
-        if (!appointmentId || !newDate || !newStartRaw) {
+        const slotToken = String(args.slot_token || '').trim()
+        if (!appointmentId || !newDate || !newStartRaw || !slotToken) {
           return JSON.stringify({ error: 'Missing reschedule fields' })
         }
         if (!/^\d{4}-\d{2}-\d{2}$/.test(newDate)) {
@@ -779,6 +819,18 @@ export async function executeHarrySmsTool(
             suggested_slots: slots
               .slice(0, 8)
               .map((s) => s.start_time.slice(0, 5)),
+          })
+        }
+        const slotTokenCheck = verifySlotToken(slotToken, {
+          date: newDate,
+          startTime: match.start_time,
+          endTime: match.end_time,
+          requiredMinutes: totalMinutesWithBuffer,
+          ownerKey: ctx.customerPhoneE164,
+        })
+        if (!slotTokenCheck.ok) {
+          return JSON.stringify({
+            error: `${slotTokenCheck.error} You must call get_calendar_slots and use the returned slot_token before rescheduling.`,
           })
         }
 
@@ -1007,6 +1059,7 @@ export async function executeHarrySmsTool(
         const zipCode = String(args.zip_code || '').trim()
         const appointmentDate = String(args.appointment_date || '').trim()
         const startTime = String(args.start_time || '').trim()
+        const slotToken = String(args.slot_token || '').trim()
         const lineItems = Array.isArray(args.line_items) ? args.line_items : []
 
         // For Google LSA relay conversations, Harry must collect the real customer phone
@@ -1052,9 +1105,9 @@ export async function executeHarrySmsTool(
             error: 'street_1, city, and zip_code are required',
           })
         }
-        if (!appointmentDate || !startTime) {
+        if (!appointmentDate || !startTime || !slotToken) {
           return JSON.stringify({
-            error: 'appointment_date and start_time are required',
+            error: 'appointment_date, start_time, and slot_token are required',
           })
         }
         if (!lineItems.length) {
@@ -1149,13 +1202,25 @@ export async function executeHarrySmsTool(
         })
 
         const wantStart = normClock5(startTime)
-        const slotOk = slots.some((s) => normClock5(s.start_time) === wantStart)
-        if (!slotOk) {
+        const match = slots.find((s) => normClock5(s.start_time) === wantStart)
+        if (!match) {
           return JSON.stringify({
             error: `That start time is not available on ${appointmentDate}. Use get_calendar_slots with duration matching the services first.`,
             suggested_slots: slots
               .slice(0, 8)
               .map((s) => s.start_time.slice(0, 5)),
+          })
+        }
+        const slotTokenCheck = verifySlotToken(slotToken, {
+          date: appointmentDate,
+          startTime: match.start_time,
+          endTime: match.end_time,
+          requiredMinutes,
+          ownerKey: ctx.customerPhoneE164,
+        })
+        if (!slotTokenCheck.ok) {
+          return JSON.stringify({
+            error: `${slotTokenCheck.error} You must call get_calendar_slots and use the returned slot_token before booking.`,
           })
         }
 
@@ -1230,6 +1295,7 @@ export async function executeHarrySmsTool(
         const zipCode = String(args.zip_code || '').trim()
         const appointmentDate = String(args.appointment_date || '').trim()
         const startTime = String(args.start_time || '').trim()
+        const slotToken = String(args.slot_token || '').trim()
         const jobDescription = String(args.job_description || '').trim() || null
 
         // For LSA relay conversations Harry must collect the real customer
@@ -1258,13 +1324,50 @@ export async function executeHarrySmsTool(
             error: 'street_1, city, and zip_code are required',
           })
         }
-        if (!appointmentDate || !startTime) {
+        if (!appointmentDate || !startTime || !slotToken) {
           return JSON.stringify({
-            error: 'appointment_date and start_time are required',
+            error: 'appointment_date, start_time, and slot_token are required',
           })
         }
 
         const isLsa = ctx.isLsaRelay === true
+        const estimateBundle = await loadAvailabilityBundle(
+          supabase,
+          appointmentDate,
+        )
+        const estimateRequiredMinutes = applyAppointmentBuffer(60)
+        const estimateSlots = getAvailableSlots({
+          date: appointmentDate,
+          requiredMinutes: estimateRequiredMinutes,
+          templates: estimateBundle.templates,
+          overrides: estimateBundle.overrides,
+          appointments: estimateBundle.appointments,
+          maxResults: 48,
+        })
+        const estimateMatch = estimateSlots.find(
+          (s) => normClock5(s.start_time) === normClock5(startTime),
+        )
+        if (!estimateMatch) {
+          return JSON.stringify({
+            error: `That start time is not available on ${appointmentDate}. Call get_calendar_slots with duration_minutes=60 first.`,
+            suggested_slots: estimateSlots
+              .slice(0, 8)
+              .map((s) => s.start_time.slice(0, 5)),
+          })
+        }
+        const estimateSlotTokenCheck = verifySlotToken(slotToken, {
+          date: appointmentDate,
+          startTime: estimateMatch.start_time,
+          endTime: estimateMatch.end_time,
+          requiredMinutes: estimateRequiredMinutes,
+          ownerKey: ctx.customerPhoneE164,
+        })
+        if (!estimateSlotTokenCheck.ok) {
+          return JSON.stringify({
+            error: `${estimateSlotTokenCheck.error} You must call get_calendar_slots and use the returned slot_token before booking a commercial walkthrough.`,
+          })
+        }
+
         const result = await createAiStyleEstimate({
           supabase,
           customer: {

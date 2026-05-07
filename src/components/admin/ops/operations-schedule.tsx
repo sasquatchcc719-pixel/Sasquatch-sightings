@@ -637,6 +637,9 @@ export function OperationsSchedule() {
     x: number
     y: number
   } | null>(null)
+  const [statusActionAppointmentId, setStatusActionAppointmentId] = useState<
+    string | null
+  >(null)
   const [cellMenu, setCellMenu] = useState<{
     dateKey: string
     hour: number
@@ -1296,6 +1299,49 @@ export function OperationsSchedule() {
       // Best-effort — don't block UI if notification fails
     }
     setPendingNotify(null)
+  }
+
+  const handleAppointmentStatusAction = async (
+    appointment: Appointment,
+    nextStatus: 'booked' | 'cancelled',
+  ) => {
+    const customer = unwrapRelation(appointment.ops_customers)
+    const customerName =
+      customer?.business_name || customer?.full_name || 'this customer'
+    const actionLabel = nextStatus === 'cancelled' ? 'cancel' : 'restore'
+    const confirmed = window.confirm(
+      nextStatus === 'cancelled'
+        ? `Cancel ${customerName}'s job? This marks it cancelled but does not delete it.`
+        : `Restore ${customerName}'s job to booked?`,
+    )
+    if (!confirmed) return
+
+    setStatusActionAppointmentId(appointment.id)
+    setError(null)
+    try {
+      const response = await fetch(
+        `/api/admin/ops/appointments/${appointment.id}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: nextStatus }),
+        },
+      )
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result.error || `Failed to ${actionLabel} job`)
+      }
+      await loadSchedule()
+      router.refresh()
+    } catch (statusError) {
+      setError(
+        statusError instanceof Error
+          ? statusError.message
+          : `Failed to ${actionLabel} job`,
+      )
+    } finally {
+      setStatusActionAppointmentId(null)
+    }
   }
 
   const handleBlockSubmit = async (event: React.FormEvent) => {
@@ -2636,6 +2682,43 @@ export function OperationsSchedule() {
                                   ${calendarDisplayAmount(appointment)}
                                 </div>
                               </Link>
+                              {!isEstimate &&
+                                appointment.status !== 'completed' && (
+                                  <button
+                                    type="button"
+                                    className={`mx-2 mb-1.5 rounded-md border px-2 py-1 text-[10px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                                      appointment.status === 'cancelled'
+                                        ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                                        : 'border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100'
+                                    }`}
+                                    disabled={
+                                      statusActionAppointmentId ===
+                                      appointment.id
+                                    }
+                                    onClick={(e) => {
+                                      e.preventDefault()
+                                      e.stopPropagation()
+                                      void handleAppointmentStatusAction(
+                                        appointment,
+                                        appointment.status === 'cancelled'
+                                          ? 'booked'
+                                          : 'cancelled',
+                                      )
+                                    }}
+                                  >
+                                    {statusActionAppointmentId ===
+                                    appointment.id ? (
+                                      <span className="inline-flex items-center gap-1">
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                        Saving
+                                      </span>
+                                    ) : appointment.status === 'cancelled' ? (
+                                      'Restore Job'
+                                    ) : (
+                                      'Cancel Job'
+                                    )}
+                                  </button>
+                                )}
                               <button
                                 type="button"
                                 aria-label="Drag to change end time"

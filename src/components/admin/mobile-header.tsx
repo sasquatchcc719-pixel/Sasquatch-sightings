@@ -31,6 +31,7 @@ import {
   Award,
   ChevronDown,
   LogOut,
+  UserRoundSearch,
 } from 'lucide-react'
 import { createClient } from '@/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -214,6 +215,12 @@ const navSections: NavSection[] = [
         href: '/admin/harry/george',
         icon: Bot,
         description: 'Field copilot',
+      },
+      {
+        name: 'Ranger Hiring',
+        href: '/admin/ranger',
+        icon: UserRoundSearch,
+        description: 'Hiring pipeline',
       },
       {
         name: 'AI Chats',

@@ -4,6 +4,7 @@ export type CallRoutingConfig = {
   temporaryOpenLineMode: boolean
   primaryForwardNumber: string
   failoverForwardNumber: string
+  rabeccaSipUri: string
   openLineTimeoutSeconds: number
   ivrScheduleTimeoutSeconds: number
   ivrTechnicalTimeoutSeconds: number
@@ -14,6 +15,7 @@ const DEFAULT_CONFIG: CallRoutingConfig = {
   temporaryOpenLineMode: false,
   primaryForwardNumber: '+17197498807',
   failoverForwardNumber: '+17197498807',
+  rabeccaSipUri: '',
   openLineTimeoutSeconds: 30,
   ivrScheduleTimeoutSeconds: 30,
   ivrTechnicalTimeoutSeconds: 30,
@@ -33,7 +35,18 @@ function toPhone(value: unknown, fallback: string): string {
   return phone
 }
 
+function toSipUri(value: unknown, fallback: string): string {
+  const uri = String(value || '').trim()
+  if (!uri.startsWith('sip:') || !uri.includes('@')) return fallback
+  return uri
+}
+
 export async function getCallRoutingConfig(): Promise<CallRoutingConfig> {
+  const rabeccaSipUri = toSipUri(
+    process.env.REBECCA_RETELL_SIP_URI,
+    DEFAULT_CONFIG.rabeccaSipUri,
+  )
+
   try {
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -48,7 +61,7 @@ export async function getCallRoutingConfig(): Promise<CallRoutingConfig> {
       .limit(1)
       .maybeSingle()
 
-    if (!data) return DEFAULT_CONFIG
+    if (!data) return { ...DEFAULT_CONFIG, rabeccaSipUri }
 
     return {
       temporaryOpenLineMode:
@@ -63,6 +76,7 @@ export async function getCallRoutingConfig(): Promise<CallRoutingConfig> {
         data.twilio_failover_forward_number,
         DEFAULT_CONFIG.failoverForwardNumber,
       ),
+      rabeccaSipUri,
       openLineTimeoutSeconds: toPositiveInt(
         data.dial_timeout,
         DEFAULT_CONFIG.openLineTimeoutSeconds,
@@ -78,6 +92,6 @@ export async function getCallRoutingConfig(): Promise<CallRoutingConfig> {
     }
   } catch (error) {
     console.error('[CallRoutingConfig] Falling back to defaults:', error)
-    return DEFAULT_CONFIG
+    return { ...DEFAULT_CONFIG, rabeccaSipUri }
   }
 }

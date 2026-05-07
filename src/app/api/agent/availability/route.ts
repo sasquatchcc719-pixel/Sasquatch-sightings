@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 import {
   applyAppointmentBuffer,
+  calendarEventsToAppointmentWindows,
   getAvailableSlots,
 } from '@/lib/ops/availability'
 
@@ -54,27 +55,44 @@ export async function GET(request: NextRequest) {
     const supabase = createAdminClient()
 
     async function getSlotsForDate(targetDate: string) {
-      const [templatesResult, overridesResult, appointmentsResult] =
-        await Promise.all([
-          supabase
-            .from('availability_templates')
-            .select('*')
-            .eq('is_active', true),
-          supabase
-            .from('availability_overrides')
-            .select('*')
-            .eq('override_date', targetDate),
-          supabase
-            .from('ops_appointments')
-            .select('appointment_date, start_time, end_time, status')
-            .eq('appointment_date', targetDate),
-        ])
+      const [
+        templatesResult,
+        overridesResult,
+        appointmentsResult,
+        eventsResult,
+      ] = await Promise.all([
+        supabase
+          .from('availability_templates')
+          .select('*')
+          .eq('is_active', true),
+        supabase
+          .from('availability_overrides')
+          .select('*')
+          .eq('override_date', targetDate),
+        supabase
+          .from('ops_appointments')
+          .select('appointment_date, start_time, end_time, status')
+          .eq('appointment_date', targetDate),
+        supabase
+          .from('ops_calendar_events')
+          .select(
+            'event_kind, start_date, end_date, start_time, end_time, is_all_day',
+          )
+          .lte('start_date', targetDate)
+          .gte('end_date', targetDate),
+      ])
       return getAvailableSlots({
         date: targetDate,
         requiredMinutes,
         templates: templatesResult.data || [],
         overrides: overridesResult.data || [],
-        appointments: appointmentsResult.data || [],
+        appointments: [
+          ...(appointmentsResult.data || []),
+          ...calendarEventsToAppointmentWindows(
+            targetDate,
+            eventsResult.data || [],
+          ),
+        ],
         maxResults: 8,
       })
     }
