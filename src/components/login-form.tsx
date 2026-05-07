@@ -1,7 +1,6 @@
 'use client'
 
 import { cn } from '@/utils/tailwind'
-import { createClient } from '@/supabase/client'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -13,38 +12,20 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import Link from 'next/link'
-import { useState } from 'react'
+import { useActionState } from 'react'
+import { loginAction } from '@/app/auth/login/actions'
 
 export function LoginForm({
   className,
   ...props
 }: React.ComponentPropsWithoutRef<'div'>) {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
-    const supabase = createClient()
-    setIsLoading(true)
-    setError(null)
-
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
-      if (error) throw error
-
-      // Let the server resolve the role and redirect authoritatively
-      window.location.href = '/redirect'
-    } catch (error: unknown) {
-      setError(error instanceof Error ? error.message : 'An error occurred')
-    } finally {
-      setIsLoading(false)
-    }
-  }
+  const [state, formAction, isPending] = useActionState(
+    async (_prev: { error: string }, formData: FormData) => {
+      const result = await loginAction(formData)
+      return result ?? { error: '' }
+    },
+    { error: '' },
+  )
 
   return (
     <div className={cn('flex flex-col gap-6', className)} {...props}>
@@ -56,17 +37,16 @@ export function LoginForm({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleLogin}>
+          <form action={formAction}>
             <div className="flex flex-col gap-6">
               <div className="grid gap-2">
                 <Label htmlFor="email">Email</Label>
                 <Input
                   id="email"
+                  name="email"
                   type="email"
                   placeholder="m@example.com"
                   required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
                 />
               </div>
               <div className="grid gap-2">
@@ -79,17 +59,13 @@ export function LoginForm({
                     Forgot your password?
                   </Link>
                 </div>
-                <Input
-                  id="password"
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
+                <Input id="password" name="password" type="password" required />
               </div>
-              {error && <p className="text-sm text-red-500">{error}</p>}
-              <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? 'Logging in...' : 'Login'}
+              {state.error ? (
+                <p className="text-sm text-red-500">{state.error}</p>
+              ) : null}
+              <Button type="submit" className="w-full" disabled={isPending}>
+                {isPending ? 'Logging in...' : 'Login'}
               </Button>
             </div>
             <div className="mt-4 text-center text-sm">
