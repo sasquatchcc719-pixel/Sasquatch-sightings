@@ -99,6 +99,117 @@ const APPOINTMENT_SELECT = `
   )
 `
 
+async function sendAppointmentCancellationNotifications(
+  supabase: ReturnType<typeof createAdminClient>,
+  appointmentId: string,
+) {
+  const { data: appointment, error: appointmentError } = await supabase
+    .from('ops_appointments')
+    .select(
+      `
+        id,
+        appointment_date,
+        start_time,
+        ops_customers!ops_appointments_customer_id_fkey (
+          full_name,
+          first_name,
+          email,
+          phone
+        ),
+        ops_service_addresses (
+          street_1,
+          city,
+          state,
+          zip_code
+        )
+      `,
+    )
+    .eq('id', appointmentId)
+    .single()
+
+  if (appointmentError) throw appointmentError
+
+  const customer = Array.isArray(appointment.ops_customers)
+    ? appointment.ops_customers[0]
+    : appointment.ops_customers
+  const address = Array.isArray(appointment.ops_service_addresses)
+    ? appointment.ops_service_addresses[0]
+    : appointment.ops_service_addresses
+
+  if (!customer) return { requested: false, sent: [] as string[] }
+
+  const firstName =
+    customer.first_name || customer.full_name?.split(' ')[0] || 'there'
+  const dateStr = appointment.appointment_date
+  const addressStr = address ? `${address.street_1}, ${address.city}` : ''
+
+  const smsBody = [
+    `Hi ${firstName} — your Sasquatch Carpet Cleaning appointment`,
+    dateStr ? ` on ${dateStr}` : '',
+    addressStr ? ` at ${addressStr}` : '',
+    ` has been cancelled.`,
+    `\n\nTo rebook, visit sasquatchcarpet.com or call/text us at (719) 249-8791.`,
+  ].join('')
+
+  const notifications: Promise<string>[] = []
+
+  if (customer.phone) {
+    notifications.push(
+      sendCustomerSMS(customer.phone, smsBody, undefined, 'job_cancelled').then(
+        () => 'sms',
+      ),
+    )
+  }
+
+  if (customer.email) {
+    const resendKey = process.env.RESEND_API_KEY
+    if (resendKey) {
+      const resend = new Resend(resendKey)
+      const fromEmail =
+        process.env.OPS_EMAIL_FROM ||
+        'Sasquatch Carpet Cleaning <onboarding@resend.dev>'
+      notifications.push(
+        resend.emails
+          .send(
+            {
+              from: fromEmail,
+              to: customer.email,
+              subject:
+                'Your Sasquatch Carpet Cleaning appointment has been cancelled',
+              html: `
+<div style="font-family:Arial,sans-serif;max-width:500px;margin:0 auto;">
+  <h2 style="color:#16a34a;">Appointment Cancelled</h2>
+  <p>Hi ${firstName},</p>
+  <p>Your appointment${dateStr ? ` on <strong>${dateStr}</strong>` : ''}${addressStr ? ` at ${addressStr}` : ''} has been cancelled.</p>
+  <p>We apologize for any inconvenience. To rebook, visit our website or give us a call.</p>
+  <a href="https://sasquatchcarpet.com" style="display:inline-block;margin-top:16px;padding:10px 24px;background:#16a34a;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">Rebook Now</a>
+  <p style="margin-top:20px;color:#6b7280;font-size:13px;">Questions? Call or text us at (719) 249-8791.</p>
+</div>`,
+            },
+            { idempotencyKey: `job-cancelled/${appointment.id}` },
+          )
+          .then(({ error }) => {
+            if (error) throw new Error(error.message)
+            return 'email'
+          }),
+      )
+    }
+  }
+
+  const results = await Promise.allSettled(notifications)
+  const sent = results
+    .filter((result): result is PromiseFulfilledResult<string> => {
+      if (result.status === 'rejected') {
+        console.error('[ops/appointments/:id][cancel-notify]', result.reason)
+        return false
+      }
+      return true
+    })
+    .map((result) => result.value)
+
+  return { requested: notifications.length > 0, sent }
+}
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -502,6 +613,9 @@ export async function PATCH(
       body: string
       actually_sent?: boolean
     }[] = []
+    let cancellationNotifications: Awaited<
+      ReturnType<typeof sendAppointmentCancellationNotifications>
+    > | null = null
 
     if (current.status !== nextStatus && !isBatchMonthlyRecurring) {
       if (nextStatus === 'on_my_way') {
@@ -539,6 +653,16 @@ export async function PATCH(
           )
         }
       }
+    }
+
+    if (
+      current.status !== nextStatus &&
+      nextStatus === 'cancelled' &&
+      body.notify_customer === true &&
+      !isBatchMonthlyRecurring
+    ) {
+      cancellationNotifications =
+        await sendAppointmentCancellationNotifications(supabase, id)
     }
 
     if (nextStatus === 'completed' && !isBatchMonthlyRecurring) {
@@ -693,6 +817,7 @@ export async function PATCH(
     return NextResponse.json({
       appointment: updated,
       lifecycle_notifications: lifecycleNotifications,
+      cancellation_notifications: cancellationNotifications,
     })
   } catch (error) {
     console.error('[ops/appointments/:id][PATCH] Error:', error)

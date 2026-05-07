@@ -86,6 +86,30 @@ export async function GET(request: NextRequest) {
     if (appointmentsResult.error) throw appointmentsResult.error
     if (eventsResult.error) throw eventsResult.error
 
+    const appointments = appointmentsResult.data || []
+    const customerIds = [
+      ...new Set(
+        appointments
+          .map((appointment) => appointment.customer_id)
+          .filter(Boolean),
+      ),
+    ]
+    const appointmentCountByCustomer: Record<string, number> = {}
+    if (customerIds.length > 0) {
+      const { data: customerAppointmentRows, error: countError } =
+        await supabase
+          .from('ops_appointments')
+          .select('id, customer_id')
+          .in('customer_id', customerIds)
+          .neq('status', 'cancelled')
+
+      if (countError) throw countError
+      for (const row of customerAppointmentRows || []) {
+        appointmentCountByCustomer[row.customer_id] =
+          (appointmentCountByCustomer[row.customer_id] || 0) + 1
+      }
+    }
+
     const recurringFrequencyMap: Record<
       string,
       { frequency: string; interval_days: number | null }
@@ -100,7 +124,11 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({
-      appointments: appointmentsResult.data || [],
+      appointments: appointments.map((appointment) => ({
+        ...appointment,
+        is_repeat_customer:
+          (appointmentCountByCustomer[appointment.customer_id] || 0) > 1,
+      })),
       events: eventsResult.data || [],
       recurringFrequencyMap,
     })

@@ -35,6 +35,9 @@ type Appointment = {
   status: string
   quoted_total: number
   lead_source: string | null
+  booking_channel: string | null
+  source: string | null
+  is_repeat_customer?: boolean
   ops_customers:
     | {
         full_name: string
@@ -180,6 +183,40 @@ function calendarDisplayAmount(appointment: Appointment): string {
     ops_appointment_line_items: appointment.ops_appointment_line_items,
   })
   return Number.isFinite(n) ? n.toFixed(2) : '0.00'
+}
+
+function humanizeSourceLabel(value: string | null | undefined): string | null {
+  const raw = String(value || '').trim()
+  if (!raw) return null
+  const lower = raw.toLowerCase()
+  const labels: Record<string, string> = {
+    admin: 'Admin',
+    ai_agent: 'AI Agent',
+    internal: 'Admin',
+    lsa_sms: 'Google LSA',
+    manual: 'Manual',
+    owner: 'Owner',
+    recurring: 'Recurring',
+    recurring_generation: 'Recurring',
+    retell_rabecca: 'Rabecca',
+    sms_harry: 'Harry',
+    website: 'Website',
+  }
+  return (
+    labels[lower] ||
+    raw.replace(/[_-]+/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())
+  )
+}
+
+function getScheduleCardSources(appointment: Appointment): {
+  leadLabel: string | null
+  bookingLabel: string | null
+} {
+  const leadLabel = humanizeSourceLabel(appointment.lead_source)
+  const bookingLabel =
+    humanizeSourceLabel(appointment.booking_channel) ||
+    humanizeSourceLabel(appointment.source)
+  return { leadLabel, bookingLabel }
 }
 
 function formatDateKey(date: Date): string {
@@ -640,6 +677,13 @@ export function OperationsSchedule() {
   const [statusActionAppointmentId, setStatusActionAppointmentId] = useState<
     string | null
   >(null)
+  const [pendingStatusAction, setPendingStatusAction] = useState<{
+    appointment: Appointment
+    customerName: string
+    action: 'cancel' | 'restore'
+    x: number
+    y: number
+  } | null>(null)
   const [cellMenu, setCellMenu] = useState<{
     dateKey: string
     hour: number
@@ -1304,18 +1348,10 @@ export function OperationsSchedule() {
   const handleAppointmentStatusAction = async (
     appointment: Appointment,
     nextStatus: 'booked' | 'cancelled',
+    options: { notifyCustomer?: boolean } = {},
   ) => {
-    const customer = unwrapRelation(appointment.ops_customers)
-    const customerName =
-      customer?.business_name || customer?.full_name || 'this customer'
     const actionLabel = nextStatus === 'cancelled' ? 'cancel' : 'restore'
-    const confirmed = window.confirm(
-      nextStatus === 'cancelled'
-        ? `Cancel ${customerName}'s job? This marks it cancelled but does not delete it.`
-        : `Restore ${customerName}'s job to booked?`,
-    )
-    if (!confirmed) return
-
+    setPendingStatusAction(null)
     setStatusActionAppointmentId(appointment.id)
     setError(null)
     try {
@@ -1324,7 +1360,10 @@ export function OperationsSchedule() {
         {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: nextStatus }),
+          body: JSON.stringify({
+            status: nextStatus,
+            ...(options.notifyCustomer ? { notify_customer: true } : {}),
+          }),
         },
       )
       const result = await response.json()
@@ -1342,6 +1381,25 @@ export function OperationsSchedule() {
     } finally {
       setStatusActionAppointmentId(null)
     }
+  }
+
+  const openStatusActionPopover = (
+    event: React.MouseEvent<HTMLButtonElement>,
+    appointment: Appointment,
+  ) => {
+    event.preventDefault()
+    event.stopPropagation()
+    const customer = unwrapRelation(appointment.ops_customers)
+    const rect = event.currentTarget.getBoundingClientRect()
+    setPendingNotify(null)
+    setPendingStatusAction({
+      appointment,
+      customerName:
+        customer?.business_name || customer?.full_name || 'this customer',
+      action: appointment.status === 'cancelled' ? 'restore' : 'cancel',
+      x: rect.left,
+      y: rect.bottom + 8,
+    })
   }
 
   const handleBlockSubmit = async (event: React.FormEvent) => {
@@ -1483,6 +1541,92 @@ export function OperationsSchedule() {
             </div>
           </Card>
         </div>
+      ) : null}
+
+      {pendingStatusAction ? (
+        <>
+          <button
+            type="button"
+            aria-label="Close status action"
+            className="fixed inset-0 z-[219] cursor-default bg-transparent"
+            onClick={() => setPendingStatusAction(null)}
+          />
+          <div
+            className="fixed z-[220]"
+            style={{
+              left: Math.min(pendingStatusAction.x, window.innerWidth - 320),
+              top: Math.min(pendingStatusAction.y, window.innerHeight - 190),
+            }}
+          >
+            <Card className="border-border/60 bg-card/95 flex w-72 flex-col gap-3 rounded-xl border p-3 shadow-xl backdrop-blur">
+              <div>
+                <p className="text-sm font-semibold">
+                  {pendingStatusAction.action === 'cancel'
+                    ? `Cancel ${pendingStatusAction.customerName}'s job?`
+                    : `Restore ${pendingStatusAction.customerName}'s job?`}
+                </p>
+                <p className="text-muted-foreground mt-1 text-xs">
+                  {pendingStatusAction.action === 'cancel'
+                    ? 'This marks the job cancelled but does not delete it.'
+                    : 'This puts the job back on the schedule as booked.'}
+                </p>
+              </div>
+              {pendingStatusAction.action === 'cancel' ? (
+                <div className="flex flex-col gap-2">
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    disabled={
+                      statusActionAppointmentId ===
+                      pendingStatusAction.appointment.id
+                    }
+                    onClick={() =>
+                      void handleAppointmentStatusAction(
+                        pendingStatusAction.appointment,
+                        'cancelled',
+                        { notifyCustomer: true },
+                      )
+                    }
+                  >
+                    Cancel + notify customer
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={
+                      statusActionAppointmentId ===
+                      pendingStatusAction.appointment.id
+                    }
+                    onClick={() =>
+                      void handleAppointmentStatusAction(
+                        pendingStatusAction.appointment,
+                        'cancelled',
+                      )
+                    }
+                  >
+                    Cancel quietly
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  size="sm"
+                  disabled={
+                    statusActionAppointmentId ===
+                    pendingStatusAction.appointment.id
+                  }
+                  onClick={() =>
+                    void handleAppointmentStatusAction(
+                      pendingStatusAction.appointment,
+                      'booked',
+                    )
+                  }
+                >
+                  Restore job
+                </Button>
+              )}
+            </Card>
+          </div>
+        </>
       ) : null}
 
       {cellMenu ? (
@@ -2279,6 +2423,11 @@ export function OperationsSchedule() {
                               )}
                             {appointment.start_time.slice(0, 5)}{' '}
                             {customer?.full_name}
+                            {appointment.is_repeat_customer && (
+                              <span className="rounded-full bg-violet-50 px-1.5 py-0.5 text-[9px] font-semibold text-violet-700">
+                                Repeat
+                              </span>
+                            )}
                           </div>
                           <div className="text-muted-foreground mt-1">
                             {/* Keep service context visible in compact month tiles */}
@@ -2291,13 +2440,22 @@ export function OperationsSchedule() {
                               appointment.ops_service_addresses,
                             )
                             const city = address?.city
-                            const leadSource = appointment.lead_source
-                            if (city || leadSource) {
+                            const { leadLabel, bookingLabel } =
+                              getScheduleCardSources(appointment)
+                            if (city || leadLabel || bookingLabel) {
                               return (
-                                <div className="text-muted-foreground mt-0.5 text-[10px]">
+                                <div className="text-muted-foreground mt-0.5 text-[10px] leading-tight">
                                   {city && <span>{city}</span>}
-                                  {city && leadSource && <span> · </span>}
-                                  {leadSource && <span>{leadSource}</span>}
+                                  {city && (leadLabel || bookingLabel) && (
+                                    <span> · </span>
+                                  )}
+                                  {leadLabel && <span>Lead: {leadLabel}</span>}
+                                  {leadLabel && bookingLabel && (
+                                    <span> · </span>
+                                  )}
+                                  {bookingLabel && (
+                                    <span>Booked: {bookingLabel}</span>
+                                  )}
                                 </div>
                               )
                             }
@@ -2614,6 +2772,11 @@ export function OperationsSchedule() {
                                     {customer?.business_name ||
                                       customer?.full_name ||
                                       'Customer'}
+                                    {appointment.is_repeat_customer && (
+                                      <span className="rounded-full bg-violet-50 px-1.5 py-0.5 text-[9px] font-semibold text-violet-700">
+                                        Repeat
+                                      </span>
+                                    )}
                                   </div>
                                   <Badge
                                     variant="outline"
@@ -2649,14 +2812,24 @@ export function OperationsSchedule() {
                                     appointment.ops_service_addresses,
                                   )
                                   const city = address?.city
-                                  const leadSource = appointment.lead_source
-                                  if (city || leadSource) {
+                                  const { leadLabel, bookingLabel } =
+                                    getScheduleCardSources(appointment)
+                                  if (city || leadLabel || bookingLabel) {
                                     return (
-                                      <div className="mt-0.5 flex items-center gap-2 text-[10px] text-slate-500">
+                                      <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0 text-[10px] leading-tight text-slate-500">
                                         {city && <span>{city}</span>}
-                                        {city && leadSource && <span>·</span>}
-                                        {leadSource && (
-                                          <span>{leadSource}</span>
+                                        {city &&
+                                          (leadLabel || bookingLabel) && (
+                                            <span>·</span>
+                                          )}
+                                        {leadLabel && (
+                                          <span>Lead: {leadLabel}</span>
+                                        )}
+                                        {leadLabel && bookingLabel && (
+                                          <span>·</span>
+                                        )}
+                                        {bookingLabel && (
+                                          <span>Booked: {bookingLabel}</span>
                                         )}
                                       </div>
                                     )
@@ -2684,40 +2857,35 @@ export function OperationsSchedule() {
                               </Link>
                               {!isEstimate &&
                                 appointment.status !== 'completed' && (
-                                  <button
-                                    type="button"
-                                    className={`mx-2 mb-1.5 rounded-md border px-2 py-1 text-[10px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                                      appointment.status === 'cancelled'
-                                        ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                                        : 'border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100'
-                                    }`}
-                                    disabled={
-                                      statusActionAppointmentId ===
-                                      appointment.id
-                                    }
-                                    onClick={(e) => {
-                                      e.preventDefault()
-                                      e.stopPropagation()
-                                      void handleAppointmentStatusAction(
-                                        appointment,
+                                  <div className="pointer-events-none -mt-7 mb-1.5 flex justify-start px-2">
+                                    <button
+                                      type="button"
+                                      className={`pointer-events-auto rounded-md border px-2 py-0.5 text-[9px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
                                         appointment.status === 'cancelled'
-                                          ? 'booked'
-                                          : 'cancelled',
-                                      )
-                                    }}
-                                  >
-                                    {statusActionAppointmentId ===
-                                    appointment.id ? (
-                                      <span className="inline-flex items-center gap-1">
-                                        <Loader2 className="h-3 w-3 animate-spin" />
-                                        Saving
-                                      </span>
-                                    ) : appointment.status === 'cancelled' ? (
-                                      'Restore Job'
-                                    ) : (
-                                      'Cancel Job'
-                                    )}
-                                  </button>
+                                          ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                                          : 'border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100'
+                                      }`}
+                                      disabled={
+                                        statusActionAppointmentId ===
+                                        appointment.id
+                                      }
+                                      onClick={(e) => {
+                                        openStatusActionPopover(e, appointment)
+                                      }}
+                                    >
+                                      {statusActionAppointmentId ===
+                                      appointment.id ? (
+                                        <span className="inline-flex items-center gap-1">
+                                          <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                                          Saving
+                                        </span>
+                                      ) : appointment.status === 'cancelled' ? (
+                                        'Restore'
+                                      ) : (
+                                        'Cancel'
+                                      )}
+                                    </button>
+                                  </div>
                                 )}
                               <button
                                 type="button"
