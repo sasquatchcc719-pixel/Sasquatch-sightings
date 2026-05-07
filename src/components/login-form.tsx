@@ -47,6 +47,10 @@ export function LoginForm({
         .maybeSingle()
 
       if (staffUser?.role) {
+        if (staffUser.role === 'tech') {
+          router.push('/tech')
+          return
+        }
         router.push('/admin/operations')
         return
       }

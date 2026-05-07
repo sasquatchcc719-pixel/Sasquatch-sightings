@@ -43,6 +43,10 @@ export default async function AdminLayout({ children }: AdminLayoutProps) {
     redirect('/partners')
   }
 
+  if (role === 'tech') {
+    redirect('/tech')
+  }
+
   console.log('[AdminLayout] Access granted - internal ops role:', role)
 
   // GPS enabled for owner, tech, and legacy admin (anyone who does field work)
