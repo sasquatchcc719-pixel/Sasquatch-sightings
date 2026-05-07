@@ -13,7 +13,6 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
 export function LoginForm({
@@ -24,7 +23,6 @@ export function LoginForm({
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
-  const router = useRouter()
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -39,37 +37,8 @@ export function LoginForm({
       })
       if (error) throw error
 
-      const { data: staffUser } = await supabase
-        .from('staff_users')
-        .select('role')
-        .eq('user_id', data.user.id)
-        .eq('is_active', true)
-        .maybeSingle()
-
-      if (staffUser?.role) {
-        if (staffUser.role === 'tech') {
-          router.push('/tech')
-          return
-        }
-        router.push('/admin/operations')
-        return
-      }
-
-      // Check if user has a partner record to determine role
-      const { data: partner } = await supabase
-        .from('partners')
-        .select('role')
-        .eq('user_id', data.user.id)
-        .maybeSingle()
-
-      if (partner?.role === 'partner') {
-        router.push('/partners')
-      } else if (partner?.role === 'admin') {
-        router.push('/admin')
-      } else {
-        // No recognized role - middleware will handle redirect
-        router.push('/admin')
-      }
+      // Let the server resolve the role and redirect authoritatively
+      window.location.href = '/auth/redirect'
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : 'An error occurred')
     } finally {
