@@ -12,6 +12,7 @@ import {
 import { createAiStyleBooking } from '@/lib/ops/create-ai-style-booking'
 import { createAiStyleEstimate } from '@/lib/ops/create-ai-style-estimate'
 import { createSlotToken, verifySlotToken } from '@/lib/ops/slot-token'
+import { checkServiceArea } from '@/lib/service-area'
 
 /**
  * Scout Web Tools
@@ -221,6 +222,11 @@ export const SCOUT_WEB_TOOLS: OpenAI.ChatCompletionTool[] = [
               },
               required: ['service_id', 'quantity'],
             },
+          },
+          accepted_minimum_charge: {
+            type: 'boolean',
+            description:
+              'Set true only when selected services are below the $150 minimum and the customer explicitly agreed to book at the $150 minimum anyway.',
           },
         },
         required: [
@@ -462,6 +468,7 @@ export async function executeScoutWebTool(
         const slotToken = String(args.slot_token || '').trim()
         const providedLeadSource = String(args.lead_source || '').trim()
         const lineItems = Array.isArray(args.line_items) ? args.line_items : []
+        const acceptedMinimumCharge = args.accepted_minimum_charge === true
 
         if (!firstName || !lastName || !email) {
           return JSON.stringify({
@@ -549,14 +556,19 @@ export async function executeScoutWebTool(
         }
 
         const MIN_JOB_TOTAL = 150
-        const preTotal = catalogRows.reduce((sum, row) => {
+        const preServiceTotal = catalogRows.reduce((sum, row) => {
           const qty =
             parsedLineItems.find((p) => p.service_id === row.id)?.quantity ?? 1
           return sum + Number(row.base_price || 0) * qty
         }, 0)
-        if (preTotal < MIN_JOB_TOTAL) {
+        const serviceAreaCheck = checkServiceArea(zipCode)
+        if (!serviceAreaCheck.allowed) {
+          return JSON.stringify({ error: serviceAreaCheck.message })
+        }
+        const preTotal = preServiceTotal + (serviceAreaCheck.travelCharge || 0)
+        if (preTotal < MIN_JOB_TOTAL && !acceptedMinimumCharge) {
           return JSON.stringify({
-            error: `Job total of $${preTotal.toFixed(2)} is below the $${MIN_JOB_TOTAL} minimum. Please add more services or increase quantities.`,
+            error: `Job total of $${preTotal.toFixed(2)} is below the $${MIN_JOB_TOTAL} minimum. Ask if the customer wants to add more services or book at the $${MIN_JOB_TOTAL} minimum. If they explicitly accept the minimum, call book_new_job again with accepted_minimum_charge: true.`,
           })
         }
 
@@ -634,6 +646,7 @@ export async function executeScoutWebTool(
           lead_source: providedLeadSource,
           actor_label: 'Scout Web',
           admin_heading: 'Scout website booking',
+          accepted_minimum_charge: acceptedMinimumCharge,
         })
 
         if (!result.ok) {

@@ -646,6 +646,7 @@ async function prepareResidentialBookingQuote(
       totalBeforeDiscount: number
       minimum: number
       meetsMinimum: boolean
+      acceptedMinimumCharge: boolean
       slots: DatedSlotOption[]
       availabilityStartDate: string | null
       availabilityDays: number
@@ -936,6 +937,9 @@ async function prepareResidentialBookingQuote(
   const travelCharge = serviceAreaCheck?.travelCharge || 0
   const totalBeforeDiscount = subtotal + travelCharge
   const minimum = 150
+  const acceptedMinimumCharge = booleanArg(args, 'accepted_minimum_charge')
+  const canProceedAtMinimum =
+    totalBeforeDiscount >= minimum || acceptedMinimumCharge
   const missingFields = []
   if (!appointmentDate && !availabilityStartDate)
     missingFields.push('appointment date')
@@ -952,11 +956,7 @@ async function prepareResidentialBookingQuote(
   )
 
   let slots: DatedSlotOption[] = []
-  if (
-    availabilityStartDate &&
-    totalBeforeDiscount >= minimum &&
-    address.zip_code
-  ) {
+  if (availabilityStartDate && canProceedAtMinimum && address.zip_code) {
     for (let dayOffset = 0; dayOffset < availabilityDays; dayOffset += 1) {
       const date = addDaysIso(availabilityStartDate, dayOffset)
       const bundle = await loadAvailabilityBundle(context.supabase, date)
@@ -983,6 +983,7 @@ async function prepareResidentialBookingQuote(
     totalBeforeDiscount,
     minimum,
     meetsMinimum: totalBeforeDiscount >= minimum,
+    acceptedMinimumCharge,
     slots: slots.map((slot) => ({
       ...slot,
       slot_token: createSlotToken({
@@ -1116,11 +1117,13 @@ async function quoteAndPrepareBooking(
     args,
     prepared.totalBeforeDiscount,
   )
-  const total = prepared.totalBeforeDiscount - discountAmount
+  const displayedSubtotal =
+    prepared.acceptedMinimumCharge && !prepared.meetsMinimum
+      ? prepared.minimum
+      : prepared.totalBeforeDiscount
+  const total = displayedSubtotal - discountAmount
   const dollars = total.toFixed(2).replace(/\.00$/, '')
-  const subtotalDollars = prepared.totalBeforeDiscount
-    .toFixed(2)
-    .replace(/\.00$/, '')
+  const subtotalDollars = displayedSubtotal.toFixed(2).replace(/\.00$/, '')
   const discountDollars = discountAmount.toFixed(2).replace(/\.00$/, '')
   const travelChargeScript =
     prepared.travelCharge > 0
@@ -1148,6 +1151,31 @@ async function quoteAndPrepareBooking(
   if (!prepared.meetsMinimum) {
     const amountNeeded = prepared.minimum - prepared.totalBeforeDiscount
     const amountNeededDollars = amountNeeded.toFixed(2).replace(/\.00$/, '')
+    if (prepared.acceptedMinimumCharge) {
+      return response(true, `Estimated total is $${subtotalDollars}.`, {
+        quote_total: prepared.totalBeforeDiscount,
+        service_subtotal: prepared.subtotal,
+        travel_charge: prepared.travelCharge,
+        minimum_adjustment: amountNeeded,
+        discount_applied: discountAmount,
+        total,
+        minimum_booking_amount: prepared.minimum,
+        amount_needed_to_minimum: amountNeeded,
+        meets_minimum: true,
+        accepted_minimum_charge: true,
+        can_offer_slots: prepared.slots.length > 0,
+        appointment_date: prepared.appointmentDate,
+        line_items: prepared.lineItems,
+        missing_fields: prepared.missingFields,
+        slots: prepared.slots,
+        availability_start_date: prepared.availabilityStartDate,
+        availability_days: prepared.availabilityDays,
+        caller_script:
+          prepared.slots.length > 0
+            ? `The estimate is $${subtotalDollars}, including the accepted $${prepared.minimum} minimum. I found these available windows: ${slotSummary}. Which one works best?`
+            : noSlotsScript,
+      })
+    }
     return response(true, `Estimated total is $${subtotalDollars}.`, {
       quote_total: prepared.totalBeforeDiscount,
       service_subtotal: prepared.subtotal,
@@ -1160,7 +1188,7 @@ async function quoteAndPrepareBooking(
       can_offer_slots: false,
       line_items: prepared.lineItems,
       missing_fields: prepared.missingFields,
-      caller_script: `The updated estimate is $${subtotalDollars}.${travelChargeScript} That is $${amountNeededDollars} below our $${prepared.minimum} minimum, so I cannot check appointment availability or finalize a booking yet. Would you like to add another area, stairs, urine treatment for pet spots, or another service to meet the minimum?`,
+      caller_script: `The updated estimate is $${subtotalDollars}.${travelChargeScript} That is $${amountNeededDollars} below our $${prepared.minimum} minimum. Ask if they want to add another area, stairs, urine treatment for pet spots, or another service to get more value. If they explicitly say the $${prepared.minimum} minimum is fine, you may continue booking with accepted_minimum_charge=true.`,
     })
   }
 
@@ -1208,18 +1236,21 @@ async function bookPreparedSlot(
 ): Promise<RetellFunctionResponse> {
   const prepared = await prepareResidentialBookingQuote(args, context)
   if (!prepared.ok) return response(false, prepared.message)
-  if (!prepared.meetsMinimum) {
+  if (!prepared.meetsMinimum && !prepared.acceptedMinimumCharge) {
     return response(
       false,
       `Booking was NOT created: this job totals $${prepared.totalBeforeDiscount.toFixed(
         2,
-      )}, below the $${prepared.minimum} minimum. Do not say the caller is booked. Ask if they want to add another service.`,
+      )}, below the $${prepared.minimum} minimum. Do not say the caller is booked. Ask if they want to add another service or book at the $${prepared.minimum} minimum.`,
       {
         quote_total: prepared.totalBeforeDiscount,
         service_subtotal: prepared.subtotal,
         travel_charge: prepared.travelCharge,
         minimum_booking_amount: prepared.minimum,
         line_items: prepared.lineItems,
+        caller_script: `The selected services total $${prepared.totalBeforeDiscount.toFixed(
+          2,
+        )}, which is below our $${prepared.minimum} minimum. Ask if they want to add another service or book at the $${prepared.minimum} minimum. Only retry with accepted_minimum_charge=true if they explicitly accept the minimum.`,
       },
     )
   }
@@ -1344,6 +1375,7 @@ async function bookPreparedSlot(
     actor_label: REBECCA_RETELL_CONFIG.actorLabel,
     admin_heading: REBECCA_RETELL_CONFIG.adminHeading,
     discount_requested: booleanArg(args, 'discount_requested'),
+    accepted_minimum_charge: prepared.acceptedMinimumCharge,
   })
 
   if (!result.ok) {
@@ -2368,6 +2400,7 @@ async function createBooking(
     lead_notes: leadSource.lead_notes,
     actor_label: REBECCA_RETELL_CONFIG.actorLabel,
     admin_heading: REBECCA_RETELL_CONFIG.adminHeading,
+    accepted_minimum_charge: booleanArg(args, 'accepted_minimum_charge'),
   })
 
   if (!result.ok) {

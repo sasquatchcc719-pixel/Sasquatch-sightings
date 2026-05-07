@@ -10,6 +10,10 @@ import { createAdminClient } from '@/supabase/server'
 import { sendCustomerSMSWithResult } from '@/lib/twilio'
 import { sendToCharles } from '@/lib/harry-command-bot'
 import { opsPhoneLookupVariants } from '@/lib/ops/phone'
+import {
+  createAiStyleBooking,
+  type AiStyleBookingLineRequest,
+} from '@/lib/ops/create-ai-style-booking'
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -118,6 +122,38 @@ const CUSTOMER_SELECT =
 
 const COMMAND_ACTION_TTL_MS = 30 * 60 * 1000
 
+type HarryConversationLookup = {
+  id: string
+  phone_number: string
+  messages: unknown
+  ops_customer_id?: string | null
+}
+
+type CommandBookingLineItemInput = {
+  service_id?: string
+  catalog_item_id?: string
+  service_slug?: string
+  catalog_slug?: string
+  service_name?: string
+  name?: string
+  quantity?: number
+}
+
+type ConversationBookingDetails = {
+  firstName: string
+  lastName: string
+  email: string
+  phone: string
+  street1: string
+  city: string
+  state: string
+  zipCode: string
+}
+
+type InferredBookingLineItem = AiStyleBookingLineRequest & {
+  reason: string
+}
+
 function displayCustomerName(
   customer: Pick<HarryCustomer, 'full_name' | 'business_name'>,
 ): string {
@@ -175,6 +211,406 @@ function hashPayload(payload: unknown): string {
   return createHash('sha256')
     .update(JSON.stringify(normalizePayloadForHash(payload)))
     .digest('hex')
+}
+
+function looksLikeCurrentConversationReference(target: string): boolean {
+  const normalized = target.toLowerCase().trim()
+  return (
+    /^(current|latest|last|recent)$/.test(normalized) ||
+    /\b(currently|right now|latest|last|recent)\b/.test(normalized)
+  )
+}
+
+function conversationTextMatches(messages: unknown, target: string): boolean {
+  const normalizedTarget = target.toLowerCase().trim()
+  if (!normalizedTarget) return false
+
+  const messagesText = Array.isArray(messages)
+    ? messages
+        .map((message) =>
+          typeof message === 'object' && message !== null
+            ? String((message as { content?: unknown }).content || '')
+            : String(message || ''),
+        )
+        .join(' ')
+        .toLowerCase()
+    : String(messages || '').toLowerCase()
+
+  if (messagesText.includes(normalizedTarget)) return true
+
+  const targetWords = normalizedTarget
+    .split(/\s+/)
+    .map((word) => word.replace(/[^a-z0-9]/g, ''))
+    .filter((word) => word.length >= 3)
+
+  return (
+    targetWords.length > 0 &&
+    targetWords.every((word) => messagesText.includes(word))
+  )
+}
+
+function messagesToText(messages: unknown): string {
+  return Array.isArray(messages)
+    ? messages
+        .map((message) =>
+          typeof message === 'object' && message !== null
+            ? String((message as { content?: unknown }).content || '')
+            : String(message || ''),
+        )
+        .join('\n')
+    : String(messages || '')
+}
+
+function splitFullName(value: string): { firstName: string; lastName: string } {
+  const parts = value.trim().split(/\s+/).filter(Boolean)
+  return {
+    firstName: parts[0] || '',
+    lastName: parts.slice(1).join(' '),
+  }
+}
+
+function extractEmail(value: string): string {
+  return value.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || ''
+}
+
+function extractAddressFromConversation(value: string): {
+  street1: string
+  city: string
+  state: string
+  zipCode: string
+} {
+  const zipMatch = value.match(/\b(\d{5})(?:-\d{4})?\b/)
+  const zipCode = zipMatch?.[1] || ''
+  if (!zipCode) return { street1: '', city: '', state: 'CO', zipCode: '' }
+
+  const beforeZip = value.slice(0, zipMatch?.index ?? 0)
+  const streetMatches = Array.from(
+    beforeZip.matchAll(
+      /\b\d{2,6}\s+[A-Za-z0-9.'-]+(?:\s+[A-Za-z0-9.'-]+){0,5}\s+(?:street|st|avenue|ave|road|rd|lane|ln|drive|dr|court|ct|circle|cir|way|place|pl|trail|trl|boulevard|blvd)\b/gi,
+    ),
+  )
+  const street1 =
+    streetMatches
+      .at(-1)?.[0]
+      .replace(/[,.]+$/, '')
+      .trim() || ''
+  const afterStreet = street1
+    ? beforeZip.slice(
+        beforeZip.toLowerCase().lastIndexOf(street1.toLowerCase()) +
+          street1.length,
+      )
+    : beforeZip
+  const cityStateMatch = afterStreet.match(
+    /(?:,\s*)?([A-Za-z./\s]+?)(?:,\s*|\s+)(CO|Colorado)\.?\s*$/i,
+  )
+  const rawCity = cityStateMatch?.[1]?.trim().replace(/[,.]+$/, '') || ''
+  const city =
+    /^c\/?s$/i.test(rawCity) || /^colorado springs$/i.test(rawCity)
+      ? 'Colorado Springs'
+      : rawCity
+  return { street1, city, state: 'CO', zipCode }
+}
+
+function extractConversationBookingDetails(
+  conversation: HarryConversationLookup,
+  customer: HarryCustomer | null,
+): ConversationBookingDetails {
+  const text = messagesToText(conversation.messages)
+  const explicitName =
+    text.match(
+      /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})\s*,\s*[A-Z0-9._%+-]+@/i,
+    )?.[1] ||
+    customer?.full_name ||
+    ''
+  const parsedName = splitFullName(explicitName)
+  const address = extractAddressFromConversation(text)
+
+  return {
+    firstName: customer?.first_name || parsedName.firstName,
+    lastName: customer?.last_name || parsedName.lastName,
+    email: customer?.email || extractEmail(text),
+    phone: customer?.phone || conversation.phone_number,
+    street1: address.street1,
+    city: address.city,
+    state: address.state,
+    zipCode: address.zipCode,
+  }
+}
+
+function missingBookingDetailFields(
+  details: ConversationBookingDetails,
+): string[] {
+  return [
+    !details.firstName ? 'first name' : '',
+    !details.lastName ? 'last name' : '',
+    !details.email ? 'email' : '',
+    !details.phone ? 'phone' : '',
+    !details.street1 ? 'street address' : '',
+    !details.city ? 'city' : '',
+    !details.zipCode ? 'zip code' : '',
+  ].filter(Boolean)
+}
+
+function positiveIntegerFromPatterns(
+  text: string,
+  patterns: RegExp[],
+): number | null {
+  for (const pattern of patterns) {
+    const match = text.match(pattern)
+    if (match?.[1]) {
+      const value = Number(match[1])
+      if (Number.isInteger(value) && value > 0) return value
+    }
+  }
+  return null
+}
+
+function addInferredLineItem(
+  items: InferredBookingLineItem[],
+  serviceBySlug: Map<string, { id: string; name: string }>,
+  slug: string,
+  quantity: number | null,
+  reason: string,
+) {
+  if (!quantity || quantity <= 0) return
+  const service = serviceBySlug.get(slug)
+  if (!service) return
+
+  const existing = items.find((item) => item.service_id === service.id)
+  if (existing) {
+    existing.quantity = Math.max(existing.quantity, quantity)
+    existing.reason = `${existing.reason}; ${reason}`
+    return
+  }
+
+  items.push({
+    service_id: service.id,
+    quantity,
+    reason: `${service.name}: ${reason}`,
+  })
+}
+
+async function inferBookingLineItemsFromConversation(
+  supabase: ReturnType<typeof createAdminClient>,
+  conversation: HarryConversationLookup,
+): Promise<InferredBookingLineItem[]> {
+  const text = messagesToText(conversation.messages)
+  const lowerText = text.toLowerCase()
+  const requiredSlugs = [
+    'regular-size-room-100-to-200-sqft',
+    'sasquatch-size-room-200-to-400-sqft',
+    'monster-size-room-400-to-600-sqft',
+    'jumbo-humungous-room-600-to800-sqft',
+    'oversized-room-carpet-cleaning-800-plus-sqft',
+    'step-carpet-cleaning-per-step-charge',
+    'pet-urine-injection-treatment-with-bio-release',
+    'pre-vacuuming',
+    'sofa',
+    'loveseat',
+    'recliner',
+    'sectional',
+    'leather-cleaning-chair',
+    'leather-cleaning-love-seat',
+    'leather-cleaning-sofa',
+  ]
+  const { data: services } = await supabase
+    .from('service_catalog_items')
+    .select('id, name, slug')
+    .in('slug', requiredSlugs)
+    .eq('is_active', true)
+
+  const serviceBySlug = new Map(
+    (services || []).map((service) => [
+      String(service.slug),
+      { id: service.id, name: String(service.name || service.slug) },
+    ]),
+  )
+  const inferred: InferredBookingLineItem[] = []
+
+  const regularRoomCount = positiveIntegerFromPatterns(lowerText, [
+    /\b(\d+)\s+(?:regular\s+)?(?:standard\s+)?(?:rooms?|bedrooms?)\b/i,
+    /\b(?:rooms?|bedrooms?)\s*[:,\-]?\s*(\d+)\b/i,
+  ])
+  const wordRoomCount =
+    regularRoomCount ||
+    (/\btwo\s+(?:regular\s+)?(?:standard\s+)?(?:rooms?|bedrooms?)\b/i.test(
+      lowerText,
+    )
+      ? 2
+      : /\bthree\s+(?:regular\s+)?(?:standard\s+)?(?:rooms?|bedrooms?)\b/i.test(
+            lowerText,
+          )
+        ? 3
+        : /\bfour\s+(?:regular\s+)?(?:standard\s+)?(?:rooms?|bedrooms?)\b/i.test(
+              lowerText,
+            )
+          ? 4
+          : null)
+  addInferredLineItem(
+    inferred,
+    serviceBySlug,
+    'regular-size-room-100-to-200-sqft',
+    wordRoomCount,
+    'conversation mentions standard/regular rooms',
+  )
+
+  const explicitSqftMatches = Array.from(
+    lowerText.matchAll(/\b(\d{2,4})\s*(?:sq\s*ft|sqft|square feet)\b/g),
+  )
+    .map((match) => Number(match[1]))
+    .filter((value) => Number.isFinite(value) && value > 0)
+  if (explicitSqftMatches.length === 1 && !wordRoomCount) {
+    const sqft = explicitSqftMatches[0]
+    const slug =
+      sqft > 800
+        ? 'oversized-room-carpet-cleaning-800-plus-sqft'
+        : sqft >= 600
+          ? 'jumbo-humungous-room-600-to800-sqft'
+          : sqft >= 400
+            ? 'monster-size-room-400-to-600-sqft'
+            : sqft >= 200
+              ? 'sasquatch-size-room-200-to-400-sqft'
+              : 'regular-size-room-100-to-200-sqft'
+    addInferredLineItem(
+      inferred,
+      serviceBySlug,
+      slug,
+      sqft > 800 ? sqft : 1,
+      `conversation mentions ${sqft} square feet`,
+    )
+  }
+
+  const stepCount = positiveIntegerFromPatterns(lowerText, [
+    /\b(\d+)\s+(?:steps?|stairs?)\b/i,
+    /\b(?:steps?|stairs?)\s*[:,\-]?\s*(\d+)\b/i,
+    /\btotal\s+of\s+(\d+)\b/i,
+  ])
+  if (!/\bwasn'?t planning on doing the steps\b/i.test(lowerText)) {
+    addInferredLineItem(
+      inferred,
+      serviceBySlug,
+      'step-carpet-cleaning-per-step-charge',
+      stepCount,
+      'conversation mentions step count',
+    )
+  }
+
+  const petTreatmentCount =
+    positiveIntegerFromPatterns(lowerText, [
+      /\b(\d+)\s+(?:pet|urine)\s+(?:spots?|stains?|treatments?)\b/i,
+      /\b(?:pet|urine)\s+(?:spots?|stains?|treatments?)\s*[:,\-]?\s*(\d+)\b/i,
+    ]) ||
+    (/\b(?:pet|urine).*(?:spots?|stains?|treatment)\b/i.test(lowerText)
+      ? wordRoomCount || 1
+      : null)
+  addInferredLineItem(
+    inferred,
+    serviceBySlug,
+    'pet-urine-injection-treatment-with-bio-release',
+    petTreatmentCount,
+    'conversation mentions pet/urine treatment',
+  )
+
+  const preVacuumRooms = /\bpre[-\s]?vac/i.test(lowerText)
+    ? wordRoomCount || 1
+    : null
+  addInferredLineItem(
+    inferred,
+    serviceBySlug,
+    'pre-vacuuming',
+    preVacuumRooms,
+    'conversation mentions pre-vacuuming',
+  )
+
+  for (const [slug, service] of serviceBySlug) {
+    if (inferred.some((item) => item.service_id === service.id)) continue
+    const serviceName = service.name.toLowerCase()
+    if (serviceName.length >= 4 && lowerText.includes(serviceName)) {
+      inferred.push({
+        service_id: service.id,
+        quantity: 1,
+        reason: `${service.name}: service name appears in conversation`,
+      })
+    } else if (lowerText.includes(slug.replace(/-/g, ' '))) {
+      inferred.push({
+        service_id: service.id,
+        quantity: 1,
+        reason: `${service.name}: service slug appears in conversation`,
+      })
+    }
+  }
+
+  return inferred
+}
+
+async function resolveCommandBookingLineItems(
+  supabase: ReturnType<typeof createAdminClient>,
+  rawItems: unknown,
+): Promise<AiStyleBookingLineRequest[]> {
+  if (!Array.isArray(rawItems)) return []
+
+  const inputs = rawItems.map((item) => item as CommandBookingLineItemInput)
+  const directIds = inputs
+    .map((item) => item.service_id || item.catalog_item_id)
+    .filter(Boolean) as string[]
+  const slugs = inputs
+    .map((item) => item.service_slug || item.catalog_slug)
+    .filter(Boolean) as string[]
+  const names = inputs
+    .map((item) => item.service_name || item.name)
+    .filter(Boolean) as string[]
+
+  const idSet = new Set<string>()
+  if (directIds.length > 0) {
+    const { data } = await supabase
+      .from('service_catalog_items')
+      .select('id')
+      .in('id', directIds)
+      .eq('is_active', true)
+    for (const item of data || []) idSet.add(item.id)
+  }
+
+  const slugToId = new Map<string, string>()
+  if (slugs.length > 0) {
+    const { data } = await supabase
+      .from('service_catalog_items')
+      .select('id, slug')
+      .in('slug', slugs)
+      .eq('is_active', true)
+    for (const item of data || []) slugToId.set(String(item.slug), item.id)
+  }
+
+  const nameToId = new Map<string, string>()
+  if (names.length > 0) {
+    const { data } = await supabase
+      .from('service_catalog_items')
+      .select('id, name, slug')
+      .eq('is_active', true)
+      .limit(250)
+    for (const item of data || []) {
+      nameToId.set(String(item.name || '').toLowerCase(), item.id)
+      nameToId.set(String(item.slug || '').toLowerCase(), item.id)
+    }
+  }
+
+  return inputs
+    .map((item) => {
+      const directId = item.service_id || item.catalog_item_id
+      const serviceId =
+        (directId && idSet.has(directId) ? directId : '') ||
+        (item.service_slug ? slugToId.get(item.service_slug) : undefined) ||
+        (item.catalog_slug ? slugToId.get(item.catalog_slug) : undefined) ||
+        (item.service_name
+          ? nameToId.get(item.service_name.toLowerCase())
+          : undefined) ||
+        (item.name ? nameToId.get(item.name.toLowerCase()) : undefined)
+      if (!serviceId) return null
+      return {
+        service_id: serviceId,
+        quantity: Math.max(1, Number(item.quantity) || 1),
+      }
+    })
+    .filter(Boolean) as AiStyleBookingLineRequest[]
 }
 
 function getAllowedTelegramUserIds(): Set<string> {
@@ -720,6 +1156,7 @@ Voice:
 - When Charles asks you to text a customer, draft the SMS with send_sms. The system will ask Charles to approve before sending; never claim it was sent until approval happens.
 - When Charles says "that", "it", "same thing", or "the report", use RECENT COMMAND MEMORY and LAST ARTIFACT before asking what he means.
 - When asked "when did we last..." or about a room/building/scope, use search_job_details so you can inspect line-item descriptions before answering.
+- When Charles asks you to book "this customer", "the current conversation", or a customer from a recent Harry alert, prefer book_conversation_job. It can resolve the active SMS thread and pull customer details from the conversation.
 
 RECENT COMMAND MEMORY:
 ${
@@ -867,6 +1304,64 @@ ${
               },
             },
             required: ['customer_name', 'date', 'start_time'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'book_conversation_job',
+          description:
+            'Book a residential job from an active/recent SMS conversation. Use this when Charles says to book "this customer", "the current conversation", or a named customer from a recent Harry alert. Pulls customer details from the conversation and books through the normal booking engine. If line_items are omitted, the backend will conservatively infer obvious services from the conversation; if it cannot, it will ask for services.',
+          parameters: {
+            type: 'object',
+            properties: {
+              target: {
+                type: 'string',
+                description:
+                  'Customer name, phone number, or contextual phrase like "current", "latest", "this customer", or "Tim".',
+              },
+              appointment_date: {
+                type: 'string',
+                description: 'Appointment date in YYYY-MM-DD.',
+              },
+              start_time: {
+                type: 'string',
+                description: 'Start time in HH:MM 24-hour format.',
+              },
+              line_items: {
+                type: 'array',
+                description:
+                  'Optional if the active conversation clearly states services. Services to book. Use service_id/catalog_item_id when known, or catalog_slug/service_name with quantity.',
+                items: {
+                  type: 'object',
+                  properties: {
+                    service_id: { type: 'string' },
+                    catalog_item_id: { type: 'string' },
+                    catalog_slug: { type: 'string' },
+                    service_slug: { type: 'string' },
+                    service_name: { type: 'string' },
+                    name: { type: 'string' },
+                    quantity: { type: 'number' },
+                  },
+                },
+              },
+              lead_source: {
+                type: 'string',
+                description:
+                  'How the customer heard about Sasquatch. Use Other if unknown and Charles is manually rescuing the booking.',
+              },
+              accepted_minimum_charge: {
+                type: 'boolean',
+                description:
+                  'Set true only when the customer explicitly accepted booking at the $150 minimum.',
+              },
+              notes: {
+                type: 'string',
+                description: 'Internal note explaining the manual booking.',
+              },
+            },
+            required: ['target', 'appointment_date', 'start_time'],
           },
         },
       },
@@ -1326,6 +1821,19 @@ async function findCustomer(
   return candidates[0] || null
 }
 
+async function findCustomerById(
+  customerId: string,
+  supabase: ReturnType<typeof createAdminClient>,
+): Promise<HarryCustomer | null> {
+  const { data } = await supabase
+    .from('ops_customers')
+    .select(CUSTOMER_SELECT)
+    .eq('id', customerId)
+    .maybeSingle()
+
+  return (data as HarryCustomer | null) || null
+}
+
 async function findCustomerCandidates(
   target: string,
   supabase: ReturnType<typeof createAdminClient>,
@@ -1621,6 +2129,100 @@ async function executeToolCall(
       })
 
       return `✅ Added ${displayCustomerName(customer)} to schedule\n📅 ${formattedDate} at ${formattedTime}\n⏱️ ${durationHours}h${notes ? `\n📝 ${notes}` : ''}`
+    }
+
+    case 'book_conversation_job': {
+      const target = String(input.target || 'current')
+      const appointmentDate = String(input.appointment_date || '')
+      const startTime = String(input.start_time || '')
+      const acceptedMinimumCharge = input.accepted_minimum_charge === true
+      const notes = input.notes ? String(input.notes) : null
+      const leadSource = String(input.lead_source || 'Other').trim() || 'Other'
+
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(appointmentDate)) {
+        return '❌ appointment_date must be YYYY-MM-DD.'
+      }
+      if (!/^\d{1,2}:\d{2}(?::\d{2})?$/.test(startTime)) {
+        return '❌ start_time must be HH:MM.'
+      }
+
+      const conversation = await findConversation(target, supabase)
+      if (!conversation) {
+        return `❌ Couldn't find an active conversation for "${target}". Try a phone number or use list_recent_conversations.`
+      }
+
+      const customer = conversation.ops_customer_id
+        ? await findCustomerById(conversation.ops_customer_id, supabase)
+        : await findCustomer(conversation.phone_number, supabase)
+      const details = extractConversationBookingDetails(conversation, customer)
+      const missingFields = missingBookingDetailFields(details)
+      if (missingFields.length > 0) {
+        return `❌ I found the conversation (${conversation.phone_number}), but I still need: ${missingFields.join(', ')}.`
+      }
+
+      const explicitLineItems = await resolveCommandBookingLineItems(
+        supabase,
+        input.line_items,
+      )
+      const inferredLineItems =
+        explicitLineItems.length > 0
+          ? []
+          : await inferBookingLineItemsFromConversation(supabase, conversation)
+      const lineItems =
+        explicitLineItems.length > 0 ? explicitLineItems : inferredLineItems
+      if (lineItems.length === 0) {
+        return '❌ I could not confidently infer the service line items from the conversation. Tell me the services, like "2 regular rooms and 2 urine treatments."'
+      }
+
+      const result = await createAiStyleBooking({
+        supabase,
+        customer: {
+          first_name: details.firstName,
+          last_name: details.lastName,
+          email: details.email,
+          phone: details.phone,
+        },
+        address: {
+          street_1: details.street1,
+          city: details.city,
+          state: details.state,
+          zip_code: details.zipCode,
+        },
+        appointment_date: appointmentDate,
+        start_time: startTime,
+        line_items: lineItems,
+        booking_mode: 'direct',
+        booking_channel: 'sms_harry',
+        source_label: 'Harry Command',
+        lead_source: leadSource,
+        actor_label: 'Harry Command',
+        admin_heading: 'Harry Command booking',
+        accepted_minimum_charge: acceptedMinimumCharge,
+        lead_notes:
+          notes ||
+          `Booked by Harry Command from conversation ${conversation.id}.`,
+      })
+
+      if (!result.ok) {
+        return `❌ Booking was NOT created: ${result.error}`
+      }
+
+      await supabase
+        .from('ops_appointments')
+        .update({
+          conversation_id: conversation.id,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', result.appointment_id)
+
+      const inferredSummary =
+        inferredLineItems.length > 0
+          ? `\nInferred services:\n${inferredLineItems
+              .map((item) => `- ${item.quantity}x ${item.reason}`)
+              .join('\n')}`
+          : ''
+
+      return `✅ Booked ${details.firstName} ${details.lastName}\n📅 ${result.appointment_date} ${result.start_time.slice(0, 5)}-${result.end_time.slice(0, 5)}\n💵 $${result.total.toFixed(2)}\nConfirmation: ${result.confirmation_number}${inferredSummary}`
     }
 
     case 'view_schedule': {
@@ -2918,37 +3520,63 @@ async function handleButtonClick(
 async function findConversation(
   target: string,
   supabase: ReturnType<typeof createAdminClient>,
-): Promise<{
-  id: string
-  phone_number: string
-  messages: unknown
-} | null> {
+): Promise<HarryConversationLookup | null> {
+  const cleanTarget = String(target || '').trim()
+  if (!cleanTarget) return null
+
+  if (looksLikeCurrentConversationReference(cleanTarget)) {
+    const { data } = await supabase
+      .from('conversations')
+      .select('id, phone_number, messages, ops_customer_id')
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (data) return data as HarryConversationLookup
+  }
+
   // Try to find by phone number (extract digits)
-  const digits = target.replace(/\D/g, '')
+  const digits = cleanTarget.replace(/\D/g, '')
   if (digits.length >= 10) {
     const phone = digits.length === 10 ? `+1${digits}` : `+${digits}`
     const phoneVariants = opsPhoneLookupVariants(phone)
     const { data } = await supabase
       .from('conversations')
-      .select('id, phone_number, messages')
+      .select('id, phone_number, messages, ops_customer_id')
       .in('phone_number', phoneVariants)
+      .order('updated_at', { ascending: false })
       .maybeSingle()
 
-    if (data) return data
+    if (data) return data as HarryConversationLookup
   }
 
   // Try to find by customer or business name
-  const customer = await findCustomer(target, supabase)
+  const customer = await findCustomer(cleanTarget, supabase)
 
   if (customer?.phone) {
     const phoneVariants = opsPhoneLookupVariants(customer.phone)
     const { data: conv } = await supabase
       .from('conversations')
-      .select('id, phone_number, messages')
+      .select('id, phone_number, messages, ops_customer_id')
       .in('phone_number', phoneVariants)
+      .order('updated_at', { ascending: false })
       .maybeSingle()
 
-    if (conv) return conv
+    if (conv) return conv as HarryConversationLookup
+  }
+
+  const { data: recentConversations } = await supabase
+    .from('conversations')
+    .select('id, phone_number, messages, ops_customer_id')
+    .order('updated_at', { ascending: false })
+    .limit(25)
+
+  const matchingConversation = (recentConversations || []).find(
+    (conversation) =>
+      conversationTextMatches(conversation.messages, cleanTarget),
+  )
+  if (matchingConversation) {
+    return matchingConversation as HarryConversationLookup
   }
 
   return null
