@@ -1,4 +1,4 @@
-import { createClient } from '@/supabase/server'
+import { createAdminClient, createClient } from '@/supabase/server'
 
 export const STAFF_ROLES = ['owner', 'dispatcher', 'tech', 'marketing'] as const
 export type StaffRole = (typeof STAFF_ROLES)[number]
@@ -67,14 +67,17 @@ export async function getUserWithRole(): Promise<{
     return { user: null, role: null, partner: null, staff: null }
   }
 
-  const { data: staff, error: staffError } = await supabase
+  // Use admin client for role lookup to avoid RLS timing issues right after login.
+  // The user identity is still verified above via the session cookie.
+  const admin = createAdminClient()
+
+  const { data: staff, error: staffError } = await admin
     .from('staff_users')
     .select('*')
     .eq('user_id', user.id)
     .eq('is_active', true)
     .maybeSingle()
 
-  // Before the migration is applied, the table may not exist yet.
   if (staffError && !staffError.message.toLowerCase().includes('staff_users')) {
     console.error('[auth] staff_users lookup failed:', staffError.message)
   }
@@ -88,12 +91,11 @@ export async function getUserWithRole(): Promise<{
     }
   }
 
-  // Check if user has a partner record
-  const { data: partner } = await supabase
+  const { data: partner } = await admin
     .from('partners')
     .select('*')
     .eq('user_id', user.id)
-    .single()
+    .maybeSingle()
 
   if (partner) {
     return {

@@ -31,43 +31,15 @@ export function LoginForm({
     setError(null)
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
       if (error) throw error
 
-      // Quick role check using the just-authenticated client
-      const { data: staffUser } = await supabase
-        .from('staff_users')
-        .select('role')
-        .eq('user_id', data.user.id)
-        .eq('is_active', true)
-        .maybeSingle()
-
-      if (staffUser?.role === 'tech') {
-        window.location.href = '/tech'
-        return
-      }
-
-      if (staffUser?.role) {
-        window.location.href = '/admin/operations'
-        return
-      }
-
-      const { data: partner } = await supabase
-        .from('partners')
-        .select('role')
-        .eq('user_id', data.user.id)
-        .maybeSingle()
-
-      if (partner?.role === 'partner') {
-        window.location.href = '/partners'
-        return
-      }
-
-      // Default for admin/legacy users
-      window.location.href = '/admin'
+      // Server-side redirect page determines destination based on role.
+      // Uses admin client so it works reliably right after sign-in.
+      window.location.href = '/redirect'
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : 'An error occurred')
     } finally {
