@@ -38,7 +38,7 @@ export function LoginForm({
       if (error) throw error
 
       // Let the server resolve the role and redirect authoritatively
-      window.location.href = '/auth/redirect'
+      window.location.href = '/redirect'
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : 'An error occurred')
     } finally {

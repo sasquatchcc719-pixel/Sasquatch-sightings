@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { getUserWithRole } from '@/lib/auth'
 
-export default async function AuthRedirectPage() {
+export default async function RedirectPage() {
   const { user, role } = await getUserWithRole()
 
   if (!user) {
@@ -24,6 +24,5 @@ export default async function AuthRedirectPage() {
     redirect('/admin')
   }
 
-  // No recognized role
   redirect('/auth/login')
 }
