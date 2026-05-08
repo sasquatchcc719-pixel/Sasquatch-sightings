@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
-import { sendCustomerSMS } from '@/lib/twilio'
+import { sendCustomerSMS, sendCustomerSMSWithResult } from '@/lib/twilio'
 import { getQBInvoicePaymentLink } from '@/lib/quickbooks-api'
 import { generateInvoicePDF } from '@/lib/ops/pdf/generate'
+import { createSquarePaymentLink } from '@/lib/payments/square'
 
 const VENMO_USERNAME = process.env.VENMO_BUSINESS_USERNAME ?? 'SasquatchCarpet'
 
@@ -135,7 +136,11 @@ export async function POST(
     const { id } = await params
     const body = (await request.json()) as {
       channel: 'sms' | 'email' | 'both'
-      type?: 'invoice' | 'payment_link'
+      type?:
+        | 'invoice'
+        | 'payment_link'
+        | 'venmo_payment_link'
+        | 'square_payment_link'
     }
     const { channel, type } = body
 
@@ -241,7 +246,71 @@ export async function POST(
 
     const errors: string[] = []
 
-    // Payment link SMS — fetch QB invoice pay link and text it
+    if (type === 'square_payment_link') {
+      if (!customerPhone) {
+        return NextResponse.json(
+          { error: 'No phone number on file for this customer.' },
+          { status: 422 },
+        )
+      }
+
+      const paymentUrl = await createSquarePaymentLink({
+        invoiceId: id,
+        amount: total,
+        customerName,
+        description: addressText,
+      })
+
+      const linkBody = [
+        `Hi ${customerName} — here's your invoice from Sasquatch Carpet Cleaning.`,
+        ``,
+        `Total due: $${total.toFixed(2)}`,
+        `Pay securely by card: ${paymentUrl}`,
+        ``,
+        `Questions? Call or text us anytime. Thank you!`,
+      ].join('\n')
+
+      const sms = await sendCustomerSMSWithResult(
+        customerPhone,
+        linkBody,
+        id,
+        'square_payment_link',
+      )
+      return NextResponse.json({ ok: true, payment_url: paymentUrl, sms })
+    }
+
+    if (type === 'venmo_payment_link') {
+      if (!customerPhone) {
+        return NextResponse.json(
+          { error: 'No phone number on file for this customer.' },
+          { status: 422 },
+        )
+      }
+
+      const linkBody = [
+        `Hi ${customerName} — here's your invoice from Sasquatch Carpet Cleaning.`,
+        ``,
+        `Total due: $${total.toFixed(2)}`,
+        `Pay with Venmo: ${venmoUrl}`,
+        ``,
+        `Questions? Call or text us anytime. Thank you!`,
+      ].join('\n')
+
+      const sms = await sendCustomerSMSWithResult(
+        customerPhone,
+        linkBody,
+        id,
+        'venmo_payment_link',
+      )
+      return NextResponse.json({
+        ok: true,
+        payment_url: venmoUrl,
+        sms,
+      })
+    }
+
+    // Legacy payment link action. Keep its original Venmo fallback so existing
+    // callers do not depend on the abandoned QuickBooks pay-link experiment.
     if (type === 'payment_link') {
       if (!customerPhone) {
         return NextResponse.json(
@@ -271,8 +340,13 @@ export async function POST(
         `Questions? Call or text us anytime. Thank you!`,
       ].join('\n')
 
-      await sendCustomerSMS(customerPhone, linkBody, id, 'payment_link')
-      return NextResponse.json({ ok: true })
+      const sms = await sendCustomerSMSWithResult(
+        customerPhone,
+        linkBody,
+        id,
+        'payment_link',
+      )
+      return NextResponse.json({ ok: true, payment_url: paymentUrl, sms })
     }
 
     // Send SMS

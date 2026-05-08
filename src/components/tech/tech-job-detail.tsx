@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import type { TechAppointment } from '@/lib/tech/appointments'
 import { SignatureModal } from '@/components/admin/ops/signature-modal'
+import { formatSquareAmount } from '@/lib/payments/square'
 
 function formatTime(value: string | null): string {
   if (!value) return 'Time TBD'
@@ -58,6 +59,10 @@ export function TechJobDetail({
   const [savingInvoice, setSavingInvoice] = useState(false)
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [recordingPayment, setRecordingPayment] = useState<string | null>(null)
+  const [sendingSquareLink, setSendingSquareLink] = useState(false)
+  const [squareLinkFeedback, setSquareLinkFeedback] = useState<string | null>(
+    null,
+  )
   const [showSignatureModal, setShowSignatureModal] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
@@ -65,9 +70,10 @@ export function TechJobDetail({
   const mapsHref = fullAddress
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress)}`
     : null
-  const payableTotal = appointment.invoice?.total ?? appointment.quotedTotal
-  const squareAmount = Number(payableTotal ?? 0).toFixed(2)
-  const squareWebUrl = `https://squareup.com/dashboard/sales/transactions/new?amount=${encodeURIComponent(squareAmount)}`
+  const payableTotal = appointment.hidePricing
+    ? null
+    : (appointment.invoice?.total ?? appointment.quotedTotal)
+  const squareAmount = formatSquareAmount(payableTotal)
 
   async function updateJob(body: Record<string, unknown>) {
     setError(null)
@@ -238,6 +244,36 @@ export function TechJobDetail({
       setError(err instanceof Error ? err.message : 'Could not record payment')
     } finally {
       setRecordingPayment(null)
+    }
+  }
+
+  async function sendSquarePaymentLink() {
+    setSendingSquareLink(true)
+    setSquareLinkFeedback(null)
+    setError(null)
+    try {
+      const response = await fetch(
+        `/api/tech/appointments/${appointment.id}/square-link`,
+        { method: 'POST' },
+      )
+      const result = (await response.json()) as {
+        error?: string
+        sms?: { sid?: string; to?: string }
+      }
+      if (!response.ok) {
+        throw new Error(result.error || 'Could not send Square payment link')
+      }
+      setSquareLinkFeedback(
+        `Square payment link sent to ${result.sms?.to || 'customer'}${result.sms?.sid ? ` (${result.sms.sid})` : ''}.`,
+      )
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Could not send Square payment link',
+      )
+    } finally {
+      setSendingSquareLink(false)
     }
   }
 
@@ -491,15 +527,32 @@ export function TechJobDetail({
               ) : null}
               Save Invoice Changes
             </Button>
-            <Button
-              asChild
-              className="w-full bg-blue-500 text-white hover:bg-blue-400"
-            >
-              <a href={squareWebUrl} target="_blank" rel="noopener noreferrer">
-                <CreditCard className="h-4 w-4" />
-                Collect ${squareAmount} in Square
-              </a>
-            </Button>
+            {squareAmount ? (
+              <Button
+                className="w-full bg-blue-600 text-white hover:bg-blue-500"
+                disabled={sendingSquareLink || recordingPayment !== null}
+                onClick={() => void sendSquarePaymentLink()}
+              >
+                {sendingSquareLink ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CreditCard className="h-4 w-4" />
+                )}
+                {sendingSquareLink
+                  ? 'Sending Square Link...'
+                  : `Text Square Pay Link · ${squareAmount}`}
+              </Button>
+            ) : null}
+            {squareAmount ? (
+              <p className="text-center text-xs text-slate-400">
+                Customer pays online by card, then mark this invoice paid below.
+              </p>
+            ) : null}
+            {squareLinkFeedback ? (
+              <p className="text-center text-xs text-emerald-300">
+                {squareLinkFeedback}
+              </p>
+            ) : null}
             <Button
               variant="outline"
               className="w-full border-blue-300/40 bg-blue-500/10 text-blue-100"

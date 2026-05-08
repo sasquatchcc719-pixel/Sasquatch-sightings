@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import SignatureCanvas from 'react-signature-canvas'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -26,28 +27,51 @@ export function SignatureModal({
   const [customerName, setCustomerName] = useState(initialCustomerName)
   const [saving, setSaving] = useState(false)
   const [isEmpty, setIsEmpty] = useState(true)
+  const [mounted, setMounted] = useState(false)
+  const scrollYRef = useRef(0)
 
   useEffect(() => {
     setCustomerName(initialCustomerName)
   }, [initialCustomerName])
 
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
   // Lock body scroll when modal is open
   useEffect(() => {
     if (isOpen) {
+      scrollYRef.current = window.scrollY
       document.body.style.overflow = 'hidden'
       document.body.style.position = 'fixed'
+      document.body.style.top = `-${scrollYRef.current}px`
+      document.body.style.left = '0'
+      document.body.style.right = '0'
       document.body.style.width = '100%'
     } else {
       document.body.style.overflow = ''
       document.body.style.position = ''
+      document.body.style.top = ''
+      document.body.style.left = ''
+      document.body.style.right = ''
       document.body.style.width = ''
+      window.scrollTo(0, scrollYRef.current)
     }
 
     return () => {
       document.body.style.overflow = ''
       document.body.style.position = ''
+      document.body.style.top = ''
+      document.body.style.left = ''
+      document.body.style.right = ''
       document.body.style.width = ''
     }
+  }, [isOpen])
+
+  useEffect(() => {
+    if (!isOpen) return
+    sigCanvas.current?.clear()
+    setIsEmpty(true)
   }, [isOpen])
 
   const handleClear = () => {
@@ -79,20 +103,15 @@ export function SignatureModal({
     setIsEmpty(false)
   }
 
-  if (!isOpen) return null
+  if (!isOpen || !mounted) return null
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 p-4"
-      onClick={(e) => {
-        // Close if clicking backdrop (not the modal content)
-        if (e.target === e.currentTarget) {
-          onClose()
-        }
-      }}
+      className="fixed inset-0 z-[9999] flex touch-none items-center justify-center overflow-hidden bg-black/80 p-3 sm:p-4"
+      onTouchMove={(e) => e.preventDefault()}
     >
       <div
-        className="bg-background relative flex w-full max-w-4xl flex-col rounded-2xl shadow-2xl"
+        className="bg-background relative flex h-[calc(100dvh-1.5rem)] w-full max-w-4xl touch-none flex-col overflow-hidden rounded-2xl shadow-2xl sm:h-[92dvh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -112,7 +131,7 @@ export function SignatureModal({
         </div>
 
         {/* Signature area */}
-        <div className="flex flex-1 flex-col p-4">
+        <div className="flex min-h-0 flex-1 flex-col p-4">
           {/* Customer name input */}
           <div className="mb-4 max-w-md">
             <Label htmlFor="customer-name">Customer Name</Label>
@@ -135,8 +154,7 @@ export function SignatureModal({
             <SignatureCanvas
               ref={sigCanvas}
               canvasProps={{
-                className:
-                  'w-full h-full min-h-[300px] md:min-h-[400px] touch-none',
+                className: 'w-full h-full min-h-0 touch-none',
                 style: { touchAction: 'none' },
               }}
               backgroundColor="white"
@@ -182,6 +200,7 @@ export function SignatureModal({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
