@@ -1991,11 +1991,27 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                         −
                       </Button>
                       <Input
-                        type="text"
+                        type="number"
+                        min="1"
+                        step="1"
                         inputMode="numeric"
                         value={String(item.quantity)}
                         className="h-8 text-center text-sm tabular-nums"
-                        readOnly
+                        onChange={(event) => {
+                          const nextQuantity = Number(event.target.value || 0)
+                          if (
+                            Number.isFinite(nextQuantity) &&
+                            nextQuantity >= 1
+                          ) {
+                            setLineItems((current) =>
+                              current.map((line, lineIndex) =>
+                                lineIndex === index
+                                  ? { ...line, quantity: nextQuantity }
+                                  : line,
+                              ),
+                            )
+                          }
+                        }}
                       />
                       <Button
                         type="button"
