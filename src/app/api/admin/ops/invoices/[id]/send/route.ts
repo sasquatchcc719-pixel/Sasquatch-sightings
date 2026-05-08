@@ -259,6 +259,7 @@ export async function POST(
     }
 
     const errors: string[] = []
+    let emailDelivery: { to: string; id?: string } | null = null
 
     if (type === 'square_payment_link') {
       if (!customerPhone) {
@@ -422,31 +423,48 @@ export async function POST(
 
           const shortRef = `INV-${id.replace(/-/g, '').slice(-6).toUpperCase()}`
 
-          await resend.emails.send({
-            from: fromEmail,
-            to: customerEmail,
-            subject: isReceipt
-              ? `Your receipt from Sasquatch Carpet Cleaning — $${total.toFixed(2)} paid`
-              : `Your invoice from Sasquatch Carpet Cleaning — $${total.toFixed(2)} due`,
-            html: buildEmailHtml(
-              customerName,
-              addressText,
-              serviceDate,
-              lineItems,
-              total,
-              venmoUrl,
-              photoUrls,
-              isReceipt ? 'receipt' : 'invoice',
-            ),
-            attachments: pdfBuffer
-              ? [
-                  {
-                    filename: `${shortRef}.pdf`,
-                    content: pdfBuffer,
-                  },
-                ]
-              : undefined,
-          })
+          const { data: resendData, error: resendError } =
+            await resend.emails.send({
+              from: fromEmail,
+              to: customerEmail,
+              subject: isReceipt
+                ? `Your receipt from Sasquatch Carpet Cleaning — $${total.toFixed(2)} paid`
+                : `Your invoice from Sasquatch Carpet Cleaning — $${total.toFixed(2)} due`,
+              html: buildEmailHtml(
+                customerName,
+                addressText,
+                serviceDate,
+                lineItems,
+                total,
+                venmoUrl,
+                photoUrls,
+                isReceipt ? 'receipt' : 'invoice',
+              ),
+              attachments: pdfBuffer
+                ? [
+                    {
+                      filename: `${shortRef}.pdf`,
+                      content: pdfBuffer,
+                    },
+                  ]
+                : undefined,
+            })
+
+          if (resendError) {
+            const msg =
+              typeof resendError === 'object' &&
+              resendError !== null &&
+              'message' in resendError &&
+              typeof (resendError as { message: unknown }).message === 'string'
+                ? (resendError as { message: string }).message
+                : 'Email provider rejected the message.'
+            errors.push(msg)
+          } else {
+            emailDelivery = {
+              to: customerEmail,
+              id: resendData?.id,
+            }
+          }
         }
       }
     }
@@ -458,6 +476,7 @@ export async function POST(
     return NextResponse.json({
       ok: true,
       warnings: errors.length > 0 ? errors : undefined,
+      email_delivery: emailDelivery ?? undefined,
     })
   } catch (error) {
     console.error('[ops/invoices/:id/send][POST] Error:', error)

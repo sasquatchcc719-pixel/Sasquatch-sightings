@@ -694,6 +694,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
       const result = (await response.json()) as {
         error?: string
         sms?: { sid?: string; to?: string }
+        email_delivery?: { to?: string; id?: string }
       }
       if (!response.ok) {
         setSendFeedback({
@@ -702,17 +703,24 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
           message: result.error || 'Failed to send',
         })
       } else {
+        const mailedTo =
+          type === 'receipt'
+            ? (result.email_delivery?.to ?? '').trim() || undefined
+            : undefined
         setSendFeedback({
           channel,
           ok: true,
           message:
             type === 'receipt'
-              ? 'Receipt emailed!'
+              ? mailedTo
+                ? `Receipt emailed to ${mailedTo}.`
+                : 'Receipt emailed.'
               : channel === 'sms'
                 ? 'Text sent!'
                 : 'Email sent!',
         })
-        setTimeout(() => setSendFeedback(null), 4000)
+        const hideAfterMs = type === 'receipt' ? 8000 : 4000
+        setTimeout(() => setSendFeedback(null), hideAfterMs)
         // Auto-advance status to sent
         if (status === 'pending' && type !== 'receipt') {
           setStatus('sent')
@@ -1056,6 +1064,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   )
   const billableTotal = total > 0.005 ? total : Number(invoice?.total || 0)
   const squareAmount = formatSquareAmount(billableTotal)
+  const receiptEmail = customer?.email?.trim() ?? ''
 
   return (
     <div className="space-y-6">
@@ -1537,14 +1546,18 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
           </p>
           <div className="space-y-2">
             <p className="text-muted-foreground text-xs">
-              {status === 'paid'
-                ? 'Email an itemized receipt after the invoice is paid.'
-                : 'Mark the invoice paid first, then email the itemized receipt.'}
+              {status !== 'paid'
+                ? 'Mark the invoice paid first, then email the itemized receipt.'
+                : receiptEmail
+                  ? `Sends to the customer email on file: ${receiptEmail}. Edit Customer to change it, then Save.`
+                  : 'Add and save an email address on this customer before sending a receipt.'}
             </p>
             <Button
               variant="outline"
               className="gap-2"
-              disabled={sendLoading !== null || status !== 'paid'}
+              disabled={
+                sendLoading !== null || status !== 'paid' || !receiptEmail
+              }
               onClick={() => void handleSend('email', 'receipt')}
             >
               {sendLoading === 'email' ? (
