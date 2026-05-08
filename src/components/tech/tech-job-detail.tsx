@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import {
   CheckCircle2,
-  CreditCard,
   DollarSign,
   ImagePlus,
   Loader2,
@@ -45,6 +44,17 @@ function addressLine(appointment: TechAppointment): string {
   ]
     .filter(Boolean)
     .join(', ')
+}
+
+function SquareLogoMark({ className = '' }: { className?: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`inline-flex items-center justify-center rounded-sm border-2 border-current ${className}`}
+    >
+      <span className="h-1.5 w-1.5 rounded-[1px] border border-current" />
+    </span>
+  )
 }
 
 export function TechJobDetail({
@@ -529,14 +539,14 @@ export function TechJobDetail({
             </Button>
             {squareAmount ? (
               <Button
-                className="w-full bg-blue-600 text-white hover:bg-blue-500"
+                className="w-full bg-black text-white hover:bg-neutral-800"
                 disabled={sendingSquareLink || recordingPayment !== null}
                 onClick={() => void sendSquarePaymentLink()}
               >
                 {sendingSquareLink ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  <CreditCard className="h-4 w-4" />
+                  <SquareLogoMark className="h-4 w-4" />
                 )}
                 {sendingSquareLink
                   ? 'Sending Square Link...'
@@ -555,7 +565,7 @@ export function TechJobDetail({
             ) : null}
             <Button
               variant="outline"
-              className="w-full border-blue-300/40 bg-blue-500/10 text-blue-100"
+              className="w-full border-neutral-400/40 bg-black/40 text-white"
               disabled={recordingPayment !== null}
               onClick={() => void recordPayment('square')}
             >

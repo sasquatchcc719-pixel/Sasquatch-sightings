@@ -135,6 +135,28 @@ const LINE_ITEM_INPUT_TONES = [
   'border-cyan-200 bg-cyan-50 text-cyan-950 focus-visible:ring-cyan-500/40',
 ]
 
+function SquareLogoMark({ className = '' }: { className?: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`inline-flex items-center justify-center rounded-sm border-2 border-current ${className}`}
+    >
+      <span className="h-1.5 w-1.5 rounded-[1px] border border-current" />
+    </span>
+  )
+}
+
+function VenmoLogoMark({ className = '' }: { className?: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`inline-flex items-center justify-center font-black tracking-tighter ${className}`}
+    >
+      V
+    </span>
+  )
+}
+
 function lineItemInputTone(index: number): string {
   return LINE_ITEM_INPUT_TONES[index % LINE_ITEM_INPUT_TONES.length]
 }
@@ -1621,7 +1643,9 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                   onClick={() => void handleMarkPaid(method.toLowerCase())}
                 >
                   {method === 'Square' ? (
-                    <CreditCard className="h-3.5 w-3.5" />
+                    <SquareLogoMark className="h-3.5 w-3.5" />
+                  ) : method === 'Venmo' ? (
+                    <VenmoLogoMark className="h-3.5 w-3.5 text-[13px]" />
                   ) : null}
                   {method}
                 </Button>
@@ -1629,42 +1653,32 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
             </div>
 
             {squareAmount ? (
-              <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-3">
-                <p className="text-sm font-semibold text-blue-950">
+              <div className="mt-4 rounded-xl border border-black bg-neutral-950 p-3">
+                <p className="flex items-center gap-2 text-sm font-semibold text-white">
+                  <SquareLogoMark className="h-4 w-4" />
                   Square Pay
                 </p>
-                <p className="mt-1 text-xs text-blue-800">
+                <p className="mt-1 text-xs text-neutral-300">
                   Text a Square checkout link for ${squareAmount}, then mark
-                  this invoice Square paid after payment.
+                  this invoice Square paid above after payment.
                 </p>
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  <Button
-                    className="gap-2 bg-blue-600 text-white hover:bg-blue-500"
-                    disabled={paymentLinkLoading !== null}
-                    onClick={() => void handleSendPaymentLink('square')}
-                  >
-                    {paymentLinkLoading === 'square' ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Send className="h-4 w-4" />
-                    )}
-                    {paymentLinkLoading === 'square'
-                      ? 'Sending Square Link...'
-                      : 'Text Square Pay Link'}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="gap-2 border-blue-300 bg-white text-blue-800 hover:bg-blue-100"
-                    onClick={() => void handleMarkPaid('square')}
-                  >
-                    <CreditCard className="h-4 w-4" />
-                    Mark Square Paid
-                  </Button>
-                </div>
+                <Button
+                  className="mt-3 w-full gap-2 bg-white text-black hover:bg-neutral-200"
+                  disabled={paymentLinkLoading !== null}
+                  onClick={() => void handleSendPaymentLink('square')}
+                >
+                  {paymentLinkLoading === 'square' ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <SquareLogoMark className="h-4 w-4" />
+                  )}
+                  {paymentLinkLoading === 'square'
+                    ? 'Sending Square Link...'
+                    : 'Text Square Pay Link'}
+                </Button>
                 {paymentLinkFeedback?.type === 'square' ? (
                   <p
-                    className={`mt-2 text-sm ${paymentLinkFeedback.ok ? 'text-green-700' : 'text-red-600'}`}
+                    className={`mt-2 text-sm ${paymentLinkFeedback.ok ? 'text-green-300' : 'text-red-300'}`}
                   >
                     {paymentLinkFeedback.message}
                   </p>
@@ -1673,7 +1687,10 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
             ) : null}
 
             <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 p-3">
-              <p className="text-sm font-semibold text-blue-950">Venmo Pay</p>
+              <p className="flex items-center gap-2 text-sm font-semibold text-blue-950">
+                <VenmoLogoMark className="h-4 w-4 text-[15px] text-[#008CFF]" />
+                Venmo Pay
+              </p>
               <p className="mt-1 text-xs text-blue-800">
                 Text the Venmo payment link with the exact invoice amount.
               </p>
@@ -1686,7 +1703,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                 {paymentLinkLoading === 'venmo' ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : (
-                  <Send className="h-3.5 w-3.5" />
+                  <VenmoLogoMark className="h-3.5 w-3.5 text-[13px]" />
                 )}
                 {paymentLinkLoading === 'venmo'
                   ? 'Sending Venmo Link...'
