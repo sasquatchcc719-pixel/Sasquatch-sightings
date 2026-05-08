@@ -61,6 +61,7 @@ function buildEmailHtml(
   total: number,
   venmoUrl: string,
   photoUrls: string[] = [],
+  mode: 'invoice' | 'receipt' = 'invoice',
 ): string {
   const itemRows = lineItems
     .map(
@@ -74,6 +75,19 @@ function buildEmailHtml(
     )
     .join('')
 
+  const isReceipt = mode === 'receipt'
+  const title = isReceipt ? 'Receipt' : 'Invoice'
+  const intro = isReceipt
+    ? 'Thank you for your payment. Here is your itemized receipt.'
+    : "Thank you for choosing Sasquatch Carpet Cleaning. Here's your invoice."
+  const totalLabel = isReceipt ? 'Amount Paid' : 'Total Due'
+  const paymentCta = isReceipt
+    ? ''
+    : `
+      <a href="${venmoUrl}" style="display:inline-block;background:#008CFF;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:15px;font-weight:600;">
+        Pay with Venmo — $${total.toFixed(2)}
+      </a>`
+
   return `
 <!DOCTYPE html>
 <html>
@@ -83,12 +97,12 @@ function buildEmailHtml(
 
     <div style="background:#16a34a;padding:24px 32px;">
       <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;">Sasquatch Carpet Cleaning</h1>
-      <p style="margin:4px 0 0;color:#bbf7d0;font-size:14px;">Invoice</p>
+      <p style="margin:4px 0 0;color:#bbf7d0;font-size:14px;">${title}</p>
     </div>
 
     <div style="padding:24px 32px;">
       <p style="margin:0 0 4px;font-size:15px;font-weight:600;color:#111827;">Hi ${customerName},</p>
-      <p style="margin:0 0 20px;font-size:14px;color:#6b7280;">Thank you for choosing Sasquatch Carpet Cleaning. Here's your invoice.</p>
+      <p style="margin:0 0 20px;font-size:14px;color:#6b7280;">${intro}</p>
 
       <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:20px;">
         <thead>
@@ -104,7 +118,7 @@ function buildEmailHtml(
         </tbody>
         <tfoot>
           <tr>
-            <td colspan="3" style="padding:12px 12px 0;text-align:right;font-weight:700;color:#111827;font-size:15px;">Total Due</td>
+            <td colspan="3" style="padding:12px 12px 0;text-align:right;font-weight:700;color:#111827;font-size:15px;">${totalLabel}</td>
             <td style="padding:12px 12px 0;text-align:right;font-weight:700;color:#16a34a;font-size:15px;">$${total.toFixed(2)}</td>
           </tr>
         </tfoot>
@@ -113,9 +127,7 @@ function buildEmailHtml(
       <p style="margin:0 0 4px;font-size:13px;color:#6b7280;">Service address: ${address}</p>
       <p style="margin:0 0 20px;font-size:13px;color:#6b7280;">Date: ${serviceDate}</p>
 
-      <a href="${venmoUrl}" style="display:inline-block;background:#008CFF;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:15px;font-weight:600;">
-        Pay with Venmo — $${total.toFixed(2)}
-      </a>
+      ${paymentCta}
 
       ${buildPhotoGrid(photoUrls)}
 
@@ -141,6 +153,7 @@ export async function POST(
         | 'payment_link'
         | 'venmo_payment_link'
         | 'square_payment_link'
+        | 'receipt'
     }
     const { channel, type } = body
 
@@ -154,6 +167,7 @@ export async function POST(
       .select(
         `
         id,
+        payment_status,
         total,
         subtotal,
         discount_amount,
@@ -349,6 +363,13 @@ export async function POST(
       return NextResponse.json({ ok: true, payment_url: paymentUrl, sms })
     }
 
+    if (type === 'receipt' && channel !== 'email') {
+      return NextResponse.json(
+        { error: 'Receipts can only be emailed.' },
+        { status: 400 },
+      )
+    }
+
     // Send SMS
     if (channel === 'sms' || channel === 'both') {
       if (!customerPhone) {
@@ -385,9 +406,10 @@ export async function POST(
             (invoice as { subtotal?: number }).subtotal || total,
           )
 
+          const isReceipt = type === 'receipt'
           const pdfBuffer = await generateInvoicePDF({
             invoiceId: id,
-            isPaid: false,
+            isPaid: isReceipt || invoice.payment_status === 'paid',
             customerName,
             serviceAddress: addressText,
             serviceDate,
@@ -403,7 +425,9 @@ export async function POST(
           await resend.emails.send({
             from: fromEmail,
             to: customerEmail,
-            subject: `Your invoice from Sasquatch Carpet Cleaning — $${total.toFixed(2)} due`,
+            subject: isReceipt
+              ? `Your receipt from Sasquatch Carpet Cleaning — $${total.toFixed(2)} paid`
+              : `Your invoice from Sasquatch Carpet Cleaning — $${total.toFixed(2)} due`,
             html: buildEmailHtml(
               customerName,
               addressText,
@@ -412,6 +436,7 @@ export async function POST(
               total,
               venmoUrl,
               photoUrls,
+              isReceipt ? 'receipt' : 'invoice',
             ),
             attachments: pdfBuffer
               ? [
