@@ -81,6 +81,7 @@ type CommandThread = {
   telegram_user_id: string | null
   last_customer_id: string | null
   last_artifact_id: string | null
+  metadata?: Record<string, unknown> | null
 }
 
 type CommandArtifact = {
@@ -125,6 +126,7 @@ const COMMAND_ACTION_TTL_MS = 30 * 60 * 1000
 type HarryConversationLookup = {
   id: string
   phone_number: string
+  source?: string | null
   messages: unknown
   ops_customer_id?: string | null
 }
@@ -741,7 +743,7 @@ async function getOrCreateCommandThread(
   const { data: existing } = await supabase
     .from('harry_command_threads')
     .select(
-      'id, telegram_chat_id, telegram_user_id, last_customer_id, last_artifact_id',
+      'id, telegram_chat_id, telegram_user_id, last_customer_id, last_artifact_id, metadata',
     )
     .eq('telegram_chat_id', chatIdText)
     .maybeSingle()
@@ -755,7 +757,7 @@ async function getOrCreateCommandThread(
       telegram_user_id: userId ? String(userId) : null,
     })
     .select(
-      'id, telegram_chat_id, telegram_user_id, last_customer_id, last_artifact_id',
+      'id, telegram_chat_id, telegram_user_id, last_customer_id, last_artifact_id, metadata',
     )
     .single()
 
@@ -831,6 +833,83 @@ async function getLatestArtifact(
 
   if (error) throw error
   return (data as CommandArtifact | null) || null
+}
+
+async function rememberActiveConversationForThread(
+  supabase: ReturnType<typeof createAdminClient>,
+  threadId: string,
+  conversation: Pick<HarryConversationLookup, 'id' | 'phone_number'> & {
+    source?: string | null
+  },
+): Promise<void> {
+  const { data: thread } = await supabase
+    .from('harry_command_threads')
+    .select('metadata')
+    .eq('id', threadId)
+    .maybeSingle()
+
+  const metadata = {
+    ...((thread?.metadata as Record<string, unknown> | null) || {}),
+    active_conversation_id: conversation.id,
+    active_conversation_phone: conversation.phone_number,
+    active_conversation_source: conversation.source || null,
+    active_conversation_seen_at: new Date().toISOString(),
+  }
+
+  await supabase
+    .from('harry_command_threads')
+    .update({ metadata, updated_at: new Date().toISOString() })
+    .eq('id', threadId)
+}
+
+async function getActiveConversationSummary(
+  supabase: ReturnType<typeof createAdminClient>,
+  threadId: string,
+): Promise<string> {
+  const { data: thread } = await supabase
+    .from('harry_command_threads')
+    .select('metadata')
+    .eq('id', threadId)
+    .maybeSingle()
+
+  const metadata = (thread?.metadata as Record<string, unknown> | null) || {}
+  const conversationId =
+    typeof metadata.active_conversation_id === 'string'
+      ? metadata.active_conversation_id
+      : ''
+  if (!conversationId) return '(none)'
+
+  const { data: conversation } = await supabase
+    .from('conversations')
+    .select(
+      'id, phone_number, source, ai_enabled, status, messages, updated_at',
+    )
+    .eq('id', conversationId)
+    .maybeSingle()
+
+  if (!conversation) return '(none)'
+
+  const messages =
+    (conversation.messages as Array<{ role?: string; content?: string }>) || []
+  const recent = messages
+    .slice(-6)
+    .map((message) => {
+      const role = message.role === 'user' ? 'CUSTOMER' : 'HARRY'
+      return `${role}: ${String(message.content || '')
+        .replace(/\s+/g, ' ')
+        .slice(0, 280)}`
+    })
+    .join('\n')
+
+  return [
+    `Conversation ID: ${conversation.id}`,
+    `Phone: ${conversation.phone_number}`,
+    `Source: ${conversation.source || 'unknown'}`,
+    `Status: ${conversation.status || 'unknown'}`,
+    `Harry auto-reply: ${conversation.ai_enabled ? 'ON' : 'OFF'}`,
+    `Updated: ${conversation.updated_at}`,
+    recent ? `Recent messages:\n${recent}` : 'Recent messages: none',
+  ].join('\n')
 }
 
 async function saveArtifact(
@@ -1084,6 +1163,10 @@ async function handleTextCommand(
     })
 
     const latestArtifact = await getLatestArtifact(supabase, thread.id)
+    const activeConversationSummary = await getActiveConversationSummary(
+      supabase,
+      thread.id,
+    )
     if (latestArtifact && looksLikeSendPreviousArtifact(text)) {
       const handled = await handleSendLatestArtifactRequest(
         text,
@@ -1150,13 +1233,23 @@ Voice:
 - Be brief, direct, and useful. Charles is texting from his phone while working.
 - If the data is missing or only partially imported, say that plainly.
 - You are allowed a little personality: competent shop manager, direct, lightly dry, never gushy.
+
+Mode:
+- You are Owner/Telegram Harry in this prompt. You are not the customer-facing SMS Harry.
+- Charles is the owner; customer-facing messages still require send_sms approval before they go out.
+- Your job is to inspect, prepare, draft, and safely operate tools for Charles. Do not act like you are speaking directly to a customer unless you are drafting a message.
+- Use ACTIVE CUSTOMER THREAD for "this customer" and recent customer references. Use LAST ARTIFACT only for reports/summaries you personally just created.
+- Risky operational actions should be conservative. If the request could mean more than one customer/job/action, inspect first or ask one short clarifying question.
+
 - Treat Charles's messages as directions from the owner. When he asks for an operational outcome, use tools to gather the data and complete the requested prep work.
 - Only ask a follow-up when the target customer, date range, or requested action is genuinely unclear.
 - When asked for a customer's schedule, year schedule, upcoming jobs, dates/services/notes, or work to send to a customer, use customer_schedule_summary. Do not use search_job_details unless Charles asks for a specific room/building/service/detail phrase.
 - When Charles asks you to text a customer, draft the SMS with send_sms. The system will ask Charles to approve before sending; never claim it was sent until approval happens.
 - When Charles says "that", "it", "same thing", or "the report", use RECENT COMMAND MEMORY and LAST ARTIFACT before asking what he means.
+- When Charles says "this customer", "the current conversation", "the one you're talking to", "the person texting", or similar, use ACTIVE CUSTOMER THREAD before guessing from names or old artifacts.
 - When asked "when did we last..." or about a room/building/scope, use search_job_details so you can inspect line-item descriptions before answering.
 - When Charles asks you to book "this customer", "the current conversation", or a customer from a recent Harry alert, prefer book_conversation_job. It can resolve the active SMS thread and pull customer details from the conversation.
+- Never use add_appointment for a normal billable customer cleaning job. add_appointment creates a plain calendar placeholder only; it does not create the normal invoice, invoice line items, payment links, or booking template Charles needs. For billable jobs, use book_conversation_job or ask for the missing booking details/services.
 
 RECENT COMMAND MEMORY:
 ${
@@ -1170,7 +1263,10 @@ ${
   latestArtifact
     ? `${latestArtifact.title}\n${latestArtifact.content.slice(0, 2500)}`
     : '(none)'
-}`,
+}
+
+ACTIVE CUSTOMER THREAD:
+${activeConversationSummary}`,
       },
       { role: 'user', content: text },
     ]
@@ -1276,7 +1372,7 @@ ${
         function: {
           name: 'add_appointment',
           description:
-            'Add a new appointment/job to the schedule. Use this when Charles wants to schedule a job.',
+            'Add a non-billable schedule placeholder only, such as blocked time, a hold, or a no-invoice courtesy/reclean note. Never use this for normal billable customer cleaning jobs because it does not create the standard invoice, invoice line items, payment links, or booking template.',
           parameters: {
             type: 'object',
             properties: {
@@ -1300,10 +1396,20 @@ ${
               notes: {
                 type: 'string',
                 description:
-                  'Internal notes (e.g., "Warranty - spot popped back up")',
+                  'Internal notes explaining why this is a placeholder/no-invoice item. Required for safety.',
+              },
+              no_invoice_placeholder: {
+                type: 'boolean',
+                description:
+                  'Must be true only when Charles explicitly wants a placeholder/hold/non-billable item and does not need the normal customer invoice/payment flow.',
               },
             },
-            required: ['customer_name', 'date', 'start_time'],
+            required: [
+              'customer_name',
+              'date',
+              'start_time',
+              'no_invoice_placeholder',
+            ],
           },
         },
       },
@@ -1418,7 +1524,8 @@ ${
         type: 'function',
         function: {
           name: 'cancel_appointment',
-          description: 'Cancel/delete an appointment from the schedule.',
+          description:
+            'Cancel/delete an appointment from the schedule. Use only when Charles explicitly says cancel/delete/remove the appointment. Do not use for rescheduling, contacting a customer, blocked-time conflicts, or "I cannot make it" messages unless Charles explicitly says to cancel.',
           parameters: {
             type: 'object',
             properties: {
@@ -1729,7 +1836,12 @@ ${
             toolCall.function.name,
             args,
             supabase,
-            { smsDrafts, threadId: thread.id, telegramUserId: userId },
+            {
+              smsDrafts,
+              threadId: thread.id,
+              telegramUserId: userId,
+              ownerText: text,
+            },
           )
           await logCommandMessage(supabase, {
             threadId: thread.id,
@@ -1892,13 +2004,16 @@ async function executeToolCall(
     smsDrafts?: PendingSmsDraftNotice[]
     threadId?: string
     telegramUserId?: number
+    ownerText?: string
   } = {},
 ): Promise<string> {
   switch (toolName) {
     case 'send_sms': {
       const target = String(input.target)
       const message = String(input.message)
-      const conversation = await findConversation(target, supabase)
+      const conversation = await findConversation(target, supabase, {
+        threadId: context.threadId,
+      })
       let phoneNumber = conversation?.phone_number || null
       let targetLabel = target
 
@@ -1955,7 +2070,9 @@ async function executeToolCall(
 
     case 'view_conversation': {
       const target = String(input.target)
-      const conversation = await findConversation(target, supabase)
+      const conversation = await findConversation(target, supabase, {
+        threadId: context.threadId,
+      })
 
       if (!conversation) {
         return `❌ Couldn't find conversation for "${target}"`
@@ -1985,7 +2102,7 @@ async function executeToolCall(
             ? '🔵 LSA'
             : '💬 OTHER'
 
-      let thread = `${sourceLabel} | 📱 ${conv.phone_number}\n🤖 Harry: ${conv.ai_enabled ? 'ON' : 'OFF'}\n\n`
+      let threadText = `${sourceLabel} | 📱 ${conv.phone_number}\n🤖 Harry: ${conv.ai_enabled ? 'ON' : 'OFF'}\n\n`
 
       const recentMessages = messages.slice(-10)
       for (const msg of recentMessages) {
@@ -1998,15 +2115,17 @@ async function executeToolCall(
           msg.content.length > 200
             ? msg.content.substring(0, 200) + '...'
             : msg.content
-        thread += `${time} ${role}: ${preview}\n\n`
+        threadText += `${time} ${role}: ${preview}\n\n`
       }
 
-      return thread
+      return threadText
     }
 
     case 'take_over_conversation': {
       const target = String(input.target)
-      const conversation = await findConversation(target, supabase)
+      const conversation = await findConversation(target, supabase, {
+        threadId: context.threadId,
+      })
 
       if (!conversation) {
         return `❌ Couldn't find conversation for "${target}"`
@@ -2022,7 +2141,9 @@ async function executeToolCall(
 
     case 'enable_harry': {
       const target = String(input.target)
-      const conversation = await findConversation(target, supabase)
+      const conversation = await findConversation(target, supabase, {
+        threadId: context.threadId,
+      })
 
       if (!conversation) {
         return `❌ Couldn't find conversation for "${target}"`
@@ -2072,6 +2193,18 @@ async function executeToolCall(
       const startTime = String(input.start_time)
       const durationHours = Number(input.duration_hours) || 1
       const notes = input.notes ? String(input.notes) : null
+      const noInvoicePlaceholder = input.no_invoice_placeholder === true
+
+      if (!noInvoicePlaceholder) {
+        return [
+          '❌ I did not add this with add_appointment because that tool only creates a bare calendar placeholder.',
+          'For a normal customer job, use book_conversation_job so the standard invoice, line items, payment links, and booking template are created.',
+        ].join(' ')
+      }
+
+      if (!notes || notes.trim().length < 8) {
+        return '❌ I need a clear internal note explaining why this is a no-invoice placeholder before I can add it.'
+      }
 
       const customer = await findCustomer(customerName, supabase)
 
@@ -2146,7 +2279,9 @@ async function executeToolCall(
         return '❌ start_time must be HH:MM.'
       }
 
-      const conversation = await findConversation(target, supabase)
+      const conversation = await findConversation(target, supabase, {
+        threadId: context.threadId,
+      })
       if (!conversation) {
         return `❌ Couldn't find an active conversation for "${target}". Try a phone number or use list_recent_conversations.`
       }
@@ -2356,6 +2491,19 @@ async function executeToolCall(
     case 'cancel_appointment': {
       const customerName = String(input.customer_name)
       const targetDate = input.date ? String(input.date) : null
+      const ownerText = String(context.ownerText || '').toLowerCase()
+      const explicitlyAskedToCancel =
+        /\b(cancel|cancelled|canceled|delete|remove)\b/.test(ownerText)
+      const soundsLikeReschedule =
+        /\b(reschedule|move|change|contact|text|message)\b/.test(ownerText)
+
+      if (!explicitlyAskedToCancel || soundsLikeReschedule) {
+        return [
+          '❌ I did not cancel anything.',
+          'Cancellation is a destructive schedule change, so Charles must explicitly ask to cancel/delete/remove the appointment without also asking to reschedule or contact the customer.',
+          'Use update_appointment for schedule moves or send_sms for customer outreach.',
+        ].join(' ')
+      }
 
       const customer = await findCustomer(customerName, supabase)
 
@@ -3447,13 +3595,21 @@ async function handleButtonClick(
 
     const { data: conv } = await supabase
       .from('conversations')
-      .select('phone_number, messages, ai_enabled, source')
+      .select('id, phone_number, messages, ai_enabled, source')
       .eq('id', conversationId)
       .single()
 
     if (!conv) {
       await sendToCharles('❌ Conversation not found')
       return
+    }
+
+    if (thread) {
+      await rememberActiveConversationForThread(supabase, thread.id, {
+        id: conv.id,
+        phone_number: conv.phone_number,
+        source: conv.source,
+      })
     }
 
     const messages =
@@ -3470,7 +3626,7 @@ async function handleButtonClick(
           ? '🔵 LSA'
           : '💬 OTHER'
 
-    let thread = `${sourceLabel} | 📱 ${conv.phone_number}\n🤖 Harry: ${conv.ai_enabled ? 'ON' : 'OFF'}\n\n`
+    let threadText = `${sourceLabel} | 📱 ${conv.phone_number}\n🤖 Harry: ${conv.ai_enabled ? 'ON' : 'OFF'}\n\n`
 
     const recentMessages = messages.slice(-10)
     for (const msg of recentMessages) {
@@ -3483,15 +3639,30 @@ async function handleButtonClick(
         msg.content.length > 200
           ? msg.content.substring(0, 200) + '...'
           : msg.content
-      thread += `${time} ${role}: ${preview}\n\n`
+      threadText += `${time} ${role}: ${preview}\n\n`
     }
 
-    await sendToCharles(thread)
+    await sendToCharles(threadText)
     return
   }
 
   // Reply button
   if (data.startsWith('reply_')) {
+    const conversationId = data.replace('reply_', '')
+    if (thread) {
+      const { data: conversation } = await supabase
+        .from('conversations')
+        .select('id, phone_number, source')
+        .eq('id', conversationId)
+        .maybeSingle()
+      if (conversation) {
+        await rememberActiveConversationForThread(
+          supabase,
+          thread.id,
+          conversation,
+        )
+      }
+    }
     await sendToCharles(
       '💬 Just tell me what you want to say, like:\n"Tell them I\'m on my way"',
     )
@@ -3501,6 +3672,20 @@ async function handleButtonClick(
   // Take over button
   if (data.startsWith('takeover_')) {
     const conversationId = data.replace('takeover_', '')
+    if (thread) {
+      const { data: conversation } = await supabase
+        .from('conversations')
+        .select('id, phone_number, source')
+        .eq('id', conversationId)
+        .maybeSingle()
+      if (conversation) {
+        await rememberActiveConversationForThread(
+          supabase,
+          thread.id,
+          conversation,
+        )
+      }
+    }
 
     await supabase
       .from('conversations')
@@ -3520,19 +3705,54 @@ async function handleButtonClick(
 async function findConversation(
   target: string,
   supabase: ReturnType<typeof createAdminClient>,
+  options: { threadId?: string } = {},
 ): Promise<HarryConversationLookup | null> {
   const cleanTarget = String(target || '').trim()
   if (!cleanTarget) return null
 
   if (looksLikeCurrentConversationReference(cleanTarget)) {
+    if (options.threadId) {
+      const { data: thread } = await supabase
+        .from('harry_command_threads')
+        .select('metadata')
+        .eq('id', options.threadId)
+        .maybeSingle()
+      const metadata =
+        (thread?.metadata as Record<string, unknown> | null) || {}
+      const activeId =
+        typeof metadata.active_conversation_id === 'string'
+          ? metadata.active_conversation_id
+          : ''
+      if (activeId) {
+        const { data: activeConversation } = await supabase
+          .from('conversations')
+          .select('id, phone_number, messages, ops_customer_id, source')
+          .eq('id', activeId)
+          .maybeSingle()
+        if (activeConversation) {
+          return activeConversation as HarryConversationLookup
+        }
+      }
+    }
+
     const { data } = await supabase
       .from('conversations')
-      .select('id, phone_number, messages, ops_customer_id')
+      .select('id, phone_number, messages, ops_customer_id, source')
       .order('updated_at', { ascending: false })
       .limit(1)
       .maybeSingle()
 
-    if (data) return data as HarryConversationLookup
+    if (data) {
+      const conversation = data as HarryConversationLookup
+      if (options.threadId) {
+        await rememberActiveConversationForThread(
+          supabase,
+          options.threadId,
+          conversation,
+        )
+      }
+      return conversation
+    }
   }
 
   // Try to find by phone number (extract digits)
@@ -3542,12 +3762,22 @@ async function findConversation(
     const phoneVariants = opsPhoneLookupVariants(phone)
     const { data } = await supabase
       .from('conversations')
-      .select('id, phone_number, messages, ops_customer_id')
+      .select('id, phone_number, messages, ops_customer_id, source')
       .in('phone_number', phoneVariants)
       .order('updated_at', { ascending: false })
       .maybeSingle()
 
-    if (data) return data as HarryConversationLookup
+    if (data) {
+      const conversation = data as HarryConversationLookup
+      if (options.threadId) {
+        await rememberActiveConversationForThread(
+          supabase,
+          options.threadId,
+          conversation,
+        )
+      }
+      return conversation
+    }
   }
 
   // Try to find by customer or business name
@@ -3557,17 +3787,27 @@ async function findConversation(
     const phoneVariants = opsPhoneLookupVariants(customer.phone)
     const { data: conv } = await supabase
       .from('conversations')
-      .select('id, phone_number, messages, ops_customer_id')
+      .select('id, phone_number, messages, ops_customer_id, source')
       .in('phone_number', phoneVariants)
       .order('updated_at', { ascending: false })
       .maybeSingle()
 
-    if (conv) return conv as HarryConversationLookup
+    if (conv) {
+      const conversation = conv as HarryConversationLookup
+      if (options.threadId) {
+        await rememberActiveConversationForThread(
+          supabase,
+          options.threadId,
+          conversation,
+        )
+      }
+      return conversation
+    }
   }
 
   const { data: recentConversations } = await supabase
     .from('conversations')
-    .select('id, phone_number, messages, ops_customer_id')
+    .select('id, phone_number, messages, ops_customer_id, source')
     .order('updated_at', { ascending: false })
     .limit(25)
 
@@ -3576,7 +3816,15 @@ async function findConversation(
       conversationTextMatches(conversation.messages, cleanTarget),
   )
   if (matchingConversation) {
-    return matchingConversation as HarryConversationLookup
+    const conversation = matchingConversation as HarryConversationLookup
+    if (options.threadId) {
+      await rememberActiveConversationForThread(
+        supabase,
+        options.threadId,
+        conversation,
+      )
+    }
+    return conversation
   }
 
   return null

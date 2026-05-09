@@ -5,6 +5,7 @@
 
 import OpenAI from 'openai'
 import { createAdminClient } from '@/supabase/server'
+import { logToolCall } from '@/lib/ai/logging'
 import {
   executeHarrySmsTool,
   HARRY_SMS_TOOLS,
@@ -49,6 +50,14 @@ Team Structure (for your awareness):
 Goal: Give quotes and helpful info, book jobs directly using your tools, and help existing customers with reschedules, address changes, and job-detail updates. We use Sasquatch's own Operations system (not any third-party scheduler).
 Tone: Professional, friendly, concise, and solution-oriented. (Think: Helpful neighbor, not a robot).
 Format: SMS (Keep responses under 160 chars when possible).
+
+MODE ROUTER — PICK THE RIGHT HARRY BEFORE ANSWERING:
+- You are Customer SMS Harry in this prompt. You are not Owner/Telegram Harry.
+- Customer SMS Harry should help customers quote, book, update, reschedule, ask active-job questions, and escalate when needed.
+- Do not discuss admin tooling, internal debugging, code, or what Charles told you in Telegram.
+- Treat runtime system context as private working memory. Use it to answer intelligently, but never quote internal labels like "Known customer context" or "Current live job context."
+- If system context says this phone matches today's active job, handle the message as customer service for the current job, not as a new lead. Acknowledge the active job and escalate to Charles if they ask for him, want to inspect before/after work, have access/payment questions, or sound unhappy.
+- If the customer is trying to start a new booking, follow the booking flow below.
 
 CONTEXT AWARENESS — CHECK FOR EXISTING APPOINTMENTS FIRST:
 - At the START of every conversation (especially if the customer's message is vague like "Thanks", "OK", "Sounds good"), call list_my_upcoming_appointments to see if they have an upcoming job.
@@ -508,7 +517,11 @@ export async function generateAIResponse(
     | 'nextdoor'
     | 'lsa' = 'inbound',
   _bookingUrlOverride?: string,
-  smsOpsContext?: { customerPhoneE164: string; isLsaRelay?: boolean },
+  smsOpsContext?: {
+    customerPhoneE164: string
+    isLsaRelay?: boolean
+    sessionId?: string
+  },
 ): Promise<string> {
   if (!openai) {
     throw new Error('OpenAI not configured')
@@ -694,6 +707,16 @@ CURRENT CUSTOMER CONTEXT:
           messages.push(msg)
           for (const tc of msg.tool_calls) {
             if (tc.type !== 'function') continue
+            const startedAt = Date.now()
+            let parsedArgs: Record<string, unknown> = {}
+            try {
+              parsedArgs = JSON.parse(tc.function.arguments || '{}') as Record<
+                string,
+                unknown
+              >
+            } catch {
+              parsedArgs = {}
+            }
             const out = await executeHarrySmsTool(
               tc.function.name,
               tc.function.arguments || '{}',
@@ -703,6 +726,35 @@ CURRENT CUSTOMER CONTEXT:
                 isLsaRelay: smsOpsContext.isLsaRelay ?? false,
               },
             )
+            let parsedResult: Record<string, unknown> | unknown[] | null = null
+            try {
+              parsedResult = JSON.parse(out) as
+                | Record<string, unknown>
+                | unknown[]
+            } catch {
+              parsedResult = { message: out }
+            }
+            const success = !(
+              parsedResult &&
+              !Array.isArray(parsedResult) &&
+              typeof parsedResult.error === 'string'
+            )
+            await logToolCall({
+              agent: 'harry',
+              sessionId:
+                smsOpsContext.sessionId || smsOpsContext.customerPhoneE164,
+              toolName: tc.function.name,
+              args: parsedArgs,
+              result: parsedResult,
+              success,
+              error:
+                parsedResult &&
+                !Array.isArray(parsedResult) &&
+                typeof parsedResult.error === 'string'
+                  ? parsedResult.error
+                  : null,
+              durationMs: Date.now() - startedAt,
+            })
             messages.push({
               role: 'tool',
               tool_call_id: tc.id,

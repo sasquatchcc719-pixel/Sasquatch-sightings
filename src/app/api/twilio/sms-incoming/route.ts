@@ -48,6 +48,72 @@ function firstNameFromCustomer(
   return fullNameFirst || null
 }
 
+function mountainDateIso(): string {
+  return new Date().toLocaleDateString('en-CA', {
+    timeZone: 'America/Denver',
+  })
+}
+
+function mountainMinutesNow(): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Denver',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date())
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value || 0)
+  const minute = Number(
+    parts.find((part) => part.type === 'minute')?.value || 0,
+  )
+  return hour * 60 + minute
+}
+
+function timeToMinutes(value: string | null | undefined): number | null {
+  const match = /^(\d{1,2}):(\d{2})/.exec(String(value || ''))
+  if (!match) return null
+  return Number(match[1]) * 60 + Number(match[2])
+}
+
+async function rememberActiveHarryConversation(params: {
+  supabase: ReturnType<typeof createAdminClient>
+  conversationId: string
+  phoneNumber: string
+  source: string | null
+}) {
+  const chatId = process.env.CHARLES_TELEGRAM_CHAT_ID
+  if (!chatId) return
+
+  try {
+    const { data: thread } = await params.supabase
+      .from('harry_command_threads')
+      .select('id, metadata')
+      .eq('telegram_chat_id', chatId)
+      .maybeSingle()
+
+    const metadata = {
+      ...((thread?.metadata as Record<string, unknown> | null) || {}),
+      active_conversation_id: params.conversationId,
+      active_conversation_phone: params.phoneNumber,
+      active_conversation_source: params.source,
+      active_conversation_seen_at: new Date().toISOString(),
+    }
+
+    if (thread?.id) {
+      await params.supabase
+        .from('harry_command_threads')
+        .update({ metadata, updated_at: new Date().toISOString() })
+        .eq('id', thread.id)
+    } else {
+      await params.supabase.from('harry_command_threads').insert({
+        telegram_chat_id: chatId,
+        metadata,
+      })
+    }
+  } catch (error) {
+    console.error('[Harry] Failed to remember active conversation:', error)
+  }
+}
+
 // Extract customer info from conversation messages
 type ExtractedInfo = {
   name: string | null
@@ -1052,6 +1118,7 @@ export async function POST(request: NextRequest) {
       state?: string | null
       zip_code?: string | null
     } | null = null
+    let currentJobContext: string | null = null
     if (opsCustomerMatch?.id) {
       const { data: addressRows } = await supabase
         .from('ops_service_addresses')
@@ -1061,6 +1128,53 @@ export async function POST(request: NextRequest) {
         .limit(1)
 
       opsCustomerAddress = addressRows?.[0] || null
+
+      const todayIso = mountainDateIso()
+      const { data: todayAppointments } = await supabase
+        .from('ops_appointments')
+        .select(
+          `
+          id,
+          appointment_date,
+          start_time,
+          end_time,
+          status,
+          quoted_total,
+          internal_notes,
+          ops_service_addresses ( street_1, city, state, zip_code )
+        `,
+        )
+        .eq('customer_id', opsCustomerMatch.id)
+        .eq('appointment_date', todayIso)
+        .in('status', ['booked', 'confirmed', 'on_my_way', 'in_progress'])
+        .order('start_time', { ascending: true })
+
+      const activeStatuses = new Set(['on_my_way', 'in_progress'])
+      const nowMinutes = mountainMinutesNow()
+      const activeJob =
+        todayAppointments?.find((appointment) =>
+          activeStatuses.has(String(appointment.status || '')),
+        ) ||
+        todayAppointments?.find((appointment) => {
+          const start = timeToMinutes(appointment.start_time)
+          const end = timeToMinutes(appointment.end_time)
+          if (start === null || end === null) return false
+          return nowMinutes >= start - 30 && nowMinutes <= end + 30
+        })
+
+      if (activeJob) {
+        const jobAddress = Array.isArray(activeJob.ops_service_addresses)
+          ? activeJob.ops_service_addresses[0]
+          : activeJob.ops_service_addresses
+        const addressLine = jobAddress?.street_1
+          ? `${jobAddress.street_1}, ${jobAddress.city || ''}, ${jobAddress.state || 'CO'} ${jobAddress.zip_code || ''}`.trim()
+          : 'address on today’s job'
+        currentJobContext = `Current live job context: this texting phone matches today's appointment ${activeJob.id}. Status: ${activeJob.status}. Scheduled ${String(activeJob.start_time || '').slice(0, 5)}-${String(activeJob.end_time || '').slice(0, 5)} at ${addressLine}. Quoted total: ${
+          activeJob.quoted_total != null
+            ? `$${activeJob.quoted_total}`
+            : 'not listed'
+        }. If the customer asks about arrival, job progress, being home, access, taking a look, payment, invoice, or talking to Charles, treat this as their active job happening now, not a new lead. Acknowledge the current job and escalate to Charles when they ask for him.`
+      }
     }
     const isReminderThread = isOpsCustomer
       ? await isRecentDayBeforeReminderThread({
@@ -1389,6 +1503,13 @@ export async function POST(request: NextRequest) {
       return emptyTwiml
     }
 
+    await rememberActiveHarryConversation({
+      supabase,
+      conversationId: conversation.id,
+      phoneNumber: normalizedPhone,
+      source: conversation.source || dbSource,
+    })
+
     // Check if this thread should be held for human handling.
     const holdDecision = shouldHoldForHuman({
       latestUserMessage: messageBody,
@@ -1512,12 +1633,14 @@ export async function POST(request: NextRequest) {
     // Generate AI response
     let aiResponse: string
     try {
+      const aiContextMessages = [...messages]
+
       // LSA Identity Verification: If we detected a potential customer switch on
       // this relay number, inject a system message telling Harry to verify who
       // he's speaking with before proceeding with booking/rescheduling operations.
       if (shouldVerifyLsaIdentity && sourceType === 'lsa') {
         console.log(`[LSA] Injecting identity verification prompt for Harry`)
-        messages.push({
+        aiContextMessages.push({
           role: 'system',
           content: `CRITICAL: Google LSA relay number detected with potential customer switch. Previous customer: ${lsaPreviousCustomerName || 'unknown'}. Current customer from LSA: ${lsaCustomerName || 'unknown'}.
 
@@ -1554,10 +1677,12 @@ DO NOT assume this is a continuation of the previous conversation. DO NOT resche
           .filter(Boolean)
           .join('\n')
 
-        messages.push({
+        aiContextMessages.push({
           role: 'system',
           content: `Known customer context: This SMS phone number matches an existing Sasquatch customer. Use these database fields as already collected and do not ask the customer for any of them again:
 ${knownCustomerLines}
+
+${currentJobContext || ''}
 
 If the address city is Monument and the zip is missing, use 80132.
 
@@ -1591,13 +1716,14 @@ If the customer says something changed, collect only the changed field and use t
 
       aiResponse = await generateAIResponse(
         messageBody,
-        messages,
+        aiContextMessages,
         partnerContext,
         channelKey,
         undefined,
         {
           customerPhoneE164: normalizedPhone,
           isLsaRelay: channelKey === 'lsa',
+          sessionId: conversation.id,
         },
       )
 
