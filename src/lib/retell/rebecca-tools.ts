@@ -169,6 +169,16 @@ type CustomerAppointmentSummaryRow = {
   quoted_total: number | null
 }
 
+type CustomerInvoiceSummaryRow = {
+  id: string
+  appointment_id: string
+  invoice_number: number | string | null
+  status: string | null
+  payment_status: string | null
+  subtotal: number | null
+  total: number | null
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -177,7 +187,11 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function stringArg(args: Record<string, unknown>, key: string): string {
   const value = args[key]
-  return typeof value === 'string' ? value.trim() : ''
+  if (typeof value === 'string') return value.trim()
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(Math.trunc(value))
+  }
+  return ''
 }
 
 function numberArg(args: Record<string, unknown>, key: string): number | null {
@@ -416,6 +430,13 @@ function serviceAddressDisplay(address: ServiceAddressRow): string {
     .join(', ')
 }
 
+function appointmentIsUpcoming(appointment: CustomerAppointmentSummaryRow) {
+  return (
+    appointment.appointment_date >= todayIsoDate() &&
+    !['cancelled', 'completed'].includes(appointment.status)
+  )
+}
+
 function normalizeServiceCity(city: string, zipCode: string): string {
   const value = city.trim()
   const compact = value.toLowerCase().replace(/[^a-z]/g, '')
@@ -425,25 +446,64 @@ function normalizeServiceCity(city: string, zipCode: string): string {
   return value
 }
 
+const CITY_ZIP_FALLBACKS: Record<string, string> = {
+  monument: '80132',
+  palmerlake: '80133',
+  pommellake: '80133',
+  falcon: '80831',
+  peyton: '80831',
+  larkspur: '80118',
+  woodlandpark: '80863',
+}
+
+function zipArg(args: Record<string, unknown>): string {
+  const raw =
+    stringArg(args, 'zip_code') ||
+    stringArg(args, 'zipcode') ||
+    stringArg(args, 'zip') ||
+    stringArg(args, 'postal_code') ||
+    stringArg(args, 'postalCode') ||
+    stringArg(args, 'postal')
+  const digits = raw.replace(/\D/g, '')
+  return digits.length >= 5 ? digits.slice(0, 5) : ''
+}
+
+function inferZipFromCity(city: string): string {
+  const compact = city.toLowerCase().replace(/[^a-z]/g, '')
+  return CITY_ZIP_FALLBACKS[compact] || ''
+}
+
+function cleanCityValue(city: string, zipCode: string): string {
+  return city
+    .replace(/\s*,?\s+(?:co|colorado|colo\.?)$/i, '')
+    .replace(/\b\d{5}(?:-\d{4})?\b/g, '')
+    .replace(zipCode, '')
+    .replace(/\s+/g, ' ')
+    .replace(/^[,\s]+|[,\s]+$/g, '')
+}
+
 function parseAddressString(value: string): RebeccaAddressArgs {
+  const fullZipMatch = /\b(\d{5})(?:-\d{4})?\b/.exec(value)
+  const zipCode = fullZipMatch?.[1] || ''
   const parts = value
     .split(',')
     .map((part) => part.trim())
     .filter(Boolean)
   const street1 = parts[0] || value.trim()
-  const city = parts[1] || ''
+  const city = cleanCityValue(parts[1] || '', zipCode)
   const stateZip = parts.slice(2).join(' ')
-  const zipMatch = /\b(\d{5}(?:-\d{4})?)\b/.exec(stateZip)
   const stateMatch = /\b([A-Za-z]{2}|Colorado|Colo\.?)\b/i.exec(stateZip)
   const stateValue = stateMatch?.[1] || ''
+  const normalizedCity = normalizeServiceCity(city, zipCode)
+  const inferredZip = zipCode || inferZipFromCity(normalizedCity)
 
   return {
     street_1: street1,
-    city: normalizeServiceCity(city, zipMatch?.[1] || ''),
+    city: normalizedCity,
     state: /^co(?:lorado|lo\.?)?$/i.test(stateValue)
       ? 'CO'
       : stateValue.toUpperCase() || 'CO',
-    zip_code: zipMatch?.[1] || '',
+    zip_code: inferredZip,
   }
 }
 
@@ -647,6 +707,7 @@ async function prepareResidentialBookingQuote(
       minimum: number
       meetsMinimum: boolean
       acceptedMinimumCharge: boolean
+      address: RebeccaAddressArgs
       slots: DatedSlotOption[]
       availabilityStartDate: string | null
       availabilityDays: number
@@ -984,6 +1045,7 @@ async function prepareResidentialBookingQuote(
     minimum,
     meetsMinimum: totalBeforeDiscount >= minimum,
     acceptedMinimumCharge,
+    address,
     slots: slots.map((slot) => ({
       ...slot,
       slot_token: createSlotToken({
@@ -1163,6 +1225,7 @@ async function quoteAndPrepareBooking(
         amount_needed_to_minimum: amountNeeded,
         meets_minimum: true,
         accepted_minimum_charge: true,
+        normalized_address: prepared.address,
         can_offer_slots: prepared.slots.length > 0,
         appointment_date: prepared.appointmentDate,
         line_items: prepared.lineItems,
@@ -1185,6 +1248,7 @@ async function quoteAndPrepareBooking(
       minimum_booking_amount: prepared.minimum,
       amount_needed_to_minimum: amountNeeded,
       meets_minimum: false,
+      normalized_address: prepared.address,
       can_offer_slots: false,
       line_items: prepared.lineItems,
       missing_fields: prepared.missingFields,
@@ -1201,10 +1265,11 @@ async function quoteAndPrepareBooking(
       total,
       minimum_booking_amount: prepared.minimum,
       meets_minimum: true,
+      normalized_address: prepared.address,
       can_offer_slots: false,
       line_items: prepared.lineItems,
       missing_fields: prepared.missingFields,
-      caller_script: `The estimate is $${subtotalDollars}.${travelChargeScript}${discountScript} I need the service ZIP code before I can check availability or offer appointment times.`,
+      caller_script: `The estimate is $${subtotalDollars}.${travelChargeScript}${discountScript} I need the five-digit service ZIP code before I can check availability or offer appointment times. If the caller already gave it, reuse it and call this tool again with zip_code set to those five digits.`,
     })
   }
 
@@ -1216,6 +1281,7 @@ async function quoteAndPrepareBooking(
     total,
     minimum_booking_amount: prepared.minimum,
     meets_minimum: true,
+    normalized_address: prepared.address,
     can_offer_slots: prepared.slots.length > 0,
     appointment_date: prepared.appointmentDate,
     line_items: prepared.lineItems,
@@ -1284,9 +1350,7 @@ async function bookPreparedSlot(
         missing_fields: missingFields,
         normalized_customer: customer,
         normalized_address: address,
-        caller_script: `I still need ${missingFields.join(
-          ', ',
-        )} before I can book that. Ask how they heard about Sasquatch; if it was a referral, ask who referred them.`,
+        caller_script: missingBookingFieldsScript(missingFields),
       },
     )
   }
@@ -1474,7 +1538,7 @@ async function lookupCustomerProfile(
   }
 
   if (customerIds.size === 0) {
-    return response(false, 'No existing customer profile was found.', {
+    return response(true, 'No existing customer profile was found.', {
       match_count: 0,
       caller_script:
         'I do not see a matching customer profile yet, so I will collect the booking contact details.',
@@ -1491,6 +1555,14 @@ async function lookupCustomerProfile(
   if (customersError) throw customersError
 
   const profiles = (customers || []) as CustomerProfileRow[]
+  if (profiles.length === 0) {
+    return response(true, 'No existing customer profile was found.', {
+      match_count: 0,
+      caller_script:
+        'I do not see a matching customer profile yet, so I will collect the booking contact details.',
+    })
+  }
+
   const profileIds = profiles.map((profile) => profile.id)
   const [
     { data: addresses, error: addressesError },
@@ -1519,6 +1591,20 @@ async function lookupCustomerProfile(
   const addressRows = (addresses || []) as ServiceAddressRow[]
   const appointmentRows = (appointments ||
     []) as CustomerAppointmentSummaryRow[]
+  const appointmentIds = appointmentRows.map((appointment) => appointment.id)
+  let invoiceRows: CustomerInvoiceSummaryRow[] = []
+  if (appointmentIds.length > 0) {
+    const { data: invoices, error: invoicesError } = await context.supabase
+      .from('ops_invoices')
+      .select(
+        'id, appointment_id, invoice_number, status, payment_status, subtotal, total',
+      )
+      .in('appointment_id', appointmentIds)
+      .limit(20)
+    if (invoicesError) throw invoicesError
+    invoiceRows = (invoices || []) as CustomerInvoiceSummaryRow[]
+  }
+
   const summaries = profiles.map((profile) => {
     const profileAddresses = addressRows
       .filter((address) => address.customer_id === profile.id)
@@ -1536,6 +1622,34 @@ async function lookupCustomerProfile(
       appointmentRows.find(
         (appointment) => appointment.customer_id === profile.id,
       ) || null
+    const upcomingAppointments = appointmentRows
+      .filter(
+        (appointment) =>
+          appointment.customer_id === profile.id &&
+          appointmentIsUpcoming(appointment),
+      )
+      .sort((a, b) =>
+        `${a.appointment_date} ${a.start_time}`.localeCompare(
+          `${b.appointment_date} ${b.start_time}`,
+        ),
+      )
+    const profileInvoices = invoiceRows
+      .filter((invoice) =>
+        appointmentRows.some(
+          (appointment) =>
+            appointment.customer_id === profile.id &&
+            appointment.id === invoice.appointment_id,
+        ),
+      )
+      .map((invoice) => ({
+        id: invoice.id,
+        appointment_id: invoice.appointment_id,
+        invoice_number: invoice.invoice_number,
+        status: invoice.status,
+        payment_status: invoice.payment_status,
+        subtotal: invoice.subtotal,
+        total: invoice.total,
+      }))
 
     return {
       id: profile.id,
@@ -1547,15 +1661,25 @@ async function lookupCustomerProfile(
       business_name: profile.business_name,
       addresses: profileAddresses,
       preferred_address: profileAddresses[0] || null,
+      upcoming_appointments: upcomingAppointments,
       most_recent_appointment: recentAppointment,
+      recent_invoices: profileInvoices,
     }
   })
 
   const recommended = summaries[0] || null
   const recommendedAddress = recommended?.preferred_address
+  const recommendedFirstName =
+    recommended?.first_name ||
+    recommended?.customer_name.split(/\s+/).filter(Boolean)[0] ||
+    'there'
+  const nextAppointment = recommended?.upcoming_appointments?.[0]
+  const nextAppointmentScript = nextAppointment
+    ? ` I also see an upcoming job on ${nextAppointment.appointment_date} at ${nextAppointment.start_time}.`
+    : ''
   const callerScript =
     summaries.length === 1 && recommended
-      ? `I found your customer profile. Please confirm I should use ${recommended.customer_name}, phone ${recommended.phone || 'not on file'}, email ${recommended.email || 'not on file'}, and address ${recommendedAddress?.formatted || 'not on file'}.`
+      ? `Hi ${recommendedFirstName}, this is Rabecca with Sasquatch Carpet Cleaning. How can I help today? I found your customer profile with ${recommendedAddress?.formatted || 'no saved address on file'}.${nextAppointmentScript} If you need to book something new, confirm whether that saved address is still the service address before using it.`
       : `I found ${summaries.length} possible customer profiles. Ask which one is theirs before using saved contact details.`
 
   return response(true, `Found ${summaries.length} customer profile match.`, {
@@ -2244,20 +2368,33 @@ function customerArgs(args: Record<string, unknown>): RebeccaCustomerArgs {
   }
 }
 
-function addressArgs(args: Record<string, unknown>): RebeccaAddressArgs {
+export function normalizeRebeccaAddressArgs(
+  args: Record<string, unknown>,
+): RebeccaAddressArgs {
   if (typeof args.address === 'string') {
     return parseAddressString(args.address)
   }
 
   const address = asRecord(args.address)
-  const zipCode = stringArg(address, 'zip_code') || stringArg(args, 'zip_code')
-  const city = stringArg(address, 'city') || stringArg(args, 'city')
+  const rawZipCode = zipArg(address) || zipArg(args)
+  const rawCity =
+    stringArg(address, 'city') ||
+    stringArg(address, 'locality') ||
+    stringArg(args, 'city') ||
+    stringArg(args, 'locality')
+  const cleanedCity = cleanCityValue(rawCity, rawZipCode)
+  const normalizedCity = normalizeServiceCity(cleanedCity, rawZipCode)
+  const zipCode = rawZipCode || inferZipFromCity(normalizedCity)
   return {
     street_1: stringArg(address, 'street_1') || stringArg(args, 'street_1'),
-    city: normalizeServiceCity(city, zipCode),
+    city: normalizedCity,
     state: stringArg(address, 'state') || stringArg(args, 'state') || 'CO',
     zip_code: zipCode,
   }
+}
+
+function addressArgs(args: Record<string, unknown>): RebeccaAddressArgs {
+  return normalizeRebeccaAddressArgs(args)
 }
 
 function leadSourceArgs(args: Record<string, unknown>): LeadSourceArgs {
@@ -2310,6 +2447,26 @@ function leadSourceMissingReason(leadSource: LeadSourceArgs): string {
     return 'referrer name'
   }
   return ''
+}
+
+function missingBookingFieldsScript(missingFields: string[]): string {
+  const fieldList = missingFields.join(', ')
+  const needsAddress = missingFields.some((field) =>
+    ['street address', 'city', 'zip code'].includes(field),
+  )
+  const needsLeadSource = missingFields.some((field) =>
+    ['lead source', 'real lead source', 'referrer name'].includes(field),
+  )
+
+  if (needsAddress) {
+    return `I still need ${fieldList} before I can book that. Ask only for the missing address detail right now. If the caller already gave a ZIP code, reuse it and pass zip_code as the five digits.`
+  }
+
+  if (needsLeadSource) {
+    return `I still need ${fieldList} before I can book that. Ask how they heard about Sasquatch; if it was a referral, ask who referred them.`
+  }
+
+  return `I still need ${fieldList} before I can book that. Ask one missing item at a time, then retry booking with all confirmed details.`
 }
 
 async function createBooking(
