@@ -1211,6 +1211,7 @@ IMPORTANT: All scheduling is done in Mountain Time (America/Denver timezone). Wh
 Your capabilities:
 - Send SMS messages to customers
 - View conversation threads
+- Search past customer conversation history
 - Enable/disable Harry for specific conversations
 - List recent active conversations
 - Answer questions about customer interactions
@@ -1247,6 +1248,7 @@ Mode:
 - When Charles asks you to text a customer, draft the SMS with send_sms. The system will ask Charles to approve before sending; never claim it was sent until approval happens.
 - When Charles says "that", "it", "same thing", or "the report", use RECENT COMMAND MEMORY and LAST ARTIFACT before asking what he means.
 - When Charles says "this customer", "the current conversation", "the one you're talking to", "the person texting", or similar, use ACTIVE CUSTOMER THREAD before guessing from names or old artifacts.
+- When Charles asks you to remember, look back, find an earlier scenario, inspect what happened, or search past customer texts, use search_conversation_history. Do not say you lack access to old conversations until that tool has failed.
 - When asked "when did we last..." or about a room/building/scope, use search_job_details so you can inspect line-item descriptions before answering.
 - When Charles asks you to book "this customer", "the current conversation", or a customer from a recent Harry alert, prefer book_conversation_job. It can resolve the active SMS thread and pull customer details from the conversation.
 - Never use add_appointment for a normal billable customer cleaning job. add_appointment creates a plain calendar placeholder only; it does not create the normal invoice, invoice line items, payment links, or booking template Charles needs. For billable jobs, use book_conversation_job or ask for the missing booking details/services.
@@ -1311,6 +1313,38 @@ ${activeConversationSummary}`,
               },
             },
             required: ['target'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'search_conversation_history',
+          description:
+            'Search past customer SMS conversation history by customer name, phone number, active/current thread, and optional keywords. Use when Charles asks you to remember a prior scenario, look back through conversations, find what happened earlier, or get context from old customer texts.',
+          parameters: {
+            type: 'object',
+            properties: {
+              target: {
+                type: 'string',
+                description:
+                  'Optional customer name, phone number, or contextual phrase like "current", "this customer", "Aaron", or "Lindsay Hester".',
+              },
+              query: {
+                type: 'string',
+                description:
+                  'Optional keywords or phrase to search inside messages, e.g. "take a look", "AI", "minimum", "technical issue".',
+              },
+              days_back: {
+                type: 'number',
+                description:
+                  'Optional recent window. Defaults to all available conversation rows.',
+              },
+              limit: {
+                type: 'number',
+                description: 'Maximum matching conversations to return.',
+              },
+            },
           },
         },
       },
@@ -1996,6 +2030,262 @@ async function findCustomerCandidates(
   return Array.from(customers.values()).slice(0, 8)
 }
 
+type ConversationSearchRow = {
+  id: string
+  phone_number: string
+  source: string | null
+  status: string | null
+  ai_enabled: boolean | null
+  updated_at: string | null
+  messages: unknown
+  ops_customer_id?: string | null
+}
+
+function normalizeConversationSearchWords(value: string): string[] {
+  return Array.from(
+    new Set(
+      value
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .map((word) => word.trim())
+        .filter(
+          (word) =>
+            word.length >= 3 &&
+            ![
+              'the',
+              'and',
+              'that',
+              'this',
+              'with',
+              'for',
+              'you',
+              'him',
+              'her',
+              'his',
+              'she',
+              'was',
+              'were',
+              'earlier',
+              'scenario',
+              'conversation',
+              'customer',
+            ].includes(word),
+        ),
+    ),
+  )
+}
+
+function conversationMessages(
+  messages: unknown,
+): Array<{ role: string; content: string; timestamp?: string }> {
+  if (!Array.isArray(messages)) return []
+  return messages.flatMap((message) => {
+    if (!message || typeof message !== 'object') return []
+    const record = message as {
+      role?: unknown
+      content?: unknown
+      timestamp?: unknown
+    }
+    const content =
+      typeof record.content === 'string'
+        ? record.content.replace(/\s+/g, ' ').trim()
+        : ''
+    if (!content) return []
+
+    return [
+      {
+        role: typeof record.role === 'string' ? record.role : 'unknown',
+        content,
+        timestamp:
+          typeof record.timestamp === 'string' ? record.timestamp : undefined,
+      },
+    ]
+  })
+}
+
+function conversationMatchesWords(
+  row: ConversationSearchRow,
+  words: string[],
+): boolean {
+  if (words.length === 0) return true
+  const text = conversationMessages(row.messages)
+    .map((message) => message.content)
+    .join(' ')
+    .toLowerCase()
+  return words.every((word) => text.includes(word))
+}
+
+function formatConversationHistoryMatch(
+  row: ConversationSearchRow,
+  queryWords: string[],
+): string {
+  const messages = conversationMessages(row.messages)
+  const matchingIndexes = new Set<number>()
+  if (queryWords.length > 0) {
+    messages.forEach((message, index) => {
+      const lower = message.content.toLowerCase()
+      if (queryWords.some((word) => lower.includes(word))) {
+        matchingIndexes.add(index)
+        if (index > 0) matchingIndexes.add(index - 1)
+        if (index + 1 < messages.length) matchingIndexes.add(index + 1)
+      }
+    })
+  }
+
+  const selected =
+    matchingIndexes.size > 0
+      ? Array.from(matchingIndexes)
+          .sort((a, b) => a - b)
+          .slice(-12)
+          .map((index) => messages[index])
+      : messages.slice(-10)
+
+  const sourceLabel = row.source || 'unknown'
+  const statusLabel = row.status || 'unknown'
+  const harryLabel = row.ai_enabled ? 'ON' : 'OFF'
+  const lines = selected.map((message) => {
+    const role =
+      message.role === 'user'
+        ? 'CUSTOMER'
+        : message.role === 'assistant'
+          ? 'HARRY'
+          : message.role.toUpperCase()
+    const stamp = message.timestamp
+      ? new Date(message.timestamp).toLocaleString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+        })
+      : ''
+    return `${stamp ? `${stamp} ` : ''}${role}: ${message.content.slice(0, 500)}`
+  })
+
+  return [
+    `Conversation ${row.id}`,
+    `Phone: ${row.phone_number} | Source: ${sourceLabel} | Status: ${statusLabel} | Harry: ${harryLabel} | Updated: ${row.updated_at || 'unknown'}`,
+    ...lines,
+  ].join('\n')
+}
+
+async function searchConversationHistory(
+  input: Record<string, unknown>,
+  supabase: ReturnType<typeof createAdminClient>,
+  context: { threadId?: string },
+): Promise<string> {
+  const target = String(input.target || '').trim()
+  const query = String(input.query || '').trim()
+  const limit = Math.min(Math.max(Number(input.limit) || 5, 1), 10)
+  const daysBack = Number(input.days_back || 0)
+  const queryWords = normalizeConversationSearchWords(query)
+  const rows = new Map<string, ConversationSearchRow>()
+  const selectFields =
+    'id, phone_number, source, status, ai_enabled, updated_at, messages, ops_customer_id'
+
+  function addRows(data: unknown[] | null | undefined) {
+    for (const row of data || []) {
+      const conversation = row as ConversationSearchRow
+      if (conversation?.id) rows.set(conversation.id, conversation)
+    }
+  }
+
+  if (target) {
+    const conversation = await findConversation(target, supabase, context)
+    if (conversation) {
+      const { data } = await supabase
+        .from('conversations')
+        .select(selectFields)
+        .eq('id', conversation.id)
+        .maybeSingle()
+      addRows(data ? [data] : [])
+    }
+
+    const phoneVariants = opsPhoneLookupVariants(target)
+    if (phoneVariants.length > 0) {
+      const { data } = await supabase
+        .from('conversations')
+        .select(selectFields)
+        .in('phone_number', phoneVariants)
+        .order('updated_at', { ascending: false })
+        .limit(10)
+      addRows(data)
+    }
+
+    const customers = await findCustomerCandidates(target, supabase)
+    const variants = Array.from(
+      new Set(
+        customers
+          .map((customer) => customer.phone)
+          .filter(Boolean)
+          .flatMap((phone) => opsPhoneLookupVariants(phone as string)),
+      ),
+    )
+    if (variants.length > 0) {
+      const { data } = await supabase
+        .from('conversations')
+        .select(selectFields)
+        .in('phone_number', variants)
+        .order('updated_at', { ascending: false })
+        .limit(20)
+      addRows(data)
+    }
+  }
+
+  let recentQuery = supabase
+    .from('conversations')
+    .select(selectFields)
+    .order('updated_at', { ascending: false })
+    .limit(target ? 75 : 125)
+
+  if (daysBack > 0) {
+    recentQuery = recentQuery.gte(
+      'updated_at',
+      new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString(),
+    )
+  }
+
+  const { data: recentRows } = await recentQuery
+  const targetWords = normalizeConversationSearchWords(target)
+  addRows(
+    targetWords.length > 0
+      ? (recentRows || []).filter((row) =>
+          conversationMatchesWords(row as ConversationSearchRow, targetWords),
+        )
+      : recentRows,
+  )
+
+  const matches = Array.from(rows.values())
+    .filter((row) => conversationMatchesWords(row, queryWords))
+    .sort((a, b) =>
+      String(b.updated_at || '').localeCompare(String(a.updated_at || '')),
+    )
+    .slice(0, limit)
+
+  if (matches.length === 0) {
+    return `No matching conversation history found${target ? ` for "${target}"` : ''}${query ? ` with "${query}"` : ''}. Try a phone number, fuller name, or broader keywords.`
+  }
+
+  if (matches.length === 1 && context.threadId) {
+    await rememberActiveConversationForThread(supabase, context.threadId, {
+      id: matches[0].id,
+      phone_number: matches[0].phone_number,
+      source: matches[0].source,
+    })
+  }
+
+  return [
+    `Found ${matches.length} matching conversation${matches.length === 1 ? '' : 's'}.`,
+    matches
+      .map((row, index) =>
+        [
+          `\n--- Match ${index + 1} ---`,
+          formatConversationHistoryMatch(row, queryWords),
+        ].join('\n'),
+      )
+      .join('\n'),
+  ].join('\n')
+}
+
 async function executeToolCall(
   toolName: string,
   input: Record<string, unknown>,
@@ -2119,6 +2409,12 @@ async function executeToolCall(
       }
 
       return threadText
+    }
+
+    case 'search_conversation_history': {
+      return searchConversationHistory(input, supabase, {
+        threadId: context.threadId,
+      })
     }
 
     case 'take_over_conversation': {
