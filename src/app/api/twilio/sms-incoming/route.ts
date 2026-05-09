@@ -123,6 +123,16 @@ type ExtractedInfo = {
   serviceNeeded: string | null
 }
 
+function mergeConversationMetadata(
+  metadata: unknown,
+  updates: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    ...((metadata as Record<string, unknown> | null) || {}),
+    ...updates,
+  }
+}
+
 function extractCustomerInfo(
   messages: { role: string; content: string }[],
 ): ExtractedInfo {
@@ -1772,6 +1782,48 @@ If the customer says something changed, collect only the changed field and use t
 
       // Check if we should create a lead (has enough info and no lead exists yet)
       const extractedInfo = extractCustomerInfo(messages)
+      const conversationIdentityUpdates: Record<string, unknown> = {}
+      if (extractedInfo.email) {
+        conversationIdentityUpdates.customer_email = extractedInfo.email
+      }
+      if (extractedInfo.address) {
+        conversationIdentityUpdates.customer_address = extractedInfo.address
+      }
+      if (extractedInfo.zipCode) {
+        conversationIdentityUpdates.customer_zip_code = extractedInfo.zipCode
+      }
+      const shouldSaveConversationName =
+        Boolean(extractedInfo.name) && !conversation.customer_name
+      const shouldSaveConversationMetadata =
+        Object.keys(conversationIdentityUpdates).length > 0
+      if (shouldSaveConversationName || shouldSaveConversationMetadata) {
+        await supabase
+          .from('conversations')
+          .update({
+            ...(shouldSaveConversationName
+              ? { customer_name: extractedInfo.name }
+              : {}),
+            ...(shouldSaveConversationMetadata
+              ? {
+                  metadata: mergeConversationMetadata(
+                    conversation.metadata,
+                    conversationIdentityUpdates,
+                  ),
+                }
+              : {}),
+          })
+          .eq('id', conversation.id)
+        if (shouldSaveConversationName) {
+          conversation.customer_name = extractedInfo.name
+        }
+        if (shouldSaveConversationMetadata) {
+          conversation.metadata = mergeConversationMetadata(
+            conversation.metadata,
+            conversationIdentityUpdates,
+          )
+        }
+      }
+
       if (!conversation.lead_id && canCreateLeads) {
         const hasFullNameForLead =
           extractedInfo.name &&

@@ -79,6 +79,239 @@ function phoneMatchesInbound(
   return a.length === 10 && b.length === 10 && a === b
 }
 
+type SmsCustomerProfile = {
+  id: string
+  first_name: string | null
+  full_name: string | null
+  business_name: string | null
+  email: string | null
+  phone: string | null
+  addresses: Array<{
+    street_1: string | null
+    city: string | null
+    state: string | null
+    zip_code: string | null
+  }>
+}
+
+type SmsConversationProfile = {
+  id: string
+  source: string | null
+  status: string | null
+  customer_name: string | null
+  inferred_name: string | null
+  inferred_email: string | null
+  last_customer_message: string | null
+  updated_at: string | null
+}
+
+function conversationMessageRecords(
+  messages: unknown,
+): Array<{ role: string; content: string }> {
+  if (!Array.isArray(messages)) return []
+  return messages.flatMap((message) => {
+    if (!message || typeof message !== 'object') return []
+    const record = message as { role?: unknown; content?: unknown }
+    const content =
+      typeof record.content === 'string'
+        ? record.content.replace(/\s+/g, ' ').trim()
+        : ''
+    if (!content) return []
+    return [
+      {
+        role: typeof record.role === 'string' ? record.role : 'unknown',
+        content,
+      },
+    ]
+  })
+}
+
+function inferIdentityFromConversation(messages: unknown): {
+  name: string | null
+  email: string | null
+  lastCustomerMessage: string | null
+} {
+  const userMessages = conversationMessageRecords(messages).filter(
+    (message) => message.role === 'user',
+  )
+  const joined = userMessages.map((message) => message.content).join(' ')
+  const lastCustomerMessage =
+    userMessages[userMessages.length - 1]?.content?.slice(0, 240) || null
+
+  const email =
+    joined.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/)?.[0] ||
+    null
+
+  const namePatterns = [
+    /(?:my name is|i'm|this is|it's|i am|name's|call me)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})/i,
+    /\bname\s*[:\-]\s*([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2})/i,
+  ]
+  const falsePositives = new Set([
+    'hi',
+    'hello',
+    'hey',
+    'yes',
+    'no',
+    'sure',
+    'thanks',
+    'great',
+    'ok',
+    'okay',
+    'woodland park',
+    'colorado springs',
+    'castle rock',
+  ])
+
+  let name: string | null = null
+  for (const pattern of namePatterns) {
+    const match = joined.match(pattern)
+    const candidate = match?.[1]?.trim()
+    if (candidate && !falsePositives.has(candidate.toLowerCase())) {
+      name = candidate
+      break
+    }
+  }
+
+  return { name, email, lastCustomerMessage }
+}
+
+async function lookupSmsCustomerProfiles(
+  supabase: SupabaseClient,
+  phone: string,
+): Promise<SmsCustomerProfile[]> {
+  const variants = phoneSearchVariants(phone)
+  let customers: Array<{
+    id: string
+    first_name: string | null
+    full_name: string | null
+    business_name: string | null
+    email: string | null
+    phone: string | null
+  }> | null = null
+
+  const selectFields = 'id, first_name, full_name, business_name, email, phone'
+
+  if (variants.length > 0) {
+    const { data, error } = await supabase
+      .from('ops_customers')
+      .select(selectFields)
+      .in('phone', variants)
+      .order('updated_at', { ascending: false, nullsFirst: false })
+      .limit(5)
+
+    if (error) throw error
+    customers = data
+  }
+
+  if (!customers?.length) {
+    const last10 = last10Digits(phone)
+    if (last10.length === 10) {
+      const { data, error } = await supabase
+        .from('ops_customers')
+        .select(selectFields)
+        .ilike('phone', `%${last10}`)
+        .order('updated_at', { ascending: false, nullsFirst: false })
+        .limit(10)
+
+      if (error) throw error
+      customers = (data || []).filter((customer) =>
+        phoneMatchesInbound(phone, customer.phone),
+      )
+    }
+  }
+
+  if (!customers?.length) return []
+
+  const customerIds = customers.map((customer) => customer.id)
+  const { data: addressRows, error: addressError } = await supabase
+    .from('ops_service_addresses')
+    .select('customer_id, street_1, city, state, zip_code')
+    .in('customer_id', customerIds)
+    .order('updated_at', { ascending: false, nullsFirst: false })
+
+  if (addressError) throw addressError
+
+  const addressesByCustomer = new Map<string, SmsCustomerProfile['addresses']>()
+  for (const row of addressRows || []) {
+    const customerId = String(row.customer_id || '')
+    if (!customerId) continue
+    const addresses = addressesByCustomer.get(customerId) || []
+    addresses.push({
+      street_1: row.street_1,
+      city: row.city,
+      state: row.state,
+      zip_code: row.zip_code,
+    })
+    addressesByCustomer.set(customerId, addresses)
+  }
+
+  return customers.map((customer) => ({
+    ...customer,
+    addresses: addressesByCustomer.get(customer.id)?.slice(0, 3) || [],
+  }))
+}
+
+async function lookupSmsConversationProfiles(
+  supabase: SupabaseClient,
+  phone: string,
+): Promise<SmsConversationProfile[]> {
+  const variants = phoneSearchVariants(phone)
+  let conversations: Array<{
+    id: string
+    phone_number: string | null
+    source: string | null
+    status: string | null
+    customer_name: string | null
+    messages: unknown
+    updated_at: string | null
+  }> | null = null
+
+  const selectFields =
+    'id, phone_number, source, status, customer_name, messages, updated_at'
+  if (variants.length > 0) {
+    const { data, error } = await supabase
+      .from('conversations')
+      .select(selectFields)
+      .in('phone_number', variants)
+      .order('updated_at', { ascending: false })
+      .limit(5)
+
+    if (error) throw error
+    conversations = data
+  }
+
+  if (!conversations?.length) {
+    const last10 = last10Digits(phone)
+    if (last10.length === 10) {
+      const { data, error } = await supabase
+        .from('conversations')
+        .select(selectFields)
+        .ilike('phone_number', `%${last10}`)
+        .order('updated_at', { ascending: false })
+        .limit(10)
+
+      if (error) throw error
+      conversations = (data || []).filter((conversation) =>
+        phoneMatchesInbound(phone, conversation.phone_number),
+      )
+    }
+  }
+
+  return (conversations || []).map((conversation) => {
+    const inferred = inferIdentityFromConversation(conversation.messages)
+    return {
+      id: conversation.id,
+      source: conversation.source,
+      status: conversation.status,
+      customer_name: conversation.customer_name,
+      inferred_name: inferred.name,
+      inferred_email: inferred.email,
+      last_customer_message: inferred.lastCustomerMessage,
+      updated_at: conversation.updated_at,
+    }
+  })
+}
+
 function addMinutesToTime(value: string, minutesToAdd: number): string {
   const [hours, minutes] = value.split(':').map(Number)
   const total = hours * 60 + minutes + minutesToAdd
@@ -249,9 +482,22 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
   {
     type: 'function',
     function: {
+      name: 'get_my_customer_profile',
+      description:
+        'Look up the customer profile attached to this SMS phone number, including name, email, phone, and saved service addresses. Use before saying you do not know who the texter is.',
+      parameters: {
+        type: 'object',
+        properties: {},
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'list_my_upcoming_appointments',
       description:
-        'List this customer\'s upcoming Ops jobs (matched by SMS phone). Use when they ask about "my appointment" or need an appointment_id.',
+        'List this customer\'s upcoming Ops jobs (matched by SMS phone). Also returns any matched customer profile even when there are no upcoming jobs. Use when they ask about "my appointment" or need an appointment_id.',
       parameters: {
         type: 'object',
         properties: {},
@@ -524,31 +770,47 @@ export async function executeHarrySmsTool(
 
   try {
     switch (name) {
-      case 'list_my_upcoming_appointments': {
-        let { data: customers, error: cErr } = await supabase
-          .from('ops_customers')
-          .select('id, full_name, phone')
-          .in('phone', phoneVariants)
+      case 'get_my_customer_profile': {
+        const [profiles, conversations] = await Promise.all([
+          lookupSmsCustomerProfiles(supabase, ctx.customerPhoneE164),
+          lookupSmsConversationProfiles(supabase, ctx.customerPhoneE164),
+        ])
+        const hasIdentity =
+          profiles.length > 0 ||
+          conversations.some(
+            (conversation) =>
+              conversation.customer_name ||
+              conversation.inferred_name ||
+              conversation.inferred_email,
+          )
 
-        if (cErr) throw cErr
-        if (!customers?.length) {
-          const last10 = last10Digits(ctx.customerPhoneE164)
-          if (last10.length === 10) {
-            const retry = await supabase
-              .from('ops_customers')
-              .select('id, full_name, phone')
-              .ilike('phone', `%${last10}`)
-            if (!retry.error && retry.data?.length) {
-              customers = retry.data.filter(
-                (c) => last10Digits(c.phone || '') === last10,
-              )
-            }
-          }
-        }
-        if (!customers?.length) {
+        return JSON.stringify({
+          phone_number_seen: ctx.customerPhoneE164,
+          matched: hasIdentity,
+          customer_profiles: profiles,
+          conversation_profiles: conversations,
+          message: hasIdentity
+            ? 'Identity information found for this SMS number.'
+            : 'No saved name/profile found for this SMS number, but the phone number is visible.',
+        })
+      }
+
+      case 'list_my_upcoming_appointments': {
+        const [customers, conversations] = await Promise.all([
+          lookupSmsCustomerProfiles(supabase, ctx.customerPhoneE164),
+          lookupSmsConversationProfiles(supabase, ctx.customerPhoneE164),
+        ])
+
+        if (!customers.length) {
           return JSON.stringify({
             upcoming: [],
-            message: 'No customer profile found for this phone yet.',
+            customer_profiles: [],
+            conversation_profiles: conversations,
+            phone_number_seen: ctx.customerPhoneE164,
+            message:
+              conversations.length > 0
+                ? 'No Ops customer profile found for this phone yet, but conversation history exists.'
+                : 'No customer profile found for this phone yet.',
           })
         }
 
@@ -594,7 +856,16 @@ export async function executeHarrySmsTool(
           }
         })
 
-        return JSON.stringify({ upcoming })
+        return JSON.stringify({
+          phone_number_seen: ctx.customerPhoneE164,
+          customer_profiles: customers,
+          conversation_profiles: conversations,
+          upcoming,
+          message:
+            upcoming.length > 0
+              ? 'Customer profile and upcoming appointments found.'
+              : 'Customer profile found, but no upcoming appointments found.',
+        })
       }
 
       case 'search_service_catalog': {

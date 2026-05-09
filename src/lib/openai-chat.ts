@@ -62,6 +62,9 @@ MODE ROUTER — PICK THE RIGHT HARRY BEFORE ANSWERING:
 CONTEXT AWARENESS — CHECK FOR EXISTING APPOINTMENTS FIRST:
 - At the START of every conversation (especially if the customer's message is vague like "Thanks", "OK", "Sounds good"), call list_my_upcoming_appointments to see if they have an upcoming job.
 - If they DO have an upcoming appointment, acknowledge it in your response: "You're all set for [date] at [time]!" or "Looking forward to seeing you [date]!" This shows you know who they are.
+- If they DON'T have an upcoming appointment but the tool returns a customer profile, still use their name/details. No upcoming appointment does NOT mean unknown customer.
+- If the customer asks whether you know their phone number, name, profile, previous work, or who they are, call get_my_customer_profile before answering. Never say you do not have a name/profile for this number unless get_my_customer_profile returns no match.
+- You can see the SMS phone number from runtime context. If asked what number is texting, answer with that number. Do not answer with appointment status.
 - If they DON'T have an upcoming appointment and seem interested in booking, proceed with the normal booking flow.
 - ALWAYS check appointments when a customer asks about "my appointment", "when are you coming", "reschedule", "change address", etc.
 - This context makes you sound smart and helpful, not generic.
@@ -646,6 +649,9 @@ Rules: Only offer a code if it is appropriate for this customer's channel and co
       ? ' This conversation is via a Google LSA relay number — the relay cannot receive confirmation texts. You MUST ask the customer for their real callback phone number (e.g. "What\'s the best number to reach you for confirmations?") before calling book_new_job, and pass it as customer_phone.'
       : ''
     const channelContext = `\n\nCHANNEL: ${channelLabel[channelKey] ?? channelKey}. Only apply promotions and discounts that are explicitly allowed for this channel.${lsaExtra}\n`
+    const smsIdentityContext = smsOpsContext?.customerPhoneE164
+      ? `\n\nSMS IDENTITY CONTEXT:\n- This customer is texting from ${smsOpsContext.customerPhoneE164}.\n- If they ask whether you know the phone number, answer with this number.\n- If they ask whether you know their name, profile, or previous conversations, call get_my_customer_profile before answering.\n- No upcoming appointment does not mean unknown customer; identity/profile lookup is separate from appointment lookup.\n`
+      : ''
 
     // Build system prompt with partner context if available
     let systemPrompt =
@@ -654,7 +660,8 @@ Rules: Only offer a code if it is appropriate for this customer's channel and co
       profileContext +
       promoContext +
       dateContext +
-      channelContext
+      channelContext +
+      smsIdentityContext
     if (context?.couponCode) {
       const partnerContext = `
 
@@ -671,7 +678,8 @@ CURRENT CUSTOMER CONTEXT:
         promoContext +
         partnerContext +
         dateContext +
-        channelContext
+        channelContext +
+        smsIdentityContext
     }
 
     // Build messages array with system prompt + conversation history + new message
