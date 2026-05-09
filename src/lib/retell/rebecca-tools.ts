@@ -637,6 +637,27 @@ function addPreparedLineItem(
   })
 }
 
+function upsertPreparedLineItemMaxQuantity(
+  items: PreparedLineItem[],
+  catalogItem: CatalogItem | null,
+  quantity: number,
+) {
+  if (!catalogItem || quantity <= 0) return
+  if (!isRabeccaBookableCatalogItem(catalogItem)) return
+
+  const existing = items.find((item) => item.service_id === catalogItem.id)
+  if (!existing) {
+    addPreparedLineItem(items, catalogItem, quantity)
+    return
+  }
+
+  const normalizedQuantity = quantityForCatalogLine(catalogItem, quantity)
+  if (normalizedQuantity <= existing.quantity) return
+
+  existing.quantity = normalizedQuantity
+  existing.total = existing.unit_price * normalizedQuantity
+}
+
 function roomSlugForSquareFeet(squareFeet: number): string {
   if (squareFeet > 800) return 'oversized-room-carpet-cleaning-800-plus-sqft'
   if (squareFeet >= 600) return 'jumbo-humungous-room-600-to800-sqft'
@@ -833,43 +854,51 @@ async function prepareResidentialBookingQuote(
   ])
 
   addPreparedLineItemsFromRawInputs(lineItems, catalog, args.line_items)
-  addPreparedLineItem(lineItems, regularRoom, bedrooms)
-  addPreparedLineItem(
+  upsertPreparedLineItemMaxQuantity(lineItems, regularRoom, bedrooms)
+  upsertPreparedLineItemMaxQuantity(
     lineItems,
     catalogBySlug(catalog, 'sasquatch-size-room-200-to-400-sqft'),
     sasquatchRooms,
   )
-  addPreparedLineItem(
+  upsertPreparedLineItemMaxQuantity(
     lineItems,
     catalogBySlug(catalog, 'monster-size-room-400-to-600-sqft'),
     monsterRooms,
   )
-  addPreparedLineItem(lineItems, hall, carpetHalls)
-  addPreparedLineItem(lineItems, steps, stepCount)
-  addPreparedLineItem(lineItems, sofa, couchCount)
-  addPreparedLineItem(lineItems, loveseat, loveseatCount)
-  addPreparedLineItem(lineItems, recliner, reclinerCount)
-  addPreparedLineItem(lineItems, sectional, sectionalSeats)
-  addPreparedLineItem(lineItems, leatherChair, leatherChairCount)
-  addPreparedLineItem(lineItems, leatherLoveseat, leatherLoveseatCount)
-  addPreparedLineItem(lineItems, leatherSofa, leatherSofaCount)
-  addPreparedLineItem(lineItems, leatherSectional, leatherSectionalSeats)
-  addPreparedLineItem(
+  upsertPreparedLineItemMaxQuantity(lineItems, hall, carpetHalls)
+  upsertPreparedLineItemMaxQuantity(lineItems, steps, stepCount)
+  upsertPreparedLineItemMaxQuantity(lineItems, sofa, couchCount)
+  upsertPreparedLineItemMaxQuantity(lineItems, loveseat, loveseatCount)
+  upsertPreparedLineItemMaxQuantity(lineItems, recliner, reclinerCount)
+  upsertPreparedLineItemMaxQuantity(lineItems, sectional, sectionalSeats)
+  upsertPreparedLineItemMaxQuantity(lineItems, leatherChair, leatherChairCount)
+  upsertPreparedLineItemMaxQuantity(
+    lineItems,
+    leatherLoveseat,
+    leatherLoveseatCount,
+  )
+  upsertPreparedLineItemMaxQuantity(lineItems, leatherSofa, leatherSofaCount)
+  upsertPreparedLineItemMaxQuantity(
+    lineItems,
+    leatherSectional,
+    leatherSectionalSeats,
+  )
+  upsertPreparedLineItemMaxQuantity(
     lineItems,
     catalogBySlug(catalog, 'dining-chair'),
     diningChairCount,
   )
-  addPreparedLineItem(
+  upsertPreparedLineItemMaxQuantity(
     lineItems,
     catalogBySlug(catalog, 'ottoman'),
     ottomanCount,
   )
-  addPreparedLineItem(
+  upsertPreparedLineItemMaxQuantity(
     lineItems,
     catalogBySlug(catalog, 'mattress-cleaning'),
     mattressCount,
   )
-  addPreparedLineItem(
+  upsertPreparedLineItemMaxQuantity(
     lineItems,
     catalogBySlug(
       catalog,
@@ -877,81 +906,81 @@ async function prepareResidentialBookingQuote(
     ),
     inferredTileGroutSquareFeet || 0,
   )
-  addPreparedLineItem(
+  upsertPreparedLineItemMaxQuantity(
     lineItems,
     catalogBySlug(catalog, 'rug-cleaning-per-foot'),
     customRugSquareFeet || 0,
   )
-  addPreparedLineItem(
+  upsertPreparedLineItemMaxQuantity(
     lineItems,
     catalogBySlug(catalog, 'rug-3x5'),
     positiveIntegerArg(args, ['rug_3x5_count']),
   )
-  addPreparedLineItem(
+  upsertPreparedLineItemMaxQuantity(
     lineItems,
     catalogBySlug(catalog, 'runner-2-5x8'),
     positiveIntegerArg(args, ['runner_2_5x8_count', 'runner_rug_count']),
   )
-  addPreparedLineItem(
+  upsertPreparedLineItemMaxQuantity(
     lineItems,
     catalogBySlug(catalog, 'rug-4x6-wool-or-polyester'),
     positiveIntegerArg(args, ['rug_4x6_count']),
   )
-  addPreparedLineItem(
+  upsertPreparedLineItemMaxQuantity(
     lineItems,
     catalogBySlug(catalog, 'rug-5x6'),
     positiveIntegerArg(args, ['rug_5x6_count']),
   )
-  addPreparedLineItem(
+  upsertPreparedLineItemMaxQuantity(
     lineItems,
     catalogBySlug(catalog, 'area-rug-8x5'),
     positiveIntegerArg(args, ['rug_5x8_count', 'area_rug_5x8_count']),
   )
-  addPreparedLineItem(
+  upsertPreparedLineItemMaxQuantity(
     lineItems,
     catalogBySlug(catalog, 'rug-8x11wool-or-polyester'),
     positiveIntegerArg(args, ['rug_8x11_count']),
   )
-  addPreparedLineItem(
+  upsertPreparedLineItemMaxQuantity(
     lineItems,
     catalogBySlug(catalog, 'rug-11x14'),
     positiveIntegerArg(args, ['rug_11x14_count']),
   )
-  addPreparedLineItem(
+  upsertPreparedLineItemMaxQuantity(
     lineItems,
     catalogBySlug(catalog, 'legendary-regular'),
     legendaryRooms,
   )
-  addPreparedLineItem(
+  upsertPreparedLineItemMaxQuantity(
     lineItems,
     catalogBySlug(catalog, 'legendary-hall'),
     legendaryHallCount,
   )
-  addPreparedLineItem(
+  upsertPreparedLineItemMaxQuantity(
     lineItems,
     catalogBySlug(catalog, 'legendary-step'),
     legendaryStepCount,
   )
   if (legendarySquareFeet && legendarySquareFeet > 0) {
-    addPreparedLineItem(
+    upsertPreparedLineItemMaxQuantity(
       lineItems,
       catalogBySlug(catalog, legendarySlugForSquareFeet(legendarySquareFeet)),
       legendarySquareFeet > 800 ? legendarySquareFeet : 1,
     )
   }
-  addPreparedLineItem(
+  upsertPreparedLineItemMaxQuantity(
     lineItems,
     catalogBySlug(catalog, 'pet-urine-injection-treatment-with-bio-release'),
     urineTreatmentRooms,
   )
-  addPreparedLineItem(
+  upsertPreparedLineItemMaxQuantity(
     lineItems,
     catalogBySlug(catalog, 'pre-vacuuming'),
     preVacuumingRooms,
   )
 
   if (carpetLivingRoomSquareFeet && carpetLivingRoomSquareFeet > 0) {
-    addPreparedLineItem(
+    upsertPreparedLineItemMaxQuantity(
       lineItems,
       catalogBySlug(catalog, roomSlugForSquareFeet(carpetLivingRoomSquareFeet)),
       carpetLivingRoomSquareFeet > 800 ? carpetLivingRoomSquareFeet : 1,
