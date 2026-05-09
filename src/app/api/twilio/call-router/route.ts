@@ -81,8 +81,8 @@ export async function POST(request: NextRequest) {
     const baseUrl = getBaseUrl()
     const afterHoursUrl = `${baseUrl}/api/twilio/call-after-hours`
 
-    if (routingConfig.temporaryOpenLineMode) {
-      console.log('[Call Router] Temporary open line mode active - direct ring')
+    if (isBusinessHours || routingConfig.temporaryOpenLineMode) {
+      console.log('[Call Router] Emergency direct ring mode active')
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Dial timeout="${routingConfig.openLineTimeoutSeconds}" action="${afterHoursUrl}" callerId="${callerPhone}" answerOnBridge="true">
@@ -91,14 +91,9 @@ export async function POST(request: NextRequest) {
   </Dial>
 </Response>`
     } else {
-      // Rabecca handles scheduling 24/7. Press 2 still rings Charles/admin.
-      const ivrMenuUrl = `${baseUrl}/api/twilio/ivr-menu`
-
+      console.log('[Call Router] After hours - voicemail flow')
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Gather action="${ivrMenuUrl}" numDigits="1" timeout="10">
-    <Say>Thank you for calling Sasquatch Carpet Cleaning. For scheduling, press 1. For Charles or technical help, press 2.</Say>
-  </Gather>
   <Redirect method="POST">${afterHoursUrl}</Redirect>
 </Response>`
     }
