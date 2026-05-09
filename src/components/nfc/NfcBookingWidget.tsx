@@ -22,6 +22,8 @@ interface TimeSlot {
   label: string
 }
 
+type CalendarAvailability = Record<string, number>
+
 interface CartItem {
   service: ServiceItem
   quantity: number
@@ -76,6 +78,12 @@ const CATEGORY_DISPLAY_NAMES: Record<string, string> = {
 
 function cartTotal(cart: CartItem[]) {
   return cart.reduce((sum, ci) => sum + ci.service.base_price * ci.quantity, 0)
+}
+
+function appointmentMinutesFromSubtotal(totalDollars: number) {
+  if (totalDollars > 600) return 240
+  if (totalDollars > 300) return 180
+  return 120
 }
 
 function formatPrice(n: number) {
@@ -451,12 +459,17 @@ function CategorySection({
 function MiniCalendar({
   selected,
   onSelect,
+  requiredMinutes,
 }: {
   selected: string
   onSelect: (d: string) => void
+  requiredMinutes: number
 }) {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
+  const [availabilityByDate, setAvailabilityByDate] =
+    useState<CalendarAvailability>({})
+  const [availabilityLoading, setAvailabilityLoading] = useState(false)
 
   const [viewMonth, setViewMonth] = useState<Date>(() => {
     if (selected) {
@@ -474,11 +487,83 @@ function MiniCalendar({
     ...Array(firstDay).fill(null),
     ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
   ]
+  const startDate = toLocalISO(new Date(year, month, 1))
+  const endDate = toLocalISO(new Date(year, month, daysInMonth))
 
   const monthLabel = viewMonth.toLocaleDateString('en-US', {
     month: 'long',
     year: 'numeric',
   })
+
+  useEffect(() => {
+    let ignore = false
+    const controller = new AbortController()
+
+    async function loadMonthAvailability() {
+      setAvailabilityLoading(true)
+      try {
+        const params = new URLSearchParams({
+          start_date: startDate,
+          end_date: endDate,
+          required_minutes: String(requiredMinutes),
+        })
+        const response = await fetch(`/api/public/availability?${params}`, {
+          cache: 'no-store',
+          signal: controller.signal,
+        })
+        if (!response.ok) throw new Error('Month availability failed')
+        const data = (await response.json()) as {
+          days?: { date: string; slots?: number }[]
+        }
+        if (ignore) return
+        setAvailabilityByDate(
+          (data.days || []).reduce<CalendarAvailability>((acc, day) => {
+            acc[day.date] = Number(day.slots || 0)
+            return acc
+          }, {}),
+        )
+      } catch (error) {
+        if (controller.signal.aborted || ignore) return
+
+        const fallbackToday = new Date()
+        fallbackToday.setHours(0, 0, 0, 0)
+        const futureWeekdays = Array.from(
+          { length: daysInMonth },
+          (_, i) => new Date(year, month, i + 1),
+        ).filter((day) => day >= fallbackToday && day.getDay() !== 0)
+
+        const fallbackResults = await Promise.all(
+          futureWeekdays.map(async (day) => {
+            const date = toLocalISO(day)
+            try {
+              const response = await fetch(
+                `/api/public/availability?date=${date}&required_minutes=${requiredMinutes}`,
+                { cache: 'no-store' },
+              )
+              if (!response.ok) throw new Error('Day availability failed')
+              const data = (await response.json()) as {
+                slots?: TimeSlot[]
+              }
+              return [date, data.slots?.length || 0] as const
+            } catch {
+              return [date, 0] as const
+            }
+          }),
+        )
+
+        if (ignore) return
+        setAvailabilityByDate(Object.fromEntries(fallbackResults))
+      } finally {
+        if (!ignore) setAvailabilityLoading(false)
+      }
+    }
+
+    void loadMonthAvailability()
+    return () => {
+      ignore = true
+      controller.abort()
+    }
+  }, [daysInMonth, endDate, month, requiredMinutes, startDate, year])
 
   return (
     <div className="select-none">
@@ -535,36 +620,62 @@ function MiniCalendar({
         ))}
       </div>
 
-      <div className="grid grid-cols-7 gap-0.5">
+      <div className="grid grid-cols-7 gap-1.5">
         {cells.map((day, idx) => {
           if (!day) return <div key={`empty-${idx}`} />
           const cellDate = new Date(year, month, day)
           const iso = toLocalISO(cellDate)
           const isPast = cellDate < today
           const isSunday = cellDate.getDay() === 0
-          const isSelected = iso === selected
+          const slotsForDay = availabilityByDate[iso]
+          const hasAvailableSlots =
+            typeof slotsForDay === 'number' && slotsForDay > 0
+          const isFullyBooked =
+            typeof slotsForDay === 'number' && slotsForDay === 0
+          const isChecking =
+            !isPast &&
+            !isSunday &&
+            availabilityLoading &&
+            typeof slotsForDay !== 'number'
+          const isSelected = iso === selected && !isFullyBooked
 
           return (
             <button
               key={iso}
               type="button"
-              disabled={isPast || isSunday}
+              disabled={isPast || isSunday || isFullyBooked}
               onClick={() => onSelect(iso)}
-              className={`aspect-square w-full rounded-lg text-xs font-medium transition-all ${
+              className={`flex min-h-[54px] w-full flex-col items-center justify-center rounded-xl border px-1 text-center transition-all ${
                 isSelected
-                  ? 'bg-green-600 text-white'
+                  ? 'border-green-300 bg-green-600 text-white shadow-[0_0_14px_rgba(34,197,94,0.3)]'
                   : isPast || isSunday
-                    ? 'cursor-not-allowed text-white/15'
-                    : 'text-white/80 hover:bg-green-600/30 hover:text-green-300'
+                    ? 'cursor-not-allowed border-transparent text-white/15'
+                    : isFullyBooked
+                      ? 'cursor-not-allowed border-rose-400/40 bg-rose-500/15 text-rose-100'
+                      : hasAvailableSlots
+                        ? 'border-green-400/60 bg-green-500/15 text-green-100 shadow-[0_0_14px_rgba(34,197,94,0.16)] hover:bg-green-500/25'
+                        : isChecking
+                          ? 'border-white/10 bg-white/[0.03] text-white/45'
+                          : 'border-white/5 text-white/80 hover:bg-green-600/30 hover:text-green-300'
               }`}
             >
-              {day}
+              <span className="text-xs leading-none font-bold">{day}</span>
+              {hasAvailableSlots && (
+                <span className="mt-1 text-[8px] leading-[0.65rem] font-extrabold tracking-normal">
+                  Available
+                </span>
+              )}
+              {isFullyBooked && (
+                <span className="mt-1 text-[8px] leading-[0.65rem] font-extrabold tracking-normal">
+                  Fully booked
+                </span>
+              )}
             </button>
           )
         })}
       </div>
       <p className="mt-2 text-center text-[10px] text-white/30">
-        Sundays unavailable
+        Green days have openings. Red days are fully booked.
       </p>
     </div>
   )
@@ -629,6 +740,10 @@ export function NfcBookingWidget({
     setMobileSubtotalHost(document.body)
   }, [])
 
+  const requiredAppointmentMinutes = appointmentMinutesFromSubtotal(
+    cartTotal(cart),
+  )
+
   // Load services on mount
   useEffect(() => {
     fetch('/api/public/services', { cache: 'no-store' })
@@ -647,24 +762,14 @@ export function NfcBookingWidget({
     setSlotsLoading(true)
     setSelectedSlot(null)
 
-    // Calculate duration based on dollar amount (simple tier system)
-    // $0-300 = 2hr, $301-600 = 3hr, $601+ = 4hr
-    const totalDollars = cartTotal(cart)
-    let requiredMinutes = 120 // 2 hours default
-    if (totalDollars > 600) {
-      requiredMinutes = 240 // 4 hours
-    } else if (totalDollars > 300) {
-      requiredMinutes = 180 // 3 hours
-    }
-
     fetch(
-      `/api/public/availability?date=${selectedDate}&required_minutes=${requiredMinutes}`,
+      `/api/public/availability?date=${selectedDate}&required_minutes=${requiredAppointmentMinutes}`,
     )
       .then((r) => r.json())
       .then((d) => setSlots(d.slots || []))
       .catch(console.error)
       .finally(() => setSlotsLoading(false))
-  }, [selectedDate, cart])
+  }, [selectedDate, requiredAppointmentMinutes])
 
   // Cart helpers
   function addToCart(service: ServiceItem) {
@@ -1100,6 +1205,7 @@ export function NfcBookingWidget({
               <MiniCalendar
                 selected={selectedDate}
                 onSelect={setSelectedDate}
+                requiredMinutes={requiredAppointmentMinutes}
               />
             </div>
 
