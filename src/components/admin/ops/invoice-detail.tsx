@@ -1096,9 +1096,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
               className="gap-1.5"
               disabled={Boolean(actionLoading)}
               onClick={() =>
-                router.push(
-                  `/admin/operations?date=${appointment.appointment_date}`,
-                )
+                router.push(`/admin/operations/appointments/${appointment.id}`)
               }
             >
               <CalendarClock className="h-3.5 w-3.5" />

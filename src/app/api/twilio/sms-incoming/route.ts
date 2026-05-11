@@ -530,6 +530,10 @@ function isSmsReactionOnlyMessage(text: string): boolean {
   const trimmed = text.trim()
   if (!trimmed) return false
 
+  if (/^[❤️❤👍👎🔥😂🤣😍🥰👏🙌💯✅☑️✔️⭐️✨\s]+$/u.test(trimmed)) {
+    return true
+  }
+
   const reactionVerbs = [
     'Liked',
     'Loved',
