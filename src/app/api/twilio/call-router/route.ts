@@ -73,18 +73,24 @@ export async function POST(request: NextRequest) {
 
     const baseUrl = getBaseUrl()
     const afterHoursUrl = `${baseUrl}/api/twilio/call-after-hours`
+    const ivrMenuUrl = `${baseUrl}/api/twilio/ivr-menu`
 
-    if (isBusinessHours || routingConfig.temporaryOpenLineMode) {
-      console.log(
-        routingConfig.temporaryOpenLineMode
-          ? '[Call Router] Temporary open line mode active - direct ring'
-          : '[Call Router] Business hours - direct ring',
-      )
+    if (routingConfig.temporaryOpenLineMode) {
+      console.log('[Call Router] Temporary open line mode active - direct ring')
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Dial timeout="${routingConfig.openLineTimeoutSeconds}" action="${afterHoursUrl}" callerId="${callerPhone}" answerOnBridge="true">
     <Number>${routingConfig.primaryForwardNumber}</Number>
   </Dial>
+</Response>`
+    } else if (isBusinessHours) {
+      console.log('[Call Router] Business hours - IVR menu')
+      twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Gather action="${ivrMenuUrl}" numDigits="1" timeout="10">
+    <Say>Thank you for calling Sasquatch Carpet Cleaning. For scheduling, press 1. For Charles or technical help, press 2.</Say>
+  </Gather>
+  <Redirect method="POST">${afterHoursUrl}</Redirect>
 </Response>`
     } else {
       console.log('[Call Router] After hours - voicemail flow')

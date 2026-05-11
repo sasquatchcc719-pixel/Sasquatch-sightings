@@ -21,28 +21,17 @@ export async function POST(request: NextRequest) {
 
     const baseUrl = getBaseUrl()
     const afterHoursUrl = `${baseUrl}/api/twilio/call-after-hours` // Voicemail
-    const rabeccaFallbackUrl = `${baseUrl}/api/twilio/rabecca-fallback`
 
     let twimlResponse
 
     if (digits === '1') {
-      if (routingConfig.rabeccaSipUri) {
-        console.log(`[IVR Menu] Option 1 -> Dialing Rabecca`)
-        twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
+      console.log(`[IVR Menu] Option 1 -> Dialing scheduling forward number`)
+      twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial timeout="${routingConfig.ivrScheduleTimeoutSeconds}" action="${rabeccaFallbackUrl}" callerId="${callerPhone}" answerOnBridge="true">
-    <Sip>${routingConfig.rabeccaSipUri}</Sip>
+  <Dial timeout="${routingConfig.ivrScheduleTimeoutSeconds}" action="${afterHoursUrl}" callerId="${callerPhone}" answerOnBridge="true">
+    <Number>${routingConfig.primaryForwardNumber}</Number>
   </Dial>
 </Response>`
-      } else {
-        console.warn(
-          '[IVR Menu] Option 1 selected but REBECCA_RETELL_SIP_URI is not configured; falling back to human ring.',
-        )
-        twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Redirect method="POST">${rabeccaFallbackUrl}</Redirect>
-</Response>`
-      }
     } else if (digits === '2') {
       console.log(`[IVR Menu] Option 2 -> Dialing primary + browser`)
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
