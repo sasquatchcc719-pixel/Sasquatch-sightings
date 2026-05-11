@@ -1246,6 +1246,8 @@ Mode:
 - Only ask a follow-up when the target customer, date range, or requested action is genuinely unclear.
 - When asked for a customer's schedule, year schedule, upcoming jobs, dates/services/notes, or work to send to a customer, use customer_schedule_summary. Do not use search_job_details unless Charles asks for a specific room/building/service/detail phrase.
 - When Charles asks you to text a customer, draft the SMS with send_sms. The system will ask Charles to approve before sending; never claim it was sent until approval happens.
+- If ACTIVE CUSTOMER THREAD is set and Charles says "tell them", "text them", "say this", "reply", or "send this" without naming a customer, treat it as the active customer thread and use send_sms with target "this customer".
+- Do not expose Twilio SIDs, webhook IDs, or delivery plumbing unless Charles explicitly asks for technical details. Confirm plainly that a customer text was sent and show the customer-facing message.
 - When Charles says "that", "it", "same thing", or "the report", use RECENT COMMAND MEMORY and LAST ARTIFACT before asking what he means.
 - When Charles says "this customer", "the current conversation", "the one you're talking to", "the person texting", or similar, use ACTIVE CUSTOMER THREAD before guessing from names or old artifacts.
 - When Charles asks you to remember, look back, find an earlier scenario, inspect what happened, or search past customer texts, use search_conversation_history. Do not say you lack access to old conversations until that tool has failed.
@@ -3654,12 +3656,12 @@ async function approvePendingCommandAction(
     await logCommandMessage(supabase, {
       threadId: action.thread_id,
       role: 'assistant',
-      content: `Sent SMS to ${payload.targetLabel} (${sendResult.to}). Twilio SID: ${sendResult.sid}`,
+      content: `Sent SMS to ${payload.targetLabel} (${sendResult.to}).`,
       metadata: { pending_action_id: action.id, twilio_sid: sendResult.sid },
     })
 
     await sendToCharles(
-      `✅ Sent SMS to ${payload.targetLabel} (${sendResult.to}). Twilio SID: ${sendResult.sid}`,
+      `✅ Sent to ${payload.targetLabel} (${sendResult.to}):\n\n"${payload.message}"`,
     )
   } catch (sendError) {
     const errorMessage =
@@ -3854,7 +3856,7 @@ async function handleButtonClick(
         .eq('id', draft.id)
 
       await sendToCharles(
-        `✅ Sent SMS to ${draft.target_label} (${draft.phone_number}). Twilio SID: ${sendResult.sid}\n\n"${draft.message}"`,
+        `✅ Sent to ${draft.target_label} (${draft.phone_number}):\n\n"${draft.message}"`,
       )
     } catch (sendError) {
       const errorMessage =
@@ -3960,7 +3962,10 @@ async function handleButtonClick(
       }
     }
     await sendToCharles(
-      '💬 Just tell me what you want to say, like:\n"Tell them I\'m on my way"',
+      '💬 This is now the active customer thread. Tell me what to text them, like:\n"Tell them I\'m on my way"',
+      {
+        buttons: [[{ text: 'View Thread', data: `view_${conversationId}` }]],
+      },
     )
     return
   }
@@ -3989,7 +3994,15 @@ async function handleButtonClick(
       .eq('id', conversationId)
 
     await sendToCharles(
-      '✅ You took over - Harry is now disabled for this conversation',
+      '✅ You took over. Harry is off for this customer.\n\nTell me exactly what to text them, like:\n"Tell them I can do 2 PM tomorrow." I\'ll draft it and ask you before it sends.',
+      {
+        buttons: [
+          [
+            { text: 'View Thread', data: `view_${conversationId}` },
+            { text: 'Reply', data: `reply_${conversationId}` },
+          ],
+        ],
+      },
     )
     return
   }
