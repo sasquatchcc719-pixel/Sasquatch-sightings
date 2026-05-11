@@ -16,6 +16,7 @@ import { createAiStyleEstimate } from '@/lib/ops/create-ai-style-estimate'
 import { createSlotToken, verifySlotToken } from '@/lib/ops/slot-token'
 import { resyncInvoiceToQuickBooks } from '@/lib/quickbooks-api'
 import { sendAdminSMS } from '@/lib/twilio'
+import { sendToCharles } from '@/lib/harry-command-bot'
 
 /** Today's date in Mountain Time (YYYY-MM-DD). Avoids UTC rollover at 6 PM MDT. */
 function todayMountain(): string {
@@ -947,12 +948,25 @@ export async function executeHarrySmsTool(
           .filter(Boolean)
           .join('\n')
 
-        await sendAdminSMS(report, 'harry_operational_problem')
+        const telegramSent = await sendToCharles(report, {
+          buttons: ctx.sessionId
+            ? [
+                [
+                  { text: 'View Thread', data: `view_${ctx.sessionId}` },
+                  { text: 'Take Over', data: `takeover_${ctx.sessionId}` },
+                ],
+              ]
+            : undefined,
+        })
+        if (!telegramSent) {
+          await sendAdminSMS(report, 'harry_operational_problem')
+        }
         issueReportTimestamps.set(ctx.customerPhoneE164, now)
 
         return JSON.stringify({
           success: true,
           reported_to_charles: true,
+          delivery: telegramSent ? 'telegram' : 'sms_fallback',
           message:
             'Operational problem reported to Charles. Now send the customer the provided safe message without claiming success.',
         })
