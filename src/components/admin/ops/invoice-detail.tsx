@@ -6,7 +6,6 @@ import {
   CalendarClock,
   Camera,
   CheckCircle2,
-  CreditCard,
   Loader2,
   Mail,
   MapPin,
@@ -14,7 +13,6 @@ import {
   Pencil,
   PenTool,
   Phone,
-  Send,
   Sparkles,
   Trash2,
   X,
@@ -26,6 +24,7 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { BeforeAfterCombiner } from '@/components/admin/before-after-combiner'
 import { getCurrentLocation } from '@/lib/image-utils'
+import { formatSquareAmount } from '@/lib/payments/square'
 import { SignatureModal } from './signature-modal'
 
 type JobPhoto = {
@@ -81,6 +80,7 @@ type InvoiceDetail = {
   status: string
   payment_status: string
   payment_method: string | null
+  quickbooks_invoice_id: string | null
   subtotal: number
   total: number
   discount_amount: number | null
@@ -102,6 +102,8 @@ type InvoiceDetail = {
   }>
 }
 
+type SendChannel = 'sms' | 'email'
+
 type CustomerEditForm = {
   first_name: string
   last_name: string
@@ -122,6 +124,41 @@ type AddressEditForm = {
 
 type AppointmentEditForm = {
   lead_source: string
+}
+
+const LINE_ITEM_INPUT_TONES = [
+  'border-emerald-200 bg-emerald-50 text-emerald-950 focus-visible:ring-emerald-500/40',
+  'border-sky-200 bg-sky-50 text-sky-950 focus-visible:ring-sky-500/40',
+  'border-amber-200 bg-amber-50 text-amber-950 focus-visible:ring-amber-500/40',
+  'border-violet-200 bg-violet-50 text-violet-950 focus-visible:ring-violet-500/40',
+  'border-rose-200 bg-rose-50 text-rose-950 focus-visible:ring-rose-500/40',
+  'border-cyan-200 bg-cyan-50 text-cyan-950 focus-visible:ring-cyan-500/40',
+]
+
+function SquareLogoMark({ className = '' }: { className?: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`inline-flex items-center justify-center rounded-sm border-2 border-current ${className}`}
+    >
+      <span className="h-1.5 w-1.5 rounded-[1px] border border-current" />
+    </span>
+  )
+}
+
+function VenmoLogoMark({ className = '' }: { className?: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`inline-flex items-center justify-center font-black tracking-tighter ${className}`}
+    >
+      V
+    </span>
+  )
+}
+
+function lineItemInputTone(index: number): string {
+  return LINE_ITEM_INPUT_TONES[index % LINE_ITEM_INPUT_TONES.length]
 }
 
 function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
@@ -146,26 +183,18 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   const [status, setStatus] = useState('pending')
   const [paymentMethod, setPaymentMethod] = useState<string | null>(null)
   const [discount, setDiscount] = useState('0')
-  const [sendLoading, setSendLoading] = useState<'sms' | 'email' | null>(null)
+  const [sendLoading, setSendLoading] = useState<SendChannel | null>(null)
   const [sendFeedback, setSendFeedback] = useState<{
-    channel: 'sms' | 'email'
+    channel: SendChannel
     ok: boolean
     message: string
   } | null>(null)
-  const [showPaymentModal, setShowPaymentModal] = useState(false)
-  const [paymentTab, setPaymentTab] = useState<'qr' | 'tap'>('qr')
   const [streetViewFailed, setStreetViewFailed] = useState(false)
-  const [showCardForm, setShowCardForm] = useState(false)
-  const [cardNumber, setCardNumber] = useState('')
-  const [cardExpMonth, setCardExpMonth] = useState('')
-  const [cardExpYear, setCardExpYear] = useState('')
-  const [cardCvc, setCardCvc] = useState('')
-  const [cardName, setCardName] = useState('')
-  const [chargeLoading, setChargeLoading] = useState(false)
-  const [chargeError, setChargeError] = useState<string | null>(null)
-  const [chargeSuccess, setChargeSuccess] = useState(false)
-  const [paymentLinkLoading, setPaymentLinkLoading] = useState(false)
+  const [paymentLinkLoading, setPaymentLinkLoading] = useState<
+    'quickbooks' | 'square' | 'venmo' | null
+  >(null)
   const [paymentLinkFeedback, setPaymentLinkFeedback] = useState<{
+    type: 'quickbooks' | 'square' | 'venmo'
     ok: boolean
     message: string
   } | null>(null)
@@ -650,7 +679,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     }
   }
 
-  const handleSend = async (channel: 'sms' | 'email') => {
+  const handleSend = async (channel: SendChannel, type?: 'receipt') => {
     setSendLoading(channel)
     setSendFeedback(null)
     try {
@@ -659,10 +688,14 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ channel }),
+          body: JSON.stringify({ channel, type }),
         },
       )
-      const result = await response.json()
+      const result = (await response.json()) as {
+        error?: string
+        sms?: { sid?: string; to?: string }
+        email_delivery?: { to?: string; id?: string }
+      }
       if (!response.ok) {
         setSendFeedback({
           channel,
@@ -670,14 +703,26 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
           message: result.error || 'Failed to send',
         })
       } else {
+        const mailedTo =
+          type === 'receipt'
+            ? (result.email_delivery?.to ?? '').trim() || undefined
+            : undefined
         setSendFeedback({
           channel,
           ok: true,
-          message: channel === 'sms' ? 'Text sent!' : 'Email sent!',
+          message:
+            type === 'receipt'
+              ? mailedTo
+                ? `Receipt emailed to ${mailedTo}.`
+                : 'Receipt emailed.'
+              : channel === 'sms'
+                ? 'Text sent!'
+                : 'Email sent!',
         })
-        setTimeout(() => setSendFeedback(null), 4000)
+        const hideAfterMs = type === 'receipt' ? 8000 : 4000
+        setTimeout(() => setSendFeedback(null), hideAfterMs)
         // Auto-advance status to sent
-        if (status === 'pending') {
+        if (status === 'pending' && type !== 'receipt') {
           setStatus('sent')
           await fetch(`/api/admin/ops/invoices/${invoiceId}`, {
             method: 'PATCH',
@@ -784,82 +829,10 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     }
   }
 
-  const handleChargeCard = async () => {
-    if (!cardNumber || !cardExpMonth || !cardExpYear || !cardCvc) {
-      setChargeError('Please fill in all card fields.')
-      return
-    }
-
-    setChargeLoading(true)
-    setChargeError(null)
-    setChargeSuccess(false)
-
-    try {
-      const QB_TOKEN_URL =
-        process.env.NEXT_PUBLIC_QB_SANDBOX === 'true'
-          ? 'https://sandbox.api.intuit.com/quickbooks/v4/payments/tokens'
-          : 'https://api.intuit.com/quickbooks/v4/payments/tokens'
-
-      const tokenRes = await fetch(QB_TOKEN_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          card: {
-            number: cardNumber.replace(/\s/g, ''),
-            expMonth: cardExpMonth.padStart(2, '0'),
-            expYear:
-              cardExpYear.length === 2 ? `20${cardExpYear}` : cardExpYear,
-            cvc: cardCvc,
-            name: cardName || undefined,
-          },
-        }),
-      })
-
-      if (!tokenRes.ok) {
-        throw new Error('Card tokenization failed. Please check card details.')
-      }
-
-      const tokenData = await tokenRes.json()
-      const cardToken = tokenData.value
-
-      if (!cardToken) {
-        throw new Error('No token returned from card processor.')
-      }
-
-      const chargeRes = await fetch(
-        `/api/admin/ops/invoices/${invoiceId}/charge`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token: cardToken }),
-        },
-      )
-      const chargeResult = await chargeRes.json()
-
-      if (!chargeRes.ok) {
-        throw new Error(chargeResult.error || 'Charge failed')
-      }
-
-      setChargeSuccess(true)
-      setStatus('paid')
-      setPaymentMethod('card')
-      setShowCardForm(false)
-      setCardNumber('')
-      setCardExpMonth('')
-      setCardExpYear('')
-      setCardCvc('')
-      setCardName('')
-    } catch (err) {
-      setChargeError(
-        err instanceof Error ? err.message : 'Failed to charge card',
-      )
-    } finally {
-      setChargeLoading(false)
-    }
-  }
-
-  const handleSendPaymentLink = async () => {
-    setPaymentLinkLoading(true)
+  const handleSendPaymentLink = async (
+    type: 'quickbooks' | 'square' | 'venmo',
+  ) => {
+    setPaymentLinkLoading(type)
     setPaymentLinkFeedback(null)
     try {
       const response = await fetch(
@@ -867,29 +840,56 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ channel: 'sms', type: 'payment_link' }),
+          body: JSON.stringify({
+            channel: 'sms',
+            type:
+              type === 'quickbooks'
+                ? 'payment_link'
+                : type === 'square'
+                  ? 'square_payment_link'
+                  : 'venmo_payment_link',
+          }),
         },
       )
       const result = await response.json()
       if (!response.ok) {
+        const message = result.error || 'Failed to send payment link'
         setPaymentLinkFeedback({
+          type,
           ok: false,
-          message: result.error || 'Failed to send payment link',
+          message,
         })
+        if (type === 'quickbooks') setError(message)
       } else {
         setPaymentLinkFeedback({
+          type,
           ok: true,
-          message: 'Payment link sent via text!',
+          message:
+            type === 'quickbooks'
+              ? invoice?.quickbooks_invoice_id
+                ? `QuickBooks payment link sent to ${result.sms?.to || 'customer'}${result.sms?.sid ? ` (${result.sms.sid})` : ''}.`
+                : `QuickBooks invoice synced and payment link sent to ${result.sms?.to || 'customer'}${result.sms?.sid ? ` (${result.sms.sid})` : ''}.`
+              : type === 'square'
+                ? `Square payment link sent to ${result.sms?.to || 'customer'}${result.sms?.sid ? ` (${result.sms.sid})` : ''}.`
+              : `Venmo payment link sent to ${result.sms?.to || 'customer'}${result.sms?.sid ? ` (${result.sms.sid})` : ''}.`,
         })
-        setTimeout(() => setPaymentLinkFeedback(null), 4000)
+        if (type === 'quickbooks') await loadInvoice()
+        if (type === 'quickbooks') setError(null)
+        setTimeout(() => setPaymentLinkFeedback(null), 8000)
       }
-    } catch {
+    } catch (sendError) {
+      const message =
+        sendError instanceof Error
+          ? sendError.message
+          : 'Failed to send payment link'
       setPaymentLinkFeedback({
+        type,
         ok: false,
-        message: 'Failed to send payment link',
+        message,
       })
+      if (type === 'quickbooks') setError(message)
     } finally {
-      setPaymentLinkLoading(false)
+      setPaymentLinkLoading(null)
     }
   }
 
@@ -1063,6 +1063,8 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     subtotalCalc - discountAmount - percentageDiscountAmount,
   )
   const billableTotal = total > 0.005 ? total : Number(invoice?.total || 0)
+  const squareAmount = formatSquareAmount(billableTotal)
+  const receiptEmail = customer?.email?.trim() ?? ''
 
   return (
     <div className="space-y-6">
@@ -1094,9 +1096,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
               className="gap-1.5"
               disabled={Boolean(actionLoading)}
               onClick={() =>
-                router.push(
-                  `/admin/operations?date=${appointment.appointment_date}`,
-                )
+                router.push(`/admin/operations/appointments/${appointment.id}`)
               }
             >
               <CalendarClock className="h-3.5 w-3.5" />
@@ -1365,6 +1365,13 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
               >
                 Cancel
               </Button>
+              {paymentLinkFeedback?.type === 'quickbooks' ? (
+                <p
+                  className={`mt-2 text-sm ${paymentLinkFeedback.ok ? 'text-green-700' : 'text-red-600'}`}
+                >
+                  {paymentLinkFeedback.message}
+                </p>
+              ) : null}
             </div>
           </div>
         ) : (
@@ -1530,44 +1537,33 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
           </>
         )}
 
-        {/* Divider + invoice delivery actions */}
+        {/* Divider + receipt delivery actions */}
         <div className="border-border/60 mt-6 border-t pt-5">
           <p className="text-muted-foreground mb-3 text-xs font-semibold tracking-widest uppercase">
-            Send Invoice
+            Receipt
           </p>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              className="gap-2 bg-blue-600 text-white hover:bg-blue-700"
-              onClick={() => setShowPaymentModal(true)}
-            >
-              <CreditCard className="h-4 w-4" />
-              Venmo
-            </Button>
-            <Button
-              variant="outline"
-              className="gap-2"
-              disabled={sendLoading !== null}
-              onClick={() => void handleSend('sms')}
-            >
-              {sendLoading === 'sms' ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="h-4 w-4" />
-              )}
-              Send Invoice
-            </Button>
+          <div className="space-y-2">
+            <p className="text-muted-foreground text-xs">
+              {status !== 'paid'
+                ? 'Mark the invoice paid first, then email the itemized receipt.'
+                : receiptEmail
+                  ? `Sends to the customer email on file: ${receiptEmail}. Edit Customer to change it, then Save.`
+                  : 'Add and save an email address on this customer before sending a receipt.'}
+            </p>
             <Button
               variant="outline"
               className="gap-2"
-              disabled={sendLoading !== null}
-              onClick={() => void handleSend('email')}
+              disabled={
+                sendLoading !== null || status !== 'paid' || !receiptEmail
+              }
+              onClick={() => void handleSend('email', 'receipt')}
             >
               {sendLoading === 'email' ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <Mail className="h-4 w-4" />
               )}
-              Email Invoice
+              Email Itemized Receipt
             </Button>
           </div>
           {sendFeedback ? (
@@ -1633,164 +1629,86 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
               Mark as Paid
             </p>
             <div className="flex flex-wrap gap-2">
-              {['Cash', 'Venmo', 'Check'].map((method) => (
+              {['Square', 'Cash', 'Venmo', 'Check'].map((method) => (
                 <Button
                   key={method}
                   size="sm"
                   variant="outline"
-                  className="gap-1.5 border-green-300 text-green-700 hover:bg-green-50"
+                  className={
+                    method === 'Square'
+                      ? 'gap-1.5 border-blue-300 text-blue-700 hover:bg-blue-50'
+                      : 'gap-1.5 border-green-300 text-green-700 hover:bg-green-50'
+                  }
                   onClick={() => void handleMarkPaid(method.toLowerCase())}
                 >
+                  {method === 'Square' ? (
+                    <SquareLogoMark className="h-3.5 w-3.5" />
+                  ) : method === 'Venmo' ? (
+                    <VenmoLogoMark className="h-3.5 w-3.5 text-[13px]" />
+                  ) : null}
                   {method}
                 </Button>
               ))}
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1.5 border-blue-300 text-blue-700 hover:bg-blue-50"
-                onClick={() => setShowCardForm(!showCardForm)}
-              >
-                <CreditCard className="h-3.5 w-3.5" />
-                Charge Card
-              </Button>
             </div>
 
-            {/* Card charge form */}
-            {showCardForm ? (
-              <div className="border-border/60 mt-4 rounded-xl border p-4">
-                <p className="mb-3 text-sm font-semibold">
-                  Charge Card — ${billableTotal.toFixed(2)}
+            {squareAmount ? (
+              <div className="mt-4 rounded-xl border border-black bg-neutral-950 p-3">
+                <p className="flex items-center gap-2 text-sm font-semibold text-white">
+                  <SquareLogoMark className="h-4 w-4" />
+                  Square Pay
                 </p>
-                {chargeError ? (
-                  <p className="mb-3 text-sm text-red-500">{chargeError}</p>
-                ) : null}
-                {chargeSuccess ? (
-                  <p className="mb-3 text-sm text-green-600">
-                    Card charged successfully!
+                <p className="mt-1 text-xs text-neutral-300">
+                  Text a Square checkout link for ${squareAmount}, then mark
+                  this invoice Square paid above after payment.
+                </p>
+                <Button
+                  className="mt-3 w-full gap-2 bg-white text-black hover:bg-neutral-200"
+                  disabled={paymentLinkLoading !== null}
+                  onClick={() => void handleSendPaymentLink('square')}
+                >
+                  {paymentLinkLoading === 'square' ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <SquareLogoMark className="h-4 w-4" />
+                  )}
+                  {paymentLinkLoading === 'square'
+                    ? 'Sending Square Link...'
+                    : 'Text Square Pay Link'}
+                </Button>
+                {paymentLinkFeedback?.type === 'square' ? (
+                  <p
+                    className={`mt-2 text-sm ${paymentLinkFeedback.ok ? 'text-green-300' : 'text-red-300'}`}
+                  >
+                    {paymentLinkFeedback.message}
                   </p>
                 ) : null}
-                <div className="space-y-3">
-                  <div>
-                    <Label htmlFor="card-name" className="text-xs">
-                      Name on Card
-                    </Label>
-                    <Input
-                      id="card-name"
-                      placeholder="John Doe"
-                      value={cardName}
-                      onChange={(e) => setCardName(e.target.value)}
-                      className="h-9"
-                      autoComplete="cc-name"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="card-number" className="text-xs">
-                      Card Number
-                    </Label>
-                    <Input
-                      id="card-number"
-                      placeholder="4111 1111 1111 1111"
-                      value={cardNumber}
-                      onChange={(e) => setCardNumber(e.target.value)}
-                      className="h-9 tabular-nums"
-                      inputMode="numeric"
-                      maxLength={19}
-                      autoComplete="cc-number"
-                    />
-                  </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    <div>
-                      <Label htmlFor="card-exp-month" className="text-xs">
-                        Month
-                      </Label>
-                      <Input
-                        id="card-exp-month"
-                        placeholder="MM"
-                        value={cardExpMonth}
-                        onChange={(e) => setCardExpMonth(e.target.value)}
-                        className="h-9 tabular-nums"
-                        inputMode="numeric"
-                        maxLength={2}
-                        autoComplete="cc-exp-month"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="card-exp-year" className="text-xs">
-                        Year
-                      </Label>
-                      <Input
-                        id="card-exp-year"
-                        placeholder="YY"
-                        value={cardExpYear}
-                        onChange={(e) => setCardExpYear(e.target.value)}
-                        className="h-9 tabular-nums"
-                        inputMode="numeric"
-                        maxLength={4}
-                        autoComplete="cc-exp-year"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="card-cvc" className="text-xs">
-                        CVV
-                      </Label>
-                      <Input
-                        id="card-cvc"
-                        placeholder="123"
-                        value={cardCvc}
-                        onChange={(e) => setCardCvc(e.target.value)}
-                        className="h-9 tabular-nums"
-                        inputMode="numeric"
-                        maxLength={4}
-                        autoComplete="cc-csc"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex gap-2 pt-1">
-                    <Button
-                      className="flex-1 gap-2 bg-green-600 text-white hover:bg-green-700"
-                      disabled={chargeLoading}
-                      onClick={() => void handleChargeCard()}
-                    >
-                      {chargeLoading ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <CreditCard className="h-4 w-4" />
-                      )}
-                      {chargeLoading
-                        ? 'Charging…'
-                        : `Charge $${billableTotal.toFixed(2)}`}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      onClick={() => {
-                        setShowCardForm(false)
-                        setChargeError(null)
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
               </div>
             ) : null}
 
-            {/* Send Payment Link */}
-            <div className="mt-4">
+            <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 p-3">
+              <p className="flex items-center gap-2 text-sm font-semibold text-blue-950">
+                <VenmoLogoMark className="h-4 w-4 text-[15px] text-[#008CFF]" />
+                Venmo Pay
+              </p>
+              <p className="mt-1 text-xs text-blue-800">
+                Text the Venmo payment link with the exact invoice amount.
+              </p>
               <Button
-                size="sm"
-                variant="outline"
-                className="gap-1.5"
-                disabled={paymentLinkLoading}
-                onClick={() => void handleSendPaymentLink()}
+                size="default"
+                className="mt-3 w-full gap-2 bg-blue-600 text-white hover:bg-blue-500"
+                disabled={paymentLinkLoading !== null}
+                onClick={() => void handleSendPaymentLink('venmo')}
               >
-                {paymentLinkLoading ? (
+                {paymentLinkLoading === 'venmo' ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : (
-                  <Send className="h-3.5 w-3.5" />
+                  <VenmoLogoMark className="h-3.5 w-3.5 text-[13px]" />
                 )}
-                Send Payment Link via Text
+                {paymentLinkLoading === 'venmo'
+                  ? 'Sending Venmo Link...'
+                  : 'Text Venmo Pay Link'}
               </Button>
-              {paymentLinkFeedback ? (
+              {paymentLinkFeedback?.type === 'venmo' ? (
                 <p
                   className={`mt-2 text-sm ${paymentLinkFeedback.ok ? 'text-green-600' : 'text-red-500'}`}
                 >
@@ -1821,8 +1739,8 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
           <h3 className="text-lg font-semibold">Line Items</h3>
           <Button
             type="button"
-            size="sm"
-            variant="outline"
+            size="default"
+            className="bg-emerald-700 px-5 text-white hover:bg-emerald-600"
             onClick={() => {
               setPickerCategory(null)
               setShowServicePicker(true)
@@ -1926,10 +1844,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
         ) : null}
         <div className="mt-3 space-y-2">
           {lineItems.map((item, index) => (
-            <div
-              key={item.id}
-              className="border-border/60 bg-background/70 rounded-xl border p-3"
-            >
+            <div key={item.id} className="rounded-xl bg-white p-3 shadow-sm">
               <div className="flex flex-col gap-2">
                 <div className="flex items-start gap-2">
                   <div className="flex-1">
@@ -1942,7 +1857,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                     <Input
                       id={`line-description-${index}`}
                       value={item.description}
-                      className="h-8 text-sm"
+                      className={`h-10 text-base ${lineItemInputTone(index)}`}
                       onChange={(event) =>
                         setLineItems((current) =>
                           current.map((line, lineIndex) =>
@@ -1996,7 +1911,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                         step="1"
                         inputMode="numeric"
                         value={String(item.quantity)}
-                        className="h-8 text-center text-sm tabular-nums"
+                        className={`h-10 text-center text-base tabular-nums ${lineItemInputTone(index)}`}
                         onChange={(event) => {
                           const nextQuantity = Number(event.target.value || 0)
                           if (
@@ -2038,6 +1953,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                       type="text"
                       inputMode="decimal"
                       value={item.unit_price || ''}
+                      className={`h-10 text-base ${lineItemInputTone(index)}`}
                       onChange={(e) => {
                         const value = e.target.value
                         // Allow empty, digits, and one decimal point
@@ -2077,7 +1993,6 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                           )
                         }
                       }}
-                      className="h-8 text-sm tabular-nums"
                       placeholder="0.00"
                     />
                   </div>
@@ -2492,121 +2407,6 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
           </p>
         </Card>
       )}
-
-      {/* In-person payment modal */}
-      {showPaymentModal ? (
-        <div
-          className="fixed inset-0 z-[220] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
-          onClick={() => setShowPaymentModal(false)}
-        >
-          <div
-            className="relative w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              type="button"
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
-              onClick={() => setShowPaymentModal(false)}
-            >
-              <X className="h-5 w-5" />
-            </button>
-
-            {/* Amount */}
-            <p className="text-sm font-medium tracking-widest text-slate-400 uppercase">
-              Amount Due
-            </p>
-            <p className="mt-1 text-5xl font-bold text-slate-900">
-              ${billableTotal.toFixed(2)}
-            </p>
-            {customer?.business_name || customer?.full_name ? (
-              <p className="mt-1 text-sm text-slate-500">
-                {customer.business_name || customer.full_name}
-              </p>
-            ) : null}
-
-            {/* Tab toggle */}
-            <div className="mt-5 flex rounded-xl border border-slate-200 p-1">
-              <button
-                type="button"
-                className={`flex-1 rounded-lg py-2 text-sm font-semibold transition-colors ${
-                  paymentTab === 'qr'
-                    ? 'bg-[#008CFF] text-white'
-                    : 'text-slate-500 hover:text-slate-700'
-                }`}
-                onClick={() => setPaymentTab('qr')}
-              >
-                QR Code
-              </button>
-              <button
-                type="button"
-                className={`flex-1 rounded-lg py-2 text-sm font-semibold transition-colors ${
-                  paymentTab === 'tap'
-                    ? 'bg-[#008CFF] text-white'
-                    : 'text-slate-500 hover:text-slate-700'
-                }`}
-                onClick={() => setPaymentTab('tap')}
-              >
-                Tap Card
-              </button>
-            </div>
-
-            {paymentTab === 'qr' ? (
-              <>
-                <div className="mt-5 flex justify-center">
-                  <img
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(
-                      `https://venmo.com/SasquatchCarpet?txn=pay&amount=${billableTotal.toFixed(2)}&note=${encodeURIComponent(`Sasquatch Carpet Cleaning - ${customer?.business_name || customer?.full_name || 'Service'}`)}`,
-                    )}`}
-                    alt="Venmo QR code"
-                    width={220}
-                    height={220}
-                    className="rounded-xl border border-slate-200"
-                  />
-                </div>
-                <p className="mt-3 text-sm font-medium text-slate-700">
-                  Hand your phone to the customer
-                </p>
-                <p className="mt-1 text-xs text-slate-400">
-                  They scan the QR code or tap the button below
-                </p>
-                <a
-                  href={`https://venmo.com/SasquatchCarpet?txn=pay&amount=${billableTotal.toFixed(2)}&note=${encodeURIComponent(`Sasquatch Carpet Cleaning - ${customer?.business_name || customer?.full_name || 'Service'}`)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#008CFF] py-3 text-sm font-semibold text-white hover:bg-blue-600"
-                >
-                  <CreditCard className="h-4 w-4" />
-                  Pay with Venmo
-                </a>
-              </>
-            ) : (
-              <>
-                <div className="mt-6 flex flex-col items-center gap-2">
-                  <div className="flex h-20 w-20 items-center justify-center rounded-full bg-blue-50">
-                    <CreditCard className="h-10 w-10 text-[#008CFF]" />
-                  </div>
-                  <p className="mt-2 text-base font-semibold text-slate-800">
-                    Accept a card tap
-                  </p>
-                  <p className="text-sm leading-relaxed text-slate-500">
-                    Open Venmo → tap <strong>⊕</strong> →{' '}
-                    <strong>Accept money</strong> → enter{' '}
-                    <strong>${billableTotal.toFixed(2)}</strong> → have the
-                    customer tap their card
-                  </p>
-                </div>
-                <a
-                  href="venmo://"
-                  className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-[#008CFF] py-3 text-sm font-semibold text-white hover:bg-blue-600"
-                >
-                  <CreditCard className="h-4 w-4" />
-                  Open Venmo
-                </a>
-              </>
-            )}
-          </div>
-        </div>
-      ) : null}
 
       {/* Signature Modal */}
       <SignatureModal

@@ -25,9 +25,9 @@ export async function POST(
     const buffer = Buffer.from(base64Data, 'base64')
 
     // Upload to Supabase Storage
-    const fileName = `signature_${invoiceId}_${Date.now()}.png`
+    const fileName = `signatures/signature_${invoiceId}_${Date.now()}.png`
     const { data: uploadData, error: uploadError } = await supabase.storage
-      .from('job-photos')
+      .from('job-images')
       .upload(fileName, buffer, {
         contentType: 'image/png',
         cacheControl: '3600',
@@ -44,7 +44,7 @@ export async function POST(
     // Get public URL
     const {
       data: { publicUrl },
-    } = supabase.storage.from('job-photos').getPublicUrl(uploadData.path)
+    } = supabase.storage.from('job-images').getPublicUrl(uploadData.path)
 
     // Update invoice with signature info
     const { error: updateError } = await supabase

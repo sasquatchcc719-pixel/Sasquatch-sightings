@@ -2,9 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
-import { sendCustomerSMS } from '@/lib/twilio'
-import { getQBInvoicePaymentLink } from '@/lib/quickbooks-api'
+import { sendCustomerSMS, sendCustomerSMSWithResult } from '@/lib/twilio'
+import {
+  getQBInvoicePaymentLink,
+  syncAppointmentToQuickBooks,
+} from '@/lib/quickbooks-api'
+import { getQBConnectionStatus } from '@/lib/quickbooks-auth'
 import { generateInvoicePDF } from '@/lib/ops/pdf/generate'
+import { createSquarePaymentLink } from '@/lib/payments/square'
 
 const VENMO_USERNAME = process.env.VENMO_BUSINESS_USERNAME ?? 'SasquatchCarpet'
 
@@ -60,6 +65,7 @@ function buildEmailHtml(
   total: number,
   venmoUrl: string,
   photoUrls: string[] = [],
+  mode: 'invoice' | 'receipt' = 'invoice',
 ): string {
   const itemRows = lineItems
     .map(
@@ -73,6 +79,19 @@ function buildEmailHtml(
     )
     .join('')
 
+  const isReceipt = mode === 'receipt'
+  const title = isReceipt ? 'Receipt' : 'Invoice'
+  const intro = isReceipt
+    ? 'Thank you for your payment. Here is your itemized receipt.'
+    : "Thank you for choosing Sasquatch Carpet Cleaning. Here's your invoice."
+  const totalLabel = isReceipt ? 'Amount Paid' : 'Total Due'
+  const paymentCta = isReceipt
+    ? ''
+    : `
+      <a href="${venmoUrl}" style="display:inline-block;background:#008CFF;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:15px;font-weight:600;">
+        Pay with Venmo — $${total.toFixed(2)}
+      </a>`
+
   return `
 <!DOCTYPE html>
 <html>
@@ -82,12 +101,12 @@ function buildEmailHtml(
 
     <div style="background:#16a34a;padding:24px 32px;">
       <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;">Sasquatch Carpet Cleaning</h1>
-      <p style="margin:4px 0 0;color:#bbf7d0;font-size:14px;">Invoice</p>
+      <p style="margin:4px 0 0;color:#bbf7d0;font-size:14px;">${title}</p>
     </div>
 
     <div style="padding:24px 32px;">
       <p style="margin:0 0 4px;font-size:15px;font-weight:600;color:#111827;">Hi ${customerName},</p>
-      <p style="margin:0 0 20px;font-size:14px;color:#6b7280;">Thank you for choosing Sasquatch Carpet Cleaning. Here's your invoice.</p>
+      <p style="margin:0 0 20px;font-size:14px;color:#6b7280;">${intro}</p>
 
       <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:20px;">
         <thead>
@@ -103,7 +122,7 @@ function buildEmailHtml(
         </tbody>
         <tfoot>
           <tr>
-            <td colspan="3" style="padding:12px 12px 0;text-align:right;font-weight:700;color:#111827;font-size:15px;">Total Due</td>
+            <td colspan="3" style="padding:12px 12px 0;text-align:right;font-weight:700;color:#111827;font-size:15px;">${totalLabel}</td>
             <td style="padding:12px 12px 0;text-align:right;font-weight:700;color:#16a34a;font-size:15px;">$${total.toFixed(2)}</td>
           </tr>
         </tfoot>
@@ -112,9 +131,7 @@ function buildEmailHtml(
       <p style="margin:0 0 4px;font-size:13px;color:#6b7280;">Service address: ${address}</p>
       <p style="margin:0 0 20px;font-size:13px;color:#6b7280;">Date: ${serviceDate}</p>
 
-      <a href="${venmoUrl}" style="display:inline-block;background:#008CFF;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:15px;font-weight:600;">
-        Pay with Venmo — $${total.toFixed(2)}
-      </a>
+      ${paymentCta}
 
       ${buildPhotoGrid(photoUrls)}
 
@@ -135,7 +152,12 @@ export async function POST(
     const { id } = await params
     const body = (await request.json()) as {
       channel: 'sms' | 'email' | 'both'
-      type?: 'invoice' | 'payment_link'
+      type?:
+        | 'invoice'
+        | 'payment_link'
+        | 'venmo_payment_link'
+        | 'square_payment_link'
+        | 'receipt'
     }
     const { channel, type } = body
 
@@ -149,6 +171,7 @@ export async function POST(
       .select(
         `
         id,
+        payment_status,
         total,
         subtotal,
         discount_amount,
@@ -240,8 +263,74 @@ export async function POST(
     }
 
     const errors: string[] = []
+    let emailDelivery: { to: string; id?: string } | null = null
 
-    // Payment link SMS — fetch QB invoice pay link and text it
+    if (type === 'square_payment_link') {
+      if (!customerPhone) {
+        return NextResponse.json(
+          { error: 'No phone number on file for this customer.' },
+          { status: 422 },
+        )
+      }
+
+      const paymentUrl = await createSquarePaymentLink({
+        invoiceId: id,
+        amount: total,
+        customerName,
+        description: addressText,
+      })
+
+      const linkBody = [
+        `Hi ${customerName} — here's your invoice from Sasquatch Carpet Cleaning.`,
+        ``,
+        `Total due: $${total.toFixed(2)}`,
+        `Pay securely by card: ${paymentUrl}`,
+        ``,
+        `Questions? Call or text us anytime. Thank you!`,
+      ].join('\n')
+
+      const sms = await sendCustomerSMSWithResult(
+        customerPhone,
+        linkBody,
+        id,
+        'square_payment_link',
+      )
+      return NextResponse.json({ ok: true, payment_url: paymentUrl, sms })
+    }
+
+    if (type === 'venmo_payment_link') {
+      if (!customerPhone) {
+        return NextResponse.json(
+          { error: 'No phone number on file for this customer.' },
+          { status: 422 },
+        )
+      }
+
+      const linkBody = [
+        `Hi ${customerName} — here's your invoice from Sasquatch Carpet Cleaning.`,
+        ``,
+        `Total due: $${total.toFixed(2)}`,
+        `Pay with Venmo: ${venmoUrl}`,
+        ``,
+        `Questions? Call or text us anytime. Thank you!`,
+      ].join('\n')
+
+      const sms = await sendCustomerSMSWithResult(
+        customerPhone,
+        linkBody,
+        id,
+        'venmo_payment_link',
+      )
+      return NextResponse.json({
+        ok: true,
+        payment_url: venmoUrl,
+        sms,
+      })
+    }
+
+    // Payment link SMS — fetch a QuickBooks invoice pay link and text it.
+    // Do not silently fall back to Venmo here; this action is specifically
+    // for proving the QuickBooks Payments flow.
     if (type === 'payment_link') {
       if (!customerPhone) {
         return NextResponse.json(
@@ -250,16 +339,73 @@ export async function POST(
         )
       }
 
-      let paymentUrl: string | null = null
-
-      if (invoice.quickbooks_invoice_id) {
-        paymentUrl = await getQBInvoicePaymentLink(
-          invoice.quickbooks_invoice_id,
+      if (total <= 0) {
+        return NextResponse.json(
+          { error: 'Invoice total must be greater than zero.' },
+          { status: 422 },
         )
       }
 
+      const qbStatus = await getQBConnectionStatus()
+      if (!qbStatus.connected || !qbStatus.sync_enabled) {
+        return NextResponse.json(
+          {
+            error:
+              'QuickBooks is not connected or invoice sync is turned off. Connect QuickBooks in Operations Settings first.',
+          },
+          { status: 422 },
+        )
+      }
+
+      if (!appointment?.id) {
+        return NextResponse.json(
+          { error: 'This invoice is not linked to a job, so it cannot sync to QuickBooks.' },
+          { status: 422 },
+        )
+      }
+
+      let paymentUrl: string | null = null
+      let quickBooksInvoiceId = invoice.quickbooks_invoice_id
+
+      if (!quickBooksInvoiceId) {
+        try {
+          await syncAppointmentToQuickBooks(appointment.id)
+        } catch (syncError) {
+          console.error(
+            '[ops/invoices/:id/send][payment_link] QB sync failed:',
+            syncError,
+          )
+          return NextResponse.json(
+            {
+              error:
+                syncError instanceof Error
+                  ? syncError.message
+                  : 'QuickBooks sync failed before creating the payment link.',
+            },
+            { status: 422 },
+          )
+        }
+
+        const { data: syncedInvoice } = await supabase
+          .from('ops_invoices')
+          .select('quickbooks_invoice_id')
+          .eq('id', id)
+          .single()
+        quickBooksInvoiceId = syncedInvoice?.quickbooks_invoice_id ?? null
+      }
+
+      if (quickBooksInvoiceId) {
+        paymentUrl = await getQBInvoicePaymentLink(quickBooksInvoiceId)
+      }
+
       if (!paymentUrl) {
-        paymentUrl = venmoUrl
+        return NextResponse.json(
+          {
+            error:
+              'QuickBooks synced the invoice, but did not return an online payment link. Check that QuickBooks Payments is enabled for invoices.',
+          },
+          { status: 422 },
+        )
       }
 
       const linkBody = [
@@ -271,8 +417,20 @@ export async function POST(
         `Questions? Call or text us anytime. Thank you!`,
       ].join('\n')
 
-      await sendCustomerSMS(customerPhone, linkBody, id, 'payment_link')
-      return NextResponse.json({ ok: true })
+      const sms = await sendCustomerSMSWithResult(
+        customerPhone,
+        linkBody,
+        id,
+        'payment_link',
+      )
+      return NextResponse.json({ ok: true, payment_url: paymentUrl, sms })
+    }
+
+    if (type === 'receipt' && channel !== 'email') {
+      return NextResponse.json(
+        { error: 'Receipts can only be emailed.' },
+        { status: 400 },
+      )
     }
 
     // Send SMS
@@ -311,9 +469,10 @@ export async function POST(
             (invoice as { subtotal?: number }).subtotal || total,
           )
 
+          const isReceipt = type === 'receipt'
           const pdfBuffer = await generateInvoicePDF({
             invoiceId: id,
-            isPaid: false,
+            isPaid: isReceipt || invoice.payment_status === 'paid',
             customerName,
             serviceAddress: addressText,
             serviceDate,
@@ -326,28 +485,48 @@ export async function POST(
 
           const shortRef = `INV-${id.replace(/-/g, '').slice(-6).toUpperCase()}`
 
-          await resend.emails.send({
-            from: fromEmail,
-            to: customerEmail,
-            subject: `Your invoice from Sasquatch Carpet Cleaning — $${total.toFixed(2)} due`,
-            html: buildEmailHtml(
-              customerName,
-              addressText,
-              serviceDate,
-              lineItems,
-              total,
-              venmoUrl,
-              photoUrls,
-            ),
-            attachments: pdfBuffer
-              ? [
-                  {
-                    filename: `${shortRef}.pdf`,
-                    content: pdfBuffer,
-                  },
-                ]
-              : undefined,
-          })
+          const { data: resendData, error: resendError } =
+            await resend.emails.send({
+              from: fromEmail,
+              to: customerEmail,
+              subject: isReceipt
+                ? `Your receipt from Sasquatch Carpet Cleaning — $${total.toFixed(2)} paid`
+                : `Your invoice from Sasquatch Carpet Cleaning — $${total.toFixed(2)} due`,
+              html: buildEmailHtml(
+                customerName,
+                addressText,
+                serviceDate,
+                lineItems,
+                total,
+                venmoUrl,
+                photoUrls,
+                isReceipt ? 'receipt' : 'invoice',
+              ),
+              attachments: pdfBuffer
+                ? [
+                    {
+                      filename: `${shortRef}.pdf`,
+                      content: pdfBuffer,
+                    },
+                  ]
+                : undefined,
+            })
+
+          if (resendError) {
+            const msg =
+              typeof resendError === 'object' &&
+              resendError !== null &&
+              'message' in resendError &&
+              typeof (resendError as { message: unknown }).message === 'string'
+                ? (resendError as { message: string }).message
+                : 'Email provider rejected the message.'
+            errors.push(msg)
+          } else {
+            emailDelivery = {
+              to: customerEmail,
+              id: resendData?.id,
+            }
+          }
         }
       }
     }
@@ -359,6 +538,7 @@ export async function POST(
     return NextResponse.json({
       ok: true,
       warnings: errors.length > 0 ? errors : undefined,
+      email_delivery: emailDelivery ?? undefined,
     })
   } catch (error) {
     console.error('[ops/invoices/:id/send][POST] Error:', error)

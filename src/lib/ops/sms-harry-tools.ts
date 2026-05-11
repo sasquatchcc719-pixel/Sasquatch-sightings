@@ -79,6 +79,12 @@ function phoneMatchesInbound(
   return a.length === 10 && b.length === 10 && a === b
 }
 
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
+  )
+}
+
 function addMinutesToTime(value: string, minutesToAdd: number): string {
   const [hours, minutes] = value.split(':').map(Number)
   const total = hours * 60 + minutes + minutesToAdd
@@ -327,7 +333,7 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
     function: {
       name: 'reschedule_job',
       description:
-        'Move an existing job to a new date and start time. Time must match an available slot from get_calendar_slots.',
+        'Move an existing job to a new date and start time. First call list_my_upcoming_appointments and use its real appointment_id. Time must match an available slot from get_calendar_slots, and slot_token must be copied exactly from that slot.',
       parameters: {
         type: 'object',
         properties: {
@@ -382,7 +388,7 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
     function: {
       name: 'book_new_job',
       description:
-        "Create a new Ops appointment for this SMS customer. Requires name, email, full address, catalog service IDs, and a slot time that appears in get_calendar_slots for that date. Phone is normally taken from SMS automatically. For Google LSA relay conversations ONLY, you MUST collect the customer's real callback number and pass it as customer_phone (the relay cannot receive texts).",
+        "Create a new Ops appointment for this SMS customer. Requires name, email, full address, real service IDs returned by search_service_catalog, and a slot time that appears in get_calendar_slots for that date. Never invent service IDs. Phone is normally taken from SMS automatically. For Google LSA relay conversations ONLY, you MUST collect the customer's real callback number and pass it as customer_phone (the relay cannot receive texts).",
       parameters: {
         type: 'object',
         properties: {
@@ -619,12 +625,27 @@ export async function executeHarrySmsTool(
           'Seal coat Vinyl/LVT flooring (per foot charge)',
         ]
 
-        const { data: services, error } = await supabase
-          .from('service_catalog_items')
-          .select('id, name, category, base_price, default_duration_minutes')
-          .eq('is_active', true)
-          .ilike('name', `%${q}%`)
-          .limit(25)
+        const searchCatalog = (query: string) =>
+          supabase
+            .from('service_catalog_items')
+            .select(
+              'id, name, slug, category, base_price, default_duration_minutes',
+            )
+            .eq('is_active', true)
+            .or(`name.ilike.%${query}%,slug.ilike.%${query}%`)
+            .limit(25)
+
+        let { data: services, error } = await searchCatalog(q)
+        if (!error && (!services || services.length === 0)) {
+          const alternate = /humungous/i.test(q)
+            ? q.replace(/humungous/gi, 'Humongous')
+            : q.replace(/humongous/gi, 'Humungous')
+          if (alternate !== q) {
+            const retry = await searchCatalog(alternate)
+            services = retry.data
+            error = retry.error
+          }
+        }
 
         if (error) throw error
         const filtered = (services || []).filter(
@@ -769,6 +790,12 @@ export async function executeHarrySmsTool(
         const slotToken = String(args.slot_token || '').trim()
         if (!appointmentId || !newDate || !newStartRaw || !slotToken) {
           return JSON.stringify({ error: 'Missing reschedule fields' })
+        }
+        if (!isUuid(appointmentId)) {
+          return JSON.stringify({
+            error:
+              'appointment_id must be the real UUID returned by list_my_upcoming_appointments. Call list_my_upcoming_appointments first; do not invent an ID.',
+          })
         }
         if (!/^\d{4}-\d{2}-\d{2}$/.test(newDate)) {
           return JSON.stringify({
@@ -1160,6 +1187,16 @@ export async function executeHarrySmsTool(
             quantity: Math.max(1, Number(r.quantity) || 1),
           }
         })
+        const invalidServiceIds = parsedLineItems
+          .map((l) => l.service_id)
+          .filter((id) => !isUuid(id))
+        if (invalidServiceIds.length > 0) {
+          return JSON.stringify({
+            error:
+              'Every line_items.service_id must be a real UUID returned by search_service_catalog. Call search_service_catalog for each service and retry with those exact IDs.',
+            invalid_service_ids: invalidServiceIds,
+          })
+        }
 
         const catalogIds = parsedLineItems.map((l) => l.service_id)
         const { data: catalogRows } = await supabase
@@ -1169,6 +1206,16 @@ export async function executeHarrySmsTool(
           )
           .in('id', catalogIds)
           .eq('is_active', true)
+
+        const foundIds = new Set((catalogRows || []).map((row) => row.id))
+        const missingCatalogIds = catalogIds.filter((id) => !foundIds.has(id))
+        if (missingCatalogIds.length > 0) {
+          return JSON.stringify({
+            error:
+              'No valid services found for one or more service IDs. Call search_service_catalog and retry with active service IDs returned by the tool.',
+            missing_service_ids: missingCatalogIds,
+          })
+        }
 
         const BOOK_MIN_TOTAL = 150
         const isLsa = ctx.isLsaRelay === true

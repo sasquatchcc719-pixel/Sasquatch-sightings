@@ -140,6 +140,8 @@ Hard rules:
 
 EXISTING CUSTOMERS — RESCHEDULES, ADDRESS CHANGES, JOB UPDATES:
 - You CAN help here using your tools: use reschedule_job, update_job_address, update_job_line_items, or list_my_upcoming_appointments.
+- Before rescheduling, ALWAYS call list_my_upcoming_appointments and use the real appointment_id it returns. NEVER invent appointment IDs.
+- Before calling reschedule_job, call get_calendar_slots for the new date and pass the exact slot_token returned for the customer-selected time. NEVER invent slot tokens.
 - Get clear info (full new address if moving; preferred dates/times if rescheduling; name on the job if needed).
 - After a successful tool result, confirm the change with a full line-item breakdown (see BOOKING section above for format). If something is unclear or urgent, say Charles or the office will follow up.
 
@@ -661,14 +663,23 @@ CURRENT CUSTOMER CONTEXT:
         channelContext
     }
 
-    // Build messages array with system prompt + conversation history + new message
+    // Build messages array with system prompt + conversation history + new message.
+    // The webhook stores the inbound message before calling this function, so
+    // do not duplicate the same latest customer text in the model context.
+    const lastHistoryMessage =
+      conversationHistory[conversationHistory.length - 1]
+    const historyAlreadyIncludesLatest =
+      lastHistoryMessage?.role === 'user' &&
+      lastHistoryMessage.content.trim() === customerMessage.trim()
     const baseMessages: OpenAI.ChatCompletionMessageParam[] = [
       { role: 'system', content: systemPrompt },
       ...conversationHistory.map((msg) => ({
-        role: msg.role as 'user' | 'assistant',
+        role: msg.role as 'user' | 'assistant' | 'system',
         content: msg.content,
       })),
-      { role: 'user', content: customerMessage },
+      ...(historyAlreadyIncludesLatest
+        ? []
+        : [{ role: 'user' as const, content: customerMessage }]),
     ]
 
     const useSmsTools =
