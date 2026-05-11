@@ -15,6 +15,7 @@ import {
 import { createAiStyleEstimate } from '@/lib/ops/create-ai-style-estimate'
 import { createSlotToken, verifySlotToken } from '@/lib/ops/slot-token'
 import { resyncInvoiceToQuickBooks } from '@/lib/quickbooks-api'
+import { sendAdminSMS } from '@/lib/twilio'
 
 /** Today's date in Mountain Time (YYYY-MM-DD). Avoids UTC rollover at 6 PM MDT. */
 function todayMountain(): string {
@@ -32,6 +33,8 @@ const UPCOMING_STATUSES = [
 const TOOL_RATE_WINDOW_MS = 60_000
 const TOOL_RATE_MAX = 20
 const toolCallTimestamps = new Map<string, number[]>()
+const ISSUE_REPORT_WINDOW_MS = 10 * 60_000
+const issueReportTimestamps = new Map<string, number>()
 
 function checkToolRate(
   phone: string,
@@ -482,6 +485,7 @@ export type HarrySmsToolContext = {
   supabase: SupabaseClient
   customerPhoneE164: string
   isLsaRelay?: boolean
+  sessionId?: string
 }
 
 export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
@@ -754,6 +758,83 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'report_operational_problem',
+      description:
+        "Safely escalate a real blocker to Charles with a concise diagnostic report. Use only after you tried the correct Ops tool flow and still cannot complete the customer's operational request, or for urgent customer/service issues. Do NOT use for ordinary missing customer info, normal minimum-charge conversations, unavailable time slots, or before retrying with corrected real IDs/tokens/services.",
+      parameters: {
+        type: 'object',
+        properties: {
+          blocker_type: {
+            type: 'string',
+            enum: [
+              'tool_error_after_retry',
+              'cannot_match_service',
+              'cannot_match_appointment',
+              'policy_conflict',
+              'urgent_customer_issue',
+              'missing_internal_capability',
+            ],
+            description:
+              'The kind of blocker. Do not choose this for normal missing customer details.',
+          },
+          attempted_action: {
+            type: 'string',
+            description:
+              'What you were trying to do, e.g. book job, reschedule, update address, update line items.',
+          },
+          customer_goal: {
+            type: 'string',
+            description: 'What the customer wants in plain language.',
+          },
+          known_details: {
+            type: 'string',
+            description:
+              'Useful known details: quoted total, services, address, requested date/time, customer name/email if known.',
+          },
+          blocking_reason: {
+            type: 'string',
+            description:
+              'The exact reason you cannot finish without help. Include the real failed tool name/error when applicable.',
+          },
+          last_tool_error: {
+            type: 'string',
+            description:
+              'Most recent tool error text, or urgent issue details if no tool was appropriate.',
+          },
+          retry_attempted: {
+            type: 'boolean',
+            description:
+              'True only if you already retried or corrected the issue using the proper lookup tools. Required except urgent_customer_issue.',
+          },
+          customer_waiting: {
+            type: 'boolean',
+            description:
+              'Whether the customer is waiting for Harry/Charles to resolve this now.',
+          },
+          customer_message_draft: {
+            type: 'string',
+            description:
+              'Short safe customer-facing message you plan to send. Must not claim the action succeeded.',
+          },
+        },
+        required: [
+          'blocker_type',
+          'attempted_action',
+          'customer_goal',
+          'known_details',
+          'blocking_reason',
+          'last_tool_error',
+          'retry_attempted',
+          'customer_waiting',
+          'customer_message_draft',
+        ],
+        additionalProperties: false,
+      },
+    },
+  },
 ]
 
 export async function executeHarrySmsTool(
@@ -776,6 +857,107 @@ export async function executeHarrySmsTool(
 
   try {
     switch (name) {
+      case 'report_operational_problem': {
+        const blockerType = String(args.blocker_type || '').trim()
+        const attemptedAction = String(args.attempted_action || '').trim()
+        const customerGoal = String(args.customer_goal || '').trim()
+        const knownDetails = String(args.known_details || '').trim()
+        const blockingReason = String(args.blocking_reason || '').trim()
+        const lastToolError = String(args.last_tool_error || '').trim()
+        const customerMessageDraft = String(
+          args.customer_message_draft || '',
+        ).trim()
+        const retryAttempted = args.retry_attempted === true
+        const customerWaiting = args.customer_waiting === true
+
+        if (
+          ![
+            'tool_error_after_retry',
+            'cannot_match_service',
+            'cannot_match_appointment',
+            'policy_conflict',
+            'urgent_customer_issue',
+            'missing_internal_capability',
+          ].includes(blockerType)
+        ) {
+          return JSON.stringify({
+            error:
+              'Invalid blocker_type. Do not report normal missing customer information as an operational problem.',
+          })
+        }
+
+        if (blockerType !== 'urgent_customer_issue' && !retryAttempted) {
+          return JSON.stringify({
+            error:
+              'Do not escalate yet. First retry with the correct lookup tools and real IDs/tokens/services, or ask the customer for ordinary missing information.',
+          })
+        }
+
+        const normalMissingInfo = [
+          'email',
+          'last name',
+          'address',
+          'city',
+          'zip',
+          'phone',
+          'lead source',
+          'minimum',
+          '$150',
+          'time slot',
+          'slot unavailable',
+        ]
+        const reasonLower = `${blockingReason} ${lastToolError}`.toLowerCase()
+        if (
+          blockerType !== 'urgent_customer_issue' &&
+          normalMissingInfo.some((term) => reasonLower.includes(term)) &&
+          !reasonLower.includes('tool') &&
+          !reasonLower.includes('uuid') &&
+          !reasonLower.includes('system')
+        ) {
+          return JSON.stringify({
+            error:
+              'This looks like normal missing info, minimum-charge discussion, or unavailable scheduling. Ask the customer or offer real slots instead of escalating.',
+          })
+        }
+
+        const now = Date.now()
+        const lastReportAt = issueReportTimestamps.get(ctx.customerPhoneE164)
+        if (lastReportAt && now - lastReportAt < ISSUE_REPORT_WINDOW_MS) {
+          return JSON.stringify({
+            success: true,
+            already_reported: true,
+            message:
+              'A Harry issue report was already sent for this customer recently. Do not send another duplicate report; give the customer the safe follow-up message.',
+          })
+        }
+
+        const report = [
+          '🚧 Harry issue report',
+          `Phone: ${ctx.customerPhoneE164}`,
+          ctx.sessionId ? `Thread: ${ctx.sessionId}` : null,
+          `Customer waiting: ${customerWaiting ? 'yes' : 'no'}`,
+          `Blocker: ${blockerType}`,
+          `Trying to: ${attemptedAction || 'unknown'}`,
+          `Customer wants: ${customerGoal || 'unknown'}`,
+          `Known details: ${knownDetails || 'not provided'}`,
+          `Problem: ${blockingReason || 'not provided'}`,
+          `Last tool/error: ${lastToolError || 'not provided'}`,
+          `Harry should tell customer: ${customerMessageDraft || 'Charles will review and follow up shortly.'}`,
+        ]
+          .filter(Boolean)
+          .join('\n')
+
+        await sendAdminSMS(report, 'harry_operational_problem')
+        issueReportTimestamps.set(ctx.customerPhoneE164, now)
+
+        return JSON.stringify({
+          success: true,
+          reported_to_charles: true,
+          message:
+            'Operational problem reported to Charles. Now send the customer the provided safe message without claiming success.',
+        })
+      }
+
       case 'get_my_customer_profile': {
         const [profiles, conversations] = await Promise.all([
           lookupSmsCustomerProfiles(supabase, ctx.customerPhoneE164),
