@@ -2,14 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCallRoutingConfig } from '@/lib/twilio/call-routing-config'
 import { sendOneSignalNotification } from '@/lib/onesignal'
 
-// Robust Hardcoded Business Hours Logic (Fallback Plan)
-// This removes the dependency on the database for the critical path of answering a call.
-// Changes to business hours must be made here in code.
-
 const SETTINGS = {
-  business_hours_start: 9, // 9 AM
-  business_hours_end: 17, // 5 PM
-  business_days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
   // Static fallback values. Dynamic values come from phone_settings.
   forward_to_number_display: '+17192498791', // Shows as Business Number on Caller ID
   timezone: 'America/Denver',
@@ -62,15 +55,15 @@ export async function POST(request: NextRequest) {
     const hourStr = hourFormatter.format(now).replace(/\D/g, '')
     const hour = parseInt(hourStr, 10) || 0
 
-    const isBusinessDay = SETTINGS.business_days.some(
+    const isBusinessDay = routingConfig.businessDays.some(
       (d) => d.toLowerCase() === weekdayStr.toLowerCase(),
     )
 
     // Check business hours
     const isBusinessHours =
       isBusinessDay &&
-      hour >= SETTINGS.business_hours_start &&
-      hour < SETTINGS.business_hours_end
+      hour >= routingConfig.businessHoursStart &&
+      hour < routingConfig.businessHoursEnd
 
     console.log(
       `[Call Router] MT Time: ${weekdayStr} ${hour}:00, isBusinessDay: ${isBusinessDay}, isBusinessHours: ${isBusinessHours}`,
@@ -82,12 +75,15 @@ export async function POST(request: NextRequest) {
     const afterHoursUrl = `${baseUrl}/api/twilio/call-after-hours`
 
     if (isBusinessHours || routingConfig.temporaryOpenLineMode) {
-      console.log('[Call Router] Emergency direct ring mode active')
+      console.log(
+        routingConfig.temporaryOpenLineMode
+          ? '[Call Router] Temporary open line mode active - direct ring'
+          : '[Call Router] Business hours - direct ring',
+      )
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Dial timeout="${routingConfig.openLineTimeoutSeconds}" action="${afterHoursUrl}" callerId="${callerPhone}" answerOnBridge="true">
     <Number>${routingConfig.primaryForwardNumber}</Number>
-    <Client>admin_charles</Client>
   </Dial>
 </Response>`
     } else {

@@ -2,6 +2,9 @@ import { createClient } from '@supabase/supabase-js'
 
 export type CallRoutingConfig = {
   temporaryOpenLineMode: boolean
+  businessHoursStart: number
+  businessHoursEnd: number
+  businessDays: string[]
   primaryForwardNumber: string
   failoverForwardNumber: string
   rabeccaSipUri: string
@@ -10,11 +13,14 @@ export type CallRoutingConfig = {
   ivrTechnicalTimeoutSeconds: number
 }
 
-/** Primary PSTN ring target (Chuck). Failover matches so owner-detect & DB rows stay valid; IVR no longer rings wife first. */
+/** Primary PSTN ring target for business-hours forwarding. */
 const DEFAULT_CONFIG: CallRoutingConfig = {
   temporaryOpenLineMode: false,
-  primaryForwardNumber: '+17197498807',
-  failoverForwardNumber: '+17197498807',
+  businessHoursStart: 9,
+  businessHoursEnd: 17,
+  businessDays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+  primaryForwardNumber: '+17206447577',
+  failoverForwardNumber: '+17206447577',
   rabeccaSipUri: '',
   openLineTimeoutSeconds: 30,
   ivrScheduleTimeoutSeconds: 30,
@@ -33,6 +39,20 @@ function toPhone(value: unknown, fallback: string): string {
   const phone = String(value || '').trim()
   if (!phone.startsWith('+') || phone.length < 8) return fallback
   return phone
+}
+
+function toHour(value: unknown, fallback: number): number {
+  const num = Number(value)
+  if (!Number.isFinite(num)) return fallback
+  const rounded = Math.round(num)
+  if (rounded < 0 || rounded > 23) return fallback
+  return rounded
+}
+
+function toBusinessDays(value: unknown, fallback: string[]): string[] {
+  if (!Array.isArray(value)) return fallback
+  const days = value.map((day) => String(day || '').trim()).filter(Boolean)
+  return days.length ? days : fallback
 }
 
 function toSipUri(value: unknown, fallback: string): string {
@@ -56,7 +76,7 @@ export async function getCallRoutingConfig(): Promise<CallRoutingConfig> {
     const { data } = await supabase
       .from('phone_settings')
       .select(
-        'temporary_open_line_mode, dial_timeout, twilio_primary_forward_number, twilio_failover_forward_number, ivr_schedule_timeout_seconds, ivr_technical_timeout_seconds',
+        'temporary_open_line_mode, business_hours_start, business_hours_end, business_days, dial_timeout, twilio_primary_forward_number, twilio_failover_forward_number, ivr_schedule_timeout_seconds, ivr_technical_timeout_seconds',
       )
       .limit(1)
       .maybeSingle()
@@ -68,6 +88,18 @@ export async function getCallRoutingConfig(): Promise<CallRoutingConfig> {
         data.temporary_open_line_mode !== undefined
           ? Boolean(data.temporary_open_line_mode)
           : DEFAULT_CONFIG.temporaryOpenLineMode,
+      businessHoursStart: toHour(
+        data.business_hours_start,
+        DEFAULT_CONFIG.businessHoursStart,
+      ),
+      businessHoursEnd: toHour(
+        data.business_hours_end,
+        DEFAULT_CONFIG.businessHoursEnd,
+      ),
+      businessDays: toBusinessDays(
+        data.business_days,
+        DEFAULT_CONFIG.businessDays,
+      ),
       primaryForwardNumber: toPhone(
         data.twilio_primary_forward_number,
         DEFAULT_CONFIG.primaryForwardNumber,

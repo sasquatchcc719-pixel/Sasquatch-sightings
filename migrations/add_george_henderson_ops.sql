@@ -1,7 +1,7 @@
 -- George Henderson ops agent: action confirmations, audit trail, and call routing controls
 
 ALTER TABLE phone_settings
-  ADD COLUMN IF NOT EXISTS twilio_primary_forward_number text NOT NULL DEFAULT '+17197498807',
+  ADD COLUMN IF NOT EXISTS twilio_primary_forward_number text NOT NULL DEFAULT '+17206447577',
   ADD COLUMN IF NOT EXISTS twilio_failover_forward_number text NOT NULL DEFAULT '+17206447577',
   ADD COLUMN IF NOT EXISTS ivr_schedule_timeout_seconds integer NOT NULL DEFAULT 60,
   ADD COLUMN IF NOT EXISTS ivr_technical_timeout_seconds integer NOT NULL DEFAULT 20;
