@@ -9,6 +9,10 @@ import {
   type ExistingAppointmentWindow,
 } from '@/lib/ops/availability'
 import {
+  getActiveScheduleLanes,
+  getStaffAwareAvailableSlots,
+} from '@/lib/ops/staff-schedules'
+import {
   createAiStyleBooking,
   GOOGLE_LSA_LEAD_RECOVERY_AMOUNT,
 } from '@/lib/ops/create-ai-style-booking'
@@ -125,12 +129,14 @@ async function loadAvailabilityBundle(
         .eq('override_date', date),
       supabase
         .from('ops_appointments')
-        .select('id, appointment_date, start_time, end_time, status')
+        .select(
+          'id, appointment_date, start_time, end_time, status, assigned_staff_user_id',
+        )
         .eq('appointment_date', date),
       supabase
         .from('ops_calendar_events')
         .select(
-          'event_kind, start_date, end_date, start_time, end_time, is_all_day',
+          'event_kind, start_date, end_date, start_time, end_time, is_all_day, assigned_staff_user_id',
         )
         .lte('start_date', date)
         .gte('end_date', date),
@@ -168,12 +174,21 @@ async function loadAvailabilityBundle(
     templates,
     overrides: overridesResult.data || [],
     appointments: [
-      ...rows.map(({ appointment_date, start_time, end_time, status }) => ({
-        appointment_date,
-        start_time,
-        end_time,
-        status,
-      })),
+      ...rows.map(
+        ({
+          appointment_date,
+          start_time,
+          end_time,
+          status,
+          assigned_staff_user_id,
+        }) => ({
+          appointment_date,
+          start_time,
+          end_time,
+          status,
+          assigned_staff_user_id,
+        }),
+      ),
       ...calendarEventsToAppointmentWindows(date, eventsResult.data || []),
     ],
   }
@@ -681,13 +696,18 @@ export async function executeHarrySmsTool(
           durationParam > 0 ? durationParam : 120,
         )
 
-        const bundle = await loadAvailabilityBundle(supabase, date)
-        const slots = getAvailableSlots({
+        const [bundle, lanes] = await Promise.all([
+          loadAvailabilityBundle(supabase, date),
+          getActiveScheduleLanes(supabase),
+        ])
+        const slots = getStaffAwareAvailableSlots({
           date,
           requiredMinutes,
+          lanes,
           templates: bundle.templates,
           overrides: bundle.overrides,
           appointments: bundle.appointments,
+          events: [],
           maxResults: 12,
         })
 
@@ -702,7 +722,10 @@ export async function executeHarrySmsTool(
               endTime: s.end_time,
               requiredMinutes,
               ownerKey: ctx.customerPhoneE164,
+              assignedStaffUserId: s.assigned_staff_user_id,
             }),
+            assigned_staff_user_id: s.assigned_staff_user_id,
+            staff_label: s.staff_label,
           })),
         })
       }
@@ -832,17 +855,18 @@ export async function executeHarrySmsTool(
           totalMinutesFromLines || 120,
         )
 
-        const bundle = await loadAvailabilityBundle(
-          supabase,
-          newDate,
-          appointmentId,
-        )
-        const slots = getAvailableSlots({
+        const [bundle, lanes] = await Promise.all([
+          loadAvailabilityBundle(supabase, newDate, appointmentId),
+          getActiveScheduleLanes(supabase),
+        ])
+        const slots = getStaffAwareAvailableSlots({
           date: newDate,
           requiredMinutes: totalMinutesWithBuffer,
+          lanes,
           templates: bundle.templates,
           overrides: bundle.overrides,
           appointments: bundle.appointments,
+          events: [],
           maxResults: 48,
         })
 
@@ -862,6 +886,7 @@ export async function executeHarrySmsTool(
           endTime: match.end_time,
           requiredMinutes: totalMinutesWithBuffer,
           ownerKey: ctx.customerPhoneE164,
+          assignedStaffUserId: match.assigned_staff_user_id,
         })
         if (!slotTokenCheck.ok) {
           return JSON.stringify({
@@ -1253,13 +1278,18 @@ export async function executeHarrySmsTool(
         }, 0)
 
         const requiredMinutes = applyAppointmentBuffer(totalMinutes || 120)
-        const bundle = await loadAvailabilityBundle(supabase, appointmentDate)
-        const slots = getAvailableSlots({
+        const [bundle, lanes] = await Promise.all([
+          loadAvailabilityBundle(supabase, appointmentDate),
+          getActiveScheduleLanes(supabase),
+        ])
+        const slots = getStaffAwareAvailableSlots({
           date: appointmentDate,
           requiredMinutes,
+          lanes,
           templates: bundle.templates,
           overrides: bundle.overrides,
           appointments: bundle.appointments,
+          events: [],
           maxResults: 48,
         })
 
@@ -1279,6 +1309,7 @@ export async function executeHarrySmsTool(
           endTime: match.end_time,
           requiredMinutes,
           ownerKey: ctx.customerPhoneE164,
+          assignedStaffUserId: match.assigned_staff_user_id,
         })
         if (!slotTokenCheck.ok) {
           return JSON.stringify({
@@ -1329,6 +1360,7 @@ export async function executeHarrySmsTool(
           actor_label: isLsa ? 'Harry LSA' : 'Harry SMS',
           admin_heading: isLsa ? 'Google LSA booking' : 'Harry SMS booking',
           accepted_minimum_charge: acceptedMinimumCharge,
+          assigned_staff_user_id: match.assigned_staff_user_id,
         })
 
         if (!result.ok) {
@@ -1341,6 +1373,7 @@ export async function executeHarrySmsTool(
           status: result.appointment_status,
           appointment_date: result.appointment_date,
           start_time: result.start_time.slice(0, 5),
+          staff_label: match.staff_label,
           total: result.total,
           message: result.message,
         })
