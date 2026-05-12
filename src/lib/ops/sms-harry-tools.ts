@@ -1322,18 +1322,17 @@ export async function executeHarrySmsTool(
           totalMinutesFromLines || 120,
         )
 
-        const [bundle, lanes] = await Promise.all([
-          loadAvailabilityBundle(supabase, newDate, appointmentId),
-          getActiveScheduleLanes(supabase),
-        ])
-        const slots = getStaffAwareAvailableSlots({
+        const bundle = await loadAvailabilityBundle(
+          supabase,
+          newDate,
+          appointmentId,
+        )
+        const slots = getAvailableSlots({
           date: newDate,
           requiredMinutes: totalMinutesWithBuffer,
-          lanes,
           templates: bundle.templates,
           overrides: bundle.overrides,
           appointments: bundle.appointments,
-          events: [],
           maxResults: 48,
         })
 
@@ -1353,7 +1352,6 @@ export async function executeHarrySmsTool(
           endTime: match.end_time,
           requiredMinutes: totalMinutesWithBuffer,
           ownerKey: ctx.customerPhoneE164,
-          assignedStaffUserId: match.assigned_staff_user_id,
         })
         if (!slotTokenCheck.ok) {
           return JSON.stringify({
