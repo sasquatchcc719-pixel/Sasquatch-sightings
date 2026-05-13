@@ -495,7 +495,7 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
     function: {
       name: 'get_my_customer_profile',
       description:
-        'Look up the customer profile attached to this SMS phone number, including name, email, phone, and saved service addresses. Use before saying you do not know who the texter is.',
+        'Look up the customer profile attached to this SMS phone number, including name, email, phone, and saved service addresses. CALL THIS FIRST at the start of every conversation before asking for any contact info. Also call when customer says "look me up", "my phone number", "you have my info", etc.',
       parameters: {
         type: 'object',
         properties: {},
