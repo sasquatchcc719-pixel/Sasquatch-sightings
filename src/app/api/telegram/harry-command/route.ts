@@ -582,6 +582,7 @@ async function resolveCommandBookingLineItems(
     for (const item of data || []) slugToId.set(String(item.slug), item.id)
   }
 
+  const catalogItems: { id: string; name: string; slug: string }[] = []
   const nameToId = new Map<string, string>()
   if (names.length > 0) {
     const { data } = await supabase
@@ -590,9 +591,25 @@ async function resolveCommandBookingLineItems(
       .eq('is_active', true)
       .limit(250)
     for (const item of data || []) {
-      nameToId.set(String(item.name || '').toLowerCase(), item.id)
-      nameToId.set(String(item.slug || '').toLowerCase(), item.id)
+      const entry = {
+        id: item.id,
+        name: String(item.name || ''),
+        slug: String(item.slug || ''),
+      }
+      catalogItems.push(entry)
+      nameToId.set(entry.name.toLowerCase(), item.id)
+      nameToId.set(entry.slug.toLowerCase(), item.id)
     }
+  }
+
+  function fuzzyMatchServiceId(query: string): string | undefined {
+    const lower = query.toLowerCase().trim()
+    if (nameToId.has(lower)) return nameToId.get(lower)
+    for (const item of catalogItems) {
+      if (item.name.toLowerCase().includes(lower)) return item.id
+      if (item.slug.includes(lower.replace(/\s+/g, '-'))) return item.id
+    }
+    return undefined
   }
 
   return inputs
@@ -603,9 +620,9 @@ async function resolveCommandBookingLineItems(
         (item.service_slug ? slugToId.get(item.service_slug) : undefined) ||
         (item.catalog_slug ? slugToId.get(item.catalog_slug) : undefined) ||
         (item.service_name
-          ? nameToId.get(item.service_name.toLowerCase())
+          ? fuzzyMatchServiceId(item.service_name)
           : undefined) ||
-        (item.name ? nameToId.get(item.name.toLowerCase()) : undefined)
+        (item.name ? fuzzyMatchServiceId(item.name) : undefined)
       if (!serviceId) return null
       return {
         service_id: serviceId,
@@ -1254,6 +1271,7 @@ Mode:
 - When asked "when did we last..." or about a room/building/scope, use search_job_details so you can inspect line-item descriptions before answering.
 - When Charles asks you to book "this customer", "the current conversation", or a customer from a recent Harry alert, prefer book_conversation_job. It can resolve the active SMS thread and pull customer details from the conversation.
 - Never use add_appointment for a normal billable customer cleaning job. add_appointment creates a plain calendar placeholder only; it does not create the normal invoice, invoice line items, payment links, or booking template Charles needs. For billable jobs, use book_conversation_job or ask for the missing booking details/services.
+- When Charles specifies services in his command (e.g. "4 regular rooms", "3 Sasquatch size rooms", "2 rooms and stairs"), ALWAYS pass those as explicit line_items using catalog_slug and quantity. Map natural language to slugs: "regular/standard rooms/bedrooms" → "regular-size-room-100-to-200-sqft", "Sasquatch/large rooms" → "sasquatch-size-room-200-to-400-sqft", "monster rooms" → "monster-size-room-400-to-600-sqft", "stairs/steps" → "step-carpet-cleaning-per-step-charge". Do NOT omit line_items and rely on conversation inference when Charles explicitly states the services.
 
 RECENT COMMAND MEMORY:
 ${
@@ -1474,7 +1492,7 @@ ${activeConversationSummary}`,
               line_items: {
                 type: 'array',
                 description:
-                  'Optional if the active conversation clearly states services. Services to book. Use service_id/catalog_item_id when known, or catalog_slug/service_name with quantity.',
+                  'Services to book. ALWAYS provide when Charles specifies services directly (e.g. "4 regular rooms"). Use catalog_slug + quantity. Common slugs: "regular-size-room-100-to-200-sqft" (standard/regular rooms/bedrooms), "sasquatch-size-room-200-to-400-sqft" (large rooms), "monster-size-room-400-to-600-sqft", "jumbo-humungous-room-600-to800-sqft", "step-carpet-cleaning-per-step-charge" (stairs), "pet-urine-injection-treatment-with-bio-release", "sofa", "loveseat", "recliner", "sectional", "leather-cleaning-chair", "leather-cleaning-love-seat", "leather-cleaning-sofa", "small-area-under-100-sqft" (hallways/closets). Only omit line_items if the SMS conversation clearly states services and Charles did not specify them in his command.',
                 items: {
                   type: 'object',
                   properties: {
@@ -1844,7 +1862,7 @@ ${activeConversationSummary}`,
 
     for (let round = 0; round < 6; round += 1) {
       const response = await openai.chat.completions.create({
-        model: 'gpt-4o',
+        model: 'gpt-4.1',
         messages,
         tools,
         tool_choice: 'auto',
