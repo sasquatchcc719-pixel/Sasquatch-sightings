@@ -265,13 +265,11 @@ async function lookupSmsConversationProfiles(
     phone_number: string | null
     source: string | null
     status: string | null
-    customer_name: string | null
     messages: unknown
     updated_at: string | null
   }> | null = null
 
-  const selectFields =
-    'id, phone_number, source, status, customer_name, messages, updated_at'
+  const selectFields = 'id, phone_number, source, status, messages, updated_at'
   if (variants.length > 0) {
     const { data, error } = await supabase
       .from('conversations')
@@ -307,7 +305,7 @@ async function lookupSmsConversationProfiles(
       id: conversation.id,
       source: conversation.source,
       status: conversation.status,
-      customer_name: conversation.customer_name,
+      customer_name: null as string | null,
       inferred_name: inferred.name,
       inferred_email: inferred.email,
       last_customer_message: inferred.lastCustomerMessage,
