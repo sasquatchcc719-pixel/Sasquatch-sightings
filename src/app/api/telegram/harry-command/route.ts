@@ -2306,7 +2306,7 @@ async function searchConversationHistory(
   ].join('\n')
 }
 
-async function executeToolCall(
+export async function executeToolCall(
   toolName: string,
   input: Record<string, unknown>,
   supabase: ReturnType<typeof createAdminClient>,
@@ -3335,11 +3335,20 @@ async function executeToolCall(
     }
 
     case 'add_customer': {
-      const fullName = String(input.full_name)
-      const phone = String(input.phone)
-      const email = input.email ? String(input.email) : null
-      const address = input.address ? String(input.address) : null
-      const notes = input.notes ? String(input.notes) : null
+      const fullName = String(input.full_name || '').trim()
+      const phone = String(input.phone || '').trim()
+      const email = input.email ? String(input.email).trim() : null
+      const address = input.address ? String(input.address).trim() : null
+      const notes = input.notes ? String(input.notes).trim() : null
+
+      if (!fullName || !phone) {
+        return '❌ add_customer requires both full_name and phone.'
+      }
+
+      // Split full name into first/last for ops_customers schema
+      const nameParts = fullName.split(/\s+/)
+      const firstName = nameParts[0] || fullName
+      const lastName = nameParts.slice(1).join(' ') || ''
 
       // Normalize phone number
       const digits = phone.replace(/\D/g, '')
@@ -3361,6 +3370,8 @@ async function executeToolCall(
       const { data: newCustomer, error: customerError } = await supabase
         .from('ops_customers')
         .insert({
+          first_name: firstName,
+          last_name: lastName,
           full_name: fullName,
           phone: normalizedPhone,
           email,
@@ -3375,22 +3386,31 @@ async function executeToolCall(
 
       // Add service address if provided
       if (address && newCustomer) {
-        await supabase.from('ops_service_addresses').insert({
-          customer_id: newCustomer.id,
-          street: address,
-          city: 'Colorado Springs',
-          state: 'CO',
-          zip: '',
-        })
+        const { error: addressError } = await supabase
+          .from('ops_service_addresses')
+          .insert({
+            customer_id: newCustomer.id,
+            street_1: address,
+            city: 'Colorado Springs',
+            state: 'CO',
+            zip_code: '',
+          })
+        if (addressError) {
+          return `✅ Added new customer: ${fullName} (${normalizedPhone}) but the address insert failed: ${addressError.message}`
+        }
       }
 
       return `✅ Added new customer: ${fullName}\n📱 ${normalizedPhone}${email ? `\n📧 ${email}` : ''}${address ? `\n📍 ${address}` : ''}`
     }
 
     case 'check_availability': {
-      let targetDate = String(input.date)
-      const startTime = String(input.start_time)
+      let targetDate = String(input.date || '').trim()
+      const startTime = String(input.start_time || '').trim()
       const durationHours = Number(input.duration_hours) || 1
+
+      if (!targetDate || !startTime) {
+        return '❌ check_availability requires both date and start_time (HH:MM).'
+      }
 
       // Handle relative dates (Mountain Time)
       if (targetDate.toLowerCase() === 'today') {
@@ -3399,8 +3419,15 @@ async function executeToolCall(
         targetDate = getTomorrowMountain()
       }
 
-      // Calculate end time
-      const [hours, minutes] = startTime.split(':').map(Number)
+      const timeParts = startTime.split(':').map(Number)
+      if (
+        timeParts.length < 2 ||
+        !Number.isFinite(timeParts[0]) ||
+        !Number.isFinite(timeParts[1])
+      ) {
+        return `❌ Invalid start_time "${startTime}". Use HH:MM (24-hour) format.`
+      }
+      const [hours, minutes] = timeParts
       const endHours = hours + durationHours
       const endTime = `${endHours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:00`
 
