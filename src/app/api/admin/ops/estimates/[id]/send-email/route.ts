@@ -46,7 +46,7 @@ function buildBookingConfirmationBody(params: {
     `Thank you so much for reaching out to Sasquatch Carpet Cleaning — we truly appreciate the opportunity to earn your business.`,
     `We're looking forward to visiting your property to take a look at everything and provide you with a detailed, no-obligation estimate. Here are your appointment details:\n\n- Date: ${date}\n- Time: ${startTime} – ${endTime}\n- Address: ${address}`,
     `Our goal is to give you a thorough, honest assessment of what your carpets need and what it will cost — no pressure, no surprises. We take pride in treating every home like our own.`,
-    `If anything changes or you have questions before we arrive, don't hesitate to reach out. You can reply to this email or text us anytime at (719) 358-6137 — our scheduling assistant responds 24/7.`,
+    `If anything changes or you have questions before we arrive, don't hesitate to reach out. You can reply to this email or text us anytime at (719) 249-8791 — our scheduling assistant responds 24/7.`,
     `We'll see you soon!\n\nWith appreciation,\nThe Sasquatch Carpet Cleaning Team`,
   ].join('\n\n')
 }
@@ -94,7 +94,7 @@ function buildQuoteBody(params: {
     `Thank you for letting us visit your property at ${address}. Based on what we measured and assessed during our walk-through, here is your personalized estimate from Sasquatch Carpet Cleaning:`,
     `${lineDescriptions}\n\nEstimated Total: ${formatCurrency(total)}`,
     `This estimate reflects our standard pricing for the areas and services listed above. All of our work is backed by our satisfaction guarantee — if it's not right, we'll make it right.`,
-    `When you're ready to schedule the cleaning, just reply to this email or text us at (719) 358-6137. We'll get you on the calendar right away.`,
+    `When you're ready to schedule the cleaning, just reply to this email or text us at (719) 249-8791. We'll get you on the calendar right away.`,
     `We look forward to making your carpets look and feel like new again. Thank you for considering Sasquatch Carpet Cleaning — we don't take that trust lightly.`,
     `Warm regards,\nThe Sasquatch Carpet Cleaning Team`,
   ].join('\n\n')

@@ -12,5 +12,5 @@ Services:
 Service address:
 {{address_line}}
 
-To make any changes, text Harry at (719) 358-6137 — he''s available 24/7.'
+To make any changes, text Harry at (719) 249-8791 — he''s available 24/7.'
 WHERE template_key = 'job_scheduled_email';

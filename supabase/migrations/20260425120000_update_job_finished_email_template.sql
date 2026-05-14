@@ -22,7 +22,7 @@ A Small Favor? As a local business, your feedback helps the Sasquatch grow! If y
 Leave a review here:
 https://www.sasquatchcarpet.com/reviews
 
-If anything is not 100% legendary, text Harry at (719) 358-6137 and we will make it right.
+If anything is not 100% legendary, text Harry at (719) 249-8791 and we will make it right.
 
 Thanks again for the business!
 — {{company_name}}

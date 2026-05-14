@@ -59,7 +59,7 @@ function successHtml(): string {
   <div class="card">
     <h1>You've been unsubscribed</h1>
     <p>You will no longer receive follow-up emails from Sasquatch Carpet Cleaning.</p>
-    <p style="margin-top:16px;color:#999;font-size:13px;">If this was a mistake, just text us at <strong>(719) 358-6137</strong> and we'll fix it.</p>
+    <p style="margin-top:16px;color:#999;font-size:13px;">If this was a mistake, just text us at <strong>(719) 249-8791</strong> and we'll fix it.</p>
   </div>
 </body>
 </html>`

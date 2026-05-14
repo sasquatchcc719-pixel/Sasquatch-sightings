@@ -1074,7 +1074,7 @@ export function NfcBookingWidget({
         </div>
 
         <p className="text-xs text-white/40">
-          Need to make changes? Text Harry at (719) 358-6137
+          Need to make changes? Text Harry at (719) 249-8791
         </p>
       </div>
     )
