@@ -67,6 +67,30 @@ export async function GET(request: NextRequest) {
           customer.lead_source = stats?.lead_source ?? null
         }
       }
+
+      const { data: jobRows } = await supabase
+        .from('ops_appointments')
+        .select(
+          `id, status, appointment_date, start_time,
+           ops_invoices ( id ),
+           ops_service_addresses ( street_1, city ),
+           customer_id`,
+        )
+        .in('customer_id', customerIds)
+        .neq('status', 'cancelled')
+        .order('appointment_date', { ascending: false })
+
+      if (jobRows && Array.isArray(jobRows)) {
+        const jobsMap = new Map<string, Record<string, unknown>[]>()
+        for (const row of jobRows) {
+          const cid = row.customer_id as string
+          if (!jobsMap.has(cid)) jobsMap.set(cid, [])
+          jobsMap.get(cid)!.push(row)
+        }
+        for (const customer of customers as Record<string, unknown>[]) {
+          customer.jobs = jobsMap.get(customer.id as string) ?? []
+        }
+      }
     }
 
     return NextResponse.json({ customers })

@@ -5,7 +5,12 @@ import { useEffect, useState } from 'react'
 import {
   Briefcase,
   CalendarDays,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Clock,
   DollarSign,
+  ExternalLink,
   Loader2,
   Pencil,
   Search,
@@ -29,6 +34,15 @@ type CustomerAddress = {
   notes: string | null
 }
 
+type CustomerJob = {
+  id: string
+  status: string
+  appointment_date: string
+  start_time: string | null
+  ops_invoices: { id: string } | null
+  ops_service_addresses: { street_1: string; city: string } | null
+}
+
 type CustomerRow = {
   id: string
   full_name: string
@@ -45,6 +59,7 @@ type CustomerRow = {
   last_job_date?: string | null
   total_revenue?: number
   lead_source?: string | null
+  jobs?: CustomerJob[]
   ops_service_addresses: CustomerAddress[]
 }
 
@@ -78,6 +93,30 @@ function formatCustomerSince(iso: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
 }
 
+const UPCOMING_STATUSES = new Set([
+  'booked',
+  'confirmed',
+  'on_my_way',
+  'in_progress',
+])
+
+function formatJobDate(iso: string): string {
+  const [year, month, day] = iso.split('-').map(Number)
+  return new Date(year, month - 1, day).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
+function formatTime(hhmm: string | null): string {
+  if (!hhmm) return ''
+  const [h, m] = hhmm.slice(0, 5).split(':').map(Number)
+  const d = new Date()
+  d.setHours(h, m, 0, 0)
+  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+}
+
 export function CustomersDirectory() {
   const [loading, setLoading] = useState(true)
   const [searching, setSearching] = useState(false)
@@ -87,6 +126,9 @@ export function CustomersDirectory() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<CustomerEditState | null>(null)
   const [editSaving, setEditSaving] = useState(false)
+  const [expandedJobs, setExpandedJobs] = useState<
+    Record<string, 'upcoming' | 'completed' | null>
+  >({})
 
   const fetchCustomers = async () => {
     const hasQuery = query.trim().length > 0
@@ -586,60 +628,158 @@ export function CustomersDirectory() {
                     </div>
 
                     {/* ── Stats row ────────────────────────────── */}
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {(customer.job_count ?? 0) > 0 ? (
-                        <Badge
-                          variant="secondary"
-                          className="gap-1 text-xs font-normal"
-                        >
-                          <Briefcase className="h-3 w-3" />
-                          {customer.job_count} job
-                          {customer.job_count === 1 ? '' : 's'}
-                        </Badge>
-                      ) : null}
-                      {customer.last_job_date ? (
-                        <Badge
-                          variant="secondary"
-                          className="gap-1 text-xs font-normal"
-                        >
-                          <CalendarDays className="h-3 w-3" />
-                          Last: {customer.last_job_date}
-                        </Badge>
-                      ) : null}
-                      {(customer.total_revenue ?? 0) > 0 ? (
-                        <Badge
-                          variant="secondary"
-                          className="gap-1 text-xs font-normal"
-                        >
-                          <DollarSign className="h-3 w-3" />
-                          {formatCurrency(customer.total_revenue!)}
-                        </Badge>
-                      ) : null}
-                      {customer.lead_source ? (
-                        <Badge
-                          variant="outline"
-                          className="text-xs font-normal"
-                        >
-                          {customer.lead_source}
-                        </Badge>
-                      ) : null}
-                      {customer.quickbooks_customer_id ? (
-                        <Badge
-                          variant="outline"
-                          className="text-xs font-normal"
-                        >
-                          QB
-                        </Badge>
-                      ) : null}
-                      {customer.email_opt_out ? (
-                        <Badge
-                          variant="outline"
-                          className="border-amber-500/40 bg-amber-500/10 text-xs font-normal text-amber-300"
-                        >
-                          No emails
-                        </Badge>
-                      ) : null}
-                    </div>
+                    {(() => {
+                      const allJobs = customer.jobs ?? []
+                      const upcoming = allJobs.filter((j) =>
+                        UPCOMING_STATUSES.has(j.status),
+                      )
+                      const completed = allJobs.filter(
+                        (j) => j.status === 'completed',
+                      )
+                      const expanded = expandedJobs[customer.id] ?? null
+                      const toggleExpand = (type: 'upcoming' | 'completed') =>
+                        setExpandedJobs((prev) => ({
+                          ...prev,
+                          [customer.id]:
+                            prev[customer.id] === type ? null : type,
+                        }))
+                      const expandedList =
+                        expanded === 'upcoming'
+                          ? upcoming
+                          : expanded === 'completed'
+                            ? completed
+                            : []
+
+                      return (
+                        <>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {upcoming.length > 0 ? (
+                              <Badge
+                                variant="secondary"
+                                className="cursor-pointer gap-1 text-xs font-normal text-blue-300 hover:bg-blue-500/20"
+                                onClick={() => toggleExpand('upcoming')}
+                              >
+                                <Clock className="h-3 w-3" />
+                                {upcoming.length} upcoming
+                                {expanded === 'upcoming' ? (
+                                  <ChevronUp className="h-3 w-3" />
+                                ) : (
+                                  <ChevronDown className="h-3 w-3" />
+                                )}
+                              </Badge>
+                            ) : null}
+                            {completed.length > 0 ? (
+                              <Badge
+                                variant="secondary"
+                                className="cursor-pointer gap-1 text-xs font-normal hover:bg-green-500/20"
+                                onClick={() => toggleExpand('completed')}
+                              >
+                                <CheckCircle2 className="h-3 w-3" />
+                                {completed.length} completed
+                                {expanded === 'completed' ? (
+                                  <ChevronUp className="h-3 w-3" />
+                                ) : (
+                                  <ChevronDown className="h-3 w-3" />
+                                )}
+                              </Badge>
+                            ) : null}
+                            {customer.last_job_date ? (
+                              <Badge
+                                variant="secondary"
+                                className="gap-1 text-xs font-normal"
+                              >
+                                <CalendarDays className="h-3 w-3" />
+                                Last: {customer.last_job_date}
+                              </Badge>
+                            ) : null}
+                            {(customer.total_revenue ?? 0) > 0 ? (
+                              <Badge
+                                variant="secondary"
+                                className="gap-1 text-xs font-normal"
+                              >
+                                <DollarSign className="h-3 w-3" />
+                                {formatCurrency(customer.total_revenue!)}
+                              </Badge>
+                            ) : null}
+                            {customer.lead_source ? (
+                              <Badge
+                                variant="outline"
+                                className="text-xs font-normal"
+                              >
+                                {customer.lead_source}
+                              </Badge>
+                            ) : null}
+                            {customer.quickbooks_customer_id ? (
+                              <Badge
+                                variant="outline"
+                                className="text-xs font-normal"
+                              >
+                                QB
+                              </Badge>
+                            ) : null}
+                            {customer.email_opt_out ? (
+                              <Badge
+                                variant="outline"
+                                className="border-amber-500/40 bg-amber-500/10 text-xs font-normal text-amber-300"
+                              >
+                                No emails
+                              </Badge>
+                            ) : null}
+                          </div>
+
+                          {expanded && expandedList.length > 0 ? (
+                            <div className="mt-2 space-y-1.5">
+                              {expandedList.map((job) => {
+                                const addr = job.ops_service_addresses
+                                const invoiceId = job.ops_invoices?.id
+                                const content = (
+                                  <div
+                                    className={`flex items-center justify-between rounded-lg border px-3 py-2 text-sm ${
+                                      invoiceId
+                                        ? 'border-border/60 bg-background/70 hover:border-primary/40 hover:bg-primary/5 cursor-pointer transition-colors'
+                                        : 'border-border/40 bg-background/50'
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-3">
+                                      <span className="font-medium">
+                                        {formatJobDate(job.appointment_date)}
+                                      </span>
+                                      {job.start_time ? (
+                                        <span className="text-muted-foreground text-xs">
+                                          {formatTime(job.start_time)}
+                                        </span>
+                                      ) : null}
+                                      {addr ? (
+                                        <span className="text-muted-foreground text-xs">
+                                          {addr.street_1}, {addr.city}
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                    {invoiceId ? (
+                                      <ExternalLink className="text-muted-foreground h-3.5 w-3.5 shrink-0" />
+                                    ) : (
+                                      <span className="text-muted-foreground text-xs">
+                                        No invoice
+                                      </span>
+                                    )}
+                                  </div>
+                                )
+                                return invoiceId ? (
+                                  <Link
+                                    key={job.id}
+                                    href={`/admin/operations/invoices/${invoiceId}`}
+                                  >
+                                    {content}
+                                  </Link>
+                                ) : (
+                                  <div key={job.id}>{content}</div>
+                                )
+                              })}
+                            </div>
+                          ) : null}
+                        </>
+                      )
+                    })()}
 
                     {/* Customer since */}
                     {customer.created_at ? (
