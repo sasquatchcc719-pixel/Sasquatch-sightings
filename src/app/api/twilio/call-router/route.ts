@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCallRoutingConfig } from '@/lib/twilio/call-routing-config'
 import { sendOneSignalNotification } from '@/lib/onesignal'
+import { isBlacklisted, notifyBlockedAttempt } from '@/lib/blacklist'
 
 const SETTINGS = {
   // Static fallback values. Dynamic values come from phone_settings.
@@ -21,6 +22,15 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
     const callerPhone = formData.get('From') as string
+
+    if (await isBlacklisted(callerPhone)) {
+      notifyBlockedAttempt(callerPhone, 'call')
+      return new NextResponse(
+        '<?xml version="1.0" encoding="UTF-8"?><Response><Reject/></Response>',
+        { status: 200, headers: { 'Content-Type': 'text/xml' } },
+      )
+    }
+
     const routingConfig = await getCallRoutingConfig()
 
     console.log(`[Call Router] Incoming call from: ${callerPhone}`)

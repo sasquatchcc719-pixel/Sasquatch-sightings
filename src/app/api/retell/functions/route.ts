@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 import { isRabeccaEnabled } from '@/lib/retell/rebecca-config'
+import { isBlacklisted, notifyBlockedAttempt } from '@/lib/blacklist'
 import { executeRebeccaRetellTool } from '@/lib/retell/rebecca-tools'
 import type {
   RetellFunctionName,
@@ -197,6 +198,11 @@ export async function POST(request: NextRequest) {
   const functionName = inferFunctionName(payload, args, request)
   const callId = getPayloadCallId(payload)
   const callerPhone = getPayloadCallerPhone(payload, args)
+
+  if (callerPhone && (await isBlacklisted(callerPhone))) {
+    notifyBlockedAttempt(callerPhone, 'Rabecca AI')
+    return NextResponse.json({ error: 'Blocked' }, { status: 403 })
+  }
 
   if (!functionName) {
     await writeRetellToolLog({
