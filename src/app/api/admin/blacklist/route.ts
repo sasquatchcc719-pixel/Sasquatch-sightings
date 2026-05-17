@@ -1,15 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
-import { getUserWithRole } from '@/lib/auth'
+import { requireAnyRole } from '@/lib/auth'
 import { normalizePhone } from '@/lib/blacklist'
 
 export async function GET() {
   try {
-    const { user, role } = await getUserWithRole()
-    if (!user || role !== 'admin') {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
+    await requireAnyRole(['admin', 'owner'])
     const supabase = createAdminClient()
     const { data, error } = await supabase
       .from('blacklist')
@@ -29,11 +25,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const { user, role } = await getUserWithRole()
-    if (!user || role !== 'admin') {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
+    await requireAnyRole(['admin', 'owner'])
     const body = await request.json()
     const phone =
       typeof body.phone === 'string' ? normalizePhone(body.phone) : ''

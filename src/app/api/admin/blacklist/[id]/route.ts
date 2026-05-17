@@ -1,17 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
-import { getUserWithRole } from '@/lib/auth'
+import { requireAnyRole } from '@/lib/auth'
 
 export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const { user, role } = await getUserWithRole()
-    if (!user || role !== 'admin') {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
+    await requireAnyRole(['admin', 'owner'])
     const { id } = await params
     const supabase = createAdminClient()
     const { error } = await supabase.from('blacklist').delete().eq('id', id)
