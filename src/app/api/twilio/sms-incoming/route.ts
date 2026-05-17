@@ -8,6 +8,7 @@ import { createAdminClient } from '@/supabase/server'
 import { Resend } from 'resend'
 import { sendOneSignalNotification } from '@/lib/onesignal'
 import twilio from 'twilio'
+import { isBlacklisted, notifyBlockedAttempt } from '@/lib/blacklist'
 import {
   generateAIResponse,
   shouldEscalate,
@@ -864,6 +865,12 @@ export async function POST(request: NextRequest) {
     }
 
     const normalizedPhone = normalizePhone(fromPhone)
+
+    if (await isBlacklisted(normalizedPhone)) {
+      notifyBlockedAttempt(fromPhone, 'SMS')
+      return emptyTwiml
+    }
+
     console.log(
       `📱 Inbound SMS from ${fromPhone} → normalized to: ${normalizedPhone}`,
     )

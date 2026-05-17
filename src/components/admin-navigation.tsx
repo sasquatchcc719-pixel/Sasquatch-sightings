@@ -30,6 +30,7 @@ import {
   Ruler,
   Tag,
   UserRoundSearch,
+  Ban,
 } from 'lucide-react'
 
 interface NavTab {
@@ -328,6 +329,13 @@ export function AdminNavigation() {
       icon: Phone,
       active: pathname === '/admin/phone-settings',
       description: 'Voicemail message, hours & routing',
+    },
+    {
+      name: 'Blacklist',
+      href: '/admin/blacklist',
+      icon: Ban,
+      active: pathname === '/admin/blacklist',
+      description: 'Block customers from calling or booking',
     },
   ]
 

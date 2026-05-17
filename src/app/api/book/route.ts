@@ -3,6 +3,7 @@
  * Adds the BOOKING_API_SECRET header so it never ships in browser bundles.
  */
 import { NextRequest, NextResponse } from 'next/server'
+import { isBlacklisted, notifyBlockedAttempt } from '@/lib/blacklist'
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,6 +16,14 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
+
+    if (body.phone && (await isBlacklisted(body.phone))) {
+      notifyBlockedAttempt(body.phone, 'web booking')
+      return NextResponse.json(
+        { error: 'Something went wrong. Please try again later.' },
+        { status: 422 },
+      )
+    }
 
     // Build the internal URL so this works on any hostname (dev + production)
     const internalUrl = new URL(
