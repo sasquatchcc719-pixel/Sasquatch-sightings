@@ -87,6 +87,9 @@ function formatDisplay(phone: string): string {
   return phone
 }
 
+const MAX_INIT_RETRIES = 4
+const RETRY_BASE_MS = 2000
+
 export function SoftphoneProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<SoftphoneState>('idle')
   const [muted, setMuted] = useState(false)
@@ -102,8 +105,12 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
   const activeCallRef = useRef<Call | null>(null)
   const incomingCallRef = useRef<Call | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const tokenExpiryRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const ringtoneRef = useRef<HTMLAudioElement | null>(null)
+  const mountedRef = useRef(true)
+  const stateRef = useRef<SoftphoneState>('idle')
+
+  // Keep stateRef in sync so event handlers always see current state
+  stateRef.current = state
 
   const clearTimer = useCallback(() => {
     if (timerRef.current) {
@@ -148,15 +155,34 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const initDeviceRef = useRef<(() => Promise<void>) | undefined>(undefined)
+  // Stable init function stored in a ref so it never triggers effect re-runs
+  const initRef = useRef<(() => Promise<void>) | null>(null)
 
   useEffect(() => {
-    const init = async () => {
+    mountedRef.current = true
+
+    const init = async (attempt = 0) => {
+      if (!mountedRef.current) return
+
       const data = await fetchToken()
-      if (!data) return
+      if (!data) {
+        if (attempt < MAX_INIT_RETRIES && mountedRef.current) {
+          const delay = RETRY_BASE_MS * Math.pow(2, attempt)
+          console.warn(
+            `[Softphone] Token fetch failed, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_INIT_RETRIES})`,
+          )
+          setTimeout(() => init(attempt + 1), delay)
+        } else {
+          console.error('[Softphone] Token fetch failed after all retries')
+        }
+        return
+      }
+
+      if (!mountedRef.current) return
 
       if (deviceRef.current) {
         deviceRef.current.destroy()
+        deviceRef.current = null
       }
 
       const device = new Device(data.token, {
@@ -167,17 +193,45 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
 
       device.on('error', (err) => {
         console.error('[Softphone] Device error:', err)
-        // Don't override state if we're already in a call — transient errors happen
-        if (state !== 'in-call') {
-          setState('error')
-          setErrorMsg(err.message || 'Device error')
+        // Use ref to read current state — never stale
+        const current = stateRef.current
+        if (
+          current === 'in-call' ||
+          current === 'connecting' ||
+          current === 'ringing'
+        ) {
+          // Transient errors during active calls — log but don't kill state
+          console.warn(
+            '[Softphone] Transient error during active call, ignoring',
+          )
+          return
         }
+        setState('error')
+        setErrorMsg(err.message || 'Device error')
         stopRingtone()
       })
 
       device.on('tokenWillExpire', async () => {
+        console.log('[Softphone] Token expiring, refreshing...')
         const refreshed = await fetchToken()
-        if (refreshed) device.updateToken(refreshed.token)
+        if (refreshed) {
+          device.updateToken(refreshed.token)
+          console.log('[Softphone] Token refreshed')
+        } else {
+          console.error('[Softphone] Token refresh failed')
+        }
+      })
+
+      device.on('unregistered', () => {
+        console.warn(
+          '[Softphone] Device unregistered, will re-register on reconnect',
+        )
+        if (mountedRef.current) setReady(false)
+      })
+
+      device.on('registered', () => {
+        console.log('[Softphone] Device registered')
+        if (mountedRef.current) setReady(true)
       })
 
       device.on('incoming', (incomingCall: Call) => {
@@ -186,7 +240,6 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
           incomingCall.parameters?.From,
         )
 
-        // If already on a call, reject the incoming one
         if (activeCallRef.current) {
           incomingCall.reject()
           return
@@ -228,27 +281,75 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
         })
       })
 
-      await device.register()
-      deviceRef.current = device
-      setReady(true)
-
-      if (tokenExpiryRef.current) clearTimeout(tokenExpiryRef.current)
-      tokenExpiryRef.current = setTimeout(
-        () => initDeviceRef.current?.(),
-        50 * 60 * 1000,
-      )
+      try {
+        await device.register()
+        deviceRef.current = device
+        // ready is set via the 'registered' event above
+      } catch (err) {
+        console.error('[Softphone] Device registration failed:', err)
+        device.destroy()
+        if (attempt < MAX_INIT_RETRIES && mountedRef.current) {
+          const delay = RETRY_BASE_MS * Math.pow(2, attempt)
+          console.warn(`[Softphone] Retrying registration in ${delay}ms`)
+          setTimeout(() => init(attempt + 1), delay)
+        }
+      }
     }
 
-    initDeviceRef.current = init
-    init()
+    initRef.current = () => init(0)
+    init(0)
+
+    // Re-register when the browser comes back online
+    const handleOnline = () => {
+      console.log('[Softphone] Network restored, re-initializing device')
+      const device = deviceRef.current
+      if (device) {
+        // Try to re-register the existing device first
+        device.register().catch(() => {
+          console.warn('[Softphone] Re-register failed, full re-init')
+          init(0)
+        })
+      } else {
+        init(0)
+      }
+    }
+
+    window.addEventListener('online', handleOnline)
+
+    // Re-register after the page wakes from sleep/background
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && deviceRef.current) {
+        const device = deviceRef.current
+        // If the device lost its WebSocket during sleep, re-register
+        if (device.state !== 'registered') {
+          console.log(
+            '[Softphone] Page visible, device not registered — re-registering',
+          )
+          device.register().catch(() => {
+            console.warn(
+              '[Softphone] Visibility re-register failed, full re-init',
+            )
+            init(0)
+          })
+        }
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibility)
 
     return () => {
-      if (deviceRef.current) deviceRef.current.destroy()
-      if (tokenExpiryRef.current) clearTimeout(tokenExpiryRef.current)
+      mountedRef.current = false
+      window.removeEventListener('online', handleOnline)
+      document.removeEventListener('visibilitychange', handleVisibility)
+      if (deviceRef.current) {
+        deviceRef.current.destroy()
+        deviceRef.current = null
+      }
       clearTimer()
       stopRingtone()
     }
-  }, [fetchToken, clearTimer, playRingtone, stopRingtone])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const acceptIncoming = useCallback(() => {
     const incoming = incomingCallRef.current
@@ -276,7 +377,7 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
 
   const makeCall = useCallback(
     (phoneNumber: string) => {
-      if (!deviceRef.current || state !== 'idle') return
+      if (!deviceRef.current || stateRef.current !== 'idle') return
 
       setCallingNumber(phoneNumber)
       setState('connecting')
@@ -323,7 +424,7 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
           setErrorMsg(err.message || 'Failed to connect')
         })
     },
-    [state, startTimer, clearTimer],
+    [startTimer, clearTimer],
   )
 
   const hangUp = useCallback(() => {
@@ -390,7 +491,6 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
     const nextDevice = audioOutputs[nextIdx]
 
     try {
-      // Use Twilio Device audio API if available
       const device = deviceRef.current
       if (device?.audio?.speakerDevices) {
         await device.audio.speakerDevices.set(nextDevice.deviceId)
@@ -561,7 +661,7 @@ function AudioOutputButton({
         isHeadphones ? 'text-blue-400' : 'text-white'
       }`}
       onClick={onCycle}
-      title={`Audio: ${current?.label || 'Speaker'} — tap to switch`}
+      title={`Audio: ${current?.label || 'Speaker'} -- tap to switch`}
     >
       <Icon className="h-4 w-4" />
     </Button>
