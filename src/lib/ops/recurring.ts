@@ -184,6 +184,9 @@ function shouldSkipRecurringSlot(args: {
   /** true when this YYYY-MM has only one rule-generated date in the whole horizon. */
   monthIsSingleInstance: boolean
   extraBlockedDates: Set<string>
+  /** original_recurring_date values for all template appointments in the window.
+   *  Blocks slots that were already generated and then moved to a different week. */
+  originalRecurringDates: Set<string>
 }): boolean {
   const {
     candidateDate,
@@ -191,10 +194,12 @@ function shouldSkipRecurringSlot(args: {
     templateDates,
     monthIsSingleInstance,
     extraBlockedDates,
+    originalRecurringDates,
   } = args
   if (
     extraBlockedDates.has(candidateDate) ||
-    templateDates.has(candidateDate)
+    templateDates.has(candidateDate) ||
+    originalRecurringDates.has(candidateDate)
   ) {
     return true
   }
@@ -358,7 +363,7 @@ export async function generateRecurringAppointments(
     await Promise.all([
       supabase
         .from('ops_appointments')
-        .select('appointment_date')
+        .select('appointment_date, original_recurring_date')
         .eq('recurring_template_id', templateId)
         .gte('appointment_date', rangeStartStr)
         .lte('appointment_date', rangeEndStr),
@@ -377,6 +382,15 @@ export async function generateRecurringAppointments(
     (templateInRange || []).map(
       (a: { appointment_date: string }) => a.appointment_date,
     ),
+  )
+
+  const originalRecurringDateSet = new Set(
+    (templateInRange || [])
+      .map(
+        (a: { original_recurring_date: string | null }) =>
+          a.original_recurring_date,
+      )
+      .filter((d): d is string => d !== null),
   )
 
   const quotedSubtotalPreCalc = (
@@ -458,6 +472,7 @@ export async function generateRecurringAppointments(
         templateDates: templateDateSet,
         monthIsSingleInstance,
         extraBlockedDates,
+        originalRecurringDates: originalRecurringDateSet,
       })
     ) {
       result.skipped++
@@ -481,6 +496,7 @@ export async function generateRecurringAppointments(
           quickbooks_sync_status:
             template.invoice_mode === 'batch_monthly' ? 'held' : syncStatus,
           appointment_date: date,
+          original_recurring_date: date,
           start_time: normalizedStart,
           end_time: endTime,
           quoted_total: Number(quotedTotal.toFixed(2)),
@@ -588,6 +604,7 @@ export async function generateRecurringAppointments(
 
       result.created++
       templateDateSet.add(date)
+      originalRecurringDateSet.add(date)
     } catch (err) {
       result.errors.push(
         `${date}: ${err instanceof Error ? err.message : 'unknown error'}`,
