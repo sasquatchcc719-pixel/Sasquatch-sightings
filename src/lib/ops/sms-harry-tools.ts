@@ -429,6 +429,7 @@ async function customerOwnsAppointment(
         start_time: string
         end_time: string
         status: string
+        internal_notes: string | null
       }
       customerPhone: string | null
     }
@@ -445,6 +446,7 @@ async function customerOwnsAppointment(
       start_time,
       end_time,
       status,
+      internal_notes,
       ops_customers!ops_appointments_customer_id_fkey ( phone )
     `,
     )
@@ -475,6 +477,7 @@ async function customerOwnsAppointment(
       start_time: row.start_time,
       end_time: row.end_time,
       status: row.status,
+      internal_notes: row.internal_notes,
     },
     customerPhone,
   }
@@ -628,6 +631,31 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
           },
         },
         required: ['appointment_id', 'line_items'],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'add_job_note',
+      description:
+        'Add or append important information to the internal notes field on an existing appointment. Use this when the customer provides access codes (garage codes, gate codes), special instructions, pet information, or other details that Charles needs to know when servicing the job. The note will be added to any existing notes.',
+      parameters: {
+        type: 'object',
+        properties: {
+          appointment_id: {
+            type: 'string',
+            description:
+              'The appointment UUID from list_my_upcoming_appointments',
+          },
+          note: {
+            type: 'string',
+            description:
+              'The information to save (e.g., "Garage code: 1234" or "Dog in backyard - use front door only")',
+          },
+        },
+        required: ['appointment_id', 'note'],
         additionalProperties: false,
       },
     },
@@ -1545,6 +1573,61 @@ export async function executeHarrySmsTool(
             qty: l.quantity,
             price: l.unit_price * l.quantity,
           })),
+        })
+      }
+
+      case 'add_job_note': {
+        const appointmentId = String(args.appointment_id || '').trim()
+        const note = String(args.note || '').trim()
+
+        if (!appointmentId || !note) {
+          return JSON.stringify({
+            error: 'appointment_id and note are required',
+          })
+        }
+
+        const owned = await customerOwnsAppointment(
+          supabase,
+          appointmentId,
+          ctx.customerPhoneE164,
+        )
+        if (!owned.ok) return JSON.stringify({ error: owned.error })
+
+        // Get existing notes and append new note with timestamp
+        const existingNotes = owned.appointment.internal_notes || ''
+        const timestamp = new Date().toLocaleString('en-US', {
+          timeZone: 'America/Denver',
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+        })
+        const newNote = `[${timestamp} via Harry SMS] ${note}`
+        const updatedNotes = existingNotes
+          ? `${existingNotes}\n${newNote}`
+          : newNote
+
+        const { error: updateErr } = await supabase
+          .from('ops_appointments')
+          .update({
+            internal_notes: updatedNotes,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', appointmentId)
+
+        if (updateErr) throw updateErr
+
+        await supabase.from('ops_appointment_status_events').insert({
+          appointment_id: appointmentId,
+          from_status: owned.appointment.status,
+          to_status: owned.appointment.status,
+          notes: `Note added via Harry SMS: ${note}`,
+        })
+
+        return JSON.stringify({
+          success: true,
+          appointment_id: appointmentId,
+          note_added: note,
         })
       }
 
