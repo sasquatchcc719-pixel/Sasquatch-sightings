@@ -101,6 +101,7 @@ export default function PhonePage() {
     incomingFrom,
     audioOutputs,
     activeOutput,
+    initStatus,
   } = useSoftphone()
   const [number, setNumber] = useState('')
   const [elapsed, setElapsed] = useState(0)
@@ -168,6 +169,9 @@ export default function PhonePage() {
               Voice calling is initializing. If this persists, check your Twilio
               configuration in Settings.
             </p>
+            {initStatus && (
+              <p className="mt-1 text-xs text-yellow-400/70">{initStatus}</p>
+            )}
           </div>
         </Card>
       )}

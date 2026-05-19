@@ -49,6 +49,7 @@ type SoftphoneContextValue = {
   incomingFrom: string
   audioOutputs: AudioOutputDevice[]
   activeOutput: string
+  initStatus: string
 }
 
 const SoftphoneContext = createContext<SoftphoneContextValue>({
@@ -64,6 +65,7 @@ const SoftphoneContext = createContext<SoftphoneContextValue>({
   incomingFrom: '',
   audioOutputs: [],
   activeOutput: '',
+  initStatus: '',
 })
 
 export function useSoftphone() {
@@ -99,6 +101,7 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
   const [errorMsg, setErrorMsg] = useState('')
   const [ready, setReady] = useState(false)
   const [audioOutputs, setAudioOutputs] = useState<AudioOutputDevice[]>([])
+  const [initStatus, setInitStatus] = useState('')
   const [activeOutput, setActiveOutput] = useState('')
 
   const deviceRef = useRef<Device | null>(null)
@@ -164,21 +167,25 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
     const init = async (attempt = 0) => {
       if (!mountedRef.current) return
 
+      setInitStatus(`Fetching token (attempt ${attempt + 1})...`)
       const data = await fetchToken()
       if (!data) {
         if (attempt < MAX_INIT_RETRIES && mountedRef.current) {
           const delay = RETRY_BASE_MS * Math.pow(2, attempt)
+          setInitStatus(`Token fetch failed, retrying in ${delay / 1000}s...`)
           console.warn(
             `[Softphone] Token fetch failed, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_INIT_RETRIES})`,
           )
           setTimeout(() => init(attempt + 1), delay)
         } else {
+          setInitStatus('Token fetch failed after all retries')
           console.error('[Softphone] Token fetch failed after all retries')
         }
         return
       }
 
       if (!mountedRef.current) return
+      setInitStatus('Token OK, creating Device...')
 
       if (deviceRef.current) {
         deviceRef.current.destroy()
@@ -282,16 +289,23 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
       })
 
       try {
+        setInitStatus('Registering with Twilio...')
         await device.register()
         deviceRef.current = device
-        // ready is set via the 'registered' event above
-      } catch (err) {
+        setInitStatus('Registered')
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
         console.error('[Softphone] Device registration failed:', err)
         device.destroy()
         if (attempt < MAX_INIT_RETRIES && mountedRef.current) {
           const delay = RETRY_BASE_MS * Math.pow(2, attempt)
+          setInitStatus(
+            `Registration failed: ${msg}. Retrying in ${delay / 1000}s...`,
+          )
           console.warn(`[Softphone] Retrying registration in ${delay}ms`)
           setTimeout(() => init(attempt + 1), delay)
+        } else {
+          setInitStatus(`Registration failed: ${msg}`)
         }
       }
     }
@@ -517,6 +531,7 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
         incomingFrom,
         audioOutputs,
         activeOutput,
+        initStatus,
       }}
     >
       {children}
