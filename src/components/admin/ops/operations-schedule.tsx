@@ -864,6 +864,18 @@ export function OperationsSchedule() {
     [availabilityTemplates],
   )
 
+  const weeklyTotal = useMemo(() => {
+    if (view !== 'week') return 0
+    const weekAppointments = displayedDays.flatMap((day) => {
+      const dateKey = formatDateKey(day)
+      return appointmentsByDate.get(dateKey) || []
+    })
+    return weekAppointments.reduce(
+      (sum, appt) => sum + appointmentDisplayRevenue(appt),
+      0,
+    )
+  }, [view, displayedDays, appointmentsByDate])
+
   const saveBusinessHours = async (event: React.FormEvent) => {
     event.preventDefault()
     setBusinessHoursSaving(true)
@@ -2335,6 +2347,19 @@ export function OperationsSchedule() {
               </button>
             )
           })}
+        </div>
+      ) : null}
+
+      {view === 'week' && weeklyTotal > 0 ? (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-green-600/20 bg-green-50 px-4 py-3">
+          <span className="text-sm font-medium text-green-900">Week Total</span>
+          <span className="text-lg font-bold text-green-700">
+            $
+            {weeklyTotal.toLocaleString('en-US', {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}
+          </span>
         </div>
       ) : null}
 
