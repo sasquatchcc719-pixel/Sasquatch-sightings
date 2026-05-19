@@ -1209,7 +1209,7 @@ export default function RecurringVisitDetail({
         />
       </Card>
 
-      {/* ── Back link + Cancel ────────────────────────────── */}
+      {/* ── Back link + Delete ────────────────────────────── */}
       <div className="flex flex-wrap gap-3">
         <Button
           variant="outline"
@@ -1234,10 +1234,7 @@ export default function RecurringVisitDetail({
             variant="destructive"
             className="gap-2"
             onClick={async () => {
-              if (
-                !confirm('Cancel and delete this visit? This cannot be undone.')
-              )
-                return
+              if (!confirm('Delete this visit? This cannot be undone.')) return
               try {
                 const res = await fetch(
                   `/api/admin/ops/appointments/${appointment.id}`,
@@ -1255,7 +1252,7 @@ export default function RecurringVisitDetail({
             }}
           >
             <Trash2 className="h-4 w-4" />
-            Cancel Visit
+            Delete Visit
           </Button>
         )}
       </div>
