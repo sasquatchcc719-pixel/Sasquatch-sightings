@@ -69,6 +69,7 @@ type OpsAppointment = {
   end_time: string
   status: string
   lead_source: string | null
+  internal_notes: string | null
   gps_lat: number | null
   gps_lng: number | null
   ops_customers: OpsCustomer | OpsCustomer[] | null
@@ -1532,6 +1533,16 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                 <p className="text-muted-foreground">
                   Source: {appointment.lead_source}
                 </p>
+              ) : null}
+              {appointment?.internal_notes ? (
+                <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-50 p-3 dark:bg-amber-950/20">
+                  <p className="mb-1 text-xs font-semibold tracking-wide text-amber-900 uppercase dark:text-amber-200">
+                    Job Notes
+                  </p>
+                  <p className="text-sm whitespace-pre-wrap text-amber-900 dark:text-amber-100">
+                    {appointment.internal_notes}
+                  </p>
+                </div>
               ) : null}
             </div>
           </>
