@@ -541,7 +541,7 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
     function: {
       name: 'get_calendar_slots',
       description:
-        'Get available start times for a calendar date (YYYY-MM-DD) in America/Denver scheduling.',
+        'Get available start times for a calendar date (YYYY-MM-DD) in America/Denver scheduling. Response includes day_of_week — always use that when telling the customer what day it is.',
       parameters: {
         type: 'object',
         properties: {
@@ -1075,9 +1075,16 @@ export async function executeHarrySmsTool(
           const addressLine = addr
             ? `${addr.street_1 || ''}, ${addr.city || ''}, ${addr.state || ''} ${addr.zip_code || ''}`.trim()
             : ''
+          const apptDayName = new Date(
+            r.appointment_date + 'T12:00:00-06:00',
+          ).toLocaleDateString('en-US', {
+            weekday: 'long',
+            timeZone: 'America/Denver',
+          })
           return {
             appointment_id: r.id,
             date: r.appointment_date,
+            day_of_week: apptDayName,
             start_time: String(r.start_time || '').slice(0, 5),
             status: r.status,
             address: addressLine,
@@ -1184,8 +1191,14 @@ export async function executeHarrySmsTool(
           maxResults: 12,
         })
 
+        const dayName = new Date(date + 'T12:00:00-06:00').toLocaleDateString(
+          'en-US',
+          { weekday: 'long', timeZone: 'America/Denver' },
+        )
+
         return JSON.stringify({
           date,
+          day_of_week: dayName,
           slots: slots.map((s) => ({
             start_time: s.start_time.slice(0, 5),
             end_time: s.end_time.slice(0, 5),
@@ -1389,10 +1402,18 @@ export async function executeHarrySmsTool(
           notes: `Rescheduled via Harry SMS (${prevDate} ${String(prevStart).slice(0, 5)} → ${newDate} ${wantStart})`,
         })
 
+        const reschDayName = new Date(
+          newDate + 'T12:00:00-06:00',
+        ).toLocaleDateString('en-US', {
+          weekday: 'long',
+          timeZone: 'America/Denver',
+        })
+
         return JSON.stringify({
           success: true,
           appointment_id: appointmentId,
           new_appointment_date: newDate,
+          new_day_of_week: reschDayName,
           new_start_time: wantStart,
         })
       }
@@ -1882,11 +1903,19 @@ export async function executeHarrySmsTool(
           return JSON.stringify({ error: result.error })
         }
 
+        const bookDayName = new Date(
+          result.appointment_date + 'T12:00:00-06:00',
+        ).toLocaleDateString('en-US', {
+          weekday: 'long',
+          timeZone: 'America/Denver',
+        })
+
         return JSON.stringify({
           success: true,
           confirmation_number: result.confirmation_number,
           status: result.appointment_status,
           appointment_date: result.appointment_date,
+          day_of_week: bookDayName,
           start_time: result.start_time.slice(0, 5),
           total: result.total,
           message: result.message,
@@ -2008,10 +2037,18 @@ export async function executeHarrySmsTool(
           })
         }
 
+        const estDayName = new Date(
+          result.appointment_date + 'T12:00:00-06:00',
+        ).toLocaleDateString('en-US', {
+          weekday: 'long',
+          timeZone: 'America/Denver',
+        })
+
         return JSON.stringify({
           success: true,
           confirmation_number: result.confirmation_number,
           appointment_date: result.appointment_date,
+          day_of_week: estDayName,
           start_time: result.start_time,
           visit_duration_minutes: result.visit_duration_minutes,
           message: result.message,
