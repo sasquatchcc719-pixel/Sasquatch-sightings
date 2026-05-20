@@ -15,7 +15,7 @@ import {
 import { createAiStyleEstimate } from '@/lib/ops/create-ai-style-estimate'
 import { createSlotToken, verifySlotToken } from '@/lib/ops/slot-token'
 import { resyncInvoiceToQuickBooks } from '@/lib/quickbooks-api'
-import { sendAdminSMS } from '@/lib/twilio'
+import { sendAdminSMS, sendCustomerSMS } from '@/lib/twilio'
 import { sendToCharles } from '@/lib/harry-command-bot'
 
 /** Today's date in Mountain Time (YYYY-MM-DD). Avoids UTC rollover at 6 PM MDT. */
@@ -431,6 +431,7 @@ async function customerOwnsAppointment(
         status: string
         internal_notes: string | null
       }
+      customerName: string | null
       customerPhone: string | null
     }
   | { ok: false; error: string }
@@ -447,7 +448,7 @@ async function customerOwnsAppointment(
       end_time,
       status,
       internal_notes,
-      ops_customers!ops_appointments_customer_id_fkey ( phone )
+      ops_customers!ops_appointments_customer_id_fkey ( full_name, phone )
     `,
     )
     .eq('id', appointmentId)
@@ -457,7 +458,11 @@ async function customerOwnsAppointment(
     return { ok: false, error: 'Appointment not found.' }
   }
 
-  const cust = row.ops_customers as { phone?: string | null } | null
+  const cust = row.ops_customers as {
+    full_name?: string | null
+    phone?: string | null
+  } | null
+  const customerName = cust?.full_name ?? null
   const customerPhone = cust?.phone ?? null
   if (!phoneMatchesInbound(inboundPhoneE164, customerPhone)) {
     return {
@@ -479,6 +484,7 @@ async function customerOwnsAppointment(
       status: row.status,
       internal_notes: row.internal_notes,
     },
+    customerName,
     customerPhone,
   }
 }
@@ -1401,6 +1407,41 @@ export async function executeHarrySmsTool(
           to_status: owned.appointment.status,
           notes: `Rescheduled via Harry SMS (${prevDate} ${String(prevStart).slice(0, 5)} → ${newDate} ${wantStart})`,
         })
+
+        const prevDayName = new Date(
+          prevDate + 'T12:00:00-06:00',
+        ).toLocaleDateString('en-US', {
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+          timeZone: 'America/Denver',
+        })
+        const newDayLabel = new Date(
+          newDate + 'T12:00:00-06:00',
+        ).toLocaleDateString('en-US', {
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+          timeZone: 'America/Denver',
+        })
+        const custName = owned.customerName || 'Customer'
+        const rescheduleMsg =
+          `📅 Reschedule via Harry SMS\n` +
+          `👤 ${custName}\n` +
+          `📞 ${ctx.customerPhoneE164}\n` +
+          `❌ Was: ${prevDayName} at ${String(prevStart).slice(0, 5)}\n` +
+          `✅ Now: ${newDayLabel} at ${wantStart}`
+
+        await Promise.allSettled([
+          sendToCharles(rescheduleMsg),
+          sendAdminSMS(rescheduleMsg, 'reschedule_notification'),
+          sendCustomerSMS(
+            ctx.customerPhoneE164,
+            `Hi ${custName}! This confirms your Sasquatch Carpet Cleaning appointment has been rescheduled to ${newDayLabel} at ${wantStart}. See you then!`,
+            undefined,
+            'reschedule_confirmation',
+          ),
+        ])
 
         const reschDayName = new Date(
           newDate + 'T12:00:00-06:00',
