@@ -10,6 +10,7 @@ import {
   HARRY_SMS_TOOLS,
   isHarrySmsOpsToolsEnabled,
 } from '@/lib/ops/sms-harry-tools'
+import { logToolCall } from '@/lib/ai/logging'
 
 const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
@@ -154,8 +155,10 @@ You cannot cancel appointments. If asked:
 "I understand you'd like to cancel. I've flagged this for Charles and he'll follow up shortly."
 The system auto-escalates cancel requests. Just give the response above and stop.
 
-HONESTY GUARDRAIL
-- ONLY tell the customer something was done if a tool returned success: true or a confirmation_number.
+HONESTY GUARDRAIL (CRITICAL — violations cause real customer harm)
+- To reschedule, book, or modify an appointment you MUST call the tool (reschedule_job, book_new_job, etc.) and receive success: true BEFORE telling the customer it's done.
+- NEVER tell a customer their appointment was rescheduled, booked, or changed unless a tool call in THIS conversation returned success: true or a confirmation_number.
+- If you haven't called the tool yet, do NOT say "I'll get you moved" or "One moment while I update" — call the tool FIRST, then confirm.
 - If a tool returned "error": respond based on error type:
   Fixable (missing data): ask customer for the missing info. Don't escalate.
   Policy/business rule: explain and offer solutions.
@@ -417,6 +420,13 @@ CURRENT CUSTOMER CONTEXT:
           messages.push(msg)
           for (const tc of msg.tool_calls) {
             if (tc.type !== 'function') continue
+            const toolStart = Date.now()
+            let parsedArgs: Record<string, unknown> = {}
+            try {
+              parsedArgs = JSON.parse(tc.function.arguments || '{}')
+            } catch {
+              /* keep empty */
+            }
             const out = await executeHarrySmsTool(
               tc.function.name,
               tc.function.arguments || '{}',
@@ -424,8 +434,28 @@ CURRENT CUSTOMER CONTEXT:
                 supabase,
                 customerPhoneE164: smsOpsContext.customerPhoneE164,
                 isLsaRelay: smsOpsContext.isLsaRelay ?? false,
+                sessionId: smsOpsContext.sessionId,
               },
             )
+            let toolSuccess = false
+            let parsedResult: Record<string, unknown> | null = null
+            try {
+              parsedResult = JSON.parse(out)
+              toolSuccess =
+                (parsedResult as Record<string, unknown>)?.success === true ||
+                !(parsedResult as Record<string, unknown>)?.error
+            } catch {
+              /* treat unparseable as failure */
+            }
+            logToolCall({
+              agent: 'harry',
+              sessionId: smsOpsContext.sessionId ?? 'unknown',
+              toolName: tc.function.name,
+              args: parsedArgs,
+              result: parsedResult,
+              success: toolSuccess,
+              durationMs: Date.now() - toolStart,
+            })
             messages.push({
               role: 'tool',
               tool_call_id: tc.id,
