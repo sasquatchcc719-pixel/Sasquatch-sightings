@@ -601,7 +601,7 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
           slot_token: {
             type: 'string',
             description:
-              'Required. Use the slot_token returned by get_calendar_slots for this exact date and time.',
+              'Required. Copy the COMPLETE slot_token string exactly as returned by get_calendar_slots (a long string with periods in it like "eyJ2Ij...abc.XyZ123"). Do not truncate or modify it.',
           },
         },
         required: [
@@ -702,7 +702,7 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
           slot_token: {
             type: 'string',
             description:
-              'Required. Use the slot_token returned by get_calendar_slots for this exact date and time.',
+              'Required. Copy the COMPLETE slot_token string exactly as returned by get_calendar_slots (a long string with periods in it like "eyJ2Ij...abc.XyZ123"). Do not truncate or modify it.',
           },
           line_items: {
             type: 'array',

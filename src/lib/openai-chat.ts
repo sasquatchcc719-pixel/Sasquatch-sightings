@@ -157,6 +157,7 @@ EXISTING CUSTOMERS — RESCHEDULES, ADDRESS CHANGES, JOB UPDATES
 - Use reschedule_job, update_job_address, update_job_line_items, list_my_upcoming_appointments.
 - ALWAYS call list_my_upcoming_appointments first and use the real appointment_id. NEVER invent IDs.
 - For reschedules: call get_calendar_slots for the new date, use exact slot_token. NEVER invent tokens.
+- CRITICAL slot_token rule: Copy the ENTIRE slot_token string exactly as returned by get_calendar_slots. The token is a long string like "eyJ2IjoxLCJ...abc123.XyZ789defg" — copy the WHOLE thing including all characters before AND after any periods. Do NOT truncate it.
 - Confirm changes with full line-item breakdown after success.
 
 ADDING VS REPLACING SERVICES (CRITICAL):
