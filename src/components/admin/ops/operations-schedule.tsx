@@ -418,8 +418,8 @@ function getRecurringTone(
 
 function getEventTone(event: CalendarEvent): string {
   return event.is_all_day
-    ? 'border-amber-500/40 bg-amber-500/12'
-    : 'border-slate-500/40 bg-slate-500/10'
+    ? 'border-amber-600 bg-amber-100 text-amber-900'
+    : 'border-slate-400 bg-slate-200 text-slate-800'
 }
 
 // Estimates are measuring visits — tentative work that hasn't been priced yet.
@@ -3437,7 +3437,7 @@ export function OperationsSchedule() {
                                       {event.title}
                                     </div>
                                     {event.description ? (
-                                      <div className="text-muted-foreground mt-1 line-clamp-2">
+                                      <div className="mt-1 line-clamp-2 opacity-75">
                                         {event.description}
                                       </div>
                                     ) : null}
@@ -3596,8 +3596,15 @@ export function OperationsSchedule() {
                                       />
                                     )
                                   })}
-                                  {isFirst &&
-                                    dayEvents.map((event) => {
+                                  {dayEvents
+                                    .filter(
+                                      (event) =>
+                                        event.assigned_staff_user_id ===
+                                          staff.id ||
+                                        (!event.assigned_staff_user_id &&
+                                          isFirst),
+                                    )
+                                    .map((event) => {
                                       const endOverride =
                                         eventResizeSession?.eventId ===
                                           event.id &&
@@ -3655,7 +3662,7 @@ export function OperationsSchedule() {
                                               {event.title}
                                             </div>
                                             {event.description ? (
-                                              <div className="text-muted-foreground mt-1 line-clamp-2">
+                                              <div className="mt-1 line-clamp-2 opacity-75">
                                                 {event.description}
                                               </div>
                                             ) : null}
@@ -3851,7 +3858,7 @@ export function OperationsSchedule() {
                                       {event.title}
                                     </div>
                                     {event.description ? (
-                                      <div className="text-muted-foreground mt-1 line-clamp-2">
+                                      <div className="mt-1 line-clamp-2 opacity-75">
                                         {event.description}
                                       </div>
                                     ) : null}
