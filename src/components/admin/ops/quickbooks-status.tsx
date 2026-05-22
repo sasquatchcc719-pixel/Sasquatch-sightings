@@ -1,6 +1,38 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { ChevronDown, ChevronRight, ExternalLink } from 'lucide-react'
+
+type QBInvoiceDetail = {
+  id: string
+  invoice_number: number | string | null
+  label: string
+  customer_name: string
+  appointment_date: string | null
+  start_time: string | null
+  appointment_status: string | null
+  invoice_status: string | null
+  payment_method: string | null
+  total: number | null
+  location: string | null
+  created_at: string | null
+  url: string
+}
+
+type QBPendingJob = {
+  id: string
+  entity_type: string
+  entity_id: string
+  label: string
+  customer_name: string | null
+  appointment_date: string | null
+  start_time: string | null
+  total: number | null
+  location: string | null
+  created_at: string | null
+  updated_at: string | null
+  url: string | null
+}
 
 type QBStatus = {
   connected: boolean
@@ -11,7 +43,80 @@ type QBStatus = {
   pending: number
   failed: number
   stuck: number
+  pending_jobs: QBPendingJob[]
+  stuck_invoices: QBInvoiceDetail[]
   last_synced_at: string | null
+}
+
+function formatCurrency(amount: number | null) {
+  if (amount == null || Number.isNaN(amount)) return null
+  return amount.toLocaleString(undefined, {
+    style: 'currency',
+    currency: 'USD',
+  })
+}
+
+function formatDateTime(date: string | null, time?: string | null) {
+  if (!date) return null
+  const value = time ? `${date}T${time}` : date
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return date
+
+  return parsed.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: time ? 'numeric' : undefined,
+    minute: time ? '2-digit' : undefined,
+  })
+}
+
+function DetailRow({
+  title,
+  subtitle,
+  amount,
+  url,
+  tone = 'neutral',
+}: {
+  title: string
+  subtitle: string
+  amount: string | null
+  url: string | null
+  tone?: 'neutral' | 'danger'
+}) {
+  const content = (
+    <div
+      className={`flex items-start justify-between gap-3 rounded-md border px-3 py-2 ${
+        tone === 'danger'
+          ? 'border-red-500/20 bg-red-500/10'
+          : 'border-white/10 bg-black/20'
+      }`}
+    >
+      <div className="min-w-0">
+        <div
+          className={`truncate text-xs font-semibold ${
+            tone === 'danger' ? 'text-red-100' : 'text-white/80'
+          }`}
+        >
+          {title}
+        </div>
+        <div className="mt-0.5 line-clamp-2 text-[11px] leading-4 text-white/45">
+          {subtitle}
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-2 text-right">
+        {amount && <span className="text-xs text-white/60">{amount}</span>}
+        {url && <ExternalLink className="h-3.5 w-3.5 text-white/35" />}
+      </div>
+    </div>
+  )
+
+  if (!url) return content
+
+  return (
+    <a href={url} className="block transition-opacity hover:opacity-85">
+      {content}
+    </a>
+  )
 }
 
 export function QuickBooksStatus() {
@@ -20,6 +125,7 @@ export function QuickBooksStatus() {
   const [toggling, setToggling] = useState(false)
   const [disconnecting, setDisconnecting] = useState(false)
   const [retrying, setRetrying] = useState(false)
+  const [showPending, setShowPending] = useState(false)
 
   useEffect(() => {
     fetch('/api/admin/quickbooks/status')
@@ -137,7 +243,23 @@ export function QuickBooksStatus() {
 
           <div className="space-y-1 text-xs text-white/50">
             <div className="flex justify-between">
-              <span>Pending sync jobs</span>
+              <button
+                type="button"
+                onClick={() => setShowPending((value) => !value)}
+                disabled={status.pending === 0}
+                className="inline-flex items-center gap-1 text-left transition-colors hover:text-white/70 disabled:cursor-default disabled:hover:text-white/50"
+              >
+                {status.pending > 0 ? (
+                  showPending ? (
+                    <ChevronDown className="h-3 w-3" />
+                  ) : (
+                    <ChevronRight className="h-3 w-3" />
+                  )
+                ) : (
+                  <span className="h-3 w-3" />
+                )}
+                <span>Pending sync jobs</span>
+              </button>
               <span
                 className={
                   status.pending > 0 ? 'text-yellow-400' : 'text-white/40'
@@ -171,6 +293,83 @@ export function QuickBooksStatus() {
               </div>
             )}
           </div>
+
+          {status.stuck_invoices.length > 0 && (
+            <div className="space-y-2 rounded-md border border-red-500/20 bg-red-500/5 p-3">
+              <div className="text-xs font-semibold text-red-300">
+                Stuck invoices needing attention
+              </div>
+              <div className="space-y-2">
+                {status.stuck_invoices.map((invoice) => {
+                  const when = formatDateTime(
+                    invoice.appointment_date,
+                    invoice.start_time,
+                  )
+                  const pieces = [
+                    invoice.customer_name,
+                    when,
+                    invoice.location,
+                    invoice.invoice_status
+                      ? `Status: ${invoice.invoice_status}`
+                      : null,
+                    invoice.payment_method
+                      ? `Paid by ${invoice.payment_method}`
+                      : null,
+                  ].filter(Boolean)
+
+                  return (
+                    <DetailRow
+                      key={invoice.id}
+                      title={invoice.label}
+                      subtitle={pieces.join(' - ')}
+                      amount={formatCurrency(invoice.total)}
+                      url={invoice.url}
+                      tone="danger"
+                    />
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {showPending && status.pending > 0 && (
+            <div className="space-y-2 rounded-md border border-yellow-500/20 bg-yellow-500/5 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-xs font-semibold text-yellow-300">
+                  Pending sync jobs
+                </span>
+                {status.pending > status.pending_jobs.length && (
+                  <span className="text-[11px] text-white/35">
+                    Showing first {status.pending_jobs.length}
+                  </span>
+                )}
+              </div>
+              <div className="space-y-2">
+                {status.pending_jobs.map((job) => {
+                  const when = formatDateTime(
+                    job.appointment_date,
+                    job.start_time,
+                  )
+                  const pieces = [
+                    job.entity_type === 'invoice' ? 'Invoice' : 'Customer',
+                    job.customer_name,
+                    when,
+                    job.location,
+                  ].filter(Boolean)
+
+                  return (
+                    <DetailRow
+                      key={job.id}
+                      title={job.label}
+                      subtitle={pieces.join(' - ')}
+                      amount={formatCurrency(job.total)}
+                      url={job.url}
+                    />
+                  )
+                })}
+              </div>
+            </div>
+          )}
 
           <div className="flex gap-2 pt-1">
             {status.failed > 0 && (
