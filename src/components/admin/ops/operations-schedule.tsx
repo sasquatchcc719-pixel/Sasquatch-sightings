@@ -702,6 +702,7 @@ export function OperationsSchedule() {
   const [dragPreview, setDragPreview] = useState<{
     dateKey: string
     snappedMinutes: number
+    staffId?: string | null
   } | null>(null)
   const [pendingNotify, setPendingNotify] = useState<{
     appointmentId: string
@@ -1219,6 +1220,7 @@ export function OperationsSchedule() {
   const handleDragOver = (
     e: React.DragEvent<HTMLDivElement>,
     dateKey: string,
+    staffId?: string | null,
   ) => {
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
@@ -1226,7 +1228,7 @@ export function OperationsSchedule() {
     const rawY = e.clientY - rect.top - draggingYOffsetRef.current
     const rawMinutes = GRID_START_MINUTES + rawY / PX_PER_MINUTE
     const snappedMinutes = snapToMinutes(rawMinutes)
-    setDragPreview({ dateKey, snappedMinutes })
+    setDragPreview({ dateKey, snappedMinutes, staffId })
   }
 
   const commitAppointmentMove = async (
@@ -1401,7 +1403,11 @@ export function OperationsSchedule() {
     const rawY = e.clientY - hit.rect.top - session.grabYOffsetWithinBlock
     const rawMinutes = GRID_START_MINUTES + rawY / PX_PER_MINUTE
     const snapped = snapToMinutes(rawMinutes)
-    setDragPreview({ dateKey: hit.dateKey, snappedMinutes: snapped })
+    setDragPreview({
+      dateKey: hit.dateKey,
+      snappedMinutes: snapped,
+      staffId: hit.staffId,
+    })
   }
 
   const handleMovePointerUp = async (e: React.PointerEvent<HTMLDivElement>) => {
@@ -1615,6 +1621,240 @@ export function OperationsSchedule() {
     } finally {
       setEditEventSaving(false)
     }
+  }
+
+  const renderApptBlocks = (appts: Appointment[]) => {
+    const overlapCols = computeOverlapColumns(appts)
+    return appts.map((appointment) => {
+      const customer = unwrapRelation(appointment.ops_customers)
+      const invoice = unwrapRelation(appointment.ops_invoices)
+      const endOverride =
+        resizeSession?.appointmentId === appointment.id &&
+        resizeLiveEndMinutes != null
+          ? resizeLiveEndMinutes
+          : null
+      const placement = getAppointmentPlacement(appointment, endOverride)
+      const isEstimate = appointment.kind === 'estimate'
+      const href = isEstimate
+        ? `/admin/operations/estimates/${appointment.id}`
+        : invoice?.id
+          ? `/admin/operations/invoices/${invoice.id}`
+          : appointment.recurring_template_id
+            ? `/admin/operations/recurring/visit/${appointment.id}`
+            : `/admin/operations/appointments/${appointment.id}`
+      const isDragging = draggingAppointment?.id === appointment.id
+      const oc = overlapCols.get(appointment.id) ?? { col: 0, totalCols: 1 }
+      const blockTone = isEstimate
+        ? getEstimateTone(appointment)
+        : appointment.status === 'completed' ||
+            appointment.status === 'cancelled'
+          ? getStatusTone(appointment.status)
+          : appointment.recurring_template_id
+            ? (getRecurringTone(
+                recurringFreqMap[appointment.recurring_template_id],
+              ) ?? getStatusTone(appointment.status))
+            : getStatusTone(appointment.status)
+      const isPointerDraggingThis =
+        pointerDragging && draggingAppointment?.id === appointment.id
+      return (
+        <div
+          key={appointment.id}
+          data-appointment-block
+          className={`absolute flex flex-col overflow-hidden rounded-2xl border text-xs text-slate-900 shadow-sm transition ${blockTone} ${isDragging ? 'opacity-40' : 'hover:shadow-md'} ${isPointerDraggingThis ? 'pointer-events-none' : ''}`}
+          style={{
+            top: placement.top + 6,
+            height: placement.height - 8,
+            ...overlapStyle(oc.col, oc.totalCols),
+          }}
+        >
+          <div
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData('appointmentId', appointment.id)
+              e.dataTransfer.effectAllowed = 'move'
+              const block = (e.currentTarget as HTMLElement).closest(
+                '[data-appointment-block]',
+              ) as HTMLElement | null
+              if (block) {
+                draggingYOffsetRef.current =
+                  e.clientY - block.getBoundingClientRect().top
+              } else {
+                draggingYOffsetRef.current = e.nativeEvent.offsetY
+              }
+              didDragRef.current = false
+              setDraggingAppointment(appointment)
+              setTimeout(() => {
+                didDragRef.current = true
+              }, 50)
+            }}
+            onDragEnd={() => {
+              setDraggingAppointment(null)
+              setDragPreview(null)
+            }}
+            onPointerDown={(e) => handleMovePointerDown(e, appointment)}
+            onPointerMove={handleMovePointerMove}
+            onPointerUp={(e) => void handleMovePointerUp(e)}
+            onPointerCancel={(e) => void handleMovePointerUp(e)}
+            style={{ touchAction: 'none' }}
+            className="flex shrink-0 cursor-grab touch-none items-center gap-1 border-b border-black/5 bg-black/[0.03] px-2 py-1.5 active:cursor-grabbing sm:py-1"
+            title="Drag to move start time"
+          >
+            <GripVertical className="h-4 w-4 shrink-0 text-slate-500 sm:h-3.5 sm:w-3.5" />
+            <span className="text-[11px] font-medium tracking-tight text-slate-600 sm:text-[10px]">
+              Move
+            </span>
+            {view === 'week' &&
+              staffList.length > 1 &&
+              (() => {
+                const staffIdx = staffList.findIndex(
+                  (s) => s.id === appointment.assigned_staff_user_id,
+                )
+                if (staffIdx < 0) return null
+                const initials = staffList[staffIdx].display_name
+                  .split(' ')
+                  .map((n) => n[0])
+                  .join('')
+                  .slice(0, 2)
+                return (
+                  <span
+                    className="ml-auto rounded-full px-1.5 py-0.5 text-[9px] font-bold text-white"
+                    style={{
+                      backgroundColor:
+                        STAFF_LANE_COLORS[staffIdx % STAFF_LANE_COLORS.length],
+                    }}
+                  >
+                    {initials}
+                  </span>
+                )
+              })()}
+          </div>
+          <Link
+            href={href}
+            className="flex min-h-0 flex-1 flex-col overflow-hidden p-2 pt-1"
+            onClick={(e) => {
+              if (didDragRef.current) e.preventDefault()
+            }}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="line-clamp-1 flex items-center gap-1.5 leading-tight font-semibold">
+                {isEstimate && (
+                  <Ruler className="h-3 w-3 shrink-0 text-amber-600" />
+                )}
+                {!isEstimate && appointment.recurring_template_id && (
+                  <Repeat className="h-3 w-3 shrink-0 text-blue-500" />
+                )}
+                {customer?.business_name || customer?.full_name || 'Customer'}
+                {appointment.is_repeat_customer && (
+                  <span className="rounded-full bg-violet-50 px-1.5 py-0.5 text-[9px] font-semibold text-violet-700">
+                    Repeat
+                  </span>
+                )}
+              </div>
+              <Badge
+                variant="outline"
+                className="border-slate-300 bg-white/70 text-slate-700 capitalize"
+              >
+                {isEstimate
+                  ? 'Estimate'
+                  : appointment.status.replaceAll('_', ' ')}
+              </Badge>
+            </div>
+            {isEstimate && (
+              <span className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                <Ruler className="h-2.5 w-2.5" />
+                Measure visit
+              </span>
+            )}
+            {!isEstimate && appointment.recurring_template_id && (
+              <a
+                href={`/admin/operations/recurring/${appointment.recurring_template_id}`}
+                onClick={(e) => e.stopPropagation()}
+                className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 hover:bg-blue-100"
+              >
+                <Repeat className="h-2.5 w-2.5" />
+                Recurring
+              </a>
+            )}
+            <div className="mt-1 text-slate-700">
+              {placement.startLabel} - {placement.endLabel}
+            </div>
+            {(() => {
+              const address = unwrapRelation(appointment.ops_service_addresses)
+              const city = address?.city
+              const { leadLabel, bookingLabel } =
+                getScheduleCardSources(appointment)
+              if (city || leadLabel || bookingLabel) {
+                return (
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0 text-[10px] leading-tight text-slate-500">
+                    {city && <span>{city}</span>}
+                    {city && (leadLabel || bookingLabel) && <span>·</span>}
+                    {leadLabel && <span>Lead: {leadLabel}</span>}
+                    {leadLabel && bookingLabel && <span>·</span>}
+                    {bookingLabel && <span>Booked: {bookingLabel}</span>}
+                  </div>
+                )
+              }
+              return null
+            })()}
+            <div className="mt-2 line-clamp-2 text-slate-800">
+              {appointment.ops_appointment_line_items
+                .map((item) => item.name_snapshot)
+                .join(', ')}
+            </div>
+            {recurringLineItemDescriptionBoxes(appointment, false)}
+            <div
+              className={`mt-auto pt-2 text-right font-semibold tabular-nums ${
+                appointment.status === 'completed'
+                  ? 'text-slate-600'
+                  : 'text-slate-800'
+              }`}
+            >
+              ${calendarDisplayAmount(appointment)}
+            </div>
+          </Link>
+          {!isEstimate && appointment.status !== 'completed' && (
+            <div className="pointer-events-none -mt-7 mb-1.5 flex justify-start px-2">
+              <button
+                type="button"
+                className={`pointer-events-auto rounded-md border px-2 py-0.5 text-[9px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                  appointment.status === 'cancelled'
+                    ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                    : 'border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100'
+                }`}
+                disabled={statusActionAppointmentId === appointment.id}
+                onClick={(e) => {
+                  openStatusActionPopover(e, appointment)
+                }}
+              >
+                {statusActionAppointmentId === appointment.id ? (
+                  <span className="inline-flex items-center gap-1">
+                    <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                    Saving
+                  </span>
+                ) : appointment.status === 'cancelled' ? (
+                  'Restore'
+                ) : (
+                  'Cancel'
+                )}
+              </button>
+            </div>
+          )}
+          <button
+            type="button"
+            aria-label="Drag to change end time"
+            title="Drag to extend or shorten"
+            style={{ touchAction: 'none' }}
+            className="relative flex h-5 shrink-0 cursor-ns-resize touch-none items-center justify-center rounded-b-[13px] border-t border-black/10 bg-black/[0.08] hover:bg-black/[0.14] sm:h-2.5"
+            onPointerDown={(e) => beginResize(e, appointment)}
+          >
+            <span
+              aria-hidden
+              className="block h-0.5 w-8 rounded-full bg-black/30 sm:hidden"
+            />
+          </button>
+        </div>
+      )
+    })
   }
 
   return (
@@ -2658,11 +2898,11 @@ export function OperationsSchedule() {
                   gridTemplateColumns:
                     view === 'day'
                       ? `72px repeat(${Math.max(staffList.length, 1)}, minmax(400px, 1fr))`
-                      : '72px repeat(7, minmax(180px, 1fr))',
+                      : '72px repeat(7, minmax(270px, 1fr))',
                   minWidth:
                     view === 'day'
                       ? `${72 + Math.max(staffList.length, 1) * 400}px`
-                      : '900px',
+                      : `${72 + 7 * 270}px`,
                 }}
               >
                 <div className="border-r border-b border-slate-200 bg-slate-100 p-3" />
@@ -2738,26 +2978,28 @@ export function OperationsSchedule() {
                             })}
                           </div>
                           {staffList.length > 1 && (
-                            <div className="mt-1.5 flex gap-1">
+                            <div className="mt-2 flex gap-1">
                               {staffList.map((staff, idx) => {
                                 const open = isStaffOpenForDate(staff.id, dk)
+                                const color =
+                                  STAFF_LANE_COLORS[
+                                    idx % STAFF_LANE_COLORS.length
+                                  ]
                                 return (
                                   <button
                                     key={staff.id}
                                     type="button"
-                                    title={`${staff.display_name}: ${open ? 'Open' : 'Closed'}`}
+                                    title={`${staff.display_name}: click to toggle ${open ? 'closed' : 'open'}`}
                                     onClick={() =>
                                       toggleStaffAvailability(staff.id, dk)
                                     }
-                                    className="h-3 w-3 rounded-full border border-white/80 shadow-sm transition hover:scale-125"
+                                    className="flex-1 truncate rounded-full px-2 py-0.5 text-[10px] font-semibold text-white shadow-sm transition hover:opacity-80 active:scale-95"
                                     style={{
-                                      backgroundColor: open
-                                        ? STAFF_LANE_COLORS[
-                                            idx % STAFF_LANE_COLORS.length
-                                          ]
-                                        : '#d1d5db',
+                                      backgroundColor: open ? color : '#9ca3af',
                                     }}
-                                  />
+                                  >
+                                    {staff.display_name.split(' ')[0]}
+                                  </button>
                                 )
                               })}
                             </div>
@@ -2782,453 +3024,422 @@ export function OperationsSchedule() {
                   ))}
                 </div>
 
-                {(view === 'day' && staffList.length > 0
-                  ? staffList.map((staff) => ({
-                      date: anchorDate,
-                      laneKey: staff.id,
-                      staffId: staff.id,
-                    }))
-                  : displayedDays.map((date) => ({
-                      date,
-                      laneKey: formatDateKey(date),
-                      staffId: null as string | null,
-                    }))
-                ).map(({ date, laneKey, staffId }) => {
-                  const dateKey = formatDateKey(date)
-                  const allDayAppointments =
-                    appointmentsByDate.get(dateKey) || []
-                  const dayAppointments = staffId
-                    ? allDayAppointments.filter(
+                {view === 'day' && staffList.length > 0
+                  ? staffList.map((staff) => {
+                      const dateKey = formatDateKey(anchorDate)
+                      const allDayAppointments =
+                        appointmentsByDate.get(dateKey) || []
+                      const dayAppointments = allDayAppointments.filter(
                         (a) =>
-                          a.assigned_staff_user_id === staffId ||
+                          a.assigned_staff_user_id === staff.id ||
                           (!a.assigned_staff_user_id &&
-                            staffId === staffList[0]?.id),
+                            staff.id === staffList[0]?.id),
                       )
-                    : staffFilter
-                      ? allDayAppointments.filter(
-                          (a) =>
-                            a.assigned_staff_user_id === staffFilter ||
-                            (!a.assigned_staff_user_id &&
-                              staffFilter === staffList[0]?.id),
-                        )
-                      : allDayAppointments
-                  const dayEvents = data.events.filter((event) =>
-                    intersectsDay(event, dateKey),
-                  )
-                  const dayRanges = businessDayRanges.get(date.getDay()) || []
-                  const offHourSegments = getOffHourSegmentsForGrid(dayRanges)
-                  const laneIsOpen = staffId
-                    ? isStaffOpenForDate(staffId, dateKey)
-                    : true
-
-                  return (
-                    <div
-                      key={laneKey}
-                      data-date-column={dateKey}
-                      data-staff-lane={staffId ?? ''}
-                      className={`relative border-r border-slate-200 ${laneIsOpen ? 'bg-white' : 'bg-slate-100/60'}`}
-                      onDragOver={(e) => handleDragOver(e, dateKey)}
-                      onDragLeave={() => setDragPreview(null)}
-                      onDrop={(e) => void handleDrop(e, dateKey, staffId)}
-                    >
-                      {!laneIsOpen && (
-                        <div className="pointer-events-none absolute inset-0 z-10 bg-slate-200/40" />
-                      )}
-                      {/* Drop ghost preview */}
-                      {dragPreview?.dateKey === dateKey && draggingAppointment
-                        ? (() => {
-                            const ghostPlacement =
-                              getAppointmentPlacement(draggingAppointment)
-                            const ghostTop =
-                              ((dragPreview.snappedMinutes -
-                                GRID_START_MINUTES) /
-                                60) *
+                      const dayEvents = data.events.filter((event) =>
+                        intersectsDay(event, dateKey),
+                      )
+                      const dayRanges =
+                        businessDayRanges.get(anchorDate.getDay()) || []
+                      const offHourSegments =
+                        getOffHourSegmentsForGrid(dayRanges)
+                      const laneIsOpen = isStaffOpenForDate(staff.id, dateKey)
+                      return (
+                        <div
+                          key={staff.id}
+                          data-date-column={dateKey}
+                          data-staff-lane={staff.id}
+                          className={`relative border-r border-slate-200 ${laneIsOpen ? 'bg-white' : 'bg-slate-100/60'}`}
+                          onDragOver={(e) =>
+                            handleDragOver(e, dateKey, staff.id)
+                          }
+                          onDragLeave={() => setDragPreview(null)}
+                          onDrop={(e) => void handleDrop(e, dateKey, staff.id)}
+                        >
+                          {!laneIsOpen && (
+                            <div className="pointer-events-none absolute inset-0 z-10 bg-slate-200/40" />
+                          )}
+                          {dragPreview?.dateKey === dateKey &&
+                          dragPreview?.staffId === staff.id &&
+                          draggingAppointment
+                            ? (() => {
+                                const ghostPlacement =
+                                  getAppointmentPlacement(draggingAppointment)
+                                const ghostTop =
+                                  ((dragPreview.snappedMinutes -
+                                    GRID_START_MINUTES) /
+                                    60) *
+                                  HOUR_HEIGHT
+                                return (
+                                  <div
+                                    className="pointer-events-none absolute right-2 left-2 rounded-2xl border-2 border-dashed border-emerald-400 bg-emerald-100/60"
+                                    style={{
+                                      top: ghostTop + 6,
+                                      height: ghostPlacement.height - 8,
+                                    }}
+                                  />
+                                )
+                              })()
+                            : null}
+                          {HOURS.map((hour) => (
+                            <button
+                              key={`${dateKey}-${hour}`}
+                              type="button"
+                              className="focus-visible:ring-ring relative z-0 block w-full border-b border-slate-200 text-left transition hover:bg-emerald-50/60 focus-visible:ring-2 focus-visible:outline-none"
+                              style={{ height: HOUR_HEIGHT }}
+                              onClick={(e) => {
+                                setCellMenu({
+                                  dateKey,
+                                  hour,
+                                  x: e.clientX,
+                                  y: e.clientY,
+                                })
+                              }}
+                              title={`Create at ${String(hour).padStart(2, '0')}:00`}
+                              aria-label={`Create on ${dateKey} at ${String(hour).padStart(2, '0')}:00`}
+                            />
+                          ))}
+                          {offHourSegments.map((segment, index) => {
+                            const gridStartMinutes = HOURS[0] * 60
+                            const top =
+                              ((segment.start - gridStartMinutes) / 60) *
                               HOUR_HEIGHT
+                            const height =
+                              ((segment.end - segment.start) / 60) * HOUR_HEIGHT
                             return (
                               <div
-                                className="pointer-events-none absolute right-2 left-2 rounded-2xl border-2 border-dashed border-emerald-400 bg-emerald-100/60"
-                                style={{
-                                  top: ghostTop + 6,
-                                  height: ghostPlacement.height - 8,
-                                }}
+                                key={`${dateKey}-off-${index}`}
+                                className="pointer-events-none absolute right-0 left-0 bg-slate-100/80"
+                                style={{ top, height }}
                               />
                             )
-                          })()
-                        : null}
-
-                      {HOURS.map((hour) => (
-                        <button
-                          key={`${dateKey}-${hour}`}
-                          type="button"
-                          className="focus-visible:ring-ring relative z-0 block w-full border-b border-slate-200 text-left transition hover:bg-emerald-50/60 focus-visible:ring-2 focus-visible:outline-none"
-                          style={{ height: HOUR_HEIGHT }}
-                          onClick={(e) => {
-                            setCellMenu({
-                              dateKey,
-                              hour,
-                              x: e.clientX,
-                              y: e.clientY,
-                            })
-                          }}
-                          title={`Create at ${String(hour).padStart(2, '0')}:00`}
-                          aria-label={`Create on ${dateKey} at ${String(hour).padStart(2, '0')}:00`}
-                        />
-                      ))}
-
-                      {offHourSegments.map((segment, index) => {
-                        const gridStartMinutes = HOURS[0] * 60
-                        const top =
-                          ((segment.start - gridStartMinutes) / 60) *
-                          HOUR_HEIGHT
-                        const height =
-                          ((segment.end - segment.start) / 60) * HOUR_HEIGHT
-                        return (
-                          <div
-                            key={`${dateKey}-off-${index}`}
-                            className="pointer-events-none absolute right-0 left-0 bg-slate-100/80"
-                            style={{ top, height }}
-                          />
-                        )
-                      })}
-
-                      {dayEvents.map((event) => {
-                        const placement = getBlockPlacement(event)
-                        return (
-                          <button
-                            key={event.id}
-                            type="button"
-                            className={`absolute right-2 left-2 cursor-pointer rounded-2xl border p-2 text-left text-xs shadow-sm transition-opacity hover:opacity-80 ${getEventTone(event)}`}
-                            style={{
-                              top: placement.top + 6,
-                              height: placement.height - 8,
-                            }}
-                            onClick={() => openEditEvent(event)}
-                          >
-                            <div className="font-semibold">{event.title}</div>
-                            {event.description ? (
-                              <div className="text-muted-foreground mt-1 line-clamp-2">
-                                {event.description}
-                              </div>
-                            ) : null}
-                          </button>
-                        )
-                      })}
-
-                      {/* Current-time indicator — only on today's column,
-                          only while the clock is within the visible hour range */}
-                      {dateKey === todayKey &&
-                      nowMinutes != null &&
-                      nowMinutes >= GRID_START_MINUTES &&
-                      nowMinutes <= (HOURS[HOURS.length - 1] + 1) * 60 ? (
-                        <div
-                          className="pointer-events-none absolute right-0 left-0 z-20 flex items-center"
-                          style={{
-                            top:
-                              ((nowMinutes - GRID_START_MINUTES) / 60) *
-                              HOUR_HEIGHT,
-                          }}
-                        >
-                          {/* Dot on the left edge */}
-                          <span className="ml-0.5 h-2.5 w-2.5 shrink-0 rounded-full bg-red-500 shadow-sm" />
-                          {/* Line spanning the rest of the column */}
-                          <span className="h-px flex-1 bg-red-500/80" />
-                        </div>
-                      ) : null}
-
-                      {(() => {
-                        const overlapCols =
-                          computeOverlapColumns(dayAppointments)
-                        return dayAppointments.map((appointment) => {
-                          const customer = unwrapRelation(
-                            appointment.ops_customers,
-                          )
-                          const invoice = unwrapRelation(
-                            appointment.ops_invoices,
-                          )
-                          const endOverride =
-                            resizeSession?.appointmentId === appointment.id &&
-                            resizeLiveEndMinutes != null
-                              ? resizeLiveEndMinutes
-                              : null
-                          const placement = getAppointmentPlacement(
-                            appointment,
-                            endOverride,
-                          )
-                          const isEstimate = appointment.kind === 'estimate'
-                          const href = isEstimate
-                            ? `/admin/operations/estimates/${appointment.id}`
-                            : invoice?.id
-                              ? `/admin/operations/invoices/${invoice.id}`
-                              : appointment.recurring_template_id
-                                ? `/admin/operations/recurring/visit/${appointment.id}`
-                                : `/admin/operations/appointments/${appointment.id}`
-                          const isDragging =
-                            draggingAppointment?.id === appointment.id
-                          const oc = overlapCols.get(appointment.id) ?? {
-                            col: 0,
-                            totalCols: 1,
-                          }
-                          const blockTone = isEstimate
-                            ? getEstimateTone(appointment)
-                            : appointment.status === 'completed' ||
-                                appointment.status === 'cancelled'
-                              ? getStatusTone(appointment.status)
-                              : appointment.recurring_template_id
-                                ? (getRecurringTone(
-                                    recurringFreqMap[
-                                      appointment.recurring_template_id
-                                    ],
-                                  ) ?? getStatusTone(appointment.status))
-                                : getStatusTone(appointment.status)
-                          const isPointerDraggingThis =
-                            pointerDragging &&
-                            draggingAppointment?.id === appointment.id
-                          return (
+                          })}
+                          {dayEvents.map((event) => {
+                            const placement = getBlockPlacement(event)
+                            return (
+                              <button
+                                key={event.id}
+                                type="button"
+                                className={`absolute right-2 left-2 cursor-pointer rounded-2xl border p-2 text-left text-xs shadow-sm transition-opacity hover:opacity-80 ${getEventTone(event)}`}
+                                style={{
+                                  top: placement.top + 6,
+                                  height: placement.height - 8,
+                                }}
+                                onClick={() => openEditEvent(event)}
+                              >
+                                <div className="font-semibold">
+                                  {event.title}
+                                </div>
+                                {event.description ? (
+                                  <div className="text-muted-foreground mt-1 line-clamp-2">
+                                    {event.description}
+                                  </div>
+                                ) : null}
+                              </button>
+                            )
+                          })}
+                          {dateKey === todayKey &&
+                          nowMinutes != null &&
+                          nowMinutes >= GRID_START_MINUTES &&
+                          nowMinutes <= (HOURS[HOURS.length - 1] + 1) * 60 ? (
                             <div
-                              key={appointment.id}
-                              data-appointment-block
-                              className={`absolute flex flex-col overflow-hidden rounded-2xl border text-xs text-slate-900 shadow-sm transition ${blockTone} ${isDragging ? 'opacity-40' : 'hover:shadow-md'} ${isPointerDraggingThis ? 'pointer-events-none' : ''}`}
+                              className="pointer-events-none absolute right-0 left-0 z-20 flex items-center"
                               style={{
-                                top: placement.top + 6,
-                                height: placement.height - 8,
-                                ...overlapStyle(oc.col, oc.totalCols),
+                                top:
+                                  ((nowMinutes - GRID_START_MINUTES) / 60) *
+                                  HOUR_HEIGHT,
                               }}
                             >
-                              <div
-                                draggable
-                                onDragStart={(e) => {
-                                  e.dataTransfer.setData(
-                                    'appointmentId',
-                                    appointment.id,
-                                  )
-                                  e.dataTransfer.effectAllowed = 'move'
-                                  const block = (
-                                    e.currentTarget as HTMLElement
-                                  ).closest(
-                                    '[data-appointment-block]',
-                                  ) as HTMLElement | null
-                                  if (block) {
-                                    draggingYOffsetRef.current =
-                                      e.clientY -
-                                      block.getBoundingClientRect().top
-                                  } else {
-                                    draggingYOffsetRef.current =
-                                      e.nativeEvent.offsetY
-                                  }
-                                  didDragRef.current = false
-                                  setDraggingAppointment(appointment)
-                                  setTimeout(() => {
-                                    didDragRef.current = true
-                                  }, 50)
-                                }}
-                                onDragEnd={() => {
-                                  setDraggingAppointment(null)
-                                  setDragPreview(null)
-                                }}
-                                onPointerDown={(e) =>
-                                  handleMovePointerDown(e, appointment)
-                                }
-                                onPointerMove={handleMovePointerMove}
-                                onPointerUp={(e) => void handleMovePointerUp(e)}
-                                onPointerCancel={(e) =>
-                                  void handleMovePointerUp(e)
-                                }
-                                style={{ touchAction: 'none' }}
-                                className="flex shrink-0 cursor-grab touch-none items-center gap-1 border-b border-black/5 bg-black/[0.03] px-2 py-1.5 active:cursor-grabbing sm:py-1"
-                                title="Drag to move start time"
-                              >
-                                <GripVertical className="h-4 w-4 shrink-0 text-slate-500 sm:h-3.5 sm:w-3.5" />
-                                <span className="text-[11px] font-medium tracking-tight text-slate-600 sm:text-[10px]">
-                                  Move
-                                </span>
-                                {view === 'week' &&
-                                  staffList.length > 1 &&
-                                  (() => {
-                                    const staffIdx = staffList.findIndex(
-                                      (s) =>
-                                        s.id ===
-                                        appointment.assigned_staff_user_id,
-                                    )
-                                    if (staffIdx < 0) return null
-                                    const initials = staffList[
-                                      staffIdx
-                                    ].display_name
-                                      .split(' ')
-                                      .map((n) => n[0])
-                                      .join('')
-                                      .slice(0, 2)
-                                    return (
-                                      <span
-                                        className="ml-auto rounded-full px-1.5 py-0.5 text-[9px] font-bold text-white"
-                                        style={{
-                                          backgroundColor:
-                                            STAFF_LANE_COLORS[
-                                              staffIdx %
-                                                STAFF_LANE_COLORS.length
-                                            ],
-                                        }}
-                                      >
-                                        {initials}
-                                      </span>
-                                    )
-                                  })()}
-                              </div>
-                              <Link
-                                href={href}
-                                className="flex min-h-0 flex-1 flex-col overflow-hidden p-2 pt-1"
-                                onClick={(e) => {
-                                  if (didDragRef.current) e.preventDefault()
-                                }}
-                              >
-                                <div className="flex items-start justify-between gap-2">
-                                  <div className="line-clamp-1 flex items-center gap-1.5 leading-tight font-semibold">
-                                    {isEstimate && (
-                                      <Ruler className="h-3 w-3 shrink-0 text-amber-600" />
-                                    )}
-                                    {!isEstimate &&
-                                      appointment.recurring_template_id && (
-                                        <Repeat className="h-3 w-3 shrink-0 text-blue-500" />
-                                      )}
-                                    {customer?.business_name ||
-                                      customer?.full_name ||
-                                      'Customer'}
-                                    {appointment.is_repeat_customer && (
-                                      <span className="rounded-full bg-violet-50 px-1.5 py-0.5 text-[9px] font-semibold text-violet-700">
-                                        Repeat
-                                      </span>
-                                    )}
-                                  </div>
-                                  <Badge
-                                    variant="outline"
-                                    className="border-slate-300 bg-white/70 text-slate-700 capitalize"
-                                  >
-                                    {isEstimate
-                                      ? 'Estimate'
-                                      : appointment.status.replaceAll('_', ' ')}
-                                  </Badge>
-                                </div>
-                                {isEstimate && (
-                                  <span className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
-                                    <Ruler className="h-2.5 w-2.5" />
-                                    Measure visit
-                                  </span>
-                                )}
-                                {!isEstimate &&
-                                  appointment.recurring_template_id && (
-                                    <a
-                                      href={`/admin/operations/recurring/${appointment.recurring_template_id}`}
-                                      onClick={(e) => e.stopPropagation()}
-                                      className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 hover:bg-blue-100"
-                                    >
-                                      <Repeat className="h-2.5 w-2.5" />
-                                      Recurring
-                                    </a>
-                                  )}
-                                <div className="mt-1 text-slate-700">
-                                  {placement.startLabel} - {placement.endLabel}
-                                </div>
-                                {(() => {
-                                  const address = unwrapRelation(
-                                    appointment.ops_service_addresses,
-                                  )
-                                  const city = address?.city
-                                  const { leadLabel, bookingLabel } =
-                                    getScheduleCardSources(appointment)
-                                  if (city || leadLabel || bookingLabel) {
-                                    return (
-                                      <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0 text-[10px] leading-tight text-slate-500">
-                                        {city && <span>{city}</span>}
-                                        {city &&
-                                          (leadLabel || bookingLabel) && (
-                                            <span>·</span>
-                                          )}
-                                        {leadLabel && (
-                                          <span>Lead: {leadLabel}</span>
-                                        )}
-                                        {leadLabel && bookingLabel && (
-                                          <span>·</span>
-                                        )}
-                                        {bookingLabel && (
-                                          <span>Booked: {bookingLabel}</span>
-                                        )}
-                                      </div>
-                                    )
-                                  }
-                                  return null
-                                })()}
-                                <div className="mt-2 line-clamp-2 text-slate-800">
-                                  {appointment.ops_appointment_line_items
-                                    .map((item) => item.name_snapshot)
-                                    .join(', ')}
-                                </div>
-                                {recurringLineItemDescriptionBoxes(
-                                  appointment,
-                                  false,
-                                )}
+                              <span className="ml-0.5 h-2.5 w-2.5 shrink-0 rounded-full bg-red-500 shadow-sm" />
+                              <span className="h-px flex-1 bg-red-500/80" />
+                            </div>
+                          ) : null}
+                          {renderApptBlocks(dayAppointments)}
+                        </div>
+                      )
+                    })
+                  : view === 'week' && staffList.length > 1
+                    ? displayedDays.map((date) => {
+                        const dateKey = formatDateKey(date)
+                        const allDayAppointments =
+                          appointmentsByDate.get(dateKey) || []
+                        const dayEvents = data.events.filter((event) =>
+                          intersectsDay(event, dateKey),
+                        )
+                        const dayRanges =
+                          businessDayRanges.get(date.getDay()) || []
+                        const offHourSegments =
+                          getOffHourSegmentsForGrid(dayRanges)
+                        return (
+                          <div
+                            key={dateKey}
+                            className="relative flex border-r border-slate-200"
+                          >
+                            {staffList.map((staff, staffIdx) => {
+                              const laneAppts = allDayAppointments.filter(
+                                (a) =>
+                                  a.assigned_staff_user_id === staff.id ||
+                                  (!a.assigned_staff_user_id && staffIdx === 0),
+                              )
+                              const laneIsOpen = isStaffOpenForDate(
+                                staff.id,
+                                dateKey,
+                              )
+                              const isFirst = staffIdx === 0
+                              return (
                                 <div
-                                  className={`mt-auto pt-2 text-right font-semibold tabular-nums ${
-                                    appointment.status === 'completed'
-                                      ? 'text-slate-600'
-                                      : 'text-slate-800'
-                                  }`}
+                                  key={staff.id}
+                                  data-date-column={dateKey}
+                                  data-staff-lane={staff.id}
+                                  className={`relative min-w-0 flex-1 ${staffIdx < staffList.length - 1 ? 'border-r border-slate-200' : ''} ${laneIsOpen ? 'bg-white' : 'bg-slate-100/60'}`}
+                                  onDragOver={(e) =>
+                                    handleDragOver(e, dateKey, staff.id)
+                                  }
+                                  onDragLeave={() => setDragPreview(null)}
+                                  onDrop={(e) =>
+                                    void handleDrop(e, dateKey, staff.id)
+                                  }
                                 >
-                                  ${calendarDisplayAmount(appointment)}
-                                </div>
-                              </Link>
-                              {!isEstimate &&
-                                appointment.status !== 'completed' && (
-                                  <div className="pointer-events-none -mt-7 mb-1.5 flex justify-start px-2">
+                                  {!laneIsOpen && (
+                                    <div className="pointer-events-none absolute inset-0 z-10 bg-slate-200/40" />
+                                  )}
+                                  {dragPreview?.dateKey === dateKey &&
+                                  dragPreview?.staffId === staff.id &&
+                                  draggingAppointment
+                                    ? (() => {
+                                        const ghostPlacement =
+                                          getAppointmentPlacement(
+                                            draggingAppointment,
+                                          )
+                                        const ghostTop =
+                                          ((dragPreview.snappedMinutes -
+                                            GRID_START_MINUTES) /
+                                            60) *
+                                          HOUR_HEIGHT
+                                        return (
+                                          <div
+                                            className="pointer-events-none absolute right-2 left-2 rounded-2xl border-2 border-dashed border-emerald-400 bg-emerald-100/60"
+                                            style={{
+                                              top: ghostTop + 6,
+                                              height: ghostPlacement.height - 8,
+                                            }}
+                                          />
+                                        )
+                                      })()
+                                    : null}
+                                  {HOURS.map((hour) => (
                                     <button
+                                      key={`${dateKey}-${staff.id}-${hour}`}
                                       type="button"
-                                      className={`pointer-events-auto rounded-md border px-2 py-0.5 text-[9px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                                        appointment.status === 'cancelled'
-                                          ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                                          : 'border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100'
-                                      }`}
-                                      disabled={
-                                        statusActionAppointmentId ===
-                                        appointment.id
-                                      }
+                                      className="focus-visible:ring-ring relative z-0 block w-full border-b border-slate-200 text-left transition hover:bg-emerald-50/60 focus-visible:ring-2 focus-visible:outline-none"
+                                      style={{ height: HOUR_HEIGHT }}
                                       onClick={(e) => {
-                                        openStatusActionPopover(e, appointment)
+                                        setCellMenu({
+                                          dateKey,
+                                          hour,
+                                          x: e.clientX,
+                                          y: e.clientY,
+                                        })
+                                      }}
+                                      title={`Create at ${String(hour).padStart(2, '0')}:00`}
+                                      aria-label={`Create on ${dateKey} at ${String(hour).padStart(2, '0')}:00`}
+                                    />
+                                  ))}
+                                  {offHourSegments.map((segment, index) => {
+                                    const gridStartMinutes = HOURS[0] * 60
+                                    const top =
+                                      ((segment.start - gridStartMinutes) /
+                                        60) *
+                                      HOUR_HEIGHT
+                                    const height =
+                                      ((segment.end - segment.start) / 60) *
+                                      HOUR_HEIGHT
+                                    return (
+                                      <div
+                                        key={`${dateKey}-${staff.id}-off-${index}`}
+                                        className="pointer-events-none absolute right-0 left-0 bg-slate-100/80"
+                                        style={{ top, height }}
+                                      />
+                                    )
+                                  })}
+                                  {isFirst &&
+                                    dayEvents.map((event) => {
+                                      const placement = getBlockPlacement(event)
+                                      return (
+                                        <button
+                                          key={event.id}
+                                          type="button"
+                                          className={`absolute right-2 left-2 cursor-pointer rounded-2xl border p-2 text-left text-xs shadow-sm transition-opacity hover:opacity-80 ${getEventTone(event)}`}
+                                          style={{
+                                            top: placement.top + 6,
+                                            height: placement.height - 8,
+                                          }}
+                                          onClick={() => openEditEvent(event)}
+                                        >
+                                          <div className="font-semibold">
+                                            {event.title}
+                                          </div>
+                                          {event.description ? (
+                                            <div className="text-muted-foreground mt-1 line-clamp-2">
+                                              {event.description}
+                                            </div>
+                                          ) : null}
+                                        </button>
+                                      )
+                                    })}
+                                  {isFirst &&
+                                  dateKey === todayKey &&
+                                  nowMinutes != null &&
+                                  nowMinutes >= GRID_START_MINUTES &&
+                                  nowMinutes <=
+                                    (HOURS[HOURS.length - 1] + 1) * 60 ? (
+                                    <div
+                                      className="pointer-events-none absolute right-0 left-0 z-20 flex items-center"
+                                      style={{
+                                        top:
+                                          ((nowMinutes - GRID_START_MINUTES) /
+                                            60) *
+                                          HOUR_HEIGHT,
                                       }}
                                     >
-                                      {statusActionAppointmentId ===
-                                      appointment.id ? (
-                                        <span className="inline-flex items-center gap-1">
-                                          <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                                          Saving
-                                        </span>
-                                      ) : appointment.status === 'cancelled' ? (
-                                        'Restore'
-                                      ) : (
-                                        'Cancel'
-                                      )}
-                                    </button>
-                                  </div>
-                                )}
+                                      <span className="ml-0.5 h-2.5 w-2.5 shrink-0 rounded-full bg-red-500 shadow-sm" />
+                                      <span className="h-px flex-1 bg-red-500/80" />
+                                    </div>
+                                  ) : null}
+                                  {renderApptBlocks(laneAppts)}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )
+                      })
+                    : displayedDays.map((date) => {
+                        const dateKey = formatDateKey(date)
+                        const allDayAppointments =
+                          appointmentsByDate.get(dateKey) || []
+                        const dayAppointments = staffFilter
+                          ? allDayAppointments.filter(
+                              (a) =>
+                                a.assigned_staff_user_id === staffFilter ||
+                                (!a.assigned_staff_user_id &&
+                                  staffFilter === staffList[0]?.id),
+                            )
+                          : allDayAppointments
+                        const dayEvents = data.events.filter((event) =>
+                          intersectsDay(event, dateKey),
+                        )
+                        const dayRanges =
+                          businessDayRanges.get(date.getDay()) || []
+                        const offHourSegments =
+                          getOffHourSegmentsForGrid(dayRanges)
+                        return (
+                          <div
+                            key={dateKey}
+                            data-date-column={dateKey}
+                            data-staff-lane=""
+                            className="relative border-r border-slate-200 bg-white"
+                            onDragOver={(e) => handleDragOver(e, dateKey)}
+                            onDragLeave={() => setDragPreview(null)}
+                            onDrop={(e) => void handleDrop(e, dateKey, null)}
+                          >
+                            {dragPreview?.dateKey === dateKey &&
+                            draggingAppointment
+                              ? (() => {
+                                  const ghostPlacement =
+                                    getAppointmentPlacement(draggingAppointment)
+                                  const ghostTop =
+                                    ((dragPreview.snappedMinutes -
+                                      GRID_START_MINUTES) /
+                                      60) *
+                                    HOUR_HEIGHT
+                                  return (
+                                    <div
+                                      className="pointer-events-none absolute right-2 left-2 rounded-2xl border-2 border-dashed border-emerald-400 bg-emerald-100/60"
+                                      style={{
+                                        top: ghostTop + 6,
+                                        height: ghostPlacement.height - 8,
+                                      }}
+                                    />
+                                  )
+                                })()
+                              : null}
+                            {HOURS.map((hour) => (
                               <button
+                                key={`${dateKey}-${hour}`}
                                 type="button"
-                                aria-label="Drag to change end time"
-                                title="Drag to extend or shorten"
-                                style={{ touchAction: 'none' }}
-                                className="relative flex h-5 shrink-0 cursor-ns-resize touch-none items-center justify-center rounded-b-[13px] border-t border-black/10 bg-black/[0.08] hover:bg-black/[0.14] sm:h-2.5"
-                                onPointerDown={(e) =>
-                                  beginResize(e, appointment)
-                                }
-                              >
-                                <span
-                                  aria-hidden
-                                  className="block h-0.5 w-8 rounded-full bg-black/30 sm:hidden"
+                                className="focus-visible:ring-ring relative z-0 block w-full border-b border-slate-200 text-left transition hover:bg-emerald-50/60 focus-visible:ring-2 focus-visible:outline-none"
+                                style={{ height: HOUR_HEIGHT }}
+                                onClick={(e) => {
+                                  setCellMenu({
+                                    dateKey,
+                                    hour,
+                                    x: e.clientX,
+                                    y: e.clientY,
+                                  })
+                                }}
+                                title={`Create at ${String(hour).padStart(2, '0')}:00`}
+                                aria-label={`Create on ${dateKey} at ${String(hour).padStart(2, '0')}:00`}
+                              />
+                            ))}
+                            {offHourSegments.map((segment, index) => {
+                              const gridStartMinutes = HOURS[0] * 60
+                              const top =
+                                ((segment.start - gridStartMinutes) / 60) *
+                                HOUR_HEIGHT
+                              const height =
+                                ((segment.end - segment.start) / 60) *
+                                HOUR_HEIGHT
+                              return (
+                                <div
+                                  key={`${dateKey}-off-${index}`}
+                                  className="pointer-events-none absolute right-0 left-0 bg-slate-100/80"
+                                  style={{ top, height }}
                                 />
-                              </button>
-                            </div>
-                          )
-                        })
-                      })()}
-                    </div>
-                  )
-                })}
+                              )
+                            })}
+                            {dayEvents.map((event) => {
+                              const placement = getBlockPlacement(event)
+                              return (
+                                <button
+                                  key={event.id}
+                                  type="button"
+                                  className={`absolute right-2 left-2 cursor-pointer rounded-2xl border p-2 text-left text-xs shadow-sm transition-opacity hover:opacity-80 ${getEventTone(event)}`}
+                                  style={{
+                                    top: placement.top + 6,
+                                    height: placement.height - 8,
+                                  }}
+                                  onClick={() => openEditEvent(event)}
+                                >
+                                  <div className="font-semibold">
+                                    {event.title}
+                                  </div>
+                                  {event.description ? (
+                                    <div className="text-muted-foreground mt-1 line-clamp-2">
+                                      {event.description}
+                                    </div>
+                                  ) : null}
+                                </button>
+                              )
+                            })}
+                            {dateKey === todayKey &&
+                            nowMinutes != null &&
+                            nowMinutes >= GRID_START_MINUTES &&
+                            nowMinutes <= (HOURS[HOURS.length - 1] + 1) * 60 ? (
+                              <div
+                                className="pointer-events-none absolute right-0 left-0 z-20 flex items-center"
+                                style={{
+                                  top:
+                                    ((nowMinutes - GRID_START_MINUTES) / 60) *
+                                    HOUR_HEIGHT,
+                                }}
+                              >
+                                <span className="ml-0.5 h-2.5 w-2.5 shrink-0 rounded-full bg-red-500 shadow-sm" />
+                                <span className="h-px flex-1 bg-red-500/80" />
+                              </div>
+                            ) : null}
+                            {renderApptBlocks(dayAppointments)}
+                          </div>
+                        )
+                      })}
               </div>
             </div>
           </div>
