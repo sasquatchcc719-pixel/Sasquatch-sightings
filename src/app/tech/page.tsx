@@ -34,9 +34,10 @@ export default async function TechHomePage() {
   const access = await requireAnyRole(['admin', 'owner', 'tech'])
   const supabase = createAdminClient()
   const today = new Date().toISOString().split('T')[0]
+  const staffUserId = access.staff?.id ?? access.id
   const appointments = await getAssignedTechAppointments(
     supabase,
-    access.id,
+    staffUserId,
     today,
   )
 

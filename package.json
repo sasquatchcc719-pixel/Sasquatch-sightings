@@ -71,6 +71,7 @@
     "pg": "^8.20.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "react-easy-crop": "^5.5.7",
     "react-hook-form": "^7.71.0",
     "react-signature-canvas": "1.1.0-alpha.2",
     "recharts": "^2.15.0",

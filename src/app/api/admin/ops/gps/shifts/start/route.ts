@@ -7,6 +7,7 @@ export async function POST(request: NextRequest) {
     const access = await requireAnyRole(['admin', 'owner', 'tech'])
     const supabase = createAdminClient()
     const body = await request.json().catch(() => ({}))
+    const staffUserId = access.staff?.id ?? null
 
     // Check for an existing active shift
     const { data: existing } = await supabase
@@ -20,7 +21,7 @@ export async function POST(request: NextRequest) {
 
     if (existing) {
       // Resume the existing shift instead of rejecting
-      const fences = await fetchTodayFences(supabase)
+      const fences = await fetchTodayFences(supabase, staffUserId)
       return NextResponse.json({ shift: existing, fences })
     }
 
@@ -37,7 +38,7 @@ export async function POST(request: NextRequest) {
 
     if (error) throw error
 
-    const fences = await fetchTodayFences(supabase)
+    const fences = await fetchTodayFences(supabase, staffUserId)
 
     return NextResponse.json({ shift, fences }, { status: 201 })
   } catch (error) {
@@ -51,10 +52,11 @@ export async function POST(request: NextRequest) {
 
 async function fetchTodayFences(
   supabase: ReturnType<typeof createAdminClient>,
+  staffUserId: string | null,
 ) {
   const today = new Date().toISOString().split('T')[0]
 
-  const { data } = await supabase
+  let query = supabase
     .from('ops_appointments')
     .select(
       `
@@ -75,6 +77,12 @@ async function fetchTodayFences(
     .eq('appointment_date', today)
     .not('status', 'in', '("cancelled")')
     .order('start_time')
+
+  if (staffUserId) {
+    query = query.eq('assigned_staff_user_id', staffUserId)
+  }
+
+  const { data } = await query
 
   if (!data) return []
 

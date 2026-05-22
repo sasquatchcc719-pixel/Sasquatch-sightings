@@ -11,9 +11,10 @@ export async function GET(
     const access = await requireAnyRole(['admin', 'owner', 'tech'])
     const supabase = createAdminClient()
     const { id } = await params
+    const staffUserId = access.staff?.id ?? access.id
     const appointment = await getAssignedTechAppointment(
       supabase,
-      access.id,
+      staffUserId,
       id,
     )
 
@@ -42,7 +43,8 @@ export async function PATCH(
     const supabase = createAdminClient()
     const { id } = await params
     const body = await request.json()
-    const current = await getAssignedTechAppointment(supabase, access.id, id)
+    const staffUserId = access.staff?.id ?? access.id
+    const current = await getAssignedTechAppointment(supabase, staffUserId, id)
 
     if (!current) {
       return NextResponse.json({ error: 'Job not found' }, { status: 404 })
@@ -79,7 +81,7 @@ export async function PATCH(
       .from('ops_appointments')
       .update(updates)
       .eq('id', id)
-      .eq('assigned_staff_user_id', access.id)
+      .eq('assigned_staff_user_id', staffUserId)
 
     if (updateError) throw updateError
 
@@ -95,7 +97,7 @@ export async function PATCH(
 
     const appointment = await getAssignedTechAppointment(
       supabase,
-      access.id,
+      staffUserId,
       id,
     )
     return NextResponse.json({ appointment })

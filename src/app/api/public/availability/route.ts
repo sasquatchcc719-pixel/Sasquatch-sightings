@@ -1,11 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
-import {
-  applyAppointmentBuffer,
-  calendarEventsToAppointmentWindows,
-  getAvailableSlots,
-  timeToMinutes,
-} from '@/lib/ops/availability'
+import { applyAppointmentBuffer, timeToMinutes } from '@/lib/ops/availability'
+import { getUnionedSlots } from '@/lib/ops/staff-availability'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -84,68 +80,28 @@ export async function GET(request: NextRequest) {
       const cappedDates = enumerateDates(startDate, endDate).slice(0, 45)
       const rangeStart = cappedDates[0]
       const rangeEnd = cappedDates[cappedDates.length - 1]
-      const [
-        templatesResult,
-        overridesResult,
-        appointmentsResult,
-        eventsResult,
-      ] = await Promise.all([
-        supabase
-          .from('availability_templates')
-          .select('*')
-          .eq('is_active', true),
-        supabase
-          .from('availability_overrides')
-          .select('*')
-          .gte('override_date', rangeStart)
-          .lte('override_date', rangeEnd),
-        supabase
-          .from('ops_appointments')
-          .select('appointment_date, start_time, end_time, status')
-          .gte('appointment_date', rangeStart)
-          .lte('appointment_date', rangeEnd),
-        supabase
-          .from('ops_calendar_events')
-          .select(
-            'event_kind, start_date, end_date, start_time, end_time, is_all_day',
-          )
-          .lte('start_date', rangeEnd)
-          .gte('end_date', rangeStart),
-      ])
 
-      const days = cappedDates.map((targetDate) => {
-        if (targetDate < todayMT) {
-          return { date: targetDate, slots: 0, is_available: false }
-        }
-
-        const targetMinStartMinutes =
-          targetDate === todayMT ? minStartMinutes : undefined
-        const slots = getAvailableSlots({
-          date: targetDate,
-          requiredMinutes,
-          templates: templatesResult.data || [],
-          overrides: (overridesResult.data || []).filter(
-            (override) => override.override_date === targetDate,
-          ),
-          appointments: [
-            ...(appointmentsResult.data || []).filter(
-              (appointment) => appointment.appointment_date === targetDate,
-            ),
-            ...calendarEventsToAppointmentWindows(
-              targetDate,
-              eventsResult.data || [],
-            ),
-          ],
-          minStartMinutes: targetMinStartMinutes,
-          maxResults: 12,
-        })
-
-        return {
-          date: targetDate,
-          slots: slots.length,
-          is_available: slots.length > 0,
-        }
-      })
+      const days = await Promise.all(
+        cappedDates.map(async (targetDate) => {
+          if (targetDate < todayMT) {
+            return { date: targetDate, slots: 0, is_available: false }
+          }
+          const targetMinStartMinutes =
+            targetDate === todayMT ? minStartMinutes : undefined
+          const slots = await getUnionedSlots({
+            supabase,
+            date: targetDate,
+            requiredMinutes,
+            minStartMinutes: targetMinStartMinutes,
+            maxResults: 12,
+          })
+          return {
+            date: targetDate,
+            slots: slots.length,
+            is_available: slots.length > 0,
+          }
+        }),
+      )
 
       return NextResponse.json(
         { days, start_date: rangeStart, end_date: rangeEnd },
@@ -160,43 +116,14 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const [templatesResult, overridesResult, appointmentsResult, eventsResult] =
-      await Promise.all([
-        supabase
-          .from('availability_templates')
-          .select('*')
-          .eq('is_active', true),
-        supabase
-          .from('availability_overrides')
-          .select('*')
-          .eq('override_date', date),
-        supabase
-          .from('ops_appointments')
-          .select('appointment_date, start_time, end_time, status')
-          .eq('appointment_date', date),
-        supabase
-          .from('ops_calendar_events')
-          .select(
-            'event_kind, start_date, end_date, start_time, end_time, is_all_day',
-          )
-          .lte('start_date', date)
-          .gte('end_date', date),
-      ])
-
-    const slots = getAvailableSlots({
+    const slots = await getUnionedSlots({
+      supabase,
       date,
       requiredMinutes,
-      templates: templatesResult.data || [],
-      overrides: overridesResult.data || [],
-      appointments: [
-        ...(appointmentsResult.data || []),
-        ...calendarEventsToAppointmentWindows(date, eventsResult.data || []),
-      ],
       minStartMinutes,
       maxResults: 12,
     })
 
-    // Format slots with human-readable labels
     const formatted = slots.map((slot) => ({
       start_time: slot.start_time,
       end_time: slot.end_time,

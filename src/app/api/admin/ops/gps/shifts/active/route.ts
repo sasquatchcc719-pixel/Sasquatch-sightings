@@ -6,6 +6,7 @@ export async function GET() {
   try {
     const access = await requireAnyRole(['admin', 'owner', 'tech'])
     const supabase = createAdminClient()
+    const staffUserId = access.staff?.id ?? null
 
     const { data: shift, error } = await supabase
       .from('gps_shifts')
@@ -22,9 +23,9 @@ export async function GET() {
       return NextResponse.json({ shift: null, fences: [] })
     }
 
-    // Fetch today's fences for recovery
+    // Fetch today's fences filtered to this tech's assigned appointments
     const today = new Date().toISOString().split('T')[0]
-    const { data: appts } = await supabase
+    let apptsQuery = supabase
       .from('ops_appointments')
       .select(
         `
@@ -42,6 +43,12 @@ export async function GET() {
       )
       .eq('appointment_date', today)
       .not('status', 'in', '("cancelled")')
+
+    if (staffUserId) {
+      apptsQuery = apptsQuery.eq('assigned_staff_user_id', staffUserId)
+    }
+
+    const { data: appts } = await apptsQuery
 
     const fences = (appts ?? [])
       .filter((appt) => {

@@ -27,6 +27,22 @@ import { appointmentDisplayRevenue } from '@/lib/ops/utilization-metrics'
 
 type ScheduleView = 'week' | 'day' | 'month'
 
+type StaffMember = {
+  id: string
+  user_id: string
+  display_name: string
+  role: string
+  is_active: boolean
+  default_open: boolean
+  scheduling_priority: number
+}
+
+type DailyAvailability = {
+  staff_user_id: string
+  date: string
+  is_open: boolean
+}
+
 type Appointment = {
   id: string
   appointment_date: string
@@ -38,6 +54,7 @@ type Appointment = {
   booking_channel: string | null
   source: string | null
   is_repeat_customer?: boolean
+  assigned_staff_user_id?: string | null
   ops_customers:
     | {
         full_name: string
@@ -100,6 +117,7 @@ type CalendarEvent = {
   start_time: string | null
   end_time: string | null
   is_all_day: boolean
+  assigned_staff_user_id?: string | null
 }
 
 type RecurringFrequencyInfo = {
@@ -111,6 +129,8 @@ type ScheduleResponse = {
   appointments: Appointment[]
   events: CalendarEvent[]
   recurringFrequencyMap?: Record<string, RecurringFrequencyInfo>
+  staff?: StaffMember[]
+  dailyAvailability?: DailyAvailability[]
 }
 
 type AvailabilityTemplate = {
@@ -132,6 +152,14 @@ type BusinessHoursRow = {
 const HOURS = Array.from({ length: 13 }, (_, index) => 7 + index)
 const HOUR_HEIGHT = 84
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const STAFF_LANE_COLORS = [
+  '#2563eb',
+  '#16a34a',
+  '#9333ea',
+  '#ea580c',
+  '#0891b2',
+  '#dc2626',
+]
 const DEFAULT_SLOT_INTERVAL_MINUTES = 30
 const DEFAULT_BUSINESS_HOURS_ROWS: BusinessHoursRow[] = [
   { day_of_week: 0, is_active: false, start_time: '09:00', end_time: '17:00' },
@@ -390,8 +418,8 @@ function getRecurringTone(
 
 function getEventTone(event: CalendarEvent): string {
   return event.is_all_day
-    ? 'border-amber-500/40 bg-amber-500/12'
-    : 'border-slate-500/40 bg-slate-500/10'
+    ? 'border-amber-600 bg-amber-100 text-amber-900'
+    : 'border-slate-400 bg-slate-200 text-slate-800'
 }
 
 // Estimates are measuring visits — tentative work that hasn't been priced yet.
@@ -411,15 +439,20 @@ function intersectsDay(event: CalendarEvent, dateKey: string): boolean {
   return event.start_date <= dateKey && event.end_date >= dateKey
 }
 
-function getBlockPlacement(event: CalendarEvent) {
+function getBlockPlacement(
+  event: CalendarEvent,
+  endMinutesOverride?: number | null,
+) {
   const workdayStart = HOURS[0] * 60
   const workdayEnd = (HOURS[HOURS.length - 1] + 1) * 60
   const startMinutes = event.is_all_day
     ? workdayStart
     : Math.max(parseMinutes(event.start_time), workdayStart)
-  const endMinutes = event.is_all_day
-    ? workdayEnd
-    : Math.min(parseMinutes(event.end_time), workdayEnd)
+  const rawEnd = event.is_all_day ? workdayEnd : parseMinutes(event.end_time)
+  const endMinutes = Math.min(
+    endMinutesOverride != null ? endMinutesOverride : rawEnd,
+    workdayEnd,
+  )
   const top = ((startMinutes - workdayStart) / 60) * HOUR_HEIGHT
   const height = Math.max(((endMinutes - startMinutes) / 60) * HOUR_HEIGHT, 42)
   return { top, height }
@@ -621,6 +654,11 @@ export function OperationsSchedule() {
     appointments: [],
     events: [],
   })
+  const [staffList, setStaffList] = useState<StaffMember[]>([])
+  const [dailyAvailability, setDailyAvailability] = useState<
+    DailyAvailability[]
+  >([])
+  const [staffFilter, setStaffFilter] = useState<string | null>(null)
   const [recurringFreqMap, setRecurringFreqMap] = useState<
     Record<string, RecurringFrequencyInfo>
   >({})
@@ -651,11 +689,14 @@ export function OperationsSchedule() {
   useEffect(() => {
     const action = searchParams.get('action')
     if (action === 'block') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setShowBlockForm(true)
+
       setShowBusinessHours(false)
       router.replace('/admin/operations')
     } else if (action === 'hours') {
       setShowBusinessHours(true)
+
       setShowBlockForm(false)
       router.replace('/admin/operations')
     }
@@ -667,6 +708,7 @@ export function OperationsSchedule() {
   const [dragPreview, setDragPreview] = useState<{
     dateKey: string
     snappedMinutes: number
+    staffId?: string | null
   } | null>(null)
   const [pendingNotify, setPendingNotify] = useState<{
     appointmentId: string
@@ -689,6 +731,7 @@ export function OperationsSchedule() {
     hour: number
     x: number
     y: number
+    staffId?: string | null
   } | null>(null)
   const draggingYOffsetRef = useRef<number>(0)
   const didDragRef = useRef<boolean>(false)
@@ -705,6 +748,7 @@ export function OperationsSchedule() {
   useEffect(() => {
     if (typeof window === 'undefined') return
     if (window.matchMedia('(max-width: 639px)').matches) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setView('day')
     }
   }, [])
@@ -754,7 +798,16 @@ export function OperationsSchedule() {
     return () => clearInterval(id)
   }, [])
 
-  const [blockForm, setBlockForm] = useState({
+  const [blockForm, setBlockForm] = useState<{
+    title: string
+    description: string
+    start_date: string
+    end_date: string
+    start_time: string
+    end_time: string
+    is_all_day: boolean
+    assigned_staff_user_id: string | null
+  }>({
     title: '',
     description: '',
     start_date: formatDateKey(new Date()),
@@ -762,6 +815,7 @@ export function OperationsSchedule() {
     start_time: '',
     end_time: '',
     is_all_day: false,
+    assigned_staff_user_id: null,
   })
 
   const loadSchedule = useCallback(async () => {
@@ -796,6 +850,8 @@ export function OperationsSchedule() {
         appointments: scheduleResult.appointments || [],
         events: scheduleResult.events || [],
       })
+      setStaffList(scheduleResult.staff || [])
+      setDailyAvailability(scheduleResult.dailyAvailability || [])
       setRecurringFreqMap(scheduleResult.recurringFrequencyMap || {})
       const templates = (availabilityResult.templates ||
         []) as AvailabilityTemplate[]
@@ -817,12 +873,14 @@ export function OperationsSchedule() {
   }, [anchorDate, view])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadSchedule()
   }, [loadSchedule])
 
   // Default to day view on mobile
   useEffect(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setView('day')
     }
   }, [])
@@ -846,6 +904,56 @@ export function OperationsSchedule() {
     if (view === 'week') return buildWeekDays(anchorDate)
     return []
   }, [anchorDate, view])
+
+  const isStaffOpenForDate = useCallback(
+    (staffId: string, dateKey: string): boolean => {
+      const override = dailyAvailability.find(
+        (da) => da.staff_user_id === staffId && da.date === dateKey,
+      )
+      if (override) return override.is_open
+      const staff = staffList.find((s) => s.id === staffId)
+      return staff?.default_open ?? true
+    },
+    [dailyAvailability, staffList],
+  )
+
+  const toggleStaffAvailability = useCallback(
+    async (staffId: string, dateKey: string) => {
+      const currentlyOpen = isStaffOpenForDate(staffId, dateKey)
+      const newIsOpen = !currentlyOpen
+      setDailyAvailability((prev) => {
+        const filtered = prev.filter(
+          (da) => !(da.staff_user_id === staffId && da.date === dateKey),
+        )
+        return [
+          ...filtered,
+          { staff_user_id: staffId, date: dateKey, is_open: newIsOpen },
+        ]
+      })
+      try {
+        await fetch('/api/admin/ops/staff-availability', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            staff_user_id: staffId,
+            date: dateKey,
+            is_open: newIsOpen,
+          }),
+        })
+      } catch {
+        setDailyAvailability((prev) => {
+          const filtered = prev.filter(
+            (da) => !(da.staff_user_id === staffId && da.date === dateKey),
+          )
+          return [
+            ...filtered,
+            { staff_user_id: staffId, date: dateKey, is_open: currentlyOpen },
+          ]
+        })
+      }
+    },
+    [isStaffOpenForDate],
+  )
 
   const appointmentsByDate = useMemo(() => {
     const grouped = new Map<string, Appointment[]>()
@@ -988,7 +1096,11 @@ export function OperationsSchedule() {
     router.push(`/admin/operations/estimates/new?date=${dateKey}&time=${hh}:00`)
   }
 
-  const openBlockAt = (dateKey: string, hour: number) => {
+  const openBlockAt = (
+    dateKey: string,
+    hour: number,
+    staffId?: string | null,
+  ) => {
     const hh = String(hour).padStart(2, '0')
     const nextHh = String(Math.min(hour + 1, 23)).padStart(2, '0')
     setBlockForm({
@@ -999,6 +1111,7 @@ export function OperationsSchedule() {
       start_time: `${hh}:00`,
       end_time: `${nextHh}:00`,
       is_all_day: false,
+      assigned_staff_user_id: staffId ?? null,
     })
     setShowBusinessHours(false)
     setShowBlockForm(true)
@@ -1126,9 +1239,242 @@ export function OperationsSchedule() {
     }
   }, [resizeSession, loadSchedule, PX_PER_MINUTE])
 
+  // ---- Event block: move (pointer drag) ----
+  const [draggingEvent, setDraggingEvent] = useState<CalendarEvent | null>(null)
+  const [eventDragPreview, setEventDragPreview] = useState<{
+    snappedMinutes: number
+  } | null>(null)
+  const eventMovePointerRef = useRef<{
+    pointerId: number
+    eventId: string
+    originalDurationMinutes: number
+    grabYOffsetWithinBlock: number
+    startX: number
+    startY: number
+    active: boolean
+  } | null>(null)
+  const [eventPointerDragging, setEventPointerDragging] = useState(false)
+
+  const handleEventMovePointerDown = (
+    e: React.PointerEvent<HTMLDivElement>,
+    calEvent: CalendarEvent,
+  ) => {
+    if (calEvent.is_all_day) return
+    const block = (e.currentTarget as HTMLElement).closest(
+      '[data-event-block]',
+    ) as HTMLElement | null
+    const blockRect = block?.getBoundingClientRect()
+    const grabOffset = blockRect ? e.clientY - blockRect.top : 0
+    const startM = parseMinutes(calEvent.start_time ?? '00:00')
+    const endM = parseMinutes(calEvent.end_time ?? '00:00')
+    eventMovePointerRef.current = {
+      pointerId: e.pointerId,
+      eventId: calEvent.id,
+      originalDurationMinutes: endM - startM,
+      grabYOffsetWithinBlock: grabOffset,
+      startX: e.clientX,
+      startY: e.clientY,
+      active: false,
+    }
+    didDragRef.current = false
+    try {
+      ;(e.currentTarget as Element).setPointerCapture(e.pointerId)
+    } catch {
+      // ignore
+    }
+  }
+
+  const handleEventMovePointerMove = (
+    e: React.PointerEvent<HTMLDivElement>,
+  ) => {
+    const session = eventMovePointerRef.current
+    if (!session || session.pointerId !== e.pointerId) return
+    if (!session.active) {
+      const dx = e.clientX - session.startX
+      const dy = e.clientY - session.startY
+      if (Math.hypot(dx, dy) < 6) return
+      session.active = true
+      didDragRef.current = true
+      setEventPointerDragging(true)
+      const moved = data.events.find((ev) => ev.id === session.eventId)
+      if (moved) setDraggingEvent(moved)
+    }
+    if (e.cancelable) e.preventDefault()
+    const hit = hitTestDateColumn(e.clientX, e.clientY)
+    if (!hit) {
+      setEventDragPreview(null)
+      return
+    }
+    const rawY = e.clientY - hit.rect.top - session.grabYOffsetWithinBlock
+    const rawMinutes = GRID_START_MINUTES + rawY / PX_PER_MINUTE
+    const snapped = snapToMinutes(rawMinutes)
+    setEventDragPreview({ snappedMinutes: snapped })
+  }
+
+  const handleEventMovePointerUp = async (
+    e: React.PointerEvent<HTMLDivElement>,
+  ) => {
+    const session = eventMovePointerRef.current
+    if (!session || session.pointerId !== e.pointerId) return
+    try {
+      ;(e.currentTarget as Element).releasePointerCapture(e.pointerId)
+    } catch {
+      // ignore
+    }
+    eventMovePointerRef.current = null
+    setEventPointerDragging(false)
+    if (!session.active) {
+      setDraggingEvent(null)
+      setEventDragPreview(null)
+      didDragRef.current = false
+      return
+    }
+    const hit = hitTestDateColumn(e.clientX, e.clientY)
+    if (!hit) {
+      setDraggingEvent(null)
+      setEventDragPreview(null)
+      return
+    }
+    const rawY = e.clientY - hit.rect.top - session.grabYOffsetWithinBlock
+    const rawMinutes = GRID_START_MINUTES + rawY / PX_PER_MINUTE
+    const snapped = snapToMinutes(rawMinutes)
+    const newStartTime = minutesToDbTime(snapped)
+    const newEndTime = minutesToDbTime(
+      snapped + session.originalDurationMinutes,
+    )
+    setDraggingEvent(null)
+    setEventDragPreview(null)
+    try {
+      const response = await fetch(`/api/admin/ops/events/${session.eventId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          start_date: hit.dateKey,
+          end_date: hit.dateKey,
+          start_time: newStartTime,
+          end_time: newEndTime,
+        }),
+      })
+      if (!response.ok) {
+        const result = await response.json()
+        setError(result.error || 'Failed to move block')
+      } else {
+        await loadSchedule()
+      }
+    } catch {
+      setError('Failed to move block')
+    }
+  }
+
+  // ---- Event block: resize ----
+  type EventResizeSession = {
+    eventId: string
+    originEndMinutes: number
+    startMinutes: number
+    grabClientY: number
+  }
+  const [eventResizeSession, setEventResizeSession] =
+    useState<EventResizeSession | null>(null)
+  const [eventResizeLiveEndMinutes, setEventResizeLiveEndMinutes] = useState<
+    number | null
+  >(null)
+  const eventResizeLiveEndRef = useRef<number | null>(null)
+  const eventResizePointerIdRef = useRef<number | null>(null)
+
+  const beginEventResize = useCallback(
+    (e: React.PointerEvent<HTMLButtonElement>, calEvent: CalendarEvent) => {
+      if (calEvent.is_all_day) return
+      if (e.pointerType === 'mouse' && e.button !== 0) return
+      e.preventDefault()
+      e.stopPropagation()
+      setError(null)
+      const startM = parseMinutes(calEvent.start_time ?? '00:00')
+      const endM = parseMinutes(calEvent.end_time ?? '00:00')
+      setEventResizeSession({
+        eventId: calEvent.id,
+        originEndMinutes: endM,
+        startMinutes: startM,
+        grabClientY: e.clientY,
+      })
+      eventResizeLiveEndRef.current = endM
+      setEventResizeLiveEndMinutes(endM)
+      try {
+        ;(e.currentTarget as Element).setPointerCapture(e.pointerId)
+        eventResizePointerIdRef.current = e.pointerId
+      } catch {
+        eventResizePointerIdRef.current = null
+      }
+    },
+    [],
+  )
+
+  useEffect(() => {
+    if (!eventResizeSession) return
+    const onMove = (e: PointerEvent) => {
+      if (
+        eventResizePointerIdRef.current != null &&
+        e.pointerId !== eventResizePointerIdRef.current
+      )
+        return
+      if (e.cancelable) e.preventDefault()
+      const dy = e.clientY - eventResizeSession.grabClientY
+      const delta = Math.round(dy / PX_PER_MINUTE / 15) * 15
+      const next = Math.max(
+        eventResizeSession.startMinutes + 15,
+        eventResizeSession.originEndMinutes + delta,
+      )
+      eventResizeLiveEndRef.current = next
+      setEventResizeLiveEndMinutes(next)
+    }
+    const onUp = (e: PointerEvent) => {
+      if (
+        eventResizePointerIdRef.current != null &&
+        e.pointerId !== eventResizePointerIdRef.current
+      )
+        return
+      const session = eventResizeSession
+      const finalEnd = eventResizeLiveEndRef.current ?? session.originEndMinutes
+      void (async () => {
+        if (finalEnd !== session.originEndMinutes) {
+          try {
+            const response = await fetch(
+              `/api/admin/ops/events/${session.eventId}`,
+              {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ end_time: minutesToDbTime(finalEnd) }),
+              },
+            )
+            const result = await response.json()
+            if (!response.ok) {
+              setError(result.error || 'Failed to update block end time')
+            } else {
+              await loadSchedule()
+            }
+          } catch {
+            setError('Failed to update block end time')
+          }
+        }
+        setEventResizeSession(null)
+        setEventResizeLiveEndMinutes(null)
+        eventResizeLiveEndRef.current = null
+        eventResizePointerIdRef.current = null
+      })()
+    }
+    window.addEventListener('pointermove', onMove, { passive: false })
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
+    }
+  }, [eventResizeSession, loadSchedule, PX_PER_MINUTE])
+
   const handleDragOver = (
     e: React.DragEvent<HTMLDivElement>,
     dateKey: string,
+    staffId?: string | null,
   ) => {
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
@@ -1136,7 +1482,7 @@ export function OperationsSchedule() {
     const rawY = e.clientY - rect.top - draggingYOffsetRef.current
     const rawMinutes = GRID_START_MINUTES + rawY / PX_PER_MINUTE
     const snappedMinutes = snapToMinutes(rawMinutes)
-    setDragPreview({ dateKey, snappedMinutes })
+    setDragPreview({ dateKey, snappedMinutes, staffId })
   }
 
   const commitAppointmentMove = async (
@@ -1145,6 +1491,7 @@ export function OperationsSchedule() {
     snappedMinutes: number,
     clientX: number,
     clientY: number,
+    staffId?: string | null,
   ) => {
     const newTime = minutesToTimeString(snappedMinutes)
 
@@ -1160,6 +1507,9 @@ export function OperationsSchedule() {
           body: JSON.stringify({
             appointment_date: dateKey,
             start_time: newTime,
+            ...(staffId !== undefined
+              ? { assigned_staff_user_id: staffId }
+              : {}),
           }),
         },
       )
@@ -1191,6 +1541,7 @@ export function OperationsSchedule() {
   const handleDrop = async (
     e: React.DragEvent<HTMLDivElement>,
     dateKey: string,
+    staffId?: string | null,
   ) => {
     e.preventDefault()
     const appointmentId = e.dataTransfer.getData('appointmentId')
@@ -1206,6 +1557,7 @@ export function OperationsSchedule() {
       snappedMinutes,
       e.clientX,
       e.clientY,
+      staffId,
     )
   }
 
@@ -1227,13 +1579,18 @@ export function OperationsSchedule() {
   const hitTestDateColumn = (
     clientX: number,
     clientY: number,
-  ): { dateKey: string; rect: DOMRect } | null => {
+  ): { dateKey: string; staffId: string | null; rect: DOMRect } | null => {
     const el = document.elementFromPoint(clientX, clientY) as HTMLElement | null
     const col = el?.closest('[data-date-column]') as HTMLElement | null
     if (!col) return null
     const dateKey = col.getAttribute('data-date-column') || ''
     if (!dateKey) return null
-    return { dateKey, rect: col.getBoundingClientRect() }
+    const staffId = col.getAttribute('data-staff-lane') || null
+    return {
+      dateKey,
+      staffId: staffId || null,
+      rect: col.getBoundingClientRect(),
+    }
   }
 
   const handleMovePointerDown = (
@@ -1300,7 +1657,11 @@ export function OperationsSchedule() {
     const rawY = e.clientY - hit.rect.top - session.grabYOffsetWithinBlock
     const rawMinutes = GRID_START_MINUTES + rawY / PX_PER_MINUTE
     const snapped = snapToMinutes(rawMinutes)
-    setDragPreview({ dateKey: hit.dateKey, snappedMinutes: snapped })
+    setDragPreview({
+      dateKey: hit.dateKey,
+      snappedMinutes: snapped,
+      staffId: hit.staffId,
+    })
   }
 
   const handleMovePointerUp = async (e: React.PointerEvent<HTMLDivElement>) => {
@@ -1341,6 +1702,7 @@ export function OperationsSchedule() {
       snapped,
       e.clientX,
       e.clientY,
+      hit.staffId,
     )
   }
 
@@ -1436,6 +1798,7 @@ export function OperationsSchedule() {
         start_time: '',
         end_time: '',
         is_all_day: false,
+        assigned_staff_user_id: null,
       })
       setShowBlockForm(false)
       await loadSchedule()
@@ -1513,6 +1876,236 @@ export function OperationsSchedule() {
     } finally {
       setEditEventSaving(false)
     }
+  }
+
+  const renderApptBlocks = (appts: Appointment[]) => {
+    const overlapCols = computeOverlapColumns(appts)
+    return appts.map((appointment) => {
+      const customer = unwrapRelation(appointment.ops_customers)
+      const invoice = unwrapRelation(appointment.ops_invoices)
+      const endOverride =
+        resizeSession?.appointmentId === appointment.id &&
+        resizeLiveEndMinutes != null
+          ? resizeLiveEndMinutes
+          : null
+      const placement = getAppointmentPlacement(appointment, endOverride)
+      const isEstimate = appointment.kind === 'estimate'
+      const href = isEstimate
+        ? `/admin/operations/estimates/${appointment.id}`
+        : invoice?.id
+          ? `/admin/operations/invoices/${invoice.id}`
+          : appointment.recurring_template_id
+            ? `/admin/operations/recurring/visit/${appointment.id}`
+            : `/admin/operations/appointments/${appointment.id}`
+      const isDragging = draggingAppointment?.id === appointment.id
+      const oc = overlapCols.get(appointment.id) ?? { col: 0, totalCols: 1 }
+      const blockTone = isEstimate
+        ? getEstimateTone(appointment)
+        : appointment.status === 'completed' ||
+            appointment.status === 'cancelled'
+          ? getStatusTone(appointment.status)
+          : appointment.recurring_template_id
+            ? (getRecurringTone(
+                recurringFreqMap[appointment.recurring_template_id],
+              ) ?? getStatusTone(appointment.status))
+            : getStatusTone(appointment.status)
+      const isPointerDraggingThis =
+        pointerDragging && draggingAppointment?.id === appointment.id
+      return (
+        <div
+          key={appointment.id}
+          data-appointment-block
+          className={`absolute flex flex-col overflow-hidden rounded-2xl border text-xs text-slate-900 shadow-sm transition ${blockTone} ${isDragging ? 'opacity-40' : 'hover:shadow-md'} ${isPointerDraggingThis ? 'pointer-events-none' : ''}`}
+          style={{
+            top: placement.top + 6,
+            height: placement.height - 8,
+            ...overlapStyle(oc.col, oc.totalCols),
+          }}
+        >
+          <div
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData('appointmentId', appointment.id)
+              e.dataTransfer.effectAllowed = 'move'
+              const block = (e.currentTarget as HTMLElement).closest(
+                '[data-appointment-block]',
+              ) as HTMLElement | null
+              if (block) {
+                draggingYOffsetRef.current =
+                  e.clientY - block.getBoundingClientRect().top
+              } else {
+                draggingYOffsetRef.current = e.nativeEvent.offsetY
+              }
+              didDragRef.current = false
+              setDraggingAppointment(appointment)
+              setTimeout(() => {
+                didDragRef.current = true
+              }, 50)
+            }}
+            onDragEnd={() => {
+              setDraggingAppointment(null)
+              setDragPreview(null)
+            }}
+            onPointerDown={(e) => handleMovePointerDown(e, appointment)}
+            onPointerMove={handleMovePointerMove}
+            onPointerUp={(e) => void handleMovePointerUp(e)}
+            onPointerCancel={(e) => void handleMovePointerUp(e)}
+            style={{ touchAction: 'none' }}
+            className="flex shrink-0 cursor-grab touch-none items-center gap-1 border-b border-black/5 bg-black/[0.03] px-2 py-1.5 active:cursor-grabbing sm:py-1"
+            title="Drag to move start time"
+          >
+            <GripVertical className="h-4 w-4 shrink-0 text-slate-500 sm:h-3.5 sm:w-3.5" />
+            <span className="text-[11px] font-medium tracking-tight text-slate-600 sm:text-[10px]">
+              Move
+            </span>
+            {view === 'week' &&
+              staffList.length > 1 &&
+              (() => {
+                const staffIdx = staffList.findIndex(
+                  (s) => s.id === appointment.assigned_staff_user_id,
+                )
+                if (staffIdx < 0) return null
+                const initials = staffList[staffIdx].display_name.split(' ')[0]
+                return (
+                  <span
+                    className="ml-auto shrink-0 rounded-full px-2 py-0.5 text-[9px] font-bold text-white"
+                    style={{
+                      backgroundColor:
+                        STAFF_LANE_COLORS[staffIdx % STAFF_LANE_COLORS.length],
+                    }}
+                  >
+                    {initials}
+                  </span>
+                )
+              })()}
+          </div>
+          <Link
+            href={href}
+            className="flex min-h-0 flex-1 flex-col overflow-hidden p-2 pt-1"
+            onClick={(e) => {
+              if (didDragRef.current) e.preventDefault()
+            }}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="line-clamp-1 flex items-center gap-1.5 leading-tight font-semibold">
+                {isEstimate && (
+                  <Ruler className="h-3 w-3 shrink-0 text-amber-600" />
+                )}
+                {!isEstimate && appointment.recurring_template_id && (
+                  <Repeat className="h-3 w-3 shrink-0 text-blue-500" />
+                )}
+                {customer?.business_name || customer?.full_name || 'Customer'}
+                {appointment.is_repeat_customer && (
+                  <span className="rounded-full bg-violet-50 px-1.5 py-0.5 text-[9px] font-semibold text-violet-700">
+                    Repeat
+                  </span>
+                )}
+              </div>
+              <Badge
+                variant="outline"
+                className="border-slate-300 bg-white/70 text-slate-700 capitalize"
+              >
+                {isEstimate
+                  ? 'Estimate'
+                  : appointment.status.replaceAll('_', ' ')}
+              </Badge>
+            </div>
+            {isEstimate && (
+              <span className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                <Ruler className="h-2.5 w-2.5" />
+                Measure visit
+              </span>
+            )}
+            {!isEstimate && appointment.recurring_template_id && (
+              <a
+                href={`/admin/operations/recurring/${appointment.recurring_template_id}`}
+                onClick={(e) => e.stopPropagation()}
+                className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 hover:bg-blue-100"
+              >
+                <Repeat className="h-2.5 w-2.5" />
+                Recurring
+              </a>
+            )}
+            <div className="mt-1 text-slate-700">
+              {placement.startLabel} - {placement.endLabel}
+            </div>
+            {(() => {
+              const address = unwrapRelation(appointment.ops_service_addresses)
+              const city = address?.city
+              const { leadLabel, bookingLabel } =
+                getScheduleCardSources(appointment)
+              if (city || leadLabel || bookingLabel) {
+                return (
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0 text-[10px] leading-tight text-slate-500">
+                    {city && <span>{city}</span>}
+                    {city && (leadLabel || bookingLabel) && <span>·</span>}
+                    {leadLabel && <span>Lead: {leadLabel}</span>}
+                    {leadLabel && bookingLabel && <span>·</span>}
+                    {bookingLabel && <span>Booked: {bookingLabel}</span>}
+                  </div>
+                )
+              }
+              return null
+            })()}
+            <div className="mt-2 line-clamp-2 text-slate-800">
+              {appointment.ops_appointment_line_items
+                .map((item) => item.name_snapshot)
+                .join(', ')}
+            </div>
+            {recurringLineItemDescriptionBoxes(appointment, false)}
+            <div
+              className={`mt-auto pt-2 text-right font-semibold tabular-nums ${
+                appointment.status === 'completed'
+                  ? 'text-slate-600'
+                  : 'text-slate-800'
+              }`}
+            >
+              ${calendarDisplayAmount(appointment)}
+            </div>
+          </Link>
+          {!isEstimate && appointment.status !== 'completed' && (
+            <div className="pointer-events-none -mt-7 mb-1.5 flex justify-start px-2">
+              <button
+                type="button"
+                className={`pointer-events-auto rounded-md border px-2 py-0.5 text-[9px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                  appointment.status === 'cancelled'
+                    ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                    : 'border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100'
+                }`}
+                disabled={statusActionAppointmentId === appointment.id}
+                onClick={(e) => {
+                  openStatusActionPopover(e, appointment)
+                }}
+              >
+                {statusActionAppointmentId === appointment.id ? (
+                  <span className="inline-flex items-center gap-1">
+                    <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                    Saving
+                  </span>
+                ) : appointment.status === 'cancelled' ? (
+                  'Restore'
+                ) : (
+                  'Cancel'
+                )}
+              </button>
+            </div>
+          )}
+          <button
+            type="button"
+            aria-label="Drag to change end time"
+            title="Drag to extend or shorten"
+            style={{ touchAction: 'none' }}
+            className="relative flex h-5 shrink-0 cursor-ns-resize touch-none items-center justify-center rounded-b-[13px] border-t border-black/10 bg-black/[0.08] hover:bg-black/[0.14] sm:h-2.5"
+            onPointerDown={(e) => beginResize(e, appointment)}
+          >
+            <span
+              aria-hidden
+              className="block h-0.5 w-8 rounded-full bg-black/30 sm:hidden"
+            />
+          </button>
+        </div>
+      )
+    })
   }
 
   return (
@@ -1689,7 +2282,7 @@ export function OperationsSchedule() {
                 variant="ghost"
                 className="justify-start gap-2 text-rose-700 hover:bg-rose-50 hover:text-rose-800"
                 onClick={() => {
-                  openBlockAt(cellMenu.dateKey, cellMenu.hour)
+                  openBlockAt(cellMenu.dateKey, cellMenu.hour, cellMenu.staffId)
                   setCellMenu(null)
                 }}
               >
@@ -2350,6 +2943,47 @@ export function OperationsSchedule() {
         </div>
       ) : null}
 
+      {view === 'week' && staffList.length > 1 ? (
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-slate-500">Staff:</span>
+          <div className="flex gap-1">
+            <button
+              type="button"
+              onClick={() => setStaffFilter(null)}
+              className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                staffFilter === null
+                  ? 'bg-slate-800 text-white'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              All
+            </button>
+            {staffList.map((staff, idx) => (
+              <button
+                key={staff.id}
+                type="button"
+                onClick={() => setStaffFilter(staff.id)}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                  staffFilter === staff.id
+                    ? 'text-white'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+                style={
+                  staffFilter === staff.id
+                    ? {
+                        backgroundColor:
+                          STAFF_LANE_COLORS[idx % STAFF_LANE_COLORS.length],
+                      }
+                    : undefined
+                }
+              >
+                {staff.display_name}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       {view === 'week' && weeklyTotal > 0 ? (
         <div className="flex items-center justify-between gap-3 rounded-xl border border-green-600/20 bg-green-50 px-4 py-3">
           <span className="text-sm font-medium text-green-900">Week Total</span>
@@ -2508,33 +3142,135 @@ export function OperationsSchedule() {
           onTouchEnd={handleCalTouchEnd}
         >
           <div ref={calendarRef}>
-            <div className={view === 'day' ? '' : 'overflow-x-auto'}>
+            <div className="overflow-x-auto">
               <div
-                className={view === 'day' ? 'grid' : 'grid min-w-[900px]'}
+                className="grid"
                 style={{
                   gridTemplateColumns:
                     view === 'day'
-                      ? '72px minmax(0, 1fr)'
-                      : '72px repeat(7, minmax(180px, 1fr))',
+                      ? `72px repeat(${Math.max(staffList.length, 1)}, minmax(400px, 1fr))`
+                      : '72px 48px repeat(6, minmax(270px, 1fr))',
+                  minWidth:
+                    view === 'day'
+                      ? `${72 + Math.max(staffList.length, 1) * 400}px`
+                      : `${72 + 48 + 6 * 270}px`,
                 }}
               >
                 <div className="border-r border-b border-slate-200 bg-slate-100 p-3" />
-                {displayedDays.map((date) => (
-                  <div
-                    key={formatDateKey(date)}
-                    className="border-b border-slate-200 bg-slate-100 p-3"
-                  >
-                    <div className="text-xs font-medium tracking-[0.2em] text-slate-500 uppercase">
-                      {WEEKDAY_LABELS[date.getDay()]}
-                    </div>
-                    <div className="mt-1 text-lg font-semibold text-slate-700">
-                      {date.toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                      })}
-                    </div>
-                  </div>
-                ))}
+                {view === 'day' && staffList.length > 0
+                  ? staffList.map((staff, idx) => {
+                      const dateKey = formatDateKey(anchorDate)
+                      const isOpen = isStaffOpenForDate(staff.id, dateKey)
+                      const color =
+                        STAFF_LANE_COLORS[idx % STAFF_LANE_COLORS.length]
+                      return (
+                        <div
+                          key={staff.id}
+                          className={`border-b border-slate-200 p-3 ${isOpen ? 'bg-emerald-50/60' : 'bg-slate-100'}`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className="inline-block h-3 w-3 rounded-full"
+                                style={{ backgroundColor: color }}
+                              />
+                              <span className="text-sm font-semibold text-slate-700">
+                                {staff.display_name}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                toggleStaffAvailability(staff.id, dateKey)
+                              }
+                              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ${
+                                isOpen ? 'bg-emerald-500' : 'bg-slate-300'
+                              }`}
+                              aria-label={`Toggle ${staff.display_name} availability`}
+                            >
+                              <span
+                                className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition-transform duration-200 ${
+                                  isOpen ? 'translate-x-5' : 'translate-x-0'
+                                }`}
+                              />
+                            </button>
+                          </div>
+                          <div
+                            className={`mt-1 text-xs font-medium ${isOpen ? 'text-emerald-600' : 'text-slate-400'}`}
+                          >
+                            {isOpen ? 'OPEN' : 'CLOSED'}
+                          </div>
+                          <div className="mt-1 text-xs font-medium tracking-[0.2em] text-slate-500 uppercase">
+                            {WEEKDAY_LABELS[anchorDate.getDay()]}
+                          </div>
+                          <div className="mt-0.5 text-lg font-semibold text-slate-700">
+                            {anchorDate.toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                            })}
+                          </div>
+                        </div>
+                      )
+                    })
+                  : displayedDays.map((date) => {
+                      const dk = formatDateKey(date)
+                      const isSunday = date.getDay() === 0
+                      if (isSunday) {
+                        return (
+                          <div
+                            key={dk}
+                            className="flex items-center justify-center border-r border-b border-slate-200 bg-slate-100"
+                          >
+                            <span className="text-[10px] font-medium tracking-widest text-slate-400 uppercase [writing-mode:vertical-rl]">
+                              Sun
+                            </span>
+                          </div>
+                        )
+                      }
+                      return (
+                        <div
+                          key={dk}
+                          className="border-b border-slate-200 bg-slate-100 p-3"
+                        >
+                          <div className="text-xs font-medium tracking-[0.2em] text-slate-500 uppercase">
+                            {WEEKDAY_LABELS[date.getDay()]}
+                          </div>
+                          <div className="mt-1 text-lg font-semibold text-slate-700">
+                            {date.toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                            })}
+                          </div>
+                          {staffList.length > 1 && (
+                            <div className="mt-2 flex gap-1">
+                              {staffList.map((staff, idx) => {
+                                const open = isStaffOpenForDate(staff.id, dk)
+                                const color =
+                                  STAFF_LANE_COLORS[
+                                    idx % STAFF_LANE_COLORS.length
+                                  ]
+                                return (
+                                  <button
+                                    key={staff.id}
+                                    type="button"
+                                    title={`${staff.display_name}: click to toggle ${open ? 'closed' : 'open'}`}
+                                    onClick={() =>
+                                      toggleStaffAvailability(staff.id, dk)
+                                    }
+                                    className="flex-1 truncate rounded-full px-2 py-0.5 text-[10px] font-semibold text-white shadow-sm transition hover:opacity-80 active:scale-95"
+                                    style={{
+                                      backgroundColor: open ? color : '#9ca3af',
+                                    }}
+                                  >
+                                    {staff.display_name.split(' ')[0]}
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
 
                 <div className="relative border-r border-slate-200 bg-slate-50">
                   {HOURS.map((hour) => (
@@ -2552,388 +3288,621 @@ export function OperationsSchedule() {
                   ))}
                 </div>
 
-                {displayedDays.map((date) => {
-                  const dateKey = formatDateKey(date)
-                  const dayAppointments = appointmentsByDate.get(dateKey) || []
-                  const dayEvents = data.events.filter((event) =>
-                    intersectsDay(event, dateKey),
-                  )
-                  const dayRanges = businessDayRanges.get(date.getDay()) || []
-                  const offHourSegments = getOffHourSegmentsForGrid(dayRanges)
-
-                  return (
-                    <div
-                      key={dateKey}
-                      data-date-column={dateKey}
-                      className="relative border-r border-slate-200 bg-white"
-                      onDragOver={(e) => handleDragOver(e, dateKey)}
-                      onDragLeave={() => setDragPreview(null)}
-                      onDrop={(e) => void handleDrop(e, dateKey)}
-                    >
-                      {/* Drop ghost preview */}
-                      {dragPreview?.dateKey === dateKey && draggingAppointment
-                        ? (() => {
-                            const ghostPlacement =
-                              getAppointmentPlacement(draggingAppointment)
-                            const ghostTop =
-                              ((dragPreview.snappedMinutes -
-                                GRID_START_MINUTES) /
-                                60) *
+                {view === 'day' && staffList.length > 0
+                  ? staffList.map((staff) => {
+                      const dateKey = formatDateKey(anchorDate)
+                      const allDayAppointments =
+                        appointmentsByDate.get(dateKey) || []
+                      const dayAppointments = allDayAppointments.filter(
+                        (a) =>
+                          a.assigned_staff_user_id === staff.id ||
+                          (!a.assigned_staff_user_id &&
+                            staff.id === staffList[0]?.id),
+                      )
+                      const dayEvents = data.events.filter((event) =>
+                        intersectsDay(event, dateKey),
+                      )
+                      const dayRanges =
+                        businessDayRanges.get(anchorDate.getDay()) || []
+                      const offHourSegments =
+                        getOffHourSegmentsForGrid(dayRanges)
+                      const laneIsOpen = isStaffOpenForDate(staff.id, dateKey)
+                      return (
+                        <div
+                          key={staff.id}
+                          data-date-column={dateKey}
+                          data-staff-lane={staff.id}
+                          className={`relative border-r border-slate-200 ${laneIsOpen ? 'bg-white' : 'bg-slate-100/60'}`}
+                          onDragOver={(e) =>
+                            handleDragOver(e, dateKey, staff.id)
+                          }
+                          onDragLeave={() => setDragPreview(null)}
+                          onDrop={(e) => void handleDrop(e, dateKey, staff.id)}
+                        >
+                          {!laneIsOpen && (
+                            <div className="pointer-events-none absolute inset-0 z-10 bg-slate-200/40" />
+                          )}
+                          {dragPreview?.dateKey === dateKey &&
+                          dragPreview?.staffId === staff.id &&
+                          draggingAppointment
+                            ? (() => {
+                                const ghostPlacement =
+                                  getAppointmentPlacement(draggingAppointment)
+                                const ghostTop =
+                                  ((dragPreview.snappedMinutes -
+                                    GRID_START_MINUTES) /
+                                    60) *
+                                  HOUR_HEIGHT
+                                return (
+                                  <div
+                                    className="pointer-events-none absolute right-2 left-2 rounded-2xl border-2 border-dashed border-emerald-400 bg-emerald-100/60"
+                                    style={{
+                                      top: ghostTop + 6,
+                                      height: ghostPlacement.height - 8,
+                                    }}
+                                  />
+                                )
+                              })()
+                            : null}
+                          {HOURS.map((hour) => (
+                            <button
+                              key={`${dateKey}-${hour}`}
+                              type="button"
+                              className="focus-visible:ring-ring relative z-0 block w-full border-b border-slate-200 text-left transition hover:bg-emerald-50/60 focus-visible:ring-2 focus-visible:outline-none"
+                              style={{ height: HOUR_HEIGHT }}
+                              onClick={(e) => {
+                                setCellMenu({
+                                  dateKey,
+                                  hour,
+                                  x: e.clientX,
+                                  y: e.clientY,
+                                  staffId: staff.id,
+                                })
+                              }}
+                              title={`Create at ${String(hour).padStart(2, '0')}:00`}
+                              aria-label={`Create on ${dateKey} at ${String(hour).padStart(2, '0')}:00`}
+                            />
+                          ))}
+                          {offHourSegments.map((segment, index) => {
+                            const gridStartMinutes = HOURS[0] * 60
+                            const top =
+                              ((segment.start - gridStartMinutes) / 60) *
                               HOUR_HEIGHT
+                            const height =
+                              ((segment.end - segment.start) / 60) * HOUR_HEIGHT
                             return (
                               <div
-                                className="pointer-events-none absolute right-2 left-2 rounded-2xl border-2 border-dashed border-emerald-400 bg-emerald-100/60"
-                                style={{
-                                  top: ghostTop + 6,
-                                  height: ghostPlacement.height - 8,
-                                }}
+                                key={`${dateKey}-off-${index}`}
+                                className="pointer-events-none absolute right-0 left-0 bg-slate-100/80"
+                                style={{ top, height }}
                               />
                             )
-                          })()
-                        : null}
-
-                      {HOURS.map((hour) => (
-                        <button
-                          key={`${dateKey}-${hour}`}
-                          type="button"
-                          className="focus-visible:ring-ring relative z-0 block w-full border-b border-slate-200 text-left transition hover:bg-emerald-50/60 focus-visible:ring-2 focus-visible:outline-none"
-                          style={{ height: HOUR_HEIGHT }}
-                          onClick={(e) => {
-                            setCellMenu({
-                              dateKey,
-                              hour,
-                              x: e.clientX,
-                              y: e.clientY,
-                            })
-                          }}
-                          title={`Create at ${String(hour).padStart(2, '0')}:00`}
-                          aria-label={`Create on ${dateKey} at ${String(hour).padStart(2, '0')}:00`}
-                        />
-                      ))}
-
-                      {offHourSegments.map((segment, index) => {
-                        const gridStartMinutes = HOURS[0] * 60
-                        const top =
-                          ((segment.start - gridStartMinutes) / 60) *
-                          HOUR_HEIGHT
-                        const height =
-                          ((segment.end - segment.start) / 60) * HOUR_HEIGHT
-                        return (
-                          <div
-                            key={`${dateKey}-off-${index}`}
-                            className="pointer-events-none absolute right-0 left-0 bg-slate-100/80"
-                            style={{ top, height }}
-                          />
-                        )
-                      })}
-
-                      {dayEvents.map((event) => {
-                        const placement = getBlockPlacement(event)
-                        return (
-                          <button
-                            key={event.id}
-                            type="button"
-                            className={`absolute right-2 left-2 cursor-pointer rounded-2xl border p-2 text-left text-xs shadow-sm transition-opacity hover:opacity-80 ${getEventTone(event)}`}
-                            style={{
-                              top: placement.top + 6,
-                              height: placement.height - 8,
-                            }}
-                            onClick={() => openEditEvent(event)}
-                          >
-                            <div className="font-semibold">{event.title}</div>
-                            {event.description ? (
-                              <div className="text-muted-foreground mt-1 line-clamp-2">
-                                {event.description}
-                              </div>
-                            ) : null}
-                          </button>
-                        )
-                      })}
-
-                      {/* Current-time indicator — only on today's column,
-                          only while the clock is within the visible hour range */}
-                      {dateKey === todayKey &&
-                      nowMinutes != null &&
-                      nowMinutes >= GRID_START_MINUTES &&
-                      nowMinutes <= (HOURS[HOURS.length - 1] + 1) * 60 ? (
-                        <div
-                          className="pointer-events-none absolute right-0 left-0 z-20 flex items-center"
-                          style={{
-                            top:
-                              ((nowMinutes - GRID_START_MINUTES) / 60) *
-                              HOUR_HEIGHT,
-                          }}
-                        >
-                          {/* Dot on the left edge */}
-                          <span className="ml-0.5 h-2.5 w-2.5 shrink-0 rounded-full bg-red-500 shadow-sm" />
-                          {/* Line spanning the rest of the column */}
-                          <span className="h-px flex-1 bg-red-500/80" />
-                        </div>
-                      ) : null}
-
-                      {(() => {
-                        const overlapCols =
-                          computeOverlapColumns(dayAppointments)
-                        return dayAppointments.map((appointment) => {
-                          const customer = unwrapRelation(
-                            appointment.ops_customers,
-                          )
-                          const invoice = unwrapRelation(
-                            appointment.ops_invoices,
-                          )
-                          const endOverride =
-                            resizeSession?.appointmentId === appointment.id &&
-                            resizeLiveEndMinutes != null
-                              ? resizeLiveEndMinutes
-                              : null
-                          const placement = getAppointmentPlacement(
-                            appointment,
-                            endOverride,
-                          )
-                          const isEstimate = appointment.kind === 'estimate'
-                          const href = isEstimate
-                            ? `/admin/operations/estimates/${appointment.id}`
-                            : invoice?.id
-                              ? `/admin/operations/invoices/${invoice.id}`
-                              : appointment.recurring_template_id
-                                ? `/admin/operations/recurring/visit/${appointment.id}`
-                                : `/admin/operations/appointments/${appointment.id}`
-                          const isDragging =
-                            draggingAppointment?.id === appointment.id
-                          const oc = overlapCols.get(appointment.id) ?? {
-                            col: 0,
-                            totalCols: 1,
-                          }
-                          const blockTone = isEstimate
-                            ? getEstimateTone(appointment)
-                            : appointment.status === 'completed' ||
-                                appointment.status === 'cancelled'
-                              ? getStatusTone(appointment.status)
-                              : appointment.recurring_template_id
-                                ? (getRecurringTone(
-                                    recurringFreqMap[
-                                      appointment.recurring_template_id
-                                    ],
-                                  ) ?? getStatusTone(appointment.status))
-                                : getStatusTone(appointment.status)
-                          const isPointerDraggingThis =
-                            pointerDragging &&
-                            draggingAppointment?.id === appointment.id
-                          return (
-                            <div
-                              key={appointment.id}
-                              data-appointment-block
-                              className={`absolute flex flex-col overflow-hidden rounded-2xl border text-xs text-slate-900 shadow-sm transition ${blockTone} ${isDragging ? 'opacity-40' : 'hover:shadow-md'} ${isPointerDraggingThis ? 'pointer-events-none' : ''}`}
-                              style={{
-                                top: placement.top + 6,
-                                height: placement.height - 8,
-                                ...overlapStyle(oc.col, oc.totalCols),
-                              }}
-                            >
-                              <div
-                                draggable
-                                onDragStart={(e) => {
-                                  e.dataTransfer.setData(
-                                    'appointmentId',
-                                    appointment.id,
-                                  )
-                                  e.dataTransfer.effectAllowed = 'move'
-                                  const block = (
-                                    e.currentTarget as HTMLElement
-                                  ).closest(
-                                    '[data-appointment-block]',
-                                  ) as HTMLElement | null
-                                  if (block) {
-                                    draggingYOffsetRef.current =
-                                      e.clientY -
-                                      block.getBoundingClientRect().top
-                                  } else {
-                                    draggingYOffsetRef.current =
-                                      e.nativeEvent.offsetY
-                                  }
-                                  didDragRef.current = false
-                                  setDraggingAppointment(appointment)
-                                  setTimeout(() => {
-                                    didDragRef.current = true
-                                  }, 50)
-                                }}
-                                onDragEnd={() => {
-                                  setDraggingAppointment(null)
-                                  setDragPreview(null)
-                                }}
-                                onPointerDown={(e) =>
-                                  handleMovePointerDown(e, appointment)
-                                }
-                                onPointerMove={handleMovePointerMove}
-                                onPointerUp={(e) => void handleMovePointerUp(e)}
-                                onPointerCancel={(e) =>
-                                  void handleMovePointerUp(e)
-                                }
-                                style={{ touchAction: 'none' }}
-                                className="flex shrink-0 cursor-grab touch-none items-center gap-1 border-b border-black/5 bg-black/[0.03] px-2 py-1.5 active:cursor-grabbing sm:py-1"
-                                title="Drag to move start time"
-                              >
-                                <GripVertical className="h-4 w-4 shrink-0 text-slate-500 sm:h-3.5 sm:w-3.5" />
-                                <span className="text-[11px] font-medium tracking-tight text-slate-600 sm:text-[10px]">
-                                  Move
-                                </span>
-                              </div>
-                              <Link
-                                href={href}
-                                className="flex min-h-0 flex-1 flex-col overflow-hidden p-2 pt-1"
-                                onClick={(e) => {
-                                  if (didDragRef.current) e.preventDefault()
-                                }}
-                              >
-                                <div className="flex items-start justify-between gap-2">
-                                  <div className="line-clamp-1 flex items-center gap-1.5 leading-tight font-semibold">
-                                    {isEstimate && (
-                                      <Ruler className="h-3 w-3 shrink-0 text-amber-600" />
-                                    )}
-                                    {!isEstimate &&
-                                      appointment.recurring_template_id && (
-                                        <Repeat className="h-3 w-3 shrink-0 text-blue-500" />
-                                      )}
-                                    {customer?.business_name ||
-                                      customer?.full_name ||
-                                      'Customer'}
-                                    {appointment.is_repeat_customer && (
-                                      <span className="rounded-full bg-violet-50 px-1.5 py-0.5 text-[9px] font-semibold text-violet-700">
-                                        Repeat
-                                      </span>
-                                    )}
-                                  </div>
-                                  <Badge
-                                    variant="outline"
-                                    className="border-slate-300 bg-white/70 text-slate-700 capitalize"
-                                  >
-                                    {isEstimate
-                                      ? 'Estimate'
-                                      : appointment.status.replaceAll('_', ' ')}
-                                  </Badge>
-                                </div>
-                                {isEstimate && (
-                                  <span className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
-                                    <Ruler className="h-2.5 w-2.5" />
-                                    Measure visit
-                                  </span>
-                                )}
-                                {!isEstimate &&
-                                  appointment.recurring_template_id && (
-                                    <a
-                                      href={`/admin/operations/recurring/${appointment.recurring_template_id}`}
-                                      onClick={(e) => e.stopPropagation()}
-                                      className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 hover:bg-blue-100"
-                                    >
-                                      <Repeat className="h-2.5 w-2.5" />
-                                      Recurring
-                                    </a>
-                                  )}
-                                <div className="mt-1 text-slate-700">
-                                  {placement.startLabel} - {placement.endLabel}
-                                </div>
-                                {(() => {
-                                  const address = unwrapRelation(
-                                    appointment.ops_service_addresses,
-                                  )
-                                  const city = address?.city
-                                  const { leadLabel, bookingLabel } =
-                                    getScheduleCardSources(appointment)
-                                  if (city || leadLabel || bookingLabel) {
-                                    return (
-                                      <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0 text-[10px] leading-tight text-slate-500">
-                                        {city && <span>{city}</span>}
-                                        {city &&
-                                          (leadLabel || bookingLabel) && (
-                                            <span>·</span>
-                                          )}
-                                        {leadLabel && (
-                                          <span>Lead: {leadLabel}</span>
-                                        )}
-                                        {leadLabel && bookingLabel && (
-                                          <span>·</span>
-                                        )}
-                                        {bookingLabel && (
-                                          <span>Booked: {bookingLabel}</span>
-                                        )}
-                                      </div>
-                                    )
-                                  }
-                                  return null
-                                })()}
-                                <div className="mt-2 line-clamp-2 text-slate-800">
-                                  {appointment.ops_appointment_line_items
-                                    .map((item) => item.name_snapshot)
-                                    .join(', ')}
-                                </div>
-                                {recurringLineItemDescriptionBoxes(
-                                  appointment,
-                                  false,
-                                )}
+                          })}
+                          {dayEvents
+                            .filter(
+                              (event) =>
+                                event.assigned_staff_user_id === staff.id ||
+                                (!event.assigned_staff_user_id &&
+                                  staff.id === staffList[0]?.id),
+                            )
+                            .map((event) => {
+                              const endOverride =
+                                eventResizeSession?.eventId === event.id &&
+                                eventResizeLiveEndMinutes != null
+                                  ? eventResizeLiveEndMinutes
+                                  : null
+                              const placement = getBlockPlacement(
+                                event,
+                                endOverride,
+                              )
+                              const isDraggingThis =
+                                draggingEvent?.id === event.id
+                              return (
                                 <div
-                                  className={`mt-auto pt-2 text-right font-semibold tabular-nums ${
-                                    appointment.status === 'completed'
-                                      ? 'text-slate-600'
-                                      : 'text-slate-800'
-                                  }`}
+                                  key={event.id}
+                                  data-event-block
+                                  className={`absolute right-2 left-2 flex flex-col overflow-hidden rounded-2xl border text-xs shadow-sm ${getEventTone(event)} ${isDraggingThis ? 'opacity-40' : ''}`}
+                                  style={{
+                                    top: placement.top + 6,
+                                    height: placement.height - 8,
+                                  }}
                                 >
-                                  ${calendarDisplayAmount(appointment)}
-                                </div>
-                              </Link>
-                              {!isEstimate &&
-                                appointment.status !== 'completed' && (
-                                  <div className="pointer-events-none -mt-7 mb-1.5 flex justify-start px-2">
+                                  {!event.is_all_day && (
+                                    <div
+                                      onPointerDown={(e) =>
+                                        handleEventMovePointerDown(e, event)
+                                      }
+                                      onPointerMove={handleEventMovePointerMove}
+                                      onPointerUp={(e) =>
+                                        void handleEventMovePointerUp(e)
+                                      }
+                                      onPointerCancel={(e) =>
+                                        void handleEventMovePointerUp(e)
+                                      }
+                                      style={{ touchAction: 'none' }}
+                                      className="flex shrink-0 cursor-grab touch-none items-center gap-1 border-b border-black/5 bg-black/[0.03] px-2 py-1.5 active:cursor-grabbing"
+                                    >
+                                      <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                                      <span className="text-[10px] font-medium tracking-tight text-slate-600">
+                                        Move
+                                      </span>
+                                    </div>
+                                  )}
+                                  <button
+                                    type="button"
+                                    className="flex min-h-0 flex-1 flex-col overflow-hidden p-2 text-left"
+                                    onClick={() => openEditEvent(event)}
+                                  >
+                                    <div className="font-semibold">
+                                      {event.title}
+                                    </div>
+                                    {event.description ? (
+                                      <div className="mt-1 line-clamp-2 opacity-75">
+                                        {event.description}
+                                      </div>
+                                    ) : null}
+                                  </button>
+                                  {!event.is_all_day && (
                                     <button
                                       type="button"
-                                      className={`pointer-events-auto rounded-md border px-2 py-0.5 text-[9px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                                        appointment.status === 'cancelled'
-                                          ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                                          : 'border-rose-300 bg-rose-50 text-rose-700 hover:bg-rose-100'
-                                      }`}
-                                      disabled={
-                                        statusActionAppointmentId ===
-                                        appointment.id
+                                      aria-label="Drag to change end time"
+                                      title="Drag to extend or shorten"
+                                      style={{ touchAction: 'none' }}
+                                      className="relative flex h-5 shrink-0 cursor-ns-resize touch-none items-center justify-center rounded-b-[13px] border-t border-black/10 bg-black/[0.08] hover:bg-black/[0.14] sm:h-2.5"
+                                      onPointerDown={(e) =>
+                                        beginEventResize(e, event)
                                       }
+                                    >
+                                      <span
+                                        aria-hidden
+                                        className="block h-0.5 w-8 rounded-full bg-black/30 sm:hidden"
+                                      />
+                                    </button>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          {dateKey === todayKey &&
+                          nowMinutes != null &&
+                          nowMinutes >= GRID_START_MINUTES &&
+                          nowMinutes <= (HOURS[HOURS.length - 1] + 1) * 60 ? (
+                            <div
+                              className="pointer-events-none absolute right-0 left-0 z-20 flex items-center"
+                              style={{
+                                top:
+                                  ((nowMinutes - GRID_START_MINUTES) / 60) *
+                                  HOUR_HEIGHT,
+                              }}
+                            >
+                              <span className="ml-0.5 h-2.5 w-2.5 shrink-0 rounded-full bg-red-500 shadow-sm" />
+                              <span className="h-px flex-1 bg-red-500/80" />
+                            </div>
+                          ) : null}
+                          {renderApptBlocks(dayAppointments)}
+                        </div>
+                      )
+                    })
+                  : view === 'week' && staffList.length > 1
+                    ? displayedDays.map((date) => {
+                        const dateKey = formatDateKey(date)
+                        const isSunday = date.getDay() === 0
+                        if (isSunday) {
+                          return (
+                            <div
+                              key={dateKey}
+                              className="border-r border-slate-200 bg-slate-100/70"
+                            />
+                          )
+                        }
+                        const allDayAppointments =
+                          appointmentsByDate.get(dateKey) || []
+                        const dayEvents = data.events.filter((event) =>
+                          intersectsDay(event, dateKey),
+                        )
+                        const dayRanges =
+                          businessDayRanges.get(date.getDay()) || []
+                        const offHourSegments =
+                          getOffHourSegmentsForGrid(dayRanges)
+                        return (
+                          <div
+                            key={dateKey}
+                            className="relative flex border-r border-slate-200"
+                          >
+                            {staffList.map((staff, staffIdx) => {
+                              const laneAppts = allDayAppointments.filter(
+                                (a) =>
+                                  a.assigned_staff_user_id === staff.id ||
+                                  (!a.assigned_staff_user_id && staffIdx === 0),
+                              )
+                              const laneIsOpen = isStaffOpenForDate(
+                                staff.id,
+                                dateKey,
+                              )
+                              const isFirst = staffIdx === 0
+                              return (
+                                <div
+                                  key={staff.id}
+                                  data-date-column={dateKey}
+                                  data-staff-lane={staff.id}
+                                  className={`relative min-w-0 flex-1 ${staffIdx < staffList.length - 1 ? 'border-r border-slate-200' : ''} ${laneIsOpen ? 'bg-white' : 'bg-slate-100/60'}`}
+                                  onDragOver={(e) =>
+                                    handleDragOver(e, dateKey, staff.id)
+                                  }
+                                  onDragLeave={() => setDragPreview(null)}
+                                  onDrop={(e) =>
+                                    void handleDrop(e, dateKey, staff.id)
+                                  }
+                                >
+                                  {!laneIsOpen && (
+                                    <div className="pointer-events-none absolute inset-0 z-10 bg-slate-200/40" />
+                                  )}
+                                  {dragPreview?.dateKey === dateKey &&
+                                  dragPreview?.staffId === staff.id &&
+                                  draggingAppointment
+                                    ? (() => {
+                                        const ghostPlacement =
+                                          getAppointmentPlacement(
+                                            draggingAppointment,
+                                          )
+                                        const ghostTop =
+                                          ((dragPreview.snappedMinutes -
+                                            GRID_START_MINUTES) /
+                                            60) *
+                                          HOUR_HEIGHT
+                                        return (
+                                          <div
+                                            className="pointer-events-none absolute right-2 left-2 rounded-2xl border-2 border-dashed border-emerald-400 bg-emerald-100/60"
+                                            style={{
+                                              top: ghostTop + 6,
+                                              height: ghostPlacement.height - 8,
+                                            }}
+                                          />
+                                        )
+                                      })()
+                                    : null}
+                                  {HOURS.map((hour) => (
+                                    <button
+                                      key={`${dateKey}-${staff.id}-${hour}`}
+                                      type="button"
+                                      className="focus-visible:ring-ring relative z-0 block w-full border-b border-slate-200 text-left transition hover:bg-emerald-50/60 focus-visible:ring-2 focus-visible:outline-none"
+                                      style={{ height: HOUR_HEIGHT }}
                                       onClick={(e) => {
-                                        openStatusActionPopover(e, appointment)
+                                        setCellMenu({
+                                          dateKey,
+                                          hour,
+                                          x: e.clientX,
+                                          y: e.clientY,
+                                          staffId: staff.id,
+                                        })
+                                      }}
+                                      title={`Create at ${String(hour).padStart(2, '0')}:00`}
+                                      aria-label={`Create on ${dateKey} at ${String(hour).padStart(2, '0')}:00`}
+                                    />
+                                  ))}
+                                  {offHourSegments.map((segment, index) => {
+                                    const gridStartMinutes = HOURS[0] * 60
+                                    const top =
+                                      ((segment.start - gridStartMinutes) /
+                                        60) *
+                                      HOUR_HEIGHT
+                                    const height =
+                                      ((segment.end - segment.start) / 60) *
+                                      HOUR_HEIGHT
+                                    return (
+                                      <div
+                                        key={`${dateKey}-${staff.id}-off-${index}`}
+                                        className="pointer-events-none absolute right-0 left-0 bg-slate-100/80"
+                                        style={{ top, height }}
+                                      />
+                                    )
+                                  })}
+                                  {dayEvents
+                                    .filter(
+                                      (event) =>
+                                        event.assigned_staff_user_id ===
+                                          staff.id ||
+                                        (!event.assigned_staff_user_id &&
+                                          isFirst),
+                                    )
+                                    .map((event) => {
+                                      const endOverride =
+                                        eventResizeSession?.eventId ===
+                                          event.id &&
+                                        eventResizeLiveEndMinutes != null
+                                          ? eventResizeLiveEndMinutes
+                                          : null
+                                      const placement = getBlockPlacement(
+                                        event,
+                                        endOverride,
+                                      )
+                                      const isDraggingThis =
+                                        draggingEvent?.id === event.id
+                                      return (
+                                        <div
+                                          key={event.id}
+                                          data-event-block
+                                          className={`absolute right-2 left-2 flex flex-col overflow-hidden rounded-2xl border text-xs shadow-sm ${getEventTone(event)} ${isDraggingThis ? 'opacity-40' : ''}`}
+                                          style={{
+                                            top: placement.top + 6,
+                                            height: placement.height - 8,
+                                          }}
+                                        >
+                                          {!event.is_all_day && (
+                                            <div
+                                              onPointerDown={(e) =>
+                                                handleEventMovePointerDown(
+                                                  e,
+                                                  event,
+                                                )
+                                              }
+                                              onPointerMove={
+                                                handleEventMovePointerMove
+                                              }
+                                              onPointerUp={(e) =>
+                                                void handleEventMovePointerUp(e)
+                                              }
+                                              onPointerCancel={(e) =>
+                                                void handleEventMovePointerUp(e)
+                                              }
+                                              style={{ touchAction: 'none' }}
+                                              className="flex shrink-0 cursor-grab touch-none items-center gap-1 border-b border-black/5 bg-black/[0.03] px-2 py-1.5 active:cursor-grabbing"
+                                            >
+                                              <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                                              <span className="text-[10px] font-medium tracking-tight text-slate-600">
+                                                Move
+                                              </span>
+                                            </div>
+                                          )}
+                                          <button
+                                            type="button"
+                                            className="flex min-h-0 flex-1 flex-col overflow-hidden p-2 text-left"
+                                            onClick={() => openEditEvent(event)}
+                                          >
+                                            <div className="font-semibold">
+                                              {event.title}
+                                            </div>
+                                            {event.description ? (
+                                              <div className="mt-1 line-clamp-2 opacity-75">
+                                                {event.description}
+                                              </div>
+                                            ) : null}
+                                          </button>
+                                          {!event.is_all_day && (
+                                            <button
+                                              type="button"
+                                              aria-label="Drag to change end time"
+                                              title="Drag to extend or shorten"
+                                              style={{ touchAction: 'none' }}
+                                              className="relative flex h-5 shrink-0 cursor-ns-resize touch-none items-center justify-center rounded-b-[13px] border-t border-black/10 bg-black/[0.08] hover:bg-black/[0.14] sm:h-2.5"
+                                              onPointerDown={(e) =>
+                                                beginEventResize(e, event)
+                                              }
+                                            >
+                                              <span
+                                                aria-hidden
+                                                className="block h-0.5 w-8 rounded-full bg-black/30 sm:hidden"
+                                              />
+                                            </button>
+                                          )}
+                                        </div>
+                                      )
+                                    })}
+                                  {isFirst &&
+                                  dateKey === todayKey &&
+                                  nowMinutes != null &&
+                                  nowMinutes >= GRID_START_MINUTES &&
+                                  nowMinutes <=
+                                    (HOURS[HOURS.length - 1] + 1) * 60 ? (
+                                    <div
+                                      className="pointer-events-none absolute right-0 left-0 z-20 flex items-center"
+                                      style={{
+                                        top:
+                                          ((nowMinutes - GRID_START_MINUTES) /
+                                            60) *
+                                          HOUR_HEIGHT,
                                       }}
                                     >
-                                      {statusActionAppointmentId ===
-                                      appointment.id ? (
-                                        <span className="inline-flex items-center gap-1">
-                                          <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                                          Saving
-                                        </span>
-                                      ) : appointment.status === 'cancelled' ? (
-                                        'Restore'
-                                      ) : (
-                                        'Cancel'
-                                      )}
-                                    </button>
-                                  </div>
-                                )}
-                              <button
-                                type="button"
-                                aria-label="Drag to change end time"
-                                title="Drag to extend or shorten"
-                                style={{ touchAction: 'none' }}
-                                className="relative flex h-5 shrink-0 cursor-ns-resize touch-none items-center justify-center rounded-b-[13px] border-t border-black/10 bg-black/[0.08] hover:bg-black/[0.14] sm:h-2.5"
-                                onPointerDown={(e) =>
-                                  beginResize(e, appointment)
-                                }
-                              >
-                                <span
-                                  aria-hidden
-                                  className="block h-0.5 w-8 rounded-full bg-black/30 sm:hidden"
-                                />
-                              </button>
-                            </div>
+                                      <span className="ml-0.5 h-2.5 w-2.5 shrink-0 rounded-full bg-red-500 shadow-sm" />
+                                      <span className="h-px flex-1 bg-red-500/80" />
+                                    </div>
+                                  ) : null}
+                                  {renderApptBlocks(laneAppts)}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )
+                      })
+                    : displayedDays.map((date) => {
+                        const dateKey = formatDateKey(date)
+                        const isSunday = date.getDay() === 0
+                        if (isSunday) {
+                          return (
+                            <div
+                              key={dateKey}
+                              className="border-r border-slate-200 bg-slate-100/70"
+                            />
                           )
-                        })
-                      })()}
-                    </div>
-                  )
-                })}
+                        }
+                        const allDayAppointments =
+                          appointmentsByDate.get(dateKey) || []
+                        const dayAppointments = staffFilter
+                          ? allDayAppointments.filter(
+                              (a) =>
+                                a.assigned_staff_user_id === staffFilter ||
+                                (!a.assigned_staff_user_id &&
+                                  staffFilter === staffList[0]?.id),
+                            )
+                          : allDayAppointments
+                        const dayEvents = data.events.filter((event) =>
+                          intersectsDay(event, dateKey),
+                        )
+                        const dayRanges =
+                          businessDayRanges.get(date.getDay()) || []
+                        const offHourSegments =
+                          getOffHourSegmentsForGrid(dayRanges)
+                        return (
+                          <div
+                            key={dateKey}
+                            data-date-column={dateKey}
+                            data-staff-lane=""
+                            className="relative border-r border-slate-200 bg-white"
+                            onDragOver={(e) => handleDragOver(e, dateKey)}
+                            onDragLeave={() => setDragPreview(null)}
+                            onDrop={(e) => void handleDrop(e, dateKey, null)}
+                          >
+                            {dragPreview?.dateKey === dateKey &&
+                            draggingAppointment
+                              ? (() => {
+                                  const ghostPlacement =
+                                    getAppointmentPlacement(draggingAppointment)
+                                  const ghostTop =
+                                    ((dragPreview.snappedMinutes -
+                                      GRID_START_MINUTES) /
+                                      60) *
+                                    HOUR_HEIGHT
+                                  return (
+                                    <div
+                                      className="pointer-events-none absolute right-2 left-2 rounded-2xl border-2 border-dashed border-emerald-400 bg-emerald-100/60"
+                                      style={{
+                                        top: ghostTop + 6,
+                                        height: ghostPlacement.height - 8,
+                                      }}
+                                    />
+                                  )
+                                })()
+                              : null}
+                            {HOURS.map((hour) => (
+                              <button
+                                key={`${dateKey}-${hour}`}
+                                type="button"
+                                className="focus-visible:ring-ring relative z-0 block w-full border-b border-slate-200 text-left transition hover:bg-emerald-50/60 focus-visible:ring-2 focus-visible:outline-none"
+                                style={{ height: HOUR_HEIGHT }}
+                                onClick={(e) => {
+                                  setCellMenu({
+                                    dateKey,
+                                    hour,
+                                    x: e.clientX,
+                                    y: e.clientY,
+                                  })
+                                }}
+                                title={`Create at ${String(hour).padStart(2, '0')}:00`}
+                                aria-label={`Create on ${dateKey} at ${String(hour).padStart(2, '0')}:00`}
+                              />
+                            ))}
+                            {offHourSegments.map((segment, index) => {
+                              const gridStartMinutes = HOURS[0] * 60
+                              const top =
+                                ((segment.start - gridStartMinutes) / 60) *
+                                HOUR_HEIGHT
+                              const height =
+                                ((segment.end - segment.start) / 60) *
+                                HOUR_HEIGHT
+                              return (
+                                <div
+                                  key={`${dateKey}-off-${index}`}
+                                  className="pointer-events-none absolute right-0 left-0 bg-slate-100/80"
+                                  style={{ top, height }}
+                                />
+                              )
+                            })}
+                            {dayEvents.map((event) => {
+                              const endOverride =
+                                eventResizeSession?.eventId === event.id &&
+                                eventResizeLiveEndMinutes != null
+                                  ? eventResizeLiveEndMinutes
+                                  : null
+                              const placement = getBlockPlacement(
+                                event,
+                                endOverride,
+                              )
+                              const isDraggingThis =
+                                draggingEvent?.id === event.id
+                              return (
+                                <div
+                                  key={event.id}
+                                  data-event-block
+                                  className={`absolute right-2 left-2 flex flex-col overflow-hidden rounded-2xl border text-xs shadow-sm ${getEventTone(event)} ${isDraggingThis ? 'opacity-40' : ''}`}
+                                  style={{
+                                    top: placement.top + 6,
+                                    height: placement.height - 8,
+                                  }}
+                                >
+                                  {!event.is_all_day && (
+                                    <div
+                                      onPointerDown={(e) =>
+                                        handleEventMovePointerDown(e, event)
+                                      }
+                                      onPointerMove={handleEventMovePointerMove}
+                                      onPointerUp={(e) =>
+                                        void handleEventMovePointerUp(e)
+                                      }
+                                      onPointerCancel={(e) =>
+                                        void handleEventMovePointerUp(e)
+                                      }
+                                      style={{ touchAction: 'none' }}
+                                      className="flex shrink-0 cursor-grab touch-none items-center gap-1 border-b border-black/5 bg-black/[0.03] px-2 py-1.5 active:cursor-grabbing"
+                                    >
+                                      <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                                      <span className="text-[10px] font-medium tracking-tight text-slate-600">
+                                        Move
+                                      </span>
+                                    </div>
+                                  )}
+                                  <button
+                                    type="button"
+                                    className="flex min-h-0 flex-1 flex-col overflow-hidden p-2 text-left"
+                                    onClick={() => openEditEvent(event)}
+                                  >
+                                    <div className="font-semibold">
+                                      {event.title}
+                                    </div>
+                                    {event.description ? (
+                                      <div className="mt-1 line-clamp-2 opacity-75">
+                                        {event.description}
+                                      </div>
+                                    ) : null}
+                                  </button>
+                                  {!event.is_all_day && (
+                                    <button
+                                      type="button"
+                                      aria-label="Drag to change end time"
+                                      title="Drag to extend or shorten"
+                                      style={{ touchAction: 'none' }}
+                                      className="relative flex h-5 shrink-0 cursor-ns-resize touch-none items-center justify-center rounded-b-[13px] border-t border-black/10 bg-black/[0.08] hover:bg-black/[0.14] sm:h-2.5"
+                                      onPointerDown={(e) =>
+                                        beginEventResize(e, event)
+                                      }
+                                    >
+                                      <span
+                                        aria-hidden
+                                        className="block h-0.5 w-8 rounded-full bg-black/30 sm:hidden"
+                                      />
+                                    </button>
+                                  )}
+                                </div>
+                              )
+                            })}
+                            {dateKey === todayKey &&
+                            nowMinutes != null &&
+                            nowMinutes >= GRID_START_MINUTES &&
+                            nowMinutes <= (HOURS[HOURS.length - 1] + 1) * 60 ? (
+                              <div
+                                className="pointer-events-none absolute right-0 left-0 z-20 flex items-center"
+                                style={{
+                                  top:
+                                    ((nowMinutes - GRID_START_MINUTES) / 60) *
+                                    HOUR_HEIGHT,
+                                }}
+                              >
+                                <span className="ml-0.5 h-2.5 w-2.5 shrink-0 rounded-full bg-red-500 shadow-sm" />
+                                <span className="h-px flex-1 bg-red-500/80" />
+                              </div>
+                            ) : null}
+                            {renderApptBlocks(dayAppointments)}
+                          </div>
+                        )
+                      })}
               </div>
             </div>
           </div>

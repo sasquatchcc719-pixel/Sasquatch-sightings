@@ -5,11 +5,8 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
-import {
-  applyAppointmentBuffer,
-  calendarEventsToAppointmentWindows,
-  getAvailableSlots,
-} from '@/lib/ops/availability'
+import { applyAppointmentBuffer } from '@/lib/ops/availability'
+import { getUnionedSlots } from '@/lib/ops/staff-availability'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -54,50 +51,13 @@ export async function GET(request: NextRequest) {
     )
     const supabase = createAdminClient()
 
-    async function getSlotsForDate(targetDate: string) {
-      const [
-        templatesResult,
-        overridesResult,
-        appointmentsResult,
-        eventsResult,
-      ] = await Promise.all([
-        supabase
-          .from('availability_templates')
-          .select('*')
-          .eq('is_active', true),
-        supabase
-          .from('availability_overrides')
-          .select('*')
-          .eq('override_date', targetDate),
-        supabase
-          .from('ops_appointments')
-          .select('appointment_date, start_time, end_time, status')
-          .eq('appointment_date', targetDate),
-        supabase
-          .from('ops_calendar_events')
-          .select(
-            'event_kind, start_date, end_date, start_time, end_time, is_all_day',
-          )
-          .lte('start_date', targetDate)
-          .gte('end_date', targetDate),
-      ])
-      return getAvailableSlots({
-        date: targetDate,
-        requiredMinutes,
-        templates: templatesResult.data || [],
-        overrides: overridesResult.data || [],
-        appointments: [
-          ...(appointmentsResult.data || []),
-          ...calendarEventsToAppointmentWindows(
-            targetDate,
-            eventsResult.data || [],
-          ),
-        ],
-        maxResults: 8,
-      })
-    }
+    const slots = await getUnionedSlots({
+      supabase,
+      date,
+      requiredMinutes,
+      maxResults: 8,
+    })
 
-    const slots = await getSlotsForDate(date)
     const formatted = slots.map((slot) => ({
       start_time: slot.start_time,
       end_time: slot.end_time,
@@ -110,7 +70,12 @@ export async function GET(request: NextRequest) {
       for (let i = 1; i <= 14; i++) {
         checkDate.setDate(checkDate.getDate() + 1)
         const candidate = checkDate.toISOString().split('T')[0]
-        const candidateSlots = await getSlotsForDate(candidate)
+        const candidateSlots = await getUnionedSlots({
+          supabase,
+          date: candidate,
+          requiredMinutes,
+          maxResults: 1,
+        })
         if (candidateSlots.length > 0) {
           nextAvailableDate = candidate
           break

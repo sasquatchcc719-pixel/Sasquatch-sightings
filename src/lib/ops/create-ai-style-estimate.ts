@@ -19,13 +19,8 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import {
-  applyAppointmentBuffer,
-  calendarEventsToAppointmentWindows,
-  DEFAULT_FALLBACK_AVAILABILITY_TEMPLATES,
-  getAvailableSlots,
-  type ExistingAppointmentWindow,
-} from '@/lib/ops/availability'
+import { applyAppointmentBuffer } from '@/lib/ops/availability'
+import { getStaffPrioritizedSlots } from '@/lib/ops/staff-availability'
 import { sendAdminSMS } from '@/lib/twilio'
 import { sendOneSignalNotification } from '@/lib/onesignal'
 import { resolveServiceAddress } from '@/lib/ops/addresses'
@@ -80,49 +75,6 @@ export type CreateAiStyleEstimateResult =
     }
 
 const DEFAULT_VISIT_MINUTES = 60
-
-async function loadAvailabilityBundle(
-  supabase: SupabaseClient,
-  date: string,
-): Promise<{
-  templates: Parameters<typeof getAvailableSlots>[0]['templates']
-  overrides: Parameters<typeof getAvailableSlots>[0]['overrides']
-  appointments: ExistingAppointmentWindow[]
-}> {
-  const [templatesResult, overridesResult, appointmentsResult, eventsResult] =
-    await Promise.all([
-      supabase.from('availability_templates').select('*').eq('is_active', true),
-      supabase
-        .from('availability_overrides')
-        .select('*')
-        .eq('override_date', date),
-      supabase
-        .from('ops_appointments')
-        .select('appointment_date, start_time, end_time, status')
-        .eq('appointment_date', date),
-      supabase
-        .from('ops_calendar_events')
-        .select(
-          'event_kind, start_date, end_date, start_time, end_time, is_all_day',
-        )
-        .lte('start_date', date)
-        .gte('end_date', date),
-    ])
-
-  let templates = templatesResult.data || []
-  if (templates.length === 0) {
-    templates = DEFAULT_FALLBACK_AVAILABILITY_TEMPLATES as typeof templates
-  }
-
-  return {
-    templates,
-    overrides: overridesResult.data || [],
-    appointments: [
-      ...((appointmentsResult.data || []) as ExistingAppointmentWindow[]),
-      ...calendarEventsToAppointmentWindows(date, eventsResult.data || []),
-    ],
-  }
-}
 
 function normClock5(t: string): string {
   const m = /^(\d{1,2}):(\d{2})/.exec(String(t).trim())
@@ -195,15 +147,13 @@ export async function createAiStyleEstimate(
   const requiredMinutes = applyAppointmentBuffer(visitMinutes)
 
   // Validate the slot is real so two AI agents can't accidentally double-book.
-  const bundle = await loadAvailabilityBundle(supabase, appointmentDate)
-  const slots = getAvailableSlots({
+  const estimateStaffResult = await getStaffPrioritizedSlots({
+    supabase,
     date: appointmentDate,
     requiredMinutes,
-    templates: bundle.templates,
-    overrides: bundle.overrides,
-    appointments: bundle.appointments,
     maxResults: 48,
   })
+  const slots = estimateStaffResult?.slots || []
   const slotMatch = slots.some((s) => normClock5(s.start_time) === startTime)
   if (!slotMatch) {
     return {
@@ -315,6 +265,9 @@ export async function createAiStyleEstimate(
       quickbooks_sync_status: 'held',
       quoted_total: 0,
       internal_notes: internalNotes,
+      ...(estimateStaffResult?.staffUserId
+        ? { assigned_staff_user_id: estimateStaffResult.staffUserId }
+        : {}),
     })
     .select('id')
     .single()

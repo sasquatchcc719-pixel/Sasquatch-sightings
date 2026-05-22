@@ -63,7 +63,13 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const [appointmentsResult, eventsResult, rulesResult] = await Promise.all([
+    const [
+      appointmentsResult,
+      eventsResult,
+      rulesResult,
+      staffResult,
+      dailyAvailResult,
+    ] = await Promise.all([
       supabase
         .from('ops_appointments')
         .select(APPOINTMENT_SELECT)
@@ -81,6 +87,18 @@ export async function GET(request: NextRequest) {
       supabase
         .from('ops_recurrence_rules')
         .select('template_id, frequency, interval_days'),
+      supabase
+        .from('staff_users')
+        .select(
+          'id, user_id, display_name, role, is_active, default_open, scheduling_priority',
+        )
+        .eq('is_active', true)
+        .order('scheduling_priority', { ascending: true }),
+      supabase
+        .from('staff_daily_availability')
+        .select('staff_user_id, date, is_open')
+        .gte('date', startDate)
+        .lte('date', endDate),
     ])
 
     if (appointmentsResult.error) throw appointmentsResult.error
@@ -131,6 +149,8 @@ export async function GET(request: NextRequest) {
       })),
       events: eventsResult.data || [],
       recurringFrequencyMap,
+      staff: staffResult.data || [],
+      dailyAvailability: dailyAvailResult.data || [],
     })
   } catch (error) {
     const detail =

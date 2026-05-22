@@ -188,6 +188,9 @@ export function NewJobWorkspace() {
     Array<{ start_time: string; end_time: string }>
   >([])
   const [loadingSlots, setLoadingSlots] = useState(false)
+  const [staffMembers, setStaffMembers] = useState<
+    Array<{ id: string; display_name: string; scheduling_priority: number }>
+  >([])
 
   const [lineItems, setLineItems] = useState<LineItemForm[]>([])
 
@@ -291,6 +294,7 @@ export function NewJobWorkspace() {
       return
     }
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setAppointmentForm((current) => ({
       ...current,
       appointment_date: validDate || current.appointment_date,
@@ -323,6 +327,22 @@ export function NewJobWorkspace() {
           const defaultCategory = pickDefaultCategory(discoveredCategories)
           if (defaultCategory) {
             setSelectedCategory(defaultCategory)
+          }
+        }
+        const today = formatDateKey(new Date())
+        const staffRes = await fetch(
+          `/api/admin/ops/schedule?start_date=${today}&end_date=${today}`,
+          { cache: 'no-store' },
+        )
+        const staffResult = await staffRes.json()
+        if (staffResult.staff) {
+          setStaffMembers(staffResult.staff)
+          if (staffResult.staff.length > 0) {
+            setAppointmentForm((cur) => ({
+              ...cur,
+              assigned_staff_user_id:
+                cur.assigned_staff_user_id || staffResult.staff[0].id,
+            }))
           }
         }
       } catch (loadError) {
@@ -365,6 +385,7 @@ export function NewJobWorkspace() {
   }, [appointmentForm.appointment_date])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadSchedulePreview()
   }, [loadSchedulePreview])
 
@@ -393,6 +414,7 @@ export function NewJobWorkspace() {
     }
 
     if (!customerQuery.trim()) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCustomerResults([])
       return
     }
@@ -417,9 +439,11 @@ export function NewJobWorkspace() {
 
   useEffect(() => {
     if (categories.length === 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (selectedCategory) setSelectedCategory('')
       return
     }
+
     if (!selectedCategory || !categories.includes(selectedCategory)) {
       setSelectedCategory(pickDefaultCategory(categories))
     }
@@ -1504,9 +1528,10 @@ export function NewJobWorkspace() {
                 )}
               </div>
               <div>
-                <Label htmlFor="appointment-tech">Assigned Staff</Label>
-                <Input
+                <Label htmlFor="appointment-tech">Assigned Technician</Label>
+                <select
                   id="appointment-tech"
+                  className="border-input bg-background h-10 w-full rounded-md border px-3 text-sm"
                   value={appointmentForm.assigned_staff_user_id}
                   onChange={(event) =>
                     setAppointmentForm((current) => ({
@@ -1514,8 +1539,16 @@ export function NewJobWorkspace() {
                       assigned_staff_user_id: event.target.value,
                     }))
                   }
-                  placeholder="Future staff selector"
-                />
+                >
+                  {staffMembers.map((staff) => (
+                    <option key={staff.id} value={staff.id}>
+                      {staff.display_name}
+                    </option>
+                  ))}
+                  {staffMembers.length === 0 && (
+                    <option value="">Loading...</option>
+                  )}
+                </select>
               </div>
               <div>
                 <Label htmlFor="lead-source">Lead Source *</Label>

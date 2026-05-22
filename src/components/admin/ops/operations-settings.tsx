@@ -1,13 +1,23 @@
 'use client'
 
+import Image from 'next/image'
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
-import { Loader2, Mail, MessageSquare, Play, RefreshCw } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  Loader2,
+  Mail,
+  MessageSquare,
+  Play,
+  RefreshCw,
+  Upload,
+  User,
+} from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { QuickBooksStatus } from '@/components/admin/ops/quickbooks-status'
 import { AgentApiSettings } from '@/components/admin/ops/agent-api-settings'
+import { StaffPhotoCropper } from '@/components/admin/ops/staff-photo-cropper'
 
 type QueueStats = {
   pending: number
@@ -59,6 +69,187 @@ function formatEmailTemplateLabel(key: string) {
   return OPS_EMAIL_TEMPLATE_LABELS[key] || key.replace(/_/g, ' ')
 }
 
+type StaffMember = {
+  id: string
+  display_name: string
+  role: string
+  profile_image_url: string | null
+}
+
+function StaffPhotoCard() {
+  const [staff, setStaff] = useState<StaffMember[]>([])
+  const [uploading, setUploading] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [cropTarget, setCropTarget] = useState<{
+    staffId: string
+    imageSrc: string
+  } | null>(null)
+  const inputRefs = useRef<Record<string, HTMLInputElement | null>>({})
+
+  useEffect(() => {
+    fetch('/api/admin/ops/staff')
+      .then((r) => r.json())
+      .then((data: { staff: StaffMember[] }) => setStaff(data.staff || []))
+      .catch(() => setError('Failed to load staff'))
+  }, [])
+
+  function handleFileSelected(staffId: string, file: File) {
+    const reader = new FileReader()
+    reader.onload = () => {
+      setCropTarget({ staffId, imageSrc: reader.result as string })
+    }
+    reader.readAsDataURL(file)
+  }
+
+  async function handleCropSave(blob: Blob) {
+    if (!cropTarget) return
+    const { staffId } = cropTarget
+    setCropTarget(null)
+    setUploading(staffId)
+    setError(null)
+    try {
+      const form = new FormData()
+      form.append('file', new File([blob], 'photo.jpg', { type: 'image/jpeg' }))
+      form.append('staff_user_id', staffId)
+      const res = await fetch('/api/admin/ops/staff/photo', {
+        method: 'POST',
+        body: form,
+      })
+      const data = (await res.json()) as { url?: string; error?: string }
+      if (!res.ok) throw new Error(data.error || 'Upload failed')
+      setStaff((prev) =>
+        prev.map((s) =>
+          s.id === staffId
+            ? {
+                ...s,
+                profile_image_url: data.url
+                  ? `${data.url}?t=${Date.now()}`
+                  : null,
+              }
+            : s,
+        ),
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload failed')
+    } finally {
+      setUploading(null)
+    }
+  }
+
+  return (
+    <>
+      {cropTarget && (
+        <StaffPhotoCropper
+          imageSrc={cropTarget.imageSrc}
+          onSave={(blob) => void handleCropSave(blob)}
+          onCancel={() => setCropTarget(null)}
+        />
+      )}
+      <Card className="border-border/60 bg-card/80 p-6 shadow-sm backdrop-blur">
+        <h3 className="text-lg font-semibold">Technician Profiles</h3>
+        <p className="text-muted-foreground mt-1 text-sm">
+          Profile photos are used in customer-facing notifications.
+        </p>
+        {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
+        <div className="mt-4 flex flex-col gap-4">
+          {staff.map((member) => (
+            <div key={member.id} className="flex items-center gap-4">
+              <div className="border-border/60 bg-muted relative h-16 w-16 shrink-0 overflow-hidden rounded-full border">
+                {member.profile_image_url ? (
+                  <Image
+                    key={member.profile_image_url}
+                    src={member.profile_image_url}
+                    alt={member.display_name}
+                    fill
+                    className="object-cover"
+                    unoptimized
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center">
+                    <User className="text-muted-foreground h-7 w-7" />
+                  </div>
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="font-medium">{member.display_name}</p>
+                <p className="text-muted-foreground text-sm capitalize">
+                  {member.role}
+                </p>
+              </div>
+              <input
+                ref={(el) => {
+                  inputRefs.current[member.id] = el
+                }}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) handleFileSelected(member.id, file)
+                  e.target.value = ''
+                }}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={uploading === member.id}
+                onClick={() => inputRefs.current[member.id]?.click()}
+              >
+                {uploading === member.id ? (
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Upload className="mr-1.5 h-3.5 w-3.5" />
+                )}
+                {member.profile_image_url ? 'Replace' : 'Upload'} photo
+              </Button>
+            </div>
+          ))}
+          {staff.length === 0 && !error && (
+            <p className="text-muted-foreground text-sm">Loading staff…</p>
+          )}
+        </div>
+      </Card>
+    </>
+  )
+}
+
+function ChannelSwitch({
+  label,
+  enabled,
+  disabled,
+  onToggle,
+}: {
+  label: string
+  enabled: boolean
+  disabled?: boolean
+  onToggle: () => void
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="text-muted-foreground w-12 text-xs font-medium">
+        {label}
+      </span>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={enabled}
+        disabled={disabled}
+        onClick={() => onToggle()}
+        className={`focus-visible:ring-ring relative inline-flex h-8 w-14 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${
+          enabled ? 'bg-primary' : 'bg-muted'
+        }`}
+      >
+        <span
+          className={`pointer-events-none inline-block h-7 w-7 transform rounded-full bg-white shadow ring-0 transition ${
+            enabled ? 'translate-x-6' : 'translate-x-0.5'
+          }`}
+        />
+      </button>
+      <span className="text-xs font-medium">{enabled ? 'On' : 'Off'}</span>
+    </div>
+  )
+}
+
 export function OperationsSettings() {
   const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState(false)
@@ -69,7 +260,7 @@ export function OperationsSettings() {
   const [emailLog, setEmailLog] = useState<EmailLogEntry[]>([])
   const [emailLogTotal, setEmailLogTotal] = useState(0)
 
-  const loadStatus = async () => {
+  const loadStatus = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
@@ -122,11 +313,11 @@ export function OperationsSettings() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     void loadStatus()
-  }, [])
+  }, [loadStatus])
 
   const runNow = async () => {
     setRunning(true)
@@ -197,43 +388,6 @@ export function OperationsSettings() {
     }
   }
 
-  function ChannelSwitch({
-    label,
-    enabled,
-    disabled,
-    onToggle,
-  }: {
-    label: string
-    enabled: boolean
-    disabled?: boolean
-    onToggle: () => void
-  }) {
-    return (
-      <div className="flex items-center gap-3">
-        <span className="text-muted-foreground w-12 text-xs font-medium">
-          {label}
-        </span>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={enabled}
-          disabled={disabled}
-          onClick={() => onToggle()}
-          className={`focus-visible:ring-ring relative inline-flex h-8 w-14 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 ${
-            enabled ? 'bg-primary' : 'bg-muted'
-          }`}
-        >
-          <span
-            className={`pointer-events-none inline-block h-7 w-7 transform rounded-full bg-white shadow ring-0 transition ${
-              enabled ? 'translate-x-6' : 'translate-x-0.5'
-            }`}
-          />
-        </button>
-        <span className="text-xs font-medium">{enabled ? 'On' : 'Off'}</span>
-      </div>
-    )
-  }
-
   return (
     <div className="space-y-6">
       <Card className="border-border/60 bg-card/80 p-6 shadow-sm backdrop-blur">
@@ -255,6 +409,8 @@ export function OperationsSettings() {
           <QuickBooksStatus />
         </div>
       </Card>
+
+      <StaffPhotoCard />
 
       <Card className="border-border/60 bg-card/80 p-6 shadow-sm backdrop-blur">
         <h3 className="text-lg font-semibold">AI Agent Booking API</h3>

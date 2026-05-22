@@ -11,9 +11,10 @@ export async function POST(
     const access = await requireAnyRole(['admin', 'owner', 'tech'])
     const supabase = createAdminClient()
     const { id: appointmentId } = await params
+    const staffUserId = access.staff?.id ?? access.id
     const appointment = await getAssignedTechAppointment(
       supabase,
-      access.id,
+      staffUserId,
       appointmentId,
     )
 

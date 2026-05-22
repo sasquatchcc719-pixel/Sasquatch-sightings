@@ -84,7 +84,7 @@ export default async function AdminLayout({ children }: AdminLayoutProps) {
             </nav>
 
             <div
-              className={`flex w-full max-w-[1440px] flex-1 flex-col gap-6 p-4 sm:p-5 ${gpsEnabled ? 'pb-24 sm:pb-20' : 'pb-24 sm:pb-10'}`}
+              className={`flex w-full flex-1 flex-col gap-6 p-4 sm:p-5 ${gpsEnabled ? 'pb-24 sm:pb-20' : 'pb-24 sm:pb-10'}`}
             >
               <PushNotificationBanner />
               {/* Desktop-only nav panel */}
