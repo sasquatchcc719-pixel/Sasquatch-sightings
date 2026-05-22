@@ -10,6 +10,7 @@ type SlotTokenPayload = {
   required_minutes: number
   issued_at: number
   owner_key: string
+  assigned_staff_user_id?: string | null
 }
 
 export type SlotTokenParams = {
@@ -18,6 +19,7 @@ export type SlotTokenParams = {
   endTime: string
   requiredMinutes: number
   ownerKey: string
+  assignedStaffUserId?: string | null
 }
 
 export type SlotTokenVerifyParams = {
@@ -72,6 +74,9 @@ export function createSlotToken(params: SlotTokenParams): string {
     required_minutes: params.requiredMinutes,
     issued_at: Date.now(),
     owner_key: params.ownerKey,
+    ...(params.assignedStaffUserId
+      ? { assigned_staff_user_id: params.assignedStaffUserId }
+      : {}),
   }
   const encodedPayload = encode(JSON.stringify(payload))
   return `${encodedPayload}.${sign(encodedPayload)}`
@@ -80,7 +85,9 @@ export function createSlotToken(params: SlotTokenParams): string {
 export function verifySlotToken(
   token: string,
   params: SlotTokenVerifyParams,
-): { ok: true } | { ok: false; error: string } {
+):
+  | { ok: true; assignedStaffUserId?: string | null }
+  | { ok: false; error: string } {
   const [encodedPayload, providedSignature] = token.trim().split('.')
   if (!encodedPayload || !providedSignature) {
     return { ok: false, error: 'Missing or invalid slot_token.' }
@@ -128,5 +135,5 @@ export function verifySlotToken(
     }
   }
 
-  return { ok: true }
+  return { ok: true, assignedStaffUserId: payload.assigned_staff_user_id }
 }

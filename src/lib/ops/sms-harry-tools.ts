@@ -2,17 +2,16 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type OpenAI from 'openai'
 import {
   applyAppointmentBuffer,
-  calendarEventsToAppointmentWindows,
   calculateLineItemDurationMinutes,
-  DEFAULT_FALLBACK_AVAILABILITY_TEMPLATES,
   getAvailableSlots,
-  type ExistingAppointmentWindow,
 } from '@/lib/ops/availability'
 import {
   createAiStyleBooking,
   GOOGLE_LSA_LEAD_RECOVERY_AMOUNT,
 } from '@/lib/ops/create-ai-style-booking'
 import { createAiStyleEstimate } from '@/lib/ops/create-ai-style-estimate'
+import { loadAvailabilityBundle } from '@/lib/ops/availability-bundle'
+import { getStaffPrioritizedSlots } from '@/lib/ops/staff-availability'
 import { createSlotToken, verifySlotToken } from '@/lib/ops/slot-token'
 import { resyncInvoiceToQuickBooks } from '@/lib/quickbooks-api'
 import { sendAdminSMS, sendCustomerSMS } from '@/lib/twilio'
@@ -342,78 +341,6 @@ function normClock5(t: string): string {
   return toDbTime(t).slice(0, 5)
 }
 
-async function loadAvailabilityBundle(
-  supabase: SupabaseClient,
-  date: string,
-  excludeAppointmentId?: string,
-): Promise<{
-  templates: Parameters<typeof getAvailableSlots>[0]['templates']
-  overrides: Parameters<typeof getAvailableSlots>[0]['overrides']
-  appointments: ExistingAppointmentWindow[]
-}> {
-  const [templatesResult, overridesResult, appointmentsResult, eventsResult] =
-    await Promise.all([
-      supabase.from('availability_templates').select('*').eq('is_active', true),
-      supabase
-        .from('availability_overrides')
-        .select('*')
-        .eq('override_date', date),
-      supabase
-        .from('ops_appointments')
-        .select('id, appointment_date, start_time, end_time, status')
-        .eq('appointment_date', date),
-      supabase
-        .from('ops_calendar_events')
-        .select(
-          'event_kind, start_date, end_date, start_time, end_time, is_all_day',
-        )
-        .lte('start_date', date)
-        .gte('end_date', date),
-    ])
-
-  // Self-heal: if no active templates exist, re-seed defaults so booking
-  // keeps working and the issue is logged for investigation.
-  let templates = templatesResult.data || []
-  if (templates.length === 0) {
-    console.warn(
-      '⚠️  No active availability_templates found — auto-seeding defaults',
-    )
-    const defaults = DEFAULT_FALLBACK_AVAILABILITY_TEMPLATES.map((t) => ({
-      day_of_week: t.day_of_week,
-      start_time: t.start_time,
-      end_time: t.end_time,
-      slot_interval_minutes: t.slot_interval_minutes,
-      is_active: true,
-    }))
-    const { data: seeded } = await supabase
-      .from('availability_templates')
-      .upsert(defaults, { onConflict: 'day_of_week' })
-      .select('*')
-    if (seeded && seeded.length > 0) templates = seeded
-    else templates = DEFAULT_FALLBACK_AVAILABILITY_TEMPLATES as typeof templates
-  }
-
-  let rows = (appointmentsResult.data || []) as Array<
-    ExistingAppointmentWindow & { id: string }
-  >
-  if (excludeAppointmentId) {
-    rows = rows.filter((a) => a.id !== excludeAppointmentId)
-  }
-  return {
-    templates,
-    overrides: overridesResult.data || [],
-    appointments: [
-      ...rows.map(({ appointment_date, start_time, end_time, status }) => ({
-        appointment_date,
-        start_time,
-        end_time,
-        status,
-      })),
-      ...calendarEventsToAppointmentWindows(date, eventsResult.data || []),
-    ],
-  }
-}
-
 async function customerOwnsAppointment(
   supabase: SupabaseClient,
   appointmentId: string,
@@ -430,6 +357,7 @@ async function customerOwnsAppointment(
         end_time: string
         status: string
         internal_notes: string | null
+        assigned_staff_user_id: string | null
       }
       customerName: string | null
       customerPhone: string | null
@@ -448,6 +376,7 @@ async function customerOwnsAppointment(
       end_time,
       status,
       internal_notes,
+      assigned_staff_user_id,
       ops_customers!ops_appointments_customer_id_fkey ( full_name, phone )
     `,
     )
@@ -483,6 +412,7 @@ async function customerOwnsAppointment(
       end_time: row.end_time,
       status: row.status,
       internal_notes: row.internal_notes,
+      assigned_staff_user_id: row.assigned_staff_user_id ?? null,
     },
     customerName,
     customerPhone,
@@ -1187,14 +1117,15 @@ export async function executeHarrySmsTool(
           durationParam > 0 ? durationParam : 120,
         )
 
-        const bundle = await loadAvailabilityBundle(supabase, date)
-        const slots = getAvailableSlots({
+        const preferredTechnician =
+          String(args.preferred_technician || '').trim() || undefined
+
+        const staffResult = await getStaffPrioritizedSlots({
+          supabase,
           date,
           requiredMinutes,
-          templates: bundle.templates,
-          overrides: bundle.overrides,
-          appointments: bundle.appointments,
           maxResults: 12,
+          preferredStaffUserId: preferredTechnician,
         })
 
         const dayName = new Date(date + 'T12:00:00-06:00').toLocaleDateString(
@@ -1202,10 +1133,20 @@ export async function executeHarrySmsTool(
           { weekday: 'long', timeZone: 'America/Denver' },
         )
 
+        if (!staffResult) {
+          return JSON.stringify({
+            date,
+            day_of_week: dayName,
+            slots: [],
+            message: 'No availability on this date',
+          })
+        }
+
         return JSON.stringify({
           date,
           day_of_week: dayName,
-          slots: slots.map((s) => ({
+          technician: staffResult.staffName,
+          slots: staffResult.slots.map((s) => ({
             start_time: s.start_time.slice(0, 5),
             end_time: s.end_time.slice(0, 5),
             slot_token: createSlotToken({
@@ -1214,6 +1155,7 @@ export async function executeHarrySmsTool(
               endTime: s.end_time,
               requiredMinutes,
               ownerKey: ctx.customerPhoneE164,
+              assignedStaffUserId: staffResult.staffUserId,
             }),
           })),
         })
@@ -1344,19 +1286,18 @@ export async function executeHarrySmsTool(
           totalMinutesFromLines || 120,
         )
 
-        const bundle = await loadAvailabilityBundle(
+        const currentStaffId =
+          owned.appointment.assigned_staff_user_id || undefined
+        const staffResult = await getStaffPrioritizedSlots({
           supabase,
-          newDate,
-          appointmentId,
-        )
-        const slots = getAvailableSlots({
           date: newDate,
           requiredMinutes: totalMinutesWithBuffer,
-          templates: bundle.templates,
-          overrides: bundle.overrides,
-          appointments: bundle.appointments,
+          excludeAppointmentId: appointmentId,
           maxResults: 48,
+          preferredStaffUserId: currentStaffId,
         })
+
+        const slots = staffResult?.slots || []
 
         const wantStart = normClock5(newStartRaw)
         const match = slots.find((s) => normClock5(s.start_time) === wantStart)
@@ -1379,6 +1320,7 @@ export async function executeHarrySmsTool(
             error: `${slotTokenCheck.error} You must call get_calendar_slots and use the returned slot_token before rescheduling.`,
           })
         }
+        const rescheduleStaffId = staffResult?.staffUserId || currentStaffId
 
         const nextStartDb = toDbTime(newStartRaw)
         const nextEndDb = addMinutesToTime(
@@ -1395,6 +1337,9 @@ export async function executeHarrySmsTool(
             appointment_date: newDate,
             start_time: nextStartDb,
             end_time: nextEndDb,
+            ...(rescheduleStaffId
+              ? { assigned_staff_user_id: rescheduleStaffId }
+              : {}),
             updated_at: new Date().toISOString(),
           })
           .eq('id', appointmentId)
@@ -1862,15 +1807,14 @@ export async function executeHarrySmsTool(
         }, 0)
 
         const requiredMinutes = applyAppointmentBuffer(totalMinutes || 120)
-        const bundle = await loadAvailabilityBundle(supabase, appointmentDate)
-        const slots = getAvailableSlots({
+        const bookStaffResult = await getStaffPrioritizedSlots({
+          supabase,
           date: appointmentDate,
           requiredMinutes,
-          templates: bundle.templates,
-          overrides: bundle.overrides,
-          appointments: bundle.appointments,
           maxResults: 48,
         })
+
+        const slots = bookStaffResult?.slots || []
 
         const wantStart = normClock5(startTime)
         const match = slots.find((s) => normClock5(s.start_time) === wantStart)
@@ -1894,6 +1838,8 @@ export async function executeHarrySmsTool(
             error: `${slotTokenCheck.error} You must call get_calendar_slots and use the returned slot_token before booking.`,
           })
         }
+        const bookingStaffUserId =
+          slotTokenCheck.assignedStaffUserId || bookStaffResult?.staffUserId
 
         const bookingMode =
           process.env.HARRY_SMS_BOOKING_MODE === 'request'
@@ -1938,6 +1884,7 @@ export async function executeHarrySmsTool(
           actor_label: isLsa ? 'Harry LSA' : 'Harry SMS',
           admin_heading: isLsa ? 'Google LSA booking' : 'Harry SMS booking',
           accepted_minimum_charge: acceptedMinimumCharge,
+          assigned_staff_user_id: bookingStaffUserId,
         })
 
         if (!result.ok) {

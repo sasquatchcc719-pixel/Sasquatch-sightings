@@ -59,6 +59,8 @@ export type CreateAiStyleBookingInput = {
   discount_requested?: boolean
   /** Customer explicitly agreed to pay the $150 minimum even when catalog lines price lower. */
   accepted_minimum_charge?: boolean
+  /** Staff member to assign this appointment to. */
+  assigned_staff_user_id?: string | null
 }
 
 export type CreateAiStyleBookingSuccess = {
@@ -495,9 +497,10 @@ export async function createAiStyleBooking(
       booking_channel: bookingChannel,
       source: sourceLabel,
       lead_source: normalizedLeadSource,
-      // Harry / AI flows are always service appointments. Estimates are an
-      // admin-only workflow today.
       kind: 'service',
+      ...(input.assigned_staff_user_id
+        ? { assigned_staff_user_id: input.assigned_staff_user_id }
+        : {}),
     })
     .select('id')
     .single()

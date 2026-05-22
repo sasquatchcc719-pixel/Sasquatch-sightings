@@ -27,6 +27,22 @@ import { appointmentDisplayRevenue } from '@/lib/ops/utilization-metrics'
 
 type ScheduleView = 'week' | 'day' | 'month'
 
+type StaffMember = {
+  id: string
+  user_id: string
+  display_name: string
+  role: string
+  is_active: boolean
+  default_open: boolean
+  scheduling_priority: number
+}
+
+type DailyAvailability = {
+  staff_user_id: string
+  date: string
+  is_open: boolean
+}
+
 type Appointment = {
   id: string
   appointment_date: string
@@ -38,6 +54,7 @@ type Appointment = {
   booking_channel: string | null
   source: string | null
   is_repeat_customer?: boolean
+  assigned_staff_user_id?: string | null
   ops_customers:
     | {
         full_name: string
@@ -111,6 +128,8 @@ type ScheduleResponse = {
   appointments: Appointment[]
   events: CalendarEvent[]
   recurringFrequencyMap?: Record<string, RecurringFrequencyInfo>
+  staff?: StaffMember[]
+  dailyAvailability?: DailyAvailability[]
 }
 
 type AvailabilityTemplate = {
@@ -132,6 +151,14 @@ type BusinessHoursRow = {
 const HOURS = Array.from({ length: 13 }, (_, index) => 7 + index)
 const HOUR_HEIGHT = 84
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const STAFF_LANE_COLORS = [
+  '#2563eb',
+  '#16a34a',
+  '#9333ea',
+  '#ea580c',
+  '#0891b2',
+  '#dc2626',
+]
 const DEFAULT_SLOT_INTERVAL_MINUTES = 30
 const DEFAULT_BUSINESS_HOURS_ROWS: BusinessHoursRow[] = [
   { day_of_week: 0, is_active: false, start_time: '09:00', end_time: '17:00' },
@@ -621,6 +648,11 @@ export function OperationsSchedule() {
     appointments: [],
     events: [],
   })
+  const [staffList, setStaffList] = useState<StaffMember[]>([])
+  const [dailyAvailability, setDailyAvailability] = useState<
+    DailyAvailability[]
+  >([])
+  const [staffFilter, setStaffFilter] = useState<string | null>(null)
   const [recurringFreqMap, setRecurringFreqMap] = useState<
     Record<string, RecurringFrequencyInfo>
   >({})
@@ -651,11 +683,14 @@ export function OperationsSchedule() {
   useEffect(() => {
     const action = searchParams.get('action')
     if (action === 'block') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setShowBlockForm(true)
+
       setShowBusinessHours(false)
       router.replace('/admin/operations')
     } else if (action === 'hours') {
       setShowBusinessHours(true)
+
       setShowBlockForm(false)
       router.replace('/admin/operations')
     }
@@ -705,6 +740,7 @@ export function OperationsSchedule() {
   useEffect(() => {
     if (typeof window === 'undefined') return
     if (window.matchMedia('(max-width: 639px)').matches) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setView('day')
     }
   }, [])
@@ -796,6 +832,8 @@ export function OperationsSchedule() {
         appointments: scheduleResult.appointments || [],
         events: scheduleResult.events || [],
       })
+      setStaffList(scheduleResult.staff || [])
+      setDailyAvailability(scheduleResult.dailyAvailability || [])
       setRecurringFreqMap(scheduleResult.recurringFrequencyMap || {})
       const templates = (availabilityResult.templates ||
         []) as AvailabilityTemplate[]
@@ -817,12 +855,14 @@ export function OperationsSchedule() {
   }, [anchorDate, view])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadSchedule()
   }, [loadSchedule])
 
   // Default to day view on mobile
   useEffect(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setView('day')
     }
   }, [])
@@ -846,6 +886,56 @@ export function OperationsSchedule() {
     if (view === 'week') return buildWeekDays(anchorDate)
     return []
   }, [anchorDate, view])
+
+  const isStaffOpenForDate = useCallback(
+    (staffId: string, dateKey: string): boolean => {
+      const override = dailyAvailability.find(
+        (da) => da.staff_user_id === staffId && da.date === dateKey,
+      )
+      if (override) return override.is_open
+      const staff = staffList.find((s) => s.id === staffId)
+      return staff?.default_open ?? true
+    },
+    [dailyAvailability, staffList],
+  )
+
+  const toggleStaffAvailability = useCallback(
+    async (staffId: string, dateKey: string) => {
+      const currentlyOpen = isStaffOpenForDate(staffId, dateKey)
+      const newIsOpen = !currentlyOpen
+      setDailyAvailability((prev) => {
+        const filtered = prev.filter(
+          (da) => !(da.staff_user_id === staffId && da.date === dateKey),
+        )
+        return [
+          ...filtered,
+          { staff_user_id: staffId, date: dateKey, is_open: newIsOpen },
+        ]
+      })
+      try {
+        await fetch('/api/admin/ops/staff-availability', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            staff_user_id: staffId,
+            date: dateKey,
+            is_open: newIsOpen,
+          }),
+        })
+      } catch {
+        setDailyAvailability((prev) => {
+          const filtered = prev.filter(
+            (da) => !(da.staff_user_id === staffId && da.date === dateKey),
+          )
+          return [
+            ...filtered,
+            { staff_user_id: staffId, date: dateKey, is_open: currentlyOpen },
+          ]
+        })
+      }
+    },
+    [isStaffOpenForDate],
+  )
 
   const appointmentsByDate = useMemo(() => {
     const grouped = new Map<string, Appointment[]>()
@@ -2350,6 +2440,47 @@ export function OperationsSchedule() {
         </div>
       ) : null}
 
+      {view === 'week' && staffList.length > 1 ? (
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-slate-500">Staff:</span>
+          <div className="flex gap-1">
+            <button
+              type="button"
+              onClick={() => setStaffFilter(null)}
+              className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                staffFilter === null
+                  ? 'bg-slate-800 text-white'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              All
+            </button>
+            {staffList.map((staff, idx) => (
+              <button
+                key={staff.id}
+                type="button"
+                onClick={() => setStaffFilter(staff.id)}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                  staffFilter === staff.id
+                    ? 'text-white'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+                style={
+                  staffFilter === staff.id
+                    ? {
+                        backgroundColor:
+                          STAFF_LANE_COLORS[idx % STAFF_LANE_COLORS.length],
+                      }
+                    : undefined
+                }
+              >
+                {staff.display_name}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       {view === 'week' && weeklyTotal > 0 ? (
         <div className="flex items-center justify-between gap-3 rounded-xl border border-green-600/20 bg-green-50 px-4 py-3">
           <span className="text-sm font-medium text-green-900">Week Total</span>
@@ -2514,27 +2645,110 @@ export function OperationsSchedule() {
                 style={{
                   gridTemplateColumns:
                     view === 'day'
-                      ? '72px minmax(0, 1fr)'
+                      ? `72px repeat(${Math.max(staffList.length, 1)}, minmax(200px, 1fr))`
                       : '72px repeat(7, minmax(180px, 1fr))',
                 }}
               >
                 <div className="border-r border-b border-slate-200 bg-slate-100 p-3" />
-                {displayedDays.map((date) => (
-                  <div
-                    key={formatDateKey(date)}
-                    className="border-b border-slate-200 bg-slate-100 p-3"
-                  >
-                    <div className="text-xs font-medium tracking-[0.2em] text-slate-500 uppercase">
-                      {WEEKDAY_LABELS[date.getDay()]}
-                    </div>
-                    <div className="mt-1 text-lg font-semibold text-slate-700">
-                      {date.toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                      })}
-                    </div>
-                  </div>
-                ))}
+                {view === 'day' && staffList.length > 0
+                  ? staffList.map((staff, idx) => {
+                      const dateKey = formatDateKey(anchorDate)
+                      const isOpen = isStaffOpenForDate(staff.id, dateKey)
+                      const color =
+                        STAFF_LANE_COLORS[idx % STAFF_LANE_COLORS.length]
+                      return (
+                        <div
+                          key={staff.id}
+                          className={`border-b border-slate-200 p-3 ${isOpen ? 'bg-emerald-50/60' : 'bg-slate-100'}`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className="inline-block h-3 w-3 rounded-full"
+                                style={{ backgroundColor: color }}
+                              />
+                              <span className="text-sm font-semibold text-slate-700">
+                                {staff.display_name}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                toggleStaffAvailability(staff.id, dateKey)
+                              }
+                              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ${
+                                isOpen ? 'bg-emerald-500' : 'bg-slate-300'
+                              }`}
+                              aria-label={`Toggle ${staff.display_name} availability`}
+                            >
+                              <span
+                                className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition-transform duration-200 ${
+                                  isOpen ? 'translate-x-5' : 'translate-x-0'
+                                }`}
+                              />
+                            </button>
+                          </div>
+                          <div
+                            className={`mt-1 text-xs font-medium ${isOpen ? 'text-emerald-600' : 'text-slate-400'}`}
+                          >
+                            {isOpen ? 'OPEN' : 'CLOSED'}
+                          </div>
+                          <div className="mt-1 text-xs font-medium tracking-[0.2em] text-slate-500 uppercase">
+                            {WEEKDAY_LABELS[anchorDate.getDay()]}
+                          </div>
+                          <div className="mt-0.5 text-lg font-semibold text-slate-700">
+                            {anchorDate.toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                            })}
+                          </div>
+                        </div>
+                      )
+                    })
+                  : displayedDays.map((date) => {
+                      const dk = formatDateKey(date)
+                      return (
+                        <div
+                          key={dk}
+                          className="border-b border-slate-200 bg-slate-100 p-3"
+                        >
+                          <div className="text-xs font-medium tracking-[0.2em] text-slate-500 uppercase">
+                            {WEEKDAY_LABELS[date.getDay()]}
+                          </div>
+                          <div className="mt-1 text-lg font-semibold text-slate-700">
+                            {date.toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                            })}
+                          </div>
+                          {staffList.length > 1 && (
+                            <div className="mt-1.5 flex gap-1">
+                              {staffList.map((staff, idx) => {
+                                const open = isStaffOpenForDate(staff.id, dk)
+                                return (
+                                  <button
+                                    key={staff.id}
+                                    type="button"
+                                    title={`${staff.display_name}: ${open ? 'Open' : 'Closed'}`}
+                                    onClick={() =>
+                                      toggleStaffAvailability(staff.id, dk)
+                                    }
+                                    className="h-3 w-3 rounded-full border border-white/80 shadow-sm transition hover:scale-125"
+                                    style={{
+                                      backgroundColor: open
+                                        ? STAFF_LANE_COLORS[
+                                            idx % STAFF_LANE_COLORS.length
+                                          ]
+                                        : '#d1d5db',
+                                    }}
+                                  />
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
 
                 <div className="relative border-r border-slate-200 bg-slate-50">
                   {HOURS.map((hour) => (
@@ -2552,24 +2766,57 @@ export function OperationsSchedule() {
                   ))}
                 </div>
 
-                {displayedDays.map((date) => {
+                {(view === 'day' && staffList.length > 0
+                  ? staffList.map((staff) => ({
+                      date: anchorDate,
+                      laneKey: staff.id,
+                      staffId: staff.id,
+                    }))
+                  : displayedDays.map((date) => ({
+                      date,
+                      laneKey: formatDateKey(date),
+                      staffId: null as string | null,
+                    }))
+                ).map(({ date, laneKey, staffId }) => {
                   const dateKey = formatDateKey(date)
-                  const dayAppointments = appointmentsByDate.get(dateKey) || []
+                  const allDayAppointments =
+                    appointmentsByDate.get(dateKey) || []
+                  const dayAppointments = staffId
+                    ? allDayAppointments.filter(
+                        (a) =>
+                          a.assigned_staff_user_id === staffId ||
+                          (!a.assigned_staff_user_id &&
+                            staffId === staffList[0]?.id),
+                      )
+                    : staffFilter
+                      ? allDayAppointments.filter(
+                          (a) =>
+                            a.assigned_staff_user_id === staffFilter ||
+                            (!a.assigned_staff_user_id &&
+                              staffFilter === staffList[0]?.id),
+                        )
+                      : allDayAppointments
                   const dayEvents = data.events.filter((event) =>
                     intersectsDay(event, dateKey),
                   )
                   const dayRanges = businessDayRanges.get(date.getDay()) || []
                   const offHourSegments = getOffHourSegmentsForGrid(dayRanges)
+                  const laneIsOpen = staffId
+                    ? isStaffOpenForDate(staffId, dateKey)
+                    : true
 
                   return (
                     <div
-                      key={dateKey}
+                      key={laneKey}
                       data-date-column={dateKey}
-                      className="relative border-r border-slate-200 bg-white"
+                      className={`relative border-r border-slate-200 ${laneIsOpen ? 'bg-white' : 'bg-slate-100/60'}`}
                       onDragOver={(e) => handleDragOver(e, dateKey)}
                       onDragLeave={() => setDragPreview(null)}
                       onDrop={(e) => void handleDrop(e, dateKey)}
                     >
+                      {!laneIsOpen && (
+                        <div className="pointer-events-none absolute inset-0 z-10 bg-slate-200/40" />
+                      )}
                       {/* Drop ghost preview */}
                       {dragPreview?.dateKey === dateKey && draggingAppointment
                         ? (() => {
@@ -2777,6 +3024,37 @@ export function OperationsSchedule() {
                                 <span className="text-[11px] font-medium tracking-tight text-slate-600 sm:text-[10px]">
                                   Move
                                 </span>
+                                {view === 'week' &&
+                                  staffList.length > 1 &&
+                                  (() => {
+                                    const staffIdx = staffList.findIndex(
+                                      (s) =>
+                                        s.id ===
+                                        appointment.assigned_staff_user_id,
+                                    )
+                                    if (staffIdx < 0) return null
+                                    const initials = staffList[
+                                      staffIdx
+                                    ].display_name
+                                      .split(' ')
+                                      .map((n) => n[0])
+                                      .join('')
+                                      .slice(0, 2)
+                                    return (
+                                      <span
+                                        className="ml-auto rounded-full px-1.5 py-0.5 text-[9px] font-bold text-white"
+                                        style={{
+                                          backgroundColor:
+                                            STAFF_LANE_COLORS[
+                                              staffIdx %
+                                                STAFF_LANE_COLORS.length
+                                            ],
+                                        }}
+                                      >
+                                        {initials}
+                                      </span>
+                                    )
+                                  })()}
                               </div>
                               <Link
                                 href={href}

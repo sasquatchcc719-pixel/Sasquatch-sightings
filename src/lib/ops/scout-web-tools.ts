@@ -3,14 +3,11 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type OpenAI from 'openai'
 import {
   applyAppointmentBuffer,
-  calendarEventsToAppointmentWindows,
   calculateLineItemDurationMinutes,
-  DEFAULT_FALLBACK_AVAILABILITY_TEMPLATES,
-  getAvailableSlots,
-  type ExistingAppointmentWindow,
 } from '@/lib/ops/availability'
 import { createAiStyleBooking } from '@/lib/ops/create-ai-style-booking'
 import { createAiStyleEstimate } from '@/lib/ops/create-ai-style-estimate'
+import { getStaffPrioritizedSlots } from '@/lib/ops/staff-availability'
 import { createSlotToken, verifySlotToken } from '@/lib/ops/slot-token'
 import { checkServiceArea } from '@/lib/service-area'
 
@@ -73,60 +70,6 @@ function normalizePhone(raw: string): string {
   const digits = String(raw || '').replace(/\D/g, '')
   if (digits.length < 10) return ''
   return '+1' + digits.slice(-10)
-}
-
-async function loadAvailabilityBundle(
-  supabase: SupabaseClient,
-  date: string,
-): Promise<{
-  templates: Parameters<typeof getAvailableSlots>[0]['templates']
-  overrides: Parameters<typeof getAvailableSlots>[0]['overrides']
-  appointments: ExistingAppointmentWindow[]
-}> {
-  const [templatesResult, overridesResult, appointmentsResult, eventsResult] =
-    await Promise.all([
-      supabase.from('availability_templates').select('*').eq('is_active', true),
-      supabase
-        .from('availability_overrides')
-        .select('*')
-        .eq('override_date', date),
-      supabase
-        .from('ops_appointments')
-        .select('id, appointment_date, start_time, end_time, status')
-        .eq('appointment_date', date),
-      supabase
-        .from('ops_calendar_events')
-        .select(
-          'event_kind, start_date, end_date, start_time, end_time, is_all_day',
-        )
-        .lte('start_date', date)
-        .gte('end_date', date),
-    ])
-
-  let templates = templatesResult.data || []
-  if (templates.length === 0) {
-    console.warn(
-      '[scout] No active availability_templates — using fallback defaults',
-    )
-    templates = DEFAULT_FALLBACK_AVAILABILITY_TEMPLATES as typeof templates
-  }
-
-  const rows = (appointmentsResult.data || []) as Array<
-    ExistingAppointmentWindow & { id: string }
-  >
-  return {
-    templates,
-    overrides: overridesResult.data || [],
-    appointments: [
-      ...rows.map(({ appointment_date, start_time, end_time, status }) => ({
-        appointment_date,
-        start_time,
-        end_time,
-        status,
-      })),
-      ...calendarEventsToAppointmentWindows(date, eventsResult.data || []),
-    ],
-  }
 }
 
 export type ScoutWebToolContext = {
@@ -428,19 +371,24 @@ export async function executeScoutWebTool(
           durationParam > 0 ? durationParam : 120,
         )
 
-        const bundle = await loadAvailabilityBundle(supabase, date)
-        const slots = getAvailableSlots({
+        const staffResult = await getStaffPrioritizedSlots({
+          supabase,
           date,
           requiredMinutes,
-          templates: bundle.templates,
-          overrides: bundle.overrides,
-          appointments: bundle.appointments,
           maxResults: 12,
         })
 
+        if (!staffResult) {
+          return JSON.stringify({
+            date,
+            slots: [],
+            message: 'No availability on this date',
+          })
+        }
+
         return JSON.stringify({
           date,
-          slots: slots.map((s) => ({
+          slots: staffResult.slots.map((s) => ({
             start_time: s.start_time.slice(0, 5),
             end_time: s.end_time.slice(0, 5),
             slot_token: createSlotToken({
@@ -449,6 +397,7 @@ export async function executeScoutWebTool(
               endTime: s.end_time,
               requiredMinutes,
               ownerKey: ctx.rateLimitKey,
+              assignedStaffUserId: staffResult.staffUserId,
             }),
           })),
         })
@@ -590,15 +539,14 @@ export async function executeScoutWebTool(
         }, 0)
 
         const requiredMinutes = applyAppointmentBuffer(totalMinutes || 120)
-        const bundle = await loadAvailabilityBundle(supabase, appointmentDate)
-        const slots = getAvailableSlots({
+        const bookStaffResult = await getStaffPrioritizedSlots({
+          supabase,
           date: appointmentDate,
           requiredMinutes,
-          templates: bundle.templates,
-          overrides: bundle.overrides,
-          appointments: bundle.appointments,
           maxResults: 48,
         })
+
+        const slots = bookStaffResult?.slots || []
 
         const wantStart = normClock5(startTime)
         const match = slots.find((s) => normClock5(s.start_time) === wantStart)
@@ -647,6 +595,8 @@ export async function executeScoutWebTool(
           actor_label: 'Scout Web',
           admin_heading: 'Scout website booking',
           accepted_minimum_charge: acceptedMinimumCharge,
+          assigned_staff_user_id:
+            slotTokenCheck.assignedStaffUserId || bookStaffResult?.staffUserId,
         })
 
         if (!result.ok) {
@@ -701,19 +651,14 @@ export async function executeScoutWebTool(
           })
         }
 
-        const estimateBundle = await loadAvailabilityBundle(
-          supabase,
-          appointmentDate,
-        )
         const estimateRequiredMinutes = applyAppointmentBuffer(60)
-        const estimateSlots = getAvailableSlots({
+        const estimateStaffResult = await getStaffPrioritizedSlots({
+          supabase,
           date: appointmentDate,
           requiredMinutes: estimateRequiredMinutes,
-          templates: estimateBundle.templates,
-          overrides: estimateBundle.overrides,
-          appointments: estimateBundle.appointments,
           maxResults: 48,
         })
+        const estimateSlots = estimateStaffResult?.slots || []
         const estimateMatch = estimateSlots.find(
           (s) => normClock5(s.start_time) === normClock5(startTime),
         )
