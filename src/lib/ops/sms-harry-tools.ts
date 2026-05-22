@@ -3,14 +3,12 @@ import type OpenAI from 'openai'
 import {
   applyAppointmentBuffer,
   calculateLineItemDurationMinutes,
-  getAvailableSlots,
 } from '@/lib/ops/availability'
 import {
   createAiStyleBooking,
   GOOGLE_LSA_LEAD_RECOVERY_AMOUNT,
 } from '@/lib/ops/create-ai-style-booking'
 import { createAiStyleEstimate } from '@/lib/ops/create-ai-style-estimate'
-import { loadAvailabilityBundle } from '@/lib/ops/availability-bundle'
 import { getStaffPrioritizedSlots } from '@/lib/ops/staff-availability'
 import { createSlotToken, verifySlotToken } from '@/lib/ops/slot-token'
 import { resyncInvoiceToQuickBooks } from '@/lib/quickbooks-api'
@@ -1957,19 +1955,14 @@ export async function executeHarrySmsTool(
         }
 
         const isLsa = ctx.isLsaRelay === true
-        const estimateBundle = await loadAvailabilityBundle(
-          supabase,
-          appointmentDate,
-        )
         const estimateRequiredMinutes = applyAppointmentBuffer(60)
-        const estimateSlots = getAvailableSlots({
+        const estimateStaffResult = await getStaffPrioritizedSlots({
+          supabase,
           date: appointmentDate,
           requiredMinutes: estimateRequiredMinutes,
-          templates: estimateBundle.templates,
-          overrides: estimateBundle.overrides,
-          appointments: estimateBundle.appointments,
           maxResults: 48,
         })
+        const estimateSlots = estimateStaffResult?.slots || []
         const estimateMatch = estimateSlots.find(
           (s) => normClock5(s.start_time) === normClock5(startTime),
         )
