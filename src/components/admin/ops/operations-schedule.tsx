@@ -1235,6 +1235,7 @@ export function OperationsSchedule() {
     snappedMinutes: number,
     clientX: number,
     clientY: number,
+    staffId?: string | null,
   ) => {
     const newTime = minutesToTimeString(snappedMinutes)
 
@@ -1250,6 +1251,9 @@ export function OperationsSchedule() {
           body: JSON.stringify({
             appointment_date: dateKey,
             start_time: newTime,
+            ...(staffId !== undefined
+              ? { assigned_staff_user_id: staffId }
+              : {}),
           }),
         },
       )
@@ -1281,6 +1285,7 @@ export function OperationsSchedule() {
   const handleDrop = async (
     e: React.DragEvent<HTMLDivElement>,
     dateKey: string,
+    staffId?: string | null,
   ) => {
     e.preventDefault()
     const appointmentId = e.dataTransfer.getData('appointmentId')
@@ -1296,6 +1301,7 @@ export function OperationsSchedule() {
       snappedMinutes,
       e.clientX,
       e.clientY,
+      staffId,
     )
   }
 
@@ -1317,13 +1323,18 @@ export function OperationsSchedule() {
   const hitTestDateColumn = (
     clientX: number,
     clientY: number,
-  ): { dateKey: string; rect: DOMRect } | null => {
+  ): { dateKey: string; staffId: string | null; rect: DOMRect } | null => {
     const el = document.elementFromPoint(clientX, clientY) as HTMLElement | null
     const col = el?.closest('[data-date-column]') as HTMLElement | null
     if (!col) return null
     const dateKey = col.getAttribute('data-date-column') || ''
     if (!dateKey) return null
-    return { dateKey, rect: col.getBoundingClientRect() }
+    const staffId = col.getAttribute('data-staff-lane') || null
+    return {
+      dateKey,
+      staffId: staffId || null,
+      rect: col.getBoundingClientRect(),
+    }
   }
 
   const handleMovePointerDown = (
@@ -1431,6 +1442,7 @@ export function OperationsSchedule() {
       snapped,
       e.clientX,
       e.clientY,
+      hit.staffId,
     )
   }
 
@@ -2639,14 +2651,18 @@ export function OperationsSchedule() {
           onTouchEnd={handleCalTouchEnd}
         >
           <div ref={calendarRef}>
-            <div className={view === 'day' ? '' : 'overflow-x-auto'}>
+            <div className="overflow-x-auto">
               <div
-                className={view === 'day' ? 'grid' : 'grid min-w-[900px]'}
+                className="grid"
                 style={{
                   gridTemplateColumns:
                     view === 'day'
-                      ? `72px repeat(${Math.max(staffList.length, 1)}, minmax(200px, 1fr))`
+                      ? `72px repeat(${Math.max(staffList.length, 1)}, minmax(400px, 1fr))`
                       : '72px repeat(7, minmax(180px, 1fr))',
+                  minWidth:
+                    view === 'day'
+                      ? `${72 + Math.max(staffList.length, 1) * 400}px`
+                      : '900px',
                 }}
               >
                 <div className="border-r border-b border-slate-200 bg-slate-100 p-3" />
@@ -2809,10 +2825,11 @@ export function OperationsSchedule() {
                     <div
                       key={laneKey}
                       data-date-column={dateKey}
+                      data-staff-lane={staffId ?? ''}
                       className={`relative border-r border-slate-200 ${laneIsOpen ? 'bg-white' : 'bg-slate-100/60'}`}
                       onDragOver={(e) => handleDragOver(e, dateKey)}
                       onDragLeave={() => setDragPreview(null)}
-                      onDrop={(e) => void handleDrop(e, dateKey)}
+                      onDrop={(e) => void handleDrop(e, dateKey, staffId)}
                     >
                       {!laneIsOpen && (
                         <div className="pointer-events-none absolute inset-0 z-10 bg-slate-200/40" />
