@@ -9,10 +9,9 @@ import { createAdminClient } from '@/supabase/server'
 import {
   applyAppointmentBuffer,
   calculateAppointmentDurationFromTotal,
-  calendarEventsToAppointmentWindows,
-  getAvailableSlots,
   timeToMinutes,
 } from '@/lib/ops/availability'
+import { getStaffPrioritizedSlots } from '@/lib/ops/staff-availability'
 import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
 import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
 import { sendAdminSMS } from '@/lib/twilio'
@@ -339,48 +338,19 @@ export async function POST(request: NextRequest) {
         ? timeToMinutes(currentTimeMT) + MINIMUM_SAME_DAY_LEAD_MINUTES
         : undefined
 
-    const [templatesResult, overridesResult, appointmentsResult, eventsResult] =
-      await Promise.all([
-        supabase
-          .from('availability_templates')
-          .select('*')
-          .eq('is_active', true),
-        supabase
-          .from('availability_overrides')
-          .select('*')
-          .eq('override_date', appointmentDate),
-        supabase
-          .from('ops_appointments')
-          .select('appointment_date, start_time, end_time, status')
-          .eq('appointment_date', appointmentDate),
-        supabase
-          .from('ops_calendar_events')
-          .select(
-            'event_kind, start_date, end_date, start_time, end_time, is_all_day',
-          )
-          .lte('start_date', appointmentDate)
-          .gte('end_date', appointmentDate),
-      ])
+    const requestedStart = `${String(sh).padStart(2, '0')}:${String(sm).padStart(2, '0')}:00`
 
-    const availableSlots = getAvailableSlots({
+    const staffResult = await getStaffPrioritizedSlots({
+      supabase,
       date: appointmentDate,
       requiredMinutes: buffered,
-      templates: templatesResult.data || [],
-      overrides: overridesResult.data || [],
-      appointments: [
-        ...(appointmentsResult.data || []),
-        ...calendarEventsToAppointmentWindows(
-          appointmentDate,
-          eventsResult.data || [],
-        ),
-      ],
       minStartMinutes,
       maxResults: 8,
     })
-    const requestedStart = `${String(sh).padStart(2, '0')}:${String(sm).padStart(2, '0')}:00`
-    const slotIsStillAvailable = availableSlots.some(
-      (slot) => slot.start_time === requestedStart,
-    )
+
+    const slotIsStillAvailable =
+      staffResult !== null &&
+      staffResult.slots.some((slot) => slot.start_time === requestedStart)
 
     if (!slotIsStillAvailable) {
       return NextResponse.json(
@@ -391,6 +361,8 @@ export async function POST(request: NextRequest) {
         { status: 409, headers: CORS },
       )
     }
+
+    const assignedStaffUserId = staffResult?.staffUserId ?? null
 
     // --- Determine appointment status ---
     const appointmentStatus = serviceAreaCheck.requiresApproval
@@ -416,6 +388,7 @@ export async function POST(request: NextRequest) {
         source: 'website',
         lead_source: leadSource,
         kind: 'service',
+        assigned_staff_user_id: assignedStaffUserId,
       })
       .select('id')
       .single()
