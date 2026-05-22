@@ -100,6 +100,7 @@ type AppointmentWithRelations = {
   }>
   quoted_total: number | null
   status?: string | null
+  assigned_staff_user_id?: string | null
 }
 
 const TEMP_SUPPRESS_CUSTOMER_COMMS_MARKER =
@@ -118,6 +119,7 @@ const APPOINTMENT_SELECT = `
   internal_notes,
   status,
   quoted_total,
+  assigned_staff_user_id,
   ops_customers!ops_appointments_customer_id_fkey (
     full_name,
     first_name,
@@ -220,6 +222,20 @@ async function getTemplatesForEvent(
   return (data || []) as OpsTemplateRow[]
 }
 
+async function resolveTechFirstName(
+  supabase: ReturnType<typeof createAdminClient>,
+  staffUserId: string | null,
+): Promise<string> {
+  if (!staffUserId) return 'Charles'
+  const { data } = await supabase
+    .from('staff_users')
+    .select('display_name')
+    .eq('id', staffUserId)
+    .maybeSingle()
+  if (!data?.display_name) return 'Charles'
+  return data.display_name.split(' ')[0]
+}
+
 async function getAppointmentContext(
   supabase: ReturnType<typeof createAdminClient>,
   appointmentId: string,
@@ -264,7 +280,10 @@ async function getAppointmentContext(
     address_line: address
       ? `${address.street_1}, ${address.city}, ${address.state} ${address.zip_code}`
       : '',
-    tech_name: 'Charles',
+    tech_name: await resolveTechFirstName(
+      supabase,
+      appointment.assigned_staff_user_id ?? null,
+    ),
     quoted_total: Number(appointment.quoted_total || 0).toFixed(2),
     work_area:
       appointment.internal_notes?.trim() ||
