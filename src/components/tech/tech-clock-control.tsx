@@ -75,7 +75,7 @@ export function TechClockControl() {
               <p className="text-xs font-medium tracking-widest text-slate-500 uppercase">
                 {gps.isClocked
                   ? gps.segmentType.replace('_', ' ')
-                  : 'GPS Clock'}
+                  : 'Time Clock'}
               </p>
               <p className="font-mono text-sm font-semibold text-white">
                 {gps.isClocked
