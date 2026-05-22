@@ -16,9 +16,10 @@ export async function POST(
     const access = await requireAnyRole(['admin', 'owner', 'tech'])
     const supabase = createAdminClient()
     const { id } = await params
+    const staffUserId = access.staff?.id ?? access.id
     const appointment = await getAssignedTechAppointment(
       supabase,
-      access.id,
+      staffUserId,
       id,
     )
 
@@ -48,7 +49,7 @@ export async function POST(
         `,
       )
       .eq('id', id)
-      .eq('assigned_staff_user_id', access.staff?.id ?? access.id)
+      .eq('assigned_staff_user_id', staffUserId)
       .single()
 
     if (currentError) throw currentError

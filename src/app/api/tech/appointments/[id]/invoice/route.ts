@@ -23,9 +23,10 @@ export async function PATCH(
     const supabase = createAdminClient()
     const { id } = await params
     const body = await request.json()
+    const staffUserId = access.staff?.id ?? access.id
     const appointment = await getAssignedTechAppointment(
       supabase,
-      access.id,
+      staffUserId,
       id,
     )
 
@@ -76,7 +77,7 @@ export async function PATCH(
         `,
       )
       .eq('id', id)
-      .eq('assigned_staff_user_id', access.id)
+      .eq('assigned_staff_user_id', staffUserId)
       .single()
 
     if (currentError) throw currentError
@@ -173,7 +174,7 @@ export async function PATCH(
       })
       .eq('id', invoice.id)
 
-    const updated = await getAssignedTechAppointment(supabase, access.id, id)
+    const updated = await getAssignedTechAppointment(supabase, staffUserId, id)
     return NextResponse.json({ appointment: updated })
   } catch (error) {
     console.error('[tech/appointments/:id/invoice][PATCH]', error)

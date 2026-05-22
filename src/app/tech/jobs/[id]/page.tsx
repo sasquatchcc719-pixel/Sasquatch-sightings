@@ -14,7 +14,12 @@ export default async function TechJobPage({
   const access = await requireAnyRole(['admin', 'owner', 'tech'])
   const supabase = createAdminClient()
   const { id } = await params
-  const appointment = await getAssignedTechAppointment(supabase, access.id, id)
+  const staffUserId = access.staff?.id ?? access.id
+  const appointment = await getAssignedTechAppointment(
+    supabase,
+    staffUserId,
+    id,
+  )
 
   if (!appointment) notFound()
 
