@@ -119,7 +119,14 @@ function StaffPhotoCard() {
       if (!res.ok) throw new Error(data.error || 'Upload failed')
       setStaff((prev) =>
         prev.map((s) =>
-          s.id === staffId ? { ...s, profile_image_url: data.url ?? null } : s,
+          s.id === staffId
+            ? {
+                ...s,
+                profile_image_url: data.url
+                  ? `${data.url}?t=${Date.now()}`
+                  : null,
+              }
+            : s,
         ),
       )
     } catch (err) {
@@ -150,10 +157,12 @@ function StaffPhotoCard() {
               <div className="border-border/60 bg-muted relative h-16 w-16 shrink-0 overflow-hidden rounded-full border">
                 {member.profile_image_url ? (
                   <Image
+                    key={member.profile_image_url}
                     src={member.profile_image_url}
                     alt={member.display_name}
                     fill
                     className="object-cover"
+                    unoptimized
                   />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center">
@@ -307,7 +316,6 @@ export function OperationsSettings() {
   }, [])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadStatus()
   }, [loadStatus])
 
