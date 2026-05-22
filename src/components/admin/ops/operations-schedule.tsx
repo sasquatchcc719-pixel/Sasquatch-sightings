@@ -689,7 +689,6 @@ export function OperationsSchedule() {
   useEffect(() => {
     const action = searchParams.get('action')
     if (action === 'block') {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setShowBlockForm(true)
 
       setShowBusinessHours(false)
@@ -748,9 +747,18 @@ export function OperationsSchedule() {
   useEffect(() => {
     if (typeof window === 'undefined') return
     if (window.matchMedia('(max-width: 639px)').matches) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setView('day')
     }
+  }, [])
+
+  const [isMobile, setIsMobile] = useState(false)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const mq = window.matchMedia('(max-width: 639px)')
+    setIsMobile(mq.matches)
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
   }, [])
 
   const openDatePicker = () => {
@@ -873,14 +881,12 @@ export function OperationsSchedule() {
   }, [anchorDate, view])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadSchedule()
   }, [loadSchedule])
 
   // Default to day view on mobile
   useEffect(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 768) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setView('day')
     }
   }, [])
@@ -2943,6 +2949,35 @@ export function OperationsSchedule() {
         </div>
       ) : null}
 
+      {view === 'day' && isMobile && staffList.length > 1 ? (
+        <div className="flex items-center gap-1.5">
+          {staffList.map((staff, idx) => {
+            const isActive = (staffFilter ?? staffList[0]?.id) === staff.id
+            const color = STAFF_LANE_COLORS[idx % STAFF_LANE_COLORS.length]
+            const dateKey = formatDateKey(anchorDate)
+            const isOpen = isStaffOpenForDate(staff.id, dateKey)
+            return (
+              <button
+                key={staff.id}
+                type="button"
+                onClick={() => setStaffFilter(staff.id)}
+                className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition ${
+                  isActive
+                    ? 'text-white shadow-sm'
+                    : 'bg-slate-100 text-slate-600'
+                }`}
+                style={isActive ? { backgroundColor: color } : undefined}
+              >
+                <span
+                  className={`h-2 w-2 rounded-full ${isOpen ? 'bg-emerald-400' : 'bg-slate-300'}`}
+                />
+                {staff.display_name.split(' ')[0]}
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
+
       {view === 'week' && staffList.length > 1 ? (
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium text-slate-500">Staff:</span>
@@ -3142,768 +3177,832 @@ export function OperationsSchedule() {
           onTouchEnd={handleCalTouchEnd}
         >
           <div ref={calendarRef}>
-            <div className="overflow-x-auto">
-              <div
-                className="grid"
-                style={{
-                  gridTemplateColumns:
-                    view === 'day'
-                      ? `72px repeat(${Math.max(staffList.length, 1)}, minmax(400px, 1fr))`
-                      : '72px 48px repeat(6, minmax(270px, 1fr))',
-                  minWidth:
-                    view === 'day'
-                      ? `${72 + Math.max(staffList.length, 1) * 400}px`
-                      : `${72 + 48 + 6 * 270}px`,
-                }}
-              >
-                <div className="border-r border-b border-slate-200 bg-slate-100 p-3" />
-                {view === 'day' && staffList.length > 0
-                  ? staffList.map((staff, idx) => {
-                      const dateKey = formatDateKey(anchorDate)
-                      const isOpen = isStaffOpenForDate(staff.id, dateKey)
-                      const color =
-                        STAFF_LANE_COLORS[idx % STAFF_LANE_COLORS.length]
-                      return (
-                        <div
-                          key={staff.id}
-                          className={`border-b border-slate-200 p-3 ${isOpen ? 'bg-emerald-50/60' : 'bg-slate-100'}`}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2">
-                              <span
-                                className="inline-block h-3 w-3 rounded-full"
-                                style={{ backgroundColor: color }}
-                              />
-                              <span className="text-sm font-semibold text-slate-700">
-                                {staff.display_name}
-                              </span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                toggleStaffAvailability(staff.id, dateKey)
-                              }
-                              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ${
-                                isOpen ? 'bg-emerald-500' : 'bg-slate-300'
-                              }`}
-                              aria-label={`Toggle ${staff.display_name} availability`}
-                            >
-                              <span
-                                className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition-transform duration-200 ${
-                                  isOpen ? 'translate-x-5' : 'translate-x-0'
-                                }`}
-                              />
-                            </button>
-                          </div>
-                          <div
-                            className={`mt-1 text-xs font-medium ${isOpen ? 'text-emerald-600' : 'text-slate-400'}`}
-                          >
-                            {isOpen ? 'OPEN' : 'CLOSED'}
-                          </div>
-                          <div className="mt-1 text-xs font-medium tracking-[0.2em] text-slate-500 uppercase">
-                            {WEEKDAY_LABELS[anchorDate.getDay()]}
-                          </div>
-                          <div className="mt-0.5 text-lg font-semibold text-slate-700">
-                            {anchorDate.toLocaleDateString('en-US', {
-                              month: 'short',
-                              day: 'numeric',
-                            })}
-                          </div>
-                        </div>
-                      )
-                    })
-                  : displayedDays.map((date) => {
-                      const dk = formatDateKey(date)
-                      const isSunday = date.getDay() === 0
-                      if (isSunday) {
-                        return (
-                          <div
-                            key={dk}
-                            className="flex items-center justify-center border-r border-b border-slate-200 bg-slate-100"
-                          >
-                            <span className="text-[10px] font-medium tracking-widest text-slate-400 uppercase [writing-mode:vertical-rl]">
-                              Sun
-                            </span>
-                          </div>
-                        )
-                      }
-                      return (
-                        <div
-                          key={dk}
-                          className="border-b border-slate-200 bg-slate-100 p-3"
-                        >
-                          <div className="text-xs font-medium tracking-[0.2em] text-slate-500 uppercase">
-                            {WEEKDAY_LABELS[date.getDay()]}
-                          </div>
-                          <div className="mt-1 text-lg font-semibold text-slate-700">
-                            {date.toLocaleDateString('en-US', {
-                              month: 'short',
-                              day: 'numeric',
-                            })}
-                          </div>
-                          {staffList.length > 1 && (
-                            <div className="mt-2 flex gap-1">
-                              {staffList.map((staff, idx) => {
-                                const open = isStaffOpenForDate(staff.id, dk)
-                                const color =
-                                  STAFF_LANE_COLORS[
-                                    idx % STAFF_LANE_COLORS.length
-                                  ]
-                                return (
-                                  <button
-                                    key={staff.id}
-                                    type="button"
-                                    title={`${staff.display_name}: click to toggle ${open ? 'closed' : 'open'}`}
-                                    onClick={() =>
-                                      toggleStaffAvailability(staff.id, dk)
-                                    }
-                                    className="flex-1 truncate rounded-full px-2 py-0.5 text-[10px] font-semibold text-white shadow-sm transition hover:opacity-80 active:scale-95"
-                                    style={{
-                                      backgroundColor: open ? color : '#9ca3af',
-                                    }}
-                                  >
-                                    {staff.display_name.split(' ')[0]}
-                                  </button>
-                                )
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
-
-                <div className="relative border-r border-slate-200 bg-slate-50">
-                  {HOURS.map((hour) => (
-                    <div
-                      key={hour}
-                      className="border-b border-slate-200 px-3 pt-2 text-xs text-slate-500"
-                      style={{ height: HOUR_HEIGHT }}
-                    >
-                      {hour === 12
-                        ? '12pm'
-                        : hour > 12
-                          ? `${hour - 12}pm`
-                          : `${hour}am`}
-                    </div>
-                  ))}
-                </div>
-
-                {view === 'day' && staffList.length > 0
-                  ? staffList.map((staff) => {
-                      const dateKey = formatDateKey(anchorDate)
-                      const allDayAppointments =
-                        appointmentsByDate.get(dateKey) || []
-                      const dayAppointments = allDayAppointments.filter(
-                        (a) =>
-                          a.assigned_staff_user_id === staff.id ||
-                          (!a.assigned_staff_user_id &&
-                            staff.id === staffList[0]?.id),
-                      )
-                      const dayEvents = data.events.filter((event) =>
-                        intersectsDay(event, dateKey),
-                      )
-                      const dayRanges =
-                        businessDayRanges.get(anchorDate.getDay()) || []
-                      const offHourSegments =
-                        getOffHourSegmentsForGrid(dayRanges)
-                      const laneIsOpen = isStaffOpenForDate(staff.id, dateKey)
-                      return (
-                        <div
-                          key={staff.id}
-                          data-date-column={dateKey}
-                          data-staff-lane={staff.id}
-                          className={`relative border-r border-slate-200 ${laneIsOpen ? 'bg-white' : 'bg-slate-100/60'}`}
-                          onDragOver={(e) =>
-                            handleDragOver(e, dateKey, staff.id)
-                          }
-                          onDragLeave={() => setDragPreview(null)}
-                          onDrop={(e) => void handleDrop(e, dateKey, staff.id)}
-                        >
-                          {!laneIsOpen && (
-                            <div className="pointer-events-none absolute inset-0 z-10 bg-slate-200/40" />
-                          )}
-                          {dragPreview?.dateKey === dateKey &&
-                          dragPreview?.staffId === staff.id &&
-                          draggingAppointment
-                            ? (() => {
-                                const ghostPlacement =
-                                  getAppointmentPlacement(draggingAppointment)
-                                const ghostTop =
-                                  ((dragPreview.snappedMinutes -
-                                    GRID_START_MINUTES) /
-                                    60) *
-                                  HOUR_HEIGHT
-                                return (
-                                  <div
-                                    className="pointer-events-none absolute right-2 left-2 rounded-2xl border-2 border-dashed border-emerald-400 bg-emerald-100/60"
-                                    style={{
-                                      top: ghostTop + 6,
-                                      height: ghostPlacement.height - 8,
-                                    }}
-                                  />
-                                )
-                              })()
-                            : null}
-                          {HOURS.map((hour) => (
-                            <button
-                              key={`${dateKey}-${hour}`}
-                              type="button"
-                              className="focus-visible:ring-ring relative z-0 block w-full border-b border-slate-200 text-left transition hover:bg-emerald-50/60 focus-visible:ring-2 focus-visible:outline-none"
-                              style={{ height: HOUR_HEIGHT }}
-                              onClick={(e) => {
-                                setCellMenu({
-                                  dateKey,
-                                  hour,
-                                  x: e.clientX,
-                                  y: e.clientY,
-                                  staffId: staff.id,
-                                })
-                              }}
-                              title={`Create at ${String(hour).padStart(2, '0')}:00`}
-                              aria-label={`Create on ${dateKey} at ${String(hour).padStart(2, '0')}:00`}
-                            />
-                          ))}
-                          {offHourSegments.map((segment, index) => {
-                            const gridStartMinutes = HOURS[0] * 60
-                            const top =
-                              ((segment.start - gridStartMinutes) / 60) *
-                              HOUR_HEIGHT
-                            const height =
-                              ((segment.end - segment.start) / 60) * HOUR_HEIGHT
-                            return (
-                              <div
-                                key={`${dateKey}-off-${index}`}
-                                className="pointer-events-none absolute right-0 left-0 bg-slate-100/80"
-                                style={{ top, height }}
-                              />
-                            )
-                          })}
-                          {dayEvents
-                            .filter(
-                              (event) =>
-                                event.assigned_staff_user_id === staff.id ||
-                                (!event.assigned_staff_user_id &&
-                                  staff.id === staffList[0]?.id),
-                            )
-                            .map((event) => {
-                              const endOverride =
-                                eventResizeSession?.eventId === event.id &&
-                                eventResizeLiveEndMinutes != null
-                                  ? eventResizeLiveEndMinutes
-                                  : null
-                              const placement = getBlockPlacement(
-                                event,
-                                endOverride,
-                              )
-                              const isDraggingThis =
-                                draggingEvent?.id === event.id
-                              return (
-                                <div
-                                  key={event.id}
-                                  data-event-block
-                                  className={`absolute right-2 left-2 flex flex-col overflow-hidden rounded-2xl border text-xs shadow-sm ${getEventTone(event)} ${isDraggingThis ? 'opacity-40' : ''}`}
-                                  style={{
-                                    top: placement.top + 6,
-                                    height: placement.height - 8,
-                                  }}
-                                >
-                                  {!event.is_all_day && (
-                                    <div
-                                      onPointerDown={(e) =>
-                                        handleEventMovePointerDown(e, event)
-                                      }
-                                      onPointerMove={handleEventMovePointerMove}
-                                      onPointerUp={(e) =>
-                                        void handleEventMovePointerUp(e)
-                                      }
-                                      onPointerCancel={(e) =>
-                                        void handleEventMovePointerUp(e)
-                                      }
-                                      style={{ touchAction: 'none' }}
-                                      className="flex shrink-0 cursor-grab touch-none items-center gap-1 border-b border-black/5 bg-black/[0.03] px-2 py-1.5 active:cursor-grabbing"
-                                    >
-                                      <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-500" />
-                                      <span className="text-[10px] font-medium tracking-tight text-slate-600">
-                                        Move
-                                      </span>
-                                    </div>
-                                  )}
-                                  <button
-                                    type="button"
-                                    className="flex min-h-0 flex-1 flex-col overflow-hidden p-2 text-left"
-                                    onClick={() => openEditEvent(event)}
-                                  >
-                                    <div className="font-semibold">
-                                      {event.title}
-                                    </div>
-                                    {event.description ? (
-                                      <div className="mt-1 line-clamp-2 opacity-75">
-                                        {event.description}
-                                      </div>
-                                    ) : null}
-                                  </button>
-                                  {!event.is_all_day && (
-                                    <button
-                                      type="button"
-                                      aria-label="Drag to change end time"
-                                      title="Drag to extend or shorten"
-                                      style={{ touchAction: 'none' }}
-                                      className="relative flex h-5 shrink-0 cursor-ns-resize touch-none items-center justify-center rounded-b-[13px] border-t border-black/10 bg-black/[0.08] hover:bg-black/[0.14] sm:h-2.5"
-                                      onPointerDown={(e) =>
-                                        beginEventResize(e, event)
-                                      }
-                                    >
-                                      <span
-                                        aria-hidden
-                                        className="block h-0.5 w-8 rounded-full bg-black/30 sm:hidden"
-                                      />
-                                    </button>
-                                  )}
-                                </div>
-                              )
-                            })}
-                          {dateKey === todayKey &&
-                          nowMinutes != null &&
-                          nowMinutes >= GRID_START_MINUTES &&
-                          nowMinutes <= (HOURS[HOURS.length - 1] + 1) * 60 ? (
-                            <div
-                              className="pointer-events-none absolute right-0 left-0 z-20 flex items-center"
-                              style={{
-                                top:
-                                  ((nowMinutes - GRID_START_MINUTES) / 60) *
-                                  HOUR_HEIGHT,
-                              }}
-                            >
-                              <span className="ml-0.5 h-2.5 w-2.5 shrink-0 rounded-full bg-red-500 shadow-sm" />
-                              <span className="h-px flex-1 bg-red-500/80" />
-                            </div>
-                          ) : null}
-                          {renderApptBlocks(dayAppointments)}
-                        </div>
-                      )
-                    })
-                  : view === 'week' && staffList.length > 1
-                    ? displayedDays.map((date) => {
-                        const dateKey = formatDateKey(date)
-                        const isSunday = date.getDay() === 0
-                        if (isSunday) {
+            <div
+              className={
+                view === 'day' && isMobile
+                  ? 'overflow-x-hidden'
+                  : 'overflow-x-auto'
+              }
+            >
+              {(() => {
+                // On mobile day view, collapse all staff lanes to a single lane.
+                // The user picks which tech to view via the pill toggle above the calendar.
+                const activeDayStaff: StaffMember | null =
+                  isMobile && view === 'day' && staffList.length > 0
+                    ? staffFilter
+                      ? (staffList.find((s) => s.id === staffFilter) ??
+                        staffList[0])
+                      : staffList[0]
+                    : null
+                const dayLanes = activeDayStaff ? [activeDayStaff] : staffList
+                return (
+                  <div
+                    className="grid"
+                    style={{
+                      gridTemplateColumns:
+                        view === 'day'
+                          ? activeDayStaff
+                            ? '72px 1fr'
+                            : `72px repeat(${Math.max(staffList.length, 1)}, minmax(400px, 1fr))`
+                          : '72px 48px repeat(6, minmax(270px, 1fr))',
+                      minWidth:
+                        view === 'day'
+                          ? activeDayStaff
+                            ? undefined
+                            : `${72 + Math.max(staffList.length, 1) * 400}px`
+                          : `${72 + 48 + 6 * 270}px`,
+                    }}
+                  >
+                    <div className="border-r border-b border-slate-200 bg-slate-100 p-3" />
+                    {view === 'day' && staffList.length > 0
+                      ? dayLanes.map((staff, idx) => {
+                          const dateKey = formatDateKey(anchorDate)
+                          const isOpen = isStaffOpenForDate(staff.id, dateKey)
+                          const color =
+                            STAFF_LANE_COLORS[
+                              staffList.indexOf(staff) %
+                                STAFF_LANE_COLORS.length
+                            ]
                           return (
                             <div
-                              key={dateKey}
-                              className="border-r border-slate-200 bg-slate-100/70"
-                            />
-                          )
-                        }
-                        const allDayAppointments =
-                          appointmentsByDate.get(dateKey) || []
-                        const dayEvents = data.events.filter((event) =>
-                          intersectsDay(event, dateKey),
-                        )
-                        const dayRanges =
-                          businessDayRanges.get(date.getDay()) || []
-                        const offHourSegments =
-                          getOffHourSegmentsForGrid(dayRanges)
-                        return (
-                          <div
-                            key={dateKey}
-                            className="relative flex border-r border-slate-200"
-                          >
-                            {staffList.map((staff, staffIdx) => {
-                              const laneAppts = allDayAppointments.filter(
-                                (a) =>
-                                  a.assigned_staff_user_id === staff.id ||
-                                  (!a.assigned_staff_user_id && staffIdx === 0),
-                              )
-                              const laneIsOpen = isStaffOpenForDate(
-                                staff.id,
-                                dateKey,
-                              )
-                              const isFirst = staffIdx === 0
-                              return (
-                                <div
-                                  key={staff.id}
-                                  data-date-column={dateKey}
-                                  data-staff-lane={staff.id}
-                                  className={`relative min-w-0 flex-1 ${staffIdx < staffList.length - 1 ? 'border-r border-slate-200' : ''} ${laneIsOpen ? 'bg-white' : 'bg-slate-100/60'}`}
-                                  onDragOver={(e) =>
-                                    handleDragOver(e, dateKey, staff.id)
+                              key={staff.id}
+                              className={`border-b border-slate-200 p-3 ${isOpen ? 'bg-emerald-50/60' : 'bg-slate-100'}`}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className="inline-block h-3 w-3 rounded-full"
+                                    style={{ backgroundColor: color }}
+                                  />
+                                  <span className="text-sm font-semibold text-slate-700">
+                                    {staff.display_name}
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    toggleStaffAvailability(staff.id, dateKey)
                                   }
-                                  onDragLeave={() => setDragPreview(null)}
-                                  onDrop={(e) =>
-                                    void handleDrop(e, dateKey, staff.id)
-                                  }
+                                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ${
+                                    isOpen ? 'bg-emerald-500' : 'bg-slate-300'
+                                  }`}
+                                  aria-label={`Toggle ${staff.display_name} availability`}
                                 >
-                                  {!laneIsOpen && (
-                                    <div className="pointer-events-none absolute inset-0 z-10 bg-slate-200/40" />
-                                  )}
-                                  {dragPreview?.dateKey === dateKey &&
-                                  dragPreview?.staffId === staff.id &&
-                                  draggingAppointment
-                                    ? (() => {
-                                        const ghostPlacement =
-                                          getAppointmentPlacement(
-                                            draggingAppointment,
-                                          )
-                                        const ghostTop =
-                                          ((dragPreview.snappedMinutes -
-                                            GRID_START_MINUTES) /
-                                            60) *
-                                          HOUR_HEIGHT
-                                        return (
-                                          <div
-                                            className="pointer-events-none absolute right-2 left-2 rounded-2xl border-2 border-dashed border-emerald-400 bg-emerald-100/60"
-                                            style={{
-                                              top: ghostTop + 6,
-                                              height: ghostPlacement.height - 8,
-                                            }}
-                                          />
-                                        )
-                                      })()
-                                    : null}
-                                  {HOURS.map((hour) => (
-                                    <button
-                                      key={`${dateKey}-${staff.id}-${hour}`}
-                                      type="button"
-                                      className="focus-visible:ring-ring relative z-0 block w-full border-b border-slate-200 text-left transition hover:bg-emerald-50/60 focus-visible:ring-2 focus-visible:outline-none"
-                                      style={{ height: HOUR_HEIGHT }}
-                                      onClick={(e) => {
-                                        setCellMenu({
-                                          dateKey,
-                                          hour,
-                                          x: e.clientX,
-                                          y: e.clientY,
-                                          staffId: staff.id,
-                                        })
-                                      }}
-                                      title={`Create at ${String(hour).padStart(2, '0')}:00`}
-                                      aria-label={`Create on ${dateKey} at ${String(hour).padStart(2, '0')}:00`}
-                                    />
-                                  ))}
-                                  {offHourSegments.map((segment, index) => {
-                                    const gridStartMinutes = HOURS[0] * 60
-                                    const top =
-                                      ((segment.start - gridStartMinutes) /
+                                  <span
+                                    className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition-transform duration-200 ${
+                                      isOpen ? 'translate-x-5' : 'translate-x-0'
+                                    }`}
+                                  />
+                                </button>
+                              </div>
+                              <div
+                                className={`mt-1 text-xs font-medium ${isOpen ? 'text-emerald-600' : 'text-slate-400'}`}
+                              >
+                                {isOpen ? 'OPEN' : 'CLOSED'}
+                              </div>
+                              <div className="mt-1 text-xs font-medium tracking-[0.2em] text-slate-500 uppercase">
+                                {WEEKDAY_LABELS[anchorDate.getDay()]}
+                              </div>
+                              <div className="mt-0.5 text-lg font-semibold text-slate-700">
+                                {anchorDate.toLocaleDateString('en-US', {
+                                  month: 'short',
+                                  day: 'numeric',
+                                })}
+                              </div>
+                            </div>
+                          )
+                        })
+                      : displayedDays.map((date) => {
+                          const dk = formatDateKey(date)
+                          const isSunday = date.getDay() === 0
+                          if (isSunday) {
+                            return (
+                              <div
+                                key={dk}
+                                className="flex items-center justify-center border-r border-b border-slate-200 bg-slate-100"
+                              >
+                                <span className="text-[10px] font-medium tracking-widest text-slate-400 uppercase [writing-mode:vertical-rl]">
+                                  Sun
+                                </span>
+                              </div>
+                            )
+                          }
+                          return (
+                            <div
+                              key={dk}
+                              className="border-b border-slate-200 bg-slate-100 p-3"
+                            >
+                              <div className="text-xs font-medium tracking-[0.2em] text-slate-500 uppercase">
+                                {WEEKDAY_LABELS[date.getDay()]}
+                              </div>
+                              <div className="mt-1 text-lg font-semibold text-slate-700">
+                                {date.toLocaleDateString('en-US', {
+                                  month: 'short',
+                                  day: 'numeric',
+                                })}
+                              </div>
+                              {staffList.length > 1 && (
+                                <div className="mt-2 flex gap-1">
+                                  {staffList.map((staff, idx) => {
+                                    const open = isStaffOpenForDate(
+                                      staff.id,
+                                      dk,
+                                    )
+                                    const color =
+                                      STAFF_LANE_COLORS[
+                                        idx % STAFF_LANE_COLORS.length
+                                      ]
+                                    return (
+                                      <button
+                                        key={staff.id}
+                                        type="button"
+                                        title={`${staff.display_name}: click to toggle ${open ? 'closed' : 'open'}`}
+                                        onClick={() =>
+                                          toggleStaffAvailability(staff.id, dk)
+                                        }
+                                        className="flex-1 truncate rounded-full px-2 py-0.5 text-[10px] font-semibold text-white shadow-sm transition hover:opacity-80 active:scale-95"
+                                        style={{
+                                          backgroundColor: open
+                                            ? color
+                                            : '#9ca3af',
+                                        }}
+                                      >
+                                        {staff.display_name.split(' ')[0]}
+                                      </button>
+                                    )
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+
+                    <div className="relative border-r border-slate-200 bg-slate-50">
+                      {HOURS.map((hour) => (
+                        <div
+                          key={hour}
+                          className="border-b border-slate-200 px-3 pt-2 text-xs text-slate-500"
+                          style={{ height: HOUR_HEIGHT }}
+                        >
+                          {hour === 12
+                            ? '12pm'
+                            : hour > 12
+                              ? `${hour - 12}pm`
+                              : `${hour}am`}
+                        </div>
+                      ))}
+                    </div>
+
+                    {view === 'day' && staffList.length > 0
+                      ? dayLanes.map((staff) => {
+                          const dateKey = formatDateKey(anchorDate)
+                          const allDayAppointments =
+                            appointmentsByDate.get(dateKey) || []
+                          const dayAppointments = allDayAppointments.filter(
+                            (a) =>
+                              a.assigned_staff_user_id === staff.id ||
+                              (!a.assigned_staff_user_id &&
+                                staff.id === staffList[0]?.id),
+                          )
+                          const dayEvents = data.events.filter((event) =>
+                            intersectsDay(event, dateKey),
+                          )
+                          const dayRanges =
+                            businessDayRanges.get(anchorDate.getDay()) || []
+                          const offHourSegments =
+                            getOffHourSegmentsForGrid(dayRanges)
+                          const laneIsOpen = isStaffOpenForDate(
+                            staff.id,
+                            dateKey,
+                          )
+                          return (
+                            <div
+                              key={staff.id}
+                              data-date-column={dateKey}
+                              data-staff-lane={staff.id}
+                              className={`relative border-r border-slate-200 ${laneIsOpen ? 'bg-white' : 'bg-slate-100/60'}`}
+                              onDragOver={(e) =>
+                                handleDragOver(e, dateKey, staff.id)
+                              }
+                              onDragLeave={() => setDragPreview(null)}
+                              onDrop={(e) =>
+                                void handleDrop(e, dateKey, staff.id)
+                              }
+                            >
+                              {!laneIsOpen && (
+                                <div className="pointer-events-none absolute inset-0 z-10 bg-slate-200/40" />
+                              )}
+                              {dragPreview?.dateKey === dateKey &&
+                              dragPreview?.staffId === staff.id &&
+                              draggingAppointment
+                                ? (() => {
+                                    const ghostPlacement =
+                                      getAppointmentPlacement(
+                                        draggingAppointment,
+                                      )
+                                    const ghostTop =
+                                      ((dragPreview.snappedMinutes -
+                                        GRID_START_MINUTES) /
                                         60) *
-                                      HOUR_HEIGHT
-                                    const height =
-                                      ((segment.end - segment.start) / 60) *
                                       HOUR_HEIGHT
                                     return (
                                       <div
-                                        key={`${dateKey}-${staff.id}-off-${index}`}
-                                        className="pointer-events-none absolute right-0 left-0 bg-slate-100/80"
-                                        style={{ top, height }}
+                                        className="pointer-events-none absolute right-2 left-2 rounded-2xl border-2 border-dashed border-emerald-400 bg-emerald-100/60"
+                                        style={{
+                                          top: ghostTop + 6,
+                                          height: ghostPlacement.height - 8,
+                                        }}
                                       />
                                     )
-                                  })}
-                                  {dayEvents
-                                    .filter(
-                                      (event) =>
-                                        event.assigned_staff_user_id ===
-                                          staff.id ||
-                                        (!event.assigned_staff_user_id &&
-                                          isFirst),
-                                    )
-                                    .map((event) => {
-                                      const endOverride =
-                                        eventResizeSession?.eventId ===
-                                          event.id &&
-                                        eventResizeLiveEndMinutes != null
-                                          ? eventResizeLiveEndMinutes
-                                          : null
-                                      const placement = getBlockPlacement(
-                                        event,
-                                        endOverride,
-                                      )
-                                      const isDraggingThis =
-                                        draggingEvent?.id === event.id
-                                      return (
-                                        <div
-                                          key={event.id}
-                                          data-event-block
-                                          className={`absolute right-2 left-2 flex flex-col overflow-hidden rounded-2xl border text-xs shadow-sm ${getEventTone(event)} ${isDraggingThis ? 'opacity-40' : ''}`}
-                                          style={{
-                                            top: placement.top + 6,
-                                            height: placement.height - 8,
-                                          }}
-                                        >
-                                          {!event.is_all_day && (
-                                            <div
-                                              onPointerDown={(e) =>
-                                                handleEventMovePointerDown(
-                                                  e,
-                                                  event,
-                                                )
-                                              }
-                                              onPointerMove={
-                                                handleEventMovePointerMove
-                                              }
-                                              onPointerUp={(e) =>
-                                                void handleEventMovePointerUp(e)
-                                              }
-                                              onPointerCancel={(e) =>
-                                                void handleEventMovePointerUp(e)
-                                              }
-                                              style={{ touchAction: 'none' }}
-                                              className="flex shrink-0 cursor-grab touch-none items-center gap-1 border-b border-black/5 bg-black/[0.03] px-2 py-1.5 active:cursor-grabbing"
-                                            >
-                                              <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-500" />
-                                              <span className="text-[10px] font-medium tracking-tight text-slate-600">
-                                                Move
-                                              </span>
-                                            </div>
-                                          )}
-                                          <button
-                                            type="button"
-                                            className="flex min-h-0 flex-1 flex-col overflow-hidden p-2 text-left"
-                                            onClick={() => openEditEvent(event)}
-                                          >
-                                            <div className="font-semibold">
-                                              {event.title}
-                                            </div>
-                                            {event.description ? (
-                                              <div className="mt-1 line-clamp-2 opacity-75">
-                                                {event.description}
-                                              </div>
-                                            ) : null}
-                                          </button>
-                                          {!event.is_all_day && (
-                                            <button
-                                              type="button"
-                                              aria-label="Drag to change end time"
-                                              title="Drag to extend or shorten"
-                                              style={{ touchAction: 'none' }}
-                                              className="relative flex h-5 shrink-0 cursor-ns-resize touch-none items-center justify-center rounded-b-[13px] border-t border-black/10 bg-black/[0.08] hover:bg-black/[0.14] sm:h-2.5"
-                                              onPointerDown={(e) =>
-                                                beginEventResize(e, event)
-                                              }
-                                            >
-                                              <span
-                                                aria-hidden
-                                                className="block h-0.5 w-8 rounded-full bg-black/30 sm:hidden"
-                                              />
-                                            </button>
-                                          )}
-                                        </div>
-                                      )
-                                    })}
-                                  {isFirst &&
-                                  dateKey === todayKey &&
-                                  nowMinutes != null &&
-                                  nowMinutes >= GRID_START_MINUTES &&
-                                  nowMinutes <=
-                                    (HOURS[HOURS.length - 1] + 1) * 60 ? (
+                                  })()
+                                : null}
+                              {HOURS.map((hour) => (
+                                <button
+                                  key={`${dateKey}-${hour}`}
+                                  type="button"
+                                  className="focus-visible:ring-ring relative z-0 block w-full border-b border-slate-200 text-left transition hover:bg-emerald-50/60 focus-visible:ring-2 focus-visible:outline-none"
+                                  style={{ height: HOUR_HEIGHT }}
+                                  onClick={(e) => {
+                                    setCellMenu({
+                                      dateKey,
+                                      hour,
+                                      x: e.clientX,
+                                      y: e.clientY,
+                                      staffId: staff.id,
+                                    })
+                                  }}
+                                  title={`Create at ${String(hour).padStart(2, '0')}:00`}
+                                  aria-label={`Create on ${dateKey} at ${String(hour).padStart(2, '0')}:00`}
+                                />
+                              ))}
+                              {offHourSegments.map((segment, index) => {
+                                const gridStartMinutes = HOURS[0] * 60
+                                const top =
+                                  ((segment.start - gridStartMinutes) / 60) *
+                                  HOUR_HEIGHT
+                                const height =
+                                  ((segment.end - segment.start) / 60) *
+                                  HOUR_HEIGHT
+                                return (
+                                  <div
+                                    key={`${dateKey}-off-${index}`}
+                                    className="pointer-events-none absolute right-0 left-0 bg-slate-100/80"
+                                    style={{ top, height }}
+                                  />
+                                )
+                              })}
+                              {dayEvents
+                                .filter(
+                                  (event) =>
+                                    event.assigned_staff_user_id === staff.id ||
+                                    (!event.assigned_staff_user_id &&
+                                      staff.id === staffList[0]?.id),
+                                )
+                                .map((event) => {
+                                  const endOverride =
+                                    eventResizeSession?.eventId === event.id &&
+                                    eventResizeLiveEndMinutes != null
+                                      ? eventResizeLiveEndMinutes
+                                      : null
+                                  const placement = getBlockPlacement(
+                                    event,
+                                    endOverride,
+                                  )
+                                  const isDraggingThis =
+                                    draggingEvent?.id === event.id
+                                  return (
                                     <div
-                                      className="pointer-events-none absolute right-0 left-0 z-20 flex items-center"
+                                      key={event.id}
+                                      data-event-block
+                                      className={`absolute right-2 left-2 flex flex-col overflow-hidden rounded-2xl border text-xs shadow-sm ${getEventTone(event)} ${isDraggingThis ? 'opacity-40' : ''}`}
                                       style={{
-                                        top:
-                                          ((nowMinutes - GRID_START_MINUTES) /
-                                            60) *
-                                          HOUR_HEIGHT,
+                                        top: placement.top + 6,
+                                        height: placement.height - 8,
                                       }}
                                     >
-                                      <span className="ml-0.5 h-2.5 w-2.5 shrink-0 rounded-full bg-red-500 shadow-sm" />
-                                      <span className="h-px flex-1 bg-red-500/80" />
+                                      {!event.is_all_day && (
+                                        <div
+                                          onPointerDown={(e) =>
+                                            handleEventMovePointerDown(e, event)
+                                          }
+                                          onPointerMove={
+                                            handleEventMovePointerMove
+                                          }
+                                          onPointerUp={(e) =>
+                                            void handleEventMovePointerUp(e)
+                                          }
+                                          onPointerCancel={(e) =>
+                                            void handleEventMovePointerUp(e)
+                                          }
+                                          style={{ touchAction: 'none' }}
+                                          className="flex shrink-0 cursor-grab touch-none items-center gap-1 border-b border-black/5 bg-black/[0.03] px-2 py-1.5 active:cursor-grabbing"
+                                        >
+                                          <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                                          <span className="text-[10px] font-medium tracking-tight text-slate-600">
+                                            Move
+                                          </span>
+                                        </div>
+                                      )}
+                                      <button
+                                        type="button"
+                                        className="flex min-h-0 flex-1 flex-col overflow-hidden p-2 text-left"
+                                        onClick={() => openEditEvent(event)}
+                                      >
+                                        <div className="font-semibold">
+                                          {event.title}
+                                        </div>
+                                        {event.description ? (
+                                          <div className="mt-1 line-clamp-2 opacity-75">
+                                            {event.description}
+                                          </div>
+                                        ) : null}
+                                      </button>
+                                      {!event.is_all_day && (
+                                        <button
+                                          type="button"
+                                          aria-label="Drag to change end time"
+                                          title="Drag to extend or shorten"
+                                          style={{ touchAction: 'none' }}
+                                          className="relative flex h-5 shrink-0 cursor-ns-resize touch-none items-center justify-center rounded-b-[13px] border-t border-black/10 bg-black/[0.08] hover:bg-black/[0.14] sm:h-2.5"
+                                          onPointerDown={(e) =>
+                                            beginEventResize(e, event)
+                                          }
+                                        >
+                                          <span
+                                            aria-hidden
+                                            className="block h-0.5 w-8 rounded-full bg-black/30 sm:hidden"
+                                          />
+                                        </button>
+                                      )}
                                     </div>
-                                  ) : null}
-                                  {renderApptBlocks(laneAppts)}
+                                  )
+                                })}
+                              {dateKey === todayKey &&
+                              nowMinutes != null &&
+                              nowMinutes >= GRID_START_MINUTES &&
+                              nowMinutes <=
+                                (HOURS[HOURS.length - 1] + 1) * 60 ? (
+                                <div
+                                  className="pointer-events-none absolute right-0 left-0 z-20 flex items-center"
+                                  style={{
+                                    top:
+                                      ((nowMinutes - GRID_START_MINUTES) / 60) *
+                                      HOUR_HEIGHT,
+                                  }}
+                                >
+                                  <span className="ml-0.5 h-2.5 w-2.5 shrink-0 rounded-full bg-red-500 shadow-sm" />
+                                  <span className="h-px flex-1 bg-red-500/80" />
                                 </div>
-                              )
-                            })}
-                          </div>
-                        )
-                      })
-                    : displayedDays.map((date) => {
-                        const dateKey = formatDateKey(date)
-                        const isSunday = date.getDay() === 0
-                        if (isSunday) {
-                          return (
-                            <div
-                              key={dateKey}
-                              className="border-r border-slate-200 bg-slate-100/70"
-                            />
+                              ) : null}
+                              {renderApptBlocks(dayAppointments)}
+                            </div>
                           )
-                        }
-                        const allDayAppointments =
-                          appointmentsByDate.get(dateKey) || []
-                        const dayAppointments = staffFilter
-                          ? allDayAppointments.filter(
-                              (a) =>
-                                a.assigned_staff_user_id === staffFilter ||
-                                (!a.assigned_staff_user_id &&
-                                  staffFilter === staffList[0]?.id),
+                        })
+                      : view === 'week' && staffList.length > 1
+                        ? displayedDays.map((date) => {
+                            const dateKey = formatDateKey(date)
+                            const isSunday = date.getDay() === 0
+                            if (isSunday) {
+                              return (
+                                <div
+                                  key={dateKey}
+                                  className="border-r border-slate-200 bg-slate-100/70"
+                                />
+                              )
+                            }
+                            const allDayAppointments =
+                              appointmentsByDate.get(dateKey) || []
+                            const dayEvents = data.events.filter((event) =>
+                              intersectsDay(event, dateKey),
                             )
-                          : allDayAppointments
-                        const dayEvents = data.events.filter((event) =>
-                          intersectsDay(event, dateKey),
-                        )
-                        const dayRanges =
-                          businessDayRanges.get(date.getDay()) || []
-                        const offHourSegments =
-                          getOffHourSegmentsForGrid(dayRanges)
-                        return (
-                          <div
-                            key={dateKey}
-                            data-date-column={dateKey}
-                            data-staff-lane=""
-                            className="relative border-r border-slate-200 bg-white"
-                            onDragOver={(e) => handleDragOver(e, dateKey)}
-                            onDragLeave={() => setDragPreview(null)}
-                            onDrop={(e) => void handleDrop(e, dateKey, null)}
-                          >
-                            {dragPreview?.dateKey === dateKey &&
-                            draggingAppointment
-                              ? (() => {
-                                  const ghostPlacement =
-                                    getAppointmentPlacement(draggingAppointment)
-                                  const ghostTop =
-                                    ((dragPreview.snappedMinutes -
-                                      GRID_START_MINUTES) /
-                                      60) *
+                            const dayRanges =
+                              businessDayRanges.get(date.getDay()) || []
+                            const offHourSegments =
+                              getOffHourSegmentsForGrid(dayRanges)
+                            return (
+                              <div
+                                key={dateKey}
+                                className="relative flex border-r border-slate-200"
+                              >
+                                {staffList.map((staff, staffIdx) => {
+                                  const laneAppts = allDayAppointments.filter(
+                                    (a) =>
+                                      a.assigned_staff_user_id === staff.id ||
+                                      (!a.assigned_staff_user_id &&
+                                        staffIdx === 0),
+                                  )
+                                  const laneIsOpen = isStaffOpenForDate(
+                                    staff.id,
+                                    dateKey,
+                                  )
+                                  const isFirst = staffIdx === 0
+                                  return (
+                                    <div
+                                      key={staff.id}
+                                      data-date-column={dateKey}
+                                      data-staff-lane={staff.id}
+                                      className={`relative min-w-0 flex-1 ${staffIdx < staffList.length - 1 ? 'border-r border-slate-200' : ''} ${laneIsOpen ? 'bg-white' : 'bg-slate-100/60'}`}
+                                      onDragOver={(e) =>
+                                        handleDragOver(e, dateKey, staff.id)
+                                      }
+                                      onDragLeave={() => setDragPreview(null)}
+                                      onDrop={(e) =>
+                                        void handleDrop(e, dateKey, staff.id)
+                                      }
+                                    >
+                                      {!laneIsOpen && (
+                                        <div className="pointer-events-none absolute inset-0 z-10 bg-slate-200/40" />
+                                      )}
+                                      {dragPreview?.dateKey === dateKey &&
+                                      dragPreview?.staffId === staff.id &&
+                                      draggingAppointment
+                                        ? (() => {
+                                            const ghostPlacement =
+                                              getAppointmentPlacement(
+                                                draggingAppointment,
+                                              )
+                                            const ghostTop =
+                                              ((dragPreview.snappedMinutes -
+                                                GRID_START_MINUTES) /
+                                                60) *
+                                              HOUR_HEIGHT
+                                            return (
+                                              <div
+                                                className="pointer-events-none absolute right-2 left-2 rounded-2xl border-2 border-dashed border-emerald-400 bg-emerald-100/60"
+                                                style={{
+                                                  top: ghostTop + 6,
+                                                  height:
+                                                    ghostPlacement.height - 8,
+                                                }}
+                                              />
+                                            )
+                                          })()
+                                        : null}
+                                      {HOURS.map((hour) => (
+                                        <button
+                                          key={`${dateKey}-${staff.id}-${hour}`}
+                                          type="button"
+                                          className="focus-visible:ring-ring relative z-0 block w-full border-b border-slate-200 text-left transition hover:bg-emerald-50/60 focus-visible:ring-2 focus-visible:outline-none"
+                                          style={{ height: HOUR_HEIGHT }}
+                                          onClick={(e) => {
+                                            setCellMenu({
+                                              dateKey,
+                                              hour,
+                                              x: e.clientX,
+                                              y: e.clientY,
+                                              staffId: staff.id,
+                                            })
+                                          }}
+                                          title={`Create at ${String(hour).padStart(2, '0')}:00`}
+                                          aria-label={`Create on ${dateKey} at ${String(hour).padStart(2, '0')}:00`}
+                                        />
+                                      ))}
+                                      {offHourSegments.map((segment, index) => {
+                                        const gridStartMinutes = HOURS[0] * 60
+                                        const top =
+                                          ((segment.start - gridStartMinutes) /
+                                            60) *
+                                          HOUR_HEIGHT
+                                        const height =
+                                          ((segment.end - segment.start) / 60) *
+                                          HOUR_HEIGHT
+                                        return (
+                                          <div
+                                            key={`${dateKey}-${staff.id}-off-${index}`}
+                                            className="pointer-events-none absolute right-0 left-0 bg-slate-100/80"
+                                            style={{ top, height }}
+                                          />
+                                        )
+                                      })}
+                                      {dayEvents
+                                        .filter(
+                                          (event) =>
+                                            event.assigned_staff_user_id ===
+                                              staff.id ||
+                                            (!event.assigned_staff_user_id &&
+                                              isFirst),
+                                        )
+                                        .map((event) => {
+                                          const endOverride =
+                                            eventResizeSession?.eventId ===
+                                              event.id &&
+                                            eventResizeLiveEndMinutes != null
+                                              ? eventResizeLiveEndMinutes
+                                              : null
+                                          const placement = getBlockPlacement(
+                                            event,
+                                            endOverride,
+                                          )
+                                          const isDraggingThis =
+                                            draggingEvent?.id === event.id
+                                          return (
+                                            <div
+                                              key={event.id}
+                                              data-event-block
+                                              className={`absolute right-2 left-2 flex flex-col overflow-hidden rounded-2xl border text-xs shadow-sm ${getEventTone(event)} ${isDraggingThis ? 'opacity-40' : ''}`}
+                                              style={{
+                                                top: placement.top + 6,
+                                                height: placement.height - 8,
+                                              }}
+                                            >
+                                              {!event.is_all_day && (
+                                                <div
+                                                  onPointerDown={(e) =>
+                                                    handleEventMovePointerDown(
+                                                      e,
+                                                      event,
+                                                    )
+                                                  }
+                                                  onPointerMove={
+                                                    handleEventMovePointerMove
+                                                  }
+                                                  onPointerUp={(e) =>
+                                                    void handleEventMovePointerUp(
+                                                      e,
+                                                    )
+                                                  }
+                                                  onPointerCancel={(e) =>
+                                                    void handleEventMovePointerUp(
+                                                      e,
+                                                    )
+                                                  }
+                                                  style={{
+                                                    touchAction: 'none',
+                                                  }}
+                                                  className="flex shrink-0 cursor-grab touch-none items-center gap-1 border-b border-black/5 bg-black/[0.03] px-2 py-1.5 active:cursor-grabbing"
+                                                >
+                                                  <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                                                  <span className="text-[10px] font-medium tracking-tight text-slate-600">
+                                                    Move
+                                                  </span>
+                                                </div>
+                                              )}
+                                              <button
+                                                type="button"
+                                                className="flex min-h-0 flex-1 flex-col overflow-hidden p-2 text-left"
+                                                onClick={() =>
+                                                  openEditEvent(event)
+                                                }
+                                              >
+                                                <div className="font-semibold">
+                                                  {event.title}
+                                                </div>
+                                                {event.description ? (
+                                                  <div className="mt-1 line-clamp-2 opacity-75">
+                                                    {event.description}
+                                                  </div>
+                                                ) : null}
+                                              </button>
+                                              {!event.is_all_day && (
+                                                <button
+                                                  type="button"
+                                                  aria-label="Drag to change end time"
+                                                  title="Drag to extend or shorten"
+                                                  style={{
+                                                    touchAction: 'none',
+                                                  }}
+                                                  className="relative flex h-5 shrink-0 cursor-ns-resize touch-none items-center justify-center rounded-b-[13px] border-t border-black/10 bg-black/[0.08] hover:bg-black/[0.14] sm:h-2.5"
+                                                  onPointerDown={(e) =>
+                                                    beginEventResize(e, event)
+                                                  }
+                                                >
+                                                  <span
+                                                    aria-hidden
+                                                    className="block h-0.5 w-8 rounded-full bg-black/30 sm:hidden"
+                                                  />
+                                                </button>
+                                              )}
+                                            </div>
+                                          )
+                                        })}
+                                      {isFirst &&
+                                      dateKey === todayKey &&
+                                      nowMinutes != null &&
+                                      nowMinutes >= GRID_START_MINUTES &&
+                                      nowMinutes <=
+                                        (HOURS[HOURS.length - 1] + 1) * 60 ? (
+                                        <div
+                                          className="pointer-events-none absolute right-0 left-0 z-20 flex items-center"
+                                          style={{
+                                            top:
+                                              ((nowMinutes -
+                                                GRID_START_MINUTES) /
+                                                60) *
+                                              HOUR_HEIGHT,
+                                          }}
+                                        >
+                                          <span className="ml-0.5 h-2.5 w-2.5 shrink-0 rounded-full bg-red-500 shadow-sm" />
+                                          <span className="h-px flex-1 bg-red-500/80" />
+                                        </div>
+                                      ) : null}
+                                      {renderApptBlocks(laneAppts)}
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )
+                          })
+                        : displayedDays.map((date) => {
+                            const dateKey = formatDateKey(date)
+                            const isSunday = date.getDay() === 0
+                            if (isSunday) {
+                              return (
+                                <div
+                                  key={dateKey}
+                                  className="border-r border-slate-200 bg-slate-100/70"
+                                />
+                              )
+                            }
+                            const allDayAppointments =
+                              appointmentsByDate.get(dateKey) || []
+                            const dayAppointments = staffFilter
+                              ? allDayAppointments.filter(
+                                  (a) =>
+                                    a.assigned_staff_user_id === staffFilter ||
+                                    (!a.assigned_staff_user_id &&
+                                      staffFilter === staffList[0]?.id),
+                                )
+                              : allDayAppointments
+                            const dayEvents = data.events.filter((event) =>
+                              intersectsDay(event, dateKey),
+                            )
+                            const dayRanges =
+                              businessDayRanges.get(date.getDay()) || []
+                            const offHourSegments =
+                              getOffHourSegmentsForGrid(dayRanges)
+                            return (
+                              <div
+                                key={dateKey}
+                                data-date-column={dateKey}
+                                data-staff-lane=""
+                                className="relative border-r border-slate-200 bg-white"
+                                onDragOver={(e) => handleDragOver(e, dateKey)}
+                                onDragLeave={() => setDragPreview(null)}
+                                onDrop={(e) =>
+                                  void handleDrop(e, dateKey, null)
+                                }
+                              >
+                                {dragPreview?.dateKey === dateKey &&
+                                draggingAppointment
+                                  ? (() => {
+                                      const ghostPlacement =
+                                        getAppointmentPlacement(
+                                          draggingAppointment,
+                                        )
+                                      const ghostTop =
+                                        ((dragPreview.snappedMinutes -
+                                          GRID_START_MINUTES) /
+                                          60) *
+                                        HOUR_HEIGHT
+                                      return (
+                                        <div
+                                          className="pointer-events-none absolute right-2 left-2 rounded-2xl border-2 border-dashed border-emerald-400 bg-emerald-100/60"
+                                          style={{
+                                            top: ghostTop + 6,
+                                            height: ghostPlacement.height - 8,
+                                          }}
+                                        />
+                                      )
+                                    })()
+                                  : null}
+                                {HOURS.map((hour) => (
+                                  <button
+                                    key={`${dateKey}-${hour}`}
+                                    type="button"
+                                    className="focus-visible:ring-ring relative z-0 block w-full border-b border-slate-200 text-left transition hover:bg-emerald-50/60 focus-visible:ring-2 focus-visible:outline-none"
+                                    style={{ height: HOUR_HEIGHT }}
+                                    onClick={(e) => {
+                                      setCellMenu({
+                                        dateKey,
+                                        hour,
+                                        x: e.clientX,
+                                        y: e.clientY,
+                                      })
+                                    }}
+                                    title={`Create at ${String(hour).padStart(2, '0')}:00`}
+                                    aria-label={`Create on ${dateKey} at ${String(hour).padStart(2, '0')}:00`}
+                                  />
+                                ))}
+                                {offHourSegments.map((segment, index) => {
+                                  const gridStartMinutes = HOURS[0] * 60
+                                  const top =
+                                    ((segment.start - gridStartMinutes) / 60) *
+                                    HOUR_HEIGHT
+                                  const height =
+                                    ((segment.end - segment.start) / 60) *
                                     HOUR_HEIGHT
                                   return (
                                     <div
-                                      className="pointer-events-none absolute right-2 left-2 rounded-2xl border-2 border-dashed border-emerald-400 bg-emerald-100/60"
-                                      style={{
-                                        top: ghostTop + 6,
-                                        height: ghostPlacement.height - 8,
-                                      }}
+                                      key={`${dateKey}-off-${index}`}
+                                      className="pointer-events-none absolute right-0 left-0 bg-slate-100/80"
+                                      style={{ top, height }}
                                     />
                                   )
-                                })()
-                              : null}
-                            {HOURS.map((hour) => (
-                              <button
-                                key={`${dateKey}-${hour}`}
-                                type="button"
-                                className="focus-visible:ring-ring relative z-0 block w-full border-b border-slate-200 text-left transition hover:bg-emerald-50/60 focus-visible:ring-2 focus-visible:outline-none"
-                                style={{ height: HOUR_HEIGHT }}
-                                onClick={(e) => {
-                                  setCellMenu({
-                                    dateKey,
-                                    hour,
-                                    x: e.clientX,
-                                    y: e.clientY,
-                                  })
-                                }}
-                                title={`Create at ${String(hour).padStart(2, '0')}:00`}
-                                aria-label={`Create on ${dateKey} at ${String(hour).padStart(2, '0')}:00`}
-                              />
-                            ))}
-                            {offHourSegments.map((segment, index) => {
-                              const gridStartMinutes = HOURS[0] * 60
-                              const top =
-                                ((segment.start - gridStartMinutes) / 60) *
-                                HOUR_HEIGHT
-                              const height =
-                                ((segment.end - segment.start) / 60) *
-                                HOUR_HEIGHT
-                              return (
-                                <div
-                                  key={`${dateKey}-off-${index}`}
-                                  className="pointer-events-none absolute right-0 left-0 bg-slate-100/80"
-                                  style={{ top, height }}
-                                />
-                              )
-                            })}
-                            {dayEvents.map((event) => {
-                              const endOverride =
-                                eventResizeSession?.eventId === event.id &&
-                                eventResizeLiveEndMinutes != null
-                                  ? eventResizeLiveEndMinutes
-                                  : null
-                              const placement = getBlockPlacement(
-                                event,
-                                endOverride,
-                              )
-                              const isDraggingThis =
-                                draggingEvent?.id === event.id
-                              return (
-                                <div
-                                  key={event.id}
-                                  data-event-block
-                                  className={`absolute right-2 left-2 flex flex-col overflow-hidden rounded-2xl border text-xs shadow-sm ${getEventTone(event)} ${isDraggingThis ? 'opacity-40' : ''}`}
-                                  style={{
-                                    top: placement.top + 6,
-                                    height: placement.height - 8,
-                                  }}
-                                >
-                                  {!event.is_all_day && (
+                                })}
+                                {dayEvents.map((event) => {
+                                  const endOverride =
+                                    eventResizeSession?.eventId === event.id &&
+                                    eventResizeLiveEndMinutes != null
+                                      ? eventResizeLiveEndMinutes
+                                      : null
+                                  const placement = getBlockPlacement(
+                                    event,
+                                    endOverride,
+                                  )
+                                  const isDraggingThis =
+                                    draggingEvent?.id === event.id
+                                  return (
                                     <div
-                                      onPointerDown={(e) =>
-                                        handleEventMovePointerDown(e, event)
-                                      }
-                                      onPointerMove={handleEventMovePointerMove}
-                                      onPointerUp={(e) =>
-                                        void handleEventMovePointerUp(e)
-                                      }
-                                      onPointerCancel={(e) =>
-                                        void handleEventMovePointerUp(e)
-                                      }
-                                      style={{ touchAction: 'none' }}
-                                      className="flex shrink-0 cursor-grab touch-none items-center gap-1 border-b border-black/5 bg-black/[0.03] px-2 py-1.5 active:cursor-grabbing"
+                                      key={event.id}
+                                      data-event-block
+                                      className={`absolute right-2 left-2 flex flex-col overflow-hidden rounded-2xl border text-xs shadow-sm ${getEventTone(event)} ${isDraggingThis ? 'opacity-40' : ''}`}
+                                      style={{
+                                        top: placement.top + 6,
+                                        height: placement.height - 8,
+                                      }}
                                     >
-                                      <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-500" />
-                                      <span className="text-[10px] font-medium tracking-tight text-slate-600">
-                                        Move
-                                      </span>
+                                      {!event.is_all_day && (
+                                        <div
+                                          onPointerDown={(e) =>
+                                            handleEventMovePointerDown(e, event)
+                                          }
+                                          onPointerMove={
+                                            handleEventMovePointerMove
+                                          }
+                                          onPointerUp={(e) =>
+                                            void handleEventMovePointerUp(e)
+                                          }
+                                          onPointerCancel={(e) =>
+                                            void handleEventMovePointerUp(e)
+                                          }
+                                          style={{ touchAction: 'none' }}
+                                          className="flex shrink-0 cursor-grab touch-none items-center gap-1 border-b border-black/5 bg-black/[0.03] px-2 py-1.5 active:cursor-grabbing"
+                                        >
+                                          <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                                          <span className="text-[10px] font-medium tracking-tight text-slate-600">
+                                            Move
+                                          </span>
+                                        </div>
+                                      )}
+                                      <button
+                                        type="button"
+                                        className="flex min-h-0 flex-1 flex-col overflow-hidden p-2 text-left"
+                                        onClick={() => openEditEvent(event)}
+                                      >
+                                        <div className="font-semibold">
+                                          {event.title}
+                                        </div>
+                                        {event.description ? (
+                                          <div className="mt-1 line-clamp-2 opacity-75">
+                                            {event.description}
+                                          </div>
+                                        ) : null}
+                                      </button>
+                                      {!event.is_all_day && (
+                                        <button
+                                          type="button"
+                                          aria-label="Drag to change end time"
+                                          title="Drag to extend or shorten"
+                                          style={{ touchAction: 'none' }}
+                                          className="relative flex h-5 shrink-0 cursor-ns-resize touch-none items-center justify-center rounded-b-[13px] border-t border-black/10 bg-black/[0.08] hover:bg-black/[0.14] sm:h-2.5"
+                                          onPointerDown={(e) =>
+                                            beginEventResize(e, event)
+                                          }
+                                        >
+                                          <span
+                                            aria-hidden
+                                            className="block h-0.5 w-8 rounded-full bg-black/30 sm:hidden"
+                                          />
+                                        </button>
+                                      )}
                                     </div>
-                                  )}
-                                  <button
-                                    type="button"
-                                    className="flex min-h-0 flex-1 flex-col overflow-hidden p-2 text-left"
-                                    onClick={() => openEditEvent(event)}
+                                  )
+                                })}
+                                {dateKey === todayKey &&
+                                nowMinutes != null &&
+                                nowMinutes >= GRID_START_MINUTES &&
+                                nowMinutes <=
+                                  (HOURS[HOURS.length - 1] + 1) * 60 ? (
+                                  <div
+                                    className="pointer-events-none absolute right-0 left-0 z-20 flex items-center"
+                                    style={{
+                                      top:
+                                        ((nowMinutes - GRID_START_MINUTES) /
+                                          60) *
+                                        HOUR_HEIGHT,
+                                    }}
                                   >
-                                    <div className="font-semibold">
-                                      {event.title}
-                                    </div>
-                                    {event.description ? (
-                                      <div className="mt-1 line-clamp-2 opacity-75">
-                                        {event.description}
-                                      </div>
-                                    ) : null}
-                                  </button>
-                                  {!event.is_all_day && (
-                                    <button
-                                      type="button"
-                                      aria-label="Drag to change end time"
-                                      title="Drag to extend or shorten"
-                                      style={{ touchAction: 'none' }}
-                                      className="relative flex h-5 shrink-0 cursor-ns-resize touch-none items-center justify-center rounded-b-[13px] border-t border-black/10 bg-black/[0.08] hover:bg-black/[0.14] sm:h-2.5"
-                                      onPointerDown={(e) =>
-                                        beginEventResize(e, event)
-                                      }
-                                    >
-                                      <span
-                                        aria-hidden
-                                        className="block h-0.5 w-8 rounded-full bg-black/30 sm:hidden"
-                                      />
-                                    </button>
-                                  )}
-                                </div>
-                              )
-                            })}
-                            {dateKey === todayKey &&
-                            nowMinutes != null &&
-                            nowMinutes >= GRID_START_MINUTES &&
-                            nowMinutes <= (HOURS[HOURS.length - 1] + 1) * 60 ? (
-                              <div
-                                className="pointer-events-none absolute right-0 left-0 z-20 flex items-center"
-                                style={{
-                                  top:
-                                    ((nowMinutes - GRID_START_MINUTES) / 60) *
-                                    HOUR_HEIGHT,
-                                }}
-                              >
-                                <span className="ml-0.5 h-2.5 w-2.5 shrink-0 rounded-full bg-red-500 shadow-sm" />
-                                <span className="h-px flex-1 bg-red-500/80" />
+                                    <span className="ml-0.5 h-2.5 w-2.5 shrink-0 rounded-full bg-red-500 shadow-sm" />
+                                    <span className="h-px flex-1 bg-red-500/80" />
+                                  </div>
+                                ) : null}
+                                {renderApptBlocks(dayAppointments)}
                               </div>
-                            ) : null}
-                            {renderApptBlocks(dayAppointments)}
-                          </div>
-                        )
-                      })}
-              </div>
+                            )
+                          })}
+                  </div>
+                )
+              })()}
             </div>
           </div>
         </Card>
