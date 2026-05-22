@@ -438,15 +438,20 @@ function intersectsDay(event: CalendarEvent, dateKey: string): boolean {
   return event.start_date <= dateKey && event.end_date >= dateKey
 }
 
-function getBlockPlacement(event: CalendarEvent) {
+function getBlockPlacement(
+  event: CalendarEvent,
+  endMinutesOverride?: number | null,
+) {
   const workdayStart = HOURS[0] * 60
   const workdayEnd = (HOURS[HOURS.length - 1] + 1) * 60
   const startMinutes = event.is_all_day
     ? workdayStart
     : Math.max(parseMinutes(event.start_time), workdayStart)
-  const endMinutes = event.is_all_day
-    ? workdayEnd
-    : Math.min(parseMinutes(event.end_time), workdayEnd)
+  const rawEnd = event.is_all_day ? workdayEnd : parseMinutes(event.end_time)
+  const endMinutes = Math.min(
+    endMinutesOverride != null ? endMinutesOverride : rawEnd,
+    workdayEnd,
+  )
   const top = ((startMinutes - workdayStart) / 60) * HOUR_HEIGHT
   const height = Math.max(((endMinutes - startMinutes) / 60) * HOUR_HEIGHT, 42)
   return { top, height }
@@ -1216,6 +1221,238 @@ export function OperationsSchedule() {
       window.removeEventListener('pointercancel', onUp)
     }
   }, [resizeSession, loadSchedule, PX_PER_MINUTE])
+
+  // ---- Event block: move (pointer drag) ----
+  const [draggingEvent, setDraggingEvent] = useState<CalendarEvent | null>(null)
+  const [eventDragPreview, setEventDragPreview] = useState<{
+    snappedMinutes: number
+  } | null>(null)
+  const eventMovePointerRef = useRef<{
+    pointerId: number
+    eventId: string
+    originalDurationMinutes: number
+    grabYOffsetWithinBlock: number
+    startX: number
+    startY: number
+    active: boolean
+  } | null>(null)
+  const [eventPointerDragging, setEventPointerDragging] = useState(false)
+
+  const handleEventMovePointerDown = (
+    e: React.PointerEvent<HTMLDivElement>,
+    calEvent: CalendarEvent,
+  ) => {
+    if (calEvent.is_all_day) return
+    const block = (e.currentTarget as HTMLElement).closest(
+      '[data-event-block]',
+    ) as HTMLElement | null
+    const blockRect = block?.getBoundingClientRect()
+    const grabOffset = blockRect ? e.clientY - blockRect.top : 0
+    const startM = parseMinutes(calEvent.start_time ?? '00:00')
+    const endM = parseMinutes(calEvent.end_time ?? '00:00')
+    eventMovePointerRef.current = {
+      pointerId: e.pointerId,
+      eventId: calEvent.id,
+      originalDurationMinutes: endM - startM,
+      grabYOffsetWithinBlock: grabOffset,
+      startX: e.clientX,
+      startY: e.clientY,
+      active: false,
+    }
+    didDragRef.current = false
+    try {
+      ;(e.currentTarget as Element).setPointerCapture(e.pointerId)
+    } catch {
+      // ignore
+    }
+  }
+
+  const handleEventMovePointerMove = (
+    e: React.PointerEvent<HTMLDivElement>,
+  ) => {
+    const session = eventMovePointerRef.current
+    if (!session || session.pointerId !== e.pointerId) return
+    if (!session.active) {
+      const dx = e.clientX - session.startX
+      const dy = e.clientY - session.startY
+      if (Math.hypot(dx, dy) < 6) return
+      session.active = true
+      didDragRef.current = true
+      setEventPointerDragging(true)
+      const moved = data.events.find((ev) => ev.id === session.eventId)
+      if (moved) setDraggingEvent(moved)
+    }
+    if (e.cancelable) e.preventDefault()
+    const hit = hitTestDateColumn(e.clientX, e.clientY)
+    if (!hit) {
+      setEventDragPreview(null)
+      return
+    }
+    const rawY = e.clientY - hit.rect.top - session.grabYOffsetWithinBlock
+    const rawMinutes = GRID_START_MINUTES + rawY / PX_PER_MINUTE
+    const snapped = snapToMinutes(rawMinutes)
+    setEventDragPreview({ snappedMinutes: snapped })
+  }
+
+  const handleEventMovePointerUp = async (
+    e: React.PointerEvent<HTMLDivElement>,
+  ) => {
+    const session = eventMovePointerRef.current
+    if (!session || session.pointerId !== e.pointerId) return
+    try {
+      ;(e.currentTarget as Element).releasePointerCapture(e.pointerId)
+    } catch {
+      // ignore
+    }
+    eventMovePointerRef.current = null
+    setEventPointerDragging(false)
+    if (!session.active) {
+      setDraggingEvent(null)
+      setEventDragPreview(null)
+      didDragRef.current = false
+      return
+    }
+    const hit = hitTestDateColumn(e.clientX, e.clientY)
+    if (!hit) {
+      setDraggingEvent(null)
+      setEventDragPreview(null)
+      return
+    }
+    const rawY = e.clientY - hit.rect.top - session.grabYOffsetWithinBlock
+    const rawMinutes = GRID_START_MINUTES + rawY / PX_PER_MINUTE
+    const snapped = snapToMinutes(rawMinutes)
+    const newStartTime = minutesToDbTime(snapped)
+    const newEndTime = minutesToDbTime(
+      snapped + session.originalDurationMinutes,
+    )
+    setDraggingEvent(null)
+    setEventDragPreview(null)
+    try {
+      const response = await fetch(`/api/admin/ops/events/${session.eventId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          start_date: hit.dateKey,
+          end_date: hit.dateKey,
+          start_time: newStartTime,
+          end_time: newEndTime,
+        }),
+      })
+      if (!response.ok) {
+        const result = await response.json()
+        setError(result.error || 'Failed to move block')
+      } else {
+        await loadSchedule()
+      }
+    } catch {
+      setError('Failed to move block')
+    }
+  }
+
+  // ---- Event block: resize ----
+  type EventResizeSession = {
+    eventId: string
+    originEndMinutes: number
+    startMinutes: number
+    grabClientY: number
+  }
+  const [eventResizeSession, setEventResizeSession] =
+    useState<EventResizeSession | null>(null)
+  const [eventResizeLiveEndMinutes, setEventResizeLiveEndMinutes] = useState<
+    number | null
+  >(null)
+  const eventResizeLiveEndRef = useRef<number | null>(null)
+  const eventResizePointerIdRef = useRef<number | null>(null)
+
+  const beginEventResize = useCallback(
+    (e: React.PointerEvent<HTMLButtonElement>, calEvent: CalendarEvent) => {
+      if (calEvent.is_all_day) return
+      if (e.pointerType === 'mouse' && e.button !== 0) return
+      e.preventDefault()
+      e.stopPropagation()
+      setError(null)
+      const startM = parseMinutes(calEvent.start_time ?? '00:00')
+      const endM = parseMinutes(calEvent.end_time ?? '00:00')
+      setEventResizeSession({
+        eventId: calEvent.id,
+        originEndMinutes: endM,
+        startMinutes: startM,
+        grabClientY: e.clientY,
+      })
+      eventResizeLiveEndRef.current = endM
+      setEventResizeLiveEndMinutes(endM)
+      try {
+        ;(e.currentTarget as Element).setPointerCapture(e.pointerId)
+        eventResizePointerIdRef.current = e.pointerId
+      } catch {
+        eventResizePointerIdRef.current = null
+      }
+    },
+    [],
+  )
+
+  useEffect(() => {
+    if (!eventResizeSession) return
+    const onMove = (e: PointerEvent) => {
+      if (
+        eventResizePointerIdRef.current != null &&
+        e.pointerId !== eventResizePointerIdRef.current
+      )
+        return
+      if (e.cancelable) e.preventDefault()
+      const dy = e.clientY - eventResizeSession.grabClientY
+      const delta = Math.round(dy / PX_PER_MINUTE / 15) * 15
+      const next = Math.max(
+        eventResizeSession.startMinutes + 15,
+        eventResizeSession.originEndMinutes + delta,
+      )
+      eventResizeLiveEndRef.current = next
+      setEventResizeLiveEndMinutes(next)
+    }
+    const onUp = (e: PointerEvent) => {
+      if (
+        eventResizePointerIdRef.current != null &&
+        e.pointerId !== eventResizePointerIdRef.current
+      )
+        return
+      const session = eventResizeSession
+      const finalEnd = eventResizeLiveEndRef.current ?? session.originEndMinutes
+      void (async () => {
+        if (finalEnd !== session.originEndMinutes) {
+          try {
+            const response = await fetch(
+              `/api/admin/ops/events/${session.eventId}`,
+              {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ end_time: minutesToDbTime(finalEnd) }),
+              },
+            )
+            const result = await response.json()
+            if (!response.ok) {
+              setError(result.error || 'Failed to update block end time')
+            } else {
+              await loadSchedule()
+            }
+          } catch {
+            setError('Failed to update block end time')
+          }
+        }
+        setEventResizeSession(null)
+        setEventResizeLiveEndMinutes(null)
+        eventResizeLiveEndRef.current = null
+        eventResizePointerIdRef.current = null
+      })()
+    }
+    window.addEventListener('pointermove', onMove, { passive: false })
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
+    }
+  }, [eventResizeSession, loadSchedule, PX_PER_MINUTE])
 
   const handleDragOver = (
     e: React.DragEvent<HTMLDivElement>,
@@ -3114,27 +3351,80 @@ export function OperationsSchedule() {
                             )
                           })}
                           {dayEvents.map((event) => {
-                            const placement = getBlockPlacement(event)
+                            const endOverride =
+                              eventResizeSession?.eventId === event.id &&
+                              eventResizeLiveEndMinutes != null
+                                ? eventResizeLiveEndMinutes
+                                : null
+                            const placement = getBlockPlacement(
+                              event,
+                              endOverride,
+                            )
+                            const isDraggingThis =
+                              draggingEvent?.id === event.id
                             return (
-                              <button
+                              <div
                                 key={event.id}
-                                type="button"
-                                className={`absolute right-2 left-2 cursor-pointer rounded-2xl border p-2 text-left text-xs shadow-sm transition-opacity hover:opacity-80 ${getEventTone(event)}`}
+                                data-event-block
+                                className={`absolute right-2 left-2 flex flex-col overflow-hidden rounded-2xl border text-xs shadow-sm ${getEventTone(event)} ${isDraggingThis ? 'opacity-40' : ''}`}
                                 style={{
                                   top: placement.top + 6,
                                   height: placement.height - 8,
                                 }}
-                                onClick={() => openEditEvent(event)}
                               >
-                                <div className="font-semibold">
-                                  {event.title}
-                                </div>
-                                {event.description ? (
-                                  <div className="text-muted-foreground mt-1 line-clamp-2">
-                                    {event.description}
+                                {!event.is_all_day && (
+                                  <div
+                                    onPointerDown={(e) =>
+                                      handleEventMovePointerDown(e, event)
+                                    }
+                                    onPointerMove={handleEventMovePointerMove}
+                                    onPointerUp={(e) =>
+                                      void handleEventMovePointerUp(e)
+                                    }
+                                    onPointerCancel={(e) =>
+                                      void handleEventMovePointerUp(e)
+                                    }
+                                    style={{ touchAction: 'none' }}
+                                    className="flex shrink-0 cursor-grab touch-none items-center gap-1 border-b border-black/5 bg-black/[0.03] px-2 py-1.5 active:cursor-grabbing"
+                                  >
+                                    <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                                    <span className="text-[10px] font-medium tracking-tight text-slate-600">
+                                      Move
+                                    </span>
                                   </div>
-                                ) : null}
-                              </button>
+                                )}
+                                <button
+                                  type="button"
+                                  className="flex min-h-0 flex-1 flex-col overflow-hidden p-2 text-left"
+                                  onClick={() => openEditEvent(event)}
+                                >
+                                  <div className="font-semibold">
+                                    {event.title}
+                                  </div>
+                                  {event.description ? (
+                                    <div className="text-muted-foreground mt-1 line-clamp-2">
+                                      {event.description}
+                                    </div>
+                                  ) : null}
+                                </button>
+                                {!event.is_all_day && (
+                                  <button
+                                    type="button"
+                                    aria-label="Drag to change end time"
+                                    title="Drag to extend or shorten"
+                                    style={{ touchAction: 'none' }}
+                                    className="relative flex h-5 shrink-0 cursor-ns-resize touch-none items-center justify-center rounded-b-[13px] border-t border-black/10 bg-black/[0.08] hover:bg-black/[0.14] sm:h-2.5"
+                                    onPointerDown={(e) =>
+                                      beginEventResize(e, event)
+                                    }
+                                  >
+                                    <span
+                                      aria-hidden
+                                      className="block h-0.5 w-8 rounded-full bg-black/30 sm:hidden"
+                                    />
+                                  </button>
+                                )}
+                              </div>
                             )
                           })}
                           {dateKey === todayKey &&
@@ -3263,27 +3553,86 @@ export function OperationsSchedule() {
                                   })}
                                   {isFirst &&
                                     dayEvents.map((event) => {
-                                      const placement = getBlockPlacement(event)
+                                      const endOverride =
+                                        eventResizeSession?.eventId ===
+                                          event.id &&
+                                        eventResizeLiveEndMinutes != null
+                                          ? eventResizeLiveEndMinutes
+                                          : null
+                                      const placement = getBlockPlacement(
+                                        event,
+                                        endOverride,
+                                      )
+                                      const isDraggingThis =
+                                        draggingEvent?.id === event.id
                                       return (
-                                        <button
+                                        <div
                                           key={event.id}
-                                          type="button"
-                                          className={`absolute right-2 left-2 cursor-pointer rounded-2xl border p-2 text-left text-xs shadow-sm transition-opacity hover:opacity-80 ${getEventTone(event)}`}
+                                          data-event-block
+                                          className={`absolute right-2 left-2 flex flex-col overflow-hidden rounded-2xl border text-xs shadow-sm ${getEventTone(event)} ${isDraggingThis ? 'opacity-40' : ''}`}
                                           style={{
                                             top: placement.top + 6,
                                             height: placement.height - 8,
                                           }}
-                                          onClick={() => openEditEvent(event)}
                                         >
-                                          <div className="font-semibold">
-                                            {event.title}
-                                          </div>
-                                          {event.description ? (
-                                            <div className="text-muted-foreground mt-1 line-clamp-2">
-                                              {event.description}
+                                          {!event.is_all_day && (
+                                            <div
+                                              onPointerDown={(e) =>
+                                                handleEventMovePointerDown(
+                                                  e,
+                                                  event,
+                                                )
+                                              }
+                                              onPointerMove={
+                                                handleEventMovePointerMove
+                                              }
+                                              onPointerUp={(e) =>
+                                                void handleEventMovePointerUp(e)
+                                              }
+                                              onPointerCancel={(e) =>
+                                                void handleEventMovePointerUp(e)
+                                              }
+                                              style={{ touchAction: 'none' }}
+                                              className="flex shrink-0 cursor-grab touch-none items-center gap-1 border-b border-black/5 bg-black/[0.03] px-2 py-1.5 active:cursor-grabbing"
+                                            >
+                                              <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                                              <span className="text-[10px] font-medium tracking-tight text-slate-600">
+                                                Move
+                                              </span>
                                             </div>
-                                          ) : null}
-                                        </button>
+                                          )}
+                                          <button
+                                            type="button"
+                                            className="flex min-h-0 flex-1 flex-col overflow-hidden p-2 text-left"
+                                            onClick={() => openEditEvent(event)}
+                                          >
+                                            <div className="font-semibold">
+                                              {event.title}
+                                            </div>
+                                            {event.description ? (
+                                              <div className="text-muted-foreground mt-1 line-clamp-2">
+                                                {event.description}
+                                              </div>
+                                            ) : null}
+                                          </button>
+                                          {!event.is_all_day && (
+                                            <button
+                                              type="button"
+                                              aria-label="Drag to change end time"
+                                              title="Drag to extend or shorten"
+                                              style={{ touchAction: 'none' }}
+                                              className="relative flex h-5 shrink-0 cursor-ns-resize touch-none items-center justify-center rounded-b-[13px] border-t border-black/10 bg-black/[0.08] hover:bg-black/[0.14] sm:h-2.5"
+                                              onPointerDown={(e) =>
+                                                beginEventResize(e, event)
+                                              }
+                                            >
+                                              <span
+                                                aria-hidden
+                                                className="block h-0.5 w-8 rounded-full bg-black/30 sm:hidden"
+                                              />
+                                            </button>
+                                          )}
+                                        </div>
                                       )
                                     })}
                                   {isFirst &&
@@ -3397,27 +3746,80 @@ export function OperationsSchedule() {
                               )
                             })}
                             {dayEvents.map((event) => {
-                              const placement = getBlockPlacement(event)
+                              const endOverride =
+                                eventResizeSession?.eventId === event.id &&
+                                eventResizeLiveEndMinutes != null
+                                  ? eventResizeLiveEndMinutes
+                                  : null
+                              const placement = getBlockPlacement(
+                                event,
+                                endOverride,
+                              )
+                              const isDraggingThis =
+                                draggingEvent?.id === event.id
                               return (
-                                <button
+                                <div
                                   key={event.id}
-                                  type="button"
-                                  className={`absolute right-2 left-2 cursor-pointer rounded-2xl border p-2 text-left text-xs shadow-sm transition-opacity hover:opacity-80 ${getEventTone(event)}`}
+                                  data-event-block
+                                  className={`absolute right-2 left-2 flex flex-col overflow-hidden rounded-2xl border text-xs shadow-sm ${getEventTone(event)} ${isDraggingThis ? 'opacity-40' : ''}`}
                                   style={{
                                     top: placement.top + 6,
                                     height: placement.height - 8,
                                   }}
-                                  onClick={() => openEditEvent(event)}
                                 >
-                                  <div className="font-semibold">
-                                    {event.title}
-                                  </div>
-                                  {event.description ? (
-                                    <div className="text-muted-foreground mt-1 line-clamp-2">
-                                      {event.description}
+                                  {!event.is_all_day && (
+                                    <div
+                                      onPointerDown={(e) =>
+                                        handleEventMovePointerDown(e, event)
+                                      }
+                                      onPointerMove={handleEventMovePointerMove}
+                                      onPointerUp={(e) =>
+                                        void handleEventMovePointerUp(e)
+                                      }
+                                      onPointerCancel={(e) =>
+                                        void handleEventMovePointerUp(e)
+                                      }
+                                      style={{ touchAction: 'none' }}
+                                      className="flex shrink-0 cursor-grab touch-none items-center gap-1 border-b border-black/5 bg-black/[0.03] px-2 py-1.5 active:cursor-grabbing"
+                                    >
+                                      <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                                      <span className="text-[10px] font-medium tracking-tight text-slate-600">
+                                        Move
+                                      </span>
                                     </div>
-                                  ) : null}
-                                </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    className="flex min-h-0 flex-1 flex-col overflow-hidden p-2 text-left"
+                                    onClick={() => openEditEvent(event)}
+                                  >
+                                    <div className="font-semibold">
+                                      {event.title}
+                                    </div>
+                                    {event.description ? (
+                                      <div className="text-muted-foreground mt-1 line-clamp-2">
+                                        {event.description}
+                                      </div>
+                                    ) : null}
+                                  </button>
+                                  {!event.is_all_day && (
+                                    <button
+                                      type="button"
+                                      aria-label="Drag to change end time"
+                                      title="Drag to extend or shorten"
+                                      style={{ touchAction: 'none' }}
+                                      className="relative flex h-5 shrink-0 cursor-ns-resize touch-none items-center justify-center rounded-b-[13px] border-t border-black/10 bg-black/[0.08] hover:bg-black/[0.14] sm:h-2.5"
+                                      onPointerDown={(e) =>
+                                        beginEventResize(e, event)
+                                      }
+                                    >
+                                      <span
+                                        aria-hidden
+                                        className="block h-0.5 w-8 rounded-full bg-black/30 sm:hidden"
+                                      />
+                                    </button>
+                                  )}
+                                </div>
                               )
                             })}
                             {dateKey === todayKey &&
