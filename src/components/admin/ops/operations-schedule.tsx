@@ -1947,14 +1947,10 @@ export function OperationsSchedule() {
                   (s) => s.id === appointment.assigned_staff_user_id,
                 )
                 if (staffIdx < 0) return null
-                const initials = staffList[staffIdx].display_name
-                  .split(' ')
-                  .map((n) => n[0])
-                  .join('')
-                  .slice(0, 2)
+                const initials = staffList[staffIdx].display_name.split(' ')[0]
                 return (
                   <span
-                    className="ml-auto rounded-full px-1.5 py-0.5 text-[9px] font-bold text-white"
+                    className="ml-auto shrink-0 rounded-full px-2 py-0.5 text-[9px] font-bold text-white"
                     style={{
                       backgroundColor:
                         STAFF_LANE_COLORS[staffIdx % STAFF_LANE_COLORS.length],
