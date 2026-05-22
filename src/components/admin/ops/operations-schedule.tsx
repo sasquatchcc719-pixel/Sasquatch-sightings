@@ -3131,11 +3131,11 @@ export function OperationsSchedule() {
                   gridTemplateColumns:
                     view === 'day'
                       ? `72px repeat(${Math.max(staffList.length, 1)}, minmax(400px, 1fr))`
-                      : '72px repeat(7, minmax(270px, 1fr))',
+                      : '72px 48px repeat(6, minmax(270px, 1fr))',
                   minWidth:
                     view === 'day'
                       ? `${72 + Math.max(staffList.length, 1) * 400}px`
-                      : `${72 + 7 * 270}px`,
+                      : `${72 + 48 + 6 * 270}px`,
                 }}
               >
                 <div className="border-r border-b border-slate-200 bg-slate-100 p-3" />
@@ -3196,6 +3196,19 @@ export function OperationsSchedule() {
                     })
                   : displayedDays.map((date) => {
                       const dk = formatDateKey(date)
+                      const isSunday = date.getDay() === 0
+                      if (isSunday) {
+                        return (
+                          <div
+                            key={dk}
+                            className="flex items-center justify-center border-r border-b border-slate-200 bg-slate-100"
+                          >
+                            <span className="text-[10px] font-medium tracking-widest text-slate-400 uppercase [writing-mode:vertical-rl]">
+                              Sun
+                            </span>
+                          </div>
+                        )
+                      }
                       return (
                         <div
                           key={dk}
@@ -3446,6 +3459,15 @@ export function OperationsSchedule() {
                   : view === 'week' && staffList.length > 1
                     ? displayedDays.map((date) => {
                         const dateKey = formatDateKey(date)
+                        const isSunday = date.getDay() === 0
+                        if (isSunday) {
+                          return (
+                            <div
+                              key={dateKey}
+                              className="border-r border-slate-200 bg-slate-100/70"
+                            />
+                          )
+                        }
                         const allDayAppointments =
                           appointmentsByDate.get(dateKey) || []
                         const dayEvents = data.events.filter((event) =>
@@ -3659,6 +3681,15 @@ export function OperationsSchedule() {
                       })
                     : displayedDays.map((date) => {
                         const dateKey = formatDateKey(date)
+                        const isSunday = date.getDay() === 0
+                        if (isSunday) {
+                          return (
+                            <div
+                              key={dateKey}
+                              className="border-r border-slate-200 bg-slate-100/70"
+                            />
+                          )
+                        }
                         const allDayAppointments =
                           appointmentsByDate.get(dateKey) || []
                         const dayAppointments = staffFilter
