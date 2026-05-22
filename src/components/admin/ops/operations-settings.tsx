@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { QuickBooksStatus } from '@/components/admin/ops/quickbooks-status'
 import { AgentApiSettings } from '@/components/admin/ops/agent-api-settings'
+import { StaffPhotoCropper } from '@/components/admin/ops/staff-photo-cropper'
 
 type QueueStats = {
   pending: number
@@ -79,6 +80,10 @@ function StaffPhotoCard() {
   const [staff, setStaff] = useState<StaffMember[]>([])
   const [uploading, setUploading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [cropTarget, setCropTarget] = useState<{
+    staffId: string
+    imageSrc: string
+  } | null>(null)
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
   useEffect(() => {
@@ -88,12 +93,23 @@ function StaffPhotoCard() {
       .catch(() => setError('Failed to load staff'))
   }, [])
 
-  async function handlePhotoChange(staffId: string, file: File) {
+  function handleFileSelected(staffId: string, file: File) {
+    const reader = new FileReader()
+    reader.onload = () => {
+      setCropTarget({ staffId, imageSrc: reader.result as string })
+    }
+    reader.readAsDataURL(file)
+  }
+
+  async function handleCropSave(blob: Blob) {
+    if (!cropTarget) return
+    const { staffId } = cropTarget
+    setCropTarget(null)
     setUploading(staffId)
     setError(null)
     try {
       const form = new FormData()
-      form.append('file', file)
+      form.append('file', new File([blob], 'photo.jpg', { type: 'image/jpeg' }))
       form.append('staff_user_id', staffId)
       const res = await fetch('/api/admin/ops/staff/photo', {
         method: 'POST',
@@ -114,68 +130,77 @@ function StaffPhotoCard() {
   }
 
   return (
-    <Card className="border-border/60 bg-card/80 p-6 shadow-sm backdrop-blur">
-      <h3 className="text-lg font-semibold">Technician Profiles</h3>
-      <p className="text-muted-foreground mt-1 text-sm">
-        Profile photos are used in customer-facing notifications.
-      </p>
-      {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
-      <div className="mt-4 flex flex-col gap-4">
-        {staff.map((member) => (
-          <div key={member.id} className="flex items-center gap-4">
-            <div className="border-border/60 bg-muted relative h-16 w-16 shrink-0 overflow-hidden rounded-full border">
-              {member.profile_image_url ? (
-                <Image
-                  src={member.profile_image_url}
-                  alt={member.display_name}
-                  fill
-                  className="object-cover"
-                />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center">
-                  <User className="text-muted-foreground h-7 w-7" />
-                </div>
-              )}
+    <>
+      {cropTarget && (
+        <StaffPhotoCropper
+          imageSrc={cropTarget.imageSrc}
+          onSave={(blob) => void handleCropSave(blob)}
+          onCancel={() => setCropTarget(null)}
+        />
+      )}
+      <Card className="border-border/60 bg-card/80 p-6 shadow-sm backdrop-blur">
+        <h3 className="text-lg font-semibold">Technician Profiles</h3>
+        <p className="text-muted-foreground mt-1 text-sm">
+          Profile photos are used in customer-facing notifications.
+        </p>
+        {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
+        <div className="mt-4 flex flex-col gap-4">
+          {staff.map((member) => (
+            <div key={member.id} className="flex items-center gap-4">
+              <div className="border-border/60 bg-muted relative h-16 w-16 shrink-0 overflow-hidden rounded-full border">
+                {member.profile_image_url ? (
+                  <Image
+                    src={member.profile_image_url}
+                    alt={member.display_name}
+                    fill
+                    className="object-cover"
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center">
+                    <User className="text-muted-foreground h-7 w-7" />
+                  </div>
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="font-medium">{member.display_name}</p>
+                <p className="text-muted-foreground text-sm capitalize">
+                  {member.role}
+                </p>
+              </div>
+              <input
+                ref={(el) => {
+                  inputRefs.current[member.id] = el
+                }}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) handleFileSelected(member.id, file)
+                  e.target.value = ''
+                }}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={uploading === member.id}
+                onClick={() => inputRefs.current[member.id]?.click()}
+              >
+                {uploading === member.id ? (
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Upload className="mr-1.5 h-3.5 w-3.5" />
+                )}
+                {member.profile_image_url ? 'Replace' : 'Upload'} photo
+              </Button>
             </div>
-            <div className="min-w-0 flex-1">
-              <p className="font-medium">{member.display_name}</p>
-              <p className="text-muted-foreground text-sm capitalize">
-                {member.role}
-              </p>
-            </div>
-            <input
-              ref={(el) => {
-                inputRefs.current[member.id] = el
-              }}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0]
-                if (file) void handlePhotoChange(member.id, file)
-                e.target.value = ''
-              }}
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={uploading === member.id}
-              onClick={() => inputRefs.current[member.id]?.click()}
-            >
-              {uploading === member.id ? (
-                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Upload className="mr-1.5 h-3.5 w-3.5" />
-              )}
-              {member.profile_image_url ? 'Replace' : 'Upload'} photo
-            </Button>
-          </div>
-        ))}
-        {staff.length === 0 && !error && (
-          <p className="text-muted-foreground text-sm">Loading staff…</p>
-        )}
-      </div>
-    </Card>
+          ))}
+          {staff.length === 0 && !error && (
+            <p className="text-muted-foreground text-sm">Loading staff…</p>
+          )}
+        </div>
+      </Card>
+    </>
   )
 }
 
