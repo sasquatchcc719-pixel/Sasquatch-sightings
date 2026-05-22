@@ -117,6 +117,7 @@ type CalendarEvent = {
   start_time: string | null
   end_time: string | null
   is_all_day: boolean
+  assigned_staff_user_id?: string | null
 }
 
 type RecurringFrequencyInfo = {
@@ -730,6 +731,7 @@ export function OperationsSchedule() {
     hour: number
     x: number
     y: number
+    staffId?: string | null
   } | null>(null)
   const draggingYOffsetRef = useRef<number>(0)
   const didDragRef = useRef<boolean>(false)
@@ -796,7 +798,16 @@ export function OperationsSchedule() {
     return () => clearInterval(id)
   }, [])
 
-  const [blockForm, setBlockForm] = useState({
+  const [blockForm, setBlockForm] = useState<{
+    title: string
+    description: string
+    start_date: string
+    end_date: string
+    start_time: string
+    end_time: string
+    is_all_day: boolean
+    assigned_staff_user_id: string | null
+  }>({
     title: '',
     description: '',
     start_date: formatDateKey(new Date()),
@@ -804,6 +815,7 @@ export function OperationsSchedule() {
     start_time: '',
     end_time: '',
     is_all_day: false,
+    assigned_staff_user_id: null,
   })
 
   const loadSchedule = useCallback(async () => {
@@ -1084,7 +1096,11 @@ export function OperationsSchedule() {
     router.push(`/admin/operations/estimates/new?date=${dateKey}&time=${hh}:00`)
   }
 
-  const openBlockAt = (dateKey: string, hour: number) => {
+  const openBlockAt = (
+    dateKey: string,
+    hour: number,
+    staffId?: string | null,
+  ) => {
     const hh = String(hour).padStart(2, '0')
     const nextHh = String(Math.min(hour + 1, 23)).padStart(2, '0')
     setBlockForm({
@@ -1095,6 +1111,7 @@ export function OperationsSchedule() {
       start_time: `${hh}:00`,
       end_time: `${nextHh}:00`,
       is_all_day: false,
+      assigned_staff_user_id: staffId ?? null,
     })
     setShowBusinessHours(false)
     setShowBlockForm(true)
@@ -1781,6 +1798,7 @@ export function OperationsSchedule() {
         start_time: '',
         end_time: '',
         is_all_day: false,
+        assigned_staff_user_id: null,
       })
       setShowBlockForm(false)
       await loadSchedule()
@@ -2264,7 +2282,7 @@ export function OperationsSchedule() {
                 variant="ghost"
                 className="justify-start gap-2 text-rose-700 hover:bg-rose-50 hover:text-rose-800"
                 onClick={() => {
-                  openBlockAt(cellMenu.dateKey, cellMenu.hour)
+                  openBlockAt(cellMenu.dateKey, cellMenu.hour, cellMenu.staffId)
                   setCellMenu(null)
                 }}
               >
@@ -3338,6 +3356,7 @@ export function OperationsSchedule() {
                                   hour,
                                   x: e.clientX,
                                   y: e.clientY,
+                                  staffId: staff.id,
                                 })
                               }}
                               title={`Create at ${String(hour).padStart(2, '0')}:00`}
@@ -3359,83 +3378,90 @@ export function OperationsSchedule() {
                               />
                             )
                           })}
-                          {dayEvents.map((event) => {
-                            const endOverride =
-                              eventResizeSession?.eventId === event.id &&
-                              eventResizeLiveEndMinutes != null
-                                ? eventResizeLiveEndMinutes
-                                : null
-                            const placement = getBlockPlacement(
-                              event,
-                              endOverride,
+                          {dayEvents
+                            .filter(
+                              (event) =>
+                                event.assigned_staff_user_id === staff.id ||
+                                (!event.assigned_staff_user_id &&
+                                  staff.id === staffList[0]?.id),
                             )
-                            const isDraggingThis =
-                              draggingEvent?.id === event.id
-                            return (
-                              <div
-                                key={event.id}
-                                data-event-block
-                                className={`absolute right-2 left-2 flex flex-col overflow-hidden rounded-2xl border text-xs shadow-sm ${getEventTone(event)} ${isDraggingThis ? 'opacity-40' : ''}`}
-                                style={{
-                                  top: placement.top + 6,
-                                  height: placement.height - 8,
-                                }}
-                              >
-                                {!event.is_all_day && (
-                                  <div
-                                    onPointerDown={(e) =>
-                                      handleEventMovePointerDown(e, event)
-                                    }
-                                    onPointerMove={handleEventMovePointerMove}
-                                    onPointerUp={(e) =>
-                                      void handleEventMovePointerUp(e)
-                                    }
-                                    onPointerCancel={(e) =>
-                                      void handleEventMovePointerUp(e)
-                                    }
-                                    style={{ touchAction: 'none' }}
-                                    className="flex shrink-0 cursor-grab touch-none items-center gap-1 border-b border-black/5 bg-black/[0.03] px-2 py-1.5 active:cursor-grabbing"
-                                  >
-                                    <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-500" />
-                                    <span className="text-[10px] font-medium tracking-tight text-slate-600">
-                                      Move
-                                    </span>
-                                  </div>
-                                )}
-                                <button
-                                  type="button"
-                                  className="flex min-h-0 flex-1 flex-col overflow-hidden p-2 text-left"
-                                  onClick={() => openEditEvent(event)}
+                            .map((event) => {
+                              const endOverride =
+                                eventResizeSession?.eventId === event.id &&
+                                eventResizeLiveEndMinutes != null
+                                  ? eventResizeLiveEndMinutes
+                                  : null
+                              const placement = getBlockPlacement(
+                                event,
+                                endOverride,
+                              )
+                              const isDraggingThis =
+                                draggingEvent?.id === event.id
+                              return (
+                                <div
+                                  key={event.id}
+                                  data-event-block
+                                  className={`absolute right-2 left-2 flex flex-col overflow-hidden rounded-2xl border text-xs shadow-sm ${getEventTone(event)} ${isDraggingThis ? 'opacity-40' : ''}`}
+                                  style={{
+                                    top: placement.top + 6,
+                                    height: placement.height - 8,
+                                  }}
                                 >
-                                  <div className="font-semibold">
-                                    {event.title}
-                                  </div>
-                                  {event.description ? (
-                                    <div className="text-muted-foreground mt-1 line-clamp-2">
-                                      {event.description}
+                                  {!event.is_all_day && (
+                                    <div
+                                      onPointerDown={(e) =>
+                                        handleEventMovePointerDown(e, event)
+                                      }
+                                      onPointerMove={handleEventMovePointerMove}
+                                      onPointerUp={(e) =>
+                                        void handleEventMovePointerUp(e)
+                                      }
+                                      onPointerCancel={(e) =>
+                                        void handleEventMovePointerUp(e)
+                                      }
+                                      style={{ touchAction: 'none' }}
+                                      className="flex shrink-0 cursor-grab touch-none items-center gap-1 border-b border-black/5 bg-black/[0.03] px-2 py-1.5 active:cursor-grabbing"
+                                    >
+                                      <GripVertical className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+                                      <span className="text-[10px] font-medium tracking-tight text-slate-600">
+                                        Move
+                                      </span>
                                     </div>
-                                  ) : null}
-                                </button>
-                                {!event.is_all_day && (
+                                  )}
                                   <button
                                     type="button"
-                                    aria-label="Drag to change end time"
-                                    title="Drag to extend or shorten"
-                                    style={{ touchAction: 'none' }}
-                                    className="relative flex h-5 shrink-0 cursor-ns-resize touch-none items-center justify-center rounded-b-[13px] border-t border-black/10 bg-black/[0.08] hover:bg-black/[0.14] sm:h-2.5"
-                                    onPointerDown={(e) =>
-                                      beginEventResize(e, event)
-                                    }
+                                    className="flex min-h-0 flex-1 flex-col overflow-hidden p-2 text-left"
+                                    onClick={() => openEditEvent(event)}
                                   >
-                                    <span
-                                      aria-hidden
-                                      className="block h-0.5 w-8 rounded-full bg-black/30 sm:hidden"
-                                    />
+                                    <div className="font-semibold">
+                                      {event.title}
+                                    </div>
+                                    {event.description ? (
+                                      <div className="text-muted-foreground mt-1 line-clamp-2">
+                                        {event.description}
+                                      </div>
+                                    ) : null}
                                   </button>
-                                )}
-                              </div>
-                            )
-                          })}
+                                  {!event.is_all_day && (
+                                    <button
+                                      type="button"
+                                      aria-label="Drag to change end time"
+                                      title="Drag to extend or shorten"
+                                      style={{ touchAction: 'none' }}
+                                      className="relative flex h-5 shrink-0 cursor-ns-resize touch-none items-center justify-center rounded-b-[13px] border-t border-black/10 bg-black/[0.08] hover:bg-black/[0.14] sm:h-2.5"
+                                      onPointerDown={(e) =>
+                                        beginEventResize(e, event)
+                                      }
+                                    >
+                                      <span
+                                        aria-hidden
+                                        className="block h-0.5 w-8 rounded-full bg-black/30 sm:hidden"
+                                      />
+                                    </button>
+                                  )}
+                                </div>
+                              )
+                            })}
                           {dateKey === todayKey &&
                           nowMinutes != null &&
                           nowMinutes >= GRID_START_MINUTES &&
@@ -3546,6 +3572,7 @@ export function OperationsSchedule() {
                                           hour,
                                           x: e.clientX,
                                           y: e.clientY,
+                                          staffId: staff.id,
                                         })
                                       }}
                                       title={`Create at ${String(hour).padStart(2, '0')}:00`}
