@@ -48,7 +48,7 @@ async function logSMS(params: {
 }
 
 /**
- * Send SMS to admin (Chuck) for new leads/events
+ * Send SMS to admin (Charles) for new leads/events
  */
 export async function sendAdminSMS(
   message: string,

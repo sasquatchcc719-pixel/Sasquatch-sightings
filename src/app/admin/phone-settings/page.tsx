@@ -411,7 +411,7 @@ export default function PhoneSettingsPage() {
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div className="bg-background rounded-lg border p-4">
-                <div className="mb-2 font-semibold">Chuck&apos;s Phone</div>
+                <div className="mb-2 font-semibold">Charles&apos;s Phone</div>
                 <div className="space-y-2 text-sm">
                   <div>
                     <span className="text-muted-foreground">Username:</span>
