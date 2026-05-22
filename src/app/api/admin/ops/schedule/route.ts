@@ -49,7 +49,12 @@ const APPOINTMENT_SELECT = `
 
 export async function GET(request: NextRequest) {
   try {
-    await requireAnyRole(['admin', 'owner', 'dispatcher', 'marketing'])
+    const access = await requireAnyRole([
+      'admin',
+      'owner',
+      'dispatcher',
+      'marketing',
+    ])
     const supabase = createAdminClient()
 
     const searchParams = request.nextUrl.searchParams
@@ -151,6 +156,7 @@ export async function GET(request: NextRequest) {
       recurringFrequencyMap,
       staff: staffResult.data || [],
       dailyAvailability: dailyAvailResult.data || [],
+      currentUserId: access.id,
     })
   } catch (error) {
     const detail =

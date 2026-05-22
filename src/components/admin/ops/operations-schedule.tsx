@@ -131,6 +131,7 @@ type ScheduleResponse = {
   recurringFrequencyMap?: Record<string, RecurringFrequencyInfo>
   staff?: StaffMember[]
   dailyAvailability?: DailyAvailability[]
+  currentUserId?: string
 }
 
 type AvailabilityTemplate = {
@@ -655,6 +656,7 @@ export function OperationsSchedule() {
     events: [],
   })
   const [staffList, setStaffList] = useState<StaffMember[]>([])
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [dailyAvailability, setDailyAvailability] = useState<
     DailyAvailability[]
   >([])
@@ -859,6 +861,8 @@ export function OperationsSchedule() {
         events: scheduleResult.events || [],
       })
       setStaffList(scheduleResult.staff || [])
+      if (scheduleResult.currentUserId)
+        setCurrentUserId(scheduleResult.currentUserId)
       setDailyAvailability(scheduleResult.dailyAvailability || [])
       setRecurringFreqMap(scheduleResult.recurringFrequencyMap || {})
       const templates = (availabilityResult.templates ||
@@ -3187,12 +3191,14 @@ export function OperationsSchedule() {
               {(() => {
                 // On mobile day view, collapse all staff lanes to a single lane.
                 // The user picks which tech to view via the pill toggle above the calendar.
+                const myStaff =
+                  staffList.find((s) => s.user_id === currentUserId) ??
+                  staffList[0]
                 const activeDayStaff: StaffMember | null =
                   isMobile && view === 'day' && staffList.length > 0
                     ? staffFilter
-                      ? (staffList.find((s) => s.id === staffFilter) ??
-                        staffList[0])
-                      : staffList[0]
+                      ? (staffList.find((s) => s.id === staffFilter) ?? myStaff)
+                      : myStaff
                     : null
                 const dayLanes = activeDayStaff ? [activeDayStaff] : staffList
                 return (
