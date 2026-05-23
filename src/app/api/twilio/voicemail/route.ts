@@ -7,6 +7,7 @@ import {
   isHarryChannelEnabled,
   isHarryFunctionEnabled,
 } from '@/lib/harry/control'
+import { createAdminClient } from '@/supabase/server'
 
 /** Twilio may run 120s+; default Vercel timeout would kill Harry before SMS. */
 export const maxDuration = 300
@@ -328,6 +329,25 @@ export async function POST(request: NextRequest) {
         '[Voicemail] Failed after-hours SMS fallback:',
         fallbackSmsError,
       )
+    }
+
+    // Update call_logs with voicemail recording details — fire-and-forget
+    if (callSid) {
+      const supabaseLog = createAdminClient()
+      supabaseLog
+        .from('call_logs')
+        .upsert(
+          {
+            call_sid: callSid,
+            caller_phone: normalizedPhone,
+            outcome: 'voicemail',
+            recording_url: audioUrl || null,
+            transcription: transcriptionText || null,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'call_sid' },
+        )
+        .then()
     }
 
     // Log to sms_logs for tracking (using it as general message log)
