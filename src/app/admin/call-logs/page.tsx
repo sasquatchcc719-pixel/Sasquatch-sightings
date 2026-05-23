@@ -18,6 +18,7 @@ interface CallLog {
   id: string
   call_sid: string
   caller_phone: string | null
+  customer_name: string | null
   outcome: string
   duration_seconds: number | null
   recording_url: string | null
@@ -340,6 +341,7 @@ export default function CallLogsPage() {
                     Date / Time
                   </th>
                   <th className="px-4 py-3 text-left font-medium">Caller</th>
+                  <th className="px-4 py-3 text-left font-medium">Customer</th>
                   <th className="px-4 py-3 text-left font-medium">Outcome</th>
                   <th className="px-4 py-3 text-left font-medium">Duration</th>
                   <th className="px-4 py-3 text-left font-medium">Voicemail</th>
@@ -361,6 +363,17 @@ export default function CallLogsPage() {
                       </td>
                       <td className="px-4 py-3 font-mono text-sm">
                         {formatPhone(call.caller_phone)}
+                      </td>
+                      <td className="px-4 py-3">
+                        {call.customer_name ? (
+                          <span className="font-medium">
+                            {call.customer_name}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground text-xs">
+                            Unknown
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <OutcomeBadge outcome={call.outcome} />
