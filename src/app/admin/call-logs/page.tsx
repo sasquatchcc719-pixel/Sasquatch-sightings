@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import {
@@ -12,6 +12,8 @@ import {
   Loader2,
   RefreshCw,
   Download,
+  Play,
+  Square,
 } from 'lucide-react'
 
 interface CallLog {
@@ -113,6 +115,78 @@ function OutcomeBadge({ outcome }: { outcome: string }) {
       <Icon className="h-3 w-3" />
       {cfg.label}
     </span>
+  )
+}
+
+function VoicemailCell({
+  recordingUrl,
+  transcription,
+}: {
+  recordingUrl: string | null
+  transcription: string | null
+}) {
+  const [open, setOpen] = useState(false)
+  const [playing, setPlaying] = useState(false)
+  const audioRef = useRef<HTMLAudioElement>(null)
+
+  const proxyUrl = recordingUrl
+    ? `/api/admin/call-logs/recording?url=${encodeURIComponent(recordingUrl)}`
+    : null
+
+  function toggle() {
+    if (!proxyUrl) return
+    if (!open) {
+      setOpen(true)
+      return
+    }
+    const el = audioRef.current
+    if (!el) return
+    if (el.paused) {
+      void el.play()
+    } else {
+      el.pause()
+    }
+  }
+
+  if (!recordingUrl && !transcription) {
+    return <span className="text-muted-foreground text-xs">—</span>
+  }
+
+  return (
+    <div className="space-y-1.5">
+      {proxyUrl && (
+        <>
+          <button
+            onClick={toggle}
+            className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/15 px-2.5 py-0.5 text-xs font-medium text-amber-400 transition-colors hover:bg-amber-500/25"
+          >
+            {playing ? (
+              <Square className="h-3 w-3 fill-current" />
+            ) : (
+              <Play className="h-3 w-3 fill-current" />
+            )}
+            {playing ? 'Stop' : 'Play voicemail'}
+          </button>
+          {open && (
+            <audio
+              ref={audioRef}
+              src={proxyUrl}
+              controls
+              autoPlay
+              className="h-7 w-full max-w-[240px]"
+              onPlay={() => setPlaying(true)}
+              onPause={() => setPlaying(false)}
+              onEnded={() => setPlaying(false)}
+            />
+          )}
+        </>
+      )}
+      {transcription && (
+        <p className="text-muted-foreground line-clamp-2 text-xs">
+          {transcription}
+        </p>
+      )}
+    </div>
   )
 }
 
@@ -382,24 +456,10 @@ export default function CallLogsPage() {
                         {formatDuration(call.duration_seconds)}
                       </td>
                       <td className="max-w-[280px] px-4 py-3">
-                        {call.transcription ? (
-                          <span className="text-muted-foreground line-clamp-2 text-xs">
-                            {call.transcription}
-                          </span>
-                        ) : call.recording_url ? (
-                          <a
-                            href={call.recording_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-xs text-emerald-400 hover:underline"
-                          >
-                            Play recording
-                          </a>
-                        ) : (
-                          <span className="text-muted-foreground text-xs">
-                            —
-                          </span>
-                        )}
+                        <VoicemailCell
+                          recordingUrl={call.recording_url}
+                          transcription={call.transcription}
+                        />
                       </td>
                     </tr>
                   )
