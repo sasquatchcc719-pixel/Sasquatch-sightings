@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCallRoutingConfig } from '@/lib/twilio/call-routing-config'
 import { sendOneSignalNotification } from '@/lib/onesignal'
 import { isBlacklisted, notifyBlockedAttempt } from '@/lib/blacklist'
+import { createAdminClient } from '@/supabase/server'
 
 const SETTINGS = {
   // Static fallback values. Dynamic values come from phone_settings.
@@ -24,6 +25,19 @@ export async function POST(request: NextRequest) {
     const callerPhone = formData.get('From') as string
 
     if (await isBlacklisted(callerPhone)) {
+      const supabase = createAdminClient()
+      supabase
+        .from('call_logs')
+        .upsert(
+          {
+            call_sid: formData.get('CallSid') as string,
+            caller_phone: callerPhone,
+            outcome: 'blacklisted',
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'call_sid' },
+        )
+        .then()
       notifyBlockedAttempt(callerPhone, 'call')
       return new NextResponse(
         '<?xml version="1.0" encoding="UTF-8"?><Response><Reject/></Response>',
@@ -34,6 +48,21 @@ export async function POST(request: NextRequest) {
     const routingConfig = await getCallRoutingConfig()
 
     console.log(`[Call Router] Incoming call from: ${callerPhone}`)
+
+    // Log every non-blacklisted inbound call — outcome updated later at call-after-hours
+    const supabaseLog = createAdminClient()
+    supabaseLog
+      .from('call_logs')
+      .upsert(
+        {
+          call_sid: formData.get('CallSid') as string,
+          caller_phone: callerPhone,
+          outcome: 'inbound',
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'call_sid' },
+      )
+      .then()
 
     // Fire push notification immediately (don't await — must not delay TwiML)
     const displayPhone = callerPhone.replace(

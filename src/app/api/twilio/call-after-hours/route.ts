@@ -6,6 +6,7 @@ import {
   isHarryChannelEnabled,
   isHarryFunctionEnabled,
 } from '@/lib/harry/control'
+import { createAdminClient } from '@/supabase/server'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -44,6 +45,37 @@ export async function POST(request: NextRequest) {
     console.log(
       `[Call Handler] Caller: ${normalizedPhone}, Status: ${callStatus}, DialStatus: ${dialCallStatus}, SID: ${callSid}`,
     )
+
+    // Update call_logs with final outcome — fire-and-forget, never block TwiML
+    if (callSid) {
+      const callOutcome =
+        dialCallStatus === 'completed'
+          ? 'answered'
+          : dialCallStatus === 'no-answer' ||
+              dialCallStatus === 'busy' ||
+              dialCallStatus === 'canceled'
+            ? 'no-answer'
+            : 'voicemail'
+      const callDuration = parseInt(
+        (formData.get('CallDuration') as string) || '0',
+        10,
+      )
+      const supabaseLog = createAdminClient()
+      supabaseLog
+        .from('call_logs')
+        .upsert(
+          {
+            call_sid: callSid,
+            caller_phone: normalizedPhone,
+            outcome: callOutcome,
+            duration_seconds: callDuration || null,
+            raw_dial_status: dialCallStatus || null,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'call_sid' },
+        )
+        .then()
+    }
 
     const controlSnapshot = await getHarryControlSnapshot()
     const canRunHarryCallSms =

@@ -31,6 +31,7 @@ import {
   Tag,
   UserRoundSearch,
   Ban,
+  PhoneCall,
 } from 'lucide-react'
 
 interface NavTab {
@@ -285,6 +286,13 @@ export function AdminNavigation() {
       icon: Phone,
       active: pathname === '/admin/phone',
       description: 'Make outbound calls from your browser',
+    },
+    {
+      name: 'Call Log',
+      href: '/admin/call-logs',
+      icon: PhoneCall,
+      active: pathname.startsWith('/admin/call-logs'),
+      description: 'Inbound call history — answered, voicemail, missed',
     },
     {
       name: 'Direct Texts',
