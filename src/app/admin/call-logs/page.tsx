@@ -232,10 +232,15 @@ export default function CallLogsPage() {
       const res = await fetch('/api/admin/call-logs/backfill', {
         method: 'POST',
       })
-      const data = (await res.json()) as { inserted?: number; error?: string }
+      const data = (await res.json()) as {
+        inserted?: number
+        with_recordings?: number
+        error?: string
+      }
       if (!res.ok) throw new Error(data.error ?? 'Backfill failed')
+      const rec = data.with_recordings ?? 0
       setBackfillResult(
-        `Imported ${data.inserted ?? 0} calls from Twilio history`,
+        `Imported ${data.inserted ?? 0} calls from Twilio history${rec > 0 ? ` · ${rec} with playable voicemails` : ''}`,
       )
       void load(days)
     } catch (e) {

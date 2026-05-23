@@ -19,20 +19,34 @@ export async function POST() {
     }
 
     const client = twilio(accountSid, authToken)
-
-    // Pull last ~45 days of inbound calls
     const since = new Date(Date.now() - 45 * 86400000)
-    const calls = await client.calls.list({
-      to: twilioPhone,
-      startTimeAfter: since,
-      limit: 500,
-    })
+
+    // Fetch calls and recordings in parallel
+    const [calls, recordings] = await Promise.all([
+      client.calls.list({ to: twilioPhone, startTimeAfter: since, limit: 500 }),
+      client.recordings.list({ dateCreatedAfter: since, limit: 500 }),
+    ])
+
+    // Build callSid -> recording URL map
+    const recordingMap = new Map<string, string>()
+    for (const rec of recordings) {
+      if (rec.callSid && !recordingMap.has(rec.callSid)) {
+        recordingMap.set(
+          rec.callSid,
+          `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Recordings/${rec.sid}.mp3`,
+        )
+      }
+    }
 
     const rows = calls.map((call) => {
       const duration = parseInt(call.duration ?? '0', 10)
+      const recordingUrl = recordingMap.get(call.sid) ?? null
+
       let outcome: string
-      if (call.status === 'completed' && duration > 30) {
+      if (call.status === 'completed' && duration > 30 && !recordingUrl) {
         outcome = 'answered'
+      } else if (recordingUrl) {
+        outcome = 'voicemail'
       } else if (call.status === 'no-answer' || call.status === 'busy') {
         outcome = 'no-answer'
       } else {
@@ -45,6 +59,7 @@ export async function POST() {
         direction: 'inbound',
         outcome,
         duration_seconds: duration || null,
+        recording_url: recordingUrl,
         raw_dial_status: call.status,
         created_at: call.startTime?.toISOString() ?? new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -56,13 +71,18 @@ export async function POST() {
     }
 
     const supabase = createAdminClient()
+    // Use ignoreDuplicates: false so re-running updates recording_url on existing rows
     const { error } = await supabase
       .from('call_logs')
-      .upsert(rows, { onConflict: 'call_sid', ignoreDuplicates: true })
+      .upsert(rows, { onConflict: 'call_sid', ignoreDuplicates: false })
 
     if (error) throw error
 
-    return NextResponse.json({ inserted: rows.length })
+    const withRecordings = rows.filter((r) => r.recording_url).length
+    return NextResponse.json({
+      inserted: rows.length,
+      with_recordings: withRecordings,
+    })
   } catch (err) {
     console.error('[admin/call-logs/backfill][POST]', err)
     return NextResponse.json({ error: 'Backfill failed' }, { status: 500 })
