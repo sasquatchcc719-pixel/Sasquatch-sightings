@@ -76,6 +76,7 @@ export async function POST(
           ops_customers!ops_appointments_customer_id_fkey (
             id,
             full_name,
+            business_name,
             email,
             phone
           ),
@@ -270,6 +271,7 @@ export async function POST(
         payload: buildQuickBooksCustomerPayload({
           customerId: estimate.customer_id,
           fullName: customer.full_name || 'Customer',
+          businessName: customer.business_name || null,
           email: customer.email || null,
           phone: customer.phone || null,
           address: {

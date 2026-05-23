@@ -418,6 +418,7 @@ export async function POST(request: NextRequest) {
           payload: buildQuickBooksCustomerPayload({
             customerId,
             fullName,
+            businessName: businessName || null,
             email,
             phone,
             address: {

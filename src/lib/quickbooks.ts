@@ -11,6 +11,7 @@ export function getQuickBooksSyncStatus(): QuickBooksSyncStatus {
 export function buildQuickBooksCustomerPayload(params: {
   customerId: string
   fullName: string
+  businessName?: string | null
   email: string | null
   phone: string
   address: {
@@ -23,7 +24,7 @@ export function buildQuickBooksCustomerPayload(params: {
 }) {
   return {
     customer_id: params.customerId,
-    display_name: params.fullName,
+    display_name: params.businessName || params.fullName,
     email: params.email,
     phone: params.phone,
     billing_address: {

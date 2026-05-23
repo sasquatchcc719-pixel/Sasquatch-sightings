@@ -359,33 +359,50 @@ export async function generateRecurringAppointments(
   const rangeStartStr = formatDate(rangeStart)
   const rangeEndStr = formatDate(rangeEnd)
 
-  const [{ data: templateInRange }, { data: customerExisting }] =
-    await Promise.all([
-      supabase
-        .from('ops_appointments')
-        .select('appointment_date, original_recurring_date')
-        .eq('recurring_template_id', templateId)
-        .gte('appointment_date', rangeStartStr)
-        .lte('appointment_date', rangeEndStr),
-      supabase
-        .from('ops_appointments')
-        .select('appointment_date, quoted_total')
-        .eq('customer_id', template.customer_id)
-        .is('recurring_template_id', null)
-        .in(
-          'appointment_date',
-          uniqueDates.map((d) => d.date),
-        ),
-    ])
+  const [
+    { data: templateInRange },
+    { data: templateByOriginal },
+    { data: customerExisting },
+  ] = await Promise.all([
+    supabase
+      .from('ops_appointments')
+      .select('appointment_date, original_recurring_date')
+      .eq('recurring_template_id', templateId)
+      .gte('appointment_date', rangeStartStr)
+      .lte('appointment_date', rangeEndStr),
+    // Also fetch appointments that were moved OUTSIDE the window — their
+    // original_recurring_date still falls in range, so they must block regen.
+    supabase
+      .from('ops_appointments')
+      .select('appointment_date, original_recurring_date')
+      .eq('recurring_template_id', templateId)
+      .gte('original_recurring_date', rangeStartStr)
+      .lte('original_recurring_date', rangeEndStr)
+      .not('original_recurring_date', 'is', null),
+    supabase
+      .from('ops_appointments')
+      .select('appointment_date, quoted_total')
+      .eq('customer_id', template.customer_id)
+      .is('recurring_template_id', null)
+      .in(
+        'appointment_date',
+        uniqueDates.map((d) => d.date),
+      ),
+  ])
+
+  const allTemplateRows = [
+    ...(templateInRange || []),
+    ...(templateByOriginal || []),
+  ]
 
   const templateDateSet = new Set(
-    (templateInRange || []).map(
+    allTemplateRows.map(
       (a: { appointment_date: string }) => a.appointment_date,
     ),
   )
 
   const originalRecurringDateSet = new Set(
-    (templateInRange || [])
+    allTemplateRows
       .map(
         (a: { original_recurring_date: string | null }) =>
           a.original_recurring_date,
@@ -412,7 +429,7 @@ export async function generateRecurringAppointments(
 
   const { data: customer } = await supabase
     .from('ops_customers')
-    .select('full_name, email, phone')
+    .select('full_name, business_name, email, phone')
     .eq('id', template.customer_id)
     .single()
 
@@ -572,6 +589,7 @@ export async function generateRecurringAppointments(
             payload: buildQuickBooksCustomerPayload({
               customerId: template.customer_id,
               fullName: customer.full_name,
+              businessName: customer.business_name,
               email: customer.email,
               phone: customer.phone,
               address: {
