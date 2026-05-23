@@ -8,9 +8,9 @@ type SlotTokenPayload = {
   start_time: string
   end_time: string
   required_minutes: number
+  assigned_staff_user_id?: string | null
   issued_at: number
   owner_key: string
-  assigned_staff_user_id?: string | null
 }
 
 export type SlotTokenParams = {
@@ -28,6 +28,7 @@ export type SlotTokenVerifyParams = {
   endTime: string
   requiredMinutes?: number
   ownerKey: string
+  assignedStaffUserId?: string | null
 }
 
 function slotTokenSecret(): string {
@@ -72,6 +73,7 @@ export function createSlotToken(params: SlotTokenParams): string {
     start_time: normalizeTime(params.startTime),
     end_time: normalizeTime(params.endTime),
     required_minutes: params.requiredMinutes,
+    assigned_staff_user_id: params.assignedStaffUserId ?? null,
     issued_at: Date.now(),
     owner_key: params.ownerKey,
     ...(params.assignedStaffUserId
@@ -123,10 +125,17 @@ export function verifySlotToken(
     start_time: normalizeTime(params.startTime),
     end_time: normalizeTime(params.endTime),
     required_minutes: params.requiredMinutes ?? payload.required_minutes,
+    assigned_staff_user_id: params.assignedStaffUserId ?? null,
     owner_key: params.ownerKey,
   }
 
   for (const [key, value] of Object.entries(expectedPayload)) {
+    if (
+      key === 'assigned_staff_user_id' &&
+      params.assignedStaffUserId === undefined
+    ) {
+      continue
+    }
     if (payload[key as keyof typeof expectedPayload] !== value) {
       return {
         ok: false,

@@ -1155,6 +1155,8 @@ export async function executeHarrySmsTool(
               ownerKey: ctx.customerPhoneE164,
               assignedStaffUserId: staffResult.staffUserId,
             }),
+            assigned_staff_user_id: staffResult.staffUserId,
+            staff_label: staffResult.staffName,
           })),
         })
       }
@@ -1830,6 +1832,7 @@ export async function executeHarrySmsTool(
           endTime: match.end_time,
           requiredMinutes,
           ownerKey: ctx.customerPhoneE164,
+          assignedStaffUserId: bookStaffResult?.staffUserId,
         })
         if (!slotTokenCheck.ok) {
           return JSON.stringify({
@@ -1903,6 +1906,7 @@ export async function executeHarrySmsTool(
           appointment_date: result.appointment_date,
           day_of_week: bookDayName,
           start_time: result.start_time.slice(0, 5),
+          staff_label: bookStaffResult?.staffName ?? null,
           total: result.total,
           message: result.message,
         })

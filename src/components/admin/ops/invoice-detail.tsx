@@ -69,7 +69,6 @@ type OpsAppointment = {
   end_time: string
   status: string
   lead_source: string | null
-  internal_notes: string | null
   gps_lat: number | null
   gps_lng: number | null
   ops_customers: OpsCustomer | OpsCustomer[] | null
@@ -241,9 +240,6 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   const [driveStartedAtMs, setDriveStartedAtMs] = useState<number | null>(null)
   const [showSignatureModal, setShowSignatureModal] = useState(false)
   const [driveElapsedMs, setDriveElapsedMs] = useState(0)
-  const [editingNotes, setEditingNotes] = useState(false)
-  const [notesValue, setNotesValue] = useState('')
-  const [notesSaving, setNotesSaving] = useState(false)
 
   const [editingCustomer, setEditingCustomer] = useState(false)
   const [customerSaving, setCustomerSaving] = useState(false)
@@ -739,28 +735,6 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
       setSendFeedback({ channel, ok: false, message: 'Failed to send' })
     } finally {
       setSendLoading(null)
-    }
-  }
-
-  const handleSaveNotes = async () => {
-    if (!appointment?.id) return
-    setNotesSaving(true)
-    try {
-      const response = await fetch(
-        `/api/admin/ops/appointments/${appointment.id}`,
-        {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ internal_notes: notesValue }),
-        },
-      )
-      if (!response.ok) throw new Error('Failed to save notes')
-      setEditingNotes(false)
-      await loadInvoice()
-    } catch {
-      setError('Failed to save notes')
-    } finally {
-      setNotesSaving(false)
     }
   }
 
@@ -1559,69 +1533,6 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                   Source: {appointment.lead_source}
                 </p>
               ) : null}
-              <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-50 p-3 dark:bg-amber-950/20">
-                <div className="mb-2 flex items-center justify-between">
-                  <p className="text-xs font-semibold tracking-wide text-amber-900 uppercase dark:text-amber-200">
-                    Job Notes
-                  </p>
-                  {!editingNotes ? (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 gap-1.5"
-                      onClick={() => {
-                        setNotesValue(appointment?.internal_notes || '')
-                        setEditingNotes(true)
-                      }}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                      Edit
-                    </Button>
-                  ) : null}
-                </div>
-                {editingNotes ? (
-                  <>
-                    <textarea
-                      value={notesValue}
-                      onChange={(e) => setNotesValue(e.target.value)}
-                      className="mb-2 w-full rounded-md border border-amber-300 bg-white p-2 text-sm text-amber-900"
-                      rows={4}
-                      placeholder="Add garage codes, special instructions, etc."
-                    />
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        onClick={() => void handleSaveNotes()}
-                        disabled={notesSaving}
-                      >
-                        {notesSaving ? (
-                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
-                        )}
-                        Save
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setEditingNotes(false)}
-                        disabled={notesSaving}
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-                  </>
-                ) : appointment?.internal_notes ? (
-                  <p className="text-sm whitespace-pre-wrap text-amber-900 dark:text-amber-100">
-                    {appointment.internal_notes}
-                  </p>
-                ) : (
-                  <p className="text-muted-foreground text-sm italic">
-                    No notes yet. Click Edit to add garage codes or special
-                    instructions.
-                  </p>
-                )}
-              </div>
             </div>
           </>
         )}

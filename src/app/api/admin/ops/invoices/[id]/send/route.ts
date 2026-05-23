@@ -3,7 +3,11 @@ import { Resend } from 'resend'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { sendCustomerSMS, sendCustomerSMSWithResult } from '@/lib/twilio'
-import { getQBInvoicePaymentLink } from '@/lib/quickbooks-api'
+import {
+  getQBInvoicePaymentLink,
+  syncAppointmentToQuickBooks,
+} from '@/lib/quickbooks-api'
+import { getQBConnectionStatus } from '@/lib/quickbooks-auth'
 import { generateInvoicePDF } from '@/lib/ops/pdf/generate'
 import { createSquarePaymentLink } from '@/lib/payments/square'
 
@@ -324,8 +328,9 @@ export async function POST(
       })
     }
 
-    // Legacy payment link action. Keep its original Venmo fallback so existing
-    // callers do not depend on the abandoned QuickBooks pay-link experiment.
+    // Payment link SMS — fetch a QuickBooks invoice pay link and text it.
+    // Do not silently fall back to Venmo here; this action is specifically
+    // for proving the QuickBooks Payments flow.
     if (type === 'payment_link') {
       if (!customerPhone) {
         return NextResponse.json(
@@ -334,16 +339,76 @@ export async function POST(
         )
       }
 
-      let paymentUrl: string | null = null
-
-      if (invoice.quickbooks_invoice_id) {
-        paymentUrl = await getQBInvoicePaymentLink(
-          invoice.quickbooks_invoice_id,
+      if (total <= 0) {
+        return NextResponse.json(
+          { error: 'Invoice total must be greater than zero.' },
+          { status: 422 },
         )
       }
 
+      const qbStatus = await getQBConnectionStatus()
+      if (!qbStatus.connected || !qbStatus.sync_enabled) {
+        return NextResponse.json(
+          {
+            error:
+              'QuickBooks is not connected or invoice sync is turned off. Connect QuickBooks in Operations Settings first.',
+          },
+          { status: 422 },
+        )
+      }
+
+      if (!appointment?.id) {
+        return NextResponse.json(
+          {
+            error:
+              'This invoice is not linked to a job, so it cannot sync to QuickBooks.',
+          },
+          { status: 422 },
+        )
+      }
+
+      let paymentUrl: string | null = null
+      let quickBooksInvoiceId = invoice.quickbooks_invoice_id
+
+      if (!quickBooksInvoiceId) {
+        try {
+          await syncAppointmentToQuickBooks(appointment.id)
+        } catch (syncError) {
+          console.error(
+            '[ops/invoices/:id/send][payment_link] QB sync failed:',
+            syncError,
+          )
+          return NextResponse.json(
+            {
+              error:
+                syncError instanceof Error
+                  ? syncError.message
+                  : 'QuickBooks sync failed before creating the payment link.',
+            },
+            { status: 422 },
+          )
+        }
+
+        const { data: syncedInvoice } = await supabase
+          .from('ops_invoices')
+          .select('quickbooks_invoice_id')
+          .eq('id', id)
+          .single()
+        quickBooksInvoiceId = syncedInvoice?.quickbooks_invoice_id ?? null
+      }
+
+      if (quickBooksInvoiceId) {
+        paymentUrl = await getQBInvoicePaymentLink(quickBooksInvoiceId)
+      }
+
       if (!paymentUrl) {
-        paymentUrl = venmoUrl
+        return NextResponse.json(
+          {
+            error:
+              'QuickBooks synced the invoice, but did not return an online payment link. Check that QuickBooks Payments is enabled for invoices.',
+          },
+          { status: 422 },
+        )
       }
 
       const linkBody = [

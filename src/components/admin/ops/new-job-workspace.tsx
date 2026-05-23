@@ -294,7 +294,6 @@ export function NewJobWorkspace() {
       return
     }
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setAppointmentForm((current) => ({
       ...current,
       appointment_date: validDate || current.appointment_date,
@@ -385,7 +384,6 @@ export function NewJobWorkspace() {
   }, [appointmentForm.appointment_date])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadSchedulePreview()
   }, [loadSchedulePreview])
 
@@ -414,7 +412,6 @@ export function NewJobWorkspace() {
     }
 
     if (!customerQuery.trim()) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCustomerResults([])
       return
     }
@@ -439,7 +436,6 @@ export function NewJobWorkspace() {
 
   useEffect(() => {
     if (categories.length === 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (selectedCategory) setSelectedCategory('')
       return
     }
@@ -858,9 +854,23 @@ export function NewJobWorkspace() {
                         >
                           <Minus className="h-4 w-4" />
                         </Button>
-                        <div className="min-w-8 text-center font-semibold">
-                          {quantity}
-                        </div>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={String(quantity)}
+                          aria-label={`${service.name} quantity`}
+                          className="h-9 w-20 text-center font-semibold tabular-nums"
+                          onChange={(event) => {
+                            const nextQuantity = Number(event.target.value || 0)
+                            if (
+                              Number.isFinite(nextQuantity) &&
+                              nextQuantity >= 0
+                            ) {
+                              upsertLineItemQuantity(service, nextQuantity)
+                            }
+                          }}
+                        />
                         <Button
                           type="button"
                           variant="outline"
