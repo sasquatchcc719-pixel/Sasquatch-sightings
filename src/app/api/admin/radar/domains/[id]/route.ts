@@ -10,7 +10,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { user, role } = await getUserWithRole()
-  if (!user || role !== 'admin') {
+  if (!user || (role !== 'admin' && role !== 'owner')) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const { id } = await params
@@ -52,7 +52,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { user, role } = await getUserWithRole()
-  if (!user || role !== 'admin') {
+  if (!user || (role !== 'admin' && role !== 'owner')) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const { id } = await params

@@ -10,7 +10,7 @@ import { getUserWithRole } from '@/lib/auth'
 export async function GET(request: NextRequest) {
   try {
     const { user, role } = await getUserWithRole()
-    if (!user || role !== 'admin') {
+    if (!user || (role !== 'admin' && role !== 'owner')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 

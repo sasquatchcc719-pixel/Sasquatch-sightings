@@ -9,7 +9,7 @@ import { getUserWithRole } from '@/lib/auth'
 
 export async function GET() {
   const { user, role } = await getUserWithRole()
-  if (!user || role !== 'admin') {
+  if (!user || (role !== 'admin' && role !== 'owner')) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const supabase = createAdminClient()
@@ -26,7 +26,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   const { user, role } = await getUserWithRole()
-  if (!user || role !== 'admin') {
+  if (!user || (role !== 'admin' && role !== 'owner')) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const body = await request.json()

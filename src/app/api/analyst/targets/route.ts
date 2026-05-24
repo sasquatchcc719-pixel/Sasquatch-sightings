@@ -7,7 +7,7 @@ import { isAnalystFeatureEnabled } from '@/lib/harry/features'
 export async function GET() {
   try {
     const { user, role } = await getUserWithRole()
-    if (!user || role !== 'admin') {
+    if (!user || (role !== 'admin' && role !== 'owner')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     if (!isAnalystFeatureEnabled()) {
@@ -43,7 +43,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const { user, role } = await getUserWithRole()
-    if (!user || role !== 'admin') {
+    if (!user || (role !== 'admin' && role !== 'owner')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     if (!isAnalystFeatureEnabled()) {
@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const { user, role } = await getUserWithRole()
-    if (!user || role !== 'admin') {
+    if (!user || (role !== 'admin' && role !== 'owner')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     if (!isAnalystFeatureEnabled()) {
@@ -152,7 +152,7 @@ export async function PATCH(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const { user, role } = await getUserWithRole()
-    if (!user || role !== 'admin') {
+    if (!user || (role !== 'admin' && role !== 'owner')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     if (!isAnalystFeatureEnabled()) {

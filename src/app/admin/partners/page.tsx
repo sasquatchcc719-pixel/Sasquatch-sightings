@@ -12,7 +12,7 @@ export default async function AdminPartnersPage() {
   }
 
   // Must be an admin
-  if (role !== 'admin') {
+  if (role !== 'admin' && role !== 'owner') {
     redirect('/partners')
   }
 

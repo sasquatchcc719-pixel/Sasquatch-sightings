@@ -5,7 +5,7 @@ import { Resend } from 'resend'
 
 export async function GET(request: NextRequest) {
   const { user, role } = await getUserWithRole()
-  if (!user || role !== 'admin') {
+  if (!user || (role !== 'admin' && role !== 'owner')) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

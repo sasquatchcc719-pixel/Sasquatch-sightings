@@ -238,7 +238,13 @@ export async function GET(request: NextRequest) {
         area: area || 'all',
         jobs: formattedJobs,
       },
-      { status: 200, headers: corsHeaders },
+      {
+        status: 200,
+        headers: {
+          ...corsHeaders,
+          'Cache-Control': 'public, s-maxage=600, stale-while-revalidate=300',
+        },
+      },
     )
   } catch (error) {
     console.error('Public jobs API error:', error)

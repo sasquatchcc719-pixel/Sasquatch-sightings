@@ -11,7 +11,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { user, role } = await getUserWithRole()
-  if (!user || role !== 'admin') {
+  if (!user || (role !== 'admin' && role !== 'owner')) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
   const { id: domainId } = await params

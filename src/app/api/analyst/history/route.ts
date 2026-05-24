@@ -10,7 +10,7 @@ import {
 export async function GET() {
   try {
     const { user, role } = await getUserWithRole()
-    if (!user || role !== 'admin') {
+    if (!user || (role !== 'admin' && role !== 'owner')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     if (!isAnalystFeatureEnabled() && !isAnalystHistoryReadonlyEnabled()) {
@@ -44,7 +44,7 @@ export async function GET() {
 export async function DELETE() {
   try {
     const { user, role } = await getUserWithRole()
-    if (!user || role !== 'admin') {
+    if (!user || (role !== 'admin' && role !== 'owner')) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
     if (!isAnalystFeatureEnabled()) {

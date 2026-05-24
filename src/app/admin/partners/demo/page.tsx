@@ -70,7 +70,7 @@ export default async function PartnerDashboardDemoPage() {
   const { user, role } = await getUserWithRole()
 
   if (!user) redirect('/auth/login')
-  if (role !== 'admin') redirect('/partners')
+  if (role !== 'admin' && role !== 'owner') redirect('/partners')
 
   return (
     <div className="min-h-[80vh] overflow-hidden rounded-lg bg-gradient-to-br from-green-900 via-green-800 to-emerald-900">
