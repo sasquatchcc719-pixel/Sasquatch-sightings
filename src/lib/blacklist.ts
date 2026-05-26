@@ -11,17 +11,35 @@ export function normalizePhone(raw: string): string {
 export async function isBlacklisted(phone: string): Promise<boolean> {
   try {
     const normalized = normalizePhone(phone)
+    console.log(
+      `[blacklist] Checking phone: ${phone} → normalized: ${normalized}`,
+    )
     if (normalized.length < 10) return false
     const supabase = createAdminClient()
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('blacklist')
       .select('id')
       .eq('phone', normalized)
       .maybeSingle()
-    return data !== null
+
+    if (error) {
+      console.error('[blacklist] DB query error:', error)
+      // FAIL CLOSED - block call on DB errors to be safe
+      return true
+    }
+
+    const isBlocked = data !== null
+    console.log(
+      `[blacklist] ${normalized} is ${isBlocked ? 'BLOCKED' : 'allowed'}`,
+    )
+    return isBlocked
   } catch (err) {
-    console.error('[blacklist] DB check failed, failing open:', err)
-    return false
+    console.error(
+      '[blacklist] Unexpected error, BLOCKING call to be safe:',
+      err,
+    )
+    // FAIL CLOSED - if something goes wrong, block the call
+    return true
   }
 }
 
