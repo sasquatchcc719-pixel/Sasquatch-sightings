@@ -219,6 +219,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   const [aiDescLoading, setAiDescLoading] = useState(false)
   const [publishLoading, setPublishLoading] = useState(false)
   const [publishSuccess, setPublishSuccess] = useState(false)
+  const [publishMessage, setPublishMessage] = useState<string | null>(null)
   const [statsRecordLoading, setStatsRecordLoading] = useState(false)
   const [statsRecordMessage, setStatsRecordMessage] = useState<string | null>(
     null,
@@ -997,6 +998,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     }
 
     setPublishLoading(true)
+    setPublishMessage(null)
     setError(null)
     try {
       const res = await fetch(combinedImageDataUrl)
@@ -1019,6 +1021,31 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
       }
 
       setPublishSuccess(true)
+      const googleOk = Boolean(result.channels?.googleBusiness?.ok)
+      const zapierOk = Boolean(result.channels?.zapier?.ok)
+      const zapierSkipped = Boolean(result.channels?.zapier?.skipped)
+      const googleError = result.channels?.googleBusiness?.error
+      const zapierError = result.channels?.zapier?.error
+
+      if (googleOk && (zapierOk || zapierSkipped)) {
+        setPublishMessage(
+          zapierSkipped
+            ? 'The job page is live and Google Business posted it. Zapier is not configured, so Facebook/LinkedIn/Instagram were skipped.'
+            : 'The job page is live. Google Business and Zapier both accepted the post.',
+        )
+      } else if (googleOk) {
+        setPublishMessage(
+          `The job page is live and Google Business posted it, but Zapier needs attention: ${zapierError || 'unknown Zapier error'}`,
+        )
+      } else if (zapierOk) {
+        setPublishMessage(
+          `The job page is live and Zapier accepted the post, but Google Business needs attention: ${googleError || 'unknown Google Business error'}`,
+        )
+      } else {
+        setPublishMessage(
+          `The job page is live, but Google Business and Zapier both need attention. Google: ${googleError || 'unknown error'}. Zapier: ${zapierError || 'unknown error'}.`,
+        )
+      }
       router.refresh()
     } catch (publishError) {
       setError(
@@ -2399,11 +2426,13 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
         <Card className="border-border/60 bg-green-50 p-5 text-center shadow-sm">
           <CheckCircle2 className="mx-auto h-10 w-10 text-green-600" />
           <p className="mt-2 text-lg font-bold text-green-800">
-            Post published!
+            {publishMessage?.includes('needs attention')
+              ? 'Job page published'
+              : 'Post published!'}
           </p>
           <p className="text-muted-foreground mt-1 text-sm">
-            The before/after is live and stats include this job from the
-            published record.
+            {publishMessage ||
+              'The before/after is live and stats include this job from the published record.'}
           </p>
         </Card>
       )}

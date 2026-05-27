@@ -1,61 +1,112 @@
 import { google } from 'googleapis'
 
-// Initialize API clients
-const accountManagement = google.mybusinessaccountmanagement('v1')
-const businessInformation = google.mybusinessbusinessinformation('v1')
+const GOOGLE_BUSINESS_SCOPE = 'https://www.googleapis.com/auth/business.manage'
+const DEFAULT_BOOK_URL = 'https://sightings.sasquatchcarpet.com/book'
 
-// Setup Authentication
-const auth = new google.auth.OAuth2(
-  process.env.GOOGLE_CLIENT_ID,
-  process.env.GOOGLE_CLIENT_SECRET,
-)
+type GoogleBusinessTarget = {
+  accountId: string
+  locationId: string
+}
 
-auth.setCredentials({
-  refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
-})
+export type GoogleBusinessPostResult = {
+  name?: string
+  searchUrl?: string
+  topicType?: string
+}
+
+export function getGoogleBusinessConfigStatus() {
+  const status = {
+    hasClientId: Boolean(process.env.GOOGLE_CLIENT_ID),
+    hasClientSecret: Boolean(process.env.GOOGLE_CLIENT_SECRET),
+    hasRefreshToken: Boolean(process.env.GOOGLE_REFRESH_TOKEN),
+    hasAccountId: Boolean(process.env.GOOGLE_ACCOUNT_ID),
+    hasLocationId: Boolean(process.env.GOOGLE_LOCATION_ID),
+    scope: GOOGLE_BUSINESS_SCOPE,
+  }
+
+  return {
+    ...status,
+    ready:
+      status.hasClientId && status.hasClientSecret && status.hasRefreshToken,
+    hasPinnedTarget: status.hasAccountId && status.hasLocationId,
+  }
+}
+
+function getAuthClient() {
+  if (
+    !process.env.GOOGLE_CLIENT_ID ||
+    !process.env.GOOGLE_CLIENT_SECRET ||
+    !process.env.GOOGLE_REFRESH_TOKEN
+  ) {
+    throw new Error(
+      'Google Business Profile is not configured. Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_REFRESH_TOKEN.',
+    )
+  }
+
+  const auth = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+  )
+
+  auth.setCredentials({
+    refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
+  })
+
+  return auth
+}
+
+function cleanResourceId(value: string | undefined, prefix: string) {
+  return value?.replace(`${prefix}/`, '').trim()
+}
+
+async function resolveGoogleBusinessTarget(
+  auth: ReturnType<typeof getAuthClient>,
+): Promise<GoogleBusinessTarget> {
+  const accountId = cleanResourceId(process.env.GOOGLE_ACCOUNT_ID, 'accounts')
+  const locationId = cleanResourceId(
+    process.env.GOOGLE_LOCATION_ID,
+    'locations',
+  )
+
+  if (accountId && locationId) return { accountId, locationId }
+
+  const accountManagement = google.mybusinessaccountmanagement('v1')
+  const businessInformation = google.mybusinessbusinessinformation('v1')
+
+  const accountsRes = await accountManagement.accounts.list({ auth })
+  const account = accountsRes.data.accounts?.[0]
+
+  if (!account?.name) {
+    throw new Error('No Google Business Profile account found for this login.')
+  }
+
+  const locationsRes = await businessInformation.accounts.locations.list({
+    parent: account.name,
+    readMask: 'name,title',
+    auth,
+  })
+
+  const location = locationsRes.data.locations?.[0]
+
+  if (!location?.name) {
+    throw new Error('No Google Business Profile location found for this login.')
+  }
+
+  return {
+    accountId: account.name.split('/')[1],
+    locationId: location.name.split('/')[1],
+  }
+}
 
 export async function createSightingPost(
   imageUrl: string,
-  description: string = 'Check out this Sasquatch Sighting! 📸 spotted in the neighborhood.',
-) {
+  description = 'Check out this Sasquatch Sighting spotted in the neighborhood.',
+): Promise<GoogleBusinessPostResult> {
   try {
-    // 1. Get Account ID
-    const accountsRes = await accountManagement.accounts.list({ auth })
-    const account = accountsRes.data.accounts?.[0]
+    const auth = getAuthClient()
+    const { accountId, locationId } = await resolveGoogleBusinessTarget(auth)
 
-    if (!account || !account.name) {
-      throw new Error('No Google Business Profile account found.')
-    }
-
-    // account.name format: "accounts/{accountId}"
-    const accountId = account.name.split('/')[1]
-
-    // 2. Get Location ID
-    // Note: The parent for businessInformation is the account name
-    const locationsRes = await businessInformation.accounts.locations.list({
-      parent: account.name,
-      readMask: 'name,title',
-      auth,
-    })
-
-    const location = locationsRes.data.locations?.[0]
-
-    if (!location || !location.name) {
-      throw new Error('No location found for this account.')
-    }
-
-    // location.name format is likely "locations/{locationId}"
-    const locationId = location.name.split('/')[1]
-
-    console.log(
-      `Creating post for Account: ${accountId}, Location: ${locationId}`,
-    )
-
-    // 3. Create Post using v4 API (not covered by newer googleapis libraries yet)
-    // Legacy Endpoint: https://mybusiness.googleapis.com/v4/accounts/{accountId}/locations/{locationId}/localPosts
     const postUrl = `https://mybusiness.googleapis.com/v4/accounts/${accountId}/locations/${locationId}/localPosts`
-
-    // Manually get access token
     const tokenResponse = await auth.getAccessToken()
     const accessToken = tokenResponse.token
 
@@ -65,17 +116,16 @@ export async function createSightingPost(
 
     const postBody: Record<string, unknown> = {
       languageCode: 'en-US',
-      summary: description,
-      topicType: 'STANDARD', // "What's New" post
+      summary: description.trim().slice(0, 1500),
+      topicType: 'STANDARD',
       callToAction: {
         actionType: 'BOOK',
-        url: 'https://sightings.sasquatchcarpet.com/book',
+        url: process.env.GOOGLE_BUSINESS_BOOK_URL || DEFAULT_BOOK_URL,
       },
     }
 
-    // Only attach media if a URL was provided
-    if (imageUrl) {
-      postBody.media = [{ mediaFormat: 'PHOTO', sourceUrl: imageUrl }]
+    if (imageUrl.trim()) {
+      postBody.media = [{ mediaFormat: 'PHOTO', sourceUrl: imageUrl.trim() }]
     }
 
     const response = await fetch(postUrl, {
@@ -92,14 +142,14 @@ export async function createSightingPost(
       throw new Error(`Google API Error (${response.status}): ${errorText}`)
     }
 
-    const result = await response.json()
-    console.log('Successfully created Google Post:', result)
+    const result = (await response.json()) as GoogleBusinessPostResult
+    console.log('[google-business] Created Google Business Profile post:', {
+      name: result.name,
+      topicType: result.topicType,
+    })
     return result
   } catch (error) {
-    console.error('Error creating Google Business Post:', error)
-    // We re-throw or handle?
-    // Ideally we don't block the user flow if this fails, but we should log it.
-    // Throwing allows route.ts to decide.
+    console.error('[google-business] Error creating GBP post:', error)
     throw error
   }
 }

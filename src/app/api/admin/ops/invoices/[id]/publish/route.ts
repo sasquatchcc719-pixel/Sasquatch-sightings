@@ -11,6 +11,13 @@ import { createSightingPost } from '@/lib/google-business'
 import sharp from 'sharp'
 
 type Params = { params: Promise<{ id: string }> }
+type PublishChannelResult = {
+  ok: boolean
+  skipped?: boolean
+  postName?: string | null
+  status?: number | null
+  error?: string | null
+}
 
 async function resolveServiceId(
   supabase: ReturnType<typeof createAdminClient>,
@@ -292,19 +299,43 @@ export async function POST(request: NextRequest, { params }: Params) {
       .delete()
       .eq('ops_invoice_id', invoiceId)
 
+    const googleBusiness: PublishChannelResult = {
+      ok: false,
+      postName: null,
+      error: null,
+    }
+
+    const zapier: PublishChannelResult = {
+      ok: false,
+      skipped: !process.env.ZAPIER_WEBHOOK_URL,
+      status: null,
+      error: process.env.ZAPIER_WEBHOOK_URL
+        ? null
+        : 'ZAPIER_WEBHOOK_URL is not configured.',
+    }
+
     // Post directly to Google Business Profile
     try {
-      await createSightingPost(publicUrl, description)
+      const googlePost = await createSightingPost(publicUrl, description)
+      googleBusiness.ok = true
+      googleBusiness.postName = googlePost.name ?? null
+      await supabase
+        .from('jobs')
+        .update({ social_posted_at: new Date().toISOString() })
+        .eq('id', job.id)
       console.log('[publish] Google Business Profile post created successfully')
     } catch (gbpErr) {
+      googleBusiness.error =
+        gbpErr instanceof Error
+          ? gbpErr.message
+          : 'Google Business Profile post failed'
       console.error('[publish] Google Business Profile post failed:', gbpErr)
-      // Non-fatal — job is published regardless
     }
 
     // Trigger Zapier webhook (kept as backup / for any other automations)
     if (process.env.ZAPIER_WEBHOOK_URL) {
       try {
-        await fetch(process.env.ZAPIER_WEBHOOK_URL, {
+        const zapierResponse = await fetch(process.env.ZAPIER_WEBHOOK_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -318,7 +349,19 @@ export async function POST(request: NextRequest, { params }: Params) {
             slug: job.slug,
           }),
         })
+        zapier.status = zapierResponse.status
+        zapier.ok = zapierResponse.ok
+        zapier.skipped = false
+        if (!zapierResponse.ok) {
+          zapier.error = `Zapier webhook returned ${zapierResponse.status}: ${(
+            await zapierResponse.text()
+          ).slice(0, 300)}`
+        }
       } catch (zapErr) {
+        zapier.ok = false
+        zapier.skipped = false
+        zapier.error =
+          zapErr instanceof Error ? zapErr.message : 'Zapier webhook failed'
         console.error('[publish] Zapier webhook failed:', zapErr)
       }
     }
@@ -332,8 +375,12 @@ export async function POST(request: NextRequest, { params }: Params) {
           city: job.city,
           imageUrl: job.image_url,
         },
+        channels: {
+          googleBusiness,
+          zapier,
+        },
       },
-      { status: 201 },
+      { status: googleBusiness.ok || zapier.ok ? 201 : 207 },
     )
   } catch (err) {
     console.error('[publish] Error:', err)

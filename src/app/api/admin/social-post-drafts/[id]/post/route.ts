@@ -29,12 +29,17 @@ export async function POST(_request: NextRequest, { params }: Params) {
 
     // Post to Google Business Profile directly
     let gbpOk = false
+    let gbpError: string | null = null
     try {
       // Text-only GBP posts don't require an image — pass empty string to skip media
       await createSightingPost('', postText)
       gbpOk = true
       console.log(`[social-post-drafts] GBP post succeeded for draft ${id}`)
     } catch (gbpErr) {
+      gbpError =
+        gbpErr instanceof Error
+          ? gbpErr.message
+          : 'Google Business Profile post failed'
       console.error(
         `[social-post-drafts] GBP post failed for draft ${id}:`,
         gbpErr,
@@ -43,9 +48,12 @@ export async function POST(_request: NextRequest, { params }: Params) {
 
     // Fire Zapier for Facebook / LinkedIn / Instagram
     let zapierOk = false
+    let zapierError: string | null = process.env.ZAPIER_WEBHOOK_URL
+      ? null
+      : 'ZAPIER_WEBHOOK_URL is not configured.'
     if (process.env.ZAPIER_WEBHOOK_URL) {
       try {
-        await fetch(process.env.ZAPIER_WEBHOOK_URL, {
+        const zapierResponse = await fetch(process.env.ZAPIER_WEBHOOK_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -56,13 +64,33 @@ export async function POST(_request: NextRequest, { params }: Params) {
             source: 'social_draft',
           }),
         })
-        zapierOk = true
+        zapierOk = zapierResponse.ok
+        if (!zapierResponse.ok) {
+          zapierError = `Zapier webhook returned ${zapierResponse.status}: ${(
+            await zapierResponse.text()
+          ).slice(0, 300)}`
+        }
       } catch (zapErr) {
+        zapierError =
+          zapErr instanceof Error ? zapErr.message : 'Zapier webhook failed'
         console.error(
           `[social-post-drafts] Zapier failed for draft ${id}:`,
           zapErr,
         )
       }
+    }
+
+    if (!gbpOk && !zapierOk) {
+      return NextResponse.json(
+        {
+          error: 'Google Business Profile and Zapier both failed.',
+          channels: {
+            googleBusiness: { ok: gbpOk, error: gbpError },
+            zapier: { ok: zapierOk, error: zapierError },
+          },
+        },
+        { status: 502 },
+      )
     }
 
     // Mark posted
@@ -71,7 +99,13 @@ export async function POST(_request: NextRequest, { params }: Params) {
       .update({ status: 'posted', posted_at: new Date().toISOString() })
       .eq('id', id)
 
-    return NextResponse.json({ ok: true, gbpOk, zapierOk })
+    return NextResponse.json({
+      ok: true,
+      channels: {
+        googleBusiness: { ok: gbpOk, error: gbpError },
+        zapier: { ok: zapierOk, error: zapierError },
+      },
+    })
   } catch (err) {
     console.error('[social-post-drafts POST]', err)
     return NextResponse.json(
