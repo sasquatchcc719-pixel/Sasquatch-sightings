@@ -20,7 +20,22 @@ import {
   MapPin,
   Camera,
   Loader2,
+  Power,
+  Sliders,
+  Globe,
+  Facebook,
 } from 'lucide-react'
+
+interface EchoSettings {
+  id: number
+  enabled: boolean
+  auto_post: boolean
+  google_enabled: boolean
+  facebook_enabled: boolean
+  weekly_cap: number
+  skip_repeat_days: number
+  updated_at: string
+}
 
 interface Summary {
   weekly_posts_sent: number
@@ -272,6 +287,8 @@ export default function SocialPostsPage() {
   const [activeTab, setActiveTab] = useState<'drafts' | 'jobs' | 'promos'>(
     'drafts',
   )
+  const [echoSettings, setEchoSettings] = useState<EchoSettings | null>(null)
+  const [savingSetting, setSavingSetting] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -286,6 +303,46 @@ export default function SocialPostsPage() {
       setLoading(false)
     }
   }, [])
+
+  const fetchEchoSettings = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/echo/settings')
+      const data = await res.json()
+      if (data.ok) setEchoSettings(data.settings)
+    } catch (err) {
+      console.error('Failed to load echo settings', err)
+    }
+  }, [])
+
+  useEffect(() => {
+    void fetchEchoSettings()
+  }, [fetchEchoSettings])
+
+  const updateEchoSetting = async (
+    key: keyof Omit<EchoSettings, 'id' | 'updated_at'>,
+    value: boolean | number,
+  ) => {
+    setSavingSetting(key)
+    // Optimistic update
+    setEchoSettings((prev) => (prev ? { ...prev, [key]: value } : prev))
+    try {
+      const res = await fetch('/api/admin/echo/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [key]: value }),
+      })
+      const data = await res.json()
+      if (data.ok) setEchoSettings(data.settings)
+      else {
+        // Revert on failure
+        void fetchEchoSettings()
+      }
+    } catch {
+      void fetchEchoSettings()
+    } finally {
+      setSavingSetting(null)
+    }
+  }
 
   useEffect(() => {
     void fetchData()
@@ -381,6 +438,136 @@ export default function SocialPostsPage() {
                 Ready for approval
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Echo Settings */}
+        {echoSettings && (
+          <div
+            className={`rounded-xl border p-5 transition ${
+              echoSettings.enabled
+                ? 'border-emerald-500/20 bg-emerald-500/5'
+                : 'border-red-500/20 bg-red-500/5'
+            }`}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sliders className="h-4 w-4 text-slate-300" />
+                <h2 className="text-sm font-semibold tracking-wider text-slate-200 uppercase">
+                  Echo Controls
+                </h2>
+              </div>
+              <button
+                onClick={() =>
+                  updateEchoSetting('enabled', !echoSettings.enabled)
+                }
+                disabled={savingSetting === 'enabled'}
+                className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+                  echoSettings.enabled
+                    ? 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30'
+                    : 'bg-red-500/20 text-red-300 hover:bg-red-500/30'
+                } disabled:opacity-50`}
+              >
+                <Power className="h-3.5 w-3.5" />
+                {echoSettings.enabled ? 'Echo ON' : 'Echo OFF'}
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {/* Auto-post toggle */}
+              <label className="flex cursor-pointer items-start justify-between rounded-lg border border-white/10 bg-white/5 p-3 transition hover:bg-white/10">
+                <div className="flex-1">
+                  <div className="text-sm font-medium text-white">
+                    When a job finishes
+                  </div>
+                  <div className="mt-0.5 text-xs text-slate-400">
+                    {echoSettings.auto_post
+                      ? 'Post automatically (no approval)'
+                      : 'Draft for approval first'}
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={echoSettings.auto_post}
+                  onChange={(e) =>
+                    updateEchoSetting('auto_post', e.target.checked)
+                  }
+                  disabled={savingSetting === 'auto_post'}
+                  className="mt-0.5 ml-3 h-4 w-4 cursor-pointer accent-emerald-500"
+                />
+              </label>
+
+              {/* Weekly cap */}
+              <label className="flex items-start justify-between rounded-lg border border-white/10 bg-white/5 p-3">
+                <div className="flex-1">
+                  <div className="text-sm font-medium text-white">
+                    Weekly post cap
+                  </div>
+                  <div className="mt-0.5 text-xs text-slate-400">
+                    Max posts per week before extra jobs go map-only
+                  </div>
+                </div>
+                <input
+                  type="number"
+                  min={0}
+                  max={20}
+                  value={echoSettings.weekly_cap}
+                  onChange={(e) =>
+                    updateEchoSetting(
+                      'weekly_cap',
+                      Math.max(0, Math.min(20, Number(e.target.value) || 0)),
+                    )
+                  }
+                  disabled={savingSetting === 'weekly_cap'}
+                  className="ml-3 w-16 rounded border border-white/20 bg-white/10 px-2 py-1 text-center text-sm text-white"
+                />
+              </label>
+
+              {/* Google channel toggle */}
+              <label className="flex cursor-pointer items-center justify-between rounded-lg border border-white/10 bg-white/5 p-3 transition hover:bg-white/10">
+                <div className="flex items-center gap-2">
+                  <Globe className="h-4 w-4 text-blue-400" />
+                  <div className="text-sm font-medium text-white">
+                    Google Updates
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={echoSettings.google_enabled}
+                  onChange={(e) =>
+                    updateEchoSetting('google_enabled', e.target.checked)
+                  }
+                  disabled={savingSetting === 'google_enabled'}
+                  className="h-4 w-4 cursor-pointer accent-blue-500"
+                />
+              </label>
+
+              {/* Facebook channel toggle */}
+              <label className="flex cursor-pointer items-center justify-between rounded-lg border border-white/10 bg-white/5 p-3 transition hover:bg-white/10">
+                <div className="flex items-center gap-2">
+                  <Facebook className="h-4 w-4 text-sky-400" />
+                  <div className="text-sm font-medium text-white">
+                    Facebook Page
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={echoSettings.facebook_enabled}
+                  onChange={(e) =>
+                    updateEchoSetting('facebook_enabled', e.target.checked)
+                  }
+                  disabled={savingSetting === 'facebook_enabled'}
+                  className="h-4 w-4 cursor-pointer accent-sky-500"
+                />
+              </label>
+            </div>
+
+            {!echoSettings.enabled && (
+              <p className="mt-3 text-xs text-red-300">
+                Echo is paused. Newly published jobs will not be queued for
+                social posts until you turn it back on.
+              </p>
+            )}
           </div>
         )}
 

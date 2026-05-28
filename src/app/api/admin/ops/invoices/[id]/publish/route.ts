@@ -7,17 +7,10 @@ import {
   effectiveInvoiceAmount,
   utilizationHoursFromAppointment,
 } from '@/lib/ops/utilization-metrics'
-import { createSightingPost } from '@/lib/google-business'
+import { enqueue } from '@/lib/echo/enqueue'
 import sharp from 'sharp'
 
 type Params = { params: Promise<{ id: string }> }
-type PublishChannelResult = {
-  ok: boolean
-  skipped?: boolean
-  postName?: string | null
-  status?: number | null
-  error?: string | null
-}
 
 async function resolveServiceId(
   supabase: ReturnType<typeof createAdminClient>,
@@ -299,70 +292,24 @@ export async function POST(request: NextRequest, { params }: Params) {
       .delete()
       .eq('ops_invoice_id', invoiceId)
 
-    const googleBusiness: PublishChannelResult = {
-      ok: false,
-      postName: null,
-      error: null,
+    // Hand off to Echo for editorial decision + distribution.
+    // Echo reads echo_settings, decides skip / map_only / draft / auto_post,
+    // generates varied copy (OpenAI), writes a row to social_post_drafts,
+    // and (if auto_post) fires the Zaps + logs to social_post_log.
+    let echoResult: Awaited<ReturnType<typeof enqueue>> = {
+      action: 'skip',
+      reason: 'Echo enqueue did not run',
     }
-
-    const zapier: PublishChannelResult = {
-      ok: false,
-      skipped: !process.env.ZAPIER_WEBHOOK_URL,
-      status: null,
-      error: process.env.ZAPIER_WEBHOOK_URL
-        ? null
-        : 'ZAPIER_WEBHOOK_URL is not configured.',
-    }
-
-    // Post directly to Google Business Profile
     try {
-      const googlePost = await createSightingPost(publicUrl, description)
-      googleBusiness.ok = true
-      googleBusiness.postName = googlePost.name ?? null
-      await supabase
-        .from('jobs')
-        .update({ social_posted_at: new Date().toISOString() })
-        .eq('id', job.id)
-      console.log('[publish] Google Business Profile post created successfully')
-    } catch (gbpErr) {
-      googleBusiness.error =
-        gbpErr instanceof Error
-          ? gbpErr.message
-          : 'Google Business Profile post failed'
-      console.error('[publish] Google Business Profile post failed:', gbpErr)
-    }
-
-    // Trigger Zapier webhook (kept as backup / for any other automations)
-    if (process.env.ZAPIER_WEBHOOK_URL) {
-      try {
-        const zapierResponse = await fetch(process.env.ZAPIER_WEBHOOK_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            service: service.name,
-            city: resolvedCity,
-            state: address.state || 'CO',
-            neighborhood,
-            image_url: publicUrl,
-            description,
-            job_id: job.id,
-            slug: job.slug,
-          }),
-        })
-        zapier.status = zapierResponse.status
-        zapier.ok = zapierResponse.ok
-        zapier.skipped = false
-        if (!zapierResponse.ok) {
-          zapier.error = `Zapier webhook returned ${zapierResponse.status}: ${(
-            await zapierResponse.text()
-          ).slice(0, 300)}`
-        }
-      } catch (zapErr) {
-        zapier.ok = false
-        zapier.skipped = false
-        zapier.error =
-          zapErr instanceof Error ? zapErr.message : 'Zapier webhook failed'
-        console.error('[publish] Zapier webhook failed:', zapErr)
+      echoResult = await enqueue(job.id)
+    } catch (echoErr) {
+      console.error('[publish] Echo enqueue threw:', echoErr)
+      echoResult = {
+        action: 'skip',
+        reason:
+          echoErr instanceof Error
+            ? `Echo enqueue error: ${echoErr.message}`
+            : 'Echo enqueue threw unknown error',
       }
     }
 
@@ -375,12 +322,9 @@ export async function POST(request: NextRequest, { params }: Params) {
           city: job.city,
           imageUrl: job.image_url,
         },
-        channels: {
-          googleBusiness,
-          zapier,
-        },
+        echo: echoResult,
       },
-      { status: googleBusiness.ok || zapier.ok ? 201 : 207 },
+      { status: 201 },
     )
   } catch (err) {
     console.error('[publish] Error:', err)

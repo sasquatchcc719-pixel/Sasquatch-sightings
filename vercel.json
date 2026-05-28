@@ -45,10 +45,6 @@
       "schedule": "0 15 * * *"
     },
     {
-      "path": "/api/cron/social-draft-generator",
-      "schedule": "0 7 * * 1"
-    },
-    {
       "path": "/api/cron/gps-cleanup",
       "schedule": "0 3 * * *"
     }
