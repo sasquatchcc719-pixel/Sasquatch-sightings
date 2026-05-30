@@ -608,11 +608,22 @@ export async function createAiStyleBooking(
       : []),
   ].join('\n')
 
+  // Format date with year for notifications
+  const dateWithYear = new Date(
+    `${appointmentDate}T12:00:00`,
+  ).toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'America/Denver',
+  })
+
   await Promise.allSettled([
     sendAdminSMS(adminMsg, 'new_booking'),
     sendOneSignalNotification({
       heading: `New ${adminHeading}${statusLabel}`,
-      content: `${fullName} — $${total.toFixed(2)} · ${appointmentDate}`,
+      content: `${fullName} — $${total.toFixed(2)} · ${dateWithYear}`,
       data: { type: 'new_booking', appointment_id: appointment.id },
     }),
     sendBookingNotification({
