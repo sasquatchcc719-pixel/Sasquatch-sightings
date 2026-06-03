@@ -1,5 +1,6 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { ChevronDown, ChevronRight, ExternalLink } from 'lucide-react'
 
@@ -75,12 +76,14 @@ function DetailRow({
   subtitle,
   amount,
   url,
+  action,
   tone = 'neutral',
 }: {
   title: string
   subtitle: string
   amount: string | null
   url: string | null
+  action?: ReactNode
   tone?: 'neutral' | 'danger'
 }) {
   const content = (
@@ -105,12 +108,23 @@ function DetailRow({
       </div>
       <div className="flex shrink-0 items-center gap-2 text-right">
         {amount && <span className="text-xs text-white/60">{amount}</span>}
-        {url && <ExternalLink className="h-3.5 w-3.5 text-white/35" />}
+        {action}
+        {url && !action && (
+          <ExternalLink className="h-3.5 w-3.5 text-white/35" />
+        )}
+        {url && action && (
+          <a
+            href={url}
+            className="rounded p-1 transition-colors hover:bg-white/10"
+          >
+            <ExternalLink className="h-3.5 w-3.5 text-white/35" />
+          </a>
+        )}
       </div>
     </div>
   )
 
-  if (!url) return content
+  if (!url || action) return content
 
   return (
     <a href={url} className="block transition-opacity hover:opacity-85">
@@ -125,12 +139,24 @@ export function QuickBooksStatus() {
   const [toggling, setToggling] = useState(false)
   const [disconnecting, setDisconnecting] = useState(false)
   const [retrying, setRetrying] = useState(false)
+  const [retryingInvoiceId, setRetryingInvoiceId] = useState<string | null>(
+    null,
+  )
+  const [actionMessage, setActionMessage] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const [showPending, setShowPending] = useState(false)
 
-  useEffect(() => {
-    fetch('/api/admin/quickbooks/status')
+  async function loadStatus() {
+    const data = await fetch('/api/admin/quickbooks/status', {
+      cache: 'no-store',
+    })
       .then((r) => r.json())
-      .then((data) => setStatus(data))
+      .catch(() => null)
+    setStatus(data)
+  }
+
+  useEffect(() => {
+    loadStatus()
       .catch(() => setStatus(null))
       .finally(() => setLoading(false))
   }, [])
@@ -175,6 +201,8 @@ export function QuickBooksStatus() {
 
   async function handleRetry() {
     setRetrying(true)
+    setActionError(null)
+    setActionMessage(null)
     try {
       const res = await fetch('/api/admin/quickbooks/retry', { method: 'POST' })
       if (res.ok) {
@@ -192,8 +220,41 @@ export function QuickBooksStatus() {
             : prev,
         )
       }
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error.message : 'Failed to retry jobs',
+      )
     } finally {
       setRetrying(false)
+    }
+  }
+
+  async function handleRedeployInvoice(invoice: QBInvoiceDetail) {
+    setRetryingInvoiceId(invoice.id)
+    setActionError(null)
+    setActionMessage(null)
+    try {
+      const res = await fetch('/api/admin/quickbooks/retry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invoice_id: invoice.id }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to redeploy invoice')
+      }
+      setActionMessage(
+        data.queued === false
+          ? `${invoice.label}: ${data.reason || 'No redeploy needed'}.`
+          : `${invoice.label} was redeployed to QuickBooks.`,
+      )
+      await loadStatus()
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error.message : 'Failed to redeploy invoice',
+      )
+    } finally {
+      setRetryingInvoiceId(null)
     }
   }
 
@@ -299,6 +360,16 @@ export function QuickBooksStatus() {
               <div className="text-xs font-semibold text-red-300">
                 Stuck invoices needing attention
               </div>
+              {actionError && (
+                <div className="rounded border border-red-500/20 bg-red-500/10 px-2 py-1 text-[11px] text-red-200">
+                  {actionError}
+                </div>
+              )}
+              {actionMessage && (
+                <div className="rounded border border-green-500/20 bg-green-500/10 px-2 py-1 text-[11px] text-green-200">
+                  {actionMessage}
+                </div>
+              )}
               <div className="space-y-2">
                 {status.stuck_invoices.map((invoice) => {
                   const when = formatDateTime(
@@ -324,6 +395,18 @@ export function QuickBooksStatus() {
                       subtitle={pieces.join(' - ')}
                       amount={formatCurrency(invoice.total)}
                       url={invoice.url}
+                      action={
+                        <button
+                          type="button"
+                          onClick={() => void handleRedeployInvoice(invoice)}
+                          disabled={retryingInvoiceId === invoice.id}
+                          className="rounded-md bg-yellow-600/20 px-2 py-1 text-[11px] font-medium whitespace-nowrap text-yellow-300 transition-colors hover:bg-yellow-600/30 disabled:opacity-50"
+                        >
+                          {retryingInvoiceId === invoice.id
+                            ? 'Redeploying...'
+                            : 'Redeploy'}
+                        </button>
+                      }
                       tone="danger"
                     />
                   )
