@@ -142,6 +142,9 @@ export function QuickBooksStatus() {
   const [retryingInvoiceId, setRetryingInvoiceId] = useState<string | null>(
     null,
   )
+  const [clearingInvoiceId, setClearingInvoiceId] = useState<string | null>(
+    null,
+  )
   const [actionMessage, setActionMessage] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [showPending, setShowPending] = useState(false)
@@ -255,6 +258,39 @@ export function QuickBooksStatus() {
       )
     } finally {
       setRetryingInvoiceId(null)
+    }
+  }
+
+  async function handleClearInvoice(invoice: QBInvoiceDetail) {
+    if (
+      !confirm(
+        `Remove ${invoice.label} from the QuickBooks attention list? This will not delete the Sasquatch invoice or job.`,
+      )
+    ) {
+      return
+    }
+
+    setClearingInvoiceId(invoice.id)
+    setActionError(null)
+    setActionMessage(null)
+    try {
+      const res = await fetch('/api/admin/quickbooks/retry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invoice_id: invoice.id, action: 'clear' }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to clear invoice')
+      }
+      setActionMessage(`${invoice.label} was removed from the attention list.`)
+      await loadStatus()
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error.message : 'Failed to clear invoice',
+      )
+    } finally {
+      setClearingInvoiceId(null)
     }
   }
 
@@ -396,16 +432,34 @@ export function QuickBooksStatus() {
                       amount={formatCurrency(invoice.total)}
                       url={invoice.url}
                       action={
-                        <button
-                          type="button"
-                          onClick={() => void handleRedeployInvoice(invoice)}
-                          disabled={retryingInvoiceId === invoice.id}
-                          className="rounded-md bg-yellow-600/20 px-2 py-1 text-[11px] font-medium whitespace-nowrap text-yellow-300 transition-colors hover:bg-yellow-600/30 disabled:opacity-50"
-                        >
-                          {retryingInvoiceId === invoice.id
-                            ? 'Redeploying...'
-                            : 'Redeploy'}
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => void handleRedeployInvoice(invoice)}
+                            disabled={
+                              retryingInvoiceId === invoice.id ||
+                              clearingInvoiceId === invoice.id
+                            }
+                            className="rounded-md bg-yellow-600/20 px-2 py-1 text-[11px] font-medium whitespace-nowrap text-yellow-300 transition-colors hover:bg-yellow-600/30 disabled:opacity-50"
+                          >
+                            {retryingInvoiceId === invoice.id
+                              ? 'Redeploying...'
+                              : 'Redeploy'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleClearInvoice(invoice)}
+                            disabled={
+                              retryingInvoiceId === invoice.id ||
+                              clearingInvoiceId === invoice.id
+                            }
+                            className="rounded-md bg-red-600/20 px-2 py-1 text-[11px] font-medium whitespace-nowrap text-red-300 transition-colors hover:bg-red-600/30 disabled:opacity-50"
+                          >
+                            {clearingInvoiceId === invoice.id
+                              ? 'Deleting...'
+                              : 'Delete'}
+                          </button>
+                        </>
                       }
                       tone="danger"
                     />

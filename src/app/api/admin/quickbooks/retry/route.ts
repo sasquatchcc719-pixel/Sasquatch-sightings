@@ -14,6 +14,7 @@ export async function POST(request: NextRequest) {
     const supabase = createAdminClient()
     const body = await request.json().catch(() => ({}))
     const invoiceId = String(body.invoice_id || '').trim()
+    const action = String(body.action || 'retry').trim()
 
     const now = new Date().toISOString()
 
@@ -30,6 +31,28 @@ export async function POST(request: NextRequest) {
           { error: 'Invoice not found or missing appointment' },
           { status: 404 },
         )
+      }
+
+      if (action === 'clear') {
+        const { error: invoiceUpdateError } = await supabase
+          .from('ops_invoices')
+          .update({ sync_status: 'held', updated_at: now })
+          .eq('id', invoiceId)
+
+        if (invoiceUpdateError) throw invoiceUpdateError
+
+        const { error: jobDeleteError } = await supabase
+          .from('ops_quickbooks_sync_jobs')
+          .delete()
+          .eq('entity_type', 'invoice')
+          .eq('entity_id', invoiceId)
+
+        if (jobDeleteError) throw jobDeleteError
+
+        return NextResponse.json({
+          invoice_id: invoiceId,
+          cleared: true,
+        })
       }
 
       const queued = await ensureInvoiceQuickBooksSyncJob(supabase, invoiceId)

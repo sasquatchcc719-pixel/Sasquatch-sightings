@@ -7,6 +7,7 @@ type InvoiceSummary = {
   id: string
   invoice_number?: number | string | null
   status?: string | null
+  sync_status?: string | null
   payment_method?: string | null
   total?: number | string | null
   created_at?: string | null
@@ -158,6 +159,7 @@ export async function GET() {
           invoice_number,
           payment_method,
           status,
+          sync_status,
           total,
           created_at,
           ops_appointments!inner ( status, kind )
@@ -191,6 +193,8 @@ export async function GET() {
         return (
           appointment?.kind !== 'estimate' &&
           (appointment?.status === 'completed' || row.status === 'paid') &&
+          row.sync_status !== 'held' &&
+          row.sync_status !== 'synced' &&
           row.payment_method !== 'cash' &&
           !pendingInvoiceIds.has(row.id)
         )
