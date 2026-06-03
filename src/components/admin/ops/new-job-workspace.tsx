@@ -80,6 +80,11 @@ type SchedulePreview = {
     start_time: string | null
     end_time: string | null
   }>
+  dailyAvailability: Array<{
+    staff_user_id: string
+    date: string
+    is_open: boolean
+  }>
 }
 
 type LineItemForm = {
@@ -183,13 +188,19 @@ export function NewJobWorkspace() {
   const [schedulePreview, setSchedulePreview] = useState<SchedulePreview>({
     appointments: [],
     events: [],
+    dailyAvailability: [],
   })
   const [availableSlots, setAvailableSlots] = useState<
     Array<{ start_time: string; end_time: string }>
   >([])
   const [loadingSlots, setLoadingSlots] = useState(false)
   const [staffMembers, setStaffMembers] = useState<
-    Array<{ id: string; display_name: string; scheduling_priority: number }>
+    Array<{
+      id: string
+      display_name: string
+      scheduling_priority: number
+      default_open?: boolean | null
+    }>
   >([])
 
   const [lineItems, setLineItems] = useState<LineItemForm[]>([])
@@ -373,6 +384,7 @@ export function NewJobWorkspace() {
       setSchedulePreview({
         appointments: result.appointments || [],
         events: result.events || [],
+        dailyAvailability: result.dailyAvailability || [],
       })
     } catch (previewError) {
       setError(
@@ -462,6 +474,20 @@ export function NewJobWorkspace() {
     const start = startOfWeek(appointmentForm.appointment_date)
     return Array.from({ length: 7 }, (_, index) => addDays(start, index))
   }, [appointmentForm.appointment_date])
+
+  const isStaffOpenForPreviewDate = useCallback(
+    (staffId: string, dateKey: string): boolean => {
+      const override = schedulePreview.dailyAvailability.find(
+        (availability) =>
+          availability.staff_user_id === staffId &&
+          availability.date === dateKey,
+      )
+      if (override) return override.is_open
+      const staff = staffMembers.find((member) => member.id === staffId)
+      return staff?.default_open ?? true
+    },
+    [schedulePreview.dailyAvailability, staffMembers],
+  )
 
   const subtotalQuote = lineItems.reduce((sum, item) => {
     const quantity = Number(item.quantity || 1)
@@ -1657,6 +1683,22 @@ export function NewJobWorkspace() {
                   (event) =>
                     event.start_date <= dateKey && event.end_date >= dateKey,
                 )
+                const selectedStaff = staffMembers.find(
+                  (staff) =>
+                    staff.id === appointmentForm.assigned_staff_user_id,
+                )
+                const selectedStaffClosed = Boolean(
+                  selectedStaff &&
+                  !isStaffOpenForPreviewDate(selectedStaff.id, dateKey),
+                )
+                const closedStaff = staffMembers.filter(
+                  (staff) => !isStaffOpenForPreviewDate(staff.id, dateKey),
+                )
+                const allStaffClosed =
+                  staffMembers.length > 0 &&
+                  closedStaff.length === staffMembers.length
+                const closedStaffLabel =
+                  selectedStaff?.display_name || 'Assigned technician'
 
                 return (
                   <div
@@ -1697,6 +1739,21 @@ export function NewJobWorkspace() {
                     </div>
 
                     <div className="mt-3 space-y-2">
+                      {selectedStaffClosed || allStaffClosed ? (
+                        <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
+                          <div className="font-medium">
+                            {allStaffClosed
+                              ? 'Schedule blocked'
+                              : `${closedStaffLabel} closed`}
+                          </div>
+                          <div className="text-muted-foreground mt-1">
+                            {allStaffClosed
+                              ? 'All technicians are closed for this day.'
+                              : 'The assigned technician is closed for this day.'}
+                          </div>
+                        </div>
+                      ) : null}
+
                       {dayEvents.map((event) => (
                         <div
                           key={event.id}
@@ -1707,7 +1764,9 @@ export function NewJobWorkspace() {
                       ))}
 
                       {dayAppointments.length === 0 &&
-                      dayEvents.length === 0 ? (
+                      dayEvents.length === 0 &&
+                      !selectedStaffClosed &&
+                      !allStaffClosed ? (
                         <div className="text-muted-foreground text-sm">
                           No conflicts yet.
                         </div>
