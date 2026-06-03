@@ -1921,6 +1921,10 @@ export function OperationsSchedule() {
             : getStatusTone(appointment.status)
       const isPointerDraggingThis =
         pointerDragging && draggingAppointment?.id === appointment.id
+      const statusLabel = isEstimate
+        ? 'Estimate'
+        : appointment.status.replaceAll('_', ' ')
+      const showStatusInFooter = appointment.status === 'completed'
       return (
         <div
           key={appointment.id}
@@ -1997,7 +2001,7 @@ export function OperationsSchedule() {
             }}
           >
             <div className="flex items-start justify-between gap-2">
-              <div className="line-clamp-1 flex items-center gap-1.5 leading-tight font-semibold">
+              <div className="line-clamp-1 flex min-w-0 flex-1 items-center gap-1.5 leading-tight font-semibold">
                 {isEstimate && (
                   <Ruler className="h-3 w-3 shrink-0 text-amber-600" />
                 )}
@@ -2011,14 +2015,14 @@ export function OperationsSchedule() {
                   </span>
                 )}
               </div>
-              <Badge
-                variant="outline"
-                className="border-slate-300 bg-white/70 text-slate-700 capitalize"
-              >
-                {isEstimate
-                  ? 'Estimate'
-                  : appointment.status.replaceAll('_', ' ')}
-              </Badge>
+              {!showStatusInFooter && (
+                <Badge
+                  variant="outline"
+                  className="shrink-0 border-slate-300 bg-white/70 text-slate-700 capitalize"
+                >
+                  {statusLabel}
+                </Badge>
+              )}
             </div>
             {isEstimate && (
               <span className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
@@ -2064,13 +2068,25 @@ export function OperationsSchedule() {
             </div>
             {recurringLineItemDescriptionBoxes(appointment, false)}
             <div
-              className={`mt-auto pt-2 text-right font-semibold tabular-nums ${
+              className={`mt-auto flex items-end justify-between gap-2 pt-2 font-semibold tabular-nums ${
                 appointment.status === 'completed'
                   ? 'text-slate-600'
                   : 'text-slate-800'
               }`}
             >
-              ${calendarDisplayAmount(appointment)}
+              {showStatusInFooter ? (
+                <Badge
+                  variant="outline"
+                  className="shrink-0 border-slate-300 bg-white/70 text-slate-700 capitalize"
+                >
+                  {statusLabel}
+                </Badge>
+              ) : (
+                <span />
+              )}
+              <span className="text-right">
+                ${calendarDisplayAmount(appointment)}
+              </span>
             </div>
           </Link>
           {!isEstimate && appointment.status !== 'completed' && (
