@@ -1921,10 +1921,6 @@ export function OperationsSchedule() {
             : getStatusTone(appointment.status)
       const isPointerDraggingThis =
         pointerDragging && draggingAppointment?.id === appointment.id
-      const statusLabel = isEstimate
-        ? 'Estimate'
-        : appointment.status.replaceAll('_', ' ')
-      const showStatusInFooter = appointment.status === 'completed'
       return (
         <div
           key={appointment.id}
@@ -2015,14 +2011,6 @@ export function OperationsSchedule() {
                   </span>
                 )}
               </div>
-              {!showStatusInFooter && (
-                <Badge
-                  variant="outline"
-                  className="shrink-0 border-slate-300 bg-white/70 text-slate-700 capitalize"
-                >
-                  {statusLabel}
-                </Badge>
-              )}
             </div>
             {isEstimate && (
               <span className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
@@ -2068,25 +2056,13 @@ export function OperationsSchedule() {
             </div>
             {recurringLineItemDescriptionBoxes(appointment, false)}
             <div
-              className={`mt-auto flex items-end justify-between gap-2 pt-2 font-semibold tabular-nums ${
+              className={`mt-auto pt-2 text-right font-semibold tabular-nums ${
                 appointment.status === 'completed'
                   ? 'text-slate-600'
                   : 'text-slate-800'
               }`}
             >
-              {showStatusInFooter ? (
-                <Badge
-                  variant="outline"
-                  className="shrink-0 border-slate-300 bg-white/70 text-slate-700 capitalize"
-                >
-                  {statusLabel}
-                </Badge>
-              ) : (
-                <span />
-              )}
-              <span className="text-right">
-                ${calendarDisplayAmount(appointment)}
-              </span>
+              ${calendarDisplayAmount(appointment)}
             </div>
           </Link>
           {!isEstimate && appointment.status !== 'completed' && (
