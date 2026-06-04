@@ -384,7 +384,7 @@ function getStatusTone(status: string): string {
     case 'confirmed':
       return 'border-emerald-400 bg-emerald-100'
     case 'on_my_way':
-      return 'border-emerald-400 bg-emerald-100'
+      return 'border-lime-500 bg-lime-100 text-lime-950'
     case 'completed':
       return 'border-slate-400 bg-slate-200/95 text-slate-700'
     case 'cancelled':
