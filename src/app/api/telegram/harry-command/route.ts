@@ -11,6 +11,11 @@ import { sendCustomerSMSWithResult } from '@/lib/twilio'
 import { sendToCharles } from '@/lib/harry-command-bot'
 import { opsPhoneLookupVariants } from '@/lib/ops/phone'
 import {
+  looksLikeDeicticReference,
+  extractGreetingName,
+  recipientNameMatches,
+} from '@/lib/harry/recipient-safety'
+import {
   createAiStyleBooking,
   type AiStyleBookingLineRequest,
 } from '@/lib/ops/create-ai-style-booking'
@@ -224,31 +229,15 @@ function looksLikeCurrentConversationReference(target: string): boolean {
 }
 
 function conversationTextMatches(messages: unknown, target: string): boolean {
-  const normalizedTarget = target.toLowerCase().trim()
-  if (!normalizedTarget) return false
+  // Use the stopword-aware tokenizer so a generic phrase like "this customer"
+  // (which is made up entirely of stopwords) can never match a recipient. This
+  // is the last-resort fallback in findConversation; matching on common words
+  // like "this"/"customer" once sent a "Hi Marianne" text to the wrong number.
+  const targetWords = normalizeConversationSearchWords(target)
+  if (targetWords.length === 0) return false
 
-  const messagesText = Array.isArray(messages)
-    ? messages
-        .map((message) =>
-          typeof message === 'object' && message !== null
-            ? String((message as { content?: unknown }).content || '')
-            : String(message || ''),
-        )
-        .join(' ')
-        .toLowerCase()
-    : String(messages || '').toLowerCase()
-
-  if (messagesText.includes(normalizedTarget)) return true
-
-  const targetWords = normalizedTarget
-    .split(/\s+/)
-    .map((word) => word.replace(/[^a-z0-9]/g, ''))
-    .filter((word) => word.length >= 3)
-
-  return (
-    targetWords.length > 0 &&
-    targetWords.every((word) => messagesText.includes(word))
-  )
+  const messagesText = messagesToText(messages).toLowerCase()
+  return targetWords.every((word) => messagesText.includes(word))
 }
 
 function messagesToText(messages: unknown): string {
@@ -879,6 +868,32 @@ async function rememberActiveConversationForThread(
     .eq('id', threadId)
 }
 
+// Resolve the thread's confirmed active conversation from stored metadata.
+// This is the ONLY acceptable way to honor a deictic ("this customer") target.
+async function resolveActiveConversation(
+  supabase: ReturnType<typeof createAdminClient>,
+  threadId: string | undefined,
+): Promise<HarryConversationLookup | null> {
+  if (!threadId) return null
+  const { data: thread } = await supabase
+    .from('harry_command_threads')
+    .select('metadata')
+    .eq('id', threadId)
+    .maybeSingle()
+  const metadata = (thread?.metadata as Record<string, unknown> | null) || {}
+  const activeId =
+    typeof metadata.active_conversation_id === 'string'
+      ? metadata.active_conversation_id
+      : ''
+  if (!activeId) return null
+  const { data } = await supabase
+    .from('conversations')
+    .select('id, phone_number, messages, ops_customer_id, source')
+    .eq('id', activeId)
+    .maybeSingle()
+  return (data as HarryConversationLookup | null) || null
+}
+
 async function getActiveConversationSummary(
   supabase: ReturnType<typeof createAdminClient>,
   threadId: string,
@@ -1263,6 +1278,8 @@ Mode:
 - Only ask a follow-up when the target customer, date range, or requested action is genuinely unclear.
 - When asked for a customer's schedule, year schedule, upcoming jobs, dates/services/notes, or work to send to a customer, use customer_schedule_summary. Do not use search_job_details unless Charles asks for a specific room/building/service/detail phrase.
 - When Charles asks you to text a customer, draft the SMS with send_sms. The system will ask Charles to approve before sending; never claim it was sent until approval happens.
+- RECIPIENT SAFETY (critical): When Charles names a customer (e.g. "tell Marianne..."), you MUST pass that exact name — with last name if you know it — as the send_sms target. NEVER substitute "this customer" or "them" for a named person. Only use the deictic target "this customer" when Charles does NOT name anyone and is clearly referring to the active thread (e.g. "tell them 2pm works").
+- The greeting in your SMS body must address the same person as the target. If you write "Hi Marianne", the target must be Marianne — not the current thread. The system will hard-block any send where the greeting name does not match the resolved recipient, and it will refuse vague targets, so always name the recipient explicitly.
 - If ACTIVE CUSTOMER THREAD is set and Charles says "tell them", "text them", "say this", "reply", or "send this" without naming a customer, treat it as the active customer thread and use send_sms with target "this customer".
 - Do not expose Twilio SIDs, webhook IDs, or delivery plumbing unless Charles explicitly asks for technical details. Confirm plainly that a customer text was sent and show the customer-facing message.
 - When Charles says "that", "it", "same thing", or "the report", use RECENT COMMAND MEMORY and LAST ARTIFACT before asking what he means.
@@ -1987,6 +2004,27 @@ async function findCustomer(
   return candidates[0] || null
 }
 
+// When a name matches more than one customer, refuse to act and ask Charles to
+// pick. Returns an error string to surface, or null when the target is
+// unambiguous (zero or one match — callers keep their own "not found" handling).
+// Used to guard data-changing tools (book/reschedule/cancel/complete/note) so a
+// name like "Alex" can never silently act on the wrong customer.
+async function ambiguousCustomerError(
+  target: string,
+  supabase: ReturnType<typeof createAdminClient>,
+): Promise<string | null> {
+  const candidates = await findCustomerCandidates(target, supabase)
+  if (candidates.length <= 1) return null
+  const list = candidates
+    .slice(0, 6)
+    .map(
+      (candidate) =>
+        `• ${displayCustomerName(candidate)}${candidate.phone ? ` (${candidate.phone})` : ''}`,
+    )
+    .join('\n')
+  return `❌ "${target}" matches ${candidates.length} customers:\n${list}\nTell me which one — exact full name or phone number — before I make that change.`
+}
+
 async function findCustomerById(
   customerId: string,
   supabase: ReturnType<typeof createAdminClient>,
@@ -2319,28 +2357,100 @@ export async function executeToolCall(
 ): Promise<string> {
   switch (toolName) {
     case 'send_sms': {
-      const target = String(input.target)
-      const message = String(input.message)
-      const conversation = await findConversation(target, supabase, {
-        threadId: context.threadId,
-      })
-      let phoneNumber = conversation?.phone_number || null
+      const target = String(input.target ?? '').trim()
+      const message = String(input.message ?? '')
+
+      if (!target) {
+        return "❌ Tell me who to text — the customer's name or phone number."
+      }
+      if (!context.threadId) {
+        return '❌ Missing command thread for SMS approval.'
+      }
+
+      let phoneNumber: string | null = null
+      let conversationId: string | null = null
+      let resolvedCustomer: HarryCustomer | null = null
       let targetLabel = target
 
-      if (!phoneNumber) {
-        const customer = await findCustomer(target, supabase)
-        if (customer?.phone) {
-          phoneNumber = customer.phone
-          targetLabel = displayCustomerName(customer)
+      if (looksLikeDeicticReference(target)) {
+        // "this customer" / "them" — resolve ONLY via the confirmed active
+        // thread, never a fuzzy guess. No active thread => refuse and ask.
+        const active = await resolveActiveConversation(
+          supabase,
+          context.threadId,
+        )
+        if (!active?.phone_number) {
+          return `❌ I don't have an active customer thread to send to. Tell me the customer's name or phone number.`
+        }
+        phoneNumber = active.phone_number
+        conversationId = active.id
+        resolvedCustomer = active.ops_customer_id
+          ? await findCustomerById(active.ops_customer_id, supabase)
+          : await findCustomer(active.phone_number, supabase)
+        targetLabel = resolvedCustomer
+          ? displayCustomerName(resolvedCustomer)
+          : active.phone_number
+      } else {
+        // Named/phone target: resolve the customer record FIRST. If more than
+        // one customer matches, stop and make Charles pick — never auto-guess.
+        const candidates = await findCustomerCandidates(target, supabase)
+        if (candidates.length > 1) {
+          const list = candidates
+            .slice(0, 6)
+            .map(
+              (candidate) =>
+                `• ${displayCustomerName(candidate)}${candidate.phone ? ` (${candidate.phone})` : ''}`,
+            )
+            .join('\n')
+          return `❌ "${target}" matches ${candidates.length} customers:\n${list}\nTell me which one — exact full name or phone number — and I'll draft it.`
+        }
+        resolvedCustomer = candidates[0] || null
+
+        if (resolvedCustomer?.phone) {
+          phoneNumber = resolvedCustomer.phone
+          targetLabel = displayCustomerName(resolvedCustomer)
+        } else {
+          // Target may be a raw phone number, or a name with only a thread.
+          const conversation = await findConversation(target, supabase, {
+            threadId: context.threadId,
+          })
+          if (conversation?.phone_number) {
+            phoneNumber = conversation.phone_number
+            conversationId = conversation.id
+            resolvedCustomer = conversation.ops_customer_id
+              ? await findCustomerById(conversation.ops_customer_id, supabase)
+              : await findCustomer(conversation.phone_number, supabase)
+            targetLabel = resolvedCustomer
+              ? displayCustomerName(resolvedCustomer)
+              : conversation.phone_number
+          }
         }
       }
 
       if (!phoneNumber) {
-        return `❌ Couldn't find a phone number or conversation for "${target}"`
+        return `❌ Couldn't find a customer or phone number for "${target}". Give me their exact name or 10-digit number.`
       }
 
-      if (!context.threadId) {
-        return '❌ Missing command thread for SMS approval.'
+      // Look up the conversation by the resolved phone so the sent message gets
+      // appended to the right thread (and so the active thread is updated).
+      if (!conversationId) {
+        const conv = await findConversation(phoneNumber, supabase, {
+          threadId: context.threadId,
+        })
+        conversationId = conv?.id || null
+      }
+
+      // SAFETY STOP: if the body greets a name that isn't the resolved
+      // recipient, refuse. This is the backstop that would have caught the
+      // "Hi Marianne" text that went to Alex. Only enforced when we resolved a
+      // real customer record (a bare phone number has no name to verify).
+      const greetingName = extractGreetingName(message)
+      if (
+        greetingName &&
+        resolvedCustomer &&
+        !recipientNameMatches(resolvedCustomer, targetLabel, greetingName)
+      ) {
+        return `🛑 Safety stop — I did NOT draft this. The message greets "${greetingName}", but the recipient I resolved is ${targetLabel} (${phoneNumber}). If the recipient is wrong, give me the right customer by exact name or number. If the greeting is wrong, fix it and resend.`
       }
 
       const action = await createPendingCommandAction(supabase, {
@@ -2353,7 +2463,7 @@ export async function executeToolCall(
           targetLabel,
           phoneNumber,
           message,
-          conversationId: conversation?.id || null,
+          conversationId,
         },
       })
 
@@ -2521,6 +2631,12 @@ export async function executeToolCall(
       if (!notes || notes.trim().length < 8) {
         return '❌ I need a clear internal note explaining why this is a no-invoice placeholder before I can add it.'
       }
+
+      const addApptAmbiguity = await ambiguousCustomerError(
+        customerName,
+        supabase,
+      )
+      if (addApptAmbiguity) return addApptAmbiguity
 
       const customer = await findCustomer(customerName, supabase)
 
@@ -2755,6 +2871,12 @@ export async function executeToolCall(
         : null
       const newNotes = input.new_notes ? String(input.new_notes) : null
 
+      const updateApptAmbiguity = await ambiguousCustomerError(
+        customerName,
+        supabase,
+      )
+      if (updateApptAmbiguity) return updateApptAmbiguity
+
       const customer = await findCustomer(customerName, supabase)
 
       if (!customer) {
@@ -2820,6 +2942,12 @@ export async function executeToolCall(
           'Use update_appointment for schedule moves or send_sms for customer outreach.',
         ].join(' ')
       }
+
+      const cancelApptAmbiguity = await ambiguousCustomerError(
+        customerName,
+        supabase,
+      )
+      if (cancelApptAmbiguity) return cancelApptAmbiguity
 
       const customer = await findCustomer(customerName, supabase)
 
@@ -3225,6 +3353,12 @@ export async function executeToolCall(
       const customerName = String(input.customer_name)
       const targetDate = input.date ? String(input.date) : getTodayMountain()
 
+      const markCompleteAmbiguity = await ambiguousCustomerError(
+        customerName,
+        supabase,
+      )
+      if (markCompleteAmbiguity) return markCompleteAmbiguity
+
       const customer = await findCustomer(customerName, supabase)
 
       if (!customer) {
@@ -3531,6 +3665,12 @@ export async function executeToolCall(
       const customerName = String(input.customer_name)
       const note = String(input.note)
       const targetDate = input.date ? String(input.date) : null
+
+      const addNoteAmbiguity = await ambiguousCustomerError(
+        customerName,
+        supabase,
+      )
+      if (addNoteAmbiguity) return addNoteAmbiguity
 
       const customer = await findCustomer(customerName, supabase)
 
