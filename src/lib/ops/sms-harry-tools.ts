@@ -1938,6 +1938,7 @@ export async function executeHarrySmsTool(
         const businessName = String(args.business_name || '').trim() || null
         const email = String(args.email || '').trim()
         const street1 = String(args.street_1 || '').trim()
+        const street2 = String(args.street_2 || '').trim()
         const city = String(args.city || '').trim()
         const state = String(args.state || 'CO').trim() || 'CO'
         const zipCode = String(args.zip_code || '').trim()
