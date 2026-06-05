@@ -34,6 +34,7 @@ export type CreateAiStyleBookingInput = {
   }
   address: {
     street_1: string
+    street_2?: string
     city: string
     state: string
     zip_code: string
@@ -203,6 +204,7 @@ export async function createAiStyleBooking(
   const email = customer.email.trim()
   const phone = customer.phone.trim()
   const street1 = address.street_1.trim()
+  const street2 = address.street_2?.trim() || null
   const city = address.city.trim()
   const state = address.state.trim() || 'CO'
   const zipCode = address.zip_code.trim()
@@ -467,6 +469,7 @@ export async function createAiStyleBooking(
   const resolvedAddr = await resolveServiceAddress(supabase, customerId, {
     label: 'Service Address',
     street_1: street1,
+    street_2: street2,
     city,
     state,
     zip_code: zipCode,
@@ -574,7 +577,13 @@ export async function createAiStyleBooking(
         fullName,
         email,
         phone,
-        address: { street_1: street1, city, state, zip_code: zipCode },
+        address: {
+          street_1: street1,
+          street_2: street2,
+          city,
+          state,
+          zip_code: zipCode,
+        },
       }),
     }),
   ])

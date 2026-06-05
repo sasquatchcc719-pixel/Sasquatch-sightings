@@ -502,6 +502,11 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
         properties: {
           appointment_id: { type: 'string' },
           street_1: { type: 'string' },
+          street_2: {
+            type: 'string',
+            description:
+              'Apartment, suite, or unit number (e.g., "Unit 13", "Apt 4B"). Leave empty if not applicable.',
+          },
           city: { type: 'string' },
           state: {
             type: 'string',
@@ -622,6 +627,11 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
               'Set true only when the calculated services are below the $150 minimum and the customer explicitly agreed to pay the $150 minimum anyway.',
           },
           street_1: { type: 'string' },
+          street_2: {
+            type: 'string',
+            description:
+              'Apartment, suite, or unit number (e.g., "Unit 13", "Apt 4B"). Leave empty if not applicable.',
+          },
           city: { type: 'string' },
           state: { type: 'string' },
           zip_code: { type: 'string' },
@@ -1164,6 +1174,7 @@ export async function executeHarrySmsTool(
       case 'update_job_address': {
         const appointmentId = String(args.appointment_id || '').trim()
         const street1 = String(args.street_1 || '').trim()
+        const street2 = String(args.street_2 || '').trim() || null
         const city = String(args.city || '').trim()
         const state = String(args.state || 'CO').trim() || 'CO'
         const zipCode = String(args.zip_code || '').trim()
@@ -1192,6 +1203,7 @@ export async function executeHarrySmsTool(
             .insert({
               customer_id: owned.appointment.customer_id,
               street_1: street1,
+              street_2: street2,
               city,
               state,
               zip_code: zipCode,
@@ -1214,6 +1226,7 @@ export async function executeHarrySmsTool(
             .from('ops_service_addresses')
             .update({
               street_1: street1,
+              street_2: street2,
               city,
               state,
               zip_code: zipCode,
@@ -1643,6 +1656,7 @@ export async function executeHarrySmsTool(
         const lastName = String(args.last_name || '').trim()
         const email = String(args.email || '').trim()
         const street1 = String(args.street_1 || '').trim()
+        const street2 = String(args.street_2 || '').trim()
         const city = String(args.city || '').trim()
         const state = String(args.state || 'CO').trim() || 'CO'
         const zipCode = String(args.zip_code || '').trim()
@@ -1874,7 +1888,13 @@ export async function executeHarrySmsTool(
             email,
             phone: bookingPhone,
           },
-          address: { street_1: street1, city, state, zip_code: zipCode },
+          address: {
+            street_1: street1,
+            street_2: street2,
+            city,
+            state,
+            zip_code: zipCode,
+          },
           appointment_date: appointmentDate,
           start_time: startTime,
           line_items: parsedLineItems,
@@ -2000,7 +2020,13 @@ export async function executeHarrySmsTool(
             email,
             phone: bookingPhone,
           },
-          address: { street_1: street1, city, state, zip_code: zipCode },
+          address: {
+            street_1: street1,
+            street_2: street2,
+            city,
+            state,
+            zip_code: zipCode,
+          },
           appointment_date: appointmentDate,
           start_time: startTime,
           visit_duration_minutes: 60,

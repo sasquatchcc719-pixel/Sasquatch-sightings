@@ -36,6 +36,7 @@ export type CreateAiStyleEstimateInput = {
   }
   address: {
     street_1: string
+    street_2?: string
     city: string
     state: string
     zip_code: string
