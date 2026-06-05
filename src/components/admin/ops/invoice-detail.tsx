@@ -22,6 +22,7 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
+import { Textarea } from '@/components/ui/textarea'
 import { BeforeAfterCombiner } from '@/components/admin/before-after-combiner'
 import { getCurrentLocation } from '@/lib/image-utils'
 import { formatSquareAmount } from '@/lib/payments/square'
@@ -69,6 +70,7 @@ type OpsAppointment = {
   end_time: string
   status: string
   lead_source: string | null
+  internal_notes: string | null
   gps_lat: number | null
   gps_lng: number | null
   ops_customers: OpsCustomer | OpsCustomer[] | null
@@ -124,6 +126,7 @@ type AddressEditForm = {
 
 type AppointmentEditForm = {
   lead_source: string
+  internal_notes: string
 }
 
 const LINE_ITEM_INPUT_TONES = [
@@ -262,6 +265,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   })
   const [appointmentForm, setAppointmentForm] = useState<AppointmentEditForm>({
     lead_source: '',
+    internal_notes: '',
   })
   const [gpsCapturing, setGpsCapturing] = useState(false)
   const [gpsCoords, setGpsCoords] = useState<{
@@ -531,6 +535,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     })
     setAppointmentForm({
       lead_source: appt?.lead_source || '',
+      internal_notes: appt?.internal_notes || '',
     })
     setEditingCustomer(true)
   }
@@ -561,6 +566,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
           },
           appointment: {
             lead_source: appointmentForm.lead_source || null,
+            internal_notes: appointmentForm.internal_notes || null,
           },
         }),
       })
@@ -1092,6 +1098,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   const billableTotal = total > 0.005 ? total : Number(invoice?.total || 0)
   const squareAmount = formatSquareAmount(billableTotal)
   const receiptEmail = customer?.email?.trim() ?? ''
+  const publishNeedsAttention = /needs? attention/i.test(publishMessage ?? '')
 
   return (
     <div className="space-y-6">
@@ -1262,6 +1269,24 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                 <option value="Repeat customer">Repeat customer</option>
                 <option value="Other">Other</option>
               </select>
+            </div>
+
+            <div>
+              <Label htmlFor="edit-internal-notes" className="text-xs">
+                Job Notes
+              </Label>
+              <Textarea
+                id="edit-internal-notes"
+                value={appointmentForm.internal_notes}
+                onChange={(e) =>
+                  setAppointmentForm((f) => ({
+                    ...f,
+                    internal_notes: e.target.value,
+                  }))
+                }
+                className="min-h-[80px] text-sm"
+                placeholder="Internal notes about this job (not visible to customer)"
+              />
             </div>
 
             <div className="border-border/60 border-t pt-4">
@@ -1538,6 +1563,16 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                     <p className="text-muted-foreground ml-6 text-xs">
                       Notes: {address.notes}
                     </p>
+                  ) : null}
+                  {appointment?.internal_notes ? (
+                    <div className="mt-3 ml-6 rounded-md border border-amber-200 bg-amber-50/50 p-3">
+                      <p className="mb-1 text-xs font-medium text-amber-900">
+                        Job Notes:
+                      </p>
+                      <p className="text-sm whitespace-pre-wrap text-amber-900">
+                        {appointment.internal_notes}
+                      </p>
+                    </div>
                   ) : null}
                   <Button
                     size="default"
@@ -2423,12 +2458,24 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
           ) : null}
         </Card>
       ) : (
-        <Card className="border-border/60 bg-green-50 p-5 text-center shadow-sm">
-          <CheckCircle2 className="mx-auto h-10 w-10 text-green-600" />
-          <p className="mt-2 text-lg font-bold text-green-800">
-            {publishMessage?.includes('needs attention')
-              ? 'Job page published'
-              : 'Post published!'}
+        <Card
+          className={`p-5 text-center shadow-sm ${
+            publishNeedsAttention
+              ? 'border-amber-200 bg-amber-50'
+              : 'border-border/60 bg-green-50'
+          }`}
+        >
+          <CheckCircle2
+            className={`mx-auto h-10 w-10 ${
+              publishNeedsAttention ? 'text-amber-600' : 'text-green-600'
+            }`}
+          />
+          <p
+            className={`mt-2 text-lg font-bold ${
+              publishNeedsAttention ? 'text-amber-900' : 'text-green-800'
+            }`}
+          >
+            {publishNeedsAttention ? 'Job page published' : 'Post published!'}
           </p>
           <p className="text-muted-foreground mt-1 text-sm">
             {publishMessage ||

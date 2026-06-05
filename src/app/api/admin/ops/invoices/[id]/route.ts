@@ -180,6 +180,10 @@ export async function PATCH(
             apu.lead_source =
               String(body.appointment.lead_source || '').trim() || null
           }
+          if (body.appointment.internal_notes !== undefined) {
+            apu.internal_notes =
+              String(body.appointment.internal_notes || '').trim() || null
+          }
           if (Object.keys(apu).length > 0) {
             apu.updated_at = new Date().toISOString()
             await supabase
