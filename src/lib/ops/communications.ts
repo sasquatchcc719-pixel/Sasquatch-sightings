@@ -240,17 +240,26 @@ async function resolveTechnicianEmailProfile(
   supabase: ReturnType<typeof createAdminClient>,
   staffUserId: string | null,
 ): Promise<TechnicianEmailProfile> {
-  const { data } = staffUserId
-    ? await supabase
-        .from('staff_users')
-        .select('display_name, profile_image_url')
-        .eq('id', staffUserId)
-        .maybeSingle()
-    : await supabase
-        .from('staff_users')
-        .select('display_name, profile_image_url')
-        .eq('display_name', 'Charles')
-        .maybeSingle()
+  if (staffUserId) {
+    const { data } = await supabase
+      .from('staff_users')
+      .select('display_name, profile_image_url')
+      .eq('id', staffUserId)
+      .maybeSingle()
+
+    const displayName = data?.display_name || 'Your technician'
+    return {
+      displayName,
+      firstName: displayName.split(' ').filter(Boolean)[0] || displayName,
+      imageUrl: data?.profile_image_url || null,
+    }
+  }
+
+  const { data } = await supabase
+    .from('staff_users')
+    .select('display_name, profile_image_url')
+    .eq('display_name', 'Charles')
+    .maybeSingle()
   const displayName = data?.display_name || 'Charles'
   return {
     displayName,
@@ -433,7 +442,25 @@ function buildTechnicianCardHtml(
   templateKey: string,
   technician?: TechnicianEmailProfile | null,
 ): string {
-  if (templateKey !== 'job_scheduled_email' || !technician?.imageUrl) return ''
+  if (templateKey !== 'job_scheduled_email' || !technician) return ''
+
+  const initials = technician.displayName
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('')
+  const photoHtml = technician.imageUrl
+    ? `<img
+                          src="${escapeHtml(technician.imageUrl)}"
+                          alt="${escapeHtml(technician.displayName)}"
+                          width="64"
+                          height="64"
+                          style="display:block;width:64px;height:64px;border-radius:50%;object-fit:cover;border:2px solid #2d6a4f;"
+                        />`
+    : `<div
+                          style="display:block;width:64px;height:64px;border-radius:50%;border:2px solid #2d6a4f;background:#2d6a4f;color:#ffffff;font-size:22px;font-weight:700;line-height:64px;text-align:center;"
+                        >${escapeHtml(initials || technician.firstName[0] || 'S')}</div>`
 
   return `
             <table width="100%" cellpadding="0" cellspacing="0" style="margin:4px 0 24px 0;border:1px solid #d8e8df;border-radius:12px;background:#f4fbf7;">
@@ -442,13 +469,7 @@ function buildTechnicianCardHtml(
                   <table cellpadding="0" cellspacing="0" style="width:100%;">
                     <tr>
                       <td width="76" style="width:76px;vertical-align:middle;">
-                        <img
-                          src="${escapeHtml(technician.imageUrl)}"
-                          alt="${escapeHtml(technician.displayName)}"
-                          width="64"
-                          height="64"
-                          style="display:block;width:64px;height:64px;border-radius:50%;object-fit:cover;border:2px solid #2d6a4f;"
-                        />
+                        ${photoHtml}
                       </td>
                       <td style="vertical-align:middle;color:#173f2c;">
                         <p style="margin:0 0 4px 0;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#2d6a4f;">Your technician</p>
