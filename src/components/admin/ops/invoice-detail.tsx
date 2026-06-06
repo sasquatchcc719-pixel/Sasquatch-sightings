@@ -276,6 +276,9 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     ok: boolean
     message: string
   } | null>(null)
+  const [manualLat, setManualLat] = useState('')
+  const [manualLng, setManualLng] = useState('')
+  const [manualGpsSaving, setManualGpsSaving] = useState(false)
 
   const handleCaptureGps = async () => {
     const apptId = unwrapRelation(invoice?.ops_appointments)?.id
@@ -319,6 +322,68 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
       })
     } finally {
       setGpsCapturing(false)
+    }
+  }
+
+  const handleSaveManualGps = async () => {
+    const apptId = unwrapRelation(invoice?.ops_appointments)?.id
+    if (!apptId) return
+
+    const lat = parseFloat(manualLat.trim())
+    const lng = parseFloat(manualLng.trim())
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      setGpsFeedback({
+        ok: false,
+        message: 'Enter valid latitude and longitude numbers',
+      })
+      return
+    }
+
+    if (lat < -90 || lat > 90) {
+      setGpsFeedback({
+        ok: false,
+        message: 'Latitude must be between -90 and 90',
+      })
+      return
+    }
+
+    if (lng < -180 || lng > 180) {
+      setGpsFeedback({
+        ok: false,
+        message: 'Longitude must be between -180 and 180',
+      })
+      return
+    }
+
+    setManualGpsSaving(true)
+    setGpsFeedback(null)
+
+    try {
+      const res = await fetch(`/api/admin/ops/appointments/${apptId}/gps`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lat, lng }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Failed to save GPS')
+      }
+
+      setGpsCoords({ lat, lng })
+      setGpsFeedback({
+        ok: true,
+        message: `GPS saved: ${lat.toFixed(6)}, ${lng.toFixed(6)}`,
+      })
+      setTimeout(() => setGpsFeedback(null), 5000)
+    } catch (err) {
+      setGpsFeedback({
+        ok: false,
+        message: err instanceof Error ? err.message : 'Failed to save GPS',
+      })
+    } finally {
+      setManualGpsSaving(false)
     }
   }
 
@@ -2307,6 +2372,46 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
               {gpsCapturing ? 'Getting…' : 'Use Current Location'}
             </Button>
           </div>
+
+          {/* Manual GPS input */}
+          <div className="mt-3 space-y-2">
+            <p className="text-muted-foreground text-xs">
+              Or enter coordinates manually (for when you don&apos;t have
+              service):
+            </p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="Latitude (e.g., 38.8339)"
+                value={manualLat}
+                onChange={(e) => setManualLat(e.target.value)}
+                className="border-border/60 bg-background/70 flex-1 rounded-lg border px-3 py-2 text-sm"
+              />
+              <input
+                type="text"
+                placeholder="Longitude (e.g., -104.8214)"
+                value={manualLng}
+                onChange={(e) => setManualLng(e.target.value)}
+                className="border-border/60 bg-background/70 flex-1 rounded-lg border px-3 py-2 text-sm"
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="default"
+                disabled={
+                  manualGpsSaving || !manualLat.trim() || !manualLng.trim()
+                }
+                onClick={() => void handleSaveManualGps()}
+              >
+                {manualGpsSaving ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  'Save'
+                )}
+              </Button>
+            </div>
+          </div>
+
           {gpsFeedback ? (
             <p
               className={`mt-2 text-sm ${gpsFeedback.ok ? 'text-green-600' : 'text-red-500'}`}
