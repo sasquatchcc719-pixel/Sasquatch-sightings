@@ -6,7 +6,7 @@ import {
   Calendar,
   MessageSquare,
   Users,
-  BarChart3,
+  Briefcase,
   LogIn,
   LogOut,
   Clock,
@@ -82,11 +82,11 @@ const NAV_TABS = [
     match: (p: string) => p.startsWith('/admin/operations/customers'),
   },
   {
-    key: 'stats',
-    label: 'Stats',
-    href: '/admin/stats',
-    icon: BarChart3,
-    match: (p: string) => p.startsWith('/admin/stats'),
+    key: 'field',
+    label: 'Field',
+    href: '/field',
+    icon: Briefcase,
+    match: (p: string) => p.startsWith('/field') || p.startsWith('/tech'),
   },
 ]
 

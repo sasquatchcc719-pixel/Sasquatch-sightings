@@ -150,6 +150,13 @@ export function AdminNavigation() {
       description: 'Measure visits with line items, convert to scheduled jobs',
     },
     {
+      name: 'Field Mode',
+      href: '/field',
+      icon: Briefcase,
+      active: pathname.startsWith('/field') || pathname.startsWith('/tech'),
+      description: 'Fast mobile view for today’s jobs',
+    },
+    {
       name: 'Jobs',
       href: '/admin/jobs',
       icon: Briefcase,
