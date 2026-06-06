@@ -2519,6 +2519,37 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
                 )}
               </Button>
             </div>
+
+            {/* Manual GPS input */}
+            <div className="mt-3 space-y-2">
+              <p className="text-muted-foreground text-xs">
+                Or paste coordinates manually (for when you don&apos;t have
+                service):
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="39.2703, -104.99486"
+                  value={manualGpsInput}
+                  onChange={(e) => setManualGpsInput(e.target.value)}
+                  className="border-border/60 bg-background/70 flex-1 rounded-lg border px-3 py-2 text-sm"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="default"
+                  disabled={manualGpsSaving || !manualGpsInput.trim()}
+                  onClick={() => void handleSaveManualGps()}
+                >
+                  {manualGpsSaving ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    'Save'
+                  )}
+                </Button>
+              </div>
+            </div>
+
             {gpsFeedback ? (
               <p
                 className={`mt-2 text-sm ${gpsFeedback.ok ? 'text-green-600' : 'text-red-500'}`}
