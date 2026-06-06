@@ -276,8 +276,7 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     ok: boolean
     message: string
   } | null>(null)
-  const [manualLat, setManualLat] = useState('')
-  const [manualLng, setManualLng] = useState('')
+  const [manualGpsInput, setManualGpsInput] = useState('')
   const [manualGpsSaving, setManualGpsSaving] = useState(false)
 
   const handleCaptureGps = async () => {
@@ -329,8 +328,22 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     const apptId = unwrapRelation(invoice?.ops_appointments)?.id
     if (!apptId) return
 
-    const lat = parseFloat(manualLat.trim())
-    const lng = parseFloat(manualLng.trim())
+    // Parse input like "39.2703, -104.99486" or "39.2703,-104.99486"
+    const parts = manualGpsInput
+      .trim()
+      .split(',')
+      .map((p) => p.trim())
+    if (parts.length !== 2) {
+      setGpsFeedback({
+        ok: false,
+        message:
+          'Enter coordinates as: latitude, longitude (e.g., 39.2703, -104.99486)',
+      })
+      return
+    }
+
+    const lat = parseFloat(parts[0])
+    const lng = parseFloat(parts[1])
 
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
       setGpsFeedback({
@@ -2376,31 +2389,22 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
           {/* Manual GPS input */}
           <div className="mt-3 space-y-2">
             <p className="text-muted-foreground text-xs">
-              Or enter coordinates manually (for when you don&apos;t have
+              Or paste coordinates manually (for when you don&apos;t have
               service):
             </p>
             <div className="flex gap-2">
               <input
                 type="text"
-                placeholder="Latitude (e.g., 38.8339)"
-                value={manualLat}
-                onChange={(e) => setManualLat(e.target.value)}
-                className="border-border/60 bg-background/70 flex-1 rounded-lg border px-3 py-2 text-sm"
-              />
-              <input
-                type="text"
-                placeholder="Longitude (e.g., -104.8214)"
-                value={manualLng}
-                onChange={(e) => setManualLng(e.target.value)}
+                placeholder="39.2703, -104.99486"
+                value={manualGpsInput}
+                onChange={(e) => setManualGpsInput(e.target.value)}
                 className="border-border/60 bg-background/70 flex-1 rounded-lg border px-3 py-2 text-sm"
               />
               <Button
                 type="button"
                 size="sm"
                 variant="default"
-                disabled={
-                  manualGpsSaving || !manualLat.trim() || !manualLng.trim()
-                }
+                disabled={manualGpsSaving || !manualGpsInput.trim()}
                 onClick={() => void handleSaveManualGps()}
               >
                 {manualGpsSaving ? (
