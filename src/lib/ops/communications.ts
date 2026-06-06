@@ -55,6 +55,12 @@ type TemplateContext = {
   work_area: string
 }
 
+type TechnicianEmailProfile = {
+  displayName: string
+  firstName: string
+  imageUrl: string | null
+}
+
 type AppointmentWithRelations = {
   id: string
   customer_id: string
@@ -226,14 +232,31 @@ async function resolveTechFirstName(
   supabase: ReturnType<typeof createAdminClient>,
   staffUserId: string | null,
 ): Promise<string> {
-  if (!staffUserId) return 'Charles'
-  const { data } = await supabase
-    .from('staff_users')
-    .select('display_name')
-    .eq('id', staffUserId)
-    .maybeSingle()
-  if (!data?.display_name) return 'Charles'
-  return data.display_name.split(' ')[0]
+  const profile = await resolveTechnicianEmailProfile(supabase, staffUserId)
+  return profile.firstName
+}
+
+async function resolveTechnicianEmailProfile(
+  supabase: ReturnType<typeof createAdminClient>,
+  staffUserId: string | null,
+): Promise<TechnicianEmailProfile> {
+  const { data } = staffUserId
+    ? await supabase
+        .from('staff_users')
+        .select('display_name, profile_image_url')
+        .eq('id', staffUserId)
+        .maybeSingle()
+    : await supabase
+        .from('staff_users')
+        .select('display_name, profile_image_url')
+        .eq('display_name', 'Charles')
+        .maybeSingle()
+  const displayName = data?.display_name || 'Charles'
+  return {
+    displayName,
+    firstName: displayName.split(' ').filter(Boolean)[0] || displayName,
+    imageUrl: data?.profile_image_url || null,
+  }
 }
 
 async function getAppointmentContext(
@@ -242,6 +265,7 @@ async function getAppointmentContext(
 ): Promise<{
   appointment: AppointmentWithRelations | null
   context: TemplateContext | null
+  technician: TechnicianEmailProfile | null
 }> {
   const { data, error } = await supabase
     .from('ops_appointments')
@@ -254,7 +278,7 @@ async function getAppointmentContext(
       '[ops/communications] Failed to load appointment context:',
       error,
     )
-    return { appointment: null, context: null }
+    return { appointment: null, context: null, technician: null }
   }
 
   const appointment = data as AppointmentWithRelations
@@ -267,6 +291,10 @@ async function getAppointmentContext(
   const customerVisibleLineItems = appointment.ops_appointment_line_items
     ?.map((item) => item.name_snapshot)
     .filter((name) => name && !CUSTOMER_HIDDEN_LINE_ITEMS.has(name))
+  const technician = await resolveTechnicianEmailProfile(
+    supabase,
+    appointment.assigned_staff_user_id ?? null,
+  )
   const context: TemplateContext = {
     first_name: firstName,
     full_name: customer?.full_name || '',
@@ -280,10 +308,7 @@ async function getAppointmentContext(
     address_line: address
       ? `${address.street_1}, ${address.city}, ${address.state} ${address.zip_code}`
       : '',
-    tech_name: await resolveTechFirstName(
-      supabase,
-      appointment.assigned_staff_user_id ?? null,
-    ),
+    tech_name: technician.firstName,
     quoted_total: Number(appointment.quoted_total || 0).toFixed(2),
     work_area:
       appointment.internal_notes?.trim() ||
@@ -295,7 +320,7 @@ async function getAppointmentContext(
       'Scheduled service area',
   }
 
-  return { appointment, context }
+  return { appointment, context, technician }
 }
 
 async function queueFollowupEmail(params: {
@@ -404,6 +429,59 @@ function buildBlockHtml(block: string): string {
   return html
 }
 
+function buildTechnicianCardHtml(
+  templateKey: string,
+  technician?: TechnicianEmailProfile | null,
+): string {
+  if (templateKey !== 'job_scheduled_email' || !technician?.imageUrl) return ''
+
+  return `
+            <table width="100%" cellpadding="0" cellspacing="0" style="margin:4px 0 24px 0;border:1px solid #d8e8df;border-radius:12px;background:#f4fbf7;">
+              <tr>
+                <td style="padding:16px;">
+                  <table cellpadding="0" cellspacing="0" style="width:100%;">
+                    <tr>
+                      <td width="76" style="width:76px;vertical-align:middle;">
+                        <img
+                          src="${escapeHtml(technician.imageUrl)}"
+                          alt="${escapeHtml(technician.displayName)}"
+                          width="64"
+                          height="64"
+                          style="display:block;width:64px;height:64px;border-radius:50%;object-fit:cover;border:2px solid #2d6a4f;"
+                        />
+                      </td>
+                      <td style="vertical-align:middle;color:#173f2c;">
+                        <p style="margin:0 0 4px 0;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#2d6a4f;">Your technician</p>
+                        <p style="margin:0;font-size:18px;font-weight:700;color:#173f2c;">${escapeHtml(technician.displayName)}</p>
+                        <p style="margin:4px 0 0 0;font-size:14px;line-height:1.4;color:#46685a;">${escapeHtml(technician.firstName)} will be the Sasquatch team member arriving for your appointment.</p>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>`
+}
+
+function technicianProfileFromPayload(
+  value: unknown,
+): TechnicianEmailProfile | null {
+  if (!value || typeof value !== 'object') return null
+  const record = value as Record<string, unknown>
+  const displayName =
+    typeof record.displayName === 'string' ? record.displayName.trim() : ''
+  const firstName =
+    typeof record.firstName === 'string' ? record.firstName.trim() : ''
+  const imageUrl =
+    typeof record.imageUrl === 'string' ? record.imageUrl.trim() : ''
+
+  if (!displayName || !firstName) return null
+  return {
+    displayName,
+    firstName,
+    imageUrl: imageUrl || null,
+  }
+}
+
 /**
  * Converts plain-text template output into a clean, branded HTML email.
  * Handles real newlines (\n) and literal "\n" sequences both safely.
@@ -411,7 +489,13 @@ function buildBlockHtml(block: string): string {
  *
  * Exported so the admin email preview API can render a stored body_text.
  */
-export function buildEmailHtml(body: string, _templateKey: string): string {
+export function buildEmailHtml(
+  body: string,
+  templateKey: string,
+  options?: {
+    technician?: TechnicianEmailProfile | null
+  },
+): string {
   // Normalize literal \n sequences (stored in some templates) to real newlines
   const normalized = body.replace(/\\n/g, '\n')
 
@@ -423,6 +507,10 @@ export function buildEmailHtml(body: string, _templateKey: string): string {
     .join('')
 
   const accentColor = '#2d6a4f'
+  const technicianCard = buildTechnicianCardHtml(
+    templateKey,
+    options?.technician,
+  )
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -447,6 +535,7 @@ export function buildEmailHtml(body: string, _templateKey: string): string {
         <!-- Body -->
         <tr>
           <td style="padding:32px;color:#333333;font-size:15px;">
+            ${technicianCard}
             ${paragraphs}
           </td>
         </tr>
@@ -493,7 +582,7 @@ export async function sendOpsLifecycleCommunications(params: {
 }): Promise<{ sent: LifecycleNotificationSent[] }> {
   const sent: LifecycleNotificationSent[] = []
   const supabase = createAdminClient()
-  const { appointment, context } = await getAppointmentContext(
+  const { appointment, context, technician } = await getAppointmentContext(
     supabase,
     params.appointmentId,
   )
@@ -538,6 +627,7 @@ export async function sendOpsLifecycleCommunications(params: {
           subject,
           body,
           to: customerEmail,
+          technician,
         },
       })
       continue
@@ -569,7 +659,7 @@ export async function sendOpsLifecycleCommunications(params: {
         to: customerEmail,
         bcc,
         subject: subject || 'Update from Sasquatch Carpet Cleaning',
-        html: buildEmailHtml(body, template.template_key),
+        html: buildEmailHtml(body, template.template_key, { technician }),
       })
       sent.push({
         template_key: template.template_key,
@@ -722,12 +812,15 @@ export async function processOpsCommunicationQueue(params?: {
           throw new Error('Missing recipient email')
         }
         const bcc = process.env.OPS_EMAIL_BCC || undefined
+        const technician = technicianProfileFromPayload(payload.technician)
         const emailResult = await resend.emails.send({
           from: fromEmail,
           to,
           bcc,
           subject,
-          html: buildEmailHtml(body, item.template_key as OpsTemplateKey),
+          html: buildEmailHtml(body, item.template_key as OpsTemplateKey, {
+            technician,
+          }),
         })
         await supabase.from('ops_email_log').insert({
           appointment_id: item.appointment_id,
