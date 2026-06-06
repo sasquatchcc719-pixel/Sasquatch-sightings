@@ -54,6 +54,12 @@ export default async function TechHomePage() {
         <p className="mt-2 text-sm text-slate-300">
           Assigned work only. Recovery Village pricing is hidden here by design.
         </p>
+        <Link
+          href="/auth/update-password"
+          className="mt-3 inline-block text-sm font-medium text-emerald-200 underline-offset-4 hover:underline"
+        >
+          Change password
+        </Link>
       </section>
 
       {appointments.length === 0 ? (
