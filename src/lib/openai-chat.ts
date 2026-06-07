@@ -15,12 +15,17 @@ import {
   beginHarryWorkflowTurn,
   formatHarryWorkflowContext,
   guardHarryResponseAgainstOutcomes,
+  markHarryWorkflowForTakeover,
   prepareHarryToolArgs,
   recordHarryToolOutcome,
   sanitizeHarryToolResultForModel,
   type HarryToolOutcome,
   type HarryWorkflowState,
 } from '@/lib/harry/workflow'
+import {
+  buildHarryRecoveryPlan,
+  buildHarryTakeoverArgs,
+} from '@/lib/harry/recovery'
 
 const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
@@ -462,6 +467,66 @@ CURRENT CUSTOMER CONTEXT:
     if (useSmsTools && smsOpsContext) {
       const messages = [...baseMessages]
       const toolOutcomes: HarryToolOutcome[] = []
+      const executeAndRecord = async (params: {
+        toolName: string
+        args: Record<string, unknown>
+        toolCallId: string
+        attemptKind?: HarryToolOutcome['attemptKind']
+        parentToolCallId?: string
+      }): Promise<HarryToolOutcome> => {
+        const toolStart = Date.now()
+        const out = await executeHarrySmsTool(
+          params.toolName,
+          JSON.stringify(params.args),
+          {
+            supabase,
+            customerPhoneE164: smsOpsContext.customerPhoneE164,
+            isLsaRelay: smsOpsContext.isLsaRelay ?? false,
+            sessionId: smsOpsContext.sessionId,
+          },
+        )
+        let success = false
+        let result: Record<string, unknown> | null = null
+        try {
+          result = JSON.parse(out)
+          success = result?.success === true || !result?.error
+        } catch {
+          /* treat unparseable tool output as failure */
+        }
+        const outcome: HarryToolOutcome = {
+          toolCallId: params.toolCallId,
+          toolName: params.toolName,
+          args: params.args,
+          result,
+          success,
+          error: typeof result?.error === 'string' ? result.error : null,
+          attemptKind: params.attemptKind || 'primary',
+          parentToolCallId: params.parentToolCallId,
+        }
+        toolOutcomes.push(outcome)
+        await Promise.all([
+          logToolCall({
+            agent: 'harry',
+            sessionId: smsOpsContext.sessionId ?? 'unknown',
+            toolName: params.toolName,
+            args: params.args,
+            result,
+            success,
+            error: outcome.error,
+            durationMs: Date.now() - toolStart,
+          }),
+          smsOpsContext.sessionId
+            ? recordHarryToolOutcome({
+                supabase,
+                conversationId: smsOpsContext.sessionId,
+                outcome,
+              }).then((state) => {
+                workflowState = state
+              })
+            : Promise.resolve(),
+        ])
+        return outcome
+      }
       let lastText = ''
       for (let round = 0; round < 8; round += 1) {
         const completion = await openai.chat.completions.create({
@@ -480,7 +545,6 @@ CURRENT CUSTOMER CONTEXT:
           messages.push(msg)
           for (const tc of msg.tool_calls) {
             if (tc.type !== 'function') continue
-            const toolStart = Date.now()
             let parsedArgs: Record<string, unknown> = {}
             try {
               parsedArgs = JSON.parse(tc.function.arguments || '{}')
@@ -494,62 +558,63 @@ CURRENT CUSTOMER CONTEXT:
                   workflowState,
                 })
               : parsedArgs
-            const out = await executeHarrySmsTool(
-              tc.function.name,
-              JSON.stringify(executableArgs),
-              {
-                supabase,
-                customerPhoneE164: smsOpsContext.customerPhoneE164,
-                isLsaRelay: smsOpsContext.isLsaRelay ?? false,
-                sessionId: smsOpsContext.sessionId,
-              },
-            )
-            let toolSuccess = false
-            let parsedResult: Record<string, unknown> | null = null
-            try {
-              parsedResult = JSON.parse(out)
-              toolSuccess =
-                (parsedResult as Record<string, unknown>)?.success === true ||
-                !(parsedResult as Record<string, unknown>)?.error
-            } catch {
-              /* treat unparseable as failure */
-            }
-            const outcome: HarryToolOutcome = {
-              toolCallId: tc.id,
+            const primaryOutcome = await executeAndRecord({
               toolName: tc.function.name,
               args: executableArgs,
-              result: parsedResult,
-              success: toolSuccess,
-              error:
-                typeof parsedResult?.error === 'string'
-                  ? parsedResult.error
-                  : null,
-            }
-            toolOutcomes.push(outcome)
-            await Promise.all([
-              logToolCall({
-                agent: 'harry',
-                sessionId: smsOpsContext.sessionId ?? 'unknown',
-                toolName: tc.function.name,
-                args: executableArgs,
-                result: parsedResult,
-                success: toolSuccess,
-                error: outcome.error,
-                durationMs: Date.now() - toolStart,
-              }),
-              smsOpsContext.sessionId
-                ? recordHarryToolOutcome({
+              toolCallId: tc.id,
+            })
+            let finalOutcome = primaryOutcome
+            const recoveryPlan = workflowState
+              ? buildHarryRecoveryPlan(primaryOutcome, workflowState)
+              : null
+            if (recoveryPlan && workflowState) {
+              const lookupOutcome = await executeAndRecord({
+                toolName: recoveryPlan.lookupToolName,
+                args: recoveryPlan.lookupArgs,
+                toolCallId: `${tc.id}:recovery-lookup`,
+                attemptKind: 'recovery_lookup',
+                parentToolCallId: tc.id,
+              })
+              finalOutcome = lookupOutcome.success
+                ? await executeAndRecord({
+                    toolName: tc.function.name,
+                    args: prepareHarryToolArgs({
+                      toolName: tc.function.name,
+                      args: parsedArgs,
+                      workflowState,
+                    }),
+                    toolCallId: `${tc.id}:recovery-retry`,
+                    attemptKind: 'recovery_retry',
+                    parentToolCallId: tc.id,
+                  })
+                : primaryOutcome
+
+              if (!finalOutcome.success && smsOpsContext.sessionId) {
+                const takeoverArgs = buildHarryTakeoverArgs({
+                  failedOutcome: finalOutcome,
+                  recoveryPlan,
+                  customerMessage,
+                  state: workflowState,
+                })
+                const takeoverOutcome = await executeAndRecord({
+                  toolName: 'report_operational_problem',
+                  args: takeoverArgs,
+                  toolCallId: `${tc.id}:takeover`,
+                  attemptKind: 'takeover',
+                  parentToolCallId: tc.id,
+                })
+                if (takeoverOutcome.success) {
+                  workflowState = await markHarryWorkflowForTakeover({
                     supabase,
                     conversationId: smsOpsContext.sessionId,
-                    outcome,
-                  }).then((state) => {
-                    workflowState = state
+                    reason: String(takeoverArgs.blocking_reason),
                   })
-                : Promise.resolve(),
-            ])
+                }
+              }
+            }
             const modelResult = sanitizeHarryToolResultForModel({
               toolName: tc.function.name,
-              result: parsedResult,
+              result: finalOutcome.result,
             })
             messages.push({
               role: 'tool',
@@ -583,7 +648,9 @@ CURRENT CUSTOMER CONTEXT:
 
       if (!lastText) {
         lastText =
-          "I'm having trouble completing that right now. I'm flagging this for Charles so you aren't left waiting."
+          workflowState?.takeover_status === 'requested'
+            ? "I couldn't safely complete that, so I've alerted Charles to review it."
+            : "I couldn't safely complete that or verify a handoff. Please call our office at (719) 249-8791."
       }
 
       if (workflowState) {

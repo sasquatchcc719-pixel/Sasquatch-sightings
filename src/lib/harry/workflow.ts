@@ -88,6 +88,11 @@ export type HarryWorkflowState = {
   collected_fields: HarryCollectedFields
   missing_fields: string[]
   server_refs: HarryServerRefs
+  consecutive_failures: number
+  recovery_attempts: number
+  takeover_status: 'none' | 'requested' | 'acknowledged'
+  takeover_reason: string | null
+  taken_over_at: string | null
   turn_count: number
   last_customer_at: string | null
   last_assistant_at: string | null
@@ -100,6 +105,8 @@ export type HarryToolOutcome = {
   result: Record<string, unknown> | null
   success: boolean
   error: string | null
+  attemptKind?: 'primary' | 'recovery_lookup' | 'recovery_retry' | 'takeover'
+  parentToolCallId?: string
 }
 
 const MUTATING_TOOLS = new Set([
@@ -403,6 +410,11 @@ function fallbackState(conversationId: string): HarryWorkflowState {
     collected_fields: {},
     missing_fields: [],
     server_refs: {},
+    consecutive_failures: 0,
+    recovery_attempts: 0,
+    takeover_status: 'none',
+    takeover_reason: null,
+    taken_over_at: null,
     turn_count: 0,
     last_customer_at: null,
     last_assistant_at: null,
@@ -435,6 +447,13 @@ export async function loadHarryWorkflowState(
         ((data as HarryWorkflowState).missing_fields as string[]) || [],
       server_refs:
         ((data as HarryWorkflowState).server_refs as HarryServerRefs) || {},
+      consecutive_failures:
+        Number((data as HarryWorkflowState).consecutive_failures) || 0,
+      recovery_attempts:
+        Number((data as HarryWorkflowState).recovery_attempts) || 0,
+      takeover_status: (data as HarryWorkflowState).takeover_status || 'none',
+      takeover_reason: (data as HarryWorkflowState).takeover_reason || null,
+      taken_over_at: (data as HarryWorkflowState).taken_over_at || null,
     }
   } catch (error) {
     console.error('[Harry workflow] Failed to load state:', error)
@@ -517,6 +536,8 @@ export async function recordHarryToolOutcome(params: {
           result: params.outcome.result,
           success: params.outcome.success,
           error,
+          attempt_kind: params.outcome.attemptKind || 'primary',
+          parent_tool_call_id: params.outcome.parentToolCallId || null,
         },
         params.outcome.toolCallId
           ? { onConflict: 'tool_call_id', ignoreDuplicates: true }
@@ -541,7 +562,11 @@ export async function recordHarryToolOutcome(params: {
     params.outcome.args,
     params.outcome.result,
   )
-  const resolvedIntent = INTENT_BY_TOOL[params.outcome.toolName] || prior.intent
+  const toolIntent = INTENT_BY_TOOL[params.outcome.toolName]
+  const resolvedIntent =
+    !mutatesCustomerData && MUTATING_INTENTS.has(prior.intent)
+      ? prior.intent
+      : toolIntent || prior.intent
 
   if (!mutatesCustomerData) {
     const next: HarryWorkflowState = {
@@ -577,10 +602,37 @@ export async function recordHarryToolOutcome(params: {
       ? []
       : missingFieldsFor(resolvedIntent, collectedFields, serverRefs),
     server_refs: serverRefs,
+    consecutive_failures: params.outcome.success
+      ? 0
+      : prior.consecutive_failures + 1,
+    recovery_attempts:
+      params.outcome.attemptKind === 'recovery_retry'
+        ? prior.recovery_attempts + 1
+        : prior.recovery_attempts,
   }
 
   await saveWorkflowState(params.supabase, next)
 
+  return next
+}
+
+export async function markHarryWorkflowForTakeover(params: {
+  supabase: SupabaseClient
+  conversationId: string
+  reason: string
+}): Promise<HarryWorkflowState> {
+  const prior = await loadHarryWorkflowState(
+    params.supabase,
+    params.conversationId,
+  )
+  const next: HarryWorkflowState = {
+    ...prior,
+    phase: 'escalated',
+    takeover_status: 'requested',
+    takeover_reason: params.reason,
+    taken_over_at: new Date().toISOString(),
+  }
+  await saveWorkflowState(params.supabase, next)
   return next
 }
 
@@ -607,6 +659,9 @@ function updateServerRefs(
 ): HarryServerRefs {
   if (!result) return refs
   if (toolName === 'list_my_upcoming_appointments') {
+    const previouslySelected = refs.appointments?.find(
+      (appointment) => appointment.ref === refs.selected_appointment_ref,
+    )
     const upcoming = Array.isArray(result.upcoming) ? result.upcoming : []
     const appointments: HarryAppointmentRef[] = []
     for (const [index, row] of upcoming.entries()) {
@@ -634,7 +689,11 @@ function updateServerRefs(
       selected_appointment_ref:
         appointments.length === 1
           ? appointments[0].ref
-          : refs.selected_appointment_ref,
+          : appointments.find(
+              (appointment) =>
+                appointment.date === previouslySelected?.date &&
+                appointment.start_time === previouslySelected?.start_time,
+            )?.ref,
     }
   }
   if (toolName === 'get_calendar_slots') {
@@ -731,8 +790,8 @@ export function prepareHarryToolArgs(params: {
     const requestedRef = stringValue(args.slot_ref) || refs.selected_slot_ref
     const slots = refs.slots || []
     const slot =
-      slots.find((row) => row.ref === requestedRef) ||
-      slots.find((row) => row.date === date && row.start_time === startTime)
+      slots.find((row) => row.date === date && row.start_time === startTime) ||
+      slots.find((row) => row.ref === requestedRef)
     if (slot) args.slot_token = slot.slot_token
     if (date) {
       if (params.toolName === 'reschedule_job') {
@@ -881,6 +940,8 @@ DURABLE WORKFLOW STATE (authoritative across delayed replies):
 - Last verified action: ${state.last_action_name || 'none'}
 - Last action status: ${state.last_action_status || 'none'}
 - Unresolved action error: ${state.last_action_error || 'none'}
+- Recovery attempts: ${state.recovery_attempts}
+- Human takeover: ${state.takeover_status}
 - Last customer message: ${state.last_customer_message || 'none'}
 
 Rules:
@@ -891,6 +952,7 @@ Rules:
 - When phase is ready_to_execute, call the appropriate action tool instead of asking the customer to repeat details.
 - If phase is action_failed, do not claim the action succeeded unless you successfully retry the correct tool now.
 - If phase is completed, you may confirm the verified action, but do not repeat it or create a duplicate.
+- If phase is escalated, tell the customer Charles was actually alerted and do not call more mutation tools.
 `
 }
 
@@ -903,6 +965,12 @@ const SUCCESS_CLAIM_PATTERNS = [
 
 export function responseClaimsCompletedAction(response: string): boolean {
   return SUCCESS_CLAIM_PATTERNS.some((pattern) => pattern.test(response))
+}
+
+function responseClaimsHumanAlert(response: string): boolean {
+  return /\b(?:flagging|flagged|alerted|notified|sent (?:this|it) to) (?:this )?(?:for )?charles\b/i.test(
+    response,
+  )
 }
 
 function customerSafeActionError(error: string | null): string {
@@ -927,8 +995,26 @@ export function guardHarryResponseAgainstOutcomes(params: {
   workflowState: HarryWorkflowState
   outcomes: HarryToolOutcome[]
 }): { response: string; blockedFalseClaim: boolean } {
-  if (!responseClaimsCompletedAction(params.response)) {
+  const takeoverConfirmed =
+    params.workflowState.takeover_status === 'requested' ||
+    params.outcomes.some(
+      (outcome) =>
+        outcome.toolName === 'report_operational_problem' && outcome.success,
+    )
+  const claimsCompletedAction = responseClaimsCompletedAction(params.response)
+  const claimsUnverifiedAlert =
+    responseClaimsHumanAlert(params.response) && !takeoverConfirmed
+
+  if (!claimsCompletedAction && !claimsUnverifiedAlert) {
     return { response: params.response, blockedFalseClaim: false }
+  }
+
+  if (claimsUnverifiedAlert && !claimsCompletedAction) {
+    return {
+      response:
+        "I couldn't complete that change or verify a handoff. Please call our office at (719) 249-8791 so we can help directly.",
+      blockedFalseClaim: true,
+    }
   }
 
   const latestMutation = [...params.outcomes]
@@ -956,7 +1042,9 @@ export function guardHarryResponseAgainstOutcomes(params: {
     failedMutation?.error || params.workflowState.last_action_error || null
 
   return {
-    response: `I couldn't complete that change yet, so I won't tell you it's done. I'm flagging this for Charles to review. ${customerSafeActionError(error)}`,
+    response: takeoverConfirmed
+      ? `I couldn't complete that change yet, so I won't tell you it's done. I've alerted Charles to review it. ${customerSafeActionError(error)}`
+      : `I couldn't complete that change or verify a handoff, so I won't tell you it's done. Please call our office at (719) 249-8791. ${customerSafeActionError(error)}`,
     blockedFalseClaim: true,
   }
 }

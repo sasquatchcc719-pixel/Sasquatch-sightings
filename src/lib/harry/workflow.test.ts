@@ -33,6 +33,11 @@ function workflowState(
     },
     missing_fields: [],
     server_refs: {},
+    consecutive_failures: 1,
+    recovery_attempts: 0,
+    takeover_status: 'none',
+    takeover_reason: null,
+    taken_over_at: null,
     turn_count: 4,
     last_customer_at: '2026-06-07T12:00:00.000Z',
     last_assistant_at: null,
@@ -59,11 +64,12 @@ describe('Harry workflow truth guard', () => {
     })
 
     expect(guarded.blockedFalseClaim).toBe(true)
-    expect(guarded.response).toContain("I couldn't complete that change yet")
+    expect(guarded.response).toContain("I couldn't complete that change")
     expect(guarded.response).toContain(
       'The selected appointment time could not be verified.',
     )
     expect(guarded.response).not.toContain("You're all set")
+    expect(guarded.response).not.toContain("I've alerted Charles")
   })
 
   it('allows a confirmation after the current tool call succeeds', () => {
@@ -133,6 +139,26 @@ describe('Harry workflow truth guard', () => {
 
     expect(guarded.blockedFalseClaim).toBe(false)
     expect(guarded.response).toBe(response)
+  })
+
+  it('only claims a human alert after takeover delivery is verified', () => {
+    const blocked = guardHarryResponseAgainstOutcomes({
+      response: "I'm flagging this for Charles now.",
+      workflowState: workflowState(),
+      outcomes: [],
+    })
+    const allowed = guardHarryResponseAgainstOutcomes({
+      response: "I've alerted Charles to review this.",
+      workflowState: workflowState({
+        phase: 'escalated',
+        takeover_status: 'requested',
+      }),
+      outcomes: [],
+    })
+
+    expect(blocked.blockedFalseClaim).toBe(true)
+    expect(blocked.response).toContain("couldn't complete")
+    expect(allowed.blockedFalseClaim).toBe(false)
   })
 
   it('allows an existing-appointment lookup to say the customer is all set', () => {
