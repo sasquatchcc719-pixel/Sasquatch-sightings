@@ -11,6 +11,14 @@ import {
   isHarrySmsOpsToolsEnabled,
 } from '@/lib/ops/sms-harry-tools'
 import { logToolCall } from '@/lib/ai/logging'
+import {
+  beginHarryWorkflowTurn,
+  formatHarryWorkflowContext,
+  guardHarryResponseAgainstOutcomes,
+  recordHarryToolOutcome,
+  type HarryToolOutcome,
+  type HarryWorkflowState,
+} from '@/lib/harry/workflow'
 
 const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
@@ -277,6 +285,8 @@ export async function generateAIResponse(
     let knowledgeContext = ''
     let profileContext = ''
     let promoContext = ''
+    let workflowContext = ''
+    let workflowState: HarryWorkflowState | null = null
 
     try {
       const now = new Date().toISOString()
@@ -359,6 +369,15 @@ Rules: Only offer a code if it is appropriate for this customer's channel and co
       )
     }
 
+    if (smsOpsContext?.sessionId) {
+      workflowState = await beginHarryWorkflowTurn({
+        supabase,
+        conversationId: smsOpsContext.sessionId,
+        customerMessage,
+      })
+      workflowContext = formatHarryWorkflowContext(workflowState)
+    }
+
     // Inject today's date so Harry can resolve "tomorrow", "next Monday", etc.
     const todayMT = new Date().toLocaleDateString('en-US', {
       timeZone: 'America/Denver',
@@ -393,6 +412,7 @@ Rules: Only offer a code if it is appropriate for this customer's channel and co
       knowledgeContext +
       profileContext +
       promoContext +
+      workflowContext +
       dateContext +
       channelContext
     if (context?.couponCode) {
@@ -410,6 +430,7 @@ CURRENT CUSTOMER CONTEXT:
         profileContext +
         promoContext +
         partnerContext +
+        workflowContext +
         dateContext +
         channelContext
     }
@@ -438,6 +459,7 @@ CURRENT CUSTOMER CONTEXT:
 
     if (useSmsTools && smsOpsContext) {
       const messages = [...baseMessages]
+      const toolOutcomes: HarryToolOutcome[] = []
       let lastText = ''
       for (let round = 0; round < 8; round += 1) {
         const completion = await openai.chat.completions.create({
@@ -483,15 +505,39 @@ CURRENT CUSTOMER CONTEXT:
             } catch {
               /* treat unparseable as failure */
             }
-            logToolCall({
-              agent: 'harry',
-              sessionId: smsOpsContext.sessionId ?? 'unknown',
+            const outcome: HarryToolOutcome = {
+              toolCallId: tc.id,
               toolName: tc.function.name,
               args: parsedArgs,
               result: parsedResult,
               success: toolSuccess,
-              durationMs: Date.now() - toolStart,
-            })
+              error:
+                typeof parsedResult?.error === 'string'
+                  ? parsedResult.error
+                  : null,
+            }
+            toolOutcomes.push(outcome)
+            await Promise.all([
+              logToolCall({
+                agent: 'harry',
+                sessionId: smsOpsContext.sessionId ?? 'unknown',
+                toolName: tc.function.name,
+                args: parsedArgs,
+                result: parsedResult,
+                success: toolSuccess,
+                error: outcome.error,
+                durationMs: Date.now() - toolStart,
+              }),
+              smsOpsContext.sessionId
+                ? recordHarryToolOutcome({
+                    supabase,
+                    conversationId: smsOpsContext.sessionId,
+                    outcome,
+                  }).then((state) => {
+                    workflowState = state
+                  })
+                : Promise.resolve(),
+            ])
             messages.push({
               role: 'tool',
               tool_call_id: tc.id,
@@ -520,6 +566,29 @@ CURRENT CUSTOMER CONTEXT:
         })
         const retryText = (retry.choices[0]?.message?.content || '').trim()
         if (retryText) lastText = retryText
+      }
+
+      if (!lastText) {
+        lastText =
+          "I'm having trouble completing that right now. I'm flagging this for Charles so you aren't left waiting."
+      }
+
+      if (workflowState) {
+        const guarded = guardHarryResponseAgainstOutcomes({
+          response: lastText,
+          workflowState,
+          outcomes: toolOutcomes,
+        })
+        if (guarded.blockedFalseClaim) {
+          console.error('[Harry] Blocked unsupported success claim', {
+            sessionId: smsOpsContext.sessionId,
+            intent: workflowState.intent,
+            phase: workflowState.phase,
+            lastAction: workflowState.last_action_name,
+            lastActionStatus: workflowState.last_action_status,
+          })
+        }
+        lastText = guarded.response
       }
 
       return lastText

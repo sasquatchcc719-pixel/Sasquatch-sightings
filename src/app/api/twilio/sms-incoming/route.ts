@@ -19,11 +19,16 @@ import {
   isHarryChannelEnabled,
   isHarryFunctionEnabled,
 } from '@/lib/harry/control'
-import { sendCustomerSMS, sendAdminSMS } from '@/lib/twilio'
+import {
+  sendCustomerSMS,
+  sendCustomerSMSWithResult,
+  sendAdminSMS,
+} from '@/lib/twilio'
 import { logChatMessage } from '@/lib/ai/logging'
 import { opsPhoneLookupVariants } from '@/lib/ops/phone'
 import { sendCancellationAlert, sendLSALeadNotification } from '@/lib/telegram'
 import { notifyNewCustomerMessage } from '@/lib/harry-command-bot'
+import { recordHarryAssistantMessage } from '@/lib/harry/workflow'
 import {
   buildApplicantReplyTelegramMessage,
   sendRangerTelegramMessage,
@@ -1758,11 +1763,29 @@ If the customer says something changed, collect only the changed field and use t
         return emptyTwiml
       }
 
-      // Add AI response to conversation
+      // Only persist an assistant turn after Twilio confirms delivery. Keeping
+      // the SID on the message also prevents outbound sync from importing the
+      // same Harry reply a second time on the customer's next text.
+      const sendResult = await sendCustomerSMSWithResult(
+        normalizedPhone,
+        aiResponse,
+        conversation.lead_id || undefined,
+        'ai_dispatcher',
+        toNumber || undefined,
+      )
+
       messages.push({
         role: 'assistant',
         content: aiResponse,
         timestamp: new Date().toISOString(),
+        twilio_sid: sendResult.sid,
+        sent_by: 'harry',
+      })
+
+      await recordHarryAssistantMessage({
+        supabase,
+        conversationId: conversation.id,
+        message: aiResponse,
       })
 
       await logChatMessage({
@@ -1884,15 +1907,6 @@ If the customer says something changed, collect only the changed field and use t
         }
       }
 
-      // Send AI response from the same number they texted (866 vs 719) so reply appears in the right thread
-      await sendCustomerSMS(
-        normalizedPhone,
-        aiResponse,
-        conversation.lead_id || undefined,
-        'ai_dispatcher',
-        toNumber || undefined,
-      )
-
       // Notify Charles via Harry Command bot
       const source =
         channelKey === 'lsa'
@@ -1923,12 +1937,12 @@ If the customer says something changed, collect only the changed field and use t
 
       console.log(`✅ AI responded to ${normalizedPhone}`)
     } catch (aiError) {
-      console.error('AI generation failed:', aiError)
+      console.error('Harry response pipeline failed:', aiError)
 
       // Update conversation with error
       messages.push({
         role: 'system',
-        content: 'ERROR: AI failed to generate response',
+        content: 'ERROR: Harry response pipeline failed',
         timestamp: new Date().toISOString(),
       })
 
@@ -1940,7 +1954,7 @@ If the customer says something changed, collect only the changed field and use t
       // Notify admin
       if (canSendEscalationAlerts) {
         await sendAdminSMS(
-          `⚠️ AI Dispatcher Error!\nPhone: ${normalizedPhone}\nMessage: "${messageBody}"\n\nError: ${aiError}\n\nPlease respond manually.`,
+          `⚠️ Harry Response Error!\nPhone: ${normalizedPhone}\nMessage: "${messageBody}"\n\nError: ${aiError}\n\nPlease respond manually.`,
           'ai_dispatcher_error',
         )
       }
