@@ -443,7 +443,7 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
     function: {
       name: 'list_my_upcoming_appointments',
       description:
-        'List this customer\'s upcoming Ops jobs (matched by SMS phone). Also returns any matched customer profile even when there are no upcoming jobs. Use when they ask about "my appointment" or need an appointment_id.',
+        "List this customer's upcoming Ops jobs (matched by SMS phone). Returns stable appointment_ref values for follow-up actions.",
       parameters: {
         type: 'object',
         properties: {},
@@ -456,7 +456,7 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
     function: {
       name: 'search_service_catalog',
       description:
-        'Search active services by name to get service UUIDs for booking.',
+        'Search active services by name to get stable service_ref values for booking.',
       parameters: {
         type: 'object',
         properties: {
@@ -496,11 +496,15 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
     function: {
       name: 'update_job_address',
       description:
-        'Update the service address on an existing upcoming job for this phone number.',
+        'Update the service address on an existing upcoming job for this phone number. Use appointment_ref from list_my_upcoming_appointments; the server resolves the private appointment ID.',
       parameters: {
         type: 'object',
         properties: {
-          appointment_id: { type: 'string' },
+          appointment_ref: {
+            type: 'string',
+            description:
+              'Stable reference returned by list_my_upcoming_appointments, such as appointment_1.',
+          },
           street_1: { type: 'string' },
           street_2: {
             type: 'string',
@@ -514,7 +518,7 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
           },
           zip_code: { type: 'string' },
         },
-        required: ['appointment_id', 'street_1', 'city', 'zip_code'],
+        required: ['appointment_ref', 'street_1', 'city', 'zip_code'],
         additionalProperties: false,
       },
     },
@@ -524,24 +528,28 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
     function: {
       name: 'reschedule_job',
       description:
-        'Move an existing job to a new date and start time. First call list_my_upcoming_appointments and use its real appointment_id. Time must match an available slot from get_calendar_slots, and slot_token must be copied exactly from that slot.',
+        'Move an existing job to a new date and start time. Use appointment_ref from list_my_upcoming_appointments and slot_ref from get_calendar_slots. The server resolves private IDs and signed tokens.',
       parameters: {
         type: 'object',
         properties: {
-          appointment_id: { type: 'string' },
-          new_appointment_date: { type: 'string', description: 'YYYY-MM-DD' },
-          new_start_time: { type: 'string', description: 'HH:MM (24h)' },
-          slot_token: {
+          appointment_ref: {
             type: 'string',
             description:
-              'Required. Copy the COMPLETE slot_token string exactly as returned by get_calendar_slots (a long string with periods in it like "eyJ2Ij...abc.XyZ123"). Do not truncate or modify it.',
+              'Stable reference returned by list_my_upcoming_appointments, such as appointment_1.',
+          },
+          new_appointment_date: { type: 'string', description: 'YYYY-MM-DD' },
+          new_start_time: { type: 'string', description: 'HH:MM (24h)' },
+          slot_ref: {
+            type: 'string',
+            description:
+              'Stable reference returned by get_calendar_slots, such as slot_2.',
           },
         },
         required: [
-          'appointment_id',
+          'appointment_ref',
           'new_appointment_date',
           'new_start_time',
-          'slot_token',
+          'slot_ref',
         ],
         additionalProperties: false,
       },
@@ -552,24 +560,32 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
     function: {
       name: 'update_job_line_items',
       description:
-        'Replace the services/line items on an existing appointment. Use when the customer corrects job details after booking (wrong rooms, wrong services, wrong quantities). Recalculates price and duration.',
+        'Replace the services/line items on an existing appointment. Use appointment_ref from list_my_upcoming_appointments. Recalculates price and duration.',
       parameters: {
         type: 'object',
         properties: {
-          appointment_id: { type: 'string' },
+          appointment_ref: {
+            type: 'string',
+            description:
+              'Stable reference returned by list_my_upcoming_appointments, such as appointment_1.',
+          },
           line_items: {
             type: 'array',
             items: {
               type: 'object',
               properties: {
-                service_id: { type: 'string' },
+                service_ref: {
+                  type: 'string',
+                  description:
+                    'Stable reference returned by search_service_catalog, such as service_1.',
+                },
                 quantity: { type: 'number' },
               },
-              required: ['service_id', 'quantity'],
+              required: ['service_ref', 'quantity'],
             },
           },
         },
-        required: ['appointment_id', 'line_items'],
+        required: ['appointment_ref', 'line_items'],
         additionalProperties: false,
       },
     },
@@ -579,14 +595,14 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
     function: {
       name: 'add_job_note',
       description:
-        'Add or append important information to the internal notes field on an existing appointment. Use this when the customer provides access codes (garage codes, gate codes), special instructions, pet information, or other details that Charles needs to know when servicing the job. The note will be added to any existing notes.',
+        'Add or append important information to an existing appointment. Use appointment_ref from list_my_upcoming_appointments. The note will be added to any existing notes.',
       parameters: {
         type: 'object',
         properties: {
-          appointment_id: {
+          appointment_ref: {
             type: 'string',
             description:
-              'The appointment UUID from list_my_upcoming_appointments',
+              'Stable reference returned by list_my_upcoming_appointments, such as appointment_1.',
           },
           note: {
             type: 'string',
@@ -594,7 +610,7 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
               'The information to save (e.g., "Garage code: 1234" or "Dog in backyard - use front door only")',
           },
         },
-        required: ['appointment_id', 'note'],
+        required: ['appointment_ref', 'note'],
         additionalProperties: false,
       },
     },
@@ -604,7 +620,7 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
     function: {
       name: 'book_new_job',
       description:
-        "Create a new Ops appointment for this SMS customer. Requires name, email, full address, real service IDs returned by search_service_catalog, and a slot time that appears in get_calendar_slots for that date. Never invent service IDs. Phone is normally taken from SMS automatically. For Google LSA relay conversations ONLY, you MUST collect the customer's real callback number and pass it as customer_phone (the relay cannot receive texts).",
+        "Create a new Ops appointment for this SMS customer. Requires name, email, full address, service_ref values returned by search_service_catalog, and slot_ref from get_calendar_slots. The server supplies private IDs and the signed slot token. For Google LSA relay conversations ONLY, collect the customer's real callback number and pass it as customer_phone because the relay cannot receive texts.",
       parameters: {
         type: 'object',
         properties: {
@@ -637,20 +653,24 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
           zip_code: { type: 'string' },
           appointment_date: { type: 'string' },
           start_time: { type: 'string' },
-          slot_token: {
+          slot_ref: {
             type: 'string',
             description:
-              'Required. Copy the COMPLETE slot_token string exactly as returned by get_calendar_slots (a long string with periods in it like "eyJ2Ij...abc.XyZ123"). Do not truncate or modify it.',
+              'Stable reference returned by get_calendar_slots, such as slot_2.',
           },
           line_items: {
             type: 'array',
             items: {
               type: 'object',
               properties: {
-                service_id: { type: 'string' },
+                service_ref: {
+                  type: 'string',
+                  description:
+                    'Stable reference returned by search_service_catalog, such as service_1.',
+                },
                 quantity: { type: 'number' },
               },
-              required: ['service_id', 'quantity'],
+              required: ['service_ref', 'quantity'],
             },
           },
         },
@@ -664,7 +684,7 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
           'zip_code',
           'appointment_date',
           'start_time',
-          'slot_token',
+          'slot_ref',
           'line_items',
         ],
         additionalProperties: false,
@@ -702,10 +722,10 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
           zip_code: { type: 'string' },
           appointment_date: { type: 'string', description: 'YYYY-MM-DD' },
           start_time: { type: 'string', description: 'HH:MM (24h)' },
-          slot_token: {
+          slot_ref: {
             type: 'string',
             description:
-              'Required. Use the slot_token returned by get_calendar_slots for this exact commercial walkthrough slot.',
+              'Stable reference returned by get_calendar_slots, such as slot_2.',
           },
           job_description: {
             type: 'string',
@@ -723,7 +743,7 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
           'zip_code',
           'appointment_date',
           'start_time',
-          'slot_token',
+          'slot_ref',
         ],
         additionalProperties: false,
       },
@@ -734,7 +754,7 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
     function: {
       name: 'report_operational_problem',
       description:
-        "Safely escalate a real blocker to Charles with a concise diagnostic report. Use only after you tried the correct Ops tool flow and still cannot complete the customer's operational request, or for urgent customer/service issues. Do NOT use for ordinary missing customer info, normal minimum-charge conversations, unavailable time slots, or before retrying with corrected real IDs/tokens/services.",
+        "Safely escalate a real blocker to Charles with a concise diagnostic report. Use only after you tried the correct Ops tool flow and still cannot complete the customer's operational request, or for urgent customer/service issues. Do NOT use for ordinary missing customer info, normal minimum-charge conversations, unavailable time slots, or before retrying with refreshed appointment/service/slot references.",
       parameters: {
         type: 'object',
         properties: {

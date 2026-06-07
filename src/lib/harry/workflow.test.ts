@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  advanceHarryWorkflowState,
   formatHarryWorkflowContext,
   guardHarryResponseAgainstOutcomes,
+  prepareHarryToolArgs,
   responseClaimsCompletedAction,
+  sanitizeHarryToolResultForModel,
   type HarryWorkflowState,
 } from './workflow'
 
@@ -24,6 +27,12 @@ function workflowState(
         new_start_time: '11:00',
       },
     },
+    collected_fields: {
+      requested_date: '2026-06-08',
+      selected_start_time: '11:00',
+    },
+    missing_fields: [],
+    server_refs: {},
     turn_count: 4,
     last_customer_at: '2026-06-07T12:00:00.000Z',
     last_assistant_at: null,
@@ -151,8 +160,115 @@ describe('Harry workflow truth guard', () => {
 
     expect(context).toContain('Intent: reschedule')
     expect(context).toContain('Phase: action_failed')
-    expect(context).toContain('new_appointment_date')
+    expect(context).toContain('requested_date')
     expect(context).toContain('2026-06-08')
     expect(context).toContain('do not claim the action succeeded')
+  })
+
+  it('resumes a delayed reply by selecting the matching offered slot', () => {
+    const next = advanceHarryWorkflowState(
+      workflowState({
+        phase: 'awaiting_slot',
+        last_action_status: null,
+        last_action_error: null,
+        collected_fields: { requested_date: '2026-06-08' },
+        server_refs: {
+          appointments: [
+            {
+              ref: 'appointment_1',
+              appointment_id: 'appointment-secret',
+            },
+          ],
+          selected_appointment_ref: 'appointment_1',
+          slots: [
+            {
+              ref: 'slot_1',
+              slot_token: 'signed-secret',
+              date: '2026-06-08',
+              start_time: '11:00',
+            },
+          ],
+        },
+      }),
+      '11 would work',
+    )
+
+    expect(next.phase).toBe('ready_to_execute')
+    expect(next.server_refs.selected_slot_ref).toBe('slot_1')
+    expect(next.collected_fields.selected_start_time).toBe('11:00')
+  })
+
+  it('hydrates server-owned references immediately before execution', () => {
+    const args = prepareHarryToolArgs({
+      toolName: 'reschedule_job',
+      args: {
+        appointment_ref: 'appointment_1',
+        slot_ref: 'slot_1',
+      },
+      workflowState: workflowState({
+        server_refs: {
+          appointments: [
+            {
+              ref: 'appointment_1',
+              appointment_id: 'appointment-secret',
+            },
+          ],
+          slots: [
+            {
+              ref: 'slot_1',
+              slot_token: 'signed-secret',
+              date: '2026-06-08',
+              start_time: '11:00',
+            },
+          ],
+        },
+      }),
+    })
+
+    expect(args).toMatchObject({
+      appointment_id: 'appointment-secret',
+      slot_token: 'signed-secret',
+      new_appointment_date: '2026-06-08',
+      new_start_time: '11:00',
+    })
+    expect(args).not.toHaveProperty('appointment_ref')
+    expect(args).not.toHaveProperty('slot_ref')
+  })
+
+  it('redacts raw server identifiers from model-visible results and context', () => {
+    const sanitized = sanitizeHarryToolResultForModel({
+      toolName: 'get_calendar_slots',
+      result: {
+        slots: [
+          {
+            start_time: '11:00',
+            slot_token: 'signed-secret',
+            assigned_staff_user_id: 'staff-secret',
+          },
+        ],
+      },
+    })
+    const context = formatHarryWorkflowContext(
+      workflowState({
+        server_refs: {
+          services: [
+            {
+              ref: 'service_1',
+              service_id: 'service-secret',
+              name: 'Carpet cleaning',
+            },
+          ],
+        },
+        collected_fields: {
+          line_items: [{ service_id: 'service-secret', quantity: 1 }],
+        },
+      }),
+    )
+
+    expect(sanitized).toEqual({
+      slots: [{ slot_ref: 'slot_1', start_time: '11:00' }],
+    })
+    expect(context).toContain('"service_ref":"service_1"')
+    expect(context).not.toContain('service-secret')
   })
 })

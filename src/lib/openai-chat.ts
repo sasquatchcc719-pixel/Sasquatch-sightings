@@ -15,7 +15,9 @@ import {
   beginHarryWorkflowTurn,
   formatHarryWorkflowContext,
   guardHarryResponseAgainstOutcomes,
+  prepareHarryToolArgs,
   recordHarryToolOutcome,
+  sanitizeHarryToolResultForModel,
   type HarryToolOutcome,
   type HarryWorkflowState,
 } from '@/lib/harry/workflow'
@@ -163,9 +165,9 @@ When telling a customer what day a date falls on, ALWAYS use the day_of_week fie
 
 EXISTING CUSTOMERS — RESCHEDULES, ADDRESS CHANGES, JOB UPDATES
 - Use reschedule_job, update_job_address, update_job_line_items, list_my_upcoming_appointments.
-- ALWAYS call list_my_upcoming_appointments first and use the real appointment_id. NEVER invent IDs.
-- For reschedules: call get_calendar_slots for the new date, use exact slot_token. NEVER invent tokens.
-- CRITICAL slot_token rule: Copy the ENTIRE slot_token string exactly as returned by get_calendar_slots. The token is a long string like "eyJ2IjoxLCJ...abc123.XyZ789defg" — copy the WHOLE thing including all characters before AND after any periods. Do NOT truncate it.
+- ALWAYS call list_my_upcoming_appointments first and use the appointment_ref it returns.
+- For reschedules: call get_calendar_slots for the new date and use the slot_ref for the customer's selected time.
+- Appointment UUIDs and signed slot tokens are server-owned. Never ask for them, invent them, or copy them.
 - Confirm changes with full line-item breakdown after success.
 
 ADDING VS REPLACING SERVICES (CRITICAL):
@@ -218,8 +220,8 @@ ESCALATION
 
 SMS OPS TOOLS
 When tools are available, you may call them to read/update THIS customer's appointments.
-- list_my_upcoming_appointments: get appointment_id values.
-- search_service_catalog: find service UUIDs. ALWAYS use the exact search terms from SQUARE FOOTAGE → SERVICE MAPPING above.
+- list_my_upcoming_appointments: get stable appointment_ref values.
+- search_service_catalog: get stable service_ref values. ALWAYS use the exact search terms from SQUARE FOOTAGE → SERVICE MAPPING above.
 - get_calendar_slots: check availability before booking/rescheduling.
 - book_new_job: uses customer's SMS phone automatically — never ask them to "confirm phone."
 - update_job_line_items: fix services/quantities on existing booking.
@@ -485,9 +487,16 @@ CURRENT CUSTOMER CONTEXT:
             } catch {
               /* keep empty */
             }
+            const executableArgs = workflowState
+              ? prepareHarryToolArgs({
+                  toolName: tc.function.name,
+                  args: parsedArgs,
+                  workflowState,
+                })
+              : parsedArgs
             const out = await executeHarrySmsTool(
               tc.function.name,
-              tc.function.arguments || '{}',
+              JSON.stringify(executableArgs),
               {
                 supabase,
                 customerPhoneE164: smsOpsContext.customerPhoneE164,
@@ -508,7 +517,7 @@ CURRENT CUSTOMER CONTEXT:
             const outcome: HarryToolOutcome = {
               toolCallId: tc.id,
               toolName: tc.function.name,
-              args: parsedArgs,
+              args: executableArgs,
               result: parsedResult,
               success: toolSuccess,
               error:
@@ -522,7 +531,7 @@ CURRENT CUSTOMER CONTEXT:
                 agent: 'harry',
                 sessionId: smsOpsContext.sessionId ?? 'unknown',
                 toolName: tc.function.name,
-                args: parsedArgs,
+                args: executableArgs,
                 result: parsedResult,
                 success: toolSuccess,
                 error: outcome.error,
@@ -538,10 +547,14 @@ CURRENT CUSTOMER CONTEXT:
                   })
                 : Promise.resolve(),
             ])
+            const modelResult = sanitizeHarryToolResultForModel({
+              toolName: tc.function.name,
+              result: parsedResult,
+            })
             messages.push({
               role: 'tool',
               tool_call_id: tc.id,
-              content: out,
+              content: JSON.stringify(modelResult),
             })
           }
           continue
