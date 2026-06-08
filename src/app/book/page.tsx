@@ -26,6 +26,12 @@ interface TimeSlot {
   label: string
 }
 
+interface AvailabilityDay {
+  date: string
+  slots: number
+  is_available: boolean
+}
+
 interface CartItem {
   service: ServiceItem
   quantity: number
@@ -143,6 +149,16 @@ function formatDateDisplay(iso: string) {
   })
 }
 
+function calculateRequiredMinutes(cart: CartItem[]): number {
+  const totalMinutes = cart.reduce((sum, ci) => {
+    const duration =
+      (ci.service as ServiceItem & { duration_minutes?: number })
+        .duration_minutes || 60
+    return sum + duration * ci.quantity
+  }, 0)
+  return Math.max(totalMinutes, 60)
+}
+
 /** Returns YYYY-MM-DD for a Date in local time */
 function toLocalISO(d: Date): string {
   const y = d.getFullYear()
@@ -190,9 +206,11 @@ function groupByCategory(items: ServiceItem[]): [string, ServiceItem[]][] {
 function MiniCalendar({
   selected,
   onSelect,
+  requiredMinutes,
 }: {
   selected: string
   onSelect: (d: string) => void
+  requiredMinutes: number
 }) {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
@@ -207,6 +225,10 @@ function MiniCalendar({
 
   const year = viewMonth.getFullYear()
   const month = viewMonth.getMonth()
+  const [availabilityByDate, setAvailabilityByDate] = useState<
+    Record<string, AvailabilityDay>
+  >({})
+  const [loadedAvailabilityKey, setLoadedAvailabilityKey] = useState('')
 
   const firstDay = new Date(year, month, 1).getDay() // 0=Sun
   const daysInMonth = new Date(year, month + 1, 0).getDate()
@@ -227,6 +249,37 @@ function MiniCalendar({
     month: 'long',
     year: 'numeric',
   })
+  const availabilityKey = `${year}-${month}-${requiredMinutes}`
+  const availabilityLoading = loadedAvailabilityKey !== availabilityKey
+
+  useEffect(() => {
+    const controller = new AbortController()
+    const startDate = toLocalISO(new Date(year, month, 1))
+    const endDate = toLocalISO(new Date(year, month + 1, 0))
+
+    fetch(
+      `/api/public/availability?start_date=${startDate}&end_date=${endDate}&required_minutes=${requiredMinutes}`,
+      { signal: controller.signal },
+    )
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('failed'))))
+      .then((data) => {
+        const next: Record<string, AvailabilityDay> = {}
+        for (const day of (data.days || []) as AvailabilityDay[]) {
+          next[day.date] = day
+        }
+        setAvailabilityByDate(next)
+        setLoadedAvailabilityKey(availabilityKey)
+      })
+      .catch((error) => {
+        if (error.name !== 'AbortError') {
+          console.error('[book] Failed to load month availability', error)
+          setAvailabilityByDate({})
+          setLoadedAvailabilityKey(availabilityKey)
+        }
+      })
+
+    return () => controller.abort()
+  }, [year, month, requiredMinutes, availabilityKey])
 
   return (
     <div className="select-none">
@@ -291,28 +344,59 @@ function MiniCalendar({
           const isPast = cellDate < today
           const isSunday = cellDate.getDay() === 0
           const isSelected = iso === selected
+          const availability = availabilityByDate[iso]
+          const hasAvailability = Boolean(availability)
+          const isChecking =
+            !isPast && !isSunday && availabilityLoading && !hasAvailability
+          const isFullyBooked = hasAvailability && !availability.is_available
+          const isAvailable = hasAvailability && availability.is_available
+          const isDisabled = isPast || isSunday || isChecking || isFullyBooked
 
           return (
             <button
               key={iso}
-              disabled={isPast || isSunday}
+              disabled={isDisabled}
               onClick={() => onSelect(iso)}
-              className={`aspect-square w-full rounded-lg text-sm font-medium transition-all ${
+              title={
+                isSunday
+                  ? 'Sundays unavailable'
+                  : isFullyBooked
+                    ? 'Fully booked'
+                    : isAvailable
+                      ? `${availability.slots} time window${availability.slots === 1 ? '' : 's'} available`
+                      : undefined
+              }
+              className={`relative aspect-square w-full rounded-lg text-sm font-medium transition-all ${
                 isSelected
                   ? 'bg-green-600 text-white'
-                  : isPast || isSunday
-                    ? 'cursor-not-allowed text-gray-300'
-                    : 'text-gray-700 hover:bg-green-50 hover:text-green-700'
+                  : isPast || isSunday || isFullyBooked
+                    ? 'cursor-not-allowed text-gray-300 line-through'
+                    : isChecking
+                      ? 'cursor-wait text-gray-300'
+                      : isAvailable
+                        ? 'text-gray-800 ring-1 ring-green-100 hover:bg-green-50 hover:text-green-700'
+                        : 'text-gray-700 hover:bg-green-50 hover:text-green-700'
               }`}
             >
               {day}
+              {isAvailable && !isSelected && (
+                <span className="absolute bottom-1 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-green-500" />
+              )}
+              {isChecking && (
+                <span className="absolute bottom-1 left-1/2 h-1 w-1 -translate-x-1/2 animate-pulse rounded-full bg-gray-300" />
+              )}
             </button>
           )
         })}
       </div>
-      <p className="mt-2 text-center text-xs text-gray-400">
-        Sundays unavailable
-      </p>
+      <div className="mt-3 flex flex-wrap items-center justify-center gap-3 text-xs text-gray-400">
+        <span className="flex items-center gap-1">
+          <span className="h-2 w-2 rounded-full bg-green-500" />
+          Available
+        </span>
+        <span className="line-through">Fully booked/unavailable</span>
+        {availabilityLoading && <span>Checking availability...</span>}
+      </div>
     </div>
   )
 }
@@ -530,17 +614,8 @@ export default function BookPage() {
     setSlotsLoading(true)
     setSelectedSlot(null)
 
-    const totalMinutes = cart.reduce(
-      (sum, ci) =>
-        sum +
-          (ci.service as ServiceItem & { duration_minutes?: number })
-            .duration_minutes! *
-            ci.quantity || 60 * ci.quantity,
-      0,
-    )
-
     fetch(
-      `/api/public/availability?date=${selectedDate}&required_minutes=${Math.max(totalMinutes, 60)}`,
+      `/api/public/availability?date=${selectedDate}&required_minutes=${calculateRequiredMinutes(cart)}`,
     )
       .then((r) => r.json())
       .then((d) => setSlots(d.slots || []))
@@ -874,6 +949,7 @@ export default function BookPage() {
                   <MiniCalendar
                     selected={selectedDate}
                     onSelect={setSelectedDate}
+                    requiredMinutes={calculateRequiredMinutes(cart)}
                   />
                 </div>
 
