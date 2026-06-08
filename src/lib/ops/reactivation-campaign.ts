@@ -688,7 +688,6 @@ export async function processReactivationEmails(): Promise<ReactivationResults> 
   const fromEmail =
     process.env.OPS_EMAIL_FROM ||
     'Sasquatch Carpet Cleaning <onboarding@resend.dev>'
-  const bcc = process.env.OPS_EMAIL_BCC || undefined
 
   for (const enrollmentRaw of enrollmentsRaw || []) {
     const enrollment = enrollmentRaw as EnrollmentRow & {
@@ -762,7 +761,6 @@ export async function processReactivationEmails(): Promise<ReactivationResults> 
       {
         from: fromEmail,
         to: normalizedEmail(customer.email),
-        bcc,
         subject,
         html,
       },
