@@ -164,7 +164,7 @@ export function ReactivationControlCenter() {
     null,
   )
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('active')
   const [overrideReason, setOverrideReason] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -670,8 +670,8 @@ export function ReactivationControlCenter() {
           <div>
             <h3 className="font-semibold">Dynamic Customer Pool</h3>
             <p className="text-sm text-white/45">
-              Current reactivation status by customer. Details stay tucked away
-              until you select a customer.
+              Showing active sendable customers by default. Use the status
+              filter to review paused, suppressed, or excluded customers.
             </p>
           </div>
           <div className="flex gap-2">
@@ -690,13 +690,37 @@ export function ReactivationControlCenter() {
               onChange={(e) => setStatusFilter(e.target.value)}
             >
               <option value="">All statuses</option>
+              <option value="active">Active - getting emails</option>
+              <option value="paused_recent_booking">
+                Paused - recent booking
+              </option>
+              <option value="post_job_drip">Post-job drip</option>
+              <option value="suppressed_manual">Suppressed manually</option>
+              <option value="suppressed_blacklisted">
+                Suppressed blacklisted
+              </option>
+              <option value="suppressed_unsubscribed">
+                Suppressed unsubscribed
+              </option>
               {Array.from(
                 new Set((data?.enrollments || []).map((row) => row.status)),
-              ).map((status) => (
-                <option key={status} value={status}>
-                  {statusLabel(status)}
-                </option>
-              ))}
+              )
+                .filter(
+                  (status) =>
+                    ![
+                      'active',
+                      'paused_recent_booking',
+                      'post_job_drip',
+                      'suppressed_manual',
+                      'suppressed_blacklisted',
+                      'suppressed_unsubscribed',
+                    ].includes(status),
+                )
+                .map((status) => (
+                  <option key={status} value={status}>
+                    {statusLabel(status)}
+                  </option>
+                ))}
             </select>
           </div>
         </div>
