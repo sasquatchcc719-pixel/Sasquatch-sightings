@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 export type StaffUser = {
   id: string
-  user_id: string
+  user_id: string | null
   display_name: string
   role: string
   is_active: boolean

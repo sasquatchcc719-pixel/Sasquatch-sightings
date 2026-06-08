@@ -15,6 +15,7 @@ import {
   MessageSquare,
   ShieldBan,
   Clock,
+  DollarSign,
   MapPin,
   Timer,
   Footprints,
@@ -111,9 +112,15 @@ const NAV_ITEMS: NavItem[] = [
   },
   {
     href: '/admin/operations/timesheets',
-    label: 'GPS Timesheets',
-    description: 'Travel vs on-site time breakdown per shift',
+    label: 'GPS Activity',
+    description: 'Location history and travel vs on-site review',
     icon: Timer,
+  },
+  {
+    href: '/admin/operations/payroll-timesheets',
+    label: 'Payroll Timesheets',
+    description: 'Manual payable time entries and daily totals',
+    icon: DollarSign,
   },
   {
     href: '/admin/operations/my-day',

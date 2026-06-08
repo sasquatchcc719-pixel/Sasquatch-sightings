@@ -64,15 +64,15 @@ type ShiftRow = {
   appointments: AppointmentRow[]
 }
 
-async function fetchTimesheets(
+async function fetchGpsActivity(
   date: string,
 ): Promise<{ date: string; rows: ShiftRow[] }> {
   const res = await fetch(`/api/admin/ops/gps/timesheets?date=${date}`)
-  if (!res.ok) throw new Error('Failed to load timesheets')
+  if (!res.ok) throw new Error('Failed to load GPS activity')
   return res.json()
 }
 
-function exportCsv(rows: ShiftRow[], date: string) {
+function exportGpsCsv(rows: ShiftRow[], date: string) {
   const headers = [
     'Date',
     'Technician',
@@ -147,7 +147,7 @@ function exportCsv(rows: ShiftRow[], date: string) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `timesheets-${date}.csv`
+  a.download = `gps-activity-${date}.csv`
   a.click()
   URL.revokeObjectURL(url)
 }
@@ -323,13 +323,13 @@ export function TimesheetsView() {
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0])
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['gps-timesheets', date],
-    queryFn: () => fetchTimesheets(date),
+    queryKey: ['gps-activity', date],
+    queryFn: () => fetchGpsActivity(date),
     staleTime: 60_000,
   })
 
   const handleExport = useCallback(() => {
-    if (data?.rows) exportCsv(data.rows, date)
+    if (data?.rows) exportGpsCsv(data.rows, date)
   }, [data, date])
 
   function changeDate(offset: number) {
@@ -381,11 +381,11 @@ export function TimesheetsView() {
         </div>
       </div>
 
-      {/* Shadow mode notice */}
-      <div className="rounded-xl border border-yellow-500/20 bg-yellow-500/5 px-4 py-3 text-sm text-yellow-300">
-        <strong>Preview mode:</strong> GPS timing data shown here is for
-        validation only. Billing and payroll still use the current method
-        (On-My-Way → Completed) until you manually switch it over.
+      {/* GPS activity notice */}
+      <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 px-4 py-3 text-sm text-blue-200">
+        <strong>GPS activity only:</strong> This page shows location-derived
+        shift history for dispatch review. Payable payroll time is entered and
+        reviewed separately.
       </div>
 
       {/* Content */}
@@ -395,7 +395,9 @@ export function TimesheetsView() {
 
       {error && (
         <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-          {error instanceof Error ? error.message : 'Failed to load timesheets'}
+          {error instanceof Error
+            ? error.message
+            : 'Failed to load GPS activity'}
         </div>
       )}
 
