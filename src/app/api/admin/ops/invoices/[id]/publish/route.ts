@@ -8,6 +8,7 @@ import {
   utilizationHoursFromAppointment,
 } from '@/lib/ops/utilization-metrics'
 import { enqueue } from '@/lib/echo/enqueue'
+import { enrollCustomerInDrip } from '@/lib/ops/drip-campaign'
 import sharp from 'sharp'
 
 type Params = { params: Promise<{ id: string }> }
@@ -141,6 +142,8 @@ export async function POST(request: NextRequest, { params }: Params) {
         updated_at: publishNowIso,
       })
       .eq('id', appointment.id)
+
+    await enrollCustomerInDrip(appointment.id)
 
     const invLines = Array.isArray(invoice.ops_invoice_line_items)
       ? invoice.ops_invoice_line_items

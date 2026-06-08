@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { getAssignedTechAppointment } from '@/lib/tech/appointments'
 import { createAdminClient } from '@/supabase/server'
+import { enrollCustomerInDrip } from '@/lib/ops/drip-campaign'
 
 export async function GET(
   _request: NextRequest,
@@ -84,6 +85,10 @@ export async function PATCH(
       .eq('assigned_staff_user_id', staffUserId)
 
     if (updateError) throw updateError
+
+    if (body.status === 'completed' && current.status !== 'completed') {
+      await enrollCustomerInDrip(id)
+    }
 
     if (body.status !== undefined) {
       await supabase.from('ops_appointment_status_events').insert({

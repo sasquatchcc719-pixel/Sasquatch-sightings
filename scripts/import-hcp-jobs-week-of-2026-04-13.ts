@@ -11,6 +11,7 @@
 
 import dotenv from 'dotenv'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { isDeliverableCustomerEmail } from '@/lib/ops/email'
 
 /** Service-role client for one-off scripts (no generated Database types in this repo). */
 type ScriptSupabase = SupabaseClient<any, 'public', any>
@@ -700,16 +701,20 @@ async function upsertCustomer(
     .maybeSingle()
 
   if (existing?.id) {
+    const customerUpdate: Record<string, unknown> = {
+      full_name: fullName,
+      first_name: job.first_name,
+      last_name: job.last_name,
+      business_name: job.business_name ?? null,
+      updated_at: new Date().toISOString(),
+    }
+    if (isDeliverableCustomerEmail(job.email)) {
+      customerUpdate.email = job.email
+    }
+
     await supabase
       .from('ops_customers')
-      .update({
-        full_name: fullName,
-        first_name: job.first_name,
-        last_name: job.last_name,
-        business_name: job.business_name ?? null,
-        email: job.email,
-        updated_at: new Date().toISOString(),
-      })
+      .update(customerUpdate)
       .eq('id', existing.id)
     return existing.id
   }
@@ -721,7 +726,7 @@ async function upsertCustomer(
       first_name: job.first_name,
       last_name: job.last_name,
       business_name: job.business_name ?? null,
-      email: job.email,
+      email: isDeliverableCustomerEmail(job.email) ? job.email : null,
       phone,
       notes: 'Created by scripts/import-hcp-jobs-week-of-2026-04-13.ts',
     })

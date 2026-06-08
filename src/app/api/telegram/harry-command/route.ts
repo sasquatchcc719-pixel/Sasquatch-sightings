@@ -19,6 +19,7 @@ import {
   createAiStyleBooking,
   type AiStyleBookingLineRequest,
 } from '@/lib/ops/create-ai-style-booking'
+import { enrollCustomerInDrip } from '@/lib/ops/drip-campaign'
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -3391,6 +3392,8 @@ export async function executeToolCall(
       if (error) {
         return `❌ Failed to mark complete: ${error.message}`
       }
+
+      await enrollCustomerInDrip(appt.id)
 
       return `✅ Marked ${displayCustomerName(customer)}'s job as complete`
     }

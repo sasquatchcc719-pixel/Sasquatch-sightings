@@ -6,6 +6,7 @@ import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
 import { getQuickBooksSyncStatus } from '@/lib/quickbooks'
 import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
 import { ensureInvoiceQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
+import { enrollCustomerInDrip } from '@/lib/ops/drip-campaign'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -88,6 +89,8 @@ export async function POST(request: NextRequest, { params }: Params) {
           })
           .eq('id', inv.appointment_id)
       }
+
+      await enrollCustomerInDrip(inv.appointment_id)
 
       const { data: invRow } = await supabase
         .from('ops_invoices')

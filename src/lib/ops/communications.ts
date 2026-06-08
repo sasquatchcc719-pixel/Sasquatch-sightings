@@ -1,6 +1,7 @@
 import { Resend } from 'resend'
 import { sendCustomerSMS } from '@/lib/twilio'
 import { createAdminClient } from '@/supabase/server'
+import { isDeliverableCustomerEmail } from '@/lib/ops/email'
 
 export const OPS_TEMPLATE_KEYS = [
   'job_scheduled_sms',
@@ -619,7 +620,9 @@ export async function sendOpsLifecycleCommunications(params: {
 
   const customer = unwrapRelation(appointment.ops_customers)
   const customerPhone = customer?.phone || ''
-  const customerEmail = customer?.email || ''
+  const customerEmail = isDeliverableCustomerEmail(customer?.email)
+    ? customer.email
+    : ''
   const customerEmailOptOut = customer?.email_opt_out ?? false
 
   const resendApiKey = process.env.RESEND_API_KEY
