@@ -25,6 +25,7 @@ type CustomerRow = {
   full_name: string | null
   first_name: string | null
   email: string | null
+  phone: string | null
   email_opt_out: boolean | null
   created_at: string
   ops_service_addresses:
@@ -75,6 +76,7 @@ export type ReactivationStatus =
   | 'paused_recent_booking'
   | 'post_job_drip'
   | 'suppressed_manual'
+  | 'suppressed_blacklisted'
   | 'suppressed_unsubscribed'
   | 'suppressed_bounced'
   | 'excluded_no_email'
@@ -115,6 +117,25 @@ function normalizedEmail(value: string | null | undefined): string {
   return String(value || '')
     .trim()
     .toLowerCase()
+}
+
+function phoneDigits(value: string | null | undefined): string {
+  return String(value || '').replace(/\D/g, '')
+}
+
+function phoneMatchesBlacklist(
+  phone: string | null | undefined,
+  blacklist: Set<string>,
+) {
+  const digits = phoneDigits(phone)
+  if (!digits) return false
+  const national =
+    digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits
+  return (
+    blacklist.has(digits) ||
+    blacklist.has(national) ||
+    blacklist.has(`1${national}`)
+  )
 }
 
 function isDeliverableCustomerEmail(
@@ -260,6 +281,7 @@ function statusForCustomer(params: {
   latestAppointmentDate: string | null
   emailOwnerByEmail: Map<string, string>
   activeDripCustomerIds: Set<string>
+  blacklistedPhones: Set<string>
   existingEnrollment?: EnrollmentRow
   settings: ReactivationSettings
   asOfDate: string
@@ -275,7 +297,8 @@ function statusForCustomer(params: {
 
   if (
     params.existingEnrollment?.status === 'suppressed_manual' ||
-    params.existingEnrollment?.status === 'suppressed_bounced'
+    params.existingEnrollment?.status === 'suppressed_bounced' ||
+    params.existingEnrollment?.status === 'suppressed_blacklisted'
   ) {
     return {
       status: params.existingEnrollment.status as ReactivationStatus,
@@ -284,11 +307,25 @@ function statusForCustomer(params: {
       stopReason:
         params.existingEnrollment.status === 'suppressed_bounced'
           ? 'bounce_suppression'
-          : 'manual_suppression',
+          : params.existingEnrollment.status === 'suppressed_blacklisted'
+            ? 'blacklisted_customer'
+            : 'manual_suppression',
       source:
         params.existingEnrollment.status === 'suppressed_bounced'
           ? 'delivery_suppression'
-          : 'manual_override',
+          : params.existingEnrollment.status === 'suppressed_blacklisted'
+            ? 'blacklist'
+            : 'manual_override',
+    }
+  }
+
+  if (phoneMatchesBlacklist(params.customer.phone, params.blacklistedPhones)) {
+    return {
+      status: 'suppressed_blacklisted',
+      nextSendAt: null,
+      pausedUntil: null,
+      stopReason: 'blacklisted_customer',
+      source: 'blacklist',
     }
   }
 
@@ -363,36 +400,43 @@ function statusForCustomer(params: {
 }
 
 async function loadEligibilityData(supabase: SupabaseAdmin) {
-  const [customersResult, appointmentsResult, enrollmentsResult, dripResult] =
-    await Promise.all([
-      supabase
-        .from('ops_customers')
-        .select(
-          'id, full_name, first_name, email, email_opt_out, created_at, ops_service_addresses(city, state, zip_code)',
-        )
-        .order('created_at', { ascending: true })
-        .limit(3000),
-      supabase
-        .from('ops_appointments')
-        .select('customer_id, appointment_date, status')
-        .neq('status', 'cancelled')
-        .order('appointment_date', { ascending: false })
-        .limit(10000),
-      supabase
-        .from('reactivation_campaign_enrollments')
-        .select(
-          'id, customer_id, status, messages_sent, next_send_at, manual_suppressed_at',
-        ),
-      supabase
-        .from('drip_campaign_enrollments')
-        .select('customer_id')
-        .eq('status', 'active'),
-    ])
+  const [
+    customersResult,
+    appointmentsResult,
+    enrollmentsResult,
+    dripResult,
+    blacklistResult,
+  ] = await Promise.all([
+    supabase
+      .from('ops_customers')
+      .select(
+        'id, full_name, first_name, email, phone, email_opt_out, created_at, ops_service_addresses(city, state, zip_code)',
+      )
+      .order('created_at', { ascending: true })
+      .limit(3000),
+    supabase
+      .from('ops_appointments')
+      .select('customer_id, appointment_date, status')
+      .neq('status', 'cancelled')
+      .order('appointment_date', { ascending: false })
+      .limit(10000),
+    supabase
+      .from('reactivation_campaign_enrollments')
+      .select(
+        'id, customer_id, status, messages_sent, next_send_at, manual_suppressed_at',
+      ),
+    supabase
+      .from('drip_campaign_enrollments')
+      .select('customer_id')
+      .eq('status', 'active'),
+    supabase.from('blacklist').select('phone'),
+  ])
 
   if (customersResult.error) throw customersResult.error
   if (appointmentsResult.error) throw appointmentsResult.error
   if (enrollmentsResult.error) throw enrollmentsResult.error
   if (dripResult.error) throw dripResult.error
+  if (blacklistResult.error) throw blacklistResult.error
 
   const customers = (customersResult.data || []) as CustomerRow[]
   const appointments = (appointmentsResult.data || []) as AppointmentRow[]
@@ -406,6 +450,11 @@ async function loadEligibilityData(supabase: SupabaseAdmin) {
     ),
     activeDripCustomerIds: new Set(
       (dripResult.data || []).map((row) => row.customer_id as string),
+    ),
+    blacklistedPhones: new Set(
+      (blacklistResult.data || [])
+        .map((row) => phoneDigits(row.phone as string | null))
+        .filter(Boolean),
     ),
   }
 }
@@ -440,6 +489,7 @@ export async function enrollEligibleReactivationCustomers(params?: {
       latestAppointmentDate,
       emailOwnerByEmail,
       activeDripCustomerIds: data.activeDripCustomerIds,
+      blacklistedPhones: data.blacklistedPhones,
       existingEnrollment: existing,
       settings,
       asOfDate,
@@ -610,6 +660,7 @@ export async function processReactivationEmails(): Promise<ReactivationResults> 
         full_name,
         first_name,
         email,
+        phone,
         email_opt_out,
         created_at,
         ops_service_addresses(city, state, zip_code)

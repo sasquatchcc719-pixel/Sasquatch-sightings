@@ -296,8 +296,10 @@ export function ReactivationControlCenter() {
 
   async function overrideCustomer(
     overrideAction: 'pause' | 'suppress' | 'resume' | 'unsubscribe',
+    customerId = selectedCustomerId,
+    reason = overrideReason,
   ) {
-    if (!selectedCustomerId) return
+    if (!customerId) return
     setRunning(true)
     setError(null)
     setNotice(null)
@@ -308,8 +310,8 @@ export function ReactivationControlCenter() {
         body: JSON.stringify({
           action: 'manual_override',
           override_action: overrideAction,
-          customer_id: selectedCustomerId,
-          reason: overrideReason,
+          customer_id: customerId,
+          reason,
         }),
       })
       const result = await res.json()
@@ -566,9 +568,27 @@ export function ReactivationControlCenter() {
                     <span className="font-medium">
                       {customer?.full_name || entry.to_email || 'System event'}
                     </span>
-                    <span className="text-xs text-white/35">
-                      {formatDateTime(entry.sent_at)}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-white/35">
+                        {formatDateTime(entry.sent_at)}
+                      </span>
+                      {entry.customer_id && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={running}
+                          onClick={() =>
+                            overrideCustomer(
+                              'suppress',
+                              entry.customer_id,
+                              'Suppressed from recent activity',
+                            )
+                          }
+                        >
+                          Suppress
+                        </Button>
+                      )}
+                    </div>
                   </div>
                   <p className="mt-1 text-xs text-white/50">
                     {entry.event_type} · {entry.status}
@@ -686,7 +706,7 @@ export function ReactivationControlCenter() {
             {filteredEnrollments.map((enrollment) => {
               const customer = unwrap(enrollment.ops_customers)
               return (
-                <button
+                <div
                   key={enrollment.id}
                   className={`w-full rounded-lg border p-3 text-left transition-colors ${
                     selectedCustomerId === enrollment.customer_id
@@ -699,9 +719,26 @@ export function ReactivationControlCenter() {
                     <span className="text-sm font-medium">
                       {customer?.full_name || customer?.email || 'Unknown'}
                     </span>
-                    <Badge variant={statusVariant(enrollment.status)}>
-                      {statusLabel(enrollment.status)}
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Badge variant={statusVariant(enrollment.status)}>
+                        {statusLabel(enrollment.status)}
+                      </Badge>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={running}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          overrideCustomer(
+                            'suppress',
+                            enrollment.customer_id,
+                            'Suppressed from customer pool',
+                          )
+                        }}
+                      >
+                        Suppress
+                      </Button>
+                    </div>
                   </div>
                   <div className="mt-2 grid gap-1 text-xs text-white/45 md:grid-cols-3">
                     <span>{customer?.email || 'No email'}</span>
@@ -710,7 +747,7 @@ export function ReactivationControlCenter() {
                       Latest job: {formatDate(enrollment.latest_appointment_at)}
                     </span>
                   </div>
-                </button>
+                </div>
               )
             })}
             {filteredEnrollments.length === 0 && (
@@ -725,7 +762,7 @@ export function ReactivationControlCenter() {
             reason={overrideReason}
             onReasonChange={setOverrideReason}
             running={running}
-            onOverride={overrideCustomer}
+            onOverride={(action) => overrideCustomer(action)}
           />
         </div>
       </Card>
