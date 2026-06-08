@@ -37,6 +37,7 @@ type CustomerRow = {
 type AppointmentRow = {
   customer_id: string
   appointment_date: string | null
+  completed_at: string | null
   status: string | null
 }
 
@@ -254,10 +255,13 @@ async function getSettings(
 function latestAppointmentByCustomer(appointments: AppointmentRow[]) {
   const latest = new Map<string, string>()
   for (const appointment of appointments) {
-    if (!appointment.customer_id || !appointment.appointment_date) continue
+    const activityDate = String(
+      appointment.completed_at || appointment.appointment_date || '',
+    ).slice(0, 10)
+    if (!appointment.customer_id || !activityDate) continue
     const current = latest.get(appointment.customer_id)
-    if (!current || appointment.appointment_date > current) {
-      latest.set(appointment.customer_id, appointment.appointment_date)
+    if (!current || activityDate > current) {
+      latest.set(appointment.customer_id, activityDate)
     }
   }
   return latest
@@ -416,7 +420,7 @@ async function loadEligibilityData(supabase: SupabaseAdmin) {
       .limit(3000),
     supabase
       .from('ops_appointments')
-      .select('customer_id, appointment_date, status')
+      .select('customer_id, appointment_date, completed_at, status')
       .neq('status', 'cancelled')
       .order('appointment_date', { ascending: false })
       .limit(10000),
