@@ -24,6 +24,7 @@ import { checkServiceArea } from '@/lib/service-area'
 import { resolveServiceAddress } from '@/lib/ops/addresses'
 import { computePromoDiscountAmount } from '@/lib/promo-discount'
 import { resolveOpsCustomer } from '@/lib/ops/customers'
+import { cancelReactivationForCustomer } from '@/lib/ops/reactivation-campaign'
 import {
   leadSourceUpdatePayload,
   normalizeLeadSourceForWrite,
@@ -411,6 +412,7 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (appointmentError) throw appointmentError
+    await cancelReactivationForCustomer(customerId, 'booked_job')
 
     // --- Create invoice ---
     const { data: invoice, error: invoiceError } = await supabase

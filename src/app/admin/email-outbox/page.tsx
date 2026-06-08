@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { ReactivationControlCenter } from '@/components/admin/reactivation-control-center'
 import {
   AlertCircle,
   CheckCircle,
@@ -210,6 +211,8 @@ export default function EmailOutboxPage() {
         </div>
         <Mail className="h-5 w-5 text-white/30" />
       </div>
+
+      <ReactivationControlCenter />
 
       <Card className="p-4">
         <div className="grid gap-3 md:grid-cols-4">
