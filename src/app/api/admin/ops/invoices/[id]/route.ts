@@ -10,6 +10,10 @@ import {
 } from '@/lib/quickbooks-api'
 import { generateInvoicePDF } from '@/lib/ops/pdf/generate'
 import { ensureInvoiceQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
+import {
+  leadSourceUpdatePayload,
+  normalizeLeadSourceForWrite,
+} from '@/lib/server/lead-sources'
 
 const INVOICE_SELECT = `
   *,
@@ -25,6 +29,9 @@ const INVOICE_SELECT = `
     quoted_total,
     internal_notes,
     lead_source,
+    lead_source_key,
+    lead_source_detail,
+    original_lead_source,
     ops_customers!ops_appointments_customer_id_fkey (
       id,
       full_name,
@@ -176,9 +183,29 @@ export async function PATCH(
 
         if (body.appointment && typeof body.appointment === 'object') {
           const apu: Record<string, unknown> = {}
-          if (body.appointment.lead_source !== undefined) {
-            apu.lead_source =
-              String(body.appointment.lead_source || '').trim() || null
+          if (
+            body.appointment.lead_source !== undefined ||
+            body.appointment.lead_source_key !== undefined
+          ) {
+            const normalizedLeadSource = await normalizeLeadSourceForWrite({
+              supabase,
+              sourceKey: body.appointment.lead_source_key,
+              legacyValue: body.appointment.lead_source,
+              detail: body.appointment.lead_source_detail,
+              requireActive: true,
+              requirePublic: false,
+              allowMissingDetail: true,
+            })
+            if (!normalizedLeadSource.ok) {
+              return NextResponse.json(
+                { error: normalizedLeadSource.error },
+                { status: 400 },
+              )
+            }
+            Object.assign(
+              apu,
+              leadSourceUpdatePayload(normalizedLeadSource.source),
+            )
           }
           if (body.appointment.internal_notes !== undefined) {
             apu.internal_notes =

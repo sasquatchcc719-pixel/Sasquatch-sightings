@@ -19,6 +19,10 @@ import { ensureInvoiceQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
 import { recordRevenueFromOpsInvoice } from '@/lib/ops/revenue-from-invoice'
 import { sendCustomerSMS } from '@/lib/twilio'
 import { Resend } from 'resend'
+import {
+  leadSourceUpdatePayload,
+  normalizeLeadSourceForWrite,
+} from '@/lib/server/lead-sources'
 
 function addMinutesToTime(value: string, minutesToAdd: number): string {
   const [hours, minutes] = value.split(':').map(Number)
@@ -47,6 +51,9 @@ function parseClockMinutes(value: string): number {
 const APPOINTMENT_SELECT = `
   *,
   lead_source,
+  lead_source_key,
+  lead_source_detail,
+  original_lead_source,
   ops_customers!ops_appointments_customer_id_fkey (
     id,
     full_name,
@@ -346,6 +353,25 @@ export async function PATCH(
     const nextPaymentStatus = body.payment_status
       ? String(body.payment_status)
       : current.payment_status
+    const normalizedLeadSource =
+      body.lead_source !== undefined || body.lead_source_key !== undefined
+        ? await normalizeLeadSourceForWrite({
+            supabase,
+            sourceKey: body.lead_source_key,
+            legacyValue: body.lead_source,
+            detail: body.lead_source_detail,
+            requireActive: true,
+            requirePublic: false,
+            allowMissingDetail: true,
+          })
+        : null
+
+    if (normalizedLeadSource && !normalizedLeadSource.ok) {
+      return NextResponse.json(
+        { error: normalizedLeadSource.error },
+        { status: 400 },
+      )
+    }
 
     const nowIso = new Date().toISOString()
     const firstOnMyWayAt =
@@ -424,10 +450,14 @@ export async function PATCH(
           body.internal_notes !== undefined
             ? String(body.internal_notes || '').trim() || null
             : current.internal_notes,
-        lead_source:
-          body.lead_source !== undefined
-            ? String(body.lead_source || '').trim() || null
-            : current.lead_source,
+        ...(normalizedLeadSource?.ok
+          ? leadSourceUpdatePayload(normalizedLeadSource.source)
+          : {
+              lead_source: current.lead_source,
+              lead_source_key: current.lead_source_key,
+              lead_source_detail: current.lead_source_detail,
+              original_lead_source: current.original_lead_source,
+            }),
         assigned_staff_user_id:
           body.assigned_staff_user_id !== undefined
             ? body.assigned_staff_user_id || null

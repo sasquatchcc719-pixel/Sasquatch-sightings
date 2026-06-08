@@ -26,6 +26,12 @@ import { Textarea } from '@/components/ui/textarea'
 import { BeforeAfterCombiner } from '@/components/admin/before-after-combiner'
 import { getCurrentLocation } from '@/lib/image-utils'
 import { formatSquareAmount } from '@/lib/payments/square'
+import {
+  CANONICAL_LEAD_SOURCE_OPTIONS,
+  PublicLeadSourceOption,
+  getPublicLeadSourceOptions,
+  normalizeLeadSource,
+} from '@/lib/lead-sources'
 import { SignatureModal } from './signature-modal'
 
 type JobPhoto = {
@@ -70,6 +76,9 @@ type OpsAppointment = {
   end_time: string
   status: string
   lead_source: string | null
+  lead_source_key: string | null
+  lead_source_detail: string | null
+  original_lead_source: string | null
   internal_notes: string | null
   gps_lat: number | null
   gps_lng: number | null
@@ -126,6 +135,8 @@ type AddressEditForm = {
 
 type AppointmentEditForm = {
   lead_source: string
+  lead_source_key: string
+  lead_source_detail: string
   internal_notes: string
 }
 
@@ -265,8 +276,13 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   })
   const [appointmentForm, setAppointmentForm] = useState<AppointmentEditForm>({
     lead_source: '',
+    lead_source_key: '',
+    lead_source_detail: '',
     internal_notes: '',
   })
+  const [leadSourceOptions, setLeadSourceOptions] = useState<
+    PublicLeadSourceOption[]
+  >(() => getPublicLeadSourceOptions(CANONICAL_LEAD_SOURCE_OPTIONS))
   const [gpsCapturing, setGpsCapturing] = useState(false)
   const [gpsCoords, setGpsCoords] = useState<{
     lat: number
@@ -479,6 +495,23 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   }, [loadInvoice])
 
   useEffect(() => {
+    fetch('/api/public/lead-sources', { cache: 'no-store' })
+      .then((res) =>
+        res.ok ? res.json() : Promise.reject(new Error('failed')),
+      )
+      .then((data) => {
+        if (Array.isArray(data.options) && data.options.length > 0) {
+          setLeadSourceOptions(data.options)
+        }
+      })
+      .catch(() => {
+        setLeadSourceOptions(
+          getPublicLeadSourceOptions(CANONICAL_LEAD_SOURCE_OPTIONS),
+        )
+      })
+  }, [])
+
+  useEffect(() => {
     const ap = invoice ? unwrapRelation(invoice.ops_appointments) : null
     if (!ap?.id || ap.status !== 'on_my_way') return
     const raw = sessionStorage.getItem(`ops_onmyway_${ap.id}`)
@@ -613,6 +646,10 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
     })
     setAppointmentForm({
       lead_source: appt?.lead_source || '',
+      lead_source_key:
+        appt?.lead_source_key ||
+        normalizeLeadSource(appt?.lead_source).source_key,
+      lead_source_detail: appt?.lead_source_detail || '',
       internal_notes: appt?.internal_notes || '',
     })
     setEditingCustomer(true)
@@ -643,7 +680,8 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
             notes: addressForm.notes || null,
           },
           appointment: {
-            lead_source: appointmentForm.lead_source || null,
+            lead_source_key: appointmentForm.lead_source_key || null,
+            lead_source_detail: appointmentForm.lead_source_detail || null,
             internal_notes: appointmentForm.internal_notes || null,
           },
         }),
@@ -1177,6 +1215,9 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
   const squareAmount = formatSquareAmount(billableTotal)
   const receiptEmail = customer?.email?.trim() ?? ''
   const publishNeedsAttention = /needs? attention/i.test(publishMessage ?? '')
+  const selectedLeadSource = leadSourceOptions.find(
+    (option) => option.key === appointmentForm.lead_source_key,
+  )
 
   return (
     <div className="space-y-6">
@@ -1319,35 +1360,43 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
               </Label>
               <select
                 id="edit-lead-source"
-                value={appointmentForm.lead_source}
+                value={appointmentForm.lead_source_key}
                 onChange={(e) =>
                   setAppointmentForm((f) => ({
                     ...f,
-                    lead_source: e.target.value,
+                    lead_source_key: e.target.value,
+                    lead_source_detail: '',
                   }))
                 }
                 className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
               >
                 <option value="">Not specified</option>
-                <option value="Google">Google</option>
-                <option value="Nextdoor">Nextdoor</option>
-                <option value="Facebook">Facebook</option>
-                <option value="Yelp">Yelp</option>
-                <option value="ChatGPT">ChatGPT</option>
-                <option value="Gemini">Gemini</option>
-                <option value="Claude">Claude</option>
-                <option value="Grok">Grok</option>
-                <option value="Perplexity">Perplexity</option>
-                <option value="Saw truck/vehicle wrap">
-                  Saw truck/vehicle wrap
-                </option>
-                <option value="Word of mouth / Referral">
-                  Word of mouth / Referral
-                </option>
-                <option value="Repeat customer">Repeat customer</option>
-                <option value="Other">Other</option>
+                {leadSourceOptions.map((option) => (
+                  <option key={option.key} value={option.value}>
+                    {option.customer_label}
+                  </option>
+                ))}
               </select>
             </div>
+
+            {selectedLeadSource?.requires_detail ? (
+              <div>
+                <Label htmlFor="edit-lead-source-detail" className="text-xs">
+                  {selectedLeadSource.detail_label || 'Lead Source Detail'} *
+                </Label>
+                <Input
+                  id="edit-lead-source-detail"
+                  value={appointmentForm.lead_source_detail}
+                  onChange={(e) =>
+                    setAppointmentForm((f) => ({
+                      ...f,
+                      lead_source_detail: e.target.value,
+                    }))
+                  }
+                  className="h-9"
+                />
+              </div>
+            ) : null}
 
             <div>
               <Label htmlFor="edit-internal-notes" className="text-xs">

@@ -139,7 +139,12 @@ export const SCOUT_WEB_TOOLS: OpenAI.ChatCompletionTool[] = [
           lead_source: {
             type: 'string',
             description:
-              'How the customer heard about Sasquatch. Options: Google, Nextdoor, Facebook, Yelp, ChatGPT, Gemini, Claude, Grok, Perplexity, Saw truck/vehicle wrap, Word of mouth / Referral, Repeat customer, Other.',
+              'Canonical key for how the customer heard about Sasquatch. Use one of: google_search, google_lsa, nextdoor, facebook, instagram, yelp, chatgpt, gemini, claude, grok, perplexity, vehicle_wrap, nfc_partner, referral, realtor_property_manager, repeat_customer, other. Never use Scout, website chat, Harry, Rabecca, Retell, voice AI, or Telegram as the marketing source.',
+          },
+          lead_source_detail: {
+            type: 'string',
+            description:
+              'Required when lead_source is referral, realtor_property_manager, nfc_partner, or other. Ask for the referrer name, company/location/card code, or where they found us.',
           },
           street_1: { type: 'string' },
           city: { type: 'string' },
@@ -592,6 +597,8 @@ export async function executeScoutWebTool(
           booking_channel: 'ai_agent',
           source_label: 'Scout Website Chat',
           lead_source: providedLeadSource,
+          lead_source_detail:
+            String(args.lead_source_detail || '').trim() || null,
           actor_label: 'Scout Web',
           admin_heading: 'Scout website booking',
           accepted_minimum_charge: acceptedMinimumCharge,

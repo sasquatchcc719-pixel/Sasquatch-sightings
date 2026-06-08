@@ -2,6 +2,11 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Image from 'next/image'
+import {
+  CANONICAL_LEAD_SOURCE_OPTIONS,
+  PublicLeadSourceOption,
+  getPublicLeadSourceOptions,
+} from '@/lib/lead-sources'
 
 // ─────────────────────────────────────────────
 //  Types
@@ -32,6 +37,7 @@ interface CustomerForm {
   email: string
   phone: string
   lead_source: string
+  lead_source_detail: string
   street_1: string
   city: string
   state: string
@@ -467,6 +473,9 @@ export default function BookPage() {
   const [services, setServices] = useState<ServiceItem[]>([])
   const [servicesLoading, setServicesLoading] = useState(true)
   const [cart, setCart] = useState<CartItem[]>([])
+  const [leadSourceOptions, setLeadSourceOptions] = useState<
+    PublicLeadSourceOption[]
+  >(() => getPublicLeadSourceOptions(CANONICAL_LEAD_SOURCE_OPTIONS))
 
   // Schedule
   const [selectedDate, setSelectedDate] = useState('')
@@ -481,6 +490,7 @@ export default function BookPage() {
     email: '',
     phone: '',
     lead_source: '',
+    lead_source_detail: '',
     street_1: '',
     city: '',
     state: 'CO',
@@ -501,6 +511,17 @@ export default function BookPage() {
       .then((d) => setServices(d.services || []))
       .catch(console.error)
       .finally(() => setServicesLoading(false))
+  }, [])
+
+  useEffect(() => {
+    fetch('/api/public/lead-sources')
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('failed'))))
+      .then((d) => {
+        if (Array.isArray(d.options) && d.options.length > 0) {
+          setLeadSourceOptions(d.options)
+        }
+      })
+      .catch(console.error)
   }, [])
 
   // ── Fetch slots when date changes ──
@@ -555,6 +576,10 @@ export default function BookPage() {
   const subtotal = cartTotal(cart)
   const meetsMinimum = subtotal >= MIN_TOTAL
   const orderedGroups = useMemo(() => groupByCategory(services), [services])
+  const selectedLeadSource = useMemo(
+    () => leadSourceOptions.find((option) => option.key === form.lead_source),
+    [form.lead_source, leadSourceOptions],
+  )
 
   // ── Form helpers ──
   function setField<K extends keyof CustomerForm>(
@@ -573,6 +598,14 @@ export default function BookPage() {
       return 'Please enter a valid 10-digit phone number.'
     if (!form.lead_source.trim())
       return 'Please let us know how you heard about us.'
+    if (
+      selectedLeadSource?.requires_detail &&
+      !form.lead_source_detail.trim()
+    ) {
+      return (
+        selectedLeadSource.detail_label || 'Please add a lead source detail.'
+      )
+    }
     if (!form.street_1.trim()) return 'Please enter your service address.'
     if (!form.city.trim()) return 'Please enter your city.'
     if (!form.zip_code.trim() || !/^\d{5}/.test(form.zip_code))
@@ -610,7 +643,8 @@ export default function BookPage() {
       appointment: {
         appointment_date: selectedDate,
         start_time: selectedSlot!.start_time,
-        lead_source: form.lead_source.trim(),
+        lead_source_key: form.lead_source.trim(),
+        lead_source_detail: form.lead_source_detail.trim() || undefined,
       },
       line_items: lineItems,
       promo_code: promoCode.trim() || undefined,
@@ -975,29 +1009,37 @@ export default function BookPage() {
                     </label>
                     <select
                       value={form.lead_source}
-                      onChange={(e) => setField('lead_source', e.target.value)}
+                      onChange={(e) => {
+                        setField('lead_source', e.target.value)
+                        setField('lead_source_detail', '')
+                      }}
                       className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-200 focus:outline-none"
                     >
                       <option value="">Select one...</option>
-                      <option value="Google">Google</option>
-                      <option value="Nextdoor">Nextdoor</option>
-                      <option value="Facebook">Facebook</option>
-                      <option value="Yelp">Yelp</option>
-                      <option value="ChatGPT">ChatGPT</option>
-                      <option value="Gemini">Gemini</option>
-                      <option value="Claude">Claude</option>
-                      <option value="Grok">Grok</option>
-                      <option value="Perplexity">Perplexity</option>
-                      <option value="Saw truck/vehicle wrap">
-                        Saw truck/vehicle wrap
-                      </option>
-                      <option value="Word of mouth / Referral">
-                        Word of mouth / Referral
-                      </option>
-                      <option value="Repeat customer">Repeat customer</option>
-                      <option value="Other">Other</option>
+                      {leadSourceOptions.map((option) => (
+                        <option key={option.key} value={option.value}>
+                          {option.customer_label}
+                        </option>
+                      ))}
                     </select>
                   </div>
+
+                  {selectedLeadSource?.requires_detail ? (
+                    <div>
+                      <label className="mb-1.5 block text-xs font-semibold text-gray-600">
+                        {selectedLeadSource.detail_label || 'Tell us more'} *
+                      </label>
+                      <input
+                        type="text"
+                        value={form.lead_source_detail}
+                        onChange={(e) =>
+                          setField('lead_source_detail', e.target.value)
+                        }
+                        className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-200 focus:outline-none"
+                        placeholder={selectedLeadSource.detail_label || ''}
+                      />
+                    </div>
+                  ) : null}
 
                   <div className="border-t border-gray-100 pt-4">
                     <p className="mb-3 text-xs font-semibold text-gray-600">

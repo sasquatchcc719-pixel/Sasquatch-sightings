@@ -18,6 +18,12 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
+import {
+  CANONICAL_LEAD_SOURCE_OPTIONS,
+  PublicLeadSourceOption,
+  getPublicLeadSourceOptions,
+  normalizeLeadSource,
+} from '@/lib/lead-sources'
 
 type AppointmentDetailProps = {
   appointmentId: string
@@ -33,6 +39,9 @@ type AppointmentDetail = {
   internal_notes: string | null
   quoted_total: number
   lead_source: string | null
+  lead_source_key: string | null
+  lead_source_detail: string | null
+  original_lead_source: string | null
   ops_customers:
     | {
         full_name: string
@@ -180,7 +189,12 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
     payment_status: 'unpaid',
     internal_notes: '',
     lead_source: '',
+    lead_source_key: '',
+    lead_source_detail: '',
   })
+  const [leadSourceOptions, setLeadSourceOptions] = useState<
+    PublicLeadSourceOption[]
+  >(() => getPublicLeadSourceOptions(CANONICAL_LEAD_SOURCE_OPTIONS))
   type OnMyWaySmsInfo = { body: string; actuallySent: boolean }
   const [onMyWaySmsInfo, setOnMyWaySmsInfo] = useState<OnMyWaySmsInfo | null>(
     null,
@@ -229,6 +243,10 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
           payment_status: result.appointment.payment_status,
           internal_notes: result.appointment.internal_notes || '',
           lead_source: result.appointment.lead_source || '',
+          lead_source_key:
+            result.appointment.lead_source_key ||
+            normalizeLeadSource(result.appointment.lead_source).source_key,
+          lead_source_detail: result.appointment.lead_source_detail || '',
         })
       } catch (loadError) {
         setError(
@@ -246,6 +264,23 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
   useEffect(() => {
     void loadAppointment('initial')
   }, [loadAppointment])
+
+  useEffect(() => {
+    fetch('/api/public/lead-sources', { cache: 'no-store' })
+      .then((res) =>
+        res.ok ? res.json() : Promise.reject(new Error('failed')),
+      )
+      .then((data) => {
+        if (Array.isArray(data.options) && data.options.length > 0) {
+          setLeadSourceOptions(data.options)
+        }
+      })
+      .catch(() => {
+        setLeadSourceOptions(
+          getPublicLeadSourceOptions(CANONICAL_LEAD_SOURCE_OPTIONS),
+        )
+      })
+  }, [])
 
   // Offer re-link to recurring when this job was detached (e.g. old calendar move bug).
   useEffect(() => {
@@ -469,6 +504,10 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
           payment_status: result.appointment.payment_status,
           internal_notes: result.appointment.internal_notes || '',
           lead_source: result.appointment.lead_source || '',
+          lead_source_key:
+            result.appointment.lead_source_key ||
+            normalizeLeadSource(result.appointment.lead_source).source_key,
+          lead_source_detail: result.appointment.lead_source_detail || '',
         })
       }
       router.refresh()
@@ -633,6 +672,9 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
     appointment.status === 'in_progress' && jobStartedAtMs != null
   const showDistanceIndicator =
     appointment.status === 'on_my_way' && distanceToJob !== null
+  const selectedLeadSource = leadSourceOptions.find(
+    (option) => option.key === form.lead_source_key,
+  )
 
   return (
     <div className="space-y-6">
@@ -886,34 +928,40 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
               <select
                 id="job-lead-source"
                 className="border-input bg-background h-10 w-full rounded-md border px-3 text-sm"
-                value={form.lead_source}
+                value={form.lead_source_key}
                 onChange={(event) =>
                   setForm((current) => ({
                     ...current,
-                    lead_source: event.target.value,
+                    lead_source_key: event.target.value,
+                    lead_source_detail: '',
                   }))
                 }
               >
                 <option value="">Not specified</option>
-                <option value="Google">Google</option>
-                <option value="Nextdoor">Nextdoor</option>
-                <option value="Facebook">Facebook</option>
-                <option value="Yelp">Yelp</option>
-                <option value="ChatGPT">ChatGPT</option>
-                <option value="Gemini">Gemini</option>
-                <option value="Claude">Claude</option>
-                <option value="Grok">Grok</option>
-                <option value="Perplexity">Perplexity</option>
-                <option value="Saw truck/vehicle wrap">
-                  Saw truck/vehicle wrap
-                </option>
-                <option value="Word of mouth / Referral">
-                  Word of mouth / Referral
-                </option>
-                <option value="Repeat customer">Repeat customer</option>
-                <option value="Other">Other</option>
+                {leadSourceOptions.map((option) => (
+                  <option key={option.key} value={option.value}>
+                    {option.customer_label}
+                  </option>
+                ))}
               </select>
             </div>
+            {selectedLeadSource?.requires_detail ? (
+              <div className="md:col-span-2">
+                <Label htmlFor="job-lead-source-detail">
+                  {selectedLeadSource.detail_label || 'Lead Source Detail'} *
+                </Label>
+                <Input
+                  id="job-lead-source-detail"
+                  value={form.lead_source_detail}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      lead_source_detail: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+            ) : null}
             <div className="md:col-span-2">
               <Label htmlFor="job-notes">Internal Notes</Label>
               <Textarea

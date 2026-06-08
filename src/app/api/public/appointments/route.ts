@@ -24,6 +24,10 @@ import { checkServiceArea } from '@/lib/service-area'
 import { resolveServiceAddress } from '@/lib/ops/addresses'
 import { computePromoDiscountAmount } from '@/lib/promo-discount'
 import { resolveOpsCustomer } from '@/lib/ops/customers'
+import {
+  leadSourceUpdatePayload,
+  normalizeLeadSourceForWrite,
+} from '@/lib/server/lead-sources'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -101,6 +105,10 @@ export async function POST(request: NextRequest) {
     ).trim()
     const startTime = String(body.appointment?.start_time || '').trim()
     const leadSource = String(body.appointment?.lead_source || '').trim()
+    const leadSourceKey = String(body.appointment?.lead_source_key || '').trim()
+    const leadSourceDetail = String(
+      body.appointment?.lead_source_detail || '',
+    ).trim()
 
     if (!appointmentDate || !startTime) {
       return NextResponse.json(
@@ -109,9 +117,18 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (!leadSource) {
+    const normalizedLeadSource = await normalizeLeadSourceForWrite({
+      supabase,
+      sourceKey: leadSourceKey,
+      legacyValue: leadSource,
+      detail: leadSourceDetail,
+      requireActive: true,
+      requirePublic: true,
+    })
+
+    if (!normalizedLeadSource.ok) {
       return NextResponse.json(
-        { error: 'Please let us know how you heard about us' },
+        { error: normalizedLeadSource.error },
         { status: 400, headers: CORS },
       )
     }
@@ -386,7 +403,7 @@ export async function POST(request: NextRequest) {
         quoted_total: total,
         booking_channel: 'website',
         source: 'website',
-        lead_source: leadSource,
+        ...leadSourceUpdatePayload(normalizedLeadSource.source),
         kind: 'service',
         assigned_staff_user_id: assignedStaffUserId,
       })

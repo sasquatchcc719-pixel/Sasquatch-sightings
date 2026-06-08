@@ -14,6 +14,11 @@ import {
   calculateLineItemDurationMinutes,
   DEFAULT_APPOINTMENT_BUFFER_MINUTES,
 } from '@/lib/ops/availability'
+import {
+  CANONICAL_LEAD_SOURCE_OPTIONS,
+  PublicLeadSourceOption,
+  getPublicLeadSourceOptions,
+} from '@/lib/lead-sources'
 
 type ServiceItem = {
   id: string
@@ -237,6 +242,10 @@ export function NewJobWorkspace() {
 
   const [discount, setDiscount] = useState('0')
   const [leadSource, setLeadSource] = useState('')
+  const [leadSourceDetail, setLeadSourceDetail] = useState('')
+  const [leadSourceOptions, setLeadSourceOptions] = useState<
+    PublicLeadSourceOption[]
+  >(() => getPublicLeadSourceOptions(CANONICAL_LEAD_SOURCE_OPTIONS))
   const [useCustomTime, setUseCustomTime] = useState(false)
 
   // Address lookup (server /api/.../address-suggest) — manual fields still canonical
@@ -367,6 +376,23 @@ export function NewJobWorkspace() {
     }
 
     void loadServices()
+  }, [])
+
+  useEffect(() => {
+    fetch('/api/public/lead-sources', { cache: 'no-store' })
+      .then((res) =>
+        res.ok ? res.json() : Promise.reject(new Error('failed')),
+      )
+      .then((data) => {
+        if (Array.isArray(data.options) && data.options.length > 0) {
+          setLeadSourceOptions(data.options)
+        }
+      })
+      .catch(() => {
+        setLeadSourceOptions(
+          getPublicLeadSourceOptions(CANONICAL_LEAD_SOURCE_OPTIONS),
+        )
+      })
   }, [])
 
   const loadSchedulePreview = useCallback(async () => {
@@ -531,6 +557,9 @@ export function NewJobWorkspace() {
     (item) =>
       Number(item.quantity || 0) > 0 && Number(item.unit_price || 0) <= 0,
   ).length
+  const selectedLeadSource = leadSourceOptions.find(
+    (option) => option.key === leadSource,
+  )
 
   const handleSelectCustomer = (customer: CustomerSearchResult) => {
     setAddrSearchQuery('')
@@ -662,6 +691,13 @@ export function NewJobWorkspace() {
       setSaving(false)
       return
     }
+    if (selectedLeadSource?.requires_detail && !leadSourceDetail.trim()) {
+      setError(
+        selectedLeadSource.detail_label || 'Please add lead source detail.',
+      )
+      setSaving(false)
+      return
+    }
 
     try {
       const payload = {
@@ -679,7 +715,8 @@ export function NewJobWorkspace() {
               },
         appointment: appointmentForm,
         discount_amount: Math.max(0, Number(discount || 0)),
-        lead_source: leadSource.trim() || null,
+        lead_source_key: leadSource.trim() || null,
+        lead_source_detail: leadSourceDetail.trim() || null,
         line_items: lineItems.map((item) => ({
           service_catalog_item_id: item.service_catalog_item_id || null,
           name_snapshot: item.name_snapshot,
@@ -1592,28 +1629,33 @@ export function NewJobWorkspace() {
                   id="lead-source"
                   className="border-input bg-background h-10 w-full rounded-md border px-3 text-sm"
                   value={leadSource}
-                  onChange={(event) => setLeadSource(event.target.value)}
+                  onChange={(event) => {
+                    setLeadSource(event.target.value)
+                    setLeadSourceDetail('')
+                  }}
                 >
                   <option value="">— Select source —</option>
-                  <option value="Google">Google</option>
-                  <option value="Word of mouth / Referral">
-                    Word of mouth / Referral
-                  </option>
-                  <option value="Nextdoor">Nextdoor</option>
-                  <option value="Facebook">Facebook</option>
-                  <option value="Yelp">Yelp</option>
-                  <option value="ChatGPT">ChatGPT</option>
-                  <option value="Gemini">Gemini</option>
-                  <option value="Claude">Claude</option>
-                  <option value="Grok">Grok</option>
-                  <option value="Perplexity">Perplexity</option>
-                  <option value="Saw truck/vehicle wrap">
-                    Saw truck/vehicle wrap
-                  </option>
-                  <option value="Repeat customer">Repeat customer</option>
-                  <option value="Other">Other</option>
+                  {leadSourceOptions.map((option) => (
+                    <option key={option.key} value={option.value}>
+                      {option.customer_label}
+                    </option>
+                  ))}
                 </select>
               </div>
+              {selectedLeadSource?.requires_detail ? (
+                <div>
+                  <Label htmlFor="lead-source-detail">
+                    {selectedLeadSource.detail_label || 'Lead Source Detail'} *
+                  </Label>
+                  <Input
+                    id="lead-source-detail"
+                    value={leadSourceDetail}
+                    onChange={(event) =>
+                      setLeadSourceDetail(event.target.value)
+                    }
+                  />
+                </div>
+              ) : null}
               <div className="md:col-span-3">
                 <Label htmlFor="internal-notes">Internal Notes</Label>
                 <Textarea

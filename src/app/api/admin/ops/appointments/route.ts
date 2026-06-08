@@ -15,6 +15,10 @@ import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
 import { scheduleJobReminder } from '@/lib/onesignal'
 import { normalizeOpsPhone, opsPhoneLookupVariants } from '@/lib/ops/phone'
 import { resolveServiceAddress } from '@/lib/ops/addresses'
+import {
+  leadSourceUpdatePayload,
+  normalizeLeadSourceForWrite,
+} from '@/lib/server/lead-sources'
 
 type IncomingLineItem = {
   service_catalog_item_id?: string | null
@@ -303,6 +307,22 @@ export async function POST(request: NextRequest) {
       throw new Error('Failed to resolve service address')
     }
 
+    const normalizedLeadSource = await normalizeLeadSourceForWrite({
+      supabase,
+      sourceKey: body.lead_source_key,
+      legacyValue: body.lead_source,
+      detail: body.lead_source_detail,
+      requireActive: true,
+      requirePublic: false,
+      allowMissingDetail: true,
+    })
+    if (!normalizedLeadSource.ok) {
+      return NextResponse.json(
+        { error: normalizedLeadSource.error },
+        { status: 400 },
+      )
+    }
+
     const syncStatus = getQuickBooksSyncStatus()
     const appointmentKind =
       body.appointment?.kind === 'estimate' ? 'estimate' : 'service'
@@ -318,7 +338,7 @@ export async function POST(request: NextRequest) {
           body.appointment?.assigned_staff_user_id || null,
         booking_channel: body.appointment?.booking_channel || 'admin',
         source: body.appointment?.source || 'internal',
-        lead_source: body.lead_source ? String(body.lead_source) : null,
+        ...leadSourceUpdatePayload(normalizedLeadSource.source),
         status: 'booked',
         payment_status: 'unpaid',
         kind: appointmentKind,

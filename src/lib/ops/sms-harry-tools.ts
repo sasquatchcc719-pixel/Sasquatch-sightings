@@ -635,7 +635,12 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
           lead_source: {
             type: 'string',
             description:
-              'How the customer heard about Sasquatch Carpet Cleaning. Always required — ask before booking if not already known. Examples: Google, Nextdoor, Facebook, Yelp, ChatGPT, Gemini, Claude, Grok, Perplexity, Saw truck/vehicle wrap, Word of mouth / Referral, Repeat customer, Google LSA, NFC Card, Other.',
+              'Canonical key for how the customer heard about Sasquatch Carpet Cleaning. Always required — ask before booking if not already known. Use one of: google_search, google_lsa, nextdoor, facebook, instagram, yelp, chatgpt, gemini, claude, grok, perplexity, vehicle_wrap, nfc_partner, referral, realtor_property_manager, repeat_customer, other. Never use Harry, SMS, Telegram, Rabecca, Retell, voice AI, or website as the marketing source.',
+          },
+          lead_source_detail: {
+            type: 'string',
+            description:
+              'Required when lead_source is referral, realtor_property_manager, nfc_partner, or other. Examples: referrer name, realtor/property manager company, partner location/card code, or where they found us.',
           },
           accepted_minimum_charge: {
             type: 'boolean',
@@ -1883,7 +1888,7 @@ export async function executeHarrySmsTool(
 
         const providedLeadSource = String(args.lead_source || '').trim()
         const resolvedLeadSource =
-          providedLeadSource || (isLsa ? 'Google LSA' : 'Harry SMS Assistant')
+          providedLeadSource || (isLsa ? 'google_lsa' : '')
 
         if (!providedLeadSource) {
           return JSON.stringify({
@@ -1922,6 +1927,8 @@ export async function executeHarrySmsTool(
           booking_channel: isLsa ? 'lsa_sms' : 'sms_harry',
           source_label: isLsa ? 'Google LSA' : 'Harry SMS',
           lead_source: resolvedLeadSource,
+          lead_source_detail:
+            String(args.lead_source_detail || '').trim() || null,
           actor_label: isLsa ? 'Harry LSA' : 'Harry SMS',
           admin_heading: isLsa ? 'Google LSA booking' : 'Harry SMS booking',
           accepted_minimum_charge: acceptedMinimumCharge,

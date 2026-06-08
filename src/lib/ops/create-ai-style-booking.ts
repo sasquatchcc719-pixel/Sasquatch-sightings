@@ -18,6 +18,10 @@ import {
 import { resolveOpsCustomer } from '@/lib/ops/customers'
 import { resolveServiceAddress } from '@/lib/ops/addresses'
 import { checkServiceArea } from '@/lib/service-area'
+import {
+  leadSourceUpdatePayload,
+  normalizeLeadSourceForWrite,
+} from '@/lib/server/lead-sources'
 
 export type AiStyleBookingLineRequest = {
   service_id: string
@@ -49,6 +53,7 @@ export type CreateAiStyleBookingInput = {
   source_label: string
   /** ops_appointments.lead_source */
   lead_source: string
+  lead_source_detail?: string | null
   referrer_name?: string | null
   referrer_type?: string | null
   lead_notes?: string | null
@@ -190,6 +195,7 @@ export async function createAiStyleBooking(
     booking_channel: bookingChannel,
     source_label: sourceLabel,
     lead_source: leadSource,
+    lead_source_detail: leadSourceDetailRaw = null,
     referrer_name: referrerNameRaw = null,
     referrer_type: referrerTypeRaw = null,
     lead_notes: leadNotesRaw = null,
@@ -213,6 +219,7 @@ export async function createAiStyleBooking(
   const referrerType = (referrerTypeRaw || '').trim() || null
   const leadNotes = (leadNotesRaw || '').trim() || null
   const normalizedLeadSource = leadSource.trim()
+  const leadSourceDetail = (leadSourceDetailRaw || '').trim() || null
 
   if (!firstName || !lastName || !email || !phone) {
     return {
@@ -232,6 +239,20 @@ export async function createAiStyleBooking(
   if (!normalizedLeadSource) {
     return { ok: false, error: 'Lead source is required' }
   }
+  const resolvedLeadSource = await normalizeLeadSourceForWrite({
+    supabase,
+    sourceKey: normalizedLeadSource,
+    legacyValue: normalizedLeadSource,
+    detail: leadSourceDetail || referrerName || leadNotes,
+    requireActive: true,
+    requirePublic: false,
+    allowMissingDetail: bookingChannel === 'lsa_sms',
+  })
+
+  if (!resolvedLeadSource.ok) {
+    return { ok: false, error: resolvedLeadSource.error }
+  }
+
   if (
     bookingChannel === 'retell_rabecca' &&
     normalizedLeadSource.toLowerCase() === REBECCA_RETELL_CHANNEL_LEAD_SOURCE
@@ -499,7 +520,7 @@ export async function createAiStyleBooking(
       quoted_total: total,
       booking_channel: bookingChannel,
       source: sourceLabel,
-      lead_source: normalizedLeadSource,
+      ...leadSourceUpdatePayload(resolvedLeadSource.source),
       kind: 'service',
       ...(input.assigned_staff_user_id
         ? { assigned_staff_user_id: input.assigned_staff_user_id }
@@ -608,7 +629,10 @@ export async function createAiStyleBooking(
     `${street1}, ${city}, ${state} ${zipCode}`,
     `${appointmentDate} at ${startTime.slice(0, 5)}`,
     `Source: ${sourceLabel}`,
-    `Lead source: ${normalizedLeadSource}`,
+    `Lead source: ${resolvedLeadSource.source.lead_source}`,
+    resolvedLeadSource.source.lead_source_detail
+      ? `Lead detail: ${resolvedLeadSource.source.lead_source_detail}`
+      : '',
     ...(travelCharge > 0
       ? [`Travel-charge area: $${travelCharge.toFixed(2)} travel fee`]
       : []),
@@ -641,7 +665,7 @@ export async function createAiStyleBooking(
       appointmentDate,
       startTime: startTime.slice(0, 5),
       total,
-      leadSource: normalizedLeadSource,
+      leadSource: resolvedLeadSource.source.lead_source,
       services: lineItems.map((item) => item.name_snapshot),
     }),
   ])
@@ -653,7 +677,7 @@ export async function createAiStyleBooking(
       referrerType,
       customerName: fullName,
       customerPhone: phone,
-      leadSource: normalizedLeadSource,
+      leadSource: resolvedLeadSource.source.lead_source,
       notes: leadNotes,
     })
   }

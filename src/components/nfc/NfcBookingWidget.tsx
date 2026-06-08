@@ -965,7 +965,8 @@ export function NfcBookingWidget({
       appointment: {
         appointment_date: selectedDate,
         start_time: selectedSlot!.start_time,
-        lead_source: cardId ? `NFC Card - ${cardId}` : 'NFC Card',
+        lead_source_key: 'nfc_partner',
+        lead_source_detail: cardId || 'NFC card',
       },
       line_items: lineItems,
       percentage_discount:

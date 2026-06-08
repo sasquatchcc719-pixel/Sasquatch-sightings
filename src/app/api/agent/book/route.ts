@@ -93,10 +93,24 @@ export async function POST(request: NextRequest) {
 
     const appointmentDate = String(body.date || '').trim()
     const startTime = String(body.start_time || '').trim()
+    const leadSource =
+      String(body.lead_source_key || '').trim() ||
+      String(body.lead_source || '').trim()
+    const leadSourceDetail = String(body.lead_source_detail || '').trim()
 
     if (!appointmentDate || !startTime) {
       return NextResponse.json(
         { error: 'date (YYYY-MM-DD) and start_time (HH:MM) are required' },
+        { status: 400, headers: CORS },
+      )
+    }
+
+    if (!leadSource) {
+      return NextResponse.json(
+        {
+          error:
+            'lead_source_key is required. Ask how the customer heard about Sasquatch; do not use the agent name as attribution.',
+        },
         { status: 400, headers: CORS },
       )
     }
@@ -168,7 +182,8 @@ export async function POST(request: NextRequest) {
       booking_mode: effectiveBookingMode,
       booking_channel: 'ai_agent',
       source_label: auth.key.label,
-      lead_source: `AI Agent (${auth.key.label})`,
+      lead_source: leadSource,
+      lead_source_detail: leadSourceDetail || null,
       actor_label: `AI agent (${auth.key.label})`,
       admin_heading: 'AI Agent booking',
       assigned_staff_user_id: assignedStaffUserId,
