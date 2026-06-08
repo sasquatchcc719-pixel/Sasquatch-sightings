@@ -13,22 +13,37 @@ export async function GET() {
   try {
     await requireAnyRole([...ADMIN_ROLES])
     const supabase = createAdminClient()
+    const today = new Date().toISOString().slice(0, 10)
 
-    const [settingsResult, templatesResult, enrollmentsResult, logResult] =
-      await Promise.all([
-        supabase
-          .from('reactivation_settings')
-          .select('*')
-          .eq('id', true)
-          .maybeSingle(),
-        supabase
-          .from('reactivation_email_templates')
-          .select('*')
-          .order('rotation_order', { ascending: true }),
-        supabase
-          .from('reactivation_campaign_enrollments')
-          .select(
-            `
+    const [
+      settingsResult,
+      templatesResult,
+      enrollmentsResult,
+      logResult,
+      totalCountResult,
+      activeCountResult,
+      dueCountResult,
+      pausedRecentBookingCountResult,
+      suppressedManualCountResult,
+      suppressedUnsubscribedCountResult,
+      suppressedBlacklistedCountResult,
+      excludedNoEmailCountResult,
+      excludedDuplicateCountResult,
+      postJobDripCountResult,
+    ] = await Promise.all([
+      supabase
+        .from('reactivation_settings')
+        .select('*')
+        .eq('id', true)
+        .maybeSingle(),
+      supabase
+        .from('reactivation_email_templates')
+        .select('*')
+        .order('rotation_order', { ascending: true }),
+      supabase
+        .from('reactivation_campaign_enrollments')
+        .select(
+          `
           id,
           customer_id,
           status,
@@ -50,13 +65,13 @@ export async function GET() {
             email_opt_out
           )
         `,
-          )
-          .order('updated_at', { ascending: false })
-          .limit(200),
-        supabase
-          .from('reactivation_email_log')
-          .select(
-            `
+        )
+        .order('updated_at', { ascending: false })
+        .limit(200),
+      supabase
+        .from('reactivation_email_log')
+        .select(
+          `
           id,
           enrollment_id,
           customer_id,
@@ -70,38 +85,94 @@ export async function GET() {
           metadata,
           ops_customers ( full_name, email )
         `,
-          )
-          .order('sent_at', { ascending: false })
-          .limit(50),
-      ])
+        )
+        .order('sent_at', { ascending: false })
+        .limit(50),
+      supabase
+        .from('reactivation_campaign_enrollments')
+        .select('id', { count: 'exact', head: true }),
+      supabase
+        .from('reactivation_campaign_enrollments')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'active'),
+      supabase
+        .from('reactivation_campaign_enrollments')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'active')
+        .lte('next_send_at', today),
+      supabase
+        .from('reactivation_campaign_enrollments')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'paused_recent_booking'),
+      supabase
+        .from('reactivation_campaign_enrollments')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'suppressed_manual'),
+      supabase
+        .from('reactivation_campaign_enrollments')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'suppressed_unsubscribed'),
+      supabase
+        .from('reactivation_campaign_enrollments')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'suppressed_blacklisted'),
+      supabase
+        .from('reactivation_campaign_enrollments')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'excluded_no_email'),
+      supabase
+        .from('reactivation_campaign_enrollments')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'excluded_duplicate'),
+      supabase
+        .from('reactivation_campaign_enrollments')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'post_job_drip'),
+    ])
 
     if (settingsResult.error) throw settingsResult.error
     if (templatesResult.error) throw templatesResult.error
     if (enrollmentsResult.error) throw enrollmentsResult.error
     if (logResult.error) throw logResult.error
+    if (totalCountResult.error) throw totalCountResult.error
+    if (activeCountResult.error) throw activeCountResult.error
+    if (dueCountResult.error) throw dueCountResult.error
+    if (pausedRecentBookingCountResult.error) {
+      throw pausedRecentBookingCountResult.error
+    }
+    if (suppressedManualCountResult.error) {
+      throw suppressedManualCountResult.error
+    }
+    if (suppressedUnsubscribedCountResult.error) {
+      throw suppressedUnsubscribedCountResult.error
+    }
+    if (suppressedBlacklistedCountResult.error) {
+      throw suppressedBlacklistedCountResult.error
+    }
+    if (excludedNoEmailCountResult.error) throw excludedNoEmailCountResult.error
+    if (excludedDuplicateCountResult.error) {
+      throw excludedDuplicateCountResult.error
+    }
+    if (postJobDripCountResult.error) throw postJobDripCountResult.error
 
-    const enrollments = enrollmentsResult.data || []
     const stats = {
-      active: enrollments.filter((row) => row.status === 'active').length,
-      paused_recent_booking: enrollments.filter(
-        (row) => row.status === 'paused_recent_booking',
-      ).length,
-      suppressed_unsubscribed: enrollments.filter(
-        (row) => row.status === 'suppressed_unsubscribed',
-      ).length,
-      suppressed_manual: enrollments.filter(
-        (row) => row.status === 'suppressed_manual',
-      ).length,
-      excluded: enrollments.filter((row) =>
-        String(row.status || '').startsWith('excluded_'),
-      ).length,
-      total: enrollments.length,
+      active: activeCountResult.count || 0,
+      active_due: dueCountResult.count || 0,
+      paused_recent_booking: pausedRecentBookingCountResult.count || 0,
+      suppressed_unsubscribed: suppressedUnsubscribedCountResult.count || 0,
+      suppressed_manual: suppressedManualCountResult.count || 0,
+      suppressed_blacklisted: suppressedBlacklistedCountResult.count || 0,
+      excluded:
+        (excludedNoEmailCountResult.count || 0) +
+        (excludedDuplicateCountResult.count || 0),
+      post_job_drip: postJobDripCountResult.count || 0,
+      total: totalCountResult.count || 0,
     }
 
     return NextResponse.json({
       settings: settingsResult.data,
       templates: templatesResult.data || [],
-      enrollments,
+      enrollments: enrollmentsResult.data || [],
       log: logResult.data || [],
       stats,
     })
