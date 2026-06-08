@@ -271,6 +271,15 @@ export function ReactivationControlCenter() {
   }
 
   async function runAction(action: string) {
+    if (action === 'run_now') {
+      const dueCount = stats.active_due || 0
+      const estimatedSends = Math.min(dueCount, settings.daily_send_cap)
+      const confirmed = window.confirm(
+        `Send real reactivation emails now?\n\nDue customers: ${dueCount}\nDaily cap: ${settings.daily_send_cap}\nEstimated max sends: ${estimatedSends}`,
+      )
+      if (!confirmed) return
+    }
+
     setRunning(true)
     setError(null)
     setNotice(null)
@@ -434,20 +443,21 @@ export function ReactivationControlCenter() {
           <div className="rounded-lg border border-white/10 bg-black/20 p-4">
             <Users className="mb-2 h-4 w-4 text-emerald-300" />
             <div className="text-2xl font-semibold">{stats.active || 0}</div>
-            <div className="text-xs text-white/45">Active customers</div>
+            <div className="text-xs text-white/45">Active customers total</div>
           </div>
           <div className="rounded-lg border border-white/10 bg-black/20 p-4">
             <Clock className="mb-2 h-4 w-4 text-cyan-300" />
             <div className="text-2xl font-semibold">
-              {stats.paused_recent_booking || 0}
+              {stats.active_due || 0}
             </div>
-            <div className="text-xs text-white/45">Paused after booking</div>
+            <div className="text-xs text-white/45">Due to send now</div>
           </div>
           <div className="rounded-lg border border-white/10 bg-black/20 p-4">
             <Ban className="mb-2 h-4 w-4 text-red-300" />
             <div className="text-2xl font-semibold">
               {(stats.suppressed_unsubscribed || 0) +
-                (stats.suppressed_manual || 0)}
+                (stats.suppressed_manual || 0) +
+                (stats.suppressed_blacklisted || 0)}
             </div>
             <div className="text-xs text-white/45">Suppressed</div>
           </div>
@@ -526,7 +536,7 @@ export function ReactivationControlCenter() {
               ) : (
                 <Mail className="h-4 w-4" />
               )}
-              Run Now
+              Send Due Emails Now
             </Button>
           </div>
         </div>
