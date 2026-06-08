@@ -17,6 +17,7 @@ import {
 } from '@/lib/quickbooks'
 import { resolveOpsCustomer } from '@/lib/ops/customers'
 import { resolveServiceAddress } from '@/lib/ops/addresses'
+import { cancelReactivationForCustomer } from '@/lib/ops/reactivation-campaign'
 import { checkServiceArea } from '@/lib/service-area'
 import {
   leadSourceUpdatePayload,
@@ -533,6 +534,8 @@ export async function createAiStyleBooking(
     console.error('[createAiStyleBooking] appointment:', appointmentError)
     return { ok: false, error: 'Could not create appointment' }
   }
+
+  await cancelReactivationForCustomer(customerId, 'booked_job')
 
   const { data: invoice, error: invoiceError } = await supabase
     .from('ops_invoices')

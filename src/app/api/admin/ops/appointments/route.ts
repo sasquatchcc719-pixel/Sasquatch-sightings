@@ -11,6 +11,7 @@ import {
 } from '@/lib/ops/availability'
 import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
 import { enrollCustomerInDrip } from '@/lib/ops/drip-campaign'
+import { cancelReactivationForCustomer } from '@/lib/ops/reactivation-campaign'
 import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
 import { scheduleJobReminder } from '@/lib/onesignal'
 import { normalizeOpsPhone, opsPhoneLookupVariants } from '@/lib/ops/phone'
@@ -358,6 +359,9 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (appointmentError) throw appointmentError
+    if (!isEstimate) {
+      await cancelReactivationForCustomer(customerId, 'booked_job')
+    }
 
     const appointmentLinesPayload = normalizedLineItems.map(
       (item: NormalizedLineItem) => ({

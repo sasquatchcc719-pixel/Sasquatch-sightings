@@ -37,6 +37,24 @@ export async function GET(request: NextRequest) {
     .eq('customer_id', customerId)
     .eq('status', 'active')
 
+  await supabase
+    .from('reactivation_campaign_enrollments')
+    .update({
+      status: 'suppressed_unsubscribed',
+      next_send_at: null,
+      stop_reason: 'customer_unsubscribed',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('customer_id', customerId)
+    .eq('status', 'active')
+
+  await supabase.from('reactivation_email_log').insert({
+    customer_id: customerId,
+    event_type: 'unsubscribed',
+    status: 'logged',
+    metadata: { source: 'public_unsubscribe' },
+  })
+
   return new NextResponse(successHtml(), {
     status: 200,
     headers: { 'Content-Type': 'text/html' },
