@@ -21,6 +21,9 @@ export async function POST(request: NextRequest) {
     const callSid = formData.get('CallSid') as string
     const callStatus = formData.get('CallStatus') as string
     const dialCallStatus = formData.get('DialCallStatus') as string
+    const normalizedDialCallStatus = String(dialCallStatus || '')
+      .trim()
+      .toLowerCase()
 
     if (!callerPhone) {
       console.error('[Call Handler] Missing caller phone number')
@@ -49,11 +52,11 @@ export async function POST(request: NextRequest) {
     // Update call_logs with final outcome — fire-and-forget, never block TwiML
     if (callSid) {
       const callOutcome =
-        dialCallStatus === 'completed'
+        normalizedDialCallStatus === 'completed'
           ? 'answered'
-          : dialCallStatus === 'no-answer' ||
-              dialCallStatus === 'busy' ||
-              dialCallStatus === 'canceled'
+          : normalizedDialCallStatus === 'no-answer' ||
+              normalizedDialCallStatus === 'busy' ||
+              normalizedDialCallStatus === 'canceled'
             ? 'no-answer'
             : 'voicemail'
       const callDuration = parseInt(
@@ -83,115 +86,129 @@ export async function POST(request: NextRequest) {
       isHarryFunctionEnabled(controlSnapshot, 'call_missed_auto_sms_enabled') &&
       isHarryChannelEnabled(controlSnapshot, 'inbound')
 
-    // Send Harry SMS any time a call doesn't get answered
+    // Send Harry SMS any time this handler owns a non-answered call.
+    // After-hours/LSA fallback redirects often arrive without DialCallStatus,
+    // so missing status is treated as a missed/voicemail call here.
     const shouldSendSMS =
       canRunHarryCallSms &&
-      Boolean(dialCallStatus) &&
-      !['completed', 'answered'].includes(dialCallStatus)
+      !['completed', 'answered'].includes(normalizedDialCallStatus)
 
     if (shouldSendSMS) {
       console.log(
         `[Call Handler] Sending Harry SMS (dialCallStatus: ${dialCallStatus || 'none - after hours'})`,
       )
 
-      // Find or create conversation for this phone number
-      const { data: existingConvo } = await supabase
-        .from('conversations')
-        .select('*')
-        .eq('phone_number', normalizedPhone)
-        .eq('source', 'inbound')
-        .eq('status', 'active')
-        .single()
-
-      let conversationId = existingConvo?.id
-
-      if (!existingConvo) {
-        // Create new conversation
-        const { data: newConvo, error: convoError } = await supabase
+      try {
+        // Find or create conversation for this phone number
+        const { data: existingConvo } = await supabase
           .from('conversations')
-          .insert({
-            phone_number: normalizedPhone,
-            source: 'inbound',
-            status: 'active',
-            ai_enabled: true,
-            messages: [],
-            metadata: { trigger: 'missed_call', call_sid: callSid },
-          })
-          .select()
+          .select('*')
+          .eq('phone_number', normalizedPhone)
+          .eq('source', 'inbound')
+          .eq('status', 'active')
           .single()
 
-        if (convoError) {
-          console.error(
-            '[Call Handler] Error creating conversation:',
-            convoError,
-          )
-          return new NextResponse(
-            '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
-            {
-              status: 200,
-              headers: { 'Content-Type': 'text/xml' },
-            },
-          )
+        let conversationId = existingConvo?.id
+
+        if (!existingConvo) {
+          // Create new conversation
+          const { data: newConvo, error: convoError } = await supabase
+            .from('conversations')
+            .insert({
+              phone_number: normalizedPhone,
+              source: 'inbound',
+              status: 'active',
+              ai_enabled: true,
+              messages: [],
+              metadata: {
+                trigger: 'missed_call',
+                call_sid: callSid,
+                dial_call_status: normalizedDialCallStatus || null,
+              },
+            })
+            .select()
+            .single()
+
+          if (convoError) {
+            throw convoError
+          }
+
+          conversationId = newConvo.id
+        } else {
+          // Update existing conversation with call metadata
+          await supabase
+            .from('conversations')
+            .update({
+              metadata: {
+                ...existingConvo.metadata,
+                last_missed_call: new Date().toISOString(),
+                call_sid: callSid,
+                dial_call_status: normalizedDialCallStatus || null,
+              },
+            })
+            .eq('id', conversationId)
         }
 
-        conversationId = newConvo.id
-      } else {
-        // Update existing conversation with call metadata
+        // Send SMS via Harry
+        const harryMessage =
+          'Hi! This is Harry from Sasquatch Carpet Cleaning. I saw you just called. How can I help you today?'
+
+        const twilioClient = twilio(
+          process.env.TWILIO_ACCOUNT_SID,
+          process.env.TWILIO_AUTH_TOKEN,
+        )
+
+        const sms = await twilioClient.messages.create({
+          body: harryMessage,
+          to: normalizedPhone,
+          from: process.env.TWILIO_PHONE_NUMBER,
+        })
+
+        console.log(
+          `[Call Handler] SMS sent to ${normalizedPhone}, SID: ${sms.sid}`,
+        )
+
+        // Update conversation with Harry's message
+        const messages = existingConvo?.messages || []
+        messages.push({
+          role: 'assistant',
+          content: harryMessage,
+          timestamp: new Date().toISOString(),
+          twilio_sid: sms.sid,
+          metadata: {
+            type: 'missed_call_sms',
+            dial_call_status: normalizedDialCallStatus || null,
+          },
+        })
+
         await supabase
           .from('conversations')
-          .update({
-            metadata: {
-              ...existingConvo.metadata,
-              last_missed_call: new Date().toISOString(),
-              call_sid: callSid,
-            },
-          })
+          .update({ messages, updated_at: new Date().toISOString() })
           .eq('id', conversationId)
+
+        // Log to sms_logs
+        await supabase.from('sms_logs').insert({
+          recipient_phone: normalizedPhone,
+          message_type: 'ai_dispatcher',
+          message_content: harryMessage,
+          status: 'sent',
+          twilio_sid: sms.sid,
+          sent_at: new Date().toISOString(),
+        })
+      } catch (smsError) {
+        console.error(
+          '[Call Handler] Failed to send Harry missed-call SMS:',
+          smsError,
+        )
+        await supabase.from('sms_logs').insert({
+          recipient_phone: normalizedPhone,
+          message_type: 'ai_dispatcher',
+          message_content:
+            'Harry missed-call SMS failed before it could be sent.',
+          status: 'failed',
+          sent_at: new Date().toISOString(),
+        })
       }
-
-      // Send SMS via Harry
-      const harryMessage =
-        'Hi! This is Harry from Sasquatch Carpet Cleaning. I saw you just called. How can I help you today?'
-
-      const twilioClient = twilio(
-        process.env.TWILIO_ACCOUNT_SID,
-        process.env.TWILIO_AUTH_TOKEN,
-      )
-
-      const sms = await twilioClient.messages.create({
-        body: harryMessage,
-        to: normalizedPhone,
-        from: process.env.TWILIO_PHONE_NUMBER,
-      })
-
-      console.log(
-        `[Call Handler] SMS sent to ${normalizedPhone}, SID: ${sms.sid}`,
-      )
-
-      // Update conversation with Harry's message
-      const messages = existingConvo?.messages || []
-      messages.push({
-        role: 'assistant',
-        content: harryMessage,
-        timestamp: new Date().toISOString(),
-        twilio_sid: sms.sid,
-        metadata: { type: 'missed_call_sms' },
-      })
-
-      await supabase
-        .from('conversations')
-        .update({ messages, updated_at: new Date().toISOString() })
-        .eq('id', conversationId)
-
-      // Log to sms_logs
-      await supabase.from('sms_logs').insert({
-        recipient_phone: normalizedPhone,
-        message_type: 'ai_dispatcher',
-        message_content: harryMessage,
-        status: 'sent',
-        twilio_sid: sms.sid,
-        sent_at: new Date().toISOString(),
-      })
     } else {
       console.log(
         `[Call Handler] SMS suppressed — shouldSendSMS=${shouldSendSMS}, canRunHarryCallSms=${canRunHarryCallSms}, dialCallStatus=${dialCallStatus}`,
