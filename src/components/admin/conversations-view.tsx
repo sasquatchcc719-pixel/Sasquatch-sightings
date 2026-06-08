@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Card,
   CardContent,
@@ -807,323 +808,327 @@ export function ConversationsView({
       )}
 
       {/* Conversation Detail Modal */}
-      {selectedConvo && (
-        <div
-          className="fixed inset-0 z-[220] flex items-end justify-center bg-black/60 sm:items-center sm:p-4"
-          onClick={() => {
-            setSelectedConvo(null)
-            setConfirmDelete(false)
-          }}
-        >
+      {selectedConvo &&
+        createPortal(
           <div
-            className="bg-background flex h-[100dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl shadow-xl sm:h-auto sm:max-h-[92vh] sm:rounded-xl"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 z-[220] flex items-end justify-center bg-black/60 sm:items-center sm:p-4"
+            onClick={() => {
+              setSelectedConvo(null)
+              setConfirmDelete(false)
+            }}
           >
-            {/* Header */}
-            <div className="flex-shrink-0 border-b p-4">
-              <div className="mb-2 flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  {/* Avatar in modal header */}
-                  <div
-                    className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold text-white ${getAvatarColor(selectedConvo.phone_number)}`}
-                  >
-                    {getInitials(
-                      selectedConvo.lead?.name,
-                      selectedConvo.phone_number,
-                    )}
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-base font-semibold">
-                        {selectedConvo.lead?.name || selectedConvo.phone_number}
-                      </span>
-                      {selectedConvo.ops_customer_id && (
-                        <span className="rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400">
-                          Scheduled Customer
-                        </span>
+            <div
+              className="bg-background flex h-[100dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl shadow-xl sm:h-auto sm:max-h-[92vh] sm:rounded-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex-shrink-0 border-b p-4">
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    {/* Avatar in modal header */}
+                    <div
+                      className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold text-white ${getAvatarColor(selectedConvo.phone_number)}`}
+                    >
+                      {getInitials(
+                        selectedConvo.lead?.name,
+                        selectedConvo.phone_number,
                       )}
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <a
-                        href={`tel:${selectedConvo.phone_number}`}
-                        className="text-xs text-blue-400 hover:underline"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {selectedConvo.phone_number}
-                      </a>
-                      <CallButton phoneNumber={selectedConvo.phone_number} />
-                      {getStatusBadge(selectedConvo.status)}
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-base font-semibold">
+                          {selectedConvo.lead?.name ||
+                            selectedConvo.phone_number}
+                        </span>
+                        {selectedConvo.ops_customer_id && (
+                          <span className="rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400">
+                            Scheduled Customer
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <a
+                          href={`tel:${selectedConvo.phone_number}`}
+                          className="text-xs text-blue-400 hover:underline"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {selectedConvo.phone_number}
+                        </a>
+                        <CallButton phoneNumber={selectedConvo.phone_number} />
+                        {getStatusBadge(selectedConvo.status)}
+                      </div>
                     </div>
                   </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setSelectedConvo(null)
+                      setConfirmDelete(false)
+                    }}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setSelectedConvo(null)
-                    setConfirmDelete(false)
-                  }}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
 
-              {selectedConvo.lead && (
-                <div className="text-muted-foreground mb-2 text-xs">
-                  Lead: {selectedConvo.lead.name} ({selectedConvo.lead.source})
-                </div>
-              )}
-              <div className="text-muted-foreground mb-3 text-xs">
-                Started {formatTime(selectedConvo.created_at)} ·{' '}
-                {selectedConvo.messages.length} messages
-                {getSourceLabel(selectedConvo.source) && (
-                  <span className="ml-1 text-slate-500">
-                    · {getSourceLabel(selectedConvo.source)}
-                  </span>
+                {selectedConvo.lead && (
+                  <div className="text-muted-foreground mb-2 text-xs">
+                    Lead: {selectedConvo.lead.name} ({selectedConvo.lead.source}
+                    )
+                  </div>
                 )}
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex flex-wrap gap-2">
-                {selectedConvo.status !== 'completed' && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      void handleUpdateStatus(selectedConvo.id, 'completed')
-                    }
-                  >
-                    <CheckCircle className="mr-1 h-3 w-3" />
-                    Mark Complete
-                  </Button>
-                )}
-                {selectedConvo.status === 'completed' && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      void handleUpdateStatus(selectedConvo.id, 'active')
-                    }
-                  >
-                    Reopen
-                  </Button>
-                )}
-                {selectedConvo.status !== 'escalated' && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      void handleUpdateStatus(selectedConvo.id, 'escalated')
-                    }
-                  >
-                    <AlertCircle className="mr-1 h-3 w-3" />
-                    Flag
-                  </Button>
-                )}
-
-                {confirmDelete ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-muted-foreground text-sm">
-                      Delete?
+                <div className="text-muted-foreground mb-3 text-xs">
+                  Started {formatTime(selectedConvo.created_at)} ·{' '}
+                  {selectedConvo.messages.length} messages
+                  {getSourceLabel(selectedConvo.source) && (
+                    <span className="ml-1 text-slate-500">
+                      · {getSourceLabel(selectedConvo.source)}
                     </span>
+                  )}
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex flex-wrap gap-2">
+                  {selectedConvo.status !== 'completed' && (
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => setConfirmDelete(false)}
+                      onClick={() =>
+                        void handleUpdateStatus(selectedConvo.id, 'completed')
+                      }
                     >
-                      Cancel
+                      <CheckCircle className="mr-1 h-3 w-3" />
+                      Mark Complete
                     </Button>
+                  )}
+                  {selectedConvo.status === 'completed' && (
                     <Button
                       size="sm"
-                      variant="destructive"
-                      onClick={() => void handleDelete()}
-                      disabled={deleting}
+                      variant="outline"
+                      onClick={() =>
+                        void handleUpdateStatus(selectedConvo.id, 'active')
+                      }
                     >
-                      {deleting ? 'Deleting...' : 'Confirm'}
+                      Reopen
                     </Button>
+                  )}
+                  {selectedConvo.status !== 'escalated' && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        void handleUpdateStatus(selectedConvo.id, 'escalated')
+                      }
+                    >
+                      <AlertCircle className="mr-1 h-3 w-3" />
+                      Flag
+                    </Button>
+                  )}
+
+                  {confirmDelete ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground text-sm">
+                        Delete?
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setConfirmDelete(false)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => void handleDelete()}
+                        disabled={deleting}
+                      >
+                        {deleting ? 'Deleting...' : 'Confirm'}
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => setConfirmDelete(true)}
+                    >
+                      <Trash2 className="mr-1 h-3 w-3" />
+                      Delete
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {/* Messages */}
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+                {selectedConvo.messages.length === 0 ? (
+                  <div className="text-muted-foreground py-8 text-center text-sm">
+                    No messages yet
                   </div>
                 ) : (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="text-destructive hover:text-destructive"
-                    onClick={() => setConfirmDelete(true)}
-                  >
-                    <Trash2 className="mr-1 h-3 w-3" />
-                    Delete
-                  </Button>
-                )}
-              </div>
-            </div>
-
-            {/* Messages */}
-            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-              {selectedConvo.messages.length === 0 ? (
-                <div className="text-muted-foreground py-8 text-center text-sm">
-                  No messages yet
-                </div>
-              ) : (
-                selectedConvo.messages.map((msg, idx) => (
-                  <div
-                    key={idx}
-                    className={`flex ${msg.role === 'user' ? 'justify-start' : 'justify-end'}`}
-                  >
+                  selectedConvo.messages.map((msg, idx) => (
                     <div
-                      className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 ${
-                        msg.role === 'user'
-                          ? 'rounded-tl-sm bg-white/10 text-slate-100'
-                          : msg.role === 'system'
-                            ? 'rounded-tr-sm bg-red-500/15 text-xs text-red-300'
-                            : 'rounded-tr-sm bg-emerald-600/80 text-white'
-                      }`}
+                      key={idx}
+                      className={`flex ${msg.role === 'user' ? 'justify-start' : 'justify-end'}`}
                     >
-                      <div className="text-sm whitespace-pre-wrap">
-                        {msg.content}
-                      </div>
                       <div
-                        className={`mt-1 text-[10px] ${
+                        className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 ${
                           msg.role === 'user'
-                            ? 'text-slate-400'
-                            : 'text-white/60'
+                            ? 'rounded-tl-sm bg-white/10 text-slate-100'
+                            : msg.role === 'system'
+                              ? 'rounded-tr-sm bg-red-500/15 text-xs text-red-300'
+                              : 'rounded-tr-sm bg-emerald-600/80 text-white'
                         }`}
                       >
-                        {msg.timestamp ? formatTime(msg.timestamp) : ''}
+                        <div className="text-sm whitespace-pre-wrap">
+                          {msg.content}
+                        </div>
+                        <div
+                          className={`mt-1 text-[10px] ${
+                            msg.role === 'user'
+                              ? 'text-slate-400'
+                              : 'text-white/60'
+                          }`}
+                        >
+                          {msg.timestamp ? formatTime(msg.timestamp) : ''}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))
-              )}
-            </div>
+                  ))
+                )}
+              </div>
 
-            {/* Reply Box */}
-            <div className="flex-shrink-0 border-t p-4">
-              {(() => {
-                const lsa = isLsaConversation(selectedConvo)
-                const autoOn = selectedConvo.ai_enabled
-                return (
-                  <>
-                    <div className="mb-3 flex flex-wrap items-center gap-2">
-                      <Button
-                        asChild
-                        variant="outline"
-                        size="sm"
-                        className="bg-green-600 text-white hover:bg-green-700 hover:text-white"
-                      >
-                        <a href={`sms:${selectedConvo.phone_number}`}>
-                          <MessageCircle className="mr-1.5 h-3.5 w-3.5" />
-                          Open in Messages
-                        </a>
-                      </Button>
-
-                      {/* Auto/Manual toggle — locked Auto for LSA, togglable otherwise */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (lsa) return
-                          void handleToggleAutoReply()
-                        }}
-                        disabled={lsa || autoReplyUpdating}
-                        aria-pressed={autoOn}
-                        title={
-                          lsa
-                            ? 'Google LSA conversations must stay automated.'
-                            : autoOn
-                              ? 'Harry is auto-replying. Tap to switch to manual.'
-                              : 'Manual mode. Tap to let Harry auto-reply again.'
-                        }
-                        className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-                          autoOn
-                            ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
-                            : 'border-amber-500/40 bg-amber-500/15 text-amber-300'
-                        } ${lsa ? 'cursor-not-allowed opacity-90' : 'hover:brightness-110'}`}
-                      >
-                        {autoReplyUpdating ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : lsa ? (
-                          <Lock className="h-3.5 w-3.5" />
-                        ) : (
-                          <Bot className="h-3.5 w-3.5" />
-                        )}
-                        <span>
-                          Harry: {autoOn ? 'Auto' : 'Manual'}
-                          {lsa ? ' (LSA)' : ''}
-                        </span>
-                      </button>
-
-                      {/* Ask Harry draft button — only in manual mode */}
-                      {!autoOn && (
+              {/* Reply Box */}
+              <div className="flex-shrink-0 border-t p-4">
+                {(() => {
+                  const lsa = isLsaConversation(selectedConvo)
+                  const autoOn = selectedConvo.ai_enabled
+                  return (
+                    <>
+                      <div className="mb-3 flex flex-wrap items-center gap-2">
                         <Button
-                          size="sm"
+                          asChild
                           variant="outline"
-                          className="border-emerald-500/40 text-emerald-400 hover:border-emerald-400 hover:text-emerald-300"
-                          onClick={() => void handleAskHarry()}
-                          disabled={harryDraftLoading}
+                          size="sm"
+                          className="bg-green-600 text-white hover:bg-green-700 hover:text-white"
                         >
-                          {harryDraftLoading ? (
-                            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Bot className="mr-1.5 h-3.5 w-3.5" />
-                          )}
-                          {harryDraftLoading ? 'Asking Harry…' : 'Ask Harry'}
+                          <a href={`sms:${selectedConvo.phone_number}`}>
+                            <MessageCircle className="mr-1.5 h-3.5 w-3.5" />
+                            Open in Messages
+                          </a>
                         </Button>
-                      )}
-                    </div>
 
-                    {/* Helper text explaining the current mode */}
-                    {lsa ? (
-                      <p className="text-muted-foreground mb-2 text-xs">
-                        Google LSA is fully automated — Harry handles these
-                        leads end-to-end.
-                      </p>
-                    ) : !autoOn && !harryDraftLoading && !replyText ? (
-                      <p className="text-muted-foreground mb-2 text-xs">
-                        Manual mode: Harry won&apos;t reply automatically. Tap
-                        &ldquo;Ask Harry&rdquo; for a draft, or type your own
-                        reply.
-                      </p>
-                    ) : null}
-
-                    <div className="flex gap-2">
-                      <Textarea
-                        value={replyText}
-                        onChange={(e) => setReplyText(e.target.value)}
-                        placeholder={
-                          !autoOn
-                            ? 'Ask Harry for a draft or type your reply…'
-                            : 'Type your reply…'
-                        }
-                        className="min-h-[80px] flex-1"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                            void handleSendReply()
+                        {/* Auto/Manual toggle — locked Auto for LSA, togglable otherwise */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (lsa) return
+                            void handleToggleAutoReply()
+                          }}
+                          disabled={lsa || autoReplyUpdating}
+                          aria-pressed={autoOn}
+                          title={
+                            lsa
+                              ? 'Google LSA conversations must stay automated.'
+                              : autoOn
+                                ? 'Harry is auto-replying. Tap to switch to manual.'
+                                : 'Manual mode. Tap to let Harry auto-reply again.'
                           }
-                        }}
-                      />
-                      <Button
-                        onClick={() => void handleSendReply()}
-                        disabled={!replyText.trim() || sending}
-                        className="self-end"
-                      >
-                        {sending ? (
-                          'Sending...'
-                        ) : (
-                          <>
-                            <Send className="mr-1 h-4 w-4" />
-                            Send
-                          </>
+                          className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                            autoOn
+                              ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
+                              : 'border-amber-500/40 bg-amber-500/15 text-amber-300'
+                          } ${lsa ? 'cursor-not-allowed opacity-90' : 'hover:brightness-110'}`}
+                        >
+                          {autoReplyUpdating ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : lsa ? (
+                            <Lock className="h-3.5 w-3.5" />
+                          ) : (
+                            <Bot className="h-3.5 w-3.5" />
+                          )}
+                          <span>
+                            Harry: {autoOn ? 'Auto' : 'Manual'}
+                            {lsa ? ' (LSA)' : ''}
+                          </span>
+                        </button>
+
+                        {/* Ask Harry draft button — only in manual mode */}
+                        {!autoOn && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="border-emerald-500/40 text-emerald-400 hover:border-emerald-400 hover:text-emerald-300"
+                            onClick={() => void handleAskHarry()}
+                            disabled={harryDraftLoading}
+                          >
+                            {harryDraftLoading ? (
+                              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Bot className="mr-1.5 h-3.5 w-3.5" />
+                            )}
+                            {harryDraftLoading ? 'Asking Harry…' : 'Ask Harry'}
+                          </Button>
                         )}
-                      </Button>
-                    </div>
-                    <p className="text-muted-foreground mt-2 text-xs">
-                      Cmd/Ctrl + Enter to send
-                    </p>
-                  </>
-                )
-              })()}
+                      </div>
+
+                      {/* Helper text explaining the current mode */}
+                      {lsa ? (
+                        <p className="text-muted-foreground mb-2 text-xs">
+                          Google LSA is fully automated — Harry handles these
+                          leads end-to-end.
+                        </p>
+                      ) : !autoOn && !harryDraftLoading && !replyText ? (
+                        <p className="text-muted-foreground mb-2 text-xs">
+                          Manual mode: Harry won&apos;t reply automatically. Tap
+                          &ldquo;Ask Harry&rdquo; for a draft, or type your own
+                          reply.
+                        </p>
+                      ) : null}
+
+                      <div className="flex gap-2">
+                        <Textarea
+                          value={replyText}
+                          onChange={(e) => setReplyText(e.target.value)}
+                          placeholder={
+                            !autoOn
+                              ? 'Ask Harry for a draft or type your reply…'
+                              : 'Type your reply…'
+                          }
+                          className="min-h-[80px] flex-1"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                              void handleSendReply()
+                            }
+                          }}
+                        />
+                        <Button
+                          onClick={() => void handleSendReply()}
+                          disabled={!replyText.trim() || sending}
+                          className="self-end"
+                        >
+                          {sending ? (
+                            'Sending...'
+                          ) : (
+                            <>
+                              <Send className="mr-1 h-4 w-4" />
+                              Send
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                      <p className="text-muted-foreground mt-2 text-xs">
+                        Cmd/Ctrl + Enter to send
+                      </p>
+                    </>
+                  )
+                })()}
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }

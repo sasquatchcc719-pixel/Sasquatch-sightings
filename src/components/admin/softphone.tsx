@@ -202,6 +202,12 @@ export function SoftphoneProvider({ children }: { children: ReactNode }) {
         console.error('[Softphone] Device error:', err)
         // Use ref to read current state — never stale
         const current = stateRef.current
+        if (current === 'idle') {
+          setReady(false)
+          setInitStatus(err.message || 'Voice device unavailable')
+          stopRingtone()
+          return
+        }
         if (
           current === 'in-call' ||
           current === 'connecting' ||
