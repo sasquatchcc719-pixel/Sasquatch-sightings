@@ -13,6 +13,7 @@ import {
   Save,
   Search,
   ShieldOff,
+  Trash2,
   Users,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -321,6 +322,39 @@ export function ReactivationControlCenter() {
       await loadData()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Override failed')
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  async function deleteJunkCustomer() {
+    if (!selectedCustomerId || !selectedCustomer) return
+    const customer = unwrap(selectedCustomer.ops_customers)
+    const label = customer?.full_name || customer?.email || 'this customer'
+    const confirmed = window.confirm(
+      `Delete ${label} from the CRM database? This is only for fake/test customers with no job history. If they have any real history, the server will block it.`,
+    )
+    if (!confirmed) return
+
+    setRunning(true)
+    setError(null)
+    setNotice(null)
+    try {
+      const res = await fetch('/api/admin/comms/reactivation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'delete_junk_customer',
+          customer_id: selectedCustomerId,
+        }),
+      })
+      const result = await res.json()
+      if (!res.ok) throw new Error(result.error || 'Delete failed')
+      setNotice(`${label} was deleted from the CRM.`)
+      setSelectedCustomerId(null)
+      await loadData()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Delete failed')
     } finally {
       setRunning(false)
     }
@@ -787,6 +821,7 @@ export function ReactivationControlCenter() {
             onReasonChange={setOverrideReason}
             running={running}
             onOverride={(action) => overrideCustomer(action)}
+            onDeleteJunkCustomer={deleteJunkCustomer}
           />
         </div>
       </Card>
@@ -898,12 +933,14 @@ function CustomerDrawer({
   onReasonChange,
   running,
   onOverride,
+  onDeleteJunkCustomer,
 }: {
   enrollment: Enrollment | undefined
   reason: string
   onReasonChange: (value: string) => void
   running: boolean
   onOverride: (action: 'pause' | 'suppress' | 'resume' | 'unsubscribe') => void
+  onDeleteJunkCustomer: () => void
 }) {
   if (!enrollment) {
     return (
@@ -1015,6 +1052,23 @@ function CustomerDrawer({
         >
           <Ban className="h-4 w-4" />
           Unsubscribe
+        </Button>
+      </div>
+
+      <div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/10 p-3">
+        <p className="text-xs text-red-100/80">
+          For fake test customers only. Delete is blocked if this customer has
+          jobs, recurring templates, invoices, or queued communications.
+        </p>
+        <Button
+          className="mt-3 w-full"
+          variant="destructive"
+          size="sm"
+          disabled={running}
+          onClick={onDeleteJunkCustomer}
+        >
+          <Trash2 className="h-4 w-4" />
+          Delete Junk Customer
         </Button>
       </div>
     </div>

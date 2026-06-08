@@ -162,6 +162,79 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true })
     }
 
+    if (action === 'delete_junk_customer') {
+      const customerId = String(body?.customer_id || '').trim()
+      if (!customerId) {
+        return NextResponse.json(
+          { error: 'Missing customer_id' },
+          { status: 400 },
+        )
+      }
+
+      const supabase = createAdminClient()
+      const [appointmentsResult, recurringResult, batchResult, queueResult] =
+        await Promise.all([
+          supabase
+            .from('ops_appointments')
+            .select('id', { count: 'exact', head: true })
+            .or(
+              `customer_id.eq.${customerId},batch_billing_customer_id.eq.${customerId}`,
+            ),
+          supabase
+            .from('ops_recurring_templates')
+            .select('id', { count: 'exact', head: true })
+            .eq('customer_id', customerId),
+          supabase
+            .from('ops_batch_invoices')
+            .select('id', { count: 'exact', head: true })
+            .eq('customer_id', customerId),
+          supabase
+            .from('ops_communication_queue')
+            .select('id', { count: 'exact', head: true })
+            .eq('customer_id', customerId),
+        ])
+
+      if (appointmentsResult.error) throw appointmentsResult.error
+      if (recurringResult.error) throw recurringResult.error
+      if (batchResult.error) throw batchResult.error
+      if (queueResult.error) throw queueResult.error
+
+      const blockers =
+        (appointmentsResult.count || 0) +
+        (recurringResult.count || 0) +
+        (batchResult.count || 0) +
+        (queueResult.count || 0)
+
+      if (blockers > 0) {
+        return NextResponse.json(
+          {
+            error:
+              'This customer has job, recurring, invoice, or queued communication history. Suppress them instead of deleting.',
+          },
+          { status: 409 },
+        )
+      }
+
+      await supabase.from('reactivation_email_log').insert({
+        customer_id: customerId,
+        event_type: 'suppressed',
+        status: 'logged',
+        metadata: {
+          reason: 'junk_customer_deleted',
+          deleted_by: user.id,
+        },
+      })
+
+      const { error: deleteError } = await supabase
+        .from('ops_customers')
+        .delete()
+        .eq('id', customerId)
+
+      if (deleteError) throw deleteError
+
+      return NextResponse.json({ success: true })
+    }
+
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
   } catch (error) {
     if (error instanceof Error && error.message === 'Not authorized') {
