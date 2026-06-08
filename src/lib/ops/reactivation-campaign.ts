@@ -2,7 +2,7 @@ import { Resend } from 'resend'
 import { generateUnsubscribeToken } from '@/lib/ops/drip-campaign'
 import { createAdminClient } from '@/supabase/server'
 
-const BOOK_URL = 'https://sightings.sasquatchcarpet.com/book'
+const BOOK_URL = 'https://www.sasquatchcarpet.com'
 const UNSUB_BASE =
   'https://sightings.sasquatchcarpet.com/api/public/unsubscribe'
 const NON_DELIVERABLE_DOMAINS = new Set(['import.local'])
@@ -206,7 +206,7 @@ function buildReactivationEmailHtml(body: string, customerId: string): string {
             ${paragraphs}
             <table width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0;">
               <tr><td align="center">
-                <a href="${BOOK_URL}" style="display:inline-block;padding:14px 32px;background:#1a73e8;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:bold;font-size:16px;">BOOK NOW</a>
+                <a href="${BOOK_URL}" style="display:inline-block;padding:14px 32px;background:#1a73e8;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:bold;font-size:16px;">BOOK ONLINE</a>
               </td></tr>
             </table>
           </td>
