@@ -494,22 +494,7 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
       if (!response.ok) {
         throw new Error(result.error || 'Failed to update appointment')
       }
-      if (result.appointment) {
-        setAppointment(result.appointment)
-        setForm({
-          appointment_date: result.appointment.appointment_date,
-          start_time: String(result.appointment.start_time).slice(0, 5),
-          end_time: String(result.appointment.end_time).slice(0, 5),
-          status: result.appointment.status,
-          payment_status: result.appointment.payment_status,
-          internal_notes: result.appointment.internal_notes || '',
-          lead_source: result.appointment.lead_source || '',
-          lead_source_key:
-            result.appointment.lead_source_key ||
-            normalizeLeadSource(result.appointment.lead_source).source_key,
-          lead_source_detail: result.appointment.lead_source_detail || '',
-        })
-      }
+      await loadAppointment('refresh')
       router.refresh()
     } catch (saveError) {
       setError(
