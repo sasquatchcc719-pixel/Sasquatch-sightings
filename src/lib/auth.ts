@@ -22,7 +22,7 @@ export type PartnerData = {
 
 export type StaffUserData = {
   id: string
-  user_id: string
+  user_id: string | null
   display_name: string
   role: StaffRole
   is_active: boolean

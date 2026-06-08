@@ -236,7 +236,8 @@ export function MyDayView() {
       )}
 
       <p className="text-center text-xs text-slate-600">
-        GPS data is preview only. Billing and payroll are unchanged.
+        GPS activity is location history only. Payroll time is tracked
+        separately.
       </p>
     </div>
   )
