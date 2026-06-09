@@ -7,6 +7,11 @@ import {
   isHarryFunctionEnabled,
 } from '@/lib/harry/control'
 import { createAdminClient } from '@/supabase/server'
+import {
+  classifyCallOutcome,
+  parseDialCallDuration,
+  wasForwardedCallHandled,
+} from '@/lib/twilio/call-outcome'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -24,6 +29,13 @@ export async function POST(request: NextRequest) {
     const normalizedDialCallStatus = String(dialCallStatus || '')
       .trim()
       .toLowerCase()
+    const dialCallDuration = parseDialCallDuration(
+      formData.get('DialCallDuration') || formData.get('CallDuration'),
+    )
+    const forwardedCallWasHandled = wasForwardedCallHandled(
+      normalizedDialCallStatus,
+      dialCallDuration,
+    )
 
     if (!callerPhone) {
       console.error('[Call Handler] Missing caller phone number')
@@ -46,22 +58,14 @@ export async function POST(request: NextRequest) {
           : `+${digits}`
 
     console.log(
-      `[Call Handler] Caller: ${normalizedPhone}, Status: ${callStatus}, DialStatus: ${dialCallStatus}, SID: ${callSid}`,
+      `[Call Handler] Caller: ${normalizedPhone}, Status: ${callStatus}, DialStatus: ${dialCallStatus}, DialDuration: ${dialCallDuration ?? 'unknown'}s, SID: ${callSid}`,
     )
 
     // Update call_logs with final outcome — fire-and-forget, never block TwiML
     if (callSid) {
-      const callOutcome =
-        normalizedDialCallStatus === 'completed'
-          ? 'answered'
-          : normalizedDialCallStatus === 'no-answer' ||
-              normalizedDialCallStatus === 'busy' ||
-              normalizedDialCallStatus === 'canceled'
-            ? 'no-answer'
-            : 'voicemail'
-      const callDuration = parseInt(
-        (formData.get('CallDuration') as string) || '0',
-        10,
+      const callOutcome = classifyCallOutcome(
+        normalizedDialCallStatus,
+        dialCallDuration,
       )
       const supabaseLog = createAdminClient()
       supabaseLog
@@ -71,7 +75,7 @@ export async function POST(request: NextRequest) {
             call_sid: callSid,
             caller_phone: normalizedPhone,
             outcome: callOutcome,
-            duration_seconds: callDuration || null,
+            duration_seconds: dialCallDuration,
             raw_dial_status: dialCallStatus || null,
             updated_at: new Date().toISOString(),
           },
@@ -89,13 +93,13 @@ export async function POST(request: NextRequest) {
     // Send Harry SMS any time this handler owns a non-answered call.
     // After-hours/LSA fallback redirects often arrive without DialCallStatus,
     // so missing status is treated as a missed/voicemail call here.
-    const shouldSendSMS =
-      canRunHarryCallSms &&
-      !['completed', 'answered'].includes(normalizedDialCallStatus)
+    // Very short completed forwarding legs are commonly carrier voicemail or
+    // another automated pickup, not a person actually handling the caller.
+    const shouldSendSMS = canRunHarryCallSms && !forwardedCallWasHandled
 
     if (shouldSendSMS) {
       console.log(
-        `[Call Handler] Sending Harry SMS (dialCallStatus: ${dialCallStatus || 'none - after hours'})`,
+        `[Call Handler] Sending Harry SMS (dialCallStatus: ${dialCallStatus || 'none - after hours'}, dialCallDuration: ${dialCallDuration ?? 'unknown'}s)`,
       )
 
       try {
@@ -124,6 +128,7 @@ export async function POST(request: NextRequest) {
                 trigger: 'missed_call',
                 call_sid: callSid,
                 dial_call_status: normalizedDialCallStatus || null,
+                dial_call_duration_seconds: dialCallDuration,
               },
             })
             .select()
@@ -144,6 +149,7 @@ export async function POST(request: NextRequest) {
                 last_missed_call: new Date().toISOString(),
                 call_sid: callSid,
                 dial_call_status: normalizedDialCallStatus || null,
+                dial_call_duration_seconds: dialCallDuration,
               },
             })
             .eq('id', conversationId)
@@ -178,6 +184,7 @@ export async function POST(request: NextRequest) {
           metadata: {
             type: 'missed_call_sms',
             dial_call_status: normalizedDialCallStatus || null,
+            dial_call_duration_seconds: dialCallDuration,
           },
         })
 
@@ -211,7 +218,7 @@ export async function POST(request: NextRequest) {
       }
     } else {
       console.log(
-        `[Call Handler] SMS suppressed — shouldSendSMS=${shouldSendSMS}, canRunHarryCallSms=${canRunHarryCallSms}, dialCallStatus=${dialCallStatus}`,
+        `[Call Handler] SMS suppressed — shouldSendSMS=${shouldSendSMS}, canRunHarryCallSms=${canRunHarryCallSms}, dialCallStatus=${dialCallStatus}, dialCallDuration=${dialCallDuration ?? 'unknown'}s`,
       )
     }
 
