@@ -21,6 +21,8 @@ type TimesheetEntry = {
   endedAt: string
   breakMinutes: number
   payableMinutes: number
+  hourlyRate: number
+  grossPay: number
   workType: string
   source: string
   status: string
@@ -32,6 +34,7 @@ type EntryFormState = {
   startTime: string
   endTime: string
   breakMinutes: string
+  hourlyRate: string
   workType: string
   notes: string
 }
@@ -41,6 +44,7 @@ const DEFAULT_FORM: EntryFormState = {
   startTime: '08:00',
   endTime: '17:00',
   breakMinutes: '0',
+  hourlyRate: '',
   workType: 'training',
   notes: '',
 }
@@ -59,6 +63,13 @@ function fmtTime(iso: string): string {
   })
 }
 
+function fmtMoney(amount: number): string {
+  return amount.toLocaleString('en-US', {
+    style: 'currency',
+    currency: 'USD',
+  })
+}
+
 function toIso(date: string, time: string): string {
   return new Date(`${date}T${time}:00`).toISOString()
 }
@@ -73,7 +84,11 @@ async function fetchStaff(): Promise<StaffRow[]> {
 async function fetchEntries(
   date: string,
   staffUserId: string,
-): Promise<{ entries: TimesheetEntry[]; totalPayableMinutes: number }> {
+): Promise<{
+  entries: TimesheetEntry[]
+  totalPayableMinutes: number
+  totalGrossPay: number
+}> {
   const params = new URLSearchParams({ date })
   if (staffUserId) params.set('staffUserId', staffUserId)
 
@@ -108,15 +123,21 @@ export function PayrollTimesheetsView() {
     [entriesQuery.data?.entries],
   )
   const totalPayableMinutes = entriesQuery.data?.totalPayableMinutes || 0
+  const totalGrossPay = entriesQuery.data?.totalGrossPay || 0
 
   const totalsByStaff = useMemo(() => {
-    const totals = new Map<string, { name: string; minutes: number }>()
+    const totals = new Map<
+      string,
+      { name: string; minutes: number; grossPay: number }
+    >()
     for (const entry of entries) {
       const existing = totals.get(entry.staffUserId) || {
         name: entry.staffDisplayName,
         minutes: 0,
+        grossPay: 0,
       }
       existing.minutes += entry.payableMinutes
+      existing.grossPay += entry.grossPay
       totals.set(entry.staffUserId, existing)
     }
     return [...totals.values()].sort((a, b) => a.name.localeCompare(b.name))
@@ -179,6 +200,7 @@ export function PayrollTimesheetsView() {
           startedAt: toIso(date, form.startTime),
           endedAt: toIso(date, form.endTime),
           breakMinutes: Number(form.breakMinutes || 0),
+          hourlyRate: Number(form.hourlyRate),
           workType: form.workType,
           notes: form.notes,
         }),
@@ -190,6 +212,7 @@ export function PayrollTimesheetsView() {
       setForm((current) => ({
         ...DEFAULT_FORM,
         staffUserId: current.staffUserId,
+        hourlyRate: current.hourlyRate,
       }))
       setMessage('Payroll time entry added.')
     } catch (error) {
@@ -368,24 +391,51 @@ export function PayrollTimesheetsView() {
             </label>
           </div>
 
-          <label className="block text-sm text-slate-300">
-            Work type
-            <select
-              value={form.workType}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  workType: event.target.value,
-                }))
-              }
-              className="mt-1 w-full rounded-lg border border-white/10 bg-slate-800/60 px-3 py-2 text-white"
-            >
-              <option value="training">Training</option>
-              <option value="job">Job</option>
-              <option value="admin">Admin</option>
-              <option value="other">Other</option>
-            </select>
-          </label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block text-sm text-slate-300">
+              Work type
+              <select
+                value={form.workType}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    workType: event.target.value,
+                  }))
+                }
+                className="mt-1 w-full rounded-lg border border-white/10 bg-slate-800/60 px-3 py-2 text-white"
+              >
+                <option value="training">Training</option>
+                <option value="job">Job</option>
+                <option value="admin">Admin</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+
+            <label className="block text-sm text-slate-300">
+              Hourly rate
+              <div className="relative mt-1">
+                <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400">
+                  $
+                </span>
+                <input
+                  type="number"
+                  min="0.01"
+                  max="1000"
+                  step="0.01"
+                  required
+                  value={form.hourlyRate}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      hourlyRate: event.target.value,
+                    }))
+                  }
+                  className="w-full rounded-lg border border-white/10 bg-slate-800/60 py-2 pr-3 pl-7 text-white"
+                  placeholder="20.00"
+                />
+              </div>
+            </label>
+          </div>
 
           <label className="block text-sm text-slate-300">
             Notes
@@ -445,10 +495,20 @@ export function PayrollTimesheetsView() {
           </form>
 
           <div className="rounded-2xl border border-white/10 bg-slate-900/50 p-4">
-            <p className="text-sm text-slate-400">Total payable time</p>
-            <p className="mt-1 text-3xl font-bold text-white">
-              {fmtMin(totalPayableMinutes)}
-            </p>
+            <div className="flex items-end justify-between gap-4">
+              <div>
+                <p className="text-sm text-slate-400">Total payable time</p>
+                <p className="mt-1 text-3xl font-bold text-white">
+                  {fmtMin(totalPayableMinutes)}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-sm text-slate-400">Gross pay</p>
+                <p className="mt-1 text-3xl font-bold text-emerald-300">
+                  {fmtMoney(totalGrossPay)}
+                </p>
+              </div>
+            </div>
             {totalsByStaff.length > 0 && (
               <div className="mt-4 space-y-2">
                 {totalsByStaff.map((total) => (
@@ -457,7 +517,9 @@ export function PayrollTimesheetsView() {
                     className="flex justify-between text-sm text-slate-300"
                   >
                     <span>{total.name}</span>
-                    <span className="font-mono">{fmtMin(total.minutes)}</span>
+                    <span className="font-mono">
+                      {fmtMin(total.minutes)} · {fmtMoney(total.grossPay)}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -522,7 +584,11 @@ export function PayrollTimesheetsView() {
                 <div className="flex items-center gap-3">
                   <div className="text-right">
                     <p className="font-mono text-lg font-semibold text-emerald-300">
-                      {fmtMin(entry.payableMinutes)}
+                      {fmtMoney(entry.grossPay)}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {fmtMin(entry.payableMinutes)} at{' '}
+                      {fmtMoney(entry.hourlyRate)}/hr
                     </p>
                     <p className="text-xs text-slate-500 capitalize">
                       {entry.workType} · {entry.status}

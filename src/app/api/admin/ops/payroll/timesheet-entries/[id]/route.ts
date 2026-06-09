@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
+import { parseHourlyRate } from '@/lib/ops/timesheet-pay'
 import { createAdminClient } from '@/supabase/server'
 
 const WORK_TYPES = new Set(['training', 'job', 'admin', 'other'])
@@ -52,7 +53,7 @@ export async function PATCH(
     const { data: existing, error: findError } = await supabase
       .from('ops_timesheet_entries')
       .select(
-        'id, started_at, ended_at, break_minutes, work_type, status, notes',
+        'id, started_at, ended_at, break_minutes, hourly_rate, work_type, status, notes',
       )
       .eq('id', id)
       .maybeSingle()
@@ -75,11 +76,17 @@ export async function PATCH(
         : Number(existing.break_minutes || 0)
     const nextWorkType =
       body.workType !== undefined ? String(body.workType) : existing.work_type
+    const nextHourlyRate = parseHourlyRate(
+      body.hourlyRate !== undefined ? body.hourlyRate : existing.hourly_rate,
+    )
     const nextStatus =
       body.status !== undefined ? String(body.status) : existing.status
 
     if (!WORK_TYPES.has(nextWorkType))
       return jsonError('Invalid work type', 400)
+    if (nextHourlyRate === null) {
+      return jsonError('Hourly rate must be between $0.01 and $1,000', 400)
+    }
     if (!STATUSES.has(nextStatus)) return jsonError('Invalid status', 400)
 
     const calculated = calculatePayableMinutes(
@@ -94,6 +101,7 @@ export async function PATCH(
       ended_at: nextEndedAt,
       break_minutes: nextBreakMinutes,
       payable_minutes: calculated.payableMinutes,
+      hourly_rate: nextHourlyRate,
       work_type: nextWorkType,
       status: nextStatus,
       updated_by: access.id,
