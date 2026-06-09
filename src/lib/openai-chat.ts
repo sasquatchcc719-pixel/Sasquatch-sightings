@@ -18,6 +18,7 @@ import {
   markHarryWorkflowForTakeover,
   prepareHarryToolArgs,
   recordHarryToolOutcome,
+  requiredHarryToolForState,
   sanitizeHarryToolResultForModel,
   type HarryToolOutcome,
   type HarryWorkflowState,
@@ -529,11 +530,19 @@ CURRENT CUSTOMER CONTEXT:
       }
       let lastText = ''
       for (let round = 0; round < 8; round += 1) {
+        const requiredTool = workflowState
+          ? requiredHarryToolForState(workflowState)
+          : null
         const completion = await openai.chat.completions.create({
           model: 'gpt-4.1',
           messages,
           tools: HARRY_SMS_TOOLS,
-          tool_choice: 'auto',
+          tool_choice: requiredTool
+            ? {
+                type: 'function',
+                function: { name: requiredTool },
+              }
+            : 'auto',
           temperature: 0.4,
           max_tokens: 450,
         })

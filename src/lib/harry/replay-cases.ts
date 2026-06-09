@@ -76,6 +76,21 @@ export const HARRY_PRODUCTION_REPLAY_CASES: HarryReplayCase[] = [
     expectFalseClaimBlocked: true,
   },
   {
+    name: 'job note attempted before appointment lookup',
+    state: replayState({ intent: 'add_job_note' }),
+    outcome: {
+      toolCallId: 'replay-job-note',
+      toolName: 'add_job_note',
+      args: { note: 'The key is in the brown barrel out front.' },
+      result: { error: 'appointment_id and note are required' },
+      success: false,
+      error: 'appointment_id and note are required',
+    },
+    proposedResponse: "I'll make sure Charles knows where the key is.",
+    expectedRecovery: 'refresh_appointment',
+    expectFalseClaimBlocked: false,
+  },
+  {
     name: 'ordinary missing booking details do not trigger tool retries',
     state: replayState({
       intent: 'new_booking',
