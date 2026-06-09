@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseHourlyRate } from './timesheet-pay'
+import { mountainDateKey, parseHourlyRate } from './timesheet-pay'
 
 describe('parseHourlyRate', () => {
   it('accepts and rounds a valid hourly rate', () => {
@@ -12,4 +12,8 @@ describe('parseHourlyRate', () => {
       expect(parseHourlyRate(value)).toBeNull()
     },
   )
+
+  it('uses the Mountain Time calendar date', () => {
+    expect(mountainDateKey('2026-06-09T03:00:00.000Z')).toBe('2026-06-08')
+  })
 })
