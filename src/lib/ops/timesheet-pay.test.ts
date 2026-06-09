@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { mountainDateKey, parseHourlyRate } from './timesheet-pay'
+import {
+  getSemiMonthlyPayPeriod,
+  mountainDateKey,
+  parseHourlyRate,
+  shiftSemiMonthlyPayPeriod,
+} from './timesheet-pay'
 
 describe('parseHourlyRate', () => {
   it('accepts and rounds a valid hourly rate', () => {
@@ -15,5 +20,34 @@ describe('parseHourlyRate', () => {
 
   it('uses the Mountain Time calendar date', () => {
     expect(mountainDateKey('2026-06-09T03:00:00.000Z')).toBe('2026-06-08')
+  })
+
+  it('groups dates into fixed semi-monthly pay periods', () => {
+    expect(getSemiMonthlyPayPeriod('2026-06-08')).toEqual({
+      startDate: '2026-06-01',
+      endDate: '2026-06-15',
+      label: '1st through 15th',
+    })
+    expect(getSemiMonthlyPayPeriod('2026-02-20')).toEqual({
+      startDate: '2026-02-16',
+      endDate: '2026-02-28',
+      label: '16th through end of month',
+    })
+    expect(getSemiMonthlyPayPeriod('2028-02-20').endDate).toBe('2028-02-29')
+  })
+
+  it('moves between adjacent semi-monthly periods', () => {
+    expect(shiftSemiMonthlyPayPeriod('2026-06-08', 1).startDate).toBe(
+      '2026-06-16',
+    )
+    expect(shiftSemiMonthlyPayPeriod('2026-06-20', 1).startDate).toBe(
+      '2026-07-01',
+    )
+    expect(shiftSemiMonthlyPayPeriod('2026-06-08', -1).startDate).toBe(
+      '2026-05-16',
+    )
+    expect(shiftSemiMonthlyPayPeriod('2026-12-20', 1).startDate).toBe(
+      '2027-01-01',
+    )
   })
 })
