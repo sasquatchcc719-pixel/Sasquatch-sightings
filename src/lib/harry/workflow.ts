@@ -355,6 +355,46 @@ function derivePhase(
   return intent === 'general' ? 'idle' : 'gathering'
 }
 
+function isOperationalJobNoteMessage(text: string): boolean {
+  const patterns = [
+    // Property access and entry.
+    /\b(key|lockbox|gate|garage|door|entry|entrance|access|code)\b.*\b(in|inside|under|behind|beside|by|near|at|open|unlocked|locked|hidden|located|use|enter|through)\b/,
+    /\b(in|inside|under|behind|beside|by|near|at|through)\b.*\b(key|lockbox|gate|garage|door|entry|entrance)\b/,
+    /\b(gate|garage|door|entry|access|lockbox)\s+(code|pin)\b/,
+    /\b(use|enter|come|go)\b.*\b(door|entrance|entry|gate|garage|lockbox)\b/,
+
+    // Pets, children, occupants, and safety considerations.
+    /\b(dog|cat|pet|puppy|kitten|animal)\b.*\b(out|inside|outside|backyard|yard|kennel|crate|room|barks?|bites?|aggressive|friendly|scared|escape|loose)\b/,
+    /\b(don't|do not|please don't|please do not|make sure|be careful)\b.*\b(let|allow|open|close)\b.*\b(dog|cat|pet|animal|child|baby)\b/,
+    /\b(baby|child|tenant|resident|occupant|elderly|sick|sleeping)\b.*\b(home|inside|room|sleeping|resting|careful|quiet)\b/,
+
+    // Furniture and property handling.
+    /\b(move|don't move|do not move|leave|remove|clean under|clean around|work around|avoid)\b.*\b(furniture|couch|sofa|dresser|bed|nightstands?|table|desk|chair|cabinet|piano|tv|electronics?|boxes)\b/,
+    /\b(furniture|couch|sofa|dresser|bed|nightstands?|table|desk|chair|cabinet|piano|tv|electronics?|boxes)\b.*\b(move|moved|stay|leave|remove|under|around|avoid|fragile|heavy)\b/,
+
+    // Areas to prioritize, avoid, or handle differently.
+    /\b(skip|avoid|don't clean|do not clean|don't do|do not do|focus on|prioritize|start with|do first|do last|pay attention to|extra attention)\b.*\b(room|area|carpet|rug|stairs?|hallway|closet|basement|bedroom|office|nursery|floor|spot|stain)\b/,
+    /\b(room|area|carpet|rug|stairs?|hallway|closet|basement|bedroom|office|nursery|floor)\b.*\b(skip|avoid|priority|first|last|locked|off limits|do not enter)\b/,
+
+    // Parking, navigation, building, and property logistics.
+    /\b(park|parking|driveway|alley|garage|loading|security|front desk|concierge|elevator|stairs|hoa|building|unit)\b.*\b(in|at|use|enter|through|behind|front|back|side|reserved|permit|code|call|check in|blocked|available)\b/,
+
+    // Utilities and equipment constraints.
+    /\b(water|faucet|spigot|hose|electric|electricity|power|outlet|breaker|restroom|bathroom)\b.*\b(use|available|unavailable|off|on|broken|located|inside|outside|shutoff|shut off)\b/,
+    /\b(no|without|don't use|do not use)\b.*\b(water|faucet|spigot|electric|electricity|power|outlet|restroom|bathroom)\b/,
+
+    // Existing conditions and treatment instructions for the upcoming work.
+    /\b(stain|spot|odor|smell|damage|delicate|fragile|antique|urine|paint|wax|gum)\b.*\b(in|on|under|near|by|from|needs?|treat|clean|avoid|careful|attention)\b/,
+    /\b(treat|clean|avoid|watch|note|remember|be careful with)\b.*\b(stain|spot|odor|damage|delicate|fragile|antique|urine|paint|wax|gum)\b/,
+
+    // Arrival, departure, and customer coordination.
+    /\b(call|text|knock|ring|message)\b.*\b(before|when|upon|arrive|arrival|enter|leave|leaving|finished|done)\b/,
+    /\b(i|we|tenant|owner|someone|nobody|no one)\b.*\b(will be|won't be|will not be|am not|are not)\b.*\b(home|there|back|arrive|leave|leaving)\b/,
+  ]
+
+  return patterns.some((pattern) => pattern.test(text))
+}
+
 function inferIntent(
   message: string,
   priorIntent: HarryWorkflowIntent = 'general',
@@ -379,14 +419,7 @@ function inferIntent(
   ) {
     return 'update_services'
   }
-  if (
-    (/\b(gate|garage|door|access|parking|lockbox)\b/.test(text) &&
-      /\b(code|note|instruction|key|open|unlocked)\b/.test(text)) ||
-    (/\bkey\b/.test(text) &&
-      /\b(in|inside|under|behind|beside|by|near|at|hidden|located)\b/.test(
-        text,
-      ))
-  ) {
+  if (isOperationalJobNoteMessage(text)) {
     return 'add_job_note'
   }
   if (
@@ -768,6 +801,10 @@ export function prepareHarryToolArgs(params: {
 }): Record<string, unknown> {
   const args = { ...params.args }
   const refs = params.workflowState.server_refs || {}
+
+  if (params.toolName === 'add_job_note' && !stringValue(args.note)) {
+    args.note = params.workflowState.last_customer_message || ''
+  }
 
   if (
     [

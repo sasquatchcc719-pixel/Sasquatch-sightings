@@ -246,6 +246,68 @@ describe('Harry workflow truth guard', () => {
     )
   })
 
+  it.each([
+    ['Please do not let the dog out when you open the back door.', 'pets'],
+    ['The gate code is 1234 and you can use the side door.', 'access code'],
+    ['Move the dresser, but please leave the piano where it is.', 'furniture'],
+    [
+      'The couch can be moved but the nightstands need to stay.',
+      'furniture permission',
+    ],
+    ['Skip the nursery and focus on the stain in the basement.', 'areas'],
+    ["Don't do the master bedroom.", 'excluded area'],
+    ['Park in the alley and check in with the front desk.', 'parking'],
+    ['Please park in the driveway.', 'short parking instruction'],
+    [
+      'The outside water spigot is broken, so use the basement faucet.',
+      'utilities',
+    ],
+    [
+      'There is a fragile antique rug in the office, please avoid it.',
+      'hazards',
+    ],
+    ['Text me when you arrive because nobody will be home.', 'coordination'],
+  ])('persists %s as operational job information (%s)', (message) => {
+    const next = advanceHarryWorkflowState(
+      workflowState({
+        intent: 'appointment_lookup',
+        phase: 'gathering',
+        last_action_name: null,
+        last_action_status: null,
+        last_action_error: null,
+        server_refs: {},
+      }),
+      message,
+    )
+
+    expect(next.intent).toBe('add_job_note')
+    expect(next.phase).toBe('awaiting_appointment')
+    expect(requiredHarryToolForState(next)).toBe(
+      'list_my_upcoming_appointments',
+    )
+  })
+
+  it.each([
+    ['Please add a couch to the cleaning.', 'update_services'],
+    ['Can we move my appointment to Friday?', 'reschedule'],
+    ['The carpet is still dirty and I am not happy.', 'service_issue'],
+    ['What time is my appointment?', 'appointment_lookup'],
+  ])('keeps %s in the existing %s workflow', (message, expectedIntent) => {
+    const next = advanceHarryWorkflowState(
+      workflowState({
+        intent: 'general',
+        phase: 'idle',
+        last_action_name: null,
+        last_action_status: null,
+        last_action_error: null,
+        server_refs: {},
+      }),
+      message,
+    )
+
+    expect(next.intent).toBe(expectedIntent)
+  })
+
   it('requires the note mutation after the appointment lookup succeeds', () => {
     const state = workflowState({
       intent: 'add_job_note',
@@ -274,6 +336,38 @@ describe('Harry workflow truth guard', () => {
     ).toEqual({
       appointment_id: 'appointment-secret',
       note: 'The key is in the brown pot.',
+    })
+  })
+
+  it('uses the exact customer message when the model omits the note argument', () => {
+    const state = workflowState({
+      intent: 'add_job_note',
+      phase: 'ready_to_execute',
+      last_customer_message:
+        'Please do not let the dog out when you open the back door.',
+      last_action_name: 'list_my_upcoming_appointments',
+      last_action_status: null,
+      last_action_error: null,
+      server_refs: {
+        appointments: [
+          {
+            ref: 'appointment_1',
+            appointment_id: 'appointment-secret',
+          },
+        ],
+        selected_appointment_ref: 'appointment_1',
+      },
+    })
+
+    expect(
+      prepareHarryToolArgs({
+        toolName: 'add_job_note',
+        args: {},
+        workflowState: state,
+      }),
+    ).toEqual({
+      appointment_id: 'appointment-secret',
+      note: 'Please do not let the dog out when you open the back door.',
     })
   })
 
