@@ -60,6 +60,7 @@ export function buildHarryRecoveryPlan(
     ].includes(outcome.toolName) &&
     (error.includes('appointment not found') ||
       error.includes('appointment_id is required') ||
+      error.includes('appointment_id and note are required') ||
       error.includes('real uuid'))
   ) {
     return {

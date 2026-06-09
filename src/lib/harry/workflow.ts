@@ -272,6 +272,13 @@ function missingFieldsFor(
   fields: HarryCollectedFields,
   refs: HarryServerRefs,
 ): string[] {
+  if (intent === 'add_job_note') {
+    return !refs.selected_appointment_ref &&
+      (refs.appointments?.length || 0) !== 1
+      ? ['appointment']
+      : []
+  }
+
   if (intent === 'reschedule') {
     const missing: string[] = []
     if (
@@ -313,6 +320,11 @@ function derivePhase(
   refs: HarryServerRefs,
 ): HarryWorkflowPhase {
   const missing = missingFieldsFor(intent, fields, refs)
+  if (intent === 'add_job_note') {
+    return missing.includes('appointment')
+      ? 'awaiting_appointment'
+      : 'ready_to_execute'
+  }
   if (intent === 'reschedule') {
     if (missing.includes('appointment')) return 'awaiting_appointment'
     if (missing.includes('requested_date')) return 'awaiting_date'
@@ -368,8 +380,12 @@ function inferIntent(
     return 'update_services'
   }
   if (
-    /\b(gate|garage|door|access|parking)\b/.test(text) &&
-    /\b(code|note|instruction)\b/.test(text)
+    (/\b(gate|garage|door|access|parking|lockbox)\b/.test(text) &&
+      /\b(code|note|instruction|key|open|unlocked)\b/.test(text)) ||
+    (/\bkey\b/.test(text) &&
+      /\b(in|inside|under|behind|beside|by|near|at|hidden|located)\b/.test(
+        text,
+      ))
   ) {
     return 'add_job_note'
   }
@@ -761,7 +777,8 @@ export function prepareHarryToolArgs(params: {
       'add_job_note',
     ].includes(params.toolName)
   ) {
-    const requestedRef = stringValue(args.appointment_ref)
+    const requestedRef =
+      stringValue(args.appointment_ref) || refs.selected_appointment_ref
     const appointments = refs.appointments || []
     const appointment =
       appointments.find((row) => row.ref === requestedRef) ||
@@ -827,6 +844,25 @@ export function prepareHarryToolArgs(params: {
   }
 
   return args
+}
+
+export function requiredHarryToolForState(
+  state: HarryWorkflowState,
+): 'list_my_upcoming_appointments' | 'add_job_note' | null {
+  if (
+    state.intent !== 'add_job_note' ||
+    state.last_action_status === 'succeeded'
+  ) {
+    return null
+  }
+  if (
+    state.phase === 'awaiting_appointment' &&
+    (state.server_refs.appointments?.length || 0) === 0
+  ) {
+    return 'list_my_upcoming_appointments'
+  }
+  if (state.phase === 'ready_to_execute') return 'add_job_note'
+  return null
 }
 
 export function sanitizeHarryToolResultForModel(params: {

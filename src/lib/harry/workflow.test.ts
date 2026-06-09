@@ -4,6 +4,7 @@ import {
   formatHarryWorkflowContext,
   guardHarryResponseAgainstOutcomes,
   prepareHarryToolArgs,
+  requiredHarryToolForState,
   responseClaimsCompletedAction,
   sanitizeHarryToolResultForModel,
   type HarryWorkflowState,
@@ -222,6 +223,82 @@ describe('Harry workflow truth guard', () => {
     expect(next.phase).toBe('ready_to_execute')
     expect(next.server_refs.selected_slot_ref).toBe('slot_1')
     expect(next.collected_fields.selected_start_time).toBe('11:00')
+  })
+
+  it('treats a hidden key location as a job note that must be persisted', () => {
+    const next = advanceHarryWorkflowState(
+      workflowState({
+        intent: 'appointment_lookup',
+        phase: 'gathering',
+        last_action_name: null,
+        last_action_status: null,
+        last_action_error: null,
+        server_refs: {},
+      }),
+      'Thank you. The key is in the brown pot.',
+    )
+
+    expect(next.intent).toBe('add_job_note')
+    expect(next.phase).toBe('awaiting_appointment')
+    expect(next.missing_fields).toEqual(['appointment'])
+    expect(requiredHarryToolForState(next)).toBe(
+      'list_my_upcoming_appointments',
+    )
+  })
+
+  it('requires the note mutation after the appointment lookup succeeds', () => {
+    const state = workflowState({
+      intent: 'add_job_note',
+      phase: 'ready_to_execute',
+      last_action_name: 'list_my_upcoming_appointments',
+      last_action_status: null,
+      last_action_error: null,
+      server_refs: {
+        appointments: [
+          {
+            ref: 'appointment_1',
+            appointment_id: 'appointment-secret',
+          },
+        ],
+        selected_appointment_ref: 'appointment_1',
+      },
+    })
+
+    expect(requiredHarryToolForState(state)).toBe('add_job_note')
+    expect(
+      prepareHarryToolArgs({
+        toolName: 'add_job_note',
+        args: { note: 'The key is in the brown pot.' },
+        workflowState: state,
+      }),
+    ).toEqual({
+      appointment_id: 'appointment-secret',
+      note: 'The key is in the brown pot.',
+    })
+  })
+
+  it('does not loop appointment lookup when several jobs need clarification', () => {
+    const state = workflowState({
+      intent: 'add_job_note',
+      phase: 'awaiting_appointment',
+      last_action_name: 'list_my_upcoming_appointments',
+      last_action_status: null,
+      last_action_error: null,
+      server_refs: {
+        appointments: [
+          {
+            ref: 'appointment_1',
+            appointment_id: 'appointment-one',
+          },
+          {
+            ref: 'appointment_2',
+            appointment_id: 'appointment-two',
+          },
+        ],
+      },
+    })
+
+    expect(requiredHarryToolForState(state)).toBeNull()
   })
 
   it('hydrates server-owned references immediately before execution', () => {
