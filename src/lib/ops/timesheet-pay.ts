@@ -3,3 +3,8 @@ export function parseHourlyRate(value: unknown): number | null {
   if (!Number.isFinite(rate) || rate <= 0 || rate > 1000) return null
   return Math.round((rate + Number.EPSILON) * 100) / 100
 }
+
+export function mountainDateKey(value: string | Date): string {
+  const date = value instanceof Date ? value : new Date(value)
+  return date.toLocaleDateString('en-CA', { timeZone: 'America/Denver' })
+}

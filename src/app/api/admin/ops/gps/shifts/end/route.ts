@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
+import { mountainDateKey } from '@/lib/ops/timesheet-pay'
 import { createAdminClient } from '@/supabase/server'
 
 export async function POST(request: NextRequest) {
@@ -56,6 +57,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const payrollEntry = await syncShiftToPayroll({
+      supabase,
+      shiftId: shift.id,
+      userId: access.id,
+      startedAt: shift.started_at,
+      endedAt: nowIso,
+    })
+
     const { data: updated, error: updateError } = await supabase
       .from('gps_shifts')
       .update({
@@ -74,11 +83,81 @@ export async function POST(request: NextRequest) {
       console.error('[gps/shifts/end] visit rollup error:', err),
     )
 
-    return NextResponse.json({ shift: updated })
+    return NextResponse.json({ shift: updated, payrollEntry })
   } catch (error) {
     console.error('[gps/shifts/end][POST]', error)
     return NextResponse.json({ error: 'Failed to end shift' }, { status: 500 })
   }
+}
+
+async function syncShiftToPayroll(params: {
+  supabase: ReturnType<typeof createAdminClient>
+  shiftId: string
+  userId: string
+  startedAt: string
+  endedAt: string
+}) {
+  const { supabase, shiftId, userId, startedAt, endedAt } = params
+  const { data: staff, error: staffError } = await supabase
+    .from('staff_users')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('is_active', true)
+    .maybeSingle()
+
+  if (staffError) throw staffError
+  if (!staff) return null
+
+  const payableMinutes = Math.max(
+    0,
+    Math.round(
+      (new Date(endedAt).getTime() - new Date(startedAt).getTime()) / 60000,
+    ),
+  )
+
+  const { data: latestRate } = await supabase
+    .from('ops_timesheet_entries')
+    .select('hourly_rate')
+    .eq('staff_user_id', staff.id)
+    .gt('hourly_rate', 0)
+    .order('work_date', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const hourlyRate = Number(latestRate?.hourly_rate || 0)
+  const notes =
+    hourlyRate > 0
+      ? 'Created automatically from Clock In/Out.'
+      : 'Created automatically from Clock In/Out. Hourly rate needs review.'
+
+  const { data, error } = await supabase
+    .from('ops_timesheet_entries')
+    .upsert(
+      {
+        staff_user_id: staff.id,
+        gps_shift_id: shiftId,
+        work_date: mountainDateKey(startedAt),
+        started_at: startedAt,
+        ended_at: endedAt,
+        break_minutes: 0,
+        payable_minutes: payableMinutes,
+        hourly_rate: hourlyRate,
+        work_type: 'job',
+        source: 'calculated',
+        status: 'draft',
+        notes,
+        created_by: userId,
+        updated_by: userId,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'gps_shift_id' },
+    )
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
 }
 
 async function rollUpVisits(

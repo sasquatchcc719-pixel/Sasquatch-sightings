@@ -2,7 +2,7 @@
 
 import { FormEvent, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Plus, Trash2 } from 'lucide-react'
+import { Pencil, Plus, Save, Trash2, X } from 'lucide-react'
 
 type StaffRow = {
   id: string
@@ -23,6 +23,7 @@ type TimesheetEntry = {
   payableMinutes: number
   hourlyRate: number
   grossPay: number
+  gpsShiftId: string | null
   workType: string
   source: string
   status: string
@@ -37,6 +38,11 @@ type EntryFormState = {
   hourlyRate: string
   workType: string
   notes: string
+}
+
+type EditFormState = EntryFormState & {
+  workDate: string
+  status: string
 }
 
 const DEFAULT_FORM: EntryFormState = {
@@ -74,6 +80,21 @@ function toIso(date: string, time: string): string {
   return new Date(`${date}T${time}:00`).toISOString()
 }
 
+function fmtInputTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString('en-GB', {
+    timeZone: 'America/Denver',
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function shiftDate(date: string, days: number): string {
+  const next = new Date(`${date}T12:00:00`)
+  next.setDate(next.getDate() + days)
+  return next.toISOString().split('T')[0]
+}
+
 async function fetchStaff(): Promise<StaffRow[]> {
   const res = await fetch('/api/admin/ops/staff')
   if (!res.ok) throw new Error('Failed to load staff')
@@ -82,14 +103,15 @@ async function fetchStaff(): Promise<StaffRow[]> {
 }
 
 async function fetchEntries(
-  date: string,
+  startDate: string,
+  endDate: string,
   staffUserId: string,
 ): Promise<{
   entries: TimesheetEntry[]
   totalPayableMinutes: number
   totalGrossPay: number
 }> {
-  const params = new URLSearchParams({ date })
+  const params = new URLSearchParams({ startDate, endDate })
   if (staffUserId) params.set('staffUserId', staffUserId)
 
   const res = await fetch(
@@ -101,8 +123,17 @@ async function fetchEntries(
 
 export function PayrollTimesheetsView() {
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0])
+  const [viewMode, setViewMode] = useState<'day' | 'period'>('day')
+  const [periodStart, setPeriodStart] = useState(() =>
+    shiftDate(new Date().toISOString().split('T')[0], -13),
+  )
+  const [periodEnd, setPeriodEnd] = useState(
+    () => new Date().toISOString().split('T')[0],
+  )
   const [staffFilter, setStaffFilter] = useState('')
   const [form, setForm] = useState<EntryFormState>(DEFAULT_FORM)
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState<EditFormState | null>(null)
   const [newWorkerName, setNewWorkerName] = useState('')
   const [message, setMessage] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
@@ -113,8 +144,20 @@ export function PayrollTimesheetsView() {
   })
 
   const entriesQuery = useQuery({
-    queryKey: ['payroll-timesheet-entries', date, staffFilter],
-    queryFn: () => fetchEntries(date, staffFilter),
+    queryKey: [
+      'payroll-timesheet-entries',
+      viewMode,
+      date,
+      periodStart,
+      periodEnd,
+      staffFilter,
+    ],
+    queryFn: () =>
+      fetchEntries(
+        viewMode === 'day' ? date : periodStart,
+        viewMode === 'day' ? date : periodEnd,
+        staffFilter,
+      ),
   })
 
   const staff = staffQuery.data || []
@@ -144,9 +187,79 @@ export function PayrollTimesheetsView() {
   }, [entries])
 
   function changeDate(offset: number) {
+    if (viewMode === 'period') {
+      setPeriodStart((current) => shiftDate(current, offset * 14))
+      setPeriodEnd((current) => shiftDate(current, offset * 14))
+      return
+    }
     const d = new Date(date)
     d.setDate(d.getDate() + offset)
     setDate(d.toISOString().split('T')[0])
+  }
+
+  function startEditing(entry: TimesheetEntry) {
+    setEditingEntryId(entry.id)
+    setEditForm({
+      staffUserId: entry.staffUserId,
+      workDate: entry.workDate,
+      startTime: fmtInputTime(entry.startedAt),
+      endTime: fmtInputTime(entry.endedAt),
+      breakMinutes: String(entry.breakMinutes),
+      hourlyRate: entry.hourlyRate > 0 ? String(entry.hourlyRate) : '',
+      workType: entry.workType,
+      status: entry.status,
+      notes: entry.notes || '',
+    })
+    setMessage(null)
+  }
+
+  function stopEditing() {
+    setEditingEntryId(null)
+    setEditForm(null)
+  }
+
+  function updateEditForm(field: keyof EditFormState, value: string) {
+    setEditForm((current) =>
+      current ? { ...current, [field]: value } : current,
+    )
+  }
+
+  async function saveEntry(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!editingEntryId || !editForm) return
+
+    setIsSaving(true)
+    setMessage(null)
+    try {
+      const res = await fetch(
+        `/api/admin/ops/payroll/timesheet-entries/${editingEntryId}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            workDate: editForm.workDate,
+            startedAt: toIso(editForm.workDate, editForm.startTime),
+            endedAt: toIso(editForm.workDate, editForm.endTime),
+            breakMinutes: Number(editForm.breakMinutes || 0),
+            hourlyRate: Number(editForm.hourlyRate),
+            workType: editForm.workType,
+            status: editForm.status,
+            notes: editForm.notes,
+          }),
+        },
+      )
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Failed to save entry')
+      stopEditing()
+      await entriesQuery.refetch()
+      setMessage('Payroll time entry updated.')
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : 'Failed to save entry',
+      )
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   async function addWorker(event: FormEvent<HTMLFormElement>) {
@@ -258,6 +371,7 @@ export function PayrollTimesheetsView() {
       )
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || 'Failed to delete entry')
+      if (editingEntryId === entry.id) stopEditing()
       await entriesQuery.refetch()
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Failed to delete')
@@ -270,23 +384,70 @@ export function PayrollTimesheetsView() {
     <div className="space-y-6">
       <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 text-sm text-emerald-200">
         <strong>Payroll source of truth:</strong> These entries are payable
-        time. GPS activity is separate and remains dispatch/location history.
+        time. Clock In/Out creates a draft entry here; GPS location details
+        remain separate dispatch history.
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex rounded-lg border border-white/10 bg-slate-900/50 p-1">
+            <button
+              type="button"
+              onClick={() => setViewMode('day')}
+              className={`rounded-md px-3 py-1 text-sm ${
+                viewMode === 'day'
+                  ? 'bg-emerald-700 text-white'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Day
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPeriodEnd(date)
+                setPeriodStart(shiftDate(date, -13))
+                setViewMode('period')
+              }}
+              className={`rounded-md px-3 py-1 text-sm ${
+                viewMode === 'period'
+                  ? 'bg-emerald-700 text-white'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Pay period
+            </button>
+          </div>
           <button
             onClick={() => changeDate(-1)}
             className="rounded-lg border border-white/10 px-3 py-1.5 text-sm text-slate-300 hover:bg-white/5"
           >
             ‹ Prev
           </button>
-          <input
-            type="date"
-            value={date}
-            onChange={(event) => setDate(event.target.value)}
-            className="rounded-lg border border-white/10 bg-slate-800/60 px-3 py-1.5 text-sm text-white"
-          />
+          {viewMode === 'day' ? (
+            <input
+              type="date"
+              value={date}
+              onChange={(event) => setDate(event.target.value)}
+              className="rounded-lg border border-white/10 bg-slate-800/60 px-3 py-1.5 text-sm text-white"
+            />
+          ) : (
+            <>
+              <input
+                type="date"
+                value={periodStart}
+                onChange={(event) => setPeriodStart(event.target.value)}
+                className="rounded-lg border border-white/10 bg-slate-800/60 px-3 py-1.5 text-sm text-white"
+              />
+              <span className="text-sm text-slate-500">to</span>
+              <input
+                type="date"
+                value={periodEnd}
+                onChange={(event) => setPeriodEnd(event.target.value)}
+                className="rounded-lg border border-white/10 bg-slate-800/60 px-3 py-1.5 text-sm text-white"
+              />
+            </>
+          )}
           <button
             onClick={() => changeDate(1)}
             className="rounded-lg border border-white/10 px-3 py-1.5 text-sm text-slate-300 hover:bg-white/5"
@@ -536,7 +697,11 @@ export function PayrollTimesheetsView() {
 
       <div className="overflow-hidden rounded-2xl border border-white/10">
         <div className="border-b border-white/10 bg-slate-900/70 px-4 py-3">
-          <h3 className="font-semibold text-white">Entries for {date}</h3>
+          <h3 className="font-semibold text-white">
+            {viewMode === 'day'
+              ? `Entries for ${date}`
+              : `Pay period ${periodStart} to ${periodEnd}`}
+          </h3>
         </div>
 
         {entriesQuery.isLoading && (
@@ -555,68 +720,228 @@ export function PayrollTimesheetsView() {
           !entriesQuery.error &&
           entries.length === 0 && (
             <div className="p-6 text-center text-slate-500">
-              No payable time entries for this date.
+              No payable time entries for this range.
             </div>
           )}
 
         {entries.length > 0 && (
           <div className="divide-y divide-white/5">
             {entries.map((entry) => (
-              <div
-                key={entry.id}
-                className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
-              >
-                <div className="min-w-0">
-                  <p className="font-medium text-white">
-                    {entry.staffDisplayName}
-                  </p>
-                  <p className="text-sm text-slate-400">
-                    {fmtTime(entry.startedAt)} → {fmtTime(entry.endedAt)}
-                    {entry.breakMinutes > 0
-                      ? `, ${entry.breakMinutes}m break`
-                      : ''}
-                  </p>
-                  {entry.notes && (
-                    <p className="mt-1 text-sm text-slate-500">{entry.notes}</p>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <div className="text-right">
-                    <p className="font-mono text-lg font-semibold text-emerald-300">
-                      {fmtMoney(entry.grossPay)}
+              <div key={entry.id} className="px-4 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-medium text-white">
+                      {entry.staffDisplayName}
                     </p>
-                    <p className="text-xs text-slate-500">
-                      {fmtMin(entry.payableMinutes)} at{' '}
-                      {fmtMoney(entry.hourlyRate)}/hr
+                    <p className="text-sm text-slate-400">
+                      {viewMode === 'period' ? `${entry.workDate} · ` : ''}
+                      {fmtTime(entry.startedAt)} → {fmtTime(entry.endedAt)}
+                      {entry.breakMinutes > 0
+                        ? `, ${entry.breakMinutes}m break`
+                        : ''}
                     </p>
-                    <p className="text-xs text-slate-500 capitalize">
-                      {entry.workType} · {entry.status}
-                    </p>
+                    {entry.notes && (
+                      <p className="mt-1 text-sm text-slate-500">
+                        {entry.notes}
+                      </p>
+                    )}
+                    {entry.gpsShiftId && (
+                      <p className="mt-1 text-xs font-medium text-blue-300">
+                        Clock In/Out entry
+                      </p>
+                    )}
                   </div>
 
-                  <select
-                    value={entry.status}
-                    onChange={(event) =>
-                      updateStatus(entry, event.target.value)
-                    }
-                    disabled={isSaving || entry.status === 'paid'}
-                    className="rounded-lg border border-white/10 bg-slate-800/60 px-2 py-1.5 text-sm text-white disabled:opacity-50"
-                  >
-                    <option value="draft">Draft</option>
-                    <option value="approved">Approved</option>
-                    <option value="paid">Paid</option>
-                  </select>
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <p className="font-mono text-lg font-semibold text-emerald-300">
+                        {entry.hourlyRate > 0
+                          ? fmtMoney(entry.grossPay)
+                          : 'Rate needed'}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {fmtMin(entry.payableMinutes)}
+                        {entry.hourlyRate > 0
+                          ? ` at ${fmtMoney(entry.hourlyRate)}/hr`
+                          : ''}
+                      </p>
+                      <p className="text-xs text-slate-500 capitalize">
+                        {entry.workType} · {entry.status}
+                      </p>
+                    </div>
 
-                  <button
-                    onClick={() => deleteEntry(entry)}
-                    disabled={isSaving || entry.status === 'paid'}
-                    className="rounded-lg border border-red-500/20 p-2 text-red-300 hover:bg-red-500/10 disabled:opacity-40"
-                    title="Delete entry"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                    <select
+                      value={entry.status}
+                      onChange={(event) =>
+                        updateStatus(entry, event.target.value)
+                      }
+                      disabled={
+                        isSaving ||
+                        entry.status === 'paid' ||
+                        entry.hourlyRate <= 0
+                      }
+                      title={
+                        entry.hourlyRate <= 0
+                          ? 'Add an hourly rate before approving this entry'
+                          : undefined
+                      }
+                      className="rounded-lg border border-white/10 bg-slate-800/60 px-2 py-1.5 text-sm text-white disabled:opacity-50"
+                    >
+                      <option value="draft">Draft</option>
+                      <option value="approved">Approved</option>
+                      <option value="paid">Paid</option>
+                    </select>
+
+                    <button
+                      onClick={() => startEditing(entry)}
+                      disabled={isSaving || entry.status === 'paid'}
+                      className="rounded-lg border border-blue-500/20 p-2 text-blue-300 hover:bg-blue-500/10 disabled:opacity-40"
+                      title="Edit entry"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </button>
+
+                    <button
+                      onClick={() => deleteEntry(entry)}
+                      disabled={isSaving || entry.status === 'paid'}
+                      className="rounded-lg border border-red-500/20 p-2 text-red-300 hover:bg-red-500/10 disabled:opacity-40"
+                      title="Delete entry"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
+
+                {editingEntryId === entry.id && editForm && (
+                  <form
+                    onSubmit={saveEntry}
+                    className="mt-4 grid gap-3 rounded-xl border border-blue-500/20 bg-slate-950/40 p-4 sm:grid-cols-2 lg:grid-cols-4"
+                  >
+                    <label className="text-sm text-slate-300">
+                      Work date
+                      <input
+                        type="date"
+                        required
+                        value={editForm.workDate}
+                        onChange={(event) =>
+                          updateEditForm('workDate', event.target.value)
+                        }
+                        className="mt-1 w-full rounded-lg border border-white/10 bg-slate-800/60 px-3 py-2 text-white"
+                      />
+                    </label>
+                    <label className="text-sm text-slate-300">
+                      Start
+                      <input
+                        type="time"
+                        required
+                        value={editForm.startTime}
+                        onChange={(event) =>
+                          updateEditForm('startTime', event.target.value)
+                        }
+                        className="mt-1 w-full rounded-lg border border-white/10 bg-slate-800/60 px-3 py-2 text-white"
+                      />
+                    </label>
+                    <label className="text-sm text-slate-300">
+                      End
+                      <input
+                        type="time"
+                        required
+                        value={editForm.endTime}
+                        onChange={(event) =>
+                          updateEditForm('endTime', event.target.value)
+                        }
+                        className="mt-1 w-full rounded-lg border border-white/10 bg-slate-800/60 px-3 py-2 text-white"
+                      />
+                    </label>
+                    <label className="text-sm text-slate-300">
+                      Break min
+                      <input
+                        type="number"
+                        min="0"
+                        required
+                        value={editForm.breakMinutes}
+                        onChange={(event) =>
+                          updateEditForm('breakMinutes', event.target.value)
+                        }
+                        className="mt-1 w-full rounded-lg border border-white/10 bg-slate-800/60 px-3 py-2 text-white"
+                      />
+                    </label>
+                    <label className="text-sm text-slate-300">
+                      Work type
+                      <select
+                        value={editForm.workType}
+                        onChange={(event) =>
+                          updateEditForm('workType', event.target.value)
+                        }
+                        className="mt-1 w-full rounded-lg border border-white/10 bg-slate-800/60 px-3 py-2 text-white"
+                      >
+                        <option value="training">Training</option>
+                        <option value="job">Job</option>
+                        <option value="admin">Admin</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </label>
+                    <label className="text-sm text-slate-300">
+                      Hourly rate
+                      <input
+                        type="number"
+                        min="0.01"
+                        max="1000"
+                        step="0.01"
+                        required
+                        value={editForm.hourlyRate}
+                        onChange={(event) =>
+                          updateEditForm('hourlyRate', event.target.value)
+                        }
+                        className="mt-1 w-full rounded-lg border border-white/10 bg-slate-800/60 px-3 py-2 text-white"
+                      />
+                    </label>
+                    <label className="text-sm text-slate-300">
+                      Status
+                      <select
+                        value={editForm.status}
+                        onChange={(event) =>
+                          updateEditForm('status', event.target.value)
+                        }
+                        className="mt-1 w-full rounded-lg border border-white/10 bg-slate-800/60 px-3 py-2 text-white"
+                      >
+                        <option value="draft">Draft</option>
+                        <option value="approved">Approved</option>
+                        <option value="paid">Paid</option>
+                      </select>
+                    </label>
+                    <label className="text-sm text-slate-300 sm:col-span-2 lg:col-span-4">
+                      Notes
+                      <textarea
+                        rows={2}
+                        value={editForm.notes}
+                        onChange={(event) =>
+                          updateEditForm('notes', event.target.value)
+                        }
+                        className="mt-1 w-full rounded-lg border border-white/10 bg-slate-800/60 px-3 py-2 text-white"
+                      />
+                    </label>
+                    <div className="flex gap-2 sm:col-span-2 lg:col-span-4">
+                      <button
+                        type="submit"
+                        disabled={isSaving}
+                        className="flex items-center gap-2 rounded-lg bg-blue-700 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-600 disabled:opacity-50"
+                      >
+                        <Save className="h-4 w-4" />
+                        Save changes
+                      </button>
+                      <button
+                        type="button"
+                        onClick={stopEditing}
+                        disabled={isSaving}
+                        className="flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm text-slate-300 hover:bg-white/5"
+                      >
+                        <X className="h-4 w-4" />
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                )}
               </div>
             ))}
           </div>

@@ -46,7 +46,13 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const date =
       searchParams.get('date') || new Date().toISOString().split('T')[0]
+    const startDate = searchParams.get('startDate') || date
+    const endDate = searchParams.get('endDate') || date
     const staffUserId = searchParams.get('staffUserId')
+
+    if (startDate > endDate) {
+      return jsonError('Start date must be before end date', 400)
+    }
 
     let query = supabase
       .from('ops_timesheet_entries')
@@ -61,6 +67,7 @@ export async function GET(request: NextRequest) {
         payable_minutes,
         hourly_rate,
         gross_pay,
+        gps_shift_id,
         work_type,
         source,
         status,
@@ -74,7 +81,9 @@ export async function GET(request: NextRequest) {
         )
       `,
       )
-      .eq('work_date', date)
+      .gte('work_date', startDate)
+      .lte('work_date', endDate)
+      .order('work_date', { ascending: true })
       .order('started_at', { ascending: true })
 
     if (staffUserId) {
@@ -101,6 +110,7 @@ export async function GET(request: NextRequest) {
         payableMinutes: entry.payable_minutes,
         hourlyRate: Number(entry.hourly_rate || 0),
         grossPay: Number(entry.gross_pay || 0),
+        gpsShiftId: entry.gps_shift_id,
         workType: entry.work_type,
         source: entry.source,
         status: entry.status,
@@ -112,6 +122,8 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       date,
+      startDate,
+      endDate,
       entries,
       totalPayableMinutes: entries.reduce(
         (sum, entry) => sum + Number(entry.payableMinutes || 0),

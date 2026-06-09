@@ -53,7 +53,7 @@ export async function PATCH(
     const { data: existing, error: findError } = await supabase
       .from('ops_timesheet_entries')
       .select(
-        'id, started_at, ended_at, break_minutes, hourly_rate, work_type, status, notes',
+        'id, work_date, started_at, ended_at, break_minutes, hourly_rate, work_type, status, notes',
       )
       .eq('id', id)
       .maybeSingle()
@@ -64,12 +64,26 @@ export async function PATCH(
       return jsonError('Paid timesheet entries cannot be edited', 409)
     }
 
+    const nextWorkDate =
+      body.workDate !== undefined
+        ? String(body.workDate)
+        : String(existing.work_date)
     const nextStartedAt =
       body.startedAt !== undefined
         ? String(body.startedAt)
         : existing.started_at
     const nextEndedAt =
       body.endedAt !== undefined ? String(body.endedAt) : existing.ended_at
+
+    if (
+      body.workDate !== undefined &&
+      (body.startedAt === undefined || body.endedAt === undefined)
+    ) {
+      return jsonError(
+        'Start and end times are required when changing the work date',
+        400,
+      )
+    }
     const nextBreakMinutes =
       body.breakMinutes !== undefined
         ? Number(body.breakMinutes)
@@ -97,6 +111,7 @@ export async function PATCH(
     if ('error' in calculated) return jsonError(calculated.error, 400)
 
     const update: Record<string, unknown> = {
+      work_date: nextWorkDate,
       started_at: nextStartedAt,
       ended_at: nextEndedAt,
       break_minutes: nextBreakMinutes,
