@@ -26,6 +26,7 @@ export async function POST(request: NextRequest) {
     const callSid = formData.get('CallSid') as string
     const callStatus = formData.get('CallStatus') as string
     const dialCallStatus = formData.get('DialCallStatus') as string
+    const recordingSid = formData.get('RecordingSid') as string
     const normalizedDialCallStatus = String(dialCallStatus || '')
       .trim()
       .toLowerCase()
@@ -39,6 +40,22 @@ export async function POST(request: NextRequest) {
 
     if (!callerPhone) {
       console.error('[Call Handler] Missing caller phone number')
+      return new NextResponse(
+        '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+        {
+          status: 200,
+          headers: { 'Content-Type': 'text/xml' },
+        },
+      )
+    }
+
+    // A <Record> without an explicit action posts back to the current URL.
+    // Older TwiML did that, so terminate any late recording callbacks instead
+    // of re-running missed-call SMS and starting another recording.
+    if (recordingSid) {
+      console.log(
+        `[Call Handler] Ignoring recording callback ${recordingSid} for call ${callSid}`,
+      )
       return new NextResponse(
         '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
         {
@@ -103,6 +120,38 @@ export async function POST(request: NextRequest) {
       )
 
       try {
+        if (!callSid) {
+          throw new Error('Missing CallSid; refusing duplicate-unsafe SMS send')
+        }
+
+        const missedCallMessageType = `missed_call_auto_reply:${callSid}`
+        const harryMessage =
+          'Hi! This is Harry from Sasquatch Carpet Cleaning. I saw you just called. How can I help you today?'
+
+        // Claim this call before sending. The partial unique index on
+        // message_type makes retries and concurrent Twilio callbacks harmless.
+        const { data: claim, error: claimError } = await supabase
+          .from('sms_logs')
+          .insert({
+            recipient_phone: normalizedPhone,
+            message_type: missedCallMessageType,
+            message_content: harryMessage,
+            status: 'queued',
+            sent_at: new Date().toISOString(),
+          })
+          .select('id')
+          .single()
+
+        if (claimError?.code === '23505') {
+          console.log(
+            `[Call Handler] Missed-call SMS already claimed for ${callSid}; skipping duplicate`,
+          )
+          return await buildVoicemailResponse()
+        }
+        if (claimError || !claim) {
+          throw claimError || new Error('Could not claim missed-call SMS')
+        }
+
         // Find or create conversation for this phone number
         const { data: existingConvo } = await supabase
           .from('conversations')
@@ -155,10 +204,6 @@ export async function POST(request: NextRequest) {
             .eq('id', conversationId)
         }
 
-        // Send SMS via Harry
-        const harryMessage =
-          'Hi! This is Harry from Sasquatch Carpet Cleaning. I saw you just called. How can I help you today?'
-
         const twilioClient = twilio(
           process.env.TWILIO_ACCOUNT_SID,
           process.env.TWILIO_AUTH_TOKEN,
@@ -193,28 +238,29 @@ export async function POST(request: NextRequest) {
           .update({ messages, updated_at: new Date().toISOString() })
           .eq('id', conversationId)
 
-        // Log to sms_logs
-        await supabase.from('sms_logs').insert({
-          recipient_phone: normalizedPhone,
-          message_type: 'ai_dispatcher',
-          message_content: harryMessage,
-          status: 'sent',
-          twilio_sid: sms.sid,
-          sent_at: new Date().toISOString(),
-        })
+        await supabase
+          .from('sms_logs')
+          .update({
+            status: 'sent',
+            twilio_sid: sms.sid,
+            sent_at: new Date().toISOString(),
+          })
+          .eq('id', claim.id)
       } catch (smsError) {
         console.error(
           '[Call Handler] Failed to send Harry missed-call SMS:',
           smsError,
         )
-        await supabase.from('sms_logs').insert({
-          recipient_phone: normalizedPhone,
-          message_type: 'ai_dispatcher',
-          message_content:
-            'Harry missed-call SMS failed before it could be sent.',
-          status: 'failed',
-          sent_at: new Date().toISOString(),
-        })
+        if (callSid) {
+          await supabase
+            .from('sms_logs')
+            .update({
+              status: 'failed',
+              message_content:
+                'Harry missed-call SMS failed before it could be sent.',
+            })
+            .eq('message_type', `missed_call_auto_reply:${callSid}`)
+        }
       }
     } else {
       console.log(
@@ -222,7 +268,21 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Fetch phone settings from database for voicemail
+    return await buildVoicemailResponse()
+  } catch (error) {
+    console.error('[Call Handler] Error:', error)
+    return new NextResponse(
+      '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+      {
+        status: 200,
+        headers: { 'Content-Type': 'text/xml' },
+      },
+    )
+  }
+}
+
+async function buildVoicemailResponse(): Promise<NextResponse> {
+  // Fetch phone settings from database for voicemail
     let voicemailMessage =
       "Thanks for calling Sasquatch Carpet Cleaning. You've either reached us after business hours or we're currently assisting other customers. You can book immediately at sasquatch carpet dot com and add any questions to the notes. Or leave a message after the beep and we'll get back to you as soon as possible."
     let voicemailVoice = 'Polly.Joanna-Neural'
@@ -255,27 +315,17 @@ export async function POST(request: NextRequest) {
     const voicemailUrl = `${baseUrl}/api/twilio/voicemail`
 
     // Return voicemail TwiML - let caller leave a message
-    const voicemailTwiml = `<?xml version="1.0" encoding="UTF-8"?>
+  const voicemailTwiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Say voice="${voicemailVoice}">${voicemailMessage}</Say>
-    <Record maxLength="120" transcribe="true" transcribeCallback="${voicemailUrl}" recordingStatusCallback="${voicemailUrl}" />
+    <Record maxLength="120" action="${voicemailUrl}" method="POST" transcribe="true" transcribeCallback="${voicemailUrl}" recordingStatusCallback="${voicemailUrl}" />
     <Say voice="${voicemailVoice}">We didn't receive your message. Please try calling back during business hours. Goodbye.</Say>
 </Response>`
 
     console.log('[Call Handler] Returning voicemail TwiML')
 
-    return new NextResponse(voicemailTwiml, {
-      status: 200,
-      headers: { 'Content-Type': 'text/xml' },
-    })
-  } catch (error) {
-    console.error('[Call Handler] Error:', error)
-    return new NextResponse(
-      '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
-      {
-        status: 200,
-        headers: { 'Content-Type': 'text/xml' },
-      },
-    )
-  }
+  return new NextResponse(voicemailTwiml, {
+    status: 200,
+    headers: { 'Content-Type': 'text/xml' },
+  })
 }
