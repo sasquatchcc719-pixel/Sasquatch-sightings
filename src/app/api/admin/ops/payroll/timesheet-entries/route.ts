@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
+import { parseHourlyRate } from '@/lib/ops/timesheet-pay'
 import { createAdminClient } from '@/supabase/server'
 
 const WORK_TYPES = new Set(['training', 'job', 'admin', 'other'])
@@ -58,6 +59,8 @@ export async function GET(request: NextRequest) {
         ended_at,
         break_minutes,
         payable_minutes,
+        hourly_rate,
+        gross_pay,
         work_type,
         source,
         status,
@@ -96,6 +99,8 @@ export async function GET(request: NextRequest) {
         endedAt: entry.ended_at,
         breakMinutes: entry.break_minutes,
         payableMinutes: entry.payable_minutes,
+        hourlyRate: Number(entry.hourly_rate || 0),
+        grossPay: Number(entry.gross_pay || 0),
         workType: entry.work_type,
         source: entry.source,
         status: entry.status,
@@ -110,6 +115,10 @@ export async function GET(request: NextRequest) {
       entries,
       totalPayableMinutes: entries.reduce(
         (sum, entry) => sum + Number(entry.payableMinutes || 0),
+        0,
+      ),
+      totalGrossPay: entries.reduce(
+        (sum, entry) => sum + Number(entry.grossPay || 0),
         0,
       ),
     })
@@ -132,11 +141,15 @@ export async function POST(request: NextRequest) {
     const startedAt = String(body.startedAt || '')
     const endedAt = String(body.endedAt || '')
     const breakMinutes = Number(body.breakMinutes || 0)
+    const hourlyRate = parseHourlyRate(body.hourlyRate)
     const workType = String(body.workType || 'training')
     const notes = body.notes ? String(body.notes).trim() : null
 
     if (!staffUserId) return jsonError('Staff member is required', 400)
     if (!workDate) return jsonError('Work date is required', 400)
+    if (hourlyRate === null) {
+      return jsonError('Hourly rate must be between $0.01 and $1,000', 400)
+    }
     if (!WORK_TYPES.has(workType)) return jsonError('Invalid work type', 400)
 
     const calculated = calculatePayableMinutes(startedAt, endedAt, breakMinutes)
@@ -161,6 +174,7 @@ export async function POST(request: NextRequest) {
         ended_at: endedAt,
         break_minutes: breakMinutes,
         payable_minutes: calculated.payableMinutes,
+        hourly_rate: hourlyRate,
         work_type: workType,
         source: 'manual',
         status: 'draft',
