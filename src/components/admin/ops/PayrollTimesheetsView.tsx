@@ -3,6 +3,10 @@
 import { FormEvent, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Pencil, Plus, Save, Trash2, X } from 'lucide-react'
+import {
+  getSemiMonthlyPayPeriod,
+  shiftSemiMonthlyPayPeriod,
+} from '@/lib/ops/timesheet-pay'
 
 type StaffRow = {
   id: string
@@ -89,12 +93,6 @@ function fmtInputTime(iso: string): string {
   })
 }
 
-function shiftDate(date: string, days: number): string {
-  const next = new Date(`${date}T12:00:00`)
-  next.setDate(next.getDate() + days)
-  return next.toISOString().split('T')[0]
-}
-
 async function fetchStaff(): Promise<StaffRow[]> {
   const res = await fetch('/api/admin/ops/staff')
   if (!res.ok) throw new Error('Failed to load staff')
@@ -124,10 +122,7 @@ async function fetchEntries(
 export function PayrollTimesheetsView() {
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0])
   const [viewMode, setViewMode] = useState<'day' | 'period'>('day')
-  const [periodStart, setPeriodStart] = useState(() =>
-    shiftDate(new Date().toISOString().split('T')[0], -13),
-  )
-  const [periodEnd, setPeriodEnd] = useState(
+  const [periodAnchor, setPeriodAnchor] = useState(
     () => new Date().toISOString().split('T')[0],
   )
   const [staffFilter, setStaffFilter] = useState('')
@@ -137,6 +132,10 @@ export function PayrollTimesheetsView() {
   const [newWorkerName, setNewWorkerName] = useState('')
   const [message, setMessage] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+  const payPeriod = useMemo(
+    () => getSemiMonthlyPayPeriod(periodAnchor),
+    [periodAnchor],
+  )
 
   const staffQuery = useQuery({
     queryKey: ['payroll-staff'],
@@ -148,14 +147,14 @@ export function PayrollTimesheetsView() {
       'payroll-timesheet-entries',
       viewMode,
       date,
-      periodStart,
-      periodEnd,
+      payPeriod.startDate,
+      payPeriod.endDate,
       staffFilter,
     ],
     queryFn: () =>
       fetchEntries(
-        viewMode === 'day' ? date : periodStart,
-        viewMode === 'day' ? date : periodEnd,
+        viewMode === 'day' ? date : payPeriod.startDate,
+        viewMode === 'day' ? date : payPeriod.endDate,
         staffFilter,
       ),
   })
@@ -188,8 +187,9 @@ export function PayrollTimesheetsView() {
 
   function changeDate(offset: number) {
     if (viewMode === 'period') {
-      setPeriodStart((current) => shiftDate(current, offset * 14))
-      setPeriodEnd((current) => shiftDate(current, offset * 14))
+      setPeriodAnchor(
+        shiftSemiMonthlyPayPeriod(periodAnchor, offset < 0 ? -1 : 1).startDate,
+      )
       return
     }
     const d = new Date(date)
@@ -405,8 +405,7 @@ export function PayrollTimesheetsView() {
             <button
               type="button"
               onClick={() => {
-                setPeriodEnd(date)
-                setPeriodStart(shiftDate(date, -13))
+                setPeriodAnchor(date)
                 setViewMode('period')
               }}
               className={`rounded-md px-3 py-1 text-sm ${
@@ -432,21 +431,12 @@ export function PayrollTimesheetsView() {
               className="rounded-lg border border-white/10 bg-slate-800/60 px-3 py-1.5 text-sm text-white"
             />
           ) : (
-            <>
-              <input
-                type="date"
-                value={periodStart}
-                onChange={(event) => setPeriodStart(event.target.value)}
-                className="rounded-lg border border-white/10 bg-slate-800/60 px-3 py-1.5 text-sm text-white"
-              />
-              <span className="text-sm text-slate-500">to</span>
-              <input
-                type="date"
-                value={periodEnd}
-                onChange={(event) => setPeriodEnd(event.target.value)}
-                className="rounded-lg border border-white/10 bg-slate-800/60 px-3 py-1.5 text-sm text-white"
-              />
-            </>
+            <div className="rounded-lg border border-white/10 bg-slate-800/60 px-3 py-1.5 text-sm text-white">
+              <span className="font-medium">{payPeriod.label}</span>
+              <span className="ml-2 text-slate-400">
+                {payPeriod.startDate} to {payPeriod.endDate}
+              </span>
+            </div>
           )}
           <button
             onClick={() => changeDate(1)}
@@ -700,7 +690,7 @@ export function PayrollTimesheetsView() {
           <h3 className="font-semibold text-white">
             {viewMode === 'day'
               ? `Entries for ${date}`
-              : `Pay period ${periodStart} to ${periodEnd}`}
+              : `Pay period: ${payPeriod.label} (${payPeriod.startDate} to ${payPeriod.endDate})`}
           </h3>
         </div>
 
