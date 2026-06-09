@@ -595,7 +595,7 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
     function: {
       name: 'add_job_note',
       description:
-        'Add or append important information to an existing appointment. Use appointment_ref from list_my_upcoming_appointments. The note will be added to any existing notes.',
+        'Add or append customer-provided information that affects how an existing job should be performed, including access, pets, furniture, priority/skip areas, parking, utilities, hazards, treatment details, or coordination. Use appointment_ref from list_my_upcoming_appointments. The note will be added to existing notes.',
       parameters: {
         type: 'object',
         properties: {
@@ -607,7 +607,7 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
           note: {
             type: 'string',
             description:
-              'The information to save (e.g., "Garage code: 1234" or "Dog in backyard - use front door only")',
+              'Preserve the operational information the customer provided (e.g., "Garage code: 1234", "Do not let the dog out", or "Move the dresser but leave the piano")',
           },
         },
         required: ['appointment_ref', 'note'],
