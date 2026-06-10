@@ -1,5 +1,90 @@
 # Echo Content Engine Plan
 
+## System Context: The Full Stack
+
+This section exists so any AI model reviewing Echo understands the complete system it operates inside. Echo is not a standalone tool — it is one output layer of a larger platform designed from the beginning to win the Monument, CO local map pack.
+
+**The overarching goal of every piece of this system is to own the Google Maps local pack in the Monument / Tri-Lakes / Palmer Lake / Woodmoor / Black Forest market for carpet cleaning. Every feature below exists in service of that goal.**
+
+### The Monument Market
+
+Sasquatch Carpet Cleaning is a local service area business operating out of Monument, CO. Primary service areas: Monument, Palmer Lake, Woodmoor, Gleneagle, Black Forest, North Colorado Springs, Castle Rock, Larkspur, Tri-Lakes area, El Paso County.
+
+Services: carpet cleaning, pet urine treatment, upholstery cleaning, tile and grout cleaning, commercial carpet cleaning, stain removal, odor treatment (hot water extraction / truck-mounted / CRB agitation process).
+
+Current position: 68 five-star Google reviews as of June 2026, strong review velocity, competing against legacy companies with 1,000–3,000 reviews. Several competitors with fewer reviews are currently outranking in the map pack. The goal is consistent, dominant map pack presence.
+
+### Sasquatch Sightings (the Admin Platform)
+
+`sasquatchcc719-pixel/Sasquatch-sightings` — Next.js 16 / React 19 / TypeScript / Tailwind / Supabase / Vercel. This is the internal operations platform Charles uses to run the business. Everything below lives here.
+
+**Harry** (`src/lib/harry/`) — SMS automation agent. Handles inbound customer texts: new booking requests, reschedule requests, appointment lookups, address updates, job notes. Multi-phase state machine. This is an operational tool, not a marketing tool. It keeps customers managed so the business runs smoothly and reviews stay positive — indirect map pack support through customer satisfaction. Harry is already at scope capacity and should not be given additional responsibilities.
+
+**George** (`src/app/api/admin/george/`) — Admin AI agent. Handles back-office tasks: phone settings, QuickBooks operations, scheduling decisions. Enabled by default in production with `GEORGE_HENDERSON_ROLLOUT_MODE=confirm_actions`.
+
+**Rabecca** (`src/lib/retell/`) — Voice AI via Retell. Gated by `REBECCA_VOICE_ENABLED`. Not wired into live call routing — only gates the `/api/retell/functions` endpoint.
+
+**Call Routing** — Twilio inbound calls route through `/api/twilio/call-router`. Business hours (9am–5pm MT Mon–Fri) and all forward numbers come from the `phone_settings` table. IVR menu: press 1 for scheduling forward, press 2 for Charles + browser client. After hours → voicemail + Harry SMS follow-up.
+
+**Job / Invoice System** — Core operational workflow. Invoices are created and published via `/api/admin/ops/invoices/[id]/publish`. Publishing a job: creates a job record with city, service, line items, before/after images, and an AI-generated description. This is the trigger point for Echo.
+
+**Job Map / Job Pages** — Every published job creates a permanent public-facing page. These are real proof pages: city, service, process, images, description. They live on the public site and are crawlable. This is a key local SEO asset — real job proof with real city + service combinations indexed by Google. These pages feed prominence and relevance signals for the map pack.
+
+**Echo** (`src/lib/echo/`) — Google Business Profile and Facebook content automation. Triggered automatically when a job is published. Decides whether to skip, draft, or post content based on settings, weekly cap, and repeat-city rules. Generates varied copy via OpenAI (style memory, opener ban list). Delivers to Google Business Profile and Facebook via Zapier webhooks. Admin UI at `/admin/social-posts`. Currently built and complete but awaiting Zapier setup (two webhook env vars not yet configured). Full spec in `docs/ECHO_V1_SPEC.md`.
+
+**SERP Tracking** — Daily cron job (`track-serps`) monitors keyword rankings. Provides data on where the business is currently appearing in search results.
+
+**Review Builder** — Exists on the customer-facing website. Customers are directed here from multiple touchpoints: post-job close-out, 3-day follow-up SMS, NFC business card / magnet. Funnels happy customers to leave Google reviews.
+
+**QuickBooks Sync** — Financial sync cron. Keeps job/invoice data in sync with accounting. Operational, not SEO-relevant.
+
+**Gmail Intake** — Cron reads incoming Gmail for customer requests, feeds into the task/booking system.
+
+**Push Notifications** — OneSignal integration for customer/admin notifications.
+
+**Cron Jobs** — 13 total in `vercel.json`. Includes job reminders (every 5 min), Gmail intake + task worker (every 10 min), daily SERP tracking, QuickBooks sync, booking cleanup, and others.
+
+### SasquatchCarpet.com (the Customer Website)
+
+`sasquatchcc719-pixel/sasquatch.com-client` — HTML-based site deployed on Vercel. This is the public-facing marketing website that Google indexes and that GBP links point to.
+
+**Known features:**
+- Main marketing site for Sasquatch Carpet Cleaning
+- Review builder / review funnel page
+- Job pages / map (proof pages generated from Sightings jobs, either embedded or linked)
+- NFC business card / magnet links to review page
+
+**Gap:** This repo was not accessible during the session this section was written. A full audit of service area pages, blog/field notes, internal linking structure, and on-page SEO signals still needs to be done. Before any strategic recommendation about Echo or map pack ranking is finalized, the website structure should be reviewed — specifically: which city/service pages exist, how job pages are structured, whether there are blog or field notes pages, and how the site links internally.
+
+### How the System Works Together Toward the Map Pack
+
+```
+Customer calls / texts
+→ Harry manages booking → job gets scheduled → Charles does the job
+→ Invoice published in Sightings
+→ Job page created (permanent local proof, indexed by Google)
+→ Echo triggered → evaluates job quality → drafts or posts GBP update
+→ Customer receives 3-day follow-up → directed to review builder → Google review posted
+→ SERP tracker monitors ranking movement
+→ All of this feeds: relevance (real service + city signals), prominence (reviews, indexed job pages, GBP activity), and behavioral signals (GBP clicks/calls)
+```
+
+The platform was designed from November 2025 onward with the map pack as the explicit end goal. Individual features should be evaluated against that goal, not in isolation.
+
+### What Has Changed Since November 2025
+
+Google's local ranking environment shifted meaningfully between when this system was designed and mid-2026:
+
+- **AI Overviews** expanded into local search — businesses now need signals that feed AI-generated local answers, not just the traditional map pack
+- **Behavioral signals** (clicks, calls, direction requests from GBP) carry more weight in 2026 than when the original plan was written
+- **Review recency** now outweighs total review count — velocity matters more than volume
+- **August 2025 Spam Update** targeted GBP keyword stuffing and fake profiles — benefits legitimate businesses with real job proof
+- **GBP posts** confirmed by controlled studies (Sterling Sky, 441 keywords) to have **zero direct effect on map pack position** — they help click-through rate and feed freshness signals but do not move rank
+
+Any AI model reviewing this system should evaluate Echo's design against the 2026 reality, not the November 2025 assumptions it was built on.
+
+---
+
 ## Working Goal
 
 Build Echo, an agent-backed Google Updates and local SEO content engine that stops dumping every finished job directly into Google Business Profile.
