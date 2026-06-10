@@ -114,12 +114,16 @@ export async function POST(request: NextRequest) {
     const afterHoursUrl = `${baseUrl}/api/twilio/call-after-hours`
     const ivrMenuUrl = `${baseUrl}/api/twilio/ivr-menu`
 
+    const secondaryNumberTag = routingConfig.secondaryForwardNumber
+      ? `\n    <Number>${routingConfig.secondaryForwardNumber}</Number>`
+      : ''
+
     if (routingConfig.temporaryOpenLineMode) {
       console.log('[Call Router] Temporary open line mode active - direct ring')
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Dial timeout="${routingConfig.openLineTimeoutSeconds}" action="${afterHoursUrl}" callerId="${callerPhone}" answerOnBridge="true">
-    <Number>${routingConfig.primaryForwardNumber}</Number>
+    <Number>${routingConfig.primaryForwardNumber}</Number>${secondaryNumberTag}
   </Dial>
 </Response>`
     } else if (isBusinessHours) {

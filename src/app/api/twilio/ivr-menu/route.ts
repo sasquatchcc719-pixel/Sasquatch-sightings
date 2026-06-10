@@ -24,12 +24,16 @@ export async function POST(request: NextRequest) {
 
     let twimlResponse
 
+    const secondaryNumberTag = routingConfig.secondaryForwardNumber
+      ? `\n    <Number>${routingConfig.secondaryForwardNumber}</Number>`
+      : ''
+
     if (digits === '1') {
       console.log(`[IVR Menu] Option 1 -> Dialing scheduling forward number`)
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Dial timeout="${routingConfig.ivrScheduleTimeoutSeconds}" action="${afterHoursUrl}" callerId="${callerPhone}" answerOnBridge="true">
-    <Number>${routingConfig.primaryForwardNumber}</Number>
+    <Number>${routingConfig.primaryForwardNumber}</Number>${secondaryNumberTag}
   </Dial>
 </Response>`
     } else if (digits === '2') {
@@ -37,7 +41,7 @@ export async function POST(request: NextRequest) {
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Dial timeout="${routingConfig.ivrTechnicalTimeoutSeconds}" action="${afterHoursUrl}" callerId="${callerPhone}" answerOnBridge="true">
-    <Number>${routingConfig.primaryForwardNumber}</Number>
+    <Number>${routingConfig.primaryForwardNumber}</Number>${secondaryNumberTag}
     <Client>admin_charles</Client>
   </Dial>
 </Response>`
