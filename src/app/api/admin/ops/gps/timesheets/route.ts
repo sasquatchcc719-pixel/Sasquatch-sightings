@@ -13,7 +13,7 @@ import { createAdminClient } from '@/supabase/server'
  */
 export async function GET(request: NextRequest) {
   try {
-    await requireAnyRole(['admin', 'owner', 'dispatcher'])
+    const access = await requireAnyRole(['admin', 'owner', 'dispatcher'])
     const supabase = createAdminClient()
 
     const { searchParams } = new URL(request.url)
@@ -57,7 +57,11 @@ export async function GET(request: NextRequest) {
     if (shiftsError) throw shiftsError
 
     if (!shifts || shifts.length === 0) {
-      return NextResponse.json({ date, rows: [] })
+      return NextResponse.json({
+        date,
+        rows: [],
+        canManageShifts: access.role === 'admin' || access.role === 'owner',
+      })
     }
 
     // Get staff display names
@@ -231,7 +235,11 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    return NextResponse.json({ date, rows })
+    return NextResponse.json({
+      date,
+      rows,
+      canManageShifts: access.role === 'admin' || access.role === 'owner',
+    })
   } catch (error) {
     console.error('[gps/timesheets][GET]', error)
     return NextResponse.json(

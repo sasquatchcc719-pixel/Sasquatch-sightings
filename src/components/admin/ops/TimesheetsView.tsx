@@ -10,6 +10,7 @@ import {
   MapPin,
   Download,
   AlertCircle,
+  LogOut,
 } from 'lucide-react'
 
 function fmtMin(minutes: number | null): string {
@@ -66,7 +67,7 @@ type ShiftRow = {
 
 async function fetchGpsActivity(
   date: string,
-): Promise<{ date: string; rows: ShiftRow[] }> {
+): Promise<{ date: string; rows: ShiftRow[]; canManageShifts: boolean }> {
   const res = await fetch(`/api/admin/ops/gps/timesheets?date=${date}`)
   if (!res.ok) throw new Error('Failed to load GPS activity')
   return res.json()
@@ -152,8 +153,73 @@ function exportGpsCsv(rows: ShiftRow[], date: string) {
   URL.revokeObjectURL(url)
 }
 
-function ShiftCard({ row }: { row: ShiftRow }) {
+function mountainNowParts() {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Denver',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date())
+  const values = Object.fromEntries(
+    parts
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [part.type, part.value]),
+  )
+  return {
+    date: `${values.year}-${values.month}-${values.day}`,
+    time: `${values.hour}:${values.minute}`,
+  }
+}
+
+function ShiftCard({
+  row,
+  canManageShifts,
+  onCompleted,
+}: {
+  row: ShiftRow
+  canManageShifts: boolean
+  onCompleted: () => void
+}) {
   const [expanded, setExpanded] = useState(false)
+  const [showClockOut, setShowClockOut] = useState(false)
+  const [clockOutDate, setClockOutDate] = useState(
+    () => mountainNowParts().date,
+  )
+  const [clockOutTime, setClockOutTime] = useState(
+    () => mountainNowParts().time,
+  )
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+
+  async function completeShift() {
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const response = await fetch(
+        `/api/admin/ops/gps/shifts/${row.shiftId}/complete`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ date: clockOutDate, time: clockOutTime }),
+        },
+      )
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to complete shift')
+      }
+      setShowClockOut(false)
+      onCompleted()
+    } catch (error) {
+      setSaveError(
+        error instanceof Error ? error.message : 'Failed to complete shift',
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return (
     <div className="overflow-hidden rounded-2xl border border-white/10">
@@ -228,7 +294,81 @@ function ShiftCard({ row }: { row: ShiftRow }) {
             <span className="text-slate-500">
               {fmtMiles(row.totalDistanceM)} driven
             </span>
+            {row.shiftStatus === 'active' && (
+              <span className="font-semibold text-emerald-400">
+                Still clocked in
+              </span>
+            )}
           </div>
+
+          {row.shiftStatus === 'active' && canManageShifts && (
+            <div className="bg-amber-500/5 px-4 py-3">
+              {!showClockOut ? (
+                <button
+                  type="button"
+                  onClick={() => setShowClockOut(true)}
+                  className="flex items-center gap-2 rounded-lg border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-sm font-semibold text-amber-200 hover:bg-amber-500/20"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Manually Clock Out
+                </button>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-sm text-amber-100">
+                    Enter the employee&apos;s actual clock-out time in Mountain
+                    Time. This will complete the shift and create a draft
+                    payroll entry.
+                  </p>
+                  <div className="flex flex-wrap items-end gap-2">
+                    <label className="space-y-1 text-xs text-slate-400">
+                      <span className="block">Date</span>
+                      <input
+                        type="date"
+                        value={clockOutDate}
+                        onChange={(event) =>
+                          setClockOutDate(event.target.value)
+                        }
+                        className="rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white"
+                      />
+                    </label>
+                    <label className="space-y-1 text-xs text-slate-400">
+                      <span className="block">Time</span>
+                      <input
+                        type="time"
+                        value={clockOutTime}
+                        onChange={(event) =>
+                          setClockOutTime(event.target.value)
+                        }
+                        className="rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-white"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={completeShift}
+                      disabled={saving || !clockOutDate || !clockOutTime}
+                      className="rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-500 disabled:opacity-50"
+                    >
+                      {saving ? 'Saving…' : 'Confirm Clock Out'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowClockOut(false)
+                        setSaveError(null)
+                      }}
+                      disabled={saving}
+                      className="rounded-lg border border-white/10 px-3 py-2 text-sm text-slate-300 hover:bg-white/5"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                  {saveError && (
+                    <p className="text-sm text-red-400">{saveError}</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {row.appointments.length === 0 ? (
             <div className="px-4 py-3 text-sm text-slate-500 italic">
@@ -410,7 +550,12 @@ export function TimesheetsView() {
           ) : (
             <div className="space-y-3">
               {data?.rows?.map((row) => (
-                <ShiftCard key={row.shiftId} row={row} />
+                <ShiftCard
+                  key={row.shiftId}
+                  row={row}
+                  canManageShifts={data.canManageShifts}
+                  onCompleted={() => refetch()}
+                />
               ))}
             </div>
           )}

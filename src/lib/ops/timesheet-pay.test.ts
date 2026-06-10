@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   getSemiMonthlyPayPeriod,
+  mountainLocalDateTimeToIso,
   mountainDateKey,
   parseHourlyRate,
   shiftSemiMonthlyPayPeriod,
@@ -20,6 +21,22 @@ describe('parseHourlyRate', () => {
 
   it('uses the Mountain Time calendar date', () => {
     expect(mountainDateKey('2026-06-09T03:00:00.000Z')).toBe('2026-06-08')
+  })
+
+  it('converts Mountain daylight time to UTC', () => {
+    expect(mountainLocalDateTimeToIso('2026-06-09', '16:44')).toBe(
+      '2026-06-09T22:44:00.000Z',
+    )
+  })
+
+  it('converts Mountain standard time to UTC', () => {
+    expect(mountainLocalDateTimeToIso('2026-12-09', '16:44')).toBe(
+      '2026-12-09T23:44:00.000Z',
+    )
+  })
+
+  it('rejects nonexistent Mountain times during daylight saving transition', () => {
+    expect(mountainLocalDateTimeToIso('2026-03-08', '02:30')).toBeNull()
   })
 
   it('groups dates into fixed semi-monthly pay periods', () => {
