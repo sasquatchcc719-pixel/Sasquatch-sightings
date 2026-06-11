@@ -39,6 +39,19 @@ type Message = {
   twilio_sid?: string
 }
 
+type CustomerContext = {
+  name: string | null
+  email: string | null
+  address: string | null
+  mapsUrl: string | null
+  invoice: {
+    id: string
+    number: string | null
+    total: number | null
+    paymentStatus: string | null
+  } | null
+}
+
 type Conversation = {
   id: string
   phone_number: string
@@ -57,6 +70,7 @@ type Conversation = {
     source: string
     status: string
   } | null
+  customerContext?: CustomerContext | null
 }
 
 type ConversationsViewProps = {
@@ -648,7 +662,8 @@ export function ConversationsView({
               {filteredConversations.map((convo, i) => {
                 const isLast = i === filteredConversations.length - 1
                 const lastMessage = convo.messages[convo.messages.length - 1]
-                const displayName = convo.lead?.name || null
+                const displayName =
+                  convo.customerContext?.name || convo.lead?.name || null
                 const initials = getInitials(displayName, convo.phone_number)
                 const avatarColor = getAvatarColor(convo.phone_number)
                 const isLocallyRead = localReadIds.has(convo.id)
@@ -830,14 +845,16 @@ export function ConversationsView({
                       className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold text-white ${getAvatarColor(selectedConvo.phone_number)}`}
                     >
                       {getInitials(
-                        selectedConvo.lead?.name,
+                        selectedConvo.customerContext?.name ||
+                          selectedConvo.lead?.name,
                         selectedConvo.phone_number,
                       )}
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="text-base font-semibold">
-                          {selectedConvo.lead?.name ||
+                          {selectedConvo.customerContext?.name ||
+                            selectedConvo.lead?.name ||
                             selectedConvo.phone_number}
                         </span>
                         {selectedConvo.ops_customer_id && (
@@ -886,6 +903,75 @@ export function ConversationsView({
                     </span>
                   )}
                 </div>
+
+                {/* Customer context: name/email/address + active invoice */}
+                {selectedConvo.customerContext &&
+                  (selectedConvo.customerContext.email ||
+                    selectedConvo.customerContext.address ||
+                    selectedConvo.customerContext.invoice) && (
+                    <div className="mb-3 space-y-1.5 rounded-lg border border-white/10 bg-white/[0.03] p-3 text-xs">
+                      {selectedConvo.customerContext.email && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-500">Email</span>
+                          <a
+                            href={`mailto:${selectedConvo.customerContext.email}`}
+                            className="truncate text-blue-400 hover:underline"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {selectedConvo.customerContext.email}
+                          </a>
+                        </div>
+                      )}
+                      {selectedConvo.customerContext.address && (
+                        <div className="flex items-start gap-2">
+                          <span className="mt-px text-slate-500">Address</span>
+                          {selectedConvo.customerContext.mapsUrl ? (
+                            <a
+                              href={selectedConvo.customerContext.mapsUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-400 hover:underline"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {selectedConvo.customerContext.address}
+                            </a>
+                          ) : (
+                            <span className="text-slate-300">
+                              {selectedConvo.customerContext.address}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {selectedConvo.customerContext.invoice && (
+                        <div className="flex items-center gap-2 pt-0.5">
+                          <a
+                            href={`/admin/operations/invoices/${selectedConvo.customerContext.invoice.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 font-medium text-emerald-300 hover:bg-emerald-500/20"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            View invoice
+                            {selectedConvo.customerContext.invoice.number
+                              ? ` #${selectedConvo.customerContext.invoice.number}`
+                              : ''}
+                            {selectedConvo.customerContext.invoice.total != null
+                              ? ` · $${selectedConvo.customerContext.invoice.total.toFixed(2)}`
+                              : ''}
+                          </a>
+                          {selectedConvo.customerContext.invoice
+                            .paymentStatus && (
+                            <span className="text-[10px] text-slate-500 capitalize">
+                              {selectedConvo.customerContext.invoice.paymentStatus.replace(
+                                /_/g,
+                                ' ',
+                              )}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                 {/* Action Buttons */}
                 <div className="flex flex-wrap gap-2">
