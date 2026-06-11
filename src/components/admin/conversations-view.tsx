@@ -132,6 +132,9 @@ export function ConversationsView({
   const [harryDraftLoading, setHarryDraftLoading] = useState(false)
   const [autoReplyUpdating, setAutoReplyUpdating] = useState(false)
   const [markingAllRead, setMarkingAllRead] = useState(false)
+  const [markingPaidInvoiceId, setMarkingPaidInvoiceId] = useState<
+    string | null
+  >(null)
 
   // Optimistic read state: track which conversations have been marked read this session
   const [localReadIds, setLocalReadIds] = useState<Set<string>>(new Set())
@@ -323,6 +326,59 @@ export function ConversationsView({
     } catch (error) {
       console.error('Update error:', error)
       alert('Failed to update status')
+    }
+  }
+
+  const handleMarkInvoicePaid = async (
+    invoiceId: string,
+    paymentMethod: string,
+  ) => {
+    if (markingPaidInvoiceId) return
+    setMarkingPaidInvoiceId(invoiceId)
+    try {
+      const response = await fetch(`/api/admin/ops/invoices/${invoiceId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'paid', payment_method: paymentMethod }),
+      })
+
+      if (response.ok) {
+        // Optimistically update payment status in the selected conversation
+        if (selectedConvo?.customerContext?.invoice?.id === invoiceId) {
+          setSelectedConvo({
+            ...selectedConvo,
+            customerContext: {
+              ...selectedConvo.customerContext,
+              invoice: {
+                ...selectedConvo.customerContext.invoice,
+                paymentStatus: 'paid',
+              },
+            },
+          })
+        }
+        setConversations((prev) =>
+          prev.map((c) => {
+            if (c.customerContext?.invoice?.id !== invoiceId) return c
+            return {
+              ...c,
+              customerContext: {
+                ...c.customerContext,
+                invoice: {
+                  ...c.customerContext.invoice,
+                  paymentStatus: 'paid',
+                },
+              },
+            }
+          }),
+        )
+      } else {
+        alert('Failed to mark invoice as paid')
+      }
+    } catch (error) {
+      console.error('Mark paid error:', error)
+      alert('Failed to mark invoice as paid')
+    } finally {
+      setMarkingPaidInvoiceId(null)
     }
   }
 
@@ -943,7 +999,7 @@ export function ConversationsView({
                         </div>
                       )}
                       {selectedConvo.customerContext.invoice && (
-                        <div className="flex items-center gap-2 pt-0.5">
+                        <div className="flex flex-wrap items-center gap-2 pt-0.5">
                           <a
                             href={`/admin/operations/invoices/${selectedConvo.customerContext.invoice.id}`}
                             target="_blank"
@@ -961,12 +1017,52 @@ export function ConversationsView({
                           </a>
                           {selectedConvo.customerContext.invoice
                             .paymentStatus && (
-                            <span className="text-[10px] text-slate-500 capitalize">
+                            <span
+                              className={`rounded px-1.5 py-0.5 text-[10px] font-medium capitalize ${
+                                selectedConvo.customerContext.invoice
+                                  .paymentStatus === 'paid'
+                                  ? 'bg-emerald-500/15 text-emerald-400'
+                                  : selectedConvo.customerContext.invoice
+                                        .paymentStatus === 'unpaid'
+                                    ? 'bg-amber-500/15 text-amber-400'
+                                    : 'bg-slate-500/20 text-slate-400'
+                              }`}
+                            >
                               {selectedConvo.customerContext.invoice.paymentStatus.replace(
                                 /_/g,
                                 ' ',
                               )}
                             </span>
+                          )}
+                          {selectedConvo.customerContext.invoice
+                            .paymentStatus === 'unpaid' && (
+                            <div className="flex items-center gap-1">
+                              {(['venmo', 'cash', 'check'] as const).map(
+                                (method) => (
+                                  <button
+                                    key={method}
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      void handleMarkInvoicePaid(
+                                        selectedConvo.customerContext!.invoice!
+                                          .id,
+                                        method,
+                                      )
+                                    }}
+                                    disabled={
+                                      markingPaidInvoiceId ===
+                                      selectedConvo.customerContext?.invoice?.id
+                                    }
+                                    className="rounded border border-slate-600 bg-slate-700/50 px-1.5 py-0.5 text-[10px] text-slate-300 capitalize hover:border-emerald-500/50 hover:bg-emerald-500/10 hover:text-emerald-300 disabled:opacity-50"
+                                  >
+                                    {markingPaidInvoiceId ===
+                                    selectedConvo.customerContext?.invoice?.id
+                                      ? '…'
+                                      : method}
+                                  </button>
+                                ),
+                              )}
+                            </div>
                           )}
                         </div>
                       )}
