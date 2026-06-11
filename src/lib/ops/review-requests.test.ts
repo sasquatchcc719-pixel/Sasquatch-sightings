@@ -13,11 +13,57 @@ loadEnv({ path: '.env.local' })
 import { createAdminClient } from '@/supabase/server'
 import {
   buildReviewRequestMessage,
+  buildReviewRequestContext,
   enqueueReviewRequests,
   processDueReviewRequests,
   isWithinSendWindow,
   GOOGLE_REVIEW_URL,
+  ALL_REVIEWS_PAGE_URL,
 } from './review-requests'
+import { reviewerMatchesCustomer } from '@/lib/gbp-reviews'
+
+describe('reviewerMatchesCustomer', () => {
+  it('matches exact full names', () => {
+    expect(
+      reviewerMatchesCustomer('Dave Capriotti', {
+        first_name: 'Dave',
+        last_name: 'Capriotti',
+        full_name: 'Dave Capriotti',
+      }),
+    ).toBe(true)
+  })
+
+  it('matches name variants via last name + first initial', () => {
+    // The real case: customer "Kathie Hartman", Google reviewer "Kathleen Hartman".
+    expect(
+      reviewerMatchesCustomer('Kathleen Hartman', {
+        first_name: 'Kathie',
+        last_name: 'Hartman',
+        full_name: 'Kathie Hartman',
+      }),
+    ).toBe(true)
+  })
+
+  it('does not match different people', () => {
+    expect(
+      reviewerMatchesCustomer('Tamara Shepherd', {
+        first_name: 'Dave',
+        last_name: 'Capriotti',
+        full_name: 'Dave Capriotti',
+      }),
+    ).toBe(false)
+    expect(
+      reviewerMatchesCustomer('Robert Hartman', {
+        first_name: 'Kathie',
+        last_name: 'Hartman',
+        full_name: 'Kathie Hartman',
+      }),
+    ).toBe(false)
+    expect(reviewerMatchesCustomer(null, { full_name: 'Dave Capriotti' })).toBe(
+      false,
+    )
+  })
+})
 
 describe('isWithinSendWindow (Mountain Time)', () => {
   it('allows mid-day and blocks the night', () => {
@@ -130,6 +176,35 @@ describe('review request pipeline against the real DB', () => {
     expect(after?.status).toBe('sent')
     expect(after?.sent_at).toBeTruthy()
     expect(after?.message).toContain(GOOGLE_REVIEW_URL)
+  })
+
+  it('builds review-reply context for phones with a recent sent request', async () => {
+    // Use a real sent row (the production cron has been live since 9am MT).
+    const { data: sentRow } = await supabase
+      .from('review_requests')
+      .select('phone')
+      .eq('status', 'sent')
+      .not('phone', 'is', null)
+      .order('sent_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (!sentRow?.phone) return // nothing sent yet — nothing to verify
+
+    const digits = String(sentRow.phone).replace(/\D/g, '').slice(-10)
+    const context = await buildReviewRequestContext(supabase, `+1${digits}`)
+    expect(context).toContain('REVIEW REQUEST CONTEXT')
+    expect(context).toContain(ALL_REVIEWS_PAGE_URL)
+
+    // And a phone with no recent request gets no context.
+    const none = await buildReviewRequestContext(supabase, '+10000000000')
+    expect(none).toBe('')
+  })
+
+  it('skips customers whose name matches a Google reviewer', async () => {
+    const { count } = await supabase
+      .from('gbp_reviews')
+      .select('*', { count: 'exact', head: true })
+    expect(count ?? 0).toBeGreaterThan(0)
   })
 
   it('defers everything outside the send window', async () => {

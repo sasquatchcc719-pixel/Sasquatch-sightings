@@ -12,6 +12,11 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { sendCustomerSMSWithResult } from '@/lib/twilio'
 import { isBlacklisted } from '@/lib/blacklist'
 import { sendToCharles } from '@/lib/harry-command-bot'
+import { opsPhoneLookupVariants } from '@/lib/ops/phone'
+import { reviewerMatchesCustomer } from '@/lib/gbp-reviews'
+
+/** Public page listing every platform we can be reviewed on (Google, Yelp, BBB, Nextdoor, …). */
+export const ALL_REVIEWS_PAGE_URL = 'https://www.sasquatchcarpet.com/reviews'
 
 // Sasquatch Carpet Cleaning, LLC GBP listing (Place ID verified via SerpApi
 // 2026-06-11: 740 Platte Ln, Palmer Lake — 4.9★, 69 reviews at launch).
@@ -95,6 +100,15 @@ export async function enqueueReviewRequests(
     )
   const alreadyQueued = new Set((existing || []).map((r) => r.appointment_id))
 
+  // Known Google reviewers (synced daily from the GBP listing) — customers
+  // whose name matches a reviewer have already left a review; don't ask again.
+  const { data: reviewerRows } = await supabase
+    .from('gbp_reviews')
+    .select('author')
+  const reviewerNames = (reviewerRows || [])
+    .map((r) => r.author as string | null)
+    .filter(Boolean) as string[]
+
   let queued = 0
   let skipped = 0
 
@@ -133,6 +147,12 @@ export async function enqueueReviewRequests(
     }
     if (await isBlacklisted(customer.phone)) {
       await insertSkip('blacklisted')
+      continue
+    }
+    if (
+      reviewerNames.some((author) => reviewerMatchesCustomer(author, customer))
+    ) {
+      await insertSkip('already reviewed on Google (reviewer name match)')
       continue
     }
 
@@ -272,6 +292,12 @@ export async function processDueReviewRequests(
         })
         .eq('id', request.id)
       sent += 1
+
+      // Write the request into the customer's SMS thread so Harry knows he
+      // asked — otherwise their reply ("just left one!") reads as a
+      // non-sequitur and he falls back to generic conversation openers.
+      await appendToConversationThread(supabase, phone, message)
+
       const label = customer?.full_name || customer?.first_name || phone
       notifyOwner(
         `⭐ Review request sent to ${label} (${phone}) after their completed job.`,
@@ -297,4 +323,89 @@ export async function processDueReviewRequests(
   }
 
   return { sent, failed, deferred: false }
+}
+
+/** Append an outbound message to the customer's SMS conversation thread. */
+async function appendToConversationThread(
+  supabase: SupabaseClient,
+  phone: string,
+  message: string,
+): Promise<void> {
+  try {
+    const variants = opsPhoneLookupVariants(phone)
+    if (variants.length === 0) return
+    const { data: conversation } = await supabase
+      .from('conversations')
+      .select('id, messages')
+      .in('phone_number', variants)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (!conversation) return
+
+    const messages =
+      (conversation.messages as Array<{
+        role: string
+        content: string
+        timestamp: string
+      }>) || []
+    messages.push({
+      role: 'assistant',
+      content: message,
+      timestamp: new Date().toISOString(),
+    })
+    await supabase
+      .from('conversations')
+      .update({ messages, updated_at: new Date().toISOString() })
+      .eq('id', conversation.id)
+  } catch (err) {
+    console.error('[review-requests] thread append failed:', err)
+  }
+}
+
+/**
+ * Prompt context for Harry: if this phone got a review request recently,
+ * return instructions so his reply to "just left one!" sounds like a human
+ * and not a contact-details audit. Empty string when not applicable.
+ */
+export async function buildReviewRequestContext(
+  supabase: SupabaseClient,
+  phoneE164: string | undefined,
+): Promise<string> {
+  if (!phoneE164) return ''
+  const digits = phoneE164.replace(/\D/g, '').slice(-10)
+  if (digits.length < 10) return ''
+
+  try {
+    const sinceIso = new Date(
+      Date.now() - 7 * 24 * 60 * 60 * 1000,
+    ).toISOString()
+    const { data: recent } = await supabase
+      .from('review_requests')
+      .select('phone, sent_at')
+      .eq('status', 'sent')
+      .gte('sent_at', sinceIso)
+      .order('sent_at', { ascending: false })
+      .limit(50)
+
+    const match = (recent || []).find(
+      (row) =>
+        String(row.phone || '')
+          .replace(/\D/g, '')
+          .slice(-10) === digits,
+    )
+    if (!match) return ''
+
+    const sentDate = new Date(String(match.sent_at)).toLocaleDateString(
+      'en-US',
+      { timeZone: 'America/Denver', month: 'long', day: 'numeric' },
+    )
+    return `
+
+REVIEW REQUEST CONTEXT (important):
+We texted this customer a Google review request on ${sentDate}, right after their completed job. If their message is about that — they left a review, plan to, mention stars, or reviewed on another platform like Yelp — reply with a short, warm, natural thank-you (1–2 sentences, like a real person: "That means a lot — thank you so much!"). Do NOT recite or confirm their contact details, do NOT quote prices, do NOT start a booking flow unless they ask for one. If they already reviewed on Google and ask where else they can leave one, share ${ALL_REVIEWS_PAGE_URL} (links to Yelp, BBB, Nextdoor, and more). Never pressure anyone for a review they've already given.`
+  } catch (err) {
+    console.error('[review-requests] context lookup failed:', err)
+    return ''
+  }
 }

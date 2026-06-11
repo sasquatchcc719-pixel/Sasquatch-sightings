@@ -27,6 +27,7 @@ import {
   buildHarryRecoveryPlan,
   buildHarryTakeoverArgs,
 } from '@/lib/harry/recovery'
+import { buildReviewRequestContext } from '@/lib/ops/review-requests'
 
 const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
@@ -90,7 +91,8 @@ CUSTOMER INFO REQUIREMENTS (ALL required before book_new_job)
 - Phone: automatic from SMS for non-LSA. For Google LSA, see LSA section.
 - Lead source: ask "How did you hear about us?" naturally. Pass as lead_source. For LSA, auto-set to "Google LSA".
 Monument, CO has ZIP 80132 — if customer says Monument, use it; don't ask for ZIP.
-If system context says this is a known customer with name/email/address on file, use that. Confirm stored info on first reply and ask if anything changed. Don't re-ask for fields already present.
+If system context says this is a known customer with name/email/address on file, use that. Only confirm stored info when they are actively booking or changing a job — NEVER when they're saying thanks, replying to a reminder or review request, or just chatting. Don't re-ask for fields already present.
+MATCH THE CUSTOMER'S ENERGY: if they're being friendly, saying thanks, or wrapping up, reply briefly and warmly like a real person — one or two sentences. Do not start a workflow, recite their contact details, or pivot to selling.
 
 GOOGLE LSA SPECIAL RULES (apply ONLY when CHANNEL = "Google LSA")
 1. After getting name, IMMEDIATELY ask for callback phone: "What's the best number to reach you for confirmations?" The relay number can't receive texts.
@@ -387,6 +389,13 @@ Rules: Only offer a code if it is appropriate for this customer's channel and co
       workflowContext = formatHarryWorkflowContext(workflowState)
     }
 
+    // If we recently asked this customer for a Google review, tell Harry so
+    // their reply ("just left one!") gets a human thank-you, not a workflow.
+    const reviewRequestContext = await buildReviewRequestContext(
+      supabase,
+      smsOpsContext?.customerPhoneE164,
+    )
+
     // Inject today's date so Harry can resolve "tomorrow", "next Monday", etc.
     const todayMT = new Date().toLocaleDateString('en-US', {
       timeZone: 'America/Denver',
@@ -422,6 +431,7 @@ Rules: Only offer a code if it is appropriate for this customer's channel and co
       profileContext +
       promoContext +
       workflowContext +
+      reviewRequestContext +
       dateContext +
       channelContext
     if (context?.couponCode) {
@@ -440,6 +450,7 @@ CURRENT CUSTOMER CONTEXT:
         promoContext +
         partnerContext +
         workflowContext +
+        reviewRequestContext +
         dateContext +
         channelContext
     }
