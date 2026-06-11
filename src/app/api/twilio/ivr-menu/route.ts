@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCallRoutingConfig } from '@/lib/twilio/call-routing-config'
+import { buildForwardNumberElements } from '@/lib/twilio/forward-numbers'
 
 function getBaseUrl(): string {
   const url = (
@@ -22,22 +23,25 @@ export async function POST(request: NextRequest) {
     const baseUrl = getBaseUrl()
     const afterHoursUrl = `${baseUrl}/api/twilio/call-after-hours` // Voicemail
 
+    // Ring both the primary and secondary (e.g. owner's wife) phones at once.
+    const forwardNumbers = buildForwardNumberElements(routingConfig)
+
     let twimlResponse
 
     if (digits === '1') {
-      console.log(`[IVR Menu] Option 1 -> Dialing scheduling forward number`)
+      console.log(`[IVR Menu] Option 1 -> Dialing scheduling forward number(s)`)
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Dial timeout="${routingConfig.ivrScheduleTimeoutSeconds}" action="${afterHoursUrl}" callerId="${callerPhone}" answerOnBridge="true">
-    <Number>${routingConfig.primaryForwardNumber}</Number>
+    ${forwardNumbers}
   </Dial>
 </Response>`
     } else if (digits === '2') {
-      console.log(`[IVR Menu] Option 2 -> Dialing primary + browser`)
+      console.log(`[IVR Menu] Option 2 -> Dialing forward number(s) + browser`)
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Dial timeout="${routingConfig.ivrTechnicalTimeoutSeconds}" action="${afterHoursUrl}" callerId="${callerPhone}" answerOnBridge="true">
-    <Number>${routingConfig.primaryForwardNumber}</Number>
+    ${forwardNumbers}
     <Client>admin_charles</Client>
   </Dial>
 </Response>`
