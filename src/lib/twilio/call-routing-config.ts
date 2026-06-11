@@ -6,6 +6,8 @@ export type CallRoutingConfig = {
   businessHoursEnd: number
   businessDays: string[]
   primaryForwardNumber: string
+  /** Second phone to ring alongside the primary (e.g. owner's wife). Empty when unset. */
+  secondaryForwardNumber: string
   failoverForwardNumber: string
   rabeccaSipUri: string
   openLineTimeoutSeconds: number
@@ -20,6 +22,7 @@ const DEFAULT_CONFIG: CallRoutingConfig = {
   businessHoursEnd: 17,
   businessDays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
   primaryForwardNumber: '+17206447577',
+  secondaryForwardNumber: '',
   failoverForwardNumber: '+17206447577',
   rabeccaSipUri: '',
   openLineTimeoutSeconds: 30,
@@ -38,6 +41,13 @@ function toPositiveInt(value: unknown, fallback: number): number {
 function toPhone(value: unknown, fallback: string): string {
   const phone = String(value || '').trim()
   if (!phone.startsWith('+') || phone.length < 8) return fallback
+  return phone
+}
+
+/** Like toPhone but returns '' (no number) when unset/invalid instead of a fallback. */
+function toOptionalPhone(value: unknown): string {
+  const phone = String(value || '').trim()
+  if (!phone.startsWith('+') || phone.length < 8) return ''
   return phone
 }
 
@@ -76,7 +86,7 @@ export async function getCallRoutingConfig(): Promise<CallRoutingConfig> {
     const { data } = await supabase
       .from('phone_settings')
       .select(
-        'temporary_open_line_mode, business_hours_start, business_hours_end, business_days, dial_timeout, twilio_primary_forward_number, twilio_failover_forward_number, ivr_schedule_timeout_seconds, ivr_technical_timeout_seconds',
+        'temporary_open_line_mode, business_hours_start, business_hours_end, business_days, dial_timeout, twilio_primary_forward_number, twilio_secondary_forward_number, twilio_failover_forward_number, ivr_schedule_timeout_seconds, ivr_technical_timeout_seconds',
       )
       .limit(1)
       .maybeSingle()
@@ -103,6 +113,9 @@ export async function getCallRoutingConfig(): Promise<CallRoutingConfig> {
       primaryForwardNumber: toPhone(
         data.twilio_primary_forward_number,
         DEFAULT_CONFIG.primaryForwardNumber,
+      ),
+      secondaryForwardNumber: toOptionalPhone(
+        data.twilio_secondary_forward_number,
       ),
       failoverForwardNumber: toPhone(
         data.twilio_failover_forward_number,

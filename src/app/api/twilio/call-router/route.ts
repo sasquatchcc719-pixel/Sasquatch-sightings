@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCallRoutingConfig } from '@/lib/twilio/call-routing-config'
+import { buildForwardNumberElements } from '@/lib/twilio/forward-numbers'
 import { sendOneSignalNotification } from '@/lib/onesignal'
 import { isBlacklisted, notifyBlockedAttempt } from '@/lib/blacklist'
 import { createAdminClient } from '@/supabase/server'
@@ -119,7 +120,7 @@ export async function POST(request: NextRequest) {
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Dial timeout="${routingConfig.openLineTimeoutSeconds}" action="${afterHoursUrl}" callerId="${callerPhone}" answerOnBridge="true">
-    <Number>${routingConfig.primaryForwardNumber}</Number>
+    ${buildForwardNumberElements(routingConfig)}
   </Dial>
 </Response>`
     } else if (isBusinessHours) {
