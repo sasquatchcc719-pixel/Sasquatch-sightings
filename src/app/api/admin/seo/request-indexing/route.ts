@@ -37,6 +37,26 @@ async function isAuthorized(request: NextRequest): Promise<boolean> {
   }
 }
 
+/** Returns the indexing service account's email (an identifier, not a secret)
+ *  so it can be added as a delegated owner in Search Console. */
+export async function GET(request: NextRequest) {
+  if (!(await isAuthorized(request))) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  try {
+    const sa = JSON.parse(process.env.GOOGLE_INDEXING_SA_JSON || '{}') as {
+      client_email?: string
+      project_id?: string
+    }
+    return NextResponse.json({
+      serviceAccountEmail: sa.client_email || null,
+      projectId: sa.project_id || null,
+    })
+  } catch {
+    return NextResponse.json({ serviceAccountEmail: null, projectId: null })
+  }
+}
+
 export async function POST(request: NextRequest) {
   if (!(await isAuthorized(request))) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
