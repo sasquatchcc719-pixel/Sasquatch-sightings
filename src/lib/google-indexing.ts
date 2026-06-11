@@ -36,27 +36,34 @@ export function buildJobUrl(city: string, slug: string): string {
   return `${MAIN_DOMAIN}/sightings/${citySlug}/${slug}`
 }
 
+export type IndexingPingResult = {
+  url: string
+  ok: boolean
+  error?: string
+}
+
 /**
- * Ping Google Indexing API for the given URL.
- * Silently no-ops (logs warning) if the env var is missing.
+ * Ping Google Indexing API for one URL and report the outcome.
+ * (Official API scope is JobPosting/BroadcastEvent pages — for other pages
+ * this acts as a crawl nudge, not a guarantee.)
  */
-export async function notifyGoogleIndexing(url: string): Promise<void> {
+export async function pingGoogleIndexing(
+  url: string,
+): Promise<IndexingPingResult> {
   const saJson = process.env.GOOGLE_INDEXING_SA_JSON
   if (!saJson) {
-    console.warn(
-      '[google-indexing] GOOGLE_INDEXING_SA_JSON not set — skipping ping',
-    )
-    return
+    return { url, ok: false, error: 'GOOGLE_INDEXING_SA_JSON not set' }
   }
 
   let credentials: object
   try {
     credentials = JSON.parse(saJson)
   } catch {
-    console.error(
-      '[google-indexing] Failed to parse GOOGLE_INDEXING_SA_JSON — check the format',
-    )
-    return
+    return {
+      url,
+      ok: false,
+      error: 'GOOGLE_INDEXING_SA_JSON is not valid JSON',
+    }
   }
 
   try {
@@ -79,8 +86,17 @@ export async function notifyGoogleIndexing(url: string): Promise<void> {
     })
 
     console.log(`[google-indexing] Pinged Google for: ${url}`)
+    return { url, ok: true }
   } catch (err) {
-    // Non-fatal — log and continue. Publishing should never fail due to indexing.
+    const message = err instanceof Error ? err.message : String(err)
     console.error('[google-indexing] Ping failed:', err)
+    return { url, ok: false, error: message.slice(0, 300) }
   }
+}
+
+/**
+ * Fire-and-forget ping (publish flows). Never throws.
+ */
+export async function notifyGoogleIndexing(url: string): Promise<void> {
+  await pingGoogleIndexing(url)
 }
