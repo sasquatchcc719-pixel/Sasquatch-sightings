@@ -51,6 +51,10 @@
     {
       "path": "/api/cron/gps-cleanup",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/review-requests",
+      "schedule": "*/15 * * * *"
     }
   ],
   "redirects": []
