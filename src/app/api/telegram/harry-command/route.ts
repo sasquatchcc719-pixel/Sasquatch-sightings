@@ -15,6 +15,7 @@ import {
   extractGreetingName,
   recipientNameMatches,
 } from '@/lib/harry/recipient-safety'
+import { normalizePhone as normalizeBlacklistPhone } from '@/lib/blacklist'
 import {
   createAiStyleBooking,
   type AiStyleBookingLineRequest,
@@ -651,28 +652,30 @@ function verifyTelegramSecret(request: NextRequest): boolean {
   return request.headers.get('x-telegram-bot-api-secret-token') === expected
 }
 
-function looksLikeSendPreviousArtifact(text: string): boolean {
-  const lower = text.toLowerCase()
-  return (
-    /\b(text|send|message)\b/.test(lower) &&
-    /\b(that|it|the report|the schedule|what you just sent|message you just sent)\b/.test(
-      lower,
-    )
-  )
+// Look up a phone number on the blacklist. Returns the entry (with reason)
+// when blocked, or null when the number is clear.
+async function getBlacklistEntry(
+  supabase: ReturnType<typeof createAdminClient>,
+  phone: string | null | undefined,
+): Promise<{ reason: string | null } | null> {
+  const normalized = normalizeBlacklistPhone(String(phone || ''))
+  if (normalized.length < 10) return null
+  const { data } = await supabase
+    .from('blacklist')
+    .select('reason')
+    .eq('phone', normalized)
+    .maybeSingle()
+  return data ? { reason: (data as { reason: string | null }).reason } : null
 }
 
-function extractTargetFromSendRequest(text: string): string | null {
-  const patterns = [
-    /\b(?:to|for)\s+([^?.!,]+?)(?:\s+with|\s+at\s*$|[?.!,]|$)/i,
-    /\b(?:text|send|message)\s+([^?.!,]+?)(?:\s+that|\s+the|\s+with|[?.!,]|$)/i,
-  ]
-
-  for (const pattern of patterns) {
-    const match = text.match(pattern)
-    if (match?.[1]) return match[1].trim()
-  }
-
-  return null
+// Owner-facing warning line for drafts targeting a blacklisted number. Sends
+// still go through the normal approval flow — Charles can knowingly approve
+// (e.g. a "you can no longer book with us" message) but never unknowingly.
+function blacklistWarningLine(
+  label: string,
+  entry: { reason: string | null },
+): string {
+  return `⚠️ ${label} is on the BLACKLIST${entry.reason ? ` (${entry.reason})` : ''}. Approving will text them anyway.`
 }
 
 function trimForSmsArtifact(content: string): string {
@@ -915,7 +918,7 @@ async function getActiveConversationSummary(
   const { data: conversation } = await supabase
     .from('conversations')
     .select(
-      'id, phone_number, source, ai_enabled, status, messages, updated_at',
+      'id, phone_number, source, ai_enabled, status, messages, updated_at, ops_customer_id',
     )
     .eq('id', conversationId)
     .maybeSingle()
@@ -934,15 +937,31 @@ async function getActiveConversationSummary(
     })
     .join('\n')
 
+  // Show WHO this thread belongs to so a named customer elsewhere in the
+  // command is never silently conflated with the active thread.
+  const linkedCustomer = conversation.ops_customer_id
+    ? await findCustomerById(String(conversation.ops_customer_id), supabase)
+    : await findCustomer(String(conversation.phone_number || ''), supabase)
+  const blacklistEntry = await getBlacklistEntry(
+    supabase,
+    String(conversation.phone_number || ''),
+  )
+
   return [
     `Conversation ID: ${conversation.id}`,
     `Phone: ${conversation.phone_number}`,
+    `Customer: ${linkedCustomer ? displayCustomerName(linkedCustomer) : 'NOT LINKED to a customer record — verify identity before texting'}`,
+    blacklistEntry
+      ? `⚠️ BLACKLISTED${blacklistEntry.reason ? ` (${blacklistEntry.reason})` : ''} — flag this to Charles before any outreach or booking.`
+      : null,
     `Source: ${conversation.source || 'unknown'}`,
     `Status: ${conversation.status || 'unknown'}`,
     `Harry auto-reply: ${conversation.ai_enabled ? 'ON' : 'OFF'}`,
     `Updated: ${conversation.updated_at}`,
     recent ? `Recent messages:\n${recent}` : 'Recent messages: none',
-  ].join('\n')
+  ]
+    .filter((line): line is string => Boolean(line))
+    .join('\n')
 }
 
 async function saveArtifact(
@@ -1051,97 +1070,89 @@ async function writeCommandAudit(
   })
 }
 
-async function handleSendLatestArtifactRequest(
-  text: string,
-  thread: CommandThread,
-  artifact: CommandArtifact,
-  userId: number,
-  supabase: ReturnType<typeof createAdminClient>,
-): Promise<boolean> {
-  const targetText = extractTargetFromSendRequest(text)
-  let customer: HarryCustomer | null = null
-
-  if (targetText) {
-    const candidates = await findCustomerCandidates(targetText, supabase)
-    if (candidates.length > 1) {
-      const reply = `I found a few possible matches for "${targetText}". Pick the one to text.`
-      await logCommandMessage(supabase, {
-        threadId: thread.id,
-        role: 'assistant',
-        content: reply,
-        metadata: {
-          artifact_id: artifact.id,
-          candidates: candidates.map((candidate) => candidate.id),
-        },
-      })
-      await sendToCharles(reply, {
-        buttons: candidates.slice(0, 5).map((candidate) => [
-          {
-            text: `${displayCustomerName(candidate)}${candidate.phone ? ` ${candidate.phone}` : ''}`.slice(
-              0,
-              60,
-            ),
-            data: `selectcust_${candidate.id}`,
-          },
-        ]),
-      })
-      return true
-    }
-    customer = candidates[0] || null
+// Draft the latest saved artifact as an SMS to an explicitly named target.
+// Called from the send_saved_report tool — the model supplies the target, and
+// the recipient must resolve to exactly one customer with a phone number.
+// There is deliberately NO fallback to the artifact's own customer: guessing
+// a recipient Charles didn't name is how unrelated customers surfaced
+// mid-conversation.
+async function draftArtifactSmsForTarget(params: {
+  target: string
+  threadId: string
+  artifact: CommandArtifact
+  userId: number | null
+  supabase: ReturnType<typeof createAdminClient>
+  smsDrafts?: PendingSmsDraftNotice[]
+}): Promise<string> {
+  const { target, threadId, artifact, userId, supabase } = params
+  const candidates = await findCustomerCandidates(target, supabase)
+  if (candidates.length > 1) {
+    const list = candidates
+      .slice(0, 6)
+      .map(
+        (candidate) =>
+          `• ${displayCustomerName(candidate)}${candidate.phone ? ` (${candidate.phone})` : ''}`,
+      )
+      .join('\n')
+    return `❌ "${target}" matches ${candidates.length} customers:\n${list}\nTell me which one — exact full name or phone number — and I'll draft it.`
   }
 
-  if (!customer && artifact.customer_id) {
-    const { data } = await supabase
-      .from('ops_customers')
-      .select(CUSTOMER_SELECT)
-      .eq('id', artifact.customer_id)
-      .maybeSingle()
-    customer = (data as HarryCustomer | null) || null
-  }
-
+  const customer = candidates[0] || null
   if (!customer?.phone) {
-    const reply = targetText
-      ? `I found the saved report, but I couldn't resolve "${targetText}" to a customer with a phone number. Give me the phone or pick the exact customer.`
-      : "I found the saved report, but I don't know who to send it to. Tell me the customer or phone number."
-    await logCommandMessage(supabase, {
-      threadId: thread.id,
-      role: 'assistant',
-      content: reply,
-    })
-    await sendToCharles(reply)
-    return true
+    return `❌ I couldn't resolve "${target}" to a customer with a phone number. Give me the exact name or 10-digit number.`
   }
 
-  await createArtifactSmsApproval(thread, artifact, customer, userId, supabase)
-  return true
+  const pending = await createArtifactPendingAction({
+    threadId,
+    artifact,
+    customer,
+    userId,
+    supabase,
+  })
+
+  params.smsDrafts?.push({
+    id: pending.actionId,
+    target: pending.targetLabel,
+    phoneNumber: customer.phone,
+    message: pending.message,
+  })
+
+  const warning = pending.blacklistEntry
+    ? `\n${blacklistWarningLine(pending.targetLabel, pending.blacklistEntry)}`
+    : ''
+  return `SMS draft created for ${pending.targetLabel} (${customer.phone}) using the saved report "${artifact.title}". It has not been sent yet and needs Charles approval.${warning} Draft: "${pending.message.slice(0, 1500)}"`
 }
 
-async function createArtifactSmsApproval(
-  thread: CommandThread,
-  artifact: CommandArtifact,
-  customer: HarryCustomer,
-  userId: number,
-  supabase: ReturnType<typeof createAdminClient>,
-): Promise<void> {
-  if (!customer.phone) {
-    await sendToCharles(
-      `❌ ${displayCustomerName(customer)} has no phone number.`,
-    )
-    return
-  }
-
-  const conversation = await findConversation(customer.phone, supabase)
+// Shared by the send_saved_report tool and the customer-picker button: create
+// the pending approval action for sending a saved artifact to a specific,
+// already-resolved customer.
+async function createArtifactPendingAction(params: {
+  threadId: string
+  artifact: CommandArtifact
+  customer: HarryCustomer
+  userId: number | null
+  supabase: ReturnType<typeof createAdminClient>
+}): Promise<{
+  actionId: string
+  targetLabel: string
+  message: string
+  blacklistEntry: { reason: string | null } | null
+}> {
+  const { threadId, artifact, customer, userId, supabase } = params
+  const phone = String(customer.phone || '')
+  const conversation = await findConversation(phone, supabase)
   const message = trimForSmsArtifact(artifact.content)
   const targetLabel = displayCustomerName(customer)
+  const blacklistEntry = await getBlacklistEntry(supabase, phone)
   const action = await createPendingCommandAction(supabase, {
-    threadId: thread.id,
+    threadId,
     telegramUserId: userId,
     targetLabel,
     preview: message,
     action: {
       kind: 'send_customer_sms',
       targetLabel,
-      phoneNumber: customer.phone,
+      phoneNumber: phone,
       message,
       conversationId: conversation?.id || null,
       artifactId: artifact.id,
@@ -1149,7 +1160,7 @@ async function createArtifactSmsApproval(
   })
 
   await writeCommandAudit(supabase, {
-    threadId: thread.id,
+    threadId,
     pendingActionId: action.id,
     actionType: action.action_type,
     status: 'proposed',
@@ -1159,21 +1170,7 @@ async function createArtifactSmsApproval(
     telegramUserId: userId,
   })
 
-  const reply = `Draft ready for ${targetLabel} (${customer.phone}). It uses the saved report "${artifact.title}". Send it?`
-  await logCommandMessage(supabase, {
-    threadId: thread.id,
-    role: 'assistant',
-    content: reply,
-    metadata: { artifact_id: artifact.id, pending_action_id: action.id },
-  })
-  await sendToCharles(`${reply}\n\n${message.slice(0, 2800)}`, {
-    buttons: [
-      [
-        { text: 'Send SMS', data: `approveaction_${action.id}` },
-        { text: 'Cancel', data: `cancelaction_${action.id}` },
-      ],
-    ],
-  })
+  return { actionId: action.id, targetLabel, message, blacklistEntry }
 }
 
 async function handleTextCommand(
@@ -1200,16 +1197,12 @@ async function handleTextCommand(
       supabase,
       thread.id,
     )
-    if (latestArtifact && looksLikeSendPreviousArtifact(text)) {
-      const handled = await handleSendLatestArtifactRequest(
-        text,
-        thread,
-        latestArtifact,
-        userId,
-        supabase,
-      )
-      if (handled) return
-    }
+    // NOTE: there used to be a regex pre-router here that hijacked any owner
+    // message containing "text/send/message" + "that/it" and drafted the last
+    // saved artifact to its customer — bypassing the model and every recipient
+    // guard. It repeatedly surfaced unrelated customers mid-conversation
+    // (the "Randy Shoemaker" incidents). Artifact sends now go through the
+    // send_saved_report tool so the model decides when a send was requested.
 
     const recentCommandMessages = await getRecentCommandMessages(
       supabase,
@@ -1280,6 +1273,9 @@ Mode:
 - When asked for a customer's schedule, year schedule, upcoming jobs, dates/services/notes, or work to send to a customer, use customer_schedule_summary. Do not use search_job_details unless Charles asks for a specific room/building/service/detail phrase.
 - When Charles asks you to text a customer, draft the SMS with send_sms. The system will ask Charles to approve before sending; never claim it was sent until approval happens.
 - RECIPIENT SAFETY (critical): When Charles names a customer (e.g. "tell Marianne..."), you MUST pass that exact name — with last name if you know it — as the send_sms target. NEVER substitute "this customer" or "them" for a named person. Only use the deictic target "this customer" when Charles does NOT name anyone and is clearly referring to the active thread (e.g. "tell them 2pm works").
+- PRONOUNS FOLLOW NAMES: if Charles named a customer in the last few messages (e.g. "Roger") and then says "ask him", "text her", "tell them" — the pronoun refers to that NAMED customer, NOT the active thread. Pass the name as the target. Only treat a pronoun as the active thread when no customer was recently named.
+- BLACKLIST: tool results may flag a customer as BLACKLISTED. Surface that to Charles immediately and prominently any time a blacklisted customer comes up — in drafts, lookups, bookings, or conversation summaries. Never book a blacklisted customer.
+- To re-send a saved report/schedule summary, use send_saved_report with an explicit target. Use it ONLY when Charles clearly asks to send the saved report — if he is asking a question, venting, or talking about a past message, answer him instead of drafting anything.
 - The greeting in your SMS body must address the same person as the target. If you write "Hi Marianne", the target must be Marianne — not the current thread. The system will hard-block any send where the greeting name does not match the resolved recipient, and it will refuse vague targets, so always name the recipient explicitly.
 - If ACTIVE CUSTOMER THREAD is set and Charles says "tell them", "text them", "say this", "reply", or "send this" without naming a customer, treat it as the active customer thread and use send_sms with target "this customer".
 - Do not expose Twilio SIDs, webhook IDs, or delivery plumbing unless Charles explicitly asks for technical details. Confirm plainly that a customer text was sent and show the customer-facing message.
@@ -1332,6 +1328,25 @@ ${activeConversationSummary}`,
               },
             },
             required: ['target', 'message'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'send_saved_report',
+          description:
+            'Send the most recent saved report/artifact (e.g. a schedule report you just built) to a customer via SMS. Use ONLY when Charles explicitly asks to send/text the saved report. The target is required — never guess who to send to.',
+          parameters: {
+            type: 'object',
+            properties: {
+              target: {
+                type: 'string',
+                description:
+                  'Customer name or phone number to send the saved report to. Required — use the exact name Charles gave.',
+              },
+            },
+            required: ['target'],
           },
         },
       },
@@ -2434,11 +2449,13 @@ export async function executeToolCall(
 
       // Look up the conversation by the resolved phone so the sent message gets
       // appended to the right thread (and so the active thread is updated).
+      let conversationLinkedCustomerId: string | null = null
       if (!conversationId) {
         const conv = await findConversation(phoneNumber, supabase, {
           threadId: context.threadId,
         })
         conversationId = conv?.id || null
+        conversationLinkedCustomerId = conv?.ops_customer_id || null
       }
 
       // SAFETY STOP: if the body greets a name that isn't the resolved
@@ -2453,6 +2470,36 @@ export async function executeToolCall(
       ) {
         return `🛑 Safety stop — I did NOT draft this. The message greets "${greetingName}", but the recipient I resolved is ${targetLabel} (${phoneNumber}). If the recipient is wrong, give me the right customer by exact name or number. If the greeting is wrong, fix it and resend.`
       }
+
+      // SAFETY STOP: a personalized greeting with NO verified customer record
+      // is exactly how "Hi Roger" went to Alex's number — the active thread had
+      // no linked customer, so the greeting check above was skipped. If the
+      // body greets someone by name, we must be able to verify the recipient.
+      // A bare phone number Charles typed himself is the only exception.
+      const targetIsExplicitPhone = target.replace(/\D/g, '').length >= 10
+      if (greetingName && !resolvedCustomer && !targetIsExplicitPhone) {
+        return `🛑 Safety stop — I did NOT draft this. The message greets "${greetingName}", but ${phoneNumber} isn't linked to a verified customer record, so I can't confirm it reaches ${greetingName}. Give me the customer's exact name (so I can match their record) or confirm the 10-digit number explicitly.`
+      }
+
+      // SAFETY STOP: the conversation thread at this number is linked to a
+      // DIFFERENT customer record than the one we resolved. This catches bad
+      // data like a customer record carrying someone else's phone number —
+      // the root cause of the original Marianne→Alex missend.
+      if (
+        resolvedCustomer &&
+        conversationLinkedCustomerId &&
+        conversationLinkedCustomerId !== resolvedCustomer.id
+      ) {
+        const linkedCustomer = await findCustomerById(
+          conversationLinkedCustomerId,
+          supabase,
+        )
+        if (linkedCustomer) {
+          return `🛑 Safety stop — I did NOT draft this. The number ${phoneNumber} resolves to ${targetLabel}, but the SMS thread at that number belongs to ${displayCustomerName(linkedCustomer)}. One of these records has the wrong phone number. Fix the customer record or give me the correct number before I text anyone.`
+        }
+      }
+
+      const blacklistEntry = await getBlacklistEntry(supabase, phoneNumber)
 
       const action = await createPendingCommandAction(supabase, {
         threadId: context.threadId,
@@ -2486,7 +2533,32 @@ export async function executeToolCall(
         message,
       })
 
-      return `SMS draft created for ${targetLabel} (${phoneNumber}). It has not been sent yet and needs Charles approval. Draft: "${message}"`
+      const blacklistWarning = blacklistEntry
+        ? `\n${blacklistWarningLine(targetLabel, blacklistEntry)}`
+        : ''
+      return `SMS draft created for ${targetLabel} (${phoneNumber}). It has not been sent yet and needs Charles approval.${blacklistWarning} Draft: "${message}"`
+    }
+
+    case 'send_saved_report': {
+      const target = String(input.target ?? '').trim()
+      if (!target) {
+        return '❌ Tell me who to send the saved report to — exact name or phone number.'
+      }
+      if (!context.threadId) {
+        return '❌ Missing command thread for SMS approval.'
+      }
+      const artifact = await getLatestArtifact(supabase, context.threadId)
+      if (!artifact) {
+        return "❌ There's no saved report in this thread to send."
+      }
+      return draftArtifactSmsForTarget({
+        target,
+        threadId: context.threadId,
+        artifact,
+        userId: context.telegramUserId || null,
+        supabase,
+        smsDrafts: context.smsDrafts,
+      })
     }
 
     case 'view_conversation': {
@@ -2717,6 +2789,14 @@ export async function executeToolCall(
       })
       if (!conversation) {
         return `❌ Couldn't find an active conversation for "${target}". Try a phone number or use list_recent_conversations.`
+      }
+
+      const bookingBlacklistEntry = await getBlacklistEntry(
+        supabase,
+        conversation.phone_number,
+      )
+      if (bookingBlacklistEntry) {
+        return `🛑 NOT booked — ${conversation.phone_number} is on the BLACKLIST${bookingBlacklistEntry.reason ? ` (${bookingBlacklistEntry.reason})` : ''}. Remove them from the blacklist in the admin first if this is intentional.`
       }
 
       const customer = conversation.ops_customer_id
@@ -3040,7 +3120,15 @@ export async function executeToolCall(
         .limit(1)
         .maybeSingle()
 
+      const lookupBlacklistEntry = await getBlacklistEntry(
+        supabase,
+        customer.phone,
+      )
+
       let info = `👤 ${displayCustomerName(customer)}\n`
+      if (lookupBlacklistEntry) {
+        info += `🚫 BLACKLISTED${lookupBlacklistEntry.reason ? ` — ${lookupBlacklistEntry.reason}` : ''}\n`
+      }
       if (
         customer.business_name &&
         customer.full_name !== customer.business_name
@@ -3954,13 +4042,43 @@ async function handleButtonClick(
       return
     }
 
-    await createArtifactSmsApproval(
-      thread,
+    const selected = customer as HarryCustomer
+    if (!selected.phone) {
+      await sendToCharles(
+        `❌ ${displayCustomerName(selected)} has no phone number.`,
+      )
+      return
+    }
+
+    const pending = await createArtifactPendingAction({
+      threadId: thread.id,
       artifact,
-      customer as HarryCustomer,
+      customer: selected,
       userId,
       supabase,
-    )
+    })
+
+    const warning = pending.blacklistEntry
+      ? `\n${blacklistWarningLine(pending.targetLabel, pending.blacklistEntry)}`
+      : ''
+    const reply = `Draft ready for ${pending.targetLabel} (${selected.phone}). It uses the saved report "${artifact.title}".${warning} Send it?`
+    await logCommandMessage(supabase, {
+      threadId: thread.id,
+      role: 'assistant',
+      content: reply,
+      metadata: {
+        artifact_id: artifact.id,
+        pending_action_id: pending.actionId,
+      },
+    })
+    await sendToCharles(`${reply}\n\n${pending.message.slice(0, 2800)}`, {
+      buttons: [
+        [
+          { text: 'Send SMS', data: `approveaction_${pending.actionId}` },
+          { text: 'Cancel', data: `cancelaction_${pending.actionId}` },
+        ],
+      ],
+    })
     return
   }
 
