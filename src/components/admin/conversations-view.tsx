@@ -975,10 +975,10 @@ export function ConversationsView({
                       <div
                         className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 ${
                           msg.role === 'user'
-                            ? 'rounded-tl-sm bg-white/10 text-slate-100'
+                            ? 'rounded-tl-sm bg-slate-100 text-slate-900 dark:bg-white/10 dark:text-slate-100'
                             : msg.role === 'system'
-                              ? 'rounded-tr-sm bg-red-500/15 text-xs text-red-300'
-                              : 'rounded-tr-sm bg-emerald-600/80 text-white'
+                              ? 'rounded-tr-sm bg-red-50 text-xs text-red-800 dark:bg-red-500/15 dark:text-red-300'
+                              : 'rounded-tr-sm bg-emerald-700 text-white dark:bg-emerald-600/80'
                         }`}
                       >
                         <div className="text-sm whitespace-pre-wrap">
@@ -987,8 +987,10 @@ export function ConversationsView({
                         <div
                           className={`mt-1 text-[10px] ${
                             msg.role === 'user'
-                              ? 'text-slate-400'
-                              : 'text-white/60'
+                              ? 'text-slate-500 dark:text-slate-400'
+                              : msg.role === 'system'
+                                ? 'text-red-600 dark:text-red-400'
+                                : 'text-white/75'
                           }`}
                         >
                           {msg.timestamp ? formatTime(msg.timestamp) : ''}
