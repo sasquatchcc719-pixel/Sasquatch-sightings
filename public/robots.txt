@@ -1,5 +1,9 @@
 User-agent: *
 Allow: /
+# Ops platform internals — never crawl (all auth-walled as well)
+Disallow: /admin/
+Disallow: /api/
+Disallow: /auth/
 Disallow: /favicon.ico
 
 Sitemap: https://sightings.sasquatchcarpet.com/sitemap.xml
