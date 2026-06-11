@@ -41,9 +41,19 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: 'daily',
       priority: 0.9,
     },
+    {
+      url: `${baseUrl}/book`,
+      lastModified: new Date(),
+      changeFrequency: 'monthly',
+      priority: 0.9,
+    },
   ]
 
-  // Job pages (dynamic) — skip unknown city/slug jobs entirely
+  // Job pages (dynamic) — skip unknown city/slug jobs entirely.
+  // Advertise the CANONICAL www proxy URLs (www.sasquatchcarpet.com/sightings/*),
+  // matching the canonical tag on the pages — cross-host sitemap entries are
+  // valid because both properties are verified in Search Console. Previously
+  // this sitemap pushed the duplicate subdomain copies, splitting signals.
   const jobPages: MetadataRoute.Sitemap = (jobs || [])
     .filter((job) => !isUnknownCity(job.city) && !job.slug?.includes('unknown'))
     .map((job) => {
@@ -54,7 +64,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         .replace(/^-+|-+$/g, '')
 
       return {
-        url: `${baseUrl}/work/${citySlug}/${job.slug}`,
+        url: `https://www.sasquatchcarpet.com/sightings/${citySlug}/${job.slug}`,
         lastModified: new Date(job.published_at),
         changeFrequency: 'weekly' as const,
         priority: 0.8,
