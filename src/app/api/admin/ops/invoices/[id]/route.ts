@@ -364,6 +364,12 @@ export async function PATCH(
             : current.percentage_discount_scope,
         status:
           body.status !== undefined ? String(body.status) : current.status,
+        payment_status:
+          body.payment_status !== undefined
+            ? body.payment_status
+            : body.status === 'paid'
+              ? 'paid'
+              : current.payment_status,
         payment_method:
           body.payment_method !== undefined
             ? body.payment_method
