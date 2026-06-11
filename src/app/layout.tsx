@@ -11,9 +11,12 @@ import ReactQueryProvider from '@/providers/ReactQueryProvider'
 import { OneSignalPublicInit } from '@/components/onesignal-public-init'
 import { ThemeSwitcher } from '@/components/theme-switcher'
 
-const defaultUrl = process.env.VERCEL_URL
-  ? `https://${process.env.VERCEL_URL}`
-  : 'http://localhost:3000'
+// Fixed canonical host — VERCEL_URL points at per-deployment hashes, which
+// made metadataBase (and every relative OG/canonical URL) unstable.
+const defaultUrl =
+  process.env.NODE_ENV === 'production'
+    ? 'https://sightings.sasquatchcarpet.com'
+    : 'http://localhost:3000'
 
 export const metadata: Metadata = {
   metadataBase: new URL(defaultUrl),

@@ -3,8 +3,37 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/supabase/server'
 import { isUnknownCity } from '@/lib/geocode'
+import { buildJobUrl } from '@/lib/google-indexing'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+
+// Cities with a dedicated service-area page on the marketing site. Job pages
+// link into these (absolute www URLs — these pages are served on both the
+// sightings subdomain and the www /sightings/* proxy, so relative links would
+// 404 on one host).
+const SERVICE_AREA_SLUGS = new Set([
+  'monument',
+  'palmer-lake',
+  'woodmoor',
+  'black-forest',
+  'gleneagle',
+  'colorado-springs',
+  'larkspur',
+  'castle-rock',
+  'castle-pines',
+  'falcon',
+  'flying-horse',
+])
+
+function serviceAreaUrl(city: string | null): string | null {
+  const slug = String(city || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return SERVICE_AREA_SLUGS.has(slug)
+    ? `https://www.sasquatchcarpet.com/service-areas/${slug}`
+    : null
+}
 
 interface PageProps {
   params: Promise<{
@@ -74,7 +103,15 @@ export async function generateMetadata({
     description,
     ...(hasUnknownCity || hasUnknownSlug
       ? { robots: { index: false, follow: false } }
-      : {}),
+      : {
+          // Job pages are served at BOTH sightings.../work/* and (via the
+          // marketing site's Vercel proxy) www.sasquatchcarpet.com/sightings/*
+          // with no referee — the duplicate split was suppressing both copies.
+          // Canonical consolidates every signal onto the www URL.
+          alternates: {
+            canonical: buildJobUrl(job.city ?? 'Colorado', job.slug),
+          },
+        }),
     openGraph: {
       title,
       description,
@@ -113,25 +150,36 @@ export default async function JobPage({ params }: PageProps) {
       })
     : null
 
-  // JSON-LD structured data for local business
+  const canonicalUrl = buildJobUrl(job.city ?? 'Colorado', job.slug)
+  const areaPageUrl = serviceAreaUrl(job.city)
+
+  // JSON-LD: the completed job as a Service performed by the business.
+  // Business identity fields (phone, base address, url) match the marketing
+  // site's LocalBusiness schema so Google entity-resolves them together.
   const jsonLd = {
     '@context': 'https://schema.org',
-    '@type': 'LocalBusiness',
-    name: 'Sasquatch Carpet Cleaning',
-    image: job.image_url,
-    description: job.ai_description,
-    address: {
-      '@type': 'PostalAddress',
-      addressLocality: cityDisplay,
-      addressRegion: 'CO',
-    },
-    geo: job.neighborhood
-      ? {
-          '@type': 'GeoCoordinates',
-          addressLocality: job.neighborhood,
-        }
-      : undefined,
+    '@type': 'Service',
+    '@id': canonicalUrl,
+    name: `${serviceName} in ${location}`,
     serviceType: serviceName,
+    description: job.ai_description,
+    image: job.image_url,
+    url: canonicalUrl,
+    areaServed: { '@type': 'City', name: cityDisplay },
+    provider: {
+      '@type': 'LocalBusiness',
+      name: 'Sasquatch Carpet Cleaning',
+      telephone: '+1-719-249-8791',
+      url: 'https://www.sasquatchcarpet.com',
+      address: {
+        '@type': 'PostalAddress',
+        addressLocality: 'Palmer Lake',
+        addressRegion: 'CO',
+        postalCode: '80133',
+        addressCountry: 'US',
+      },
+      priceRange: '$$',
+    },
   }
 
   return (
@@ -164,13 +212,19 @@ export default async function JobPage({ params }: PageProps) {
 
         {/* Main Content */}
         <main className="container mx-auto max-w-4xl px-4 py-8">
-          {/* Breadcrumbs */}
+          {/* Breadcrumbs — city links to its marketing service-area page */}
           <nav className="mb-6 text-sm text-gray-600">
             <Link href="/" className="hover:text-green-600">
               Home
             </Link>
             {' / '}
-            <span>{cityDisplay}</span>
+            {areaPageUrl ? (
+              <a href={areaPageUrl} className="hover:text-green-600">
+                {cityDisplay}
+              </a>
+            ) : (
+              <span>{cityDisplay}</span>
+            )}
             {' / '}
             <span className="text-gray-900">{serviceName}</span>
           </nav>
@@ -213,8 +267,19 @@ export default async function JobPage({ params }: PageProps) {
                     Need Professional Cleaning?
                   </h2>
                   <p className="mb-6 text-gray-600">
-                    Serving {cityDisplay} and surrounding areas with top-quality
-                    carpet and upholstery cleaning.
+                    Serving{' '}
+                    {areaPageUrl ? (
+                      <a
+                        href={areaPageUrl}
+                        className="font-medium text-green-700 hover:underline"
+                      >
+                        {cityDisplay}
+                      </a>
+                    ) : (
+                      cityDisplay
+                    )}{' '}
+                    and surrounding areas with top-quality carpet and upholstery
+                    cleaning.
                   </p>
                   <div className="flex flex-col justify-center gap-4 sm:flex-row">
                     <Button size="lg" asChild>
