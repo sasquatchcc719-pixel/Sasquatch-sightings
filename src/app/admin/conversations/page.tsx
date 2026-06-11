@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/supabase/server'
 import { ConversationsView } from '@/components/admin/conversations-view'
+import { getCustomerContextForConversations } from '@/lib/ops/conversation-customer-context'
 
 interface PageProps {
   searchParams: Promise<{ source?: string }>
@@ -59,6 +60,19 @@ export default async function ConversationsPage({ searchParams }: PageProps) {
     // Yelp inbound messages (integration pending)
     conversations = conversations.filter((c) => c.source === 'Yelp')
   }
+
+  // Enrich scheduled-customer threads with name/email/address/latest invoice so
+  // each card shows full customer context with clickable links.
+  const customerContextById = await getCustomerContextForConversations(
+    supabase,
+    conversations.map((c) => c.ops_customer_id),
+  )
+  conversations = conversations.map((c) => ({
+    ...c,
+    customerContext: c.ops_customer_id
+      ? (customerContextById.get(c.ops_customer_id) ?? null)
+      : null,
+  }))
 
   const isVendorView = source === 'vendor'
   const isContestView = source === 'contest'
