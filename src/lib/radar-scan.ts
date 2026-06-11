@@ -60,7 +60,7 @@ export async function runRadarScan(): Promise<RadarScanResult> {
   for (let i = 0; i < keywords.length; i++) {
     const kw = keywords[i]
     try {
-      const { ranks, snapshot } = await fetchSerpRanks(
+      const { ranks, snapshot, mapPack } = await fetchSerpRanks(
         kw.keyword,
         kw.location,
         domains,
@@ -100,6 +100,30 @@ export async function runRadarScan(): Promise<RadarScanResult> {
             ...(s.address && { address: s.address }),
           })),
         )
+      }
+
+      // Persist the full Maps local pack (with review counts) as history so
+      // the review gap vs competitors is trackable over time.
+      if (mapPack.length > 0) {
+        const { error: mapPackError } = await supabase
+          .from('radar_map_pack_snapshots')
+          .insert(
+            mapPack.map((p) => ({
+              keyword_id: kw.id,
+              position: p.position,
+              title: p.title,
+              domain: p.domain,
+              rating: p.rating,
+              reviews: p.reviews,
+              address: p.address,
+            })),
+          )
+        if (mapPackError) {
+          console.error(
+            `[Radar Scan] Map pack insert error for keyword ${kw.id}:`,
+            mapPackError,
+          )
+        }
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)

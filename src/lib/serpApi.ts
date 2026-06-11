@@ -76,10 +76,21 @@ function matchPlaceToDomainId(
 const SERP_NUM_RESULTS = 50
 const NOT_FOUND_RANK = SERP_NUM_RESULTS
 
+export type SerpMapPackPlace = {
+  position: number
+  title: string | null
+  domain: string | null
+  rating: number | null
+  reviews: number | null
+  address: string | null
+}
+
 export type SerpRanksWithSnapshot = {
   ranks: SerpApiRankResult[]
   /** Full SERP order (who’s #1, #2, …) so we can show it even if not on our list */
   snapshot: SerpDomainWithPosition[]
+  /** Full Maps local pack (every place, not just tracked domains) with review counts */
+  mapPack: SerpMapPackPlace[]
 }
 
 /**
@@ -141,14 +152,24 @@ export async function fetchSerpRanks(
     { rating: number; reviews: number; address?: string }
   >()
   const mapPackByDomainId = new Map<string, number>()
+  const mapPack: SerpMapPackPlace[] = []
   for (const place of places) {
     const pos = place.position ?? 0
     if (!pos) continue
     const domainId = matchPlaceToDomainId(place, domains)
     if (domainId) mapPackByDomainId.set(domainId, pos)
     const website = place.links?.website
+    const placeDomain = website ? normalizeDomain(website) : null
+    mapPack.push({
+      position: pos,
+      title: (place.title ?? '').trim() || null,
+      domain: placeDomain,
+      rating: place.rating ?? null,
+      reviews: place.reviews ?? null,
+      address: (place.address ?? '').trim() || null,
+    })
     if (website && place.rating != null) {
-      const hostNorm = normalizeDomain(website)
+      const hostNorm = placeDomain
       if (hostNorm)
         localDataByDomain.set(hostNorm, {
           rating: place.rating,
@@ -210,7 +231,7 @@ export async function fetchSerpRanks(
     }
   }
 
-  return { ranks, snapshot }
+  return { ranks, snapshot, mapPack }
 }
 
 export type SerpDomainWithPosition = {
