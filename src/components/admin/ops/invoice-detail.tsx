@@ -46,6 +46,7 @@ type JobPhoto = {
 
 type InvoiceDetailProps = {
   invoiceId: string
+  mode?: 'admin' | 'tech'
 }
 
 type OpsCustomer = {
@@ -187,7 +188,11 @@ function formatDriveElapsed(elapsedMs: number): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
-export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
+export function InvoiceDetail({
+  invoiceId,
+  mode = 'admin',
+}: InvoiceDetailProps) {
+  const isTechMode = mode === 'tech'
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -1230,44 +1235,48 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
       {/* ── Customer header card ───────────────────────────── */}
       <Card className="border-border/60 bg-card/80 p-6 shadow-sm backdrop-blur">
         {/* Top action row */}
-        <div className="mb-4 flex items-center justify-end gap-2">
-          {!editingCustomer ? (
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1.5"
-              onClick={enterCustomerEdit}
-            >
-              <Pencil className="h-3.5 w-3.5" />
-              Edit
-            </Button>
-          ) : null}
-          {appointment?.id ? (
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1.5"
-              disabled={Boolean(actionLoading)}
-              onClick={() =>
-                router.push(`/admin/operations/appointments/${appointment.id}`)
-              }
-            >
-              <CalendarClock className="h-3.5 w-3.5" />
-              Reschedule
-            </Button>
-          ) : null}
-          <Button
-            size="sm"
-            variant="destructive"
-            disabled={Boolean(actionLoading)}
-            onClick={() => void handleDeleteJob()}
-          >
-            {actionLoading === 'Delete Job' ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        {!isTechMode ? (
+          <div className="mb-4 flex items-center justify-end gap-2">
+            {!editingCustomer ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                onClick={enterCustomerEdit}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                Edit
+              </Button>
             ) : null}
-            Delete Job
-          </Button>
-        </div>
+            {appointment?.id ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                disabled={Boolean(actionLoading)}
+                onClick={() =>
+                  router.push(
+                    `/admin/operations/appointments/${appointment.id}`,
+                  )
+                }
+              >
+                <CalendarClock className="h-3.5 w-3.5" />
+                Reschedule
+              </Button>
+            ) : null}
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={Boolean(actionLoading)}
+              onClick={() => void handleDeleteJob()}
+            >
+              {actionLoading === 'Delete Job' ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : null}
+              Delete Job
+            </Button>
+          </div>
+        ) : null}
 
         {editingCustomer ? (
           /* ── Edit mode ─────────────────────────────────────── */
@@ -1736,7 +1745,9 @@ export function InvoiceDetail({ invoiceId }: InvoiceDetailProps) {
               {status !== 'paid'
                 ? 'Mark the invoice paid first, then email the itemized receipt.'
                 : receiptEmail
-                  ? `Sends to the customer email on file: ${receiptEmail}. Edit Customer to change it, then Save.`
+                  ? isTechMode
+                    ? `Sends to the customer email on file: ${receiptEmail}.`
+                    : `Sends to the customer email on file: ${receiptEmail}. Edit Customer to change it, then Save.`
                   : 'Add and save an email address on this customer before sending a receipt.'}
             </p>
             <Button

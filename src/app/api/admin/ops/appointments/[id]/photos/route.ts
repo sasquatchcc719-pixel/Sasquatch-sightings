@@ -4,6 +4,7 @@ import fs from 'fs'
 import sharp from 'sharp'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
+import { assertTechAppointmentAccess } from '@/lib/ops/tech-job-access'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -35,9 +36,15 @@ async function buildLogoOverlay(targetWidth: number): Promise<Buffer> {
 
 export async function GET(_request: NextRequest, { params }: Params) {
   try {
-    await requireAnyRole(['admin', 'owner', 'dispatcher'])
+    const access = await requireAnyRole([
+      'admin',
+      'owner',
+      'dispatcher',
+      'tech',
+    ])
     const supabase = createAdminClient()
     const { id } = await params
+    await assertTechAppointmentAccess(supabase, access, id)
 
     const { data, error } = await supabase
       .from('ops_job_photos')
@@ -58,9 +65,15 @@ export async function GET(_request: NextRequest, { params }: Params) {
 
 export async function POST(request: NextRequest, { params }: Params) {
   try {
-    await requireAnyRole(['admin', 'owner', 'dispatcher'])
+    const access = await requireAnyRole([
+      'admin',
+      'owner',
+      'dispatcher',
+      'tech',
+    ])
     const supabase = createAdminClient()
     const { id: appointmentId } = await params
+    await assertTechAppointmentAccess(supabase, access, appointmentId)
 
     const formData = await request.formData()
     const imageFile = formData.get('image') as File | null
@@ -172,9 +185,15 @@ export async function POST(request: NextRequest, { params }: Params) {
 
 export async function DELETE(request: NextRequest, { params }: Params) {
   try {
-    await requireAnyRole(['admin', 'owner', 'dispatcher'])
+    const access = await requireAnyRole([
+      'admin',
+      'owner',
+      'dispatcher',
+      'tech',
+    ])
     const supabase = createAdminClient()
     const { id: appointmentId } = await params
+    await assertTechAppointmentAccess(supabase, access, appointmentId)
     const { searchParams } = new URL(request.url)
     const photoId = searchParams.get('photoId')
 

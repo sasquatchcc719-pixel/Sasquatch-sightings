@@ -23,6 +23,7 @@ import {
   leadSourceUpdatePayload,
   normalizeLeadSourceForWrite,
 } from '@/lib/server/lead-sources'
+import { assertTechAppointmentAccess } from '@/lib/ops/tech-job-access'
 
 function addMinutesToTime(value: string, minutesToAdd: number): string {
   const [hours, minutes] = value.split(':').map(Number)
@@ -257,6 +258,7 @@ export async function PATCH(
     ])
     const supabase = createAdminClient()
     const { id } = await params
+    await assertTechAppointmentAccess(supabase, access, id)
     const body = await request.json()
 
     const { data: current, error: currentError } = await supabase

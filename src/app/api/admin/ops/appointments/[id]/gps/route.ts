@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
+import { assertTechAppointmentAccess } from '@/lib/ops/tech-job-access'
 
 /**
  * Save GPS coordinates to an appointment.
@@ -12,9 +13,15 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    await requireAnyRole(['admin', 'owner', 'dispatcher'])
+    const access = await requireAnyRole([
+      'admin',
+      'owner',
+      'dispatcher',
+      'tech',
+    ])
     const supabase = createAdminClient()
     const { id: appointmentId } = await params
+    await assertTechAppointmentAccess(supabase, access, appointmentId)
     const body = await request.json()
 
     const lat = Number(body.lat)

@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 import { requireAnyRole } from '@/lib/auth'
+import { assertTechInvoiceAccess } from '@/lib/ops/tech-job-access'
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    await requireAnyRole(['owner', 'admin'])
+    const access = await requireAnyRole(['owner', 'admin', 'tech'])
     const supabase = createAdminClient()
     const { signatureData, customerName } = await request.json()
 
@@ -19,6 +20,7 @@ export async function POST(
     }
 
     const { id: invoiceId } = await params
+    await assertTechInvoiceAccess(supabase, access, invoiceId)
 
     // Convert base64 to buffer
     const base64Data = signatureData.replace(/^data:image\/\w+;base64,/, '')

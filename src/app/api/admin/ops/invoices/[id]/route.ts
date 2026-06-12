@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
+import { assertTechInvoiceAccess } from '@/lib/ops/tech-job-access'
 import {
   voidQBInvoice,
   createQBPayment,
@@ -76,9 +77,16 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    await requireAnyRole(['admin', 'owner', 'dispatcher', 'marketing'])
+    const access = await requireAnyRole([
+      'admin',
+      'owner',
+      'dispatcher',
+      'marketing',
+      'tech',
+    ])
     const supabase = createAdminClient()
     const { id } = await params
+    await assertTechInvoiceAccess(supabase, access, id)
 
     const { data, error } = await supabase
       .from('ops_invoices')
@@ -103,10 +111,25 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    await requireAnyRole(['admin', 'owner', 'dispatcher'])
+    const access = await requireAnyRole([
+      'admin',
+      'owner',
+      'dispatcher',
+      'tech',
+    ])
     const supabase = createAdminClient()
     const { id } = await params
     const body = await request.json()
+    await assertTechInvoiceAccess(supabase, access, id)
+
+    if (
+      access.role === 'tech' &&
+      (body.customer !== undefined ||
+        body.address !== undefined ||
+        body.appointment !== undefined)
+    ) {
+      return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    }
 
     const { data: current, error: currentError } = await supabase
       .from('ops_invoices')

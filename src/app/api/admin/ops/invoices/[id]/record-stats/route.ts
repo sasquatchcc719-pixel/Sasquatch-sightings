@@ -6,6 +6,7 @@ import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
 import { getQuickBooksSyncStatus } from '@/lib/quickbooks'
 import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
 import { ensureInvoiceQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
+import { assertTechInvoiceAccess } from '@/lib/ops/tech-job-access'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -19,6 +20,7 @@ export async function POST(request: NextRequest, { params }: Params) {
     ])
     const supabase = createAdminClient()
     const { id: invoiceId } = await params
+    await assertTechInvoiceAccess(supabase, access, invoiceId)
 
     let driveMinutes: number | null = null
     let markCompleted = true
