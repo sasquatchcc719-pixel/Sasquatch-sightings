@@ -98,6 +98,75 @@ async function resolveGoogleBusinessTarget(
   }
 }
 
+const STAR_ENUM_TO_NUMBER: Record<string, number> = {
+  ONE: 1,
+  TWO: 2,
+  THREE: 3,
+  FOUR: 4,
+  FIVE: 5,
+}
+
+export type LiveGoogleReview = {
+  id: string
+  author: string
+  profilePhotoUrl: string | null
+  rating: number
+  text: string
+  createTime: string | null
+  updateTime: string | null
+  hasOwnerReply: boolean
+}
+
+/**
+ * Fetch reviews LIVE from the Google Business Profile API (not the SerpApi
+ * snapshot in gbp_reviews). Uses the same OAuth + pinned account/location that
+ * Echo posts with. Returns newest-updated first.
+ */
+export async function fetchLiveGoogleReviews(
+  pageSize = 50,
+): Promise<LiveGoogleReview[]> {
+  const auth = getAuthClient()
+  const { accountId, locationId } = await resolveGoogleBusinessTarget(auth)
+  const { token } = await auth.getAccessToken()
+  if (!token) throw new Error('Failed to generate Google access token.')
+
+  const url =
+    `https://mybusiness.googleapis.com/v4/accounts/${accountId}/locations/${locationId}/reviews` +
+    `?pageSize=${pageSize}&orderBy=${encodeURIComponent('updateTime desc')}`
+
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) {
+    const body = await res.text()
+    throw new Error(`GBP reviews API ${res.status}: ${body.slice(0, 300)}`)
+  }
+
+  const data = (await res.json()) as {
+    reviews?: Array<{
+      reviewId?: string
+      name?: string
+      starRating?: string
+      comment?: string
+      createTime?: string
+      updateTime?: string
+      reviewer?: { displayName?: string; profilePhotoUrl?: string }
+      reviewReply?: { comment?: string }
+    }>
+  }
+
+  return (data.reviews ?? []).map((r) => ({
+    id: r.reviewId ?? r.name ?? '',
+    author: r.reviewer?.displayName ?? 'Google user',
+    profilePhotoUrl: r.reviewer?.profilePhotoUrl ?? null,
+    rating: STAR_ENUM_TO_NUMBER[r.starRating ?? ''] ?? 0,
+    text: (r.comment ?? '').trim(),
+    createTime: r.createTime ?? null,
+    updateTime: r.updateTime ?? null,
+    hasOwnerReply: Boolean(r.reviewReply?.comment),
+  }))
+}
+
 export async function createSightingPost(
   imageUrl: string,
   description = 'Check out this Sasquatch Sighting spotted in the neighborhood.',
