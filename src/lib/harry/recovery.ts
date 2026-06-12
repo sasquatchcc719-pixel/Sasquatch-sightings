@@ -73,6 +73,13 @@ export function buildHarryRecoveryPlan(
   return null
 }
 
+// The exact text the customer receives when Harry escalates to Charles.
+// Must be honest (no success claim, no retry promise) and must mention
+// Charles so guardHarryResponseAgainstOutcomes recognizes it as a verified
+// human-alert claim.
+export const HARRY_TAKEOVER_SAFE_MESSAGE =
+  "I wasn't able to get that change through on my end, so I've flagged it for Charles to handle personally. He'll follow up with you to get it taken care of."
+
 export function buildHarryTakeoverArgs(params: {
   failedOutcome: HarryToolOutcome
   recoveryPlan: HarryRecoveryPlan
@@ -96,7 +103,6 @@ export function buildHarryTakeoverArgs(params: {
     last_tool_error: error,
     retry_attempted: true,
     customer_waiting: true,
-    customer_message_draft:
-      "I couldn't safely complete that change, so I've alerted Charles to review it. I won't claim it's done until the system confirms it.",
+    customer_message_draft: HARRY_TAKEOVER_SAFE_MESSAGE,
   }
 }

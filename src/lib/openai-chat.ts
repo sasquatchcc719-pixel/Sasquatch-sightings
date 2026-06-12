@@ -26,6 +26,7 @@ import {
 import {
   buildHarryRecoveryPlan,
   buildHarryTakeoverArgs,
+  HARRY_TAKEOVER_SAFE_MESSAGE,
 } from '@/lib/harry/recovery'
 import { buildReviewRequestContext } from '@/lib/ops/review-requests'
 
@@ -541,6 +542,7 @@ CURRENT CUSTOMER CONTEXT:
         return outcome
       }
       let lastText = ''
+      let takeoverSafeMessage: string | null = null
       for (let round = 0; round < 8; round += 1) {
         const requiredTool = workflowState
           ? requiredHarryToolForState(workflowState)
@@ -630,6 +632,9 @@ CURRENT CUSTOMER CONTEXT:
                     conversationId: smsOpsContext.sessionId,
                     reason: String(takeoverArgs.blocking_reason),
                   })
+                  takeoverSafeMessage =
+                    String(takeoverArgs.customer_message_draft || '').trim() ||
+                    HARRY_TAKEOVER_SAFE_MESSAGE
                 }
               }
             }
@@ -642,6 +647,16 @@ CURRENT CUSTOMER CONTEXT:
               tool_call_id: tc.id,
               content: JSON.stringify(modelResult),
             })
+          }
+          // A takeover means this turn is over: Charles was alerted and the
+          // customer must get the safe message. The model never sees the
+          // takeover (only the raw tool error goes back to it), so giving it
+          // another round produced retry loops and "one moment!" promises
+          // that were never kept (Michelle Tsirlis, 2026-06-12). End the
+          // turn deterministically instead.
+          if (takeoverSafeMessage) {
+            lastText = takeoverSafeMessage
+            break
           }
           continue
         }
