@@ -16,6 +16,7 @@ import {
   Repeat,
   Ruler,
   ShieldBan,
+  UserRoundCog,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -1585,6 +1586,9 @@ export function OperationsSchedule() {
     active: boolean
   } | null>(null)
   const [pointerDragging, setPointerDragging] = useState(false)
+  const [reassigningAppointmentId, setReassigningAppointmentId] = useState<
+    string | null
+  >(null)
 
   const hitTestDateColumn = (
     clientX: number,
@@ -1714,6 +1718,36 @@ export function OperationsSchedule() {
       e.clientY,
       hit.staffId,
     )
+  }
+
+  const handleMobileStaffReassignment = async (
+    appointment: Appointment,
+    staff: StaffMember,
+  ) => {
+    setError(null)
+    setReassigningAppointmentId(appointment.id)
+    try {
+      const response = await fetch(
+        `/api/admin/ops/appointments/${appointment.id}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ assigned_staff_user_id: staff.id }),
+        },
+      )
+      const result = await response.json()
+      if (!response.ok) {
+        setError(result.error || 'Failed to reassign job')
+        return
+      }
+
+      setStaffFilter(staff.id)
+      await loadSchedule()
+    } catch {
+      setError('Failed to reassign job')
+    } finally {
+      setReassigningAppointmentId(null)
+    }
   }
 
   const sendRescheduleNotification = async (appointmentId: string) => {
@@ -1921,6 +1955,11 @@ export function OperationsSchedule() {
             : getStatusTone(appointment.status)
       const isPointerDraggingThis =
         pointerDragging && draggingAppointment?.id === appointment.id
+      const effectiveStaffId =
+        appointment.assigned_staff_user_id ?? staffList[0]?.id
+      const otherStaff = staffList.filter(
+        (staff) => staff.id !== effectiveStaffId,
+      )
       return (
         <div
           key={appointment.id}
@@ -1968,6 +2007,31 @@ export function OperationsSchedule() {
             <span className="text-[11px] font-medium tracking-tight text-slate-600 sm:text-[10px]">
               Move
             </span>
+            {isMobile && view === 'day'
+              ? otherStaff.map((staff) => (
+                  <button
+                    key={staff.id}
+                    type="button"
+                    draggable={false}
+                    className="ml-auto inline-flex min-h-7 items-center gap-1 rounded-md border border-slate-300 bg-white/80 px-2 py-1 text-[10px] font-semibold text-slate-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+                    disabled={reassigningAppointmentId === appointment.id}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      void handleMobileStaffReassignment(appointment, staff)
+                    }}
+                    aria-label={`Move job to ${staff.display_name}`}
+                  >
+                    {reassigningAppointmentId === appointment.id ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <UserRoundCog className="h-3 w-3" />
+                    )}
+                    To {staff.display_name.split(' ')[0]}
+                  </button>
+                ))
+              : null}
             {view === 'week' &&
               staffList.length > 1 &&
               (() => {
