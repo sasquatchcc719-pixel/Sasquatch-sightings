@@ -20,7 +20,6 @@ import {
   createAiStyleBooking,
   type AiStyleBookingLineRequest,
 } from '@/lib/ops/create-ai-style-booking'
-import { enrollCustomerInDrip } from '@/lib/ops/drip-campaign'
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -1248,6 +1247,7 @@ Your capabilities:
 - Look up customer details
 - View customer job history
 - Search job line items, descriptions, rooms, buildings, and service notes
+- Inspect Harry's action ledger — every tool attempt with the exact recorded error — and workflow state for a customer
 - Mark jobs as complete
 - Add new customers to the system
 - Check schedule availability
@@ -1281,6 +1281,7 @@ Mode:
 - Do not expose Twilio SIDs, webhook IDs, or delivery plumbing unless Charles explicitly asks for technical details. Confirm plainly that a customer text was sent and show the customer-facing message.
 - When Charles says "that", "it", "same thing", or "the report", use RECENT COMMAND MEMORY and LAST ARTIFACT before asking what he means.
 - When Charles says "this customer", "the current conversation", "the one you're talking to", "the person texting", or similar, use ACTIVE CUSTOMER THREAD before guessing from names or old artifacts.
+- FAILURE QUESTIONS (hard rule): when Charles asks why something failed, didn't work, didn't send, didn't go through, or what went wrong with a customer-facing action (reschedule, booking, text, quote, etc.), you MUST call inspect_harry_actions for that customer/conversation BEFORE answering, and your answer MUST quote the recorded error text from the ledger verbatim. NEVER explain a failure from general knowledge or offer plausible-sounding causes ("the customer was ambiguous", "the message was unclear") — the ledger is the only acceptable source. If the ledger has no recorded actions for that customer, say exactly that and offer to pull the conversation thread instead. Do not speculate.
 - When Charles asks you to remember, look back, find an earlier scenario, inspect what happened, or search past customer texts, use search_conversation_history. Do not say you lack access to old conversations until that tool has failed.
 - When asked "when did we last..." or about a room/building/scope, use search_job_details so you can inspect line-item descriptions before answering.
 - When Charles asks you to book "this customer", "the current conversation", or a customer from a recent Harry alert, prefer book_conversation_job. It can resolve the active SMS thread and pull customer details from the conversation.
@@ -1398,6 +1399,39 @@ ${activeConversationSummary}`,
                 description: 'Maximum matching conversations to return.',
               },
             },
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'inspect_harry_actions',
+          description:
+            "Pull Harry's authoritative action ledger (every tool attempt with success/failure and the EXACT recorded error message) plus workflow state for a customer or conversation. MUST be called first whenever Charles asks why something failed, didn't work, didn't send, or what went wrong — answer by quoting the recorded error, never by guessing.",
+          parameters: {
+            type: 'object',
+            properties: {
+              target: {
+                type: 'string',
+                description:
+                  'Customer name, phone number, conversation ID, or contextual phrase like "this customer"/"current".',
+              },
+              only_failures: {
+                type: 'boolean',
+                description:
+                  'Set true to show only failed attempts. Default false (full attempt timeline, newest first).',
+              },
+              days_back: {
+                type: 'number',
+                description:
+                  'Optional recent window in days. Defaults to all recorded attempts.',
+              },
+              limit: {
+                type: 'number',
+                description: 'Maximum ledger entries to return (default 20).',
+              },
+            },
+            required: ['target'],
           },
         },
       },
@@ -2360,6 +2394,206 @@ async function searchConversationHistory(
   ].join('\n')
 }
 
+type HarryLedgerRow = {
+  id: string
+  tool_name: string
+  success: boolean
+  error: string | null
+  attempt_kind: string | null
+  args: Record<string, unknown> | null
+  created_at: string
+}
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+// Compact one-line rendering of ledger args. Long opaque values (slot tokens,
+// message bodies) are truncated so the timeline stays readable on a phone.
+function compactLedgerArgs(args: unknown): string {
+  try {
+    const json = JSON.stringify(args, (_key, value) =>
+      typeof value === 'string' && value.length > 80
+        ? `${value.slice(0, 77)}...`
+        : value,
+    )
+    return json && json !== '{}' && json !== 'null' ? json.slice(0, 400) : ''
+  } catch {
+    return ''
+  }
+}
+
+function formatLedgerTimestamp(value: string): string {
+  return new Date(value).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: 'America/Denver',
+  })
+}
+
+// The authoritative answer to "why did that fail?" — reads harry_action_ledger
+// and harry_workflow_states for a conversation so the bot quotes recorded
+// errors instead of inventing plausible causes.
+async function inspectHarryActions(
+  input: Record<string, unknown>,
+  supabase: ReturnType<typeof createAdminClient>,
+  context: { threadId?: string },
+): Promise<string> {
+  const target = String(input.target || '').trim()
+  const onlyFailures = Boolean(input.only_failures)
+  const limit = Math.min(Math.max(Number(input.limit) || 20, 1), 50)
+  const daysBack = Number(input.days_back || 0)
+
+  if (!target) {
+    return '❌ Tell me which customer or conversation to inspect — name, phone number, or conversation ID.'
+  }
+
+  // Resolve the target to conversation rows. A raw conversation UUID is
+  // accepted directly; otherwise reuse the same resolution path as the other
+  // conversation tools so "this customer", names, and phones all work.
+  const conversations = new Map<
+    string,
+    Pick<HarryConversationLookup, 'id' | 'phone_number' | 'ops_customer_id'>
+  >()
+
+  if (UUID_PATTERN.test(target)) {
+    const { data } = await supabase
+      .from('conversations')
+      .select('id, phone_number, ops_customer_id')
+      .eq('id', target)
+      .maybeSingle()
+    if (data) conversations.set(data.id, data)
+  } else if (looksLikeDeicticReference(target)) {
+    const active = await resolveActiveConversation(supabase, context.threadId)
+    if (active) conversations.set(active.id, active)
+  } else {
+    const conversation = await findConversation(target, supabase, {
+      threadId: context.threadId,
+    })
+    if (conversation) conversations.set(conversation.id, conversation)
+
+    // Same customer can have multiple conversation rows — pull the recent ones
+    // for every phone variant so failures on an older thread still surface.
+    const customers = await findCustomerCandidates(target, supabase)
+    const variants = Array.from(
+      new Set(
+        customers
+          .map((customer) => customer.phone)
+          .filter(Boolean)
+          .flatMap((phone) => opsPhoneLookupVariants(phone as string)),
+      ),
+    )
+    if (variants.length > 0) {
+      const { data } = await supabase
+        .from('conversations')
+        .select('id, phone_number, ops_customer_id')
+        .in('phone_number', variants)
+        .order('updated_at', { ascending: false })
+        .limit(5)
+      for (const row of data || []) conversations.set(row.id, row)
+    }
+  }
+
+  if (conversations.size === 0) {
+    return `❌ Couldn't find a conversation for "${target}". Give me the exact name, 10-digit number, or conversation ID.`
+  }
+
+  const sections: string[] = []
+  for (const conversation of Array.from(conversations.values()).slice(0, 3)) {
+    const customer = conversation.ops_customer_id
+      ? await findCustomerById(String(conversation.ops_customer_id), supabase)
+      : await findCustomer(String(conversation.phone_number || ''), supabase)
+    const customerLabel = customer
+      ? displayCustomerName(customer)
+      : 'not linked to a customer record'
+
+    const { data: state } = await supabase
+      .from('harry_workflow_states')
+      .select(
+        'intent, phase, last_action_name, last_action_status, last_action_error, missing_fields, consecutive_failures, recovery_attempts, takeover_status, takeover_reason, updated_at',
+      )
+      .eq('conversation_id', conversation.id)
+      .maybeSingle()
+
+    let ledgerQuery = supabase
+      .from('harry_action_ledger')
+      .select('id, tool_name, success, error, attempt_kind, args, created_at')
+      .eq('conversation_id', conversation.id)
+      .order('created_at', { ascending: false })
+      .limit(limit)
+    if (onlyFailures) ledgerQuery = ledgerQuery.eq('success', false)
+    if (daysBack > 0) {
+      ledgerQuery = ledgerQuery.gte(
+        'created_at',
+        new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString(),
+      )
+    }
+    const { data: ledger, error: ledgerError } = await ledgerQuery
+    if (ledgerError) {
+      return `❌ Ledger lookup failed: ${ledgerError.message}`
+    }
+
+    const lines: string[] = [
+      `Conversation ${conversation.id}`,
+      `Phone: ${conversation.phone_number} | Customer: ${customerLabel}`,
+    ]
+
+    if (state) {
+      const missingFields = Array.isArray(state.missing_fields)
+        ? (state.missing_fields as string[]).join(', ')
+        : ''
+      lines.push(
+        `WORKFLOW STATE (updated ${formatLedgerTimestamp(String(state.updated_at))}):`,
+        `Intent: ${state.intent} | Phase: ${state.phase} | Consecutive failures: ${state.consecutive_failures ?? 0} | Recovery attempts: ${state.recovery_attempts ?? 0}`,
+      )
+      if (state.last_action_name) {
+        lines.push(
+          `Last action: ${state.last_action_name} — ${state.last_action_status || 'unknown'}${state.last_action_error ? ` — recorded error: "${String(state.last_action_error).slice(0, 600)}"` : ''}`,
+        )
+      }
+      if (missingFields) lines.push(`Missing fields: ${missingFields}`)
+      if (state.takeover_status && state.takeover_status !== 'none') {
+        lines.push(
+          `Takeover: ${state.takeover_status}${state.takeover_reason ? ` — ${state.takeover_reason}` : ''}`,
+        )
+      }
+    } else {
+      lines.push('WORKFLOW STATE: none recorded for this conversation.')
+    }
+
+    const rows = (ledger || []) as HarryLedgerRow[]
+    if (rows.length === 0) {
+      lines.push(
+        onlyFailures
+          ? 'RECORDED ACTIONS: no failed attempts in the ledger for this conversation.'
+          : 'RECORDED ACTIONS: none in the ledger for this conversation.',
+      )
+    } else {
+      lines.push(`RECORDED ACTIONS (newest first, ${rows.length} shown):`)
+      for (const row of rows) {
+        const status = row.success ? '✅' : '❌ FAILED'
+        const kind =
+          row.attempt_kind && row.attempt_kind !== 'primary'
+            ? ` [${row.attempt_kind}]`
+            : ''
+        lines.push(
+          `${formatLedgerTimestamp(row.created_at)} ${status} ${row.tool_name}${kind}`,
+        )
+        if (row.error) {
+          lines.push(`   error: "${String(row.error).slice(0, 600)}"`)
+        }
+        const argsLine = compactLedgerArgs(row.args)
+        if (argsLine) lines.push(`   args: ${argsLine}`)
+      }
+    }
+
+    sections.push(lines.join('\n'))
+  }
+
+  return sections.join('\n\n=====\n\n')
+}
+
 export async function executeToolCall(
   toolName: string,
   input: Record<string, unknown>,
@@ -2616,6 +2850,12 @@ export async function executeToolCall(
 
     case 'search_conversation_history': {
       return searchConversationHistory(input, supabase, {
+        threadId: context.threadId,
+      })
+    }
+
+    case 'inspect_harry_actions': {
+      return inspectHarryActions(input, supabase, {
         threadId: context.threadId,
       })
     }
@@ -3480,8 +3720,6 @@ export async function executeToolCall(
       if (error) {
         return `❌ Failed to mark complete: ${error.message}`
       }
-
-      await enrollCustomerInDrip(appt.id)
 
       return `✅ Marked ${displayCustomerName(customer)}'s job as complete`
     }
