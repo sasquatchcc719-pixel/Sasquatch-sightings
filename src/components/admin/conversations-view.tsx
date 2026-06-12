@@ -530,21 +530,30 @@ export function ConversationsView({
     switch (status) {
       case 'active':
         return (
-          <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+          <Badge
+            variant="secondary"
+            className="bg-blue-100 text-blue-800 dark:bg-blue-500/20 dark:text-blue-300"
+          >
             <MessageSquare className="mr-1 h-3 w-3" />
             Active
           </Badge>
         )
       case 'completed':
         return (
-          <Badge variant="secondary" className="bg-green-100 text-green-800">
+          <Badge
+            variant="secondary"
+            className="bg-green-100 text-green-800 dark:bg-green-500/20 dark:text-green-300"
+          >
             <CheckCircle className="mr-1 h-3 w-3" />
             Completed
           </Badge>
         )
       case 'escalated':
         return (
-          <Badge variant="secondary" className="bg-red-100 text-red-800">
+          <Badge
+            variant="secondary"
+            className="bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-300"
+          >
             <AlertCircle className="mr-1 h-3 w-3" />
             Escalated
           </Badge>
@@ -741,8 +750,8 @@ export function ConversationsView({
                   <div
                     key={convo.id}
                     className={`flex items-center gap-3 px-4 py-3.5 transition-colors ${
-                      !isLast ? 'border-b border-white/5' : ''
-                    } ${isUnread ? 'bg-white/3' : ''} cursor-pointer hover:bg-white/5 active:bg-white/10`}
+                      !isLast ? 'border-border border-b' : ''
+                    } ${isUnread ? 'bg-muted/60' : ''} hover:bg-muted/50 active:bg-muted cursor-pointer`}
                     onClick={() => openConversation(convo)}
                   >
                     {/* Checkbox */}
@@ -768,25 +777,27 @@ export function ConversationsView({
                         <span
                           className={`truncate text-sm ${
                             isUnread
-                              ? 'font-semibold text-white'
-                              : 'font-medium text-slate-200'
+                              ? 'text-foreground font-semibold'
+                              : 'text-foreground font-medium'
                           }`}
                         >
                           {displayName || convo.phone_number}
                           {isOpsCustomer && (
-                            <span className="ml-1.5 text-[10px] font-normal text-emerald-400">
+                            <span className="ml-1.5 text-[10px] font-normal text-emerald-700 dark:text-emerald-400">
                               Scheduled
                             </span>
                           )}
                         </span>
-                        <span className="flex-shrink-0 text-[11px] text-slate-500">
+                        <span className="text-muted-foreground flex-shrink-0 text-[11px]">
                           {formatRelativeTime(convo.updated_at)}
                         </span>
                       </div>
                       <div className="mt-0.5 flex items-center justify-between gap-2">
                         <p
                           className={`truncate text-xs ${
-                            isUnread ? 'text-slate-300' : 'text-slate-500'
+                            isUnread
+                              ? 'text-foreground/80'
+                              : 'text-muted-foreground'
                           }`}
                         >
                           {lastMessage
@@ -916,13 +927,13 @@ export function ConversationsView({
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="text-base font-semibold">
+                        <span className="text-foreground text-base font-semibold">
                           {selectedConvo.customerContext?.name ||
                             selectedConvo.lead?.name ||
                             selectedConvo.phone_number}
                         </span>
                         {selectedConvo.ops_customer_id && (
-                          <span className="rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400">
+                          <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300">
                             Scheduled Customer
                           </span>
                         )}
@@ -930,12 +941,15 @@ export function ConversationsView({
                       <div className="flex items-center gap-1.5">
                         <a
                           href={`tel:${selectedConvo.phone_number}`}
-                          className="text-xs text-blue-400 hover:underline"
+                          className="text-xs text-blue-700 hover:underline dark:text-blue-400"
                           onClick={(e) => e.stopPropagation()}
                         >
                           {selectedConvo.phone_number}
                         </a>
-                        <CallButton phoneNumber={selectedConvo.phone_number} />
+                        <CallButton
+                          phoneNumber={selectedConvo.phone_number}
+                          className="text-green-700 hover:bg-green-100 hover:text-green-800 dark:text-green-400 dark:hover:bg-green-500/20 dark:hover:text-green-300"
+                        />
                         {getStatusBadge(selectedConvo.status)}
                       </div>
                     </div>
@@ -966,7 +980,7 @@ export function ConversationsView({
                   }{' '}
                   messages
                   {getSourceLabel(selectedConvo.source) && (
-                    <span className="ml-1 text-slate-500">
+                    <span className="text-muted-foreground ml-1">
                       · {getSourceLabel(selectedConvo.source)}
                     </span>
                   )}
@@ -977,13 +991,13 @@ export function ConversationsView({
                   (selectedConvo.customerContext.email ||
                     selectedConvo.customerContext.address ||
                     selectedConvo.customerContext.invoice) && (
-                    <div className="mb-3 space-y-1.5 rounded-lg border border-white/10 bg-white/[0.03] p-3 text-xs">
+                    <div className="bg-muted/40 mb-3 space-y-1.5 rounded-lg border p-3 text-xs">
                       {selectedConvo.customerContext.email && (
                         <div className="flex items-center gap-2">
-                          <span className="text-slate-500">Email</span>
+                          <span className="text-muted-foreground">Email</span>
                           <a
                             href={`mailto:${selectedConvo.customerContext.email}`}
-                            className="truncate text-blue-400 hover:underline"
+                            className="truncate text-blue-700 hover:underline dark:text-blue-400"
                             onClick={(e) => e.stopPropagation()}
                           >
                             {selectedConvo.customerContext.email}
@@ -992,19 +1006,21 @@ export function ConversationsView({
                       )}
                       {selectedConvo.customerContext.address && (
                         <div className="flex items-start gap-2">
-                          <span className="mt-px text-slate-500">Address</span>
+                          <span className="text-muted-foreground mt-px">
+                            Address
+                          </span>
                           {selectedConvo.customerContext.mapsUrl ? (
                             <a
                               href={selectedConvo.customerContext.mapsUrl}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="text-blue-400 hover:underline"
+                              className="text-blue-700 hover:underline dark:text-blue-400"
                               onClick={(e) => e.stopPropagation()}
                             >
                               {selectedConvo.customerContext.address}
                             </a>
                           ) : (
-                            <span className="text-slate-300">
+                            <span className="text-foreground">
                               {selectedConvo.customerContext.address}
                             </span>
                           )}
@@ -1016,7 +1032,7 @@ export function ConversationsView({
                             href={`/admin/operations/invoices/${selectedConvo.customerContext.invoice.id}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 font-medium text-emerald-300 hover:bg-emerald-500/20"
+                            className="inline-flex items-center gap-1.5 rounded-md border border-emerald-600/30 bg-emerald-50 px-2 py-1 font-medium text-emerald-800 hover:bg-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300 dark:hover:bg-emerald-500/20"
                             onClick={(e) => e.stopPropagation()}
                           >
                             View invoice
@@ -1033,11 +1049,11 @@ export function ConversationsView({
                               className={`rounded px-1.5 py-0.5 text-[10px] font-medium capitalize ${
                                 selectedConvo.customerContext.invoice
                                   .paymentStatus === 'paid'
-                                  ? 'bg-emerald-500/15 text-emerald-400'
+                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300'
                                   : selectedConvo.customerContext.invoice
                                         .paymentStatus === 'unpaid'
-                                    ? 'bg-amber-500/15 text-amber-400'
-                                    : 'bg-slate-500/20 text-slate-400'
+                                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300'
+                                    : 'bg-slate-200 text-slate-700 dark:bg-slate-500/20 dark:text-slate-300'
                               }`}
                             >
                               {selectedConvo.customerContext.invoice.paymentStatus.replace(
@@ -1065,7 +1081,7 @@ export function ConversationsView({
                                       markingPaidInvoiceId ===
                                       selectedConvo.customerContext?.invoice?.id
                                     }
-                                    className="rounded border border-slate-600 bg-slate-700/50 px-1.5 py-0.5 text-[10px] text-slate-300 capitalize hover:border-emerald-500/50 hover:bg-emerald-500/10 hover:text-emerald-300 disabled:opacity-50"
+                                    className="rounded border border-slate-300 bg-white px-1.5 py-0.5 text-[10px] text-slate-700 capitalize hover:border-emerald-600/50 hover:bg-emerald-50 hover:text-emerald-800 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-700/50 dark:text-slate-300 dark:hover:border-emerald-500/50 dark:hover:bg-emerald-500/10 dark:hover:text-emerald-300"
                                   >
                                     {markingPaidInvoiceId ===
                                     selectedConvo.customerContext?.invoice?.id
@@ -1236,8 +1252,8 @@ export function ConversationsView({
                           }
                           className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
                             autoOn
-                              ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
-                              : 'border-amber-500/40 bg-amber-500/15 text-amber-300'
+                              ? 'border-emerald-600/40 bg-emerald-50 text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-300'
+                              : 'border-amber-600/40 bg-amber-50 text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-300'
                           } ${lsa ? 'cursor-not-allowed opacity-90' : 'hover:brightness-110'}`}
                         >
                           {autoReplyUpdating ? (
@@ -1258,7 +1274,7 @@ export function ConversationsView({
                           <Button
                             size="sm"
                             variant="outline"
-                            className="border-emerald-500/40 text-emerald-400 hover:border-emerald-400 hover:text-emerald-300"
+                            className="border-emerald-600/40 text-emerald-800 hover:border-emerald-700 hover:text-emerald-900 dark:border-emerald-500/40 dark:text-emerald-400 dark:hover:border-emerald-400 dark:hover:text-emerald-300"
                             onClick={() => void handleAskHarry()}
                             disabled={harryDraftLoading}
                           >
