@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Resend } from 'resend'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
+import { assertTechInvoiceAccess } from '@/lib/ops/tech-job-access'
 import { sendCustomerSMS, sendCustomerSMSWithResult } from '@/lib/twilio'
 import {
   getQBInvoicePaymentLink,
@@ -147,9 +148,15 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    await requireAnyRole(['admin', 'owner', 'dispatcher'])
+    const access = await requireAnyRole([
+      'admin',
+      'owner',
+      'dispatcher',
+      'tech',
+    ])
     const supabase = createAdminClient()
     const { id } = await params
+    await assertTechInvoiceAccess(supabase, access, id)
     const body = (await request.json()) as {
       channel: 'sms' | 'email' | 'both'
       type?:

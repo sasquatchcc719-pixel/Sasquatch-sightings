@@ -13,7 +13,7 @@ function slugify(value: string): string {
 
 export async function GET() {
   try {
-    await requireAnyRole(['admin', 'owner', 'dispatcher', 'marketing'])
+    await requireAnyRole(['admin', 'owner', 'dispatcher', 'marketing', 'tech'])
     const supabase = createAdminClient()
     const { data, error } = await supabase
       .from('service_catalog_items')

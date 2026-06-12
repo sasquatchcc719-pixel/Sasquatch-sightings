@@ -4,6 +4,7 @@ import { ArrowLeft } from 'lucide-react'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { getAssignedTechAppointment } from '@/lib/tech/appointments'
+import { InvoiceDetail } from '@/components/admin/ops/invoice-detail'
 import { TechJobDetail } from '@/components/tech/tech-job-detail'
 
 export default async function TechJobPage({
@@ -32,7 +33,11 @@ export default async function TechJobPage({
         <ArrowLeft className="h-4 w-4" />
         Back to today
       </Link>
-      <TechJobDetail initialAppointment={appointment} />
+      {appointment.invoice && !appointment.hidePricing ? (
+        <InvoiceDetail invoiceId={appointment.invoice.id} mode="tech" />
+      ) : (
+        <TechJobDetail initialAppointment={appointment} />
+      )}
     </div>
   )
 }

@@ -3,7 +3,7 @@ import { requireAnyRole } from '@/lib/auth'
 
 export async function GET(request: NextRequest) {
   try {
-    await requireAnyRole(['admin', 'owner', 'dispatcher', 'marketing'])
+    await requireAnyRole(['admin', 'owner', 'dispatcher', 'marketing', 'tech'])
 
     const { searchParams } = new URL(request.url)
     const address = searchParams.get('address')

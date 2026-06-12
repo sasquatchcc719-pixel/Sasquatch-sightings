@@ -10,6 +10,7 @@ import {
 import { enqueue } from '@/lib/echo/enqueue'
 import { enrollCustomerInDrip } from '@/lib/ops/drip-campaign'
 import { buildJobUrl, notifyGoogleIndexing } from '@/lib/google-indexing'
+import { assertTechInvoiceAccess } from '@/lib/ops/tech-job-access'
 import sharp from 'sharp'
 
 type Params = { params: Promise<{ id: string }> }
@@ -60,9 +61,15 @@ async function resolveServiceId(
 
 export async function POST(request: NextRequest, { params }: Params) {
   try {
-    await requireAnyRole(['admin', 'owner', 'dispatcher'])
+    const access = await requireAnyRole([
+      'admin',
+      'owner',
+      'dispatcher',
+      'tech',
+    ])
     const supabase = createAdminClient()
     const { id: invoiceId } = await params
+    await assertTechInvoiceAccess(supabase, access, invoiceId)
 
     const formData = await request.formData()
     const imageFile = formData.get('image') as File | null
