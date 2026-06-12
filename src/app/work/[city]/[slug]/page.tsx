@@ -196,13 +196,13 @@ export default async function JobPage({ params }: PageProps) {
             <div className="flex items-center justify-between">
               <Link href="/" className="flex items-center">
                 <img
-                  src="/clean-no-background.svg"
+                  src="https://sightings.sasquatchcarpet.com/clean-no-background.svg"
                   alt="Sasquatch Carpet Cleaning"
                   className="h-12 w-auto object-contain md:h-14"
                 />
               </Link>
               <Button asChild>
-                <a href="sms:7192498791?body=Hi!%20I%27d%20like%20to%20get%20a%20quote%20and%20book%20a%20cleaning.">
+                <a href="https://www.sasquatchcarpet.com/#instant-quote">
                   Book Now
                 </a>
               </Button>
@@ -283,7 +283,7 @@ export default async function JobPage({ params }: PageProps) {
                   </p>
                   <div className="flex flex-col justify-center gap-4 sm:flex-row">
                     <Button size="lg" asChild>
-                      <a href="sms:7192498791?body=Hi!%20I%27d%20like%20to%20get%20a%20quote%20and%20book%20a%20cleaning.">
+                      <a href="https://www.sasquatchcarpet.com/#instant-quote">
                         Book Online
                       </a>
                     </Button>

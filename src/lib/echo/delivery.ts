@@ -75,9 +75,12 @@ async function deliverToChannel(
   )
 }
 
-// Booking page used as the Offer "Redeem" / CTA destination.
+// Booking page used as the Offer "Redeem" / CTA destination. The marketing
+// site has no /book route (soft-404s) — the booking widget is the home-page
+// #instant-quote section, which anchor-scrolls into view on load.
 const BOOKING_URL =
-  process.env.ECHO_BOOKING_URL || 'https://www.sasquatchcarpet.com/book'
+  process.env.ECHO_BOOKING_URL ||
+  'https://www.sasquatchcarpet.com/#instant-quote'
 
 export type PromoPostInput = {
   id: string
