@@ -74,12 +74,9 @@ interface PromoPost {
 
 interface SocialDraft {
   id: string
-  post_type:
-    | 'educational'
-    | 'milestone'
-    | 'seasonal_tip'
-    | 'local_seo'
-    | 'behind_scenes'
+  // Free-form string: the Echo V2 engine emits types like "recent_work" that
+  // aren't in DRAFT_TYPE_META. Never index the meta map without a fallback.
+  post_type: string
   title: string | null
   body: string
   status: 'draft' | 'approved' | 'posted' | 'rejected'
@@ -88,15 +85,29 @@ interface SocialDraft {
   created_at: string
 }
 
-const DRAFT_TYPE_META: Record<
-  SocialDraft['post_type'],
-  { label: string; icon: React.ComponentType<{ className?: string }> }
-> = {
+type DraftTypeMeta = {
+  label: string
+  icon: React.ComponentType<{ className?: string }>
+}
+
+const DRAFT_TYPE_META: Record<string, DraftTypeMeta> = {
+  recent_work: { label: 'Recent Work', icon: Briefcase },
   educational: { label: 'Educational', icon: BookOpen },
   milestone: { label: 'Milestone', icon: Trophy },
   seasonal_tip: { label: 'Seasonal Tip', icon: Lightbulb },
   local_seo: { label: 'Local SEO', icon: MapPin },
   behind_scenes: { label: 'Behind the Scenes', icon: Camera },
+}
+
+// Fallback so an unrecognized post_type renders a generic badge instead of
+// throwing and taking down the whole page (this is what crashed it before).
+const DEFAULT_DRAFT_TYPE_META: DraftTypeMeta = {
+  label: 'Job Post',
+  icon: ImagePlay,
+}
+
+function draftTypeMeta(postType: string): DraftTypeMeta {
+  return DRAFT_TYPE_META[postType] ?? DEFAULT_DRAFT_TYPE_META
 }
 
 function StatusBadge({ postedAt }: { postedAt: string | null }) {
@@ -130,7 +141,7 @@ function DraftCard({
   const [saving, setSaving] = useState(false)
   const [result, setResult] = useState<string | null>(null)
 
-  const meta = DRAFT_TYPE_META[draft.post_type]
+  const meta = draftTypeMeta(draft.post_type)
   const Icon = meta.icon
 
   const handleSaveEdit = async () => {
