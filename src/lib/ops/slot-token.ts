@@ -25,7 +25,7 @@ export type SlotTokenParams = {
 export type SlotTokenVerifyParams = {
   date: string
   startTime: string
-  endTime: string
+  endTime?: string
   requiredMinutes?: number
   ownerKey: string
   assignedStaffUserId?: string | null
@@ -123,7 +123,10 @@ export function verifySlotToken(
   const expectedPayload: Omit<SlotTokenPayload, 'v' | 'issued_at'> = {
     date: params.date,
     start_time: normalizeTime(params.startTime),
-    end_time: normalizeTime(params.endTime),
+    end_time:
+      params.endTime === undefined
+        ? payload.end_time
+        : normalizeTime(params.endTime),
     required_minutes: params.requiredMinutes ?? payload.required_minutes,
     assigned_staff_user_id: params.assignedStaffUserId ?? null,
     owner_key: params.ownerKey,

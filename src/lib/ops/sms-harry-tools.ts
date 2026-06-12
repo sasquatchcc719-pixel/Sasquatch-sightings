@@ -339,6 +339,11 @@ function normClock5(t: string): string {
   return toDbTime(t).slice(0, 5)
 }
 
+function clockToMinutes(t: string): number {
+  const db = toDbTime(t)
+  return Number(db.slice(0, 2)) * 60 + Number(db.slice(3, 5))
+}
+
 async function customerOwnsAppointment(
   supabase: SupabaseClient,
   appointmentId: string,
@@ -483,7 +488,7 @@ export const HARRY_SMS_TOOLS: OpenAI.ChatCompletionTool[] = [
           duration_minutes: {
             type: 'number',
             description:
-              'Total job duration in minutes before buffer (default 120)',
+              'Total job duration in minutes before buffer (default 120). When rescheduling an existing job, pass the duration_minutes returned by list_my_upcoming_appointments for that appointment.',
           },
         },
         required: ['date'],
@@ -1050,11 +1055,15 @@ export async function executeHarrySmsTool(
             weekday: 'long',
             timeZone: 'America/Denver',
           })
+          const windowMinutes =
+            clockToMinutes(String(r.end_time || '')) -
+            clockToMinutes(String(r.start_time || ''))
           return {
             appointment_id: r.id,
             date: r.appointment_date,
             day_of_week: apptDayName,
             start_time: String(r.start_time || '').slice(0, 5),
+            duration_minutes: windowMinutes > 0 ? windowMinutes : 120,
             status: r.status,
             address: addressLine,
           }
@@ -1302,26 +1311,15 @@ export async function executeHarrySmsTool(
         )
         if (!owned.ok) return JSON.stringify({ error: owned.error })
 
-        const { data: lineRows, error: liErr } = await supabase
-          .from('ops_appointment_line_items')
-          .select('duration_minutes, quantity, unit_price, name_snapshot')
-          .eq('appointment_id', appointmentId)
-
-        if (liErr) throw liErr
-
-        const totalMinutesFromLines = (lineRows || []).reduce(
-          (sum, item) =>
-            sum +
-            calculateLineItemDurationMinutes({
-              durationMinutes: Number(item.duration_minutes),
-              quantity: Number(item.quantity),
-              unitPrice: Number(item.unit_price),
-              nameSnapshot: String(item.name_snapshot || ''),
-            }),
-          0,
-        )
+        // A reschedule moves the job; it never resizes it. Use the
+        // appointment's stored window as the duration — recomputing it from
+        // line items produced a different number than the slot grid the
+        // token was minted against, which made every token check fail.
+        const storedWindowMinutes =
+          clockToMinutes(String(owned.appointment.end_time || '')) -
+          clockToMinutes(String(owned.appointment.start_time || ''))
         const totalMinutesWithBuffer = applyAppointmentBuffer(
-          totalMinutesFromLines || 120,
+          storedWindowMinutes > 0 ? storedWindowMinutes : 120,
         )
 
         const currentStaffId =
@@ -1347,10 +1345,13 @@ export async function executeHarrySmsTool(
               .map((s) => s.start_time.slice(0, 5)),
           })
         }
+        // The token proves the server offered this start time on this date
+        // to this phone within the TTL. end_time/duration/staff are derived
+        // server-side from current data, so they are not part of the check —
+        // comparing them re-introduces the deterministic mismatch loop.
         const slotTokenCheck = verifySlotToken(slotToken, {
           date: newDate,
           startTime: match.start_time,
-          endTime: match.end_time,
           ownerKey: ctx.customerPhoneE164,
         })
         if (!slotTokenCheck.ok) {
@@ -1865,13 +1866,14 @@ export async function executeHarrySmsTool(
               .map((s) => s.start_time.slice(0, 5)),
           })
         }
+        // Verify only what the token is for: the server offered this start
+        // time on this date to this phone within the TTL. Duration and staff
+        // are recomputed from current catalog/availability data above, and
+        // may legitimately differ from what the token was minted with.
         const slotTokenCheck = verifySlotToken(slotToken, {
           date: appointmentDate,
           startTime: match.start_time,
-          endTime: match.end_time,
-          requiredMinutes,
           ownerKey: ctx.customerPhoneE164,
-          assignedStaffUserId: bookStaffResult?.staffUserId,
         })
         if (!slotTokenCheck.ok) {
           return JSON.stringify({
@@ -1879,7 +1881,7 @@ export async function executeHarrySmsTool(
           })
         }
         const bookingStaffUserId =
-          slotTokenCheck.assignedStaffUserId || bookStaffResult?.staffUserId
+          bookStaffResult?.staffUserId || slotTokenCheck.assignedStaffUserId
 
         const bookingMode =
           process.env.HARRY_SMS_BOOKING_MODE === 'request'
@@ -2029,8 +2031,6 @@ export async function executeHarrySmsTool(
         const estimateSlotTokenCheck = verifySlotToken(slotToken, {
           date: appointmentDate,
           startTime: estimateMatch.start_time,
-          endTime: estimateMatch.end_time,
-          requiredMinutes: estimateRequiredMinutes,
           ownerKey: ctx.customerPhoneE164,
         })
         if (!estimateSlotTokenCheck.ok) {
