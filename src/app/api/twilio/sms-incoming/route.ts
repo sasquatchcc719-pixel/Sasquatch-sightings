@@ -33,6 +33,10 @@ import {
   buildApplicantReplyTelegramMessage,
   sendRangerTelegramMessage,
 } from '@/lib/ranger/telegram'
+import {
+  getInboundSmsCustomerContext,
+  renderInboundSmsCustomerContext,
+} from '@/lib/twilio/inbound-sms-customer-context'
 
 // Harry's tool loop (up to 8 model rounds + tool calls + recovery retries)
 // can legitimately run several minutes; the platform default would kill the
@@ -904,14 +908,34 @@ export async function POST(request: NextRequest) {
         .replace(/"/g, '&quot;')
     }
 
+    const supabase = createAdminClient()
+
     async function sendInboundEmail(aiReply: string | null) {
       const safeBody = escapeHtml(messageBody)
       const safeReply = aiReply ? escapeHtml(aiReply) : ''
+      let customerContext
+      try {
+        customerContext = await getInboundSmsCustomerContext(
+          supabase,
+          normalizedPhone,
+          mountainDateIso(),
+        )
+      } catch (contextError) {
+        console.error(
+          '❌ Failed to load customer context for inbound email:',
+          contextError,
+        )
+      }
+      const customerContextHtml =
+        renderInboundSmsCustomerContext(customerContext)
+      const subjectIdentity = customerContext?.customer.name
+        ? `${customerContext.customer.name} (${normalizedPhone})`
+        : normalizedPhone
       try {
         await resend.emails.send({
           from: 'Sasquatch SMS <onboarding@resend.dev>',
           to: 'sasquatchcc719@gmail.com',
-          subject: `📱 New SMS from ${normalizedPhone}`,
+          subject: `📱 New SMS from ${subjectIdentity}`,
           html: `
           <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #166534;">New Text Message Received</h2>
@@ -919,6 +943,7 @@ export async function POST(request: NextRequest) {
               <p style="margin: 0 0 8px 0;"><strong>📞 From:</strong> <a href="tel:${normalizedPhone}">${normalizedPhone}</a></p>
               <p style="margin: 0;"><strong>🕐 Time:</strong> ${timestamp}</p>
             </div>
+            ${customerContextHtml}
             <h3 style="color: #166534;">Customer said</h3>
             <div style="background: #f3f4f6; border-radius: 8px; padding: 16px; margin: 16px 0;">
               <p style="margin: 0; white-space: pre-wrap;">${safeBody}</p>
@@ -946,8 +971,6 @@ export async function POST(request: NextRequest) {
         console.error('❌ Failed to send email notification:', emailError)
       }
     }
-
-    const supabase = createAdminClient()
 
     // First, determine the source type from this message
     // ── Nextdoor notification intercept ──────────────────────────────────────
