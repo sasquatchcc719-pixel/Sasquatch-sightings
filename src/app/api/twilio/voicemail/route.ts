@@ -7,6 +7,10 @@ import {
   isHarryChannelEnabled,
   isHarryFunctionEnabled,
 } from '@/lib/harry/control'
+import {
+  hasMeaningfulVoicemailTranscription,
+  mergeVoicemailTranscriptMessage,
+} from '@/lib/voicemail-messages'
 import { createAdminClient } from '@/supabase/server'
 
 /** Twilio may run 120s+; default Vercel timeout would kill Harry before SMS. */
@@ -44,16 +48,7 @@ type ConversationMessage = {
 }
 
 function hasMeaningfulTranscription(transcriptionText: string | null): boolean {
-  const normalized = transcriptionText?.trim().toLowerCase() ?? ''
-
-  if (!normalized) return false
-
-  return ![
-    '(no transcription available)',
-    'no transcription',
-    '(none)',
-    'none',
-  ].includes(normalized)
+  return hasMeaningfulVoicemailTranscription(transcriptionText)
 }
 
 function shouldEmailVoicemail(
@@ -189,47 +184,28 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Add or merge voicemail (Twilio may POST recording first, transcription later — same RecordingSid)
+    // Twilio posts once when the recording is ready and again when transcription
+    // finishes. Only a meaningful transcript belongs in the text conversation.
     let messages = (existingConvo?.messages || []) as ConversationMessage[]
-    const voicemailMeta = {
-      type: 'voicemail' as const,
-      recording_url: audioUrl,
-      recording_sid: recordingSid,
-      duration: recordingDuration,
-      transcription: transcriptionText,
-    }
     if (conversationId && recordingSid) {
-      const idx = messages.findIndex(
-        (m) =>
-          m?.role === 'user' &&
-          m?.metadata?.type === 'voicemail' &&
-          m?.metadata?.recording_sid === recordingSid,
-      )
-      const line = `[VOICEMAIL - ${recordingDuration}s] ${transcriptionText || '(No transcription available)'}`
-      if (idx >= 0) {
-        const prev = messages[idx]
-        messages[idx] = {
-          ...prev,
-          content: line,
-          metadata: { ...prev.metadata, ...voicemailMeta },
-        }
-      } else {
-        messages.push({
-          role: 'user',
-          content: line,
-          timestamp: new Date().toISOString(),
-          metadata: voicemailMeta,
-        })
-      }
+      const merged = mergeVoicemailTranscriptMessage(messages, {
+        recordingSid,
+        recordingUrl: audioUrl,
+        recordingDuration,
+        transcription: transcriptionText,
+      })
+      messages = merged.messages as ConversationMessage[]
 
-      await supabase
-        .from('conversations')
-        .update({
-          messages,
-          status: 'escalated', // Mark as escalated so you see it
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', conversationId)
+      if (merged.changed) {
+        await supabase
+          .from('conversations')
+          .update({
+            messages,
+            status: 'escalated', // Mark as escalated so you see it
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', conversationId)
+      }
     }
 
     // Context-aware voicemail reply:

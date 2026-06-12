@@ -31,12 +31,17 @@ import { useRouter } from 'next/navigation'
 import { CallButton } from '@/components/admin/softphone'
 import { useQueryClient } from '@tanstack/react-query'
 import { countUnreadInboundMessages } from '@/lib/conversations-unread'
+import { getVisibleConversationMessages } from '@/lib/voicemail-messages'
 
 type Message = {
   role: 'user' | 'assistant' | 'system'
   content: string
   timestamp: string
   twilio_sid?: string
+  metadata?: {
+    type?: string
+    transcription?: string | null
+  } | null
 }
 
 type CustomerContext = {
@@ -717,7 +722,10 @@ export function ConversationsView({
             <div>
               {filteredConversations.map((convo, i) => {
                 const isLast = i === filteredConversations.length - 1
-                const lastMessage = convo.messages[convo.messages.length - 1]
+                const visibleMessages = getVisibleConversationMessages(
+                  convo.messages,
+                )
+                const lastMessage = visibleMessages[visibleMessages.length - 1]
                 const displayName =
                   convo.customerContext?.name || convo.lead?.name || null
                 const initials = getInitials(displayName, convo.phone_number)
@@ -952,7 +960,11 @@ export function ConversationsView({
                 )}
                 <div className="text-muted-foreground mb-3 text-xs">
                   Started {formatTime(selectedConvo.created_at)} ·{' '}
-                  {selectedConvo.messages.length} messages
+                  {
+                    getVisibleConversationMessages(selectedConvo.messages)
+                      .length
+                  }{' '}
+                  messages
                   {getSourceLabel(selectedConvo.source) && (
                     <span className="ml-1 text-slate-500">
                       · {getSourceLabel(selectedConvo.source)}
@@ -1144,42 +1156,45 @@ export function ConversationsView({
 
               {/* Messages */}
               <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-                {selectedConvo.messages.length === 0 ? (
+                {getVisibleConversationMessages(selectedConvo.messages)
+                  .length === 0 ? (
                   <div className="text-muted-foreground py-8 text-center text-sm">
                     No messages yet
                   </div>
                 ) : (
-                  selectedConvo.messages.map((msg, idx) => (
-                    <div
-                      key={idx}
-                      className={`flex ${msg.role === 'user' ? 'justify-start' : 'justify-end'}`}
-                    >
+                  getVisibleConversationMessages(selectedConvo.messages).map(
+                    (msg, idx) => (
                       <div
-                        className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 ${
-                          msg.role === 'user'
-                            ? 'rounded-tl-sm bg-slate-100 text-slate-900 dark:bg-white/10 dark:text-slate-100'
-                            : msg.role === 'system'
-                              ? 'rounded-tr-sm bg-red-50 text-xs text-red-800 dark:bg-red-500/15 dark:text-red-300'
-                              : 'rounded-tr-sm bg-emerald-700 text-white dark:bg-emerald-600/80'
-                        }`}
+                        key={idx}
+                        className={`flex ${msg.role === 'user' ? 'justify-start' : 'justify-end'}`}
                       >
-                        <div className="text-sm whitespace-pre-wrap">
-                          {msg.content}
-                        </div>
                         <div
-                          className={`mt-1 text-[10px] ${
+                          className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 ${
                             msg.role === 'user'
-                              ? 'text-slate-500 dark:text-slate-400'
+                              ? 'rounded-tl-sm bg-slate-100 text-slate-900 dark:bg-white/10 dark:text-slate-100'
                               : msg.role === 'system'
-                                ? 'text-red-600 dark:text-red-400'
-                                : 'text-white/75'
+                                ? 'rounded-tr-sm bg-red-50 text-xs text-red-800 dark:bg-red-500/15 dark:text-red-300'
+                                : 'rounded-tr-sm bg-emerald-700 text-white dark:bg-emerald-600/80'
                           }`}
                         >
-                          {msg.timestamp ? formatTime(msg.timestamp) : ''}
+                          <div className="text-sm whitespace-pre-wrap">
+                            {msg.content}
+                          </div>
+                          <div
+                            className={`mt-1 text-[10px] ${
+                              msg.role === 'user'
+                                ? 'text-slate-500 dark:text-slate-400'
+                                : msg.role === 'system'
+                                  ? 'text-red-600 dark:text-red-400'
+                                  : 'text-white/75'
+                            }`}
+                          >
+                            {msg.timestamp ? formatTime(msg.timestamp) : ''}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))
+                    ),
+                  )
                 )}
               </div>
 

@@ -1,3 +1,5 @@
+import { getVisibleConversationMessages } from './voicemail-messages'
+
 /**
  * Unread = inbound (role user) messages with timestamp after admin_read_at.
  * Aligned with Comms hub, conversation list, and /api/admin/conversations/unread-count.
@@ -8,7 +10,15 @@
  * - Inbound role is compared case-insensitively.
  */
 export type ConversationForUnread = {
-  messages: Array<{ role: string; timestamp?: string }>
+  messages: Array<{
+    role: string
+    content?: string
+    timestamp?: string
+    metadata?: {
+      type?: string
+      transcription?: string | null
+    } | null
+  }>
   admin_read_at: string | null
 }
 
@@ -39,7 +49,7 @@ export function countUnreadInboundMessages(
   const readAtRaw = conv.admin_read_at ? new Date(conv.admin_read_at) : null
   const readMs =
     readAtRaw && !Number.isNaN(readAtRaw.getTime()) ? readAtRaw.getTime() : null
-  return conv.messages.filter((m) => {
+  return getVisibleConversationMessages(conv.messages).filter((m) => {
     if (!isInboundUserMessage(m)) return false
     if (readMs == null) return true
     if (!m.timestamp) return false
