@@ -136,4 +136,43 @@ export const HARRY_PRODUCTION_REPLAY_CASES: HarryReplayCase[] = [
     expectedRecovery: 'none',
     expectFalseClaimBlocked: false,
   },
+  {
+    // Michelle Tsirlis, 2026-06-12: after the takeover was already delivered
+    // to Charles, the model promised "Let me try again ... One moment!" and
+    // the customer never heard anything else. A post-takeover retry promise
+    // must be replaced with the safe handoff message.
+    name: 'post-takeover retry promise is replaced with the safe handoff',
+    state: replayState({
+      phase: 'escalated',
+      takeover_status: 'requested',
+      takeover_reason: 'Automatic refresh_slot recovery failed.',
+      consecutive_failures: 4,
+      recovery_attempts: 2,
+      collected_fields: {
+        requested_date: '2026-06-17',
+        selected_start_time: '11:00',
+        duration_minutes: 120,
+      },
+    }),
+    outcome: {
+      toolCallId: 'replay-takeover-promise',
+      toolName: 'reschedule_job',
+      args: {
+        new_appointment_date: '2026-06-17',
+        new_start_time: '11:00',
+      },
+      result: {
+        error:
+          'slot_token does not match the selected appointment slot. You must call get_calendar_slots and use the returned slot_token before rescheduling.',
+      },
+      success: false,
+      error:
+        'slot_token does not match the selected appointment slot. You must call get_calendar_slots and use the returned slot_token before rescheduling.',
+      attemptKind: 'recovery_retry',
+    },
+    proposedResponse:
+      'Sorry, there was a system hiccup while rescheduling. Let me try again and get you confirmed for Wednesday, June 17 at 11 AM. One moment!',
+    expectedRecovery: 'refresh_slot',
+    expectFalseClaimBlocked: true,
+  },
 ]

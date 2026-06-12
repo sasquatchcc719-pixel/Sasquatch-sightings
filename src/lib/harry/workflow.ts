@@ -1041,7 +1041,15 @@ export function responseClaimsCompletedAction(response: string): boolean {
 }
 
 function responseClaimsHumanAlert(response: string): boolean {
-  return /\b(?:flagging|flagged|alerted|notified|sent (?:this|it) to) (?:this )?(?:for )?charles\b/i.test(
+  return /\b(?:flagging|flagged|alerted|notified|sent)\s+(?:this|that|it)?\s*(?:to|for)?\s*charles\b/i.test(
+    response,
+  )
+}
+
+// "One moment!", "let me try again", etc. — promises of another automated
+// attempt that nothing in the system will actually keep once the turn ends.
+function responsePromisesAnotherAttempt(response: string): boolean {
+  return /\b(?:one (?:moment|minute|sec(?:ond)?)|just a (?:moment|minute|sec(?:ond)?)|let me try|i'?ll try|try(?:ing)? (?:again|that|once more)|hold on|hang (?:on|tight)|give me a (?:moment|minute|sec(?:ond)?)|bear with me)\b/i.test(
     response,
   )
 }
@@ -1077,6 +1085,26 @@ export function guardHarryResponseAgainstOutcomes(params: {
   const claimsCompletedAction = responseClaimsCompletedAction(params.response)
   const claimsUnverifiedAlert =
     responseClaimsHumanAlert(params.response) && !takeoverConfirmed
+  const latestMutation = [...params.outcomes]
+    .reverse()
+    .find((outcome) => isHarryMutationTool(outcome.toolName))
+
+  // After a confirmed escalation, the customer must not be promised another
+  // automated attempt ("One moment, let me try again!") — Charles owns the
+  // request now and no retry will happen. Replace with the safe handoff.
+  if (
+    takeoverConfirmed &&
+    responsePromisesAnotherAttempt(params.response) &&
+    latestMutation?.success !== true &&
+    !responseClaimsHumanAlert(params.response)
+  ) {
+    const takeoverError =
+      latestMutation?.error || params.workflowState.last_action_error || null
+    return {
+      response: `I couldn't complete that change yet, so I won't tell you it's done. I've alerted Charles to review it. ${customerSafeActionError(takeoverError)}`,
+      blockedFalseClaim: true,
+    }
+  }
 
   if (!claimsCompletedAction && !claimsUnverifiedAlert) {
     return { response: params.response, blockedFalseClaim: false }
@@ -1089,10 +1117,6 @@ export function guardHarryResponseAgainstOutcomes(params: {
       blockedFalseClaim: true,
     }
   }
-
-  const latestMutation = [...params.outcomes]
-    .reverse()
-    .find((outcome) => isHarryMutationTool(outcome.toolName))
   const verifiedPriorSuccess =
     !latestMutation &&
     params.workflowState.phase === 'completed' &&

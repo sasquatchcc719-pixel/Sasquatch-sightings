@@ -162,6 +162,70 @@ describe('Harry workflow truth guard', () => {
     expect(allowed.blockedFalseClaim).toBe(false)
   })
 
+  it('recognizes an unverified "flagged it for Charles" claim', () => {
+    const blocked = guardHarryResponseAgainstOutcomes({
+      response: "I've flagged it for Charles and he'll follow up shortly.",
+      workflowState: workflowState(),
+      outcomes: [],
+    })
+
+    expect(blocked.blockedFalseClaim).toBe(true)
+    expect(blocked.response).toContain("couldn't complete")
+  })
+
+  it('replaces a post-takeover retry promise with the safe handoff', () => {
+    const guarded = guardHarryResponseAgainstOutcomes({
+      response:
+        'Sorry, there was a system hiccup while rescheduling. Let me try again and get you confirmed for Wednesday at 11 AM. One moment!',
+      workflowState: workflowState({
+        phase: 'escalated',
+        takeover_status: 'requested',
+      }),
+      outcomes: [
+        {
+          toolCallId: 'call-1',
+          toolName: 'reschedule_job',
+          args: {},
+          result: { error: 'slot_token does not match the selected slot' },
+          success: false,
+          error: 'slot_token does not match the selected slot',
+          attemptKind: 'recovery_retry',
+        },
+      ],
+    })
+
+    expect(guarded.blockedFalseClaim).toBe(true)
+    expect(guarded.response).toContain("I've alerted Charles")
+    expect(guarded.response).not.toContain('One moment')
+    expect(guarded.response).not.toContain('try again')
+  })
+
+  it('keeps a retry promise when the retry actually succeeded this turn', () => {
+    const response = 'That worked — one moment while I send your confirmation!'
+    const guarded = guardHarryResponseAgainstOutcomes({
+      response,
+      workflowState: workflowState({
+        phase: 'completed',
+        takeover_status: 'requested',
+        last_action_status: 'succeeded',
+        last_action_error: null,
+      }),
+      outcomes: [
+        {
+          toolCallId: 'call-1',
+          toolName: 'reschedule_job',
+          args: {},
+          result: { success: true },
+          success: true,
+          error: null,
+        },
+      ],
+    })
+
+    expect(guarded.blockedFalseClaim).toBe(false)
+    expect(guarded.response).toBe(response)
+  })
+
   it('allows an existing-appointment lookup to say the customer is all set', () => {
     const response = "You're all set for Monday at 11:00 AM."
     const guarded = guardHarryResponseAgainstOutcomes({
