@@ -1,8 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   applyAppointmentBuffer,
-  calculateLineItemDurationMinutes,
+  calculateAppointmentDurationFromTotal,
 } from '@/lib/ops/availability'
+import { findAppointmentConflict } from '@/lib/ops/availability-bundle'
 import {
   buildQuickBooksCustomerPayload,
   getQuickBooksSyncStatus,
@@ -447,30 +448,20 @@ export async function generateRecurringAppointments(
   const lineItems = template.line_items as TemplateLineItem[]
   const syncStatus = getQuickBooksSyncStatus()
 
-  const totalMinutesFromLines = lineItems.reduce(
-    (sum: number, item: TemplateLineItem) =>
-      sum +
-      calculateLineItemDurationMinutes({
-        durationMinutes: item.duration_minutes,
-        quantity: item.quantity,
-        unitPrice: item.unit_price,
-        nameSnapshot: item.name_snapshot,
-      }),
-    0,
-  )
-
-  const scheduledMinutes =
-    template.scheduled_duration_minutes > 0
-      ? template.scheduled_duration_minutes
-      : totalMinutesFromLines
-
-  const bufferedMinutes = applyAppointmentBuffer(scheduledMinutes)
-
   const quotedSubtotal = lineItems.reduce(
     (sum: number, item: TemplateLineItem) =>
       sum + item.unit_price * item.quantity,
     0,
   )
+
+  // The template's explicit duration wins; without one, size the visit the
+  // same way every other booking path does (dollar tiers on the subtotal).
+  const scheduledMinutes =
+    template.scheduled_duration_minutes > 0
+      ? template.scheduled_duration_minutes
+      : calculateAppointmentDurationFromTotal(quotedSubtotal)
+
+  const bufferedMinutes = applyAppointmentBuffer(scheduledMinutes)
   const discountAmount = Math.max(0, Number(template.discount_amount || 0))
   const quotedTotal = Math.max(0, quotedSubtotal - discountAmount)
 
@@ -499,6 +490,20 @@ export async function generateRecurringAppointments(
     try {
       const normalizedStart = `${startTime}:00`.slice(0, 8)
       const endTime = addMinutesToTime(startTime, bufferedMinutes)
+
+      // Recurring generation used to write straight onto the calendar with
+      // no conflict check, which is how overlapping evening jobs got booked.
+      const conflict = await findAppointmentConflict(supabase, {
+        date,
+        startTime: normalizedStart,
+        endTime,
+      })
+      if (conflict) {
+        result.errors.push(
+          `${date}: skipped — would overlap an existing appointment (${String(conflict.start_time).slice(0, 5)}–${String(conflict.end_time).slice(0, 5)}). Resolve the conflict and regenerate.`,
+        )
+        continue
+      }
 
       const { data: appointment, error: apptErr } = await supabase
         .from('ops_appointments')

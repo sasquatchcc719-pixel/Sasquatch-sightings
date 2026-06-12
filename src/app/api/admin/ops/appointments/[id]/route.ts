@@ -3,7 +3,7 @@ import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import {
   applyAppointmentBuffer,
-  calculateLineItemDurationMinutes,
+  calculateAppointmentDurationFromTotal,
 } from '@/lib/ops/availability'
 import {
   getOnMyWaySmsRenderedBody,
@@ -295,38 +295,28 @@ export async function PATCH(
       body.appointment_date != null &&
       String(body.appointment_date).trim() !== String(current.appointment_date)
 
-    const totalMinutesFromLines = (
-      current.ops_appointment_line_items || []
-    ).reduce(
+    // Size the window the same way every booking path does: dollar tiers on
+    // the line-item subtotal (see calculateAppointmentDurationFromTotal).
+    const lineItemSubtotal = (current.ops_appointment_line_items || []).reduce(
       (
         sum: number,
         item: {
-          duration_minutes: number
-          buffer_minutes: number
           quantity: number
           unit_price: number
-          name_snapshot: string
-          pricing_unit_snapshot?: string | null
         },
-      ) =>
-        sum +
-        calculateLineItemDurationMinutes({
-          durationMinutes: Number(item.duration_minutes),
-          quantity: Number(item.quantity),
-          pricingUnit: item.pricing_unit_snapshot ?? null,
-          unitPrice: Number(item.unit_price),
-          nameSnapshot: String(item.name_snapshot || ''),
-        }),
+      ) => sum + Number(item.unit_price) * Number(item.quantity),
       0,
     )
-    const totalMinutesWithBuffer = applyAppointmentBuffer(totalMinutesFromLines)
+    const totalMinutesWithBuffer = applyAppointmentBuffer(
+      calculateAppointmentDurationFromTotal(lineItemSubtotal),
+    )
 
     const explicitEndInput =
       typeof body.end_time === 'string' && String(body.end_time).trim() !== ''
     const recalcFromLines = body.recalculate_end_from_line_items === true
 
     let nextEndDb: string
-    if (recalcFromLines && totalMinutesFromLines > 0) {
+    if (recalcFromLines && lineItemSubtotal > 0) {
       nextEndDb = addMinutesToTime(
         nextStartDb.slice(0, 5),
         totalMinutesWithBuffer,

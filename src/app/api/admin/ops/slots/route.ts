@@ -3,7 +3,7 @@ import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import {
   applyAppointmentBuffer,
-  calculateLineItemDurationMinutes,
+  calculateAppointmentDurationFromTotal,
 } from '@/lib/ops/availability'
 import { getUnionedSlots } from '@/lib/ops/staff-availability'
 
@@ -65,15 +65,13 @@ export async function GET(request: NextRequest) {
         )
       }
 
-      const requiredMinutes = calculateLineItemDurationMinutes({
-        durationMinutes: service.default_duration_minutes,
-        quantity,
-        pricingUnit: service.pricing_unit ?? null,
-        unitPrice: Number(service.base_price || 0),
-        catalogSlug: service.slug ?? null,
-        nameSnapshot: service.name ?? null,
-      })
-      requiredMinutesWithBuffer = applyAppointmentBuffer(requiredMinutes)
+      // Match what a booking for this service mix would actually store:
+      // dollar tiers on the line subtotal.
+      requiredMinutesWithBuffer = applyAppointmentBuffer(
+        calculateAppointmentDurationFromTotal(
+          Number(service.base_price || 0) * Math.max(1, quantity),
+        ),
+      )
     }
 
     const slots = await getUnionedSlots({

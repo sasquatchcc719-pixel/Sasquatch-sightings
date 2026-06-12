@@ -15,6 +15,8 @@ import {
   beginHarryWorkflowTurn,
   formatHarryWorkflowContext,
   guardHarryResponseAgainstOutcomes,
+  HARRY_TAKEOVER_BLOCK_MESSAGE,
+  isHarryMutationBlockedByTakeover,
   markHarryWorkflowForTakeover,
   prepareHarryToolArgs,
   recordHarryToolOutcome,
@@ -573,6 +575,39 @@ CURRENT CUSTOMER CONTEXT:
               parsedArgs = JSON.parse(tc.function.arguments || '{}')
             } catch {
               /* keep empty */
+            }
+            // Hard gate, not a prompt rule: no calendar writes while Charles
+            // is actively handling an escalated conversation.
+            if (
+              isHarryMutationBlockedByTakeover({
+                toolName: tc.function.name,
+                workflowState,
+              })
+            ) {
+              const blockedOutcome: HarryToolOutcome = {
+                toolCallId: tc.id,
+                toolName: tc.function.name,
+                args: parsedArgs,
+                result: { error: HARRY_TAKEOVER_BLOCK_MESSAGE },
+                success: false,
+                error: HARRY_TAKEOVER_BLOCK_MESSAGE,
+              }
+              toolOutcomes.push(blockedOutcome)
+              await logToolCall({
+                agent: 'harry',
+                sessionId: smsOpsContext.sessionId ?? 'unknown',
+                toolName: tc.function.name,
+                args: parsedArgs,
+                result: blockedOutcome.result,
+                success: false,
+                error: HARRY_TAKEOVER_BLOCK_MESSAGE,
+              })
+              messages.push({
+                role: 'tool',
+                tool_call_id: tc.id,
+                content: JSON.stringify(blockedOutcome.result),
+              })
+              continue
             }
             const executableArgs = workflowState
               ? prepareHarryToolArgs({
