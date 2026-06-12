@@ -58,8 +58,8 @@ interface JobPost {
 interface PromoPost {
   id: string
   post_type: 'OFFER' | 'EVENT'
-  season: string
-  year: number
+  season: string | null
+  year: number | null
   month: number | null
   quarter: number | null
   title: string
@@ -69,6 +69,8 @@ interface PromoPost {
   offer_start_date: string | null
   offer_end_date: string | null
   social_posted_at: string | null
+  auto_repost: boolean
+  last_reposted_at: string | null
   created_at: string
 }
 
@@ -301,6 +303,16 @@ export default function SocialPostsPage() {
   const [echoSettings, setEchoSettings] = useState<EchoSettings | null>(null)
   const [savingSetting, setSavingSetting] = useState<string | null>(null)
 
+  const fetchPromos = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/promotional-posts')
+      const data = await res.json()
+      if (data.ok) setPromoPosts(data.posts || [])
+    } catch (err) {
+      console.error('Failed to load promos', err)
+    }
+  }, [])
+
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
@@ -308,12 +320,12 @@ export default function SocialPostsPage() {
       const data = await res.json()
       setSummary(data.summary)
       setJobPosts(data.jobPosts || [])
-      setPromoPosts(data.promoPosts || [])
       setDrafts(data.drafts || [])
+      await fetchPromos()
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [fetchPromos])
 
   const fetchEchoSettings = useCallback(async () => {
     try {
@@ -763,25 +775,23 @@ export default function SocialPostsPage() {
         {/* Promos Tab */}
         {activeTab === 'promos' && (
           <div className="space-y-4">
+            <CreateOfferForm onCreated={fetchPromos} />
+
             {loading && (
               <div className="py-12 text-center text-slate-500">Loading...</div>
             )}
 
             {promoPosts.map((post) => (
-              <PromoCard key={post.id} post={post} />
+              <PromoCard key={post.id} post={post} onUpdate={fetchPromos} />
             ))}
 
             {!loading && promoPosts.length === 0 && (
-              <div className="rounded-xl border border-dashed border-white/10 py-16 text-center">
+              <div className="rounded-xl border border-dashed border-white/10 py-12 text-center">
                 <Gift className="mx-auto mb-3 h-8 w-8 text-slate-600" />
-                <p className="text-slate-400">
-                  No promotional posts generated yet.
-                </p>
+                <p className="text-slate-400">No offers or events yet.</p>
                 <p className="mt-1 text-sm text-slate-500">
-                  Zapier will trigger the first one when it polls{' '}
-                  <code className="rounded bg-white/10 px-1.5 py-0.5 text-xs text-violet-300">
-                    /api/posts/promotional
-                  </code>
+                  Create an offer above — you enter the real deal, then hit Post
+                  to Google.
                 </p>
               </div>
             )}
@@ -828,9 +838,288 @@ function JobCard({ job }: { job: JobPost }) {
   )
 }
 
-function PromoCard({ post }: { post: PromoPost }) {
+function todayStr() {
+  return new Date().toISOString().split('T')[0]
+}
+function plusDaysStr(days: number) {
+  return new Date(Date.now() + days * 86400000).toISOString().split('T')[0]
+}
+
+function CreateOfferForm({ onCreated }: { onCreated: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [postType, setPostType] = useState<'OFFER' | 'EVENT'>('OFFER')
+  const [title, setTitle] = useState('')
+  const [body, setBody] = useState('')
+  const [coupon, setCoupon] = useState('')
+  const [startDate, setStartDate] = useState(todayStr())
+  const [endDate, setEndDate] = useState(plusDaysStr(30))
+  const [imageUrl, setImageUrl] = useState('')
+  const [autoRepost, setAutoRepost] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const reset = () => {
+    setTitle('')
+    setBody('')
+    setCoupon('')
+    setImageUrl('')
+    setStartDate(todayStr())
+    setEndDate(plusDaysStr(30))
+    setAutoRepost(true)
+    setPostType('OFFER')
+    setError(null)
+  }
+
+  const handleCreate = async () => {
+    setError(null)
+    if (!title.trim() || !body.trim()) {
+      setError('Headline and description are required.')
+      return
+    }
+    setSaving(true)
+    try {
+      const res = await fetch('/api/admin/promotional-posts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          post_type: postType,
+          title: title.trim(),
+          body: body.trim(),
+          coupon_code: coupon.trim() || null,
+          offer_start_date: startDate,
+          offer_end_date: endDate,
+          image_url: imageUrl.trim() || null,
+          auto_repost: autoRepost,
+        }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        reset()
+        setOpen(false)
+        onCreated()
+      } else {
+        setError(data.error ?? 'Failed to create')
+      }
+    } catch {
+      setError('Network error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-violet-400/30 bg-violet-500/5 py-4 text-sm font-medium text-violet-300 transition hover:bg-violet-500/10"
+      >
+        <Gift className="h-4 w-4" />
+        Create an Offer or Event
+      </button>
+    )
+  }
+
+  const inputCls =
+    'w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-violet-400 focus:outline-none'
+
+  return (
+    <div className="rounded-xl border border-violet-400/20 bg-violet-500/5 p-5">
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-sm font-semibold tracking-wider text-violet-200 uppercase">
+          New {postType === 'OFFER' ? 'Offer' : 'Event'}
+        </h2>
+        <div className="flex gap-1 rounded-lg bg-white/5 p-1">
+          {(['OFFER', 'EVENT'] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => setPostType(t)}
+              className={`rounded px-3 py-1 text-xs font-medium transition ${
+                postType === t
+                  ? 'bg-violet-500/30 text-violet-200'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {t === 'OFFER' ? 'Offer' : 'Event'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <div>
+          <label className="mb-1 block text-xs text-slate-400">
+            Headline{' '}
+            {postType === 'OFFER' && '(e.g. "$30 Off Your First Clean")'}
+          </label>
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            maxLength={58}
+            placeholder={
+              postType === 'OFFER'
+                ? '$30 Off Your First Carpet Cleaning'
+                : 'Spring Cleaning Season'
+            }
+            className={inputCls}
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-xs text-slate-400">
+            Description (what the deal is, in your words)
+          </label>
+          <textarea
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            rows={3}
+            maxLength={1500}
+            placeholder="New customers save $30 on their first cleaning. Serving Monument, Palmer Lake & the Tri-Lakes area. Book online or call us."
+            className={inputCls}
+          />
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {postType === 'OFFER' && (
+            <div>
+              <label className="mb-1 block text-xs text-slate-400">
+                Coupon code (optional)
+              </label>
+              <input
+                value={coupon}
+                onChange={(e) => setCoupon(e.target.value)}
+                placeholder="FRESH30"
+                className={inputCls}
+              />
+            </div>
+          )}
+          <div>
+            <label className="mb-1 block text-xs text-slate-400">
+              Image URL (optional)
+            </label>
+            <input
+              value={imageUrl}
+              onChange={(e) => setImageUrl(e.target.value)}
+              placeholder="https://..."
+              className={inputCls}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-slate-400">
+              Start date
+            </label>
+            <input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className={inputCls}
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-slate-400">
+              End date
+            </label>
+            <input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className={inputCls}
+            />
+          </div>
+        </div>
+
+        <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-white/5 p-3">
+          <input
+            type="checkbox"
+            checked={autoRepost}
+            onChange={(e) => setAutoRepost(e.target.checked)}
+            className="h-4 w-4 cursor-pointer accent-violet-500"
+          />
+          <span className="text-sm text-slate-200">
+            Auto-repost weekly while active
+          </span>
+          <span className="text-xs text-slate-500">
+            (Google offers expire — this keeps it live)
+          </span>
+        </label>
+
+        {error && <p className="text-xs text-red-400">{error}</p>}
+
+        <div className="flex gap-2">
+          <button
+            onClick={handleCreate}
+            disabled={saving}
+            className="flex items-center gap-1.5 rounded-lg bg-violet-500/25 px-4 py-2 text-sm font-medium text-violet-200 transition hover:bg-violet-500/35 disabled:opacity-50"
+          >
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+            Save
+          </button>
+          <button
+            onClick={() => {
+              reset()
+              setOpen(false)
+            }}
+            className="rounded-lg px-4 py-2 text-sm text-slate-400 transition hover:text-slate-200"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PromoCard({
+  post,
+  onUpdate,
+}: {
+  post: PromoPost
+  onUpdate: () => void
+}) {
   const isOffer = post.post_type === 'OFFER'
   const Icon = isOffer ? Gift : CalendarDays
+  const [posting, setPosting] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [result, setResult] = useState<string | null>(null)
+
+  const handlePost = async () => {
+    setPosting(true)
+    setResult(null)
+    try {
+      const res = await fetch(`/api/admin/promotional-posts/${post.id}/post`, {
+        method: 'POST',
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setResult('Posted to Google!')
+        onUpdate()
+      } else {
+        setResult(data.error ?? 'Failed to post')
+      }
+    } finally {
+      setPosting(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    setDeleting(true)
+    try {
+      await fetch(`/api/admin/promotional-posts/${post.id}`, {
+        method: 'DELETE',
+      })
+      onUpdate()
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  const toggleAutoRepost = async () => {
+    await fetch(`/api/admin/promotional-posts/${post.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ auto_repost: !post.auto_repost }),
+    })
+    onUpdate()
+  }
 
   return (
     <div className="rounded-xl border border-white/10 bg-white/5 p-5">
@@ -854,10 +1143,13 @@ function PromoCard({ post }: { post: PromoPost }) {
               <Icon className="h-3 w-3" />
               {post.post_type}
             </span>
-            <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs text-slate-300 capitalize">
-              {post.season} {post.year}
-            </span>
             <StatusBadge postedAt={post.social_posted_at} />
+            {post.auto_repost && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-400">
+                <RefreshCw className="h-3 w-3" />
+                Auto-repost
+              </span>
+            )}
           </div>
 
           <h3 className="mt-2 text-base font-semibold text-white">
@@ -877,9 +1169,50 @@ function PromoCard({ post }: { post: PromoPost }) {
                 {new Date(post.offer_end_date).toLocaleDateString()}
               </span>
             )}
-            <span>
-              Generated {new Date(post.created_at).toLocaleDateString()}
-            </span>
+          </div>
+
+          {result && (
+            <p
+              className={`mt-2 text-xs ${
+                result.includes('!') ? 'text-emerald-400' : 'text-red-400'
+              }`}
+            >
+              {result}
+            </p>
+          )}
+
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <button
+              onClick={handlePost}
+              disabled={posting}
+              className="flex items-center gap-1.5 rounded-lg bg-emerald-500/20 px-3 py-1.5 text-xs font-medium text-emerald-300 transition hover:bg-emerald-500/30 disabled:opacity-50"
+            >
+              {posting ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Globe className="h-3 w-3" />
+              )}
+              Post to Google
+            </button>
+            <button
+              onClick={toggleAutoRepost}
+              className="flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-medium text-slate-300 transition hover:bg-white/20"
+            >
+              <RefreshCw className="h-3 w-3" />
+              {post.auto_repost ? 'Stop auto-repost' : 'Auto-repost'}
+            </button>
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs text-slate-500 transition hover:text-red-400 disabled:opacity-50"
+            >
+              {deleting ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Trash2 className="h-3 w-3" />
+              )}
+              Delete
+            </button>
           </div>
         </div>
       </div>

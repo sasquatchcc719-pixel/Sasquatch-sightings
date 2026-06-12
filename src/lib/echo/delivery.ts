@@ -75,6 +75,64 @@ async function deliverToChannel(
   )
 }
 
+// Booking page used as the Offer "Redeem" / CTA destination.
+const BOOKING_URL =
+  process.env.ECHO_BOOKING_URL || 'https://www.sasquatchcarpet.com/book'
+
+export type PromoPostInput = {
+  id: string
+  post_type: string // 'OFFER' | 'EVENT'
+  title: string
+  body: string
+  image_url: string | null
+  coupon_code: string | null
+  terms_conditions?: string | null
+  offer_start_date: string | null // 'YYYY-MM-DD'
+  offer_end_date: string | null
+}
+
+function toIsoStart(date: string | null): string {
+  return date ? `${date}T00:00:00Z` : new Date().toISOString()
+}
+function toIsoEnd(date: string | null): string {
+  return date ? `${date}T23:59:59Z` : new Date().toISOString()
+}
+
+/**
+ * Post an Offer or Event to Google Business Profile. Unlike job posts, the
+ * content (the actual deal/terms) is author-supplied by Charles — Echo never
+ * invents discounts. Returns the same shape as deliverToChannel.
+ */
+export async function deliverPromoToGoogle(
+  promo: PromoPostInput,
+): Promise<{ ok: boolean; detail: string }> {
+  const isOffer = promo.post_type === 'OFFER'
+  const params: Record<string, unknown> = {
+    location: GBP_LOCATION,
+    topic_type: isOffer ? 'OFFER' : 'EVENT',
+    post_summary: promo.body,
+    // Google requires an event title + schedule for both OFFER and EVENT posts.
+    event_title: promo.title,
+    event_start: toIsoStart(promo.offer_start_date),
+    event_end: toIsoEnd(promo.offer_end_date),
+    call_to_action_type: 'BOOK',
+    call_to_action_url: BOOKING_URL,
+    ...(promo.image_url ? { photo_source_url: promo.image_url } : {}),
+  }
+  if (isOffer) {
+    if (promo.coupon_code) params.offer_coupon_code = promo.coupon_code
+    params.offer_redeem_online_url = BOOKING_URL
+    if (promo.terms_conditions)
+      params.offer_terms_conditions = promo.terms_conditions
+  }
+  return zapierExecute(
+    'GoogleMyBusinessCLIAPI',
+    'create_post',
+    params,
+    `Create and publish this Google Business Profile ${isOffer ? 'Offer' : 'Event'} post now. Every field is supplied — do not ask any follow-up questions.`,
+  )
+}
+
 export async function fire(
   draft: EchoDraft,
   job: EchoJobContext,
