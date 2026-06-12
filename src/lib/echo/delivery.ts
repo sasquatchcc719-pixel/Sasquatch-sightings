@@ -1,4 +1,6 @@
 import { createAdminClient } from '@/supabase/server'
+import { buildJobUrl } from '@/lib/google-indexing'
+import { zapierExecute } from './zapier-mcp'
 import type {
   Channel,
   DeliveryResult,
@@ -7,42 +9,13 @@ import type {
   EchoSettings,
 } from './types'
 
-const MAX_RETRIES = 3
-const RETRY_BASE_MS = 500
-
-const PUBLIC_BASE_URL =
-  process.env.NEXT_PUBLIC_SITE_URL ?? 'https://sightings.sasquatchcarpet.com'
-
-async function fireWebhook(
-  webhookUrl: string,
-  payload: Record<string, unknown>,
-): Promise<{ ok: boolean; status: number; body: string }> {
-  let lastErr = ''
-  let lastStatus = 0
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      const res = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      const body = await res.text()
-      lastStatus = res.status
-      if (res.ok) return { ok: true, status: res.status, body }
-      // 4xx is permanent — don't retry
-      if (res.status >= 400 && res.status < 500) {
-        return { ok: false, status: res.status, body }
-      }
-      lastErr = body
-    } catch (err) {
-      lastErr = err instanceof Error ? err.message : String(err)
-    }
-    if (attempt < MAX_RETRIES) {
-      await new Promise((r) => setTimeout(r, RETRY_BASE_MS * attempt))
-    }
-  }
-  return { ok: false, status: lastStatus, body: lastErr || 'Network error' }
-}
+// The Sasquatch Carpet Cleaning Google Business Profile location (verified via
+// the Zapier MCP location enum 2026-06-12). Override with GBP_LOCATION_ID.
+const GBP_LOCATION =
+  process.env.GBP_LOCATION_ID || 'locations/9600482684384871912'
+// Facebook page id, set once the page becomes reachable (it currently lives in
+// Meta Business Suite, which Zapier's Facebook integration cannot see).
+const FB_PAGE_ID = process.env.ECHO_FACEBOOK_PAGE_ID
 
 function buildPayload(draft: EchoDraft, job: EchoJobContext) {
   const service =
@@ -55,9 +28,51 @@ function buildPayload(draft: EchoDraft, job: EchoJobContext) {
     neighborhood: job.neighborhood,
     image_url: job.image_url,
     body: draft.body,
-    target_url: `${PUBLIC_BASE_URL}/jobs/${job.slug}`,
+    target_url: buildJobUrl(job.city ?? 'Colorado', job.slug),
     style: draft.style,
   }
+}
+
+/** Post a job to the right channel via the user's Zapier MCP server. */
+async function deliverToChannel(
+  channel: Channel,
+  draft: EchoDraft,
+  job: EchoJobContext,
+): Promise<{ ok: boolean; detail: string }> {
+  const jobUrl = buildJobUrl(job.city ?? 'Colorado', job.slug)
+  if (channel === 'google') {
+    return zapierExecute(
+      'GoogleMyBusinessCLIAPI',
+      'create_post',
+      {
+        location: GBP_LOCATION,
+        topic_type: 'STANDARD',
+        post_summary: draft.body,
+        call_to_action_type: 'LEARN_MORE',
+        call_to_action_url: jobUrl,
+        ...(job.image_url ? { photo_source_url: job.image_url } : {}),
+      },
+      'Create and publish this Google Business Profile post now. Every field is supplied — do not ask any follow-up questions.',
+    )
+  }
+  // facebook
+  if (!FB_PAGE_ID) {
+    return {
+      ok: false,
+      detail:
+        'ECHO_FACEBOOK_PAGE_ID not set (page not yet reachable via Zapier — Meta Business Suite)',
+    }
+  }
+  return zapierExecute(
+    'FacebookV2CLIAPI',
+    'create_page_post',
+    {
+      page: FB_PAGE_ID,
+      message: `${draft.body}\n\n${jobUrl}`,
+      ...(job.image_url ? { source: job.image_url } : {}),
+    },
+    'Create and publish this Facebook page post now. Every field is supplied — do not ask any follow-up questions.',
+  )
 }
 
 export async function fire(
@@ -92,24 +107,19 @@ export async function fire(
       continue
     }
 
-    const envKey =
-      channel === 'google'
-        ? 'ZAPIER_GOOGLE_WEBHOOK_URL'
-        : 'ZAPIER_FACEBOOK_WEBHOOK_URL'
-    const webhookUrl = process.env[envKey]
-    if (!webhookUrl) {
+    if (!process.env.ZAPIER_MCP_URL) {
       await supabase.from('social_post_log').insert({
         job_id: job.id,
         draft_id: draft.id,
         channel,
         status: 'failed',
-        reason: `${envKey} not configured`,
+        reason: 'ZAPIER_MCP_URL not configured',
         request_payload: payload,
       })
       results.push({
         channel,
         status: 'failed',
-        reason: `${envKey} not configured`,
+        reason: 'ZAPIER_MCP_URL not configured',
       })
       continue
     }
@@ -133,25 +143,21 @@ export async function fire(
       continue
     }
 
-    const result = await fireWebhook(webhookUrl, payload)
+    const result = await deliverToChannel(channel, draft, job)
     const status: DeliveryResult['status'] = result.ok ? 'success' : 'failed'
     await supabase.from('social_post_log').insert({
       job_id: job.id,
       draft_id: draft.id,
       channel,
       status,
-      reason: result.ok
-        ? null
-        : `HTTP ${result.status}: ${result.body.slice(0, 300)}`,
+      reason: result.ok ? null : result.detail.slice(0, 300),
       request_payload: payload,
-      response: { status: result.status, body: result.body.slice(0, 1000) },
+      response: { detail: result.detail.slice(0, 1000) },
     })
     results.push({
       channel,
       status,
-      reason: result.ok
-        ? undefined
-        : `HTTP ${result.status}: ${result.body.slice(0, 200)}`,
+      reason: result.ok ? undefined : result.detail.slice(0, 200),
     })
   }
 
