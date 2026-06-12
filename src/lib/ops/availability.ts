@@ -95,7 +95,7 @@ export const DEFAULT_FALLBACK_AVAILABILITY_TEMPLATES: AvailabilityTemplate[] = [
   },
 ]
 
-const ACTIVE_APPOINTMENT_STATUSES = new Set([
+export const ACTIVE_APPOINTMENT_STATUSES = new Set([
   'booked',
   'confirmed',
   'on_my_way',
@@ -163,8 +163,11 @@ export function calculateAppointmentDurationFromTotal(
 
 /**
  * @deprecated Use calculateAppointmentDurationFromTotal instead.
- * This function is kept for backwards compatibility but should not be used
- * for new code. Duration is now calculated from total dollar amount.
+ * ONLY legitimate remaining use: commercial-estimate MEASURING visits, where
+ * time scales with the space, not the dollar amount (admin estimates route).
+ * Never use this to size or availability-check a real cleaning job — it
+ * ignores quantity (15 stair-steps count as 1 minute), which caused the
+ * 2026-06-12 slot-token incident and can double-book the calendar.
  */
 export function calculateLineItemDurationMinutes(params: {
   durationMinutes: number

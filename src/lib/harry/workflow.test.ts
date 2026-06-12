@@ -3,6 +3,7 @@ import {
   advanceHarryWorkflowState,
   formatHarryWorkflowContext,
   guardHarryResponseAgainstOutcomes,
+  isHarryMutationBlockedByTakeover,
   prepareHarryToolArgs,
   requiredHarryToolForState,
   responseClaimsCompletedAction,
@@ -48,13 +49,35 @@ function workflowState(
 
 describe('Harry workflow truth guard', () => {
   it('recognizes customer-facing action completion claims', () => {
-    expect(responseClaimsCompletedAction("You're all set for Monday.")).toBe(
-      true,
-    )
-    expect(responseClaimsCompletedAction("I've saved the garage code.")).toBe(
-      true,
-    )
-    expect(responseClaimsCompletedAction('Which time works best?')).toBe(false)
+    const claims = [
+      "You're all set for Monday.",
+      "I've saved the garage code.",
+      'Your appointment is now at 3 PM',
+      'Done! See you Tuesday at 2 PM',
+      'I moved it to Friday at 9 AM',
+      "It's all booked for next Thursday",
+      "You're set for tomorrow at 2 PM",
+      'All set! See you Friday at 9 AM',
+      'Your cleaning is confirmed for Monday',
+      'Yes, your appointment has been rescheduled.',
+    ]
+    for (const claim of claims) {
+      expect(responseClaimsCompletedAction(claim), claim).toBe(true)
+    }
+  })
+
+  it('lets restatements and questions pass without a completion claim', () => {
+    const innocents = [
+      'Which time works best?',
+      "Got it — what's your email?",
+      "You're currently booked for Tuesday, June 16 at 1:00 PM. Would you like a later time that same day?",
+      'Your appointment is scheduled for Tuesday at 1 PM — want a different day?',
+      "Once you pick a time, you'll be confirmed for that slot",
+      'What day next week works best for you for a 1 PM appointment?',
+    ]
+    for (const innocent of innocents) {
+      expect(responseClaimsCompletedAction(innocent), innocent).toBe(false)
+    }
   })
 
   it('blocks a false confirmation after a failed action, even on a later turn', () => {
@@ -198,6 +221,59 @@ describe('Harry workflow truth guard', () => {
     expect(guarded.response).toContain("I've alerted Charles")
     expect(guarded.response).not.toContain('One moment')
     expect(guarded.response).not.toContain('try again')
+  })
+
+  it('hard-blocks mutation tools while a recent takeover is active', () => {
+    const escalated = workflowState({
+      phase: 'escalated',
+      takeover_status: 'requested',
+      taken_over_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+    })
+
+    expect(
+      isHarryMutationBlockedByTakeover({
+        toolName: 'reschedule_job',
+        workflowState: escalated,
+      }),
+    ).toBe(true)
+    // Read-only tools stay available so Harry can still answer questions.
+    expect(
+      isHarryMutationBlockedByTakeover({
+        toolName: 'list_my_upcoming_appointments',
+        workflowState: escalated,
+      }),
+    ).toBe(false)
+    // The freeze expires after 24h so an uncleared takeover can't
+    // permanently brick the conversation.
+    expect(
+      isHarryMutationBlockedByTakeover({
+        toolName: 'reschedule_job',
+        workflowState: workflowState({
+          phase: 'escalated',
+          takeover_status: 'requested',
+          taken_over_at: new Date(
+            Date.now() - 25 * 60 * 60 * 1000,
+          ).toISOString(),
+        }),
+      }),
+    ).toBe(false)
+    // No takeover, no block.
+    expect(
+      isHarryMutationBlockedByTakeover({
+        toolName: 'reschedule_job',
+        workflowState: workflowState(),
+      }),
+    ).toBe(false)
+    // Requested takeover with a missing timestamp stays frozen (fail safe).
+    expect(
+      isHarryMutationBlockedByTakeover({
+        toolName: 'book_new_job',
+        workflowState: workflowState({
+          takeover_status: 'requested',
+          taken_over_at: null,
+        }),
+      }),
+    ).toBe(true)
   })
 
   it('keeps a retry promise when the retry actually succeeded this turn', () => {

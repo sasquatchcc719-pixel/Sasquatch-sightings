@@ -2,8 +2,9 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type OpenAI from 'openai'
 import {
   applyAppointmentBuffer,
-  calculateLineItemDurationMinutes,
+  calculateAppointmentDurationFromTotal,
 } from '@/lib/ops/availability'
+import { findAppointmentConflict } from '@/lib/ops/availability-bundle'
 import {
   createAiStyleBooking,
   GOOGLE_LSA_LEAD_RECOVERY_AMOUNT,
@@ -932,6 +933,32 @@ export async function executeHarrySmsTool(
           })
         }
 
+        // The in-memory map is per-serverless-instance and resets on cold
+        // starts, so also dedupe against the durable action ledger — without
+        // this, Charles gets duplicate reports whenever the instance rotates
+        // mid-window.
+        if (ctx.sessionId) {
+          const since = new Date(now - ISSUE_REPORT_WINDOW_MS).toISOString()
+          const { data: recentReport } = await supabase
+            .from('harry_action_ledger')
+            .select('id')
+            .eq('conversation_id', ctx.sessionId)
+            .eq('tool_name', 'report_operational_problem')
+            .eq('success', true)
+            .gte('created_at', since)
+            .limit(1)
+            .maybeSingle()
+          if (recentReport) {
+            issueReportTimestamps.set(ctx.customerPhoneE164, now)
+            return JSON.stringify({
+              success: true,
+              already_reported: true,
+              message:
+                'A Harry issue report was already sent for this customer recently. Do not send another duplicate report; give the customer the safe follow-up message.',
+            })
+          }
+        }
+
         const report = [
           '🚧 Harry issue report',
           `Phone: ${ctx.customerPhoneE164}`,
@@ -1486,7 +1513,6 @@ export async function executeHarrySmsTool(
           })
         }
 
-        let updateLineItemsTotalMinutes = 0
         const builtLines = parsedItems
           .map((req) => {
             const cat = catalogRows.find((c) => c.id === req.service_id)
@@ -1494,14 +1520,6 @@ export async function executeHarrySmsTool(
             const unitPrice = Number(cat.base_price || 0)
             const quantity = req.quantity
             const durationMinutes = cat.default_duration_minutes || 60
-            updateLineItemsTotalMinutes += calculateLineItemDurationMinutes({
-              durationMinutes,
-              quantity,
-              pricingUnit: cat.pricing_unit ?? null,
-              unitPrice,
-              catalogSlug: cat.slug ?? null,
-              nameSnapshot: cat.name,
-            })
             return {
               appointment_id: appointmentId,
               name_snapshot: cat.name,
@@ -1535,6 +1553,32 @@ export async function executeHarrySmsTool(
           })
         }
 
+        // Size the job the same way booking does: dollar tiers on the new
+        // subtotal. Then make sure the resized window still fits BEFORE
+        // touching any data — growing into a neighboring job double-books
+        // the calendar.
+        const newTotal = builtLines.reduce((s, l) => s + l.line_total, 0)
+        const buffered = applyAppointmentBuffer(
+          calculateAppointmentDurationFromTotal(newTotal),
+        )
+        const newEndTime = addMinutesToTime(
+          owned.appointment.start_time.slice(0, 5),
+          buffered,
+        )
+
+        const conflict = await findAppointmentConflict(supabase, {
+          date: owned.appointment.appointment_date,
+          startTime: owned.appointment.start_time,
+          endTime: newEndTime,
+          excludeAppointmentId: appointmentId,
+          staffUserId: owned.appointment.assigned_staff_user_id || undefined,
+        })
+        if (conflict) {
+          return JSON.stringify({
+            error: `The updated services make this job about ${Math.round((buffered / 60) * 10) / 10} hours, which no longer fits the current ${String(owned.appointment.start_time).slice(0, 5)} time slot. Keep the services as-is, or use get_calendar_slots and reschedule_job to move the job to a slot with enough room first, then update the services.`,
+          })
+        }
+
         // Delete old line items and insert new ones
         await supabase
           .from('ops_appointment_line_items')
@@ -1542,15 +1586,6 @@ export async function executeHarrySmsTool(
           .eq('appointment_id', appointmentId)
 
         await supabase.from('ops_appointment_line_items').insert(builtLines)
-
-        // Recalculate total and end_time
-        const newTotal = builtLines.reduce((s, l) => s + l.line_total, 0)
-        const totalMinutes = updateLineItemsTotalMinutes
-        const buffered = applyAppointmentBuffer(totalMinutes || 120)
-        const newEndTime = addMinutesToTime(
-          owned.appointment.start_time.slice(0, 5),
-          buffered,
-        )
 
         await supabase
           .from('ops_appointments')
@@ -1829,24 +1864,13 @@ export async function executeHarrySmsTool(
           })
         }
 
-        const totalMinutes = (catalogRows || []).reduce((sum, row) => {
-          const qty =
-            parsedLineItems.find((p) => p.service_id === row.id)?.quantity ?? 1
-          const unitPrice = Number(row.base_price || 0)
-          return (
-            sum +
-            calculateLineItemDurationMinutes({
-              durationMinutes: Number(row.default_duration_minutes || 60),
-              quantity: qty,
-              pricingUnit: row.pricing_unit ?? null,
-              unitPrice,
-              catalogSlug: row.slug ?? null,
-              nameSnapshot: null,
-            })
-          )
-        }, 0)
-
-        const requiredMinutes = applyAppointmentBuffer(totalMinutes || 120)
+        // Check availability with the SAME duration createAiStyleBooking will
+        // store (dollar tiers on the service subtotal). Checking with a
+        // different formula let bookings pass a small-window check and then
+        // store a 2-4 hour block over a neighboring appointment.
+        const requiredMinutes = applyAppointmentBuffer(
+          calculateAppointmentDurationFromTotal(preTotal),
+        )
         const bookStaffResult = await getStaffPrioritizedSlots({
           supabase,
           date: appointmentDate,

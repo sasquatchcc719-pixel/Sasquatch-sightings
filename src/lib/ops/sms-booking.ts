@@ -2,7 +2,6 @@ import type { createAdminClient } from '@/supabase/server'
 import {
   applyAppointmentBuffer,
   calendarEventsToAppointmentWindows,
-  calculateLineItemDurationMinutes,
   getAvailableSlots,
 } from '@/lib/ops/availability'
 
@@ -85,10 +84,7 @@ export async function buildSmsSlotOffer(params: {
   }
 
   const requiredMinutes = applyAppointmentBuffer(
-    calculateLineItemDurationMinutes({
-      durationMinutes: Number(selectedService.default_duration_minutes),
-      quantity: 1,
-    }),
+    Math.max(0, Math.round(Number(selectedService.default_duration_minutes))),
   )
 
   const slotLabels: string[] = []

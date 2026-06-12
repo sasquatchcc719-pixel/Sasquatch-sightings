@@ -3,7 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type OpenAI from 'openai'
 import {
   applyAppointmentBuffer,
-  calculateLineItemDurationMinutes,
+  calculateAppointmentDurationFromTotal,
 } from '@/lib/ops/availability'
 import { createAiStyleBooking } from '@/lib/ops/create-ai-style-booking'
 import { createAiStyleEstimate } from '@/lib/ops/create-ai-style-estimate'
@@ -526,24 +526,12 @@ export async function executeScoutWebTool(
           })
         }
 
-        const totalMinutes = catalogRows.reduce((sum, row) => {
-          const qty =
-            parsedLineItems.find((p) => p.service_id === row.id)?.quantity ?? 1
-          const unitPrice = Number(row.base_price || 0)
-          return (
-            sum +
-            calculateLineItemDurationMinutes({
-              durationMinutes: Number(row.default_duration_minutes || 60),
-              quantity: qty,
-              pricingUnit: row.pricing_unit ?? null,
-              unitPrice,
-              catalogSlug: row.slug ?? null,
-              nameSnapshot: null,
-            })
-          )
-        }, 0)
-
-        const requiredMinutes = applyAppointmentBuffer(totalMinutes || 120)
+        // Check availability with the SAME duration createAiStyleBooking
+        // stores (dollar tiers on the service subtotal) so the verified slot
+        // and the stored calendar block can never disagree.
+        const requiredMinutes = applyAppointmentBuffer(
+          calculateAppointmentDurationFromTotal(preServiceTotal),
+        )
         const bookStaffResult = await getStaffPrioritizedSlots({
           supabase,
           date: appointmentDate,

@@ -276,4 +276,76 @@ describe('Harry escalation safe-message delivery against the real DB', () => {
     expect(kinds).toContain('reschedule_job:recovery_retry:false')
     expect(kinds).toContain('report_operational_problem:takeover:true')
   }, 60_000)
+
+  it('hard-blocks mutation tools on the next turn while escalated', async () => {
+    // The previous test left this conversation escalated (takeover requested,
+    // taken_over_at = now). A follow-up customer demand to "just do it" must
+    // NOT reach the reschedule executor.
+    const { data: ledgerBefore } = await supabase
+      .from('harry_action_ledger')
+      .select('id')
+      .eq('conversation_id', conversationId)
+      .eq('tool_name', 'reschedule_job')
+    const rescheduleRowsBefore = (ledgerBefore || []).length
+
+    let openaiCalls = 0
+    server.use(
+      http.post('https://api.openai.com/v1/chat/completions', () => {
+        openaiCalls += 1
+        if (openaiCalls === 1) {
+          return HttpResponse.json(
+            toolCallCompletion(
+              'reschedule_job',
+              {
+                appointment_ref: 'appointment_1',
+                new_appointment_date: rescheduleTarget,
+                new_start_time: '09:00',
+                slot_token: 'garbage.garbage',
+              },
+              `call_${runId}_blocked`,
+            ),
+          )
+        }
+        return HttpResponse.json(
+          textCompletion(
+            'Charles is personally handling your reschedule and will follow up with you shortly.',
+          ),
+        )
+      }),
+    )
+
+    const { generateAIResponse } = await import('@/lib/openai-chat')
+    const response = await generateAIResponse(
+      'Can you please just reschedule it now?',
+      [],
+      undefined,
+      'inbound',
+      undefined,
+      {
+        customerPhoneE164: TEST_PHONE,
+        sessionId: conversationId,
+      },
+    )
+
+    // The model saw the BLOCKED tool result and answered honestly.
+    expect(response).toContain('Charles')
+    expect(response).not.toContain('One moment')
+
+    // The reschedule executor never ran: no new ledger rows for it.
+    const { data: ledgerAfter } = await supabase
+      .from('harry_action_ledger')
+      .select('id')
+      .eq('conversation_id', conversationId)
+      .eq('tool_name', 'reschedule_job')
+    expect((ledgerAfter || []).length).toBe(rescheduleRowsBefore)
+
+    // The blocked attempt is still visible for forensics in ai_tool_calls.
+    const { data: blockedCalls } = await supabase
+      .from('ai_tool_calls')
+      .select('error')
+      .eq('session_id', conversationId)
+      .eq('tool_name', 'reschedule_job')
+      .ilike('error', 'BLOCKED%')
+    expect((blockedCalls || []).length).toBeGreaterThan(0)
+  }, 60_000)
 })

@@ -1,7 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
+  ACTIVE_APPOINTMENT_STATUSES,
   calendarEventsToAppointmentWindows,
   DEFAULT_FALLBACK_AVAILABILITY_TEMPLATES,
+  timeToMinutes,
   type AvailabilityTemplate,
   type AvailabilityOverride,
   type ExistingAppointmentWindow,
@@ -11,6 +13,47 @@ export type AvailabilityBundle = {
   templates: AvailabilityTemplate[]
   overrides: AvailabilityOverride[]
   appointments: ExistingAppointmentWindow[]
+}
+
+/**
+ * Returns the first active appointment or blocking calendar event that
+ * overlaps the proposed window on `date`, or null when the window is clear.
+ * When `staffUserId` is given, only that tech's calendar is checked (plus
+ * staff-agnostic calendar events); otherwise every appointment counts.
+ */
+export async function findAppointmentConflict(
+  supabase: SupabaseClient,
+  params: {
+    date: string
+    startTime: string
+    endTime: string
+    excludeAppointmentId?: string
+    staffUserId?: string
+  },
+): Promise<ExistingAppointmentWindow | null> {
+  const bundle = await loadAvailabilityBundle(supabase, params.date, {
+    excludeAppointmentId: params.excludeAppointmentId,
+    staffUserId: params.staffUserId,
+  })
+  const proposedStart = timeToMinutes(params.startTime)
+  const proposedEnd = timeToMinutes(params.endTime)
+  if (!(proposedEnd > proposedStart)) return null
+
+  for (const window of bundle.appointments) {
+    if (window.appointment_date !== params.date) continue
+    if (
+      window.status !== 'booked' &&
+      !ACTIVE_APPOINTMENT_STATUSES.has(window.status)
+    ) {
+      continue
+    }
+    const existingStart = timeToMinutes(window.start_time)
+    const existingEnd = timeToMinutes(window.end_time)
+    if (proposedStart < existingEnd && existingStart < proposedEnd) {
+      return window
+    }
+  }
+  return null
 }
 
 export async function loadAvailabilityBundle(

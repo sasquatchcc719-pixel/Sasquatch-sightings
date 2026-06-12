@@ -474,6 +474,31 @@ export function isHarryMutationTool(toolName: string): boolean {
   return MUTATING_TOOLS.has(toolName)
 }
 
+// While Charles is actively handling an escalated conversation, Harry must
+// not write to the calendar no matter what the model decides — the prompt
+// rule alone proved unreliable. The freeze expires after 24h so a takeover
+// that nobody clears can't permanently brick a customer's conversation.
+const TAKEOVER_MUTATION_FREEZE_MS = 24 * 60 * 60 * 1000
+
+export const HARRY_TAKEOVER_BLOCK_MESSAGE =
+  'BLOCKED: this conversation was escalated to Charles and he is handling it personally. Do not retry the change and do not claim anything was completed. Tell the customer Charles has it and will follow up with them directly.'
+
+export function isHarryMutationBlockedByTakeover(params: {
+  toolName: string
+  workflowState: HarryWorkflowState | null
+  now?: number
+}): boolean {
+  const state = params.workflowState
+  if (!state || !isHarryMutationTool(params.toolName)) return false
+  if (state.takeover_status !== 'requested') return false
+  const takenOverAt = state.taken_over_at
+    ? Date.parse(state.taken_over_at)
+    : NaN
+  // A requested takeover with no usable timestamp stays frozen — fail safe.
+  if (!Number.isFinite(takenOverAt)) return true
+  return (params.now ?? Date.now()) - takenOverAt < TAKEOVER_MUTATION_FREEZE_MS
+}
+
 export async function loadHarryWorkflowState(
   supabase: SupabaseClient,
   conversationId: string,
@@ -1029,11 +1054,20 @@ Rules:
 `
 }
 
+// Tuned to catch completion CLAIMS while letting restatements of an existing
+// booking pass ("You're currently booked for Tuesday at 1 PM" must not trip
+// the guard mid-reschedule). Perfect tense, "now", "all set", "see you", and
+// first-person past verbs signal a claim; plain "is scheduled for" does not.
 const SUCCESS_CLAIM_PATTERNS = [
-  /\byou(?:'re| are) all set\b/i,
-  /\bi(?:'ve| have) (?:booked|rescheduled|updated|saved|added|moved)\b/i,
-  /\b(?:appointment|booking) (?:is|has been) (?:booked|confirmed|rescheduled|moved|updated)\b/i,
-  /\b(?:got it|done)[—,: -]+i(?:'ve| have) (?:saved|added|updated)\b/i,
+  /\byou(?:'re| are) (?:all set|set for)\b/i,
+  /\ball set\b/i,
+  /\bi(?:'ve| have)? (?:just )?(?:booked|rescheduled|updated|saved|added|moved|changed)\b/i,
+  /\b(?:appointment|booking|cleaning|service|job)\b[^.!?\n]{0,30}\bhas been (?:booked|confirmed|rescheduled|moved|updated|scheduled)\b/i,
+  /\b(?:appointment|booking|cleaning|service|job)\b[^.!?\n]{0,30}\b(?:is|'s) now\b/i,
+  /\bit(?:'s| is) (?:all )?(?:booked|confirmed|rescheduled|done|taken care of)\b/i,
+  /\b(?:is|are|'re|been) confirmed for\b/i,
+  /\bsee you (?:then|tomorrow|(?:on )?(?:mon|tues|wednes|thurs|fri|satur|sun)day)\b/i,
+  /\b(?:all )?done\b[^a-z]{0,3}[^.!?\n]{0,60}\b(?:booked|confirmed|scheduled|rescheduled|see you)\b/i,
 ]
 
 export function responseClaimsCompletedAction(response: string): boolean {

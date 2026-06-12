@@ -34,6 +34,11 @@ import {
   sendRangerTelegramMessage,
 } from '@/lib/ranger/telegram'
 
+// Harry's tool loop (up to 8 model rounds + tool calls + recovery retries)
+// can legitimately run several minutes; the platform default would kill the
+// webhook mid-turn and the customer's reply would never send.
+export const maxDuration = 300
+
 const resend = new Resend(process.env.RESEND_API_KEY)
 
 // Normalize phone number to E.164 format
@@ -1945,6 +1950,32 @@ If the customer says something changed, collect only the changed field and use t
         content: 'ERROR: Harry response pipeline failed',
         timestamp: new Date().toISOString(),
       })
+
+      // The customer must never get dead silence mid-conversation (June 4 +
+      // June 12 incidents): send a safe fallback before anything else.
+      const pipelineFallback =
+        "Sorry — I'm having technical trouble on my end right now. I've flagged this for Charles to follow up with you. If it's urgent, you can call (719) 249-8791."
+      try {
+        const fallbackSend = await sendCustomerSMSWithResult(
+          normalizedPhone,
+          pipelineFallback,
+          conversation.lead_id || undefined,
+          'ai_dispatcher_error_fallback',
+          toNumber || undefined,
+        )
+        messages.push({
+          role: 'assistant',
+          content: pipelineFallback,
+          timestamp: new Date().toISOString(),
+          twilio_sid: fallbackSend.sid,
+          sent_by: 'harry',
+        })
+      } catch (fallbackError) {
+        console.error(
+          'Failed to send pipeline-error fallback SMS:',
+          fallbackError,
+        )
+      }
 
       await supabase
         .from('conversations')
