@@ -3,12 +3,27 @@ import { requireAnyRole } from '@/lib/auth'
 import { getSettings, updateSettings } from '@/lib/echo/settings'
 import type { EchoSettings } from '@/lib/echo/types'
 
+// requireAnyRole throws a plain Error on auth failure; map those to 401 so an
+// unauthenticated request gets a clean Unauthorized instead of a 500 (which is
+// what made the Social Posts page look "crashed" when opened while logged out).
+function isAuthError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message.toLowerCase() : ''
+  return (
+    msg.includes('not authorized') ||
+    msg.includes('not authenticated') ||
+    msg.includes('not an admin')
+  )
+}
+
 export async function GET() {
   try {
     await requireAnyRole(['admin', 'owner', 'dispatcher'])
     const settings = await getSettings()
     return NextResponse.json({ ok: true, settings })
   } catch (err) {
+    if (isAuthError(err)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
     console.error('[echo/settings GET]', err)
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Failed to read settings' },
@@ -70,6 +85,9 @@ export async function PATCH(request: NextRequest) {
     const settings = await updateSettings(patch)
     return NextResponse.json({ ok: true, settings })
   } catch (err) {
+    if (isAuthError(err)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
     console.error('[echo/settings PATCH]', err)
     return NextResponse.json(
       {
