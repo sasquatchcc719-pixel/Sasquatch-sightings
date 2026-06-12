@@ -64,11 +64,29 @@ export async function GET() {
     const { data: drafts } = await admin
       .from('social_post_drafts')
       .select(
-        'id, post_type, title, body, status, context_data, posted_at, created_at',
+        'id, post_type, title, body, status, context_data, posted_at, created_at, job_id',
       )
       .in('status', ['draft', 'approved'])
       .order('created_at', { ascending: false })
       .limit(20)
+
+    // Attach the source job's photo so the draft cards can show a thumbnail
+    // (the image lives on the job, not the draft).
+    const jobIds = [
+      ...new Set((drafts || []).map((d) => d.job_id).filter(Boolean)),
+    ]
+    const imageByJob = new Map<string, string | null>()
+    if (jobIds.length > 0) {
+      const { data: jobImgs } = await admin
+        .from('jobs')
+        .select('id, image_url')
+        .in('id', jobIds)
+      for (const j of jobImgs || []) imageByJob.set(j.id, j.image_url)
+    }
+    const draftsWithImages = (drafts || []).map((d) => ({
+      ...d,
+      image_url: d.job_id ? (imageByJob.get(d.job_id) ?? null) : null,
+    }))
 
     return NextResponse.json({
       success: true,
@@ -76,12 +94,12 @@ export async function GET() {
         weekly_posts_sent: weeklyCount ?? 0,
         weekly_cap: 3,
         queued_jobs: queuedCount,
-        pending_drafts: (drafts || []).filter((d) => d.status === 'draft')
+        pending_drafts: draftsWithImages.filter((d) => d.status === 'draft')
           .length,
       },
       jobPosts: jobPosts || [],
       promoPosts: promoPosts || [],
-      drafts: drafts || [],
+      drafts: draftsWithImages,
     })
   } catch (error) {
     console.error('Social posts admin API error:', error)

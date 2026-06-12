@@ -84,6 +84,7 @@ interface SocialDraft {
   status: 'draft' | 'approved' | 'posted' | 'rejected'
   context_data: Record<string, unknown> | null
   posted_at: string | null
+  image_url: string | null
   created_at: string
 }
 
@@ -209,6 +210,16 @@ function DraftCard({
           Generated {new Date(draft.created_at).toLocaleDateString()}
         </span>
       </div>
+
+      {/* Photo that will go out with the post */}
+      {draft.image_url && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={draft.image_url}
+          alt={draft.title ?? 'Job photo'}
+          className="mb-3 h-40 w-full rounded-lg object-cover"
+        />
+      )}
 
       {/* Title */}
       {draft.title && (
