@@ -30,6 +30,7 @@ import {
   buildHarryTakeoverArgs,
   HARRY_TAKEOVER_SAFE_MESSAGE,
 } from '@/lib/harry/recovery'
+import { needsMinimumDisclaimer } from '@/lib/harry/minimum-disclaimer'
 import { buildReviewRequestContext } from '@/lib/ops/review-requests'
 
 const openai = process.env.OPENAI_API_KEY
@@ -241,28 +242,6 @@ When tools are available, you may call them to read/update THIS customer's appoi
 - book_commercial_estimate: commercial walkthroughs only (get_calendar_slots with duration_minutes=60 first).
 After a successful tool call, reply with a full line-item breakdown (except LSA — no math, just services + total).
 `
-
-/**
- * Post-processing guardrail: if a response quotes a price under $150 without
- * mentioning the minimum dispatch fee, re-prompt GPT to include it.
- */
-function needsMinimumDisclaimer(response: string): boolean {
-  const lower = response.toLowerCase()
-  if (lower.includes('minimum') || lower.includes('$150')) return false
-  if (
-    lower.includes('booked') ||
-    lower.includes('confirmed') ||
-    lower.includes('walkthrough')
-  )
-    return false
-
-  const priceMatches = response.match(/\$(\d+(?:\.\d{2})?)/g)
-  if (!priceMatches || priceMatches.length === 0) return false
-
-  const prices = priceMatches.map((p) => parseFloat(p.replace('$', '')))
-  const maxPrice = Math.max(...prices)
-  return maxPrice > 0 && maxPrice < 150
-}
 
 /**
  * Generate AI response for a customer message
