@@ -11,13 +11,9 @@ import {
 import { getQBConnectionStatus } from '@/lib/quickbooks-auth'
 import { generateInvoicePDF } from '@/lib/ops/pdf/generate'
 import { createSquarePaymentLink } from '@/lib/payments/square'
+import { buildVenmoPaymentLink } from '@/lib/payments/venmo'
 
 const VENMO_USERNAME = process.env.VENMO_BUSINESS_USERNAME ?? 'SasquatchCarpet'
-
-function buildVenmoLink(total: number, customerName: string): string {
-  const note = encodeURIComponent(`Sasquatch Carpet Cleaning - ${customerName}`)
-  return `https://venmo.com/${VENMO_USERNAME}?txn=pay&amount=${total.toFixed(2)}&note=${note}`
-}
 
 function buildSmsBody(
   customerName: string,
@@ -178,6 +174,7 @@ export async function POST(
       .select(
         `
         id,
+        invoice_number,
         payment_status,
         total,
         subtotal,
@@ -236,6 +233,13 @@ export async function POST(
     const customerPhone = customer?.phone ?? null
     const customerEmail = customer?.email ?? null
     const total = Number(invoice.total || 0)
+    const invoiceNumber = Number(invoice.invoice_number || 0)
+    if (!invoiceNumber) {
+      return NextResponse.json(
+        { error: 'Invoice number is missing for this invoice.' },
+        { status: 422 },
+      )
+    }
     const serviceDate = appointment?.appointment_date ?? ''
     const addressText = address
       ? `${address.street_1}, ${address.city}, ${address.state} ${address.zip_code}`
@@ -248,7 +252,12 @@ export async function POST(
       line_total: number
     }>
 
-    const venmoUrl = buildVenmoLink(total, customerName)
+    const venmoUrl = buildVenmoPaymentLink({
+      username: VENMO_USERNAME,
+      invoiceNumber,
+      amount: total,
+      customerName,
+    })
 
     // Fetch any job photos to include in the email
     const rawAppt = invoice.ops_appointments
@@ -282,6 +291,7 @@ export async function POST(
 
       const paymentUrl = await createSquarePaymentLink({
         invoiceId: id,
+        invoiceNumber,
         amount: total,
         customerName,
         description: addressText,
@@ -290,6 +300,7 @@ export async function POST(
       const linkBody = [
         `Hi ${customerName} — here's your invoice from Sasquatch Carpet Cleaning.`,
         ``,
+        `Invoice #${invoiceNumber}`,
         `Total due: $${total.toFixed(2)}`,
         `Pay securely by card: ${paymentUrl}`,
         ``,
@@ -316,6 +327,7 @@ export async function POST(
       const linkBody = [
         `Hi ${customerName} — here's your invoice from Sasquatch Carpet Cleaning.`,
         ``,
+        `Invoice #${invoiceNumber}`,
         `Total due: $${total.toFixed(2)}`,
         `Pay with Venmo: ${venmoUrl}`,
         ``,

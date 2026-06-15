@@ -47,6 +47,7 @@ export type TechAppointment = {
   quotedTotal: number | null
   invoice: {
     id: string
+    invoiceNumber: number | null
     status: string
     paymentStatus: string | null
     paymentMethod: string | null
@@ -99,6 +100,7 @@ const TECH_APPOINTMENT_SELECT = `
   ),
   ops_invoices (
     id,
+    invoice_number,
     status,
     payment_status,
     payment_method,
@@ -212,6 +214,7 @@ export function mapTechAppointment(
     row.ops_invoices as
       | {
           id: string
+          invoice_number?: number | null
           status?: string | null
           payment_status?: string | null
           payment_method?: string | null
@@ -226,6 +229,7 @@ export function mapTechAppointment(
         }
       | Array<{
           id: string
+          invoice_number?: number | null
           status?: string | null
           payment_status?: string | null
           payment_method?: string | null
@@ -302,6 +306,11 @@ export function mapTechAppointment(
     invoice: invoice
       ? {
           id: invoice.id,
+          invoiceNumber:
+            invoice.invoice_number === null ||
+            invoice.invoice_number === undefined
+              ? null
+              : Number(invoice.invoice_number),
           status: invoice.status ?? 'draft',
           paymentStatus: invoice.payment_status ?? null,
           paymentMethod: invoice.payment_method ?? null,

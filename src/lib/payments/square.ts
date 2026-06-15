@@ -14,6 +14,7 @@ function squareApiBaseUrl(): string {
 
 export async function createSquarePaymentLink(params: {
   invoiceId: string
+  invoiceNumber: number | string
   amount: number
   customerName: string
   description?: string | null
@@ -29,6 +30,7 @@ export async function createSquarePaymentLink(params: {
   if (!Number.isFinite(cents) || cents <= 0) {
     throw new Error('Invoice total must be greater than zero.')
   }
+  const invoiceReference = `Invoice #${String(params.invoiceNumber).trim()}`
 
   const response = await fetch(
     `${squareApiBaseUrl()}/v2/online-checkout/payment-links`,
@@ -42,7 +44,7 @@ export async function createSquarePaymentLink(params: {
       body: JSON.stringify({
         idempotency_key: `ops-invoice-${params.invoiceId}-${cents}`,
         quick_pay: {
-          name: `Sasquatch invoice - ${params.customerName}`,
+          name: `Sasquatch ${invoiceReference} - ${params.customerName}`,
           price_money: {
             amount: cents,
             currency: 'USD',
@@ -53,10 +55,10 @@ export async function createSquarePaymentLink(params: {
           ask_for_shipping_address: false,
         },
         description:
-          params.description ||
-          `Sasquatch Carpet Cleaning invoice ${params.invoiceId}`,
+          [invoiceReference, params.description].filter(Boolean).join(' - ') ||
+          `Sasquatch Carpet Cleaning ${invoiceReference}`,
         pre_populated_data: {
-          buyer_note: `Invoice ${params.invoiceId}`,
+          buyer_note: `Sasquatch Carpet Cleaning ${invoiceReference}`,
         },
       }),
     },

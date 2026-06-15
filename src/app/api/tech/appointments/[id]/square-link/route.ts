@@ -75,8 +75,16 @@ export async function POST(
 
     const customerName =
       appointment.businessName || appointment.customerName || 'Valued Customer'
+    const invoiceNumber = appointment.invoice.invoiceNumber
+    if (!invoiceNumber) {
+      return NextResponse.json(
+        { error: 'Invoice number is missing for this invoice' },
+        { status: 422 },
+      )
+    }
     const paymentUrl = await createSquarePaymentLink({
       invoiceId: appointment.invoice.id,
+      invoiceNumber,
       amount: total,
       customerName,
       description: `Job ${appointment.id}`,
@@ -85,6 +93,7 @@ export async function POST(
     const smsBody = [
       `Hi ${customerName} — here's your invoice from Sasquatch Carpet Cleaning.`,
       ``,
+      `Invoice #${invoiceNumber}`,
       `Total due: $${total.toFixed(2)}`,
       `Pay securely by card: ${paymentUrl}`,
       ``,
