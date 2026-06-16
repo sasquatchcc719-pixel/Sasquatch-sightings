@@ -142,20 +142,34 @@ function greeting(firstName?: string | null): string {
  * minimum, and asks. It never claims the job is "all set" and never silently
  * pads quantities to clear the floor (the $1,600 failure).
  */
-export function renderRemovalReply<T extends LineItem>(
-  plan: Extract<RemoveServicePlan<T>, { status: 'ok' }>,
-  firstName?: string | null,
-): string {
-  const hi = greeting(firstName)
-  if (plan.belowMinimum) {
+export function composeRemovalReply(params: {
+  removedName: string
+  newTotal: number
+  belowMinimum: boolean
+  firstName?: string | null
+}): string {
+  const hi = greeting(params.firstName)
+  if (params.belowMinimum) {
     return (
-      `I've taken the ${plan.removed.nameSnapshot} off${hi}. ` +
-      `That brings the cleaning total to $${money(plan.newTotal)}, which is below our $${MIN_JOB_TOTAL} minimum. ` +
+      `I've taken the ${params.removedName} off${hi}. ` +
+      `That brings the cleaning total to $${money(params.newTotal)}, which is below our $${MIN_JOB_TOTAL} minimum. ` +
       `Would you like to add another area, or should we keep it at the $${MIN_JOB_TOTAL} minimum?`
     )
   }
   return (
-    `Got it${hi}! I've removed the ${plan.removed.nameSnapshot}. ` +
-    `Your updated total is $${money(plan.newTotal)}.`
+    `Got it${hi}! I've removed the ${params.removedName}. ` +
+    `Your updated total is $${money(params.newTotal)}.`
   )
+}
+
+export function renderRemovalReply<T extends LineItem>(
+  plan: Extract<RemoveServicePlan<T>, { status: 'ok' }>,
+  firstName?: string | null,
+): string {
+  return composeRemovalReply({
+    removedName: plan.removed.nameSnapshot,
+    newTotal: plan.newTotal,
+    belowMinimum: plan.belowMinimum,
+    firstName,
+  })
 }
