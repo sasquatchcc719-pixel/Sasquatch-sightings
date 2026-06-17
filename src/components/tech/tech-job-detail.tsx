@@ -122,6 +122,14 @@ export function TechJobDetail({
     ? null
     : (appointment.invoice?.total ?? appointment.quotedTotal)
   const squareAmount = formatSquareAmount(payableTotal)
+  const areaMap =
+    appointment.recurringTemplateId &&
+    FLOOR_PLAN_MAPS[appointment.recurringTemplateId]
+      ? FLOOR_PLAN_MAPS[appointment.recurringTemplateId]
+      : null
+  const invoiceVisual =
+    appointment.photos.find((photo) => photo.publicUrl)?.publicUrl ??
+    (areaMap ? `/maps/${areaMap.file}` : null)
 
   async function updateJob(body: Record<string, unknown>) {
     setError(null)
@@ -452,7 +460,9 @@ export function TechJobDetail({
               variant={status === 'completed' ? 'default' : 'outline'}
               className={
                 status === 'completed'
-                  ? 'bg-emerald-500 text-slate-950 hover:bg-emerald-400'
+                  ? `bg-emerald-500 text-slate-950 hover:bg-emerald-400 ${
+                      appointment.hidePricing ? 'col-span-2 h-14 text-base' : ''
+                    }`
                   : 'border-white/20 bg-white/5 text-white'
               }
               disabled={loadingStatus !== null}
@@ -466,23 +476,25 @@ export function TechJobDetail({
               {label}
             </Button>
           ))}
-          <Button
-            variant="outline"
-            className="border-white/20 bg-white/5 text-white"
-            disabled={loadingStatus !== null}
-            onClick={() =>
-              void updateStatus('completed', {
-                skipCustomerCommunications: true,
-              })
-            }
-          >
-            {loadingStatus === 'completed_quiet' ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <CheckCircle2 className="h-4 w-4" />
-            )}
-            Quiet Close
-          </Button>
+          {!appointment.hidePricing ? (
+            <Button
+              variant="outline"
+              className="border-white/20 bg-white/5 text-white"
+              disabled={loadingStatus !== null}
+              onClick={() =>
+                void updateStatus('completed', {
+                  skipCustomerCommunications: true,
+                })
+              }
+            >
+              {loadingStatus === 'completed_quiet' ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <CheckCircle2 className="h-4 w-4" />
+              )}
+              Quiet Close
+            </Button>
+          ) : null}
         </div>
       </section>
 
@@ -496,6 +508,30 @@ export function TechJobDetail({
             </span>
           )}
         </div>
+
+        {appointment.hidePricing && invoiceVisual ? (
+          <div className="mb-3 overflow-hidden rounded-xl border border-white/10 bg-slate-950/50">
+            <Image
+              src={invoiceVisual}
+              alt={
+                areaMap
+                  ? `${areaMap.label} property area`
+                  : 'Recovery Village property photo'
+              }
+              width={900}
+              height={420}
+              className="max-h-64 w-full object-cover"
+            />
+            <div className="border-t border-white/10 px-3 py-2">
+              <p className="text-xs font-semibold tracking-wide text-slate-300 uppercase">
+                Property Area
+              </p>
+              <p className="text-sm text-slate-100">
+                {areaMap?.label ?? 'Job photos'}
+              </p>
+            </div>
+          </div>
+        ) : null}
 
         <div className="space-y-2">
           {appointment.lineItems.map((line, index) => (

@@ -2403,7 +2403,6 @@ function RecurringVisitPanel({
 
   const handleStatusChange = async (
     newStatus: 'booked' | 'on_my_way' | 'completed',
-    options: { skipCustomerCommunications?: boolean } = {},
   ) => {
     setSaving(true)
     try {
@@ -2413,9 +2412,6 @@ function RecurringVisitPanel({
         body: JSON.stringify({
           status: newStatus,
           ...(newStatus === 'booked' ? { on_my_way_at: null } : {}),
-          ...(options.skipCustomerCommunications
-            ? { skip_customer_communications: true }
-            : {}),
         }),
       })
       if (res.ok) {
@@ -2647,7 +2643,7 @@ function RecurringVisitPanel({
                   <Button
                     onClick={() => handleStatusChange('completed')}
                     disabled={saving}
-                    className="w-full"
+                    className="h-12 w-full text-base font-semibold"
                   >
                     {saving ? (
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -2655,23 +2651,6 @@ function RecurringVisitPanel({
                       <CheckCircle className="mr-2 h-4 w-4" />
                     )}
                     Close Out Job
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() =>
-                      handleStatusChange('completed', {
-                        skipCustomerCommunications: true,
-                      })
-                    }
-                    disabled={saving}
-                    className="w-full"
-                  >
-                    {saving ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <CheckCircle className="mr-2 h-4 w-4" />
-                    )}
-                    Quiet Close
                   </Button>
                   <Button
                     variant="outline"

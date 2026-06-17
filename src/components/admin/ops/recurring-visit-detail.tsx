@@ -847,7 +847,9 @@ export default function RecurringVisitDetail({
                 invoice.
               </p>
             )}
-            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            <div
+              className={`mt-4 grid gap-2 ${isBatch ? '' : 'sm:grid-cols-2'}`}
+            >
               <Button
                 className="h-14 border-green-600 bg-green-600 text-base font-semibold text-white hover:bg-green-700"
                 disabled={actionLoading !== null}
@@ -862,19 +864,21 @@ export default function RecurringVisitDetail({
                   ? 'Closing out…'
                   : 'Close Out Job'}
               </Button>
-              <Button
-                variant="outline"
-                className="h-14 text-base font-semibold"
-                disabled={actionLoading !== null}
-                onClick={() => void handleCloseOut(true)}
-              >
-                {actionLoading === 'quiet_completed' ? (
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                ) : (
-                  <CheckCircle className="mr-2 h-5 w-5" />
-                )}
-                Quiet Close
-              </Button>
+              {!isBatch ? (
+                <Button
+                  variant="outline"
+                  className="h-14 text-base font-semibold"
+                  disabled={actionLoading !== null}
+                  onClick={() => void handleCloseOut(true)}
+                >
+                  {actionLoading === 'quiet_completed' ? (
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  ) : (
+                    <CheckCircle className="mr-2 h-5 w-5" />
+                  )}
+                  Quiet Close
+                </Button>
+              ) : null}
             </div>
           </>
         )}
