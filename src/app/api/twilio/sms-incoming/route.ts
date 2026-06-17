@@ -1019,7 +1019,7 @@ export async function POST(request: NextRequest) {
     // old Harry is disabled, and any error falls through to normal handling.
     if (process.env.HARRY_NEXT_ENABLED === 'true') {
       try {
-        const { maybeProposeServiceEditFromSms } =
+        const { maybeProposeServiceEditFromSms, maybeRunBookingIntake } =
           await import('@/lib/harry-next/inbound')
         const harryNext = await maybeProposeServiceEditFromSms({
           supabase,
@@ -1029,6 +1029,18 @@ export async function POST(request: NextRequest) {
         if (harryNext.handled) {
           console.log(
             '[Harry-next] Proposed a service edit for approval — suppressing other handling',
+          )
+          return emptyTwiml
+        }
+        // Not a service edit — try the booking conversation (new leads).
+        const booking = await maybeRunBookingIntake({
+          supabase,
+          phone: normalizedPhone,
+          message: messageBody,
+        })
+        if (booking.handled) {
+          console.log(
+            `[Harry-next] Booking intake handled (${booking.status}) — suppressing other handling`,
           )
           return emptyTwiml
         }
