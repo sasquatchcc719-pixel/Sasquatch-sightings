@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
+import { notifyDavidShiftEvent } from '@/lib/ops/gps-shift-notifications'
 import { createAdminClient } from '@/supabase/server'
 
 export async function POST(request: NextRequest) {
@@ -59,6 +60,12 @@ export async function POST(request: NextRequest) {
         { status: 409 },
       )
     }
+
+    await notifyDavidShiftEvent({
+      staff: access.staff,
+      event: 'break_end',
+      shift: updated,
+    })
 
     return NextResponse.json({ shift: updated })
   } catch (error) {

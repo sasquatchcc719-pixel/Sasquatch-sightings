@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
+import { notifyDavidShiftEvent } from '@/lib/ops/gps-shift-notifications'
 import {
   completeGpsShift,
   GpsShiftCompletionError,
@@ -43,6 +44,12 @@ export async function POST(request: NextRequest) {
       shiftId: shift.id,
       endedAt: new Date().toISOString(),
       actorUserId: access.id,
+    })
+    await notifyDavidShiftEvent({
+      staff: access.staff,
+      event: 'clock_out',
+      shift: result.shift,
+      payrollEntry: result.payrollEntry,
     })
     return NextResponse.json(result)
   } catch (error) {

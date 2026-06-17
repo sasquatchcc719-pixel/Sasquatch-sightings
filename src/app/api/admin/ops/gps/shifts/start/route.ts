@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
+import { notifyDavidShiftEvent } from '@/lib/ops/gps-shift-notifications'
 import { createAdminClient } from '@/supabase/server'
 
 export async function POST(request: NextRequest) {
@@ -39,6 +40,12 @@ export async function POST(request: NextRequest) {
     if (error) throw error
 
     const fences = await fetchTodayFences(supabase, staffUserId)
+
+    await notifyDavidShiftEvent({
+      staff: access.staff,
+      event: 'clock_in',
+      shift,
+    })
 
     return NextResponse.json({ shift, fences }, { status: 201 })
   } catch (error) {
