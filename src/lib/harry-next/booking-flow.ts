@@ -32,6 +32,7 @@ import {
   type ServiceSelection,
 } from './quote'
 import { buildApprovalCard } from './proposal-card'
+import { loadBookableCatalog } from '@/lib/ops/bookable-catalog'
 
 const PENDING_TABLE = 'harry_next_pending_actions'
 
@@ -66,6 +67,7 @@ Rules:
 - services: pick from the MENU below by NUMBER — one entry per thing to clean, with a quantity (number of rooms, stairs, etc.; default 1).
   - For rooms, use the square footage if the customer gave it; the menu shows each room's sqft range.
   - A plain "bedroom" with no size is a Regular Size Room. Only pick Sasquatch or larger for big/living/open rooms or large sqft.
+  - DEFAULT TO STANDARD carpet cleaning. Only pick a "Legendary Restoration" item if the customer explicitly says the carpet is heavily soiled, badly stained, in very bad shape, or asks for a restoration-level deep clean. Otherwise always choose the standard room, never the Legendary version.
   - If you cannot confidently match something to a menu item, leave it out — a human will follow up.
 - preferred_date as YYYY-MM-DD (today is ${today}) and preferred_time as 24h HH:MM, ONLY if the customer stated a day/time.
 - lead_source_detail: if the source is a referral, a realtor/property manager, a partner location, or "other", capture WHO or WHERE here.
@@ -249,16 +251,15 @@ function todayMountain(): string {
 }
 
 async function loadCatalog(supabase: SupabaseClient): Promise<CatalogItem[]> {
-  const { data } = await supabase
-    .from('service_catalog_items')
-    .select('id, name, slug, base_price, pricing_unit')
-    .eq('is_active', true)
-  return (data ?? []).map((r) => ({
-    id: String(r.id),
-    name: String(r.name),
-    slug: r.slug ? String(r.slug) : null,
-    basePrice: r.base_price == null ? null : Number(r.base_price),
-    pricingUnit: String(r.pricing_unit),
+  // The same customer-bookable set the public booking widget shows — no
+  // water-damage Restoration gear, internal fees, or other back-office items.
+  const rows = await loadBookableCatalog(supabase)
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    slug: r.slug,
+    basePrice: r.base_price,
+    pricingUnit: r.pricing_unit,
   }))
 }
 
