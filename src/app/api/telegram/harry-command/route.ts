@@ -747,6 +747,30 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Harry-next (flag-gated): an Approve/Reject button on a pending action.
+    if (
+      process.env.HARRY_NEXT_ENABLED === 'true' &&
+      update.callback_query?.data?.startsWith('hn:')
+    ) {
+      try {
+        const { decideFromTelegramButton } =
+          await import('@/lib/harry-next/inbound')
+        const decision = await decideFromTelegramButton({
+          supabase,
+          data: update.callback_query.data,
+        })
+        if (decision.handled) {
+          await sendToCharles(decision.message ?? 'Done.')
+          return NextResponse.json({ ok: true })
+        }
+      } catch (error) {
+        console.error(
+          '[Harry-next] telegram button hook error (continuing):',
+          error,
+        )
+      }
+    }
+
     // Handle button clicks
     if (update.callback_query) {
       await handleButtonClick(
