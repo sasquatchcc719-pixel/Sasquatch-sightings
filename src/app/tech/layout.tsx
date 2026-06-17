@@ -3,8 +3,6 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { getUserWithRole } from '@/lib/auth'
 import { AuthButton } from '@/components/auth-button'
-import { GpsTrackerProvider } from '@/contexts/GpsTrackerContext'
-import { TechClockControl } from '@/components/tech/tech-clock-control'
 
 const techNavItems = [
   { href: '/tech', label: 'Jobs' },
@@ -29,43 +27,38 @@ export default async function TechLayout({
   }
 
   return (
-    <GpsTrackerProvider
-      gpsEnabled={role === 'tech' || role === 'admin' || role === 'owner'}
-    >
-      <main className="min-h-screen bg-slate-950 pb-24 text-slate-50">
-        <div className="mx-auto flex min-h-screen w-full max-w-3xl flex-col">
-          <header className="sticky top-0 z-20 border-b border-white/10 bg-slate-950/90 px-4 py-3 backdrop-blur">
-            <div className="flex items-center justify-between gap-4">
+    <main className="min-h-screen bg-slate-950 pb-24 text-slate-50">
+      <div className="mx-auto flex min-h-screen w-full max-w-3xl flex-col">
+        <header className="sticky top-0 z-20 border-b border-white/10 bg-slate-950/90 px-4 py-3 backdrop-blur">
+          <div className="flex items-center justify-between gap-4">
+            <Link
+              href="/tech"
+              className="flex items-center gap-2 font-semibold"
+            >
+              <Image
+                src="/vector6-no-background.svg"
+                alt="Sasquatch"
+                width={32}
+                height={32}
+              />
+              <span>Tech Portal</span>
+            </Link>
+            <AuthButton />
+          </div>
+          <nav className="mt-3 flex gap-2">
+            {techNavItems.map((item) => (
               <Link
-                href="/tech"
-                className="flex items-center gap-2 font-semibold"
+                key={item.href}
+                href={item.href}
+                className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm font-medium text-slate-200 transition hover:border-emerald-400/40 hover:bg-emerald-400/10 hover:text-emerald-100"
               >
-                <Image
-                  src="/vector6-no-background.svg"
-                  alt="Sasquatch"
-                  width={32}
-                  height={32}
-                />
-                <span>Tech Portal</span>
+                {item.label}
               </Link>
-              <AuthButton />
-            </div>
-            <nav className="mt-3 flex gap-2">
-              {techNavItems.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm font-medium text-slate-200 transition hover:border-emerald-400/40 hover:bg-emerald-400/10 hover:text-emerald-100"
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </nav>
-          </header>
-          <div className="flex-1 px-4 py-5">{children}</div>
-        </div>
-        <TechClockControl />
-      </main>
-    </GpsTrackerProvider>
+            ))}
+          </nav>
+        </header>
+        <div className="flex-1 px-4 py-5">{children}</div>
+      </div>
+    </main>
   )
 }

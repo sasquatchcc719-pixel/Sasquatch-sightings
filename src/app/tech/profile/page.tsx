@@ -33,32 +33,18 @@ export default async function TechProfilePage() {
   if (error) throw error
 
   const staffUserId = staff?.id || access.staff.id
-  const [
-    { data: timesheetEntries, error: timesheetError },
-    { data: activeShift, error: activeShiftError },
-  ] = await Promise.all([
-    supabase
-      .from('ops_timesheet_entries')
-      .select(
-        'id, work_date, started_at, ended_at, break_minutes, payable_minutes, work_type, status',
-      )
-      .eq('staff_user_id', staffUserId)
-      .gte('work_date', payPeriod.startDate)
-      .lte('work_date', payPeriod.endDate)
-      .order('work_date', { ascending: false })
-      .order('started_at', { ascending: false }),
-    supabase
-      .from('gps_shifts')
-      .select('id, started_at, break_started_at, break_minutes')
-      .eq('user_id', access.id)
-      .eq('status', 'active')
-      .order('started_at', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-  ])
+  const { data: timesheetEntries, error: timesheetError } = await supabase
+    .from('ops_timesheet_entries')
+    .select(
+      'id, work_date, started_at, ended_at, break_minutes, payable_minutes, work_type, status',
+    )
+    .eq('staff_user_id', staffUserId)
+    .gte('work_date', payPeriod.startDate)
+    .lte('work_date', payPeriod.endDate)
+    .order('work_date', { ascending: false })
+    .order('started_at', { ascending: false })
 
   if (timesheetError) throw timesheetError
-  if (activeShiftError) throw activeShiftError
 
   return (
     <TechProfilePhotoForm
@@ -79,14 +65,6 @@ export default async function TechProfilePage() {
           workType: entry.work_type || 'job',
           status: entry.status || 'draft',
         })),
-        activeShift: activeShift
-          ? {
-              id: activeShift.id,
-              startedAt: activeShift.started_at,
-              breakStartedAt: activeShift.break_started_at || null,
-              breakMinutes: Number(activeShift.break_minutes || 0),
-            }
-          : null,
       }}
     />
   )

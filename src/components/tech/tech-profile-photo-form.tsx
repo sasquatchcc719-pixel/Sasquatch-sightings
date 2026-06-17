@@ -2,12 +2,11 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   CalendarDays,
   Camera,
   Clock3,
-  Coffee,
   KeyRound,
   Loader2,
   User,
@@ -24,19 +23,11 @@ type PayPeriodEntry = {
   status: string
 }
 
-type ActiveShiftSummary = {
-  id: string
-  startedAt: string
-  breakStartedAt: string | null
-  breakMinutes: number
-}
-
 type PayPeriodSummary = {
   startDate: string
   endDate: string
   label: string
   entries: PayPeriodEntry[]
-  activeShift: ActiveShiftSummary | null
 }
 
 type TechProfilePhotoFormProps = {
@@ -67,34 +58,6 @@ function formatHours(minutes: number): string {
   return `${hours.toFixed(2)} hr`
 }
 
-function activeShiftMinutes(
-  activeShift: ActiveShiftSummary | null,
-  nowMs: number,
-): { grossMinutes: number; breakMinutes: number; payableMinutes: number } {
-  if (!activeShift) {
-    return { grossMinutes: 0, breakMinutes: 0, payableMinutes: 0 }
-  }
-
-  const startMs = new Date(activeShift.startedAt).getTime()
-  const breakStartMs = activeShift.breakStartedAt
-    ? new Date(activeShift.breakStartedAt).getTime()
-    : null
-  const grossMinutes = Number.isFinite(startMs)
-    ? Math.max(0, Math.round((nowMs - startMs) / 60000))
-    : 0
-  const activeBreakMinutes =
-    breakStartMs != null && Number.isFinite(breakStartMs)
-      ? Math.max(0, Math.round((nowMs - breakStartMs) / 60000))
-      : 0
-  const breakMinutes =
-    Math.max(0, activeShift.breakMinutes) + activeBreakMinutes
-  return {
-    grossMinutes,
-    breakMinutes,
-    payableMinutes: Math.max(0, grossMinutes - breakMinutes),
-  }
-}
-
 export function TechProfilePhotoForm({
   displayName,
   role,
@@ -106,7 +69,6 @@ export function TechProfilePhotoForm({
   const [isUploading, setIsUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
-  const [nowMs, setNowMs] = useState(() => Date.now())
   const loggedMinutes = payPeriod.entries.reduce(
     (sum, entry) => sum + entry.payableMinutes,
     0,
@@ -115,14 +77,6 @@ export function TechProfilePhotoForm({
     (sum, entry) => sum + entry.breakMinutes,
     0,
   )
-  const activeMinutes = activeShiftMinutes(payPeriod.activeShift, nowMs)
-  const totalMinutes = loggedMinutes + activeMinutes.payableMinutes
-
-  useEffect(() => {
-    if (!payPeriod.activeShift) return
-    const interval = setInterval(() => setNowMs(Date.now()), 60_000)
-    return () => clearInterval(interval)
-  }, [payPeriod.activeShift])
 
   async function uploadPhoto(file: File) {
     setIsUploading(true)
@@ -188,50 +142,22 @@ export function TechProfilePhotoForm({
               Total Hours
             </p>
             <p className="mt-2 text-3xl font-bold text-white">
-              {formatHours(totalMinutes)}
+              {formatHours(loggedMinutes)}
             </p>
-            <p className="mt-1 text-xs text-slate-400">
-              {payPeriod.activeShift
-                ? 'Includes active shift estimate'
-                : 'Logged payable time'}
-            </p>
+            <p className="mt-1 text-xs text-slate-400">Logged payable time</p>
           </div>
           <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-4">
             <p className="text-xs font-semibold tracking-widest text-slate-400 uppercase">
               Break Time
             </p>
             <p className="mt-2 text-3xl font-bold text-white">
-              {Math.round(loggedBreakMinutes + activeMinutes.breakMinutes)}m
+              {Math.round(loggedBreakMinutes)}m
             </p>
             <p className="mt-1 text-xs text-slate-400">
               Subtracted from payable hours
             </p>
           </div>
         </div>
-
-        {payPeriod.activeShift ? (
-          <div className="mt-3 rounded-2xl border border-amber-300/20 bg-amber-300/10 p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-amber-100">
-                  Currently clocked in
-                </p>
-                <p className="mt-1 text-xs text-amber-100/70">
-                  Started at {formatTime(payPeriod.activeShift.startedAt)}
-                </p>
-              </div>
-              <p className="font-mono text-sm font-semibold text-amber-100">
-                +{formatHours(activeMinutes.payableMinutes)}
-              </p>
-            </div>
-            {payPeriod.activeShift.breakStartedAt ? (
-              <p className="mt-3 flex items-center gap-1.5 text-xs text-amber-100/80">
-                <Coffee className="h-3.5 w-3.5" />
-                Break is active
-              </p>
-            ) : null}
-          </div>
-        ) : null}
 
         <div className="mt-4 space-y-2">
           {payPeriod.entries.length > 0 ? (

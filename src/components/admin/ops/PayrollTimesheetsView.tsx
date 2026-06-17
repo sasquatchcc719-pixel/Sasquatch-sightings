@@ -2,7 +2,7 @@
 
 import { FormEvent, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Clock, Coffee, Pencil, Plus, Save, Trash2, X } from 'lucide-react'
+import { Pencil, Plus, Save, Trash2, X } from 'lucide-react'
 import {
   getSemiMonthlyPayPeriod,
   mountainDateKey,
@@ -34,22 +34,6 @@ type TimesheetEntry = {
   source: string
   status: string
   notes: string | null
-}
-
-type ShiftStatusRow = {
-  id: string
-  staffUserId: string
-  staffDisplayName: string
-  staffRole: string
-  workDate: string
-  startedAt: string
-  endedAt: string | null
-  status: string
-  breakStartedAt: string | null
-  breakMinutes: number
-  grossMinutes: number
-  payableMinutes: number
-  hasPayrollEntry: boolean
 }
 
 type EntryFormState = {
@@ -124,7 +108,6 @@ async function fetchEntries(
   staffUserId: string,
 ): Promise<{
   entries: TimesheetEntry[]
-  shiftRows: ShiftStatusRow[]
   totalPayableMinutes: number
   totalGrossPay: number
 }> {
@@ -184,21 +167,6 @@ export function PayrollTimesheetsView() {
     () => entriesQuery.data?.entries ?? [],
     [entriesQuery.data?.entries],
   )
-  const shiftRows = useMemo(
-    () => entriesQuery.data?.shiftRows ?? [],
-    [entriesQuery.data?.shiftRows],
-  )
-  const activeShiftRows = useMemo(
-    () => shiftRows.filter((shift) => shift.status === 'active'),
-    [shiftRows],
-  )
-  const missingPayrollShiftRows = useMemo(
-    () =>
-      shiftRows.filter(
-        (shift) => shift.status !== 'active' && !shift.hasPayrollEntry,
-      ),
-    [shiftRows],
-  )
   const totalPayableMinutes = entriesQuery.data?.totalPayableMinutes || 0
   const totalGrossPay = entriesQuery.data?.totalGrossPay || 0
 
@@ -219,22 +187,6 @@ export function PayrollTimesheetsView() {
     }
     return [...totals.values()].sort((a, b) => a.name.localeCompare(b.name))
   }, [entries])
-
-  function shiftStatusLabel(shift: ShiftStatusRow): string {
-    if (shift.status === 'active' && shift.breakStartedAt) return 'On break'
-    if (shift.status === 'active') return 'Clocked in'
-    return shift.endedAt ? 'Clocked out - payroll missing' : shift.status
-  }
-
-  function shiftStatusClass(shift: ShiftStatusRow): string {
-    if (shift.status === 'active' && shift.breakStartedAt) {
-      return 'border-amber-500/30 bg-amber-500/10 text-amber-200'
-    }
-    if (shift.status === 'active') {
-      return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
-    }
-    return 'border-red-500/30 bg-red-500/10 text-red-200'
-  }
 
   function changeDate(offset: number) {
     if (viewMode === 'period') {
@@ -437,68 +389,6 @@ export function PayrollTimesheetsView() {
         <strong>Payroll source of truth:</strong> These entries are payable
         time. Clock In/Out creates a draft entry here; GPS location details
         remain separate dispatch history.
-      </div>
-
-      <div className="rounded-2xl border border-white/10 bg-slate-900/50 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h3 className="font-semibold text-white">Current Clock Status</h3>
-            <p className="text-sm text-slate-400">
-              Live GPS clock state for the selected range and worker filter.
-            </p>
-          </div>
-          {activeShiftRows.length > 0 && (
-            <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-sm font-medium text-emerald-200">
-              {activeShiftRows.length} clocked in
-            </span>
-          )}
-        </div>
-
-        {shiftRows.length === 0 ? (
-          <div className="mt-4 rounded-xl border border-white/10 bg-slate-950/30 px-4 py-3 text-sm text-slate-400">
-            No active clock records or unmatched GPS shifts for this view.
-          </div>
-        ) : (
-          <div className="mt-4 grid gap-3 lg:grid-cols-2">
-            {shiftRows.map((shift) => (
-              <div
-                key={shift.id}
-                className={`rounded-xl border px-4 py-3 ${shiftStatusClass(shift)}`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-medium text-white">
-                      {shift.staffDisplayName}
-                    </p>
-                    <p className="mt-1 flex items-center gap-2 text-sm">
-                      {shift.breakStartedAt ? (
-                        <Coffee className="h-4 w-4 shrink-0" />
-                      ) : (
-                        <Clock className="h-4 w-4 shrink-0" />
-                      )}
-                      {shiftStatusLabel(shift)}
-                    </p>
-                    <p className="mt-1 text-sm text-slate-300">
-                      {viewMode === 'period' ? `${shift.workDate} · ` : ''}
-                      In {fmtTime(shift.startedAt)}
-                      {shift.endedAt ? ` → Out ${fmtTime(shift.endedAt)}` : ''}
-                    </p>
-                  </div>
-                  <div className="text-right text-sm">
-                    <p className="font-mono font-semibold text-white">
-                      {fmtMin(shift.payableMinutes)}
-                    </p>
-                    <p className="text-slate-300">
-                      {shift.breakMinutes > 0
-                        ? `${shift.breakMinutes}m break`
-                        : 'No break'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -821,45 +711,14 @@ export function PayrollTimesheetsView() {
 
         {!entriesQuery.isLoading &&
           !entriesQuery.error &&
-          entries.length === 0 &&
-          missingPayrollShiftRows.length === 0 && (
+          entries.length === 0 && (
             <div className="p-6 text-center text-slate-500">
               No payable time entries for this range.
             </div>
           )}
 
-        {(missingPayrollShiftRows.length > 0 || entries.length > 0) && (
+        {entries.length > 0 && (
           <div className="divide-y divide-white/5">
-            {missingPayrollShiftRows.map((shift) => (
-              <div key={shift.id} className="bg-red-950/20 px-4 py-3">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-medium text-white">
-                      {shift.staffDisplayName}
-                    </p>
-                    <p className="text-sm text-slate-400">
-                      {viewMode === 'period' ? `${shift.workDate} · ` : ''}
-                      {fmtTime(shift.startedAt)}
-                      {shift.endedAt ? ` → ${fmtTime(shift.endedAt)}` : ''}
-                      {shift.breakMinutes > 0
-                        ? `, ${shift.breakMinutes}m break`
-                        : ''}
-                    </p>
-                    <p className="mt-1 text-xs font-medium text-red-300">
-                      Clock activity found, but no payroll entry exists yet.
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-mono text-lg font-semibold text-red-200">
-                      Needs review
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      {fmtMin(shift.payableMinutes)} tracked
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ))}
             {entries.map((entry) => (
               <div key={entry.id} className="px-4 py-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
