@@ -33,6 +33,8 @@ import {
 } from './quote'
 import { buildApprovalCard } from './proposal-card'
 import { loadBookableCatalog } from '@/lib/ops/bookable-catalog'
+import { openAiProseModel } from './model'
+import { loadBrandVoice } from './knowledge'
 
 const PENDING_TABLE = 'harry_next_pending_actions'
 
@@ -269,6 +271,32 @@ async function loadCatalog(supabase: SupabaseClient): Promise<CatalogItem[]> {
  * no price) or — once complete — proposes the booking to the owner. Returns
  * handled=false when the message isn't a booking, so other handling can proceed.
  */
+/**
+ * Rewrite a fixed message in the company's brand voice. The REQUEST/meaning is
+ * fixed by code (so we still ask for the right thing and never invent a price);
+ * the model just makes it sound human instead of robotic. Falls back to the
+ * original text if the model errors — so usability never depends on it.
+ */
+export async function composeIntakeMessage(params: {
+  compose: IntentModel
+  brandVoice: string
+  baseMessage: string
+}): Promise<string> {
+  const system = `You are Harry, the SMS assistant for Sasquatch Carpet Cleaning.
+Brand voice: ${params.brandVoice}
+
+Rewrite the assistant's next text to the customer in that voice — warm, natural, concise, like a helpful local neighbor. Keep the SAME request and meaning. Do NOT add, remove, or change any price, number, address, date, or fact. Output only the message text, no quotes.`
+  try {
+    const out = (await params.compose({ system, user: params.baseMessage }))
+      .trim()
+      .replace(/^["']|["']$/g, '')
+      .trim()
+    return out || params.baseMessage
+  } catch {
+    return params.baseMessage
+  }
+}
+
 export async function runBookingIntake(params: {
   supabase: SupabaseClient
   phone: string
@@ -317,6 +345,13 @@ export async function runBookingIntake(params: {
 
   if (!isBooking) return { handled: false }
 
+  // Brand-voice rewriter for the customer-facing messages (code still fixes WHAT
+  // to say; this just makes it sound human, not robotic).
+  const compose = openAiProseModel()
+  const brandVoice = await loadBrandVoice(supabase)
+  const inVoice = (baseMessage: string) =>
+    composeIntakeMessage({ compose, brandVoice, baseMessage })
+
   const persist = async (extra: Transcript) => {
     const stamped = [...transcript, ...extra].map((m) => ({
       ...m,
@@ -349,8 +384,9 @@ export async function runBookingIntake(params: {
 
   // Still gathering details — ask for the next thing (no price, bound recipient).
   if (!isBookingComplete(fields)) {
-    const prompt =
-      nextBookingPrompt(fields) ?? 'Could you tell me a little more?'
+    const prompt = await inVoice(
+      nextBookingPrompt(fields) ?? 'Could you tell me a little more?',
+    )
     await persist([{ role: 'assistant', content: prompt }])
     await sendCustomerSMS(phone, prompt, undefined, 'harry_next')
     return { handled: true, status: 'asked' }
@@ -359,7 +395,9 @@ export async function runBookingIntake(params: {
   // Complete — match services and propose to the owner.
   const built = buildBookingPayload(catalog, fields, phone)
   if ('unmatched' in built) {
-    const ask = `Quick check so I get this right — could you tell me again exactly what you'd like cleaned (rooms, stairs, etc.)?`
+    const ask = await inVoice(
+      `Quick check so I get this right — could you tell me again exactly what you'd like cleaned (rooms, stairs, etc.)?`,
+    )
     await persist([{ role: 'assistant', content: ask }])
     await sendCustomerSMS(phone, ask, undefined, 'harry_next')
     return { handled: true, status: 'clarify' }
@@ -407,8 +445,9 @@ export async function runBookingIntake(params: {
     ],
   })
 
-  const holding =
-    "Perfect — I've got everything I need. Let me confirm this with the office and I'll lock it in shortly!"
+  const holding = await inVoice(
+    "Perfect — I've got everything I need. Let me confirm this with the office and I'll lock it in shortly!",
+  )
   await persist([{ role: 'assistant', content: holding }])
   await sendCustomerSMS(phone, holding, undefined, 'harry_next')
   return { handled: true, status: 'proposed' }

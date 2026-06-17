@@ -37,6 +37,21 @@ export async function loadKnowledgeBlocks(
   }))
 }
 
+/** The brand-voice guidance Harry writes customer messages in. */
+export async function loadBrandVoice(
+  supabase: SupabaseClient,
+): Promise<string> {
+  const { data } = await supabase
+    .from('harry_knowledge_blocks')
+    .select('content')
+    .eq('category_key', 'brand_voice')
+    .eq('is_enabled', true)
+    .maybeSingle()
+  return data?.content
+    ? String(data.content)
+    : 'Friendly, local, practical, and concise — like a helpful neighbor, not a robot.'
+}
+
 const answerSchema = z.object({
   action: z.enum(['answer', 'escalate', 'none']),
   reply: z.string().optional(),

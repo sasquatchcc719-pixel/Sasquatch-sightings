@@ -27,3 +27,21 @@ export function openAiIntentModel(client?: OpenAI): IntentModel {
     return response.choices[0]?.message?.content ?? ''
   }
 }
+
+// Prose mode — plain text, a little warmth. For writing customer-facing messages
+// in the brand voice (the JSON mode above is for structured extraction only).
+export function openAiProseModel(client?: OpenAI): IntentModel {
+  const openai = client ?? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+
+  return async ({ system, user }) => {
+    const response = await openai.chat.completions.create({
+      model: DEFAULT_MODEL,
+      temperature: 0.5,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ],
+    })
+    return response.choices[0]?.message?.content ?? ''
+  }
+}
