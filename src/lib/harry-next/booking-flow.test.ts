@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { buildBookingPayload, extractBookingFields } from './booking-flow'
+import {
+  buildBookingPayload,
+  composeIntakeMessage,
+  extractBookingFields,
+} from './booking-flow'
 import type { CatalogItem } from './quote'
 import type { IntentModel } from './read-intent'
 import type { BookingFields } from './booking'
@@ -144,5 +148,28 @@ describe('buildBookingPayload', () => {
       '+17195551234',
     )
     expect('unmatched' in built).toBe(true)
+  })
+})
+
+describe('composeIntakeMessage', () => {
+  it('rewrites the message in brand voice via the model', async () => {
+    const out = await composeIntakeMessage({
+      compose: fakeModel('Hey! What address should we head to?'),
+      brandVoice: 'friendly local neighbor',
+      baseMessage: 'What is the service address?',
+    })
+    expect(out).toBe('Hey! What address should we head to?')
+  })
+
+  it('falls back to the base message if the model errors (usability never breaks)', async () => {
+    const failing: IntentModel = async () => {
+      throw new Error('model down')
+    }
+    const out = await composeIntakeMessage({
+      compose: failing,
+      brandVoice: 'x',
+      baseMessage: 'What is the service address?',
+    })
+    expect(out).toBe('What is the service address?')
   })
 })
