@@ -25,8 +25,12 @@ import {
   isBookingComplete,
   nextBookingPrompt,
 } from './booking'
-import { buildQuote, type RequestedService } from './quote'
-import type { CatalogItem } from './match-service'
+import {
+  buildCatalogMenu,
+  quoteFromSelections,
+  type CatalogItem,
+  type ServiceSelection,
+} from './quote'
 import { buildApprovalCard } from './proposal-card'
 
 const PENDING_TABLE = 'harry_next_pending_actions'
@@ -44,31 +48,37 @@ const extractionSchema = z.object({
   preferred_date: z.string().optional(),
   preferred_time: z.string().optional(),
   services: z
-    .array(z.object({ description: z.string(), quantity: z.number() }))
+    .array(z.object({ item: z.number(), quantity: z.number() }))
     .optional(),
 })
 
 export type Transcript = Array<{ role: 'user' | 'assistant'; content: string }>
 
-function buildExtractionPrompt(today: string, catalogNames: string[]): string {
+function buildExtractionPrompt(today: string, menu: string): string {
   return `You are reading an SMS conversation between a carpet-cleaning company and a potential customer, and pulling out the booking details so far.
 
 Output ONLY JSON with this shape:
-{"is_booking":bool,"first_name":str?,"last_name":str?,"email":str?,"street1":str?,"city":str?,"zip_code":str?,"lead_source":str?,"preferred_date":"YYYY-MM-DD"?,"preferred_time":"HH:MM"?,"services":[{"description":str,"quantity":int}]?}
+{"is_booking":bool,"first_name":str?,"last_name":str?,"email":str?,"street1":str?,"city":str?,"zip_code":str?,"lead_source":str?,"lead_source_detail":str?,"preferred_date":"YYYY-MM-DD"?,"preferred_time":"HH:MM"?,"services":[{"item":<menu number>,"quantity":<int>}]?}
 
 Rules:
 - is_booking = true only if the customer is trying to schedule/book a cleaning.
-- Only include a field if the customer has actually provided it. Omit unknowns.
-- "services": one entry per thing to clean, in the customer's words ("bedroom","stairs","dryer duct"), with a quantity (default 1). NEVER include prices or IDs — you only capture words and counts.
-- preferred_date as YYYY-MM-DD (today is ${today}), preferred_time as 24h HH:MM, only if the customer stated a day/time.
-- lead_source_detail: if the source is a referral, a realtor/property manager, a partner location, or "other", capture WHO or WHERE (e.g. the referrer's name) here.
-- Catalog services available (for your understanding only, do not invent): ${catalogNames.join('; ')}`
+- Only include a field if the customer actually provided it. Omit unknowns. NEVER invent a date, time, email, or address.
+- services: pick from the MENU below by NUMBER — one entry per thing to clean, with a quantity (number of rooms, stairs, etc.; default 1).
+  - For rooms, use the square footage if the customer gave it; the menu shows each room's sqft range.
+  - A plain "bedroom" with no size is a Regular Size Room. Only pick Sasquatch or larger for big/living/open rooms or large sqft.
+  - If you cannot confidently match something to a menu item, leave it out — a human will follow up.
+- preferred_date as YYYY-MM-DD (today is ${today}) and preferred_time as 24h HH:MM, ONLY if the customer stated a day/time.
+- lead_source_detail: if the source is a referral, a realtor/property manager, a partner location, or "other", capture WHO or WHERE here.
+- Never output prices or catalog ids — only menu numbers and quantities.
+
+MENU:
+${menu}`
 }
 
 export async function extractBookingFields(params: {
   transcript: Transcript
   today: string
-  catalogNames: string[]
+  catalog: CatalogItem[]
   model: IntentModel
 }): Promise<{ isBooking: boolean; fields: BookingFields }> {
   const user = params.transcript
@@ -76,7 +86,10 @@ export async function extractBookingFields(params: {
     .join('\n')
 
   const raw = await params.model({
-    system: buildExtractionPrompt(params.today, params.catalogNames),
+    system: buildExtractionPrompt(
+      params.today,
+      buildCatalogMenu(params.catalog),
+    ),
     user,
   })
 
@@ -94,8 +107,8 @@ export async function extractBookingFields(params: {
     return { isBooking: false, fields: { services: [] } }
   }
 
-  const services: RequestedService[] = (parsed.services ?? []).map((s) => ({
-    description: s.description,
+  const services: ServiceSelection[] = (parsed.services ?? []).map((s) => ({
+    item: Math.floor(s.item),
     quantity: Math.max(1, Math.floor(s.quantity) || 1),
   }))
 
@@ -160,9 +173,9 @@ export function buildBookingPayload(
 ):
   | { payload: BookingStoredPayload; summary: string }
   | { unmatched: string[] } {
-  const quote = buildQuote(catalog, fields.services)
-  if (quote.unmatched.length > 0 || quote.ambiguous.length > 0) {
-    return { unmatched: [...quote.unmatched, ...quote.ambiguous] }
+  const quote = quoteFromSelections(catalog, fields.services)
+  if (quote.invalidItems.length > 0 || quote.lines.length === 0) {
+    return { unmatched: quote.invalidItems.map(String) }
   }
 
   const payload: BookingStoredPayload = {
@@ -297,7 +310,7 @@ export async function runBookingIntake(params: {
   const { isBooking, fields } = await extractBookingFields({
     transcript,
     today: todayMountain(),
-    catalogNames: catalog.map((c) => c.name),
+    catalog,
     model,
   })
 
@@ -345,7 +358,7 @@ export async function runBookingIntake(params: {
   // Complete — match services and propose to the owner.
   const built = buildBookingPayload(catalog, fields, phone)
   if ('unmatched' in built) {
-    const ask = `Quick check so I match it to the right service — what did you mean by "${built.unmatched[0]}"?`
+    const ask = `Quick check so I get this right — could you tell me again exactly what you'd like cleaned (rooms, stairs, etc.)?`
     await persist([{ role: 'assistant', content: ask }])
     await sendCustomerSMS(phone, ask, undefined, 'harry_next')
     return { handled: true, status: 'clarify' }

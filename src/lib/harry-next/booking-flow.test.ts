@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildBookingPayload, extractBookingFields } from './booking-flow'
-import type { CatalogItem } from './match-service'
+import type { CatalogItem } from './quote'
 import type { IntentModel } from './read-intent'
 import type { BookingFields } from './booking'
 
@@ -34,15 +34,15 @@ const completeFields: BookingFields = {
   zipCode: '80132',
   leadSource: 'Nextdoor',
   services: [
-    { description: 'bedroom', quantity: 2 },
-    { description: 'stairs', quantity: 10 },
+    { item: 1, quantity: 2 },
+    { item: 2, quantity: 10 },
   ],
   preferredDate: '2026-06-20',
   preferredTime: '10:00',
 }
 
 describe('extractBookingFields', () => {
-  it('pulls structured fields from the transcript', async () => {
+  it('pulls structured fields + numbered service picks from the transcript', async () => {
     const model = fakeModel(
       JSON.stringify({
         is_booking: true,
@@ -51,18 +51,20 @@ describe('extractBookingFields', () => {
         email: 'jamie@example.com',
         preferred_date: '2026-06-20',
         preferred_time: '10:00',
-        services: [{ description: 'bedroom', quantity: 2 }],
+        services: [{ item: 1, quantity: 2 }],
       }),
     )
     const { isBooking, fields } = await extractBookingFields({
-      transcript: [{ role: 'user', content: "I'd like to book a cleaning" }],
+      transcript: [
+        { role: 'user', content: "I'd like to book a cleaning Saturday 10am" },
+      ],
       today: '2026-06-17',
-      catalogNames: catalog.map((c) => c.name),
+      catalog,
       model,
     })
     expect(isBooking).toBe(true)
     expect(fields.firstName).toBe('Jamie')
-    expect(fields.services).toEqual([{ description: 'bedroom', quantity: 2 }])
+    expect(fields.services).toEqual([{ item: 1, quantity: 2 }])
   })
 
   it('ignores a date/time the customer never actually stated (anti-fabrication)', async () => {
@@ -71,13 +73,13 @@ describe('extractBookingFields', () => {
         is_booking: true,
         preferred_date: '2026-06-20',
         preferred_time: '10:00',
-        services: [{ description: 'bedroom', quantity: 1 }],
+        services: [{ item: 1, quantity: 1 }],
       }),
     )
     const { fields } = await extractBookingFields({
       transcript: [{ role: 'user', content: 'I want a bedroom cleaned' }],
       today: '2026-06-17',
-      catalogNames: [],
+      catalog,
       model,
     })
     expect(fields.preferredDate).toBeUndefined()
@@ -90,13 +92,13 @@ describe('extractBookingFields', () => {
         is_booking: true,
         preferred_date: '2026-06-20',
         preferred_time: '10:00',
-        services: [{ description: 'bedroom', quantity: 1 }],
+        services: [{ item: 1, quantity: 1 }],
       }),
     )
     const { fields } = await extractBookingFields({
       transcript: [{ role: 'user', content: 'Saturday at 10am works' }],
       today: '2026-06-17',
-      catalogNames: [],
+      catalog,
       model,
     })
     expect(fields.preferredDate).toBe('2026-06-20')
@@ -107,7 +109,7 @@ describe('extractBookingFields', () => {
     const bad = await extractBookingFields({
       transcript: [],
       today: '2026-06-17',
-      catalogNames: [],
+      catalog,
       model: fakeModel('I am not sure'),
     })
     expect(bad.isBooking).toBe(false)
@@ -115,7 +117,7 @@ describe('extractBookingFields', () => {
     const notBooking = await extractBookingFields({
       transcript: [],
       today: '2026-06-17',
-      catalogNames: [],
+      catalog,
       model: fakeModel('{"is_booking":false}'),
     })
     expect(notBooking.isBooking).toBe(false)
@@ -135,13 +137,10 @@ describe('buildBookingPayload', () => {
     expect(built.summary).toContain('132.00')
   })
 
-  it('reports unmatched services instead of guessing', () => {
+  it('reports an out-of-range pick instead of guessing', () => {
     const built = buildBookingPayload(
       catalog,
-      {
-        ...completeFields,
-        services: [{ description: 'gutter cleaning', quantity: 1 }],
-      },
+      { ...completeFields, services: [{ item: 99, quantity: 1 }] },
       '+17195551234',
     )
     expect('unmatched' in built).toBe(true)
