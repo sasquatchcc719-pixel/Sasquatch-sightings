@@ -31,10 +31,22 @@ export interface GpsTrackerValue {
   activeAppointmentLabel: string | null
   activeAppointmentId: string | null
   elapsedMs: number
+  isOnBreak: boolean
+  breakElapsedMs: number
+  breakMinutes: number
   accuracy: number | null
   error: string | null
   clockIn: () => Promise<void>
   clockOut: () => Promise<void>
+  startBreak: () => Promise<void>
+  endBreak: () => Promise<void>
+}
+
+type ShiftPayload = {
+  id: string
+  started_at: string
+  break_started_at?: string | null
+  break_minutes?: number | null
 }
 
 export function useGpsTracker({
@@ -52,6 +64,9 @@ export function useGpsTracker({
     null,
   )
   const [elapsedMs, setElapsedMs] = useState(0)
+  const [isOnBreak, setIsOnBreak] = useState(false)
+  const [breakElapsedMs, setBreakElapsedMs] = useState(0)
+  const [breakMinutes, setBreakMinutes] = useState(0)
   const [accuracy, setAccuracy] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -65,6 +80,30 @@ export function useGpsTracker({
   const watchIdRef = useRef<number | null>(null)
   const flushIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const elapsedIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const breakStartedAtRef = useRef<number | null>(null)
+  const savedBreakMinutesRef = useRef(0)
+
+  const applyBreakState = useCallback((shift: ShiftPayload) => {
+    const savedBreakMinutes = Math.max(0, Number(shift.break_minutes || 0))
+    const breakStartedAt = shift.break_started_at
+      ? new Date(shift.break_started_at).getTime()
+      : null
+    const validBreakStartedAt =
+      breakStartedAt != null && Number.isFinite(breakStartedAt)
+        ? breakStartedAt
+        : null
+
+    savedBreakMinutesRef.current = savedBreakMinutes
+    breakStartedAtRef.current = validBreakStartedAt
+    setBreakMinutes(savedBreakMinutes)
+    setBreakElapsedMs(
+      savedBreakMinutes * 60_000 +
+        (validBreakStartedAt != null
+          ? Math.max(0, Date.now() - validBreakStartedAt)
+          : 0),
+    )
+    setIsOnBreak(validBreakStartedAt != null)
+  }, [])
 
   // ── Flush batch to server ────────────────────────────────────────────────
   const flushBatch = useCallback(async () => {
@@ -195,6 +234,12 @@ export function useGpsTracker({
       if (clockedInAtRef.current !== null) {
         setElapsedMs(Date.now() - clockedInAtRef.current)
       }
+      setBreakElapsedMs(
+        savedBreakMinutesRef.current * 60_000 +
+          (breakStartedAtRef.current !== null
+            ? Math.max(0, Date.now() - breakStartedAtRef.current)
+            : 0),
+      )
     }, 1000)
 
     return () => {
@@ -215,6 +260,7 @@ export function useGpsTracker({
           shiftIdRef.current = data.shift.id
           clockedInAtRef.current = new Date(data.shift.started_at).getTime()
           fencesRef.current = data.fences ?? []
+          applyBreakState(data.shift as ShiftPayload)
           setIsClocked(true)
           setElapsedMs(Date.now() - clockedInAtRef.current)
           startTracking(data.shift.id)
@@ -226,7 +272,7 @@ export function useGpsTracker({
 
     // Flush any points from a previous interrupted session
     void flushOfflineQueue()
-  }, [enabled, startTracking])
+  }, [applyBreakState, enabled, startTracking])
 
   // ── Clock In ─────────────────────────────────────────────────────────────
   const clockIn = useCallback(async () => {
@@ -253,22 +299,77 @@ export function useGpsTracker({
       }
 
       const { shift, fences } = await res.json()
+      const startedAtMs = new Date(shift.started_at).getTime()
+      const clockedInAt = Number.isFinite(startedAtMs)
+        ? startedAtMs
+        : Date.now()
 
       shiftIdRef.current = shift.id
-      clockedInAtRef.current = Date.now()
+      clockedInAtRef.current = clockedInAt
       fencesRef.current = fences ?? []
       arrivedAtRef.current = new Set()
       batchRef.current = []
+      applyBreakState(shift as ShiftPayload)
 
       setIsClocked(true)
-      setElapsedMs(0)
+      setElapsedMs(Math.max(0, Date.now() - clockedInAt))
 
       await requestWakeLock()
       startTracking(shift.id)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to clock in')
     }
-  }, [enabled, startTracking])
+  }, [applyBreakState, enabled, startTracking])
+
+  const startBreak = useCallback(async () => {
+    if (!enabled || !shiftIdRef.current) return
+    setError(null)
+
+    try {
+      const res = await fetch('/api/admin/ops/gps/shifts/break/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shiftId: shiftIdRef.current }),
+      })
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(
+          (body as { error?: string }).error ?? `Server error ${res.status}`,
+        )
+      }
+
+      const { shift } = await res.json()
+      applyBreakState(shift as ShiftPayload)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to start break')
+    }
+  }, [applyBreakState, enabled])
+
+  const endBreak = useCallback(async () => {
+    if (!enabled || !shiftIdRef.current) return
+    setError(null)
+
+    try {
+      const res = await fetch('/api/admin/ops/gps/shifts/break/end', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shiftId: shiftIdRef.current }),
+      })
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(
+          (body as { error?: string }).error ?? `Server error ${res.status}`,
+        )
+      }
+
+      const { shift } = await res.json()
+      applyBreakState(shift as ShiftPayload)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to end break')
+    }
+  }, [applyBreakState, enabled])
 
   // ── Clock Out ────────────────────────────────────────────────────────────
   const clockOut = useCallback(async () => {
@@ -301,12 +402,17 @@ export function useGpsTracker({
       fencesRef.current = []
       currentFenceIdRef.current = null
       arrivedAtRef.current = new Set()
+      breakStartedAtRef.current = null
+      savedBreakMinutesRef.current = 0
 
       setIsClocked(false)
       setSegmentType('idle')
       setActiveAppointmentId(null)
       setActiveAppointmentLabel(null)
       setElapsedMs(0)
+      setIsOnBreak(false)
+      setBreakElapsedMs(0)
+      setBreakMinutes(0)
     }
   }, [])
 
@@ -328,9 +434,14 @@ export function useGpsTracker({
     activeAppointmentLabel,
     activeAppointmentId,
     elapsedMs,
+    isOnBreak,
+    breakElapsedMs,
+    breakMinutes,
     accuracy,
     error,
     clockIn,
     clockOut,
+    startBreak,
+    endBreak,
   }
 }

@@ -20,7 +20,7 @@ export async function completeGpsShift(params: {
   const { supabase, shiftId, endedAt, actorUserId } = params
   const { data: shift, error: shiftError } = await supabase
     .from('gps_shifts')
-    .select('id, started_at, user_id, status')
+    .select('id, started_at, user_id, status, break_started_at, break_minutes')
     .eq('id', shiftId)
     .maybeSingle()
 
@@ -84,7 +84,17 @@ export async function completeGpsShift(params: {
     }
   }
 
-  const payableMinutes = Math.max(0, Math.round((endMs - startMs) / 60000))
+  const savedBreakMinutes = Math.max(0, Number(shift.break_minutes || 0))
+  const breakStartMs = shift.break_started_at
+    ? new Date(shift.break_started_at).getTime()
+    : null
+  const activeBreakMinutes =
+    breakStartMs != null && Number.isFinite(breakStartMs)
+      ? Math.max(0, Math.round((endMs - breakStartMs) / 60000))
+      : 0
+  const breakMinutes = savedBreakMinutes + activeBreakMinutes
+  const grossShiftMinutes = Math.max(0, Math.round((endMs - startMs) / 60000))
+  const payableMinutes = Math.max(0, grossShiftMinutes - breakMinutes)
   const { data: latestRate, error: rateError } = await supabase
     .from('ops_timesheet_entries')
     .select('hourly_rate')
@@ -98,8 +108,7 @@ export async function completeGpsShift(params: {
   if (rateError) throw rateError
 
   const hourlyRate = Number(latestRate?.hourly_rate || 0)
-  const baseNotes =
-    params.notes ?? 'Created automatically from Clock In/Out.'
+  const baseNotes = params.notes ?? 'Created automatically from Clock In/Out.'
   const notes =
     hourlyRate > 0 ? baseNotes : `${baseNotes} Hourly rate needs review.`
 
@@ -112,7 +121,7 @@ export async function completeGpsShift(params: {
         work_date: mountainDateKey(shift.started_at),
         started_at: shift.started_at,
         ended_at: endedAt,
-        break_minutes: 0,
+        break_minutes: breakMinutes,
         payable_minutes: payableMinutes,
         hourly_rate: hourlyRate,
         work_type: 'job',
@@ -135,6 +144,8 @@ export async function completeGpsShift(params: {
     .update({
       ended_at: endedAt,
       status: 'completed',
+      break_started_at: null,
+      break_minutes: breakMinutes,
       total_distance_m: Math.round(totalDistanceM),
     })
     .eq('id', shift.id)

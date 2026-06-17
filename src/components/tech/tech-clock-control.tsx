@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Clock, LogIn, LogOut } from 'lucide-react'
+import { Clock, Coffee, LogIn, LogOut } from 'lucide-react'
 import { useGpsContextOptional } from '@/contexts/GpsTrackerContext'
 import { GpsConsentModal } from '@/components/admin/GpsConsentModal'
 
@@ -18,7 +18,7 @@ function formatElapsed(ms: number): string {
 export function TechClockControl() {
   const gps = useGpsContextOptional()
   const [showConsent, setShowConsent] = useState(false)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState<string | null>(null)
   const [confirmOut, setConfirmOut] = useState(false)
 
   if (!gps?.gpsEnabled) return null
@@ -29,9 +29,9 @@ export function TechClockControl() {
       setShowConsent(true)
       return
     }
-    setLoading(true)
+    setLoading('clock')
     await gps.clockIn()
-    setLoading(false)
+    setLoading(null)
   }
 
   async function handleClockOut() {
@@ -41,9 +41,9 @@ export function TechClockControl() {
       setTimeout(() => setConfirmOut(false), 3000)
       return
     }
-    setLoading(true)
+    setLoading('clock')
     await gps.clockOut()
-    setLoading(false)
+    setLoading(null)
     setConfirmOut(false)
   }
 
@@ -51,9 +51,20 @@ export function TechClockControl() {
     if (!gps) return
     gps.grantConsent()
     setShowConsent(false)
-    setLoading(true)
+    setLoading('clock')
     await gps.clockIn()
-    setLoading(false)
+    setLoading(null)
+  }
+
+  async function handleBreakToggle() {
+    if (!gps?.isClocked) return
+    setLoading('break')
+    if (gps.isOnBreak) {
+      await gps.endBreak()
+    } else {
+      await gps.startBreak()
+    }
+    setLoading(null)
   }
 
   return (
@@ -73,21 +84,45 @@ export function TechClockControl() {
             </div>
             <div className="min-w-0">
               <p className="text-xs font-medium tracking-widest text-slate-500 uppercase">
-                {gps.isClocked
-                  ? gps.segmentType.replace('_', ' ')
-                  : 'Time Clock'}
+                {gps.isOnBreak
+                  ? 'On Break'
+                  : gps.isClocked
+                    ? gps.segmentType.replace('_', ' ')
+                    : 'Time Clock'}
               </p>
               <p className="font-mono text-sm font-semibold text-white">
-                {gps.isClocked
-                  ? formatElapsed(gps.elapsedMs)
-                  : 'Not clocked in'}
+                {gps.isOnBreak
+                  ? `Break ${formatElapsed(gps.breakElapsedMs)}`
+                  : gps.isClocked
+                    ? formatElapsed(gps.elapsedMs)
+                    : 'Not clocked in'}
               </p>
             </div>
           </div>
 
+          {gps.isClocked ? (
+            <button
+              type="button"
+              disabled={loading !== null}
+              onClick={() => void handleBreakToggle()}
+              className={`flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white disabled:opacity-60 ${
+                gps.isOnBreak
+                  ? 'bg-amber-600'
+                  : 'bg-slate-800 ring-1 ring-white/10'
+              }`}
+            >
+              <Coffee className="h-4 w-4" />
+              {loading === 'break'
+                ? 'Saving...'
+                : gps.isOnBreak
+                  ? 'End Break'
+                  : 'Start Break'}
+            </button>
+          ) : null}
+
           <button
             type="button"
-            disabled={loading}
+            disabled={loading !== null}
             onClick={() =>
               gps.isClocked ? void handleClockOut() : void handleClockIn()
             }
@@ -104,7 +139,7 @@ export function TechClockControl() {
             ) : (
               <LogIn className="h-4 w-4" />
             )}
-            {loading
+            {loading === 'clock'
               ? 'Saving...'
               : confirmOut
                 ? 'Confirm'

@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
     // Check for an existing active shift
     const { data: existing } = await supabase
       .from('gps_shifts')
-      .select('id, started_at')
+      .select('id, started_at, break_started_at, break_minutes')
       .eq('user_id', access.id)
       .eq('status', 'active')
       .order('started_at', { ascending: false })

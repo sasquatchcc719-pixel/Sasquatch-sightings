@@ -10,7 +10,7 @@ export async function GET() {
 
     const { data: shift, error } = await supabase
       .from('gps_shifts')
-      .select('id, started_at, status')
+      .select('id, started_at, status, break_started_at, break_minutes')
       .eq('user_id', access.id)
       .eq('status', 'active')
       .order('started_at', { ascending: false })
