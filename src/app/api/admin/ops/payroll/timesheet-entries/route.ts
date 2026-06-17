@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
-import { parseHourlyRate } from '@/lib/ops/timesheet-pay'
+import { mountainDateKey, parseHourlyRate } from '@/lib/ops/timesheet-pay'
 import { createAdminClient } from '@/supabase/server'
 
 const WORK_TYPES = new Set(['training', 'job', 'admin', 'other'])
@@ -44,8 +44,7 @@ export async function GET(request: NextRequest) {
     await requireAnyRole(['admin', 'owner'])
     const supabase = createAdminClient()
     const { searchParams } = new URL(request.url)
-    const date =
-      searchParams.get('date') || new Date().toISOString().split('T')[0]
+    const date = searchParams.get('date') || mountainDateKey(new Date())
     const startDate = searchParams.get('startDate') || date
     const endDate = searchParams.get('endDate') || date
     const staffUserId = searchParams.get('staffUserId')
@@ -120,11 +119,117 @@ export async function GET(request: NextRequest) {
       }
     })
 
+    let staffQuery = supabase
+      .from('staff_users')
+      .select('id, user_id, display_name, role')
+      .eq('is_active', true)
+
+    if (staffUserId) {
+      staffQuery = staffQuery.eq('id', staffUserId)
+    }
+
+    const { data: staffRows, error: staffError } = await staffQuery
+    if (staffError) throw staffError
+
+    const staffByUserId = new Map(
+      (staffRows || [])
+        .filter((staff) => staff.user_id)
+        .map((staff) => [staff.user_id as string, staff]),
+    )
+    const userIds = [...staffByUserId.keys()]
+    const existingGpsShiftIds = new Set(
+      entries.map((entry) => entry.gpsShiftId).filter(Boolean),
+    )
+    const rangeStart = new Date(`${startDate}T00:00:00.000Z`)
+    rangeStart.setUTCDate(rangeStart.getUTCDate() - 1)
+    const rangeEnd = new Date(`${endDate}T23:59:59.999Z`)
+    rangeEnd.setUTCDate(rangeEnd.getUTCDate() + 1)
+
+    let shiftRows: Array<{
+      id: string
+      staffUserId: string
+      staffDisplayName: string
+      staffRole: string
+      workDate: string
+      startedAt: string
+      endedAt: string | null
+      status: string
+      breakStartedAt: string | null
+      breakMinutes: number
+      grossMinutes: number
+      payableMinutes: number
+      hasPayrollEntry: boolean
+    }> = []
+
+    if (userIds.length > 0) {
+      const { data: gpsShifts, error: gpsShiftError } = await supabase
+        .from('gps_shifts')
+        .select(
+          'id, user_id, started_at, ended_at, status, break_started_at, break_minutes',
+        )
+        .in('user_id', userIds)
+        .gte('started_at', rangeStart.toISOString())
+        .lte('started_at', rangeEnd.toISOString())
+        .order('started_at', { ascending: true })
+
+      if (gpsShiftError) throw gpsShiftError
+
+      shiftRows = (gpsShifts || [])
+        .map((shift) => {
+          const staff = staffByUserId.get(shift.user_id)
+          const startedAt = shift.started_at
+          const endedAt = shift.ended_at || null
+          const workDate = mountainDateKey(startedAt)
+          const endMs = endedAt ? new Date(endedAt).getTime() : Date.now()
+          const startMs = new Date(startedAt).getTime()
+          const grossMinutes =
+            Number.isFinite(startMs) && Number.isFinite(endMs)
+              ? Math.max(0, Math.round((endMs - startMs) / 60000))
+              : 0
+          const savedBreakMinutes = Math.max(
+            0,
+            Number(shift.break_minutes || 0),
+          )
+          const breakStartMs = shift.break_started_at
+            ? new Date(shift.break_started_at).getTime()
+            : null
+          const activeBreakMinutes =
+            breakStartMs != null && Number.isFinite(breakStartMs)
+              ? Math.max(0, Math.round((Date.now() - breakStartMs) / 60000))
+              : 0
+          const breakMinutes = savedBreakMinutes + activeBreakMinutes
+
+          return {
+            id: shift.id,
+            staffUserId: staff?.id ?? '',
+            staffDisplayName: staff?.display_name ?? 'Unknown',
+            staffRole: staff?.role ?? 'tech',
+            workDate,
+            startedAt,
+            endedAt,
+            status: shift.status,
+            breakStartedAt: shift.break_started_at || null,
+            breakMinutes,
+            grossMinutes,
+            payableMinutes: Math.max(0, grossMinutes - breakMinutes),
+            hasPayrollEntry: existingGpsShiftIds.has(shift.id),
+          }
+        })
+        .filter(
+          (shift) =>
+            shift.staffUserId &&
+            shift.workDate >= startDate &&
+            shift.workDate <= endDate &&
+            (!shift.hasPayrollEntry || shift.status === 'active'),
+        )
+    }
+
     return NextResponse.json({
       date,
       startDate,
       endDate,
       entries,
+      shiftRows,
       totalPayableMinutes: entries.reduce(
         (sum, entry) => sum + Number(entry.payableMinutes || 0),
         0,
