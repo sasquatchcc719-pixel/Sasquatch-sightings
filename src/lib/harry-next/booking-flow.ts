@@ -40,6 +40,7 @@ const extractionSchema = z.object({
   city: z.string().optional(),
   zip_code: z.string().optional(),
   lead_source: z.string().optional(),
+  lead_source_detail: z.string().optional(),
   preferred_date: z.string().optional(),
   preferred_time: z.string().optional(),
   services: z
@@ -60,6 +61,7 @@ Rules:
 - Only include a field if the customer has actually provided it. Omit unknowns.
 - "services": one entry per thing to clean, in the customer's words ("bedroom","stairs","dryer duct"), with a quantity (default 1). NEVER include prices or IDs — you only capture words and counts.
 - preferred_date as YYYY-MM-DD (today is ${today}), preferred_time as 24h HH:MM, only if the customer stated a day/time.
+- lead_source_detail: if the source is a referral, a realtor/property manager, a partner location, or "other", capture WHO or WHERE (e.g. the referrer's name) here.
 - Catalog services available (for your understanding only, do not invent): ${catalogNames.join('; ')}`
 }
 
@@ -107,6 +109,7 @@ export async function extractBookingFields(params: {
       city: parsed.city,
       zipCode: parsed.zip_code,
       leadSource: parsed.lead_source,
+      leadSourceDetail: parsed.lead_source_detail,
       preferredDate: parsed.preferred_date,
       preferredTime: parsed.preferred_time,
       services,
@@ -128,6 +131,7 @@ export type BookingStoredPayload = {
   start_time: string
   line_items: AiStyleBookingLineRequest[]
   lead_source: string
+  lead_source_detail: string | null
   expectedTotal: number
 }
 
@@ -166,13 +170,15 @@ export function buildBookingPayload(
       quantity: l.quantity,
     })),
     lead_source: fields.leadSource!,
+    lead_source_detail: fields.leadSourceDetail ?? null,
     expectedTotal: quote.total,
   }
 
   const lineSummary = quote.lines
     .map((l) => `${l.quantity}× ${l.nameSnapshot}`)
     .join(', ')
-  const summary = `Book ${fields.firstName} ${fields.lastName} — ${lineSummary} on ${fields.preferredDate} at ${fields.preferredTime} — total $${quote.total.toFixed(2)}`
+  const via = `${fields.leadSource}${fields.leadSourceDetail ? ` (${fields.leadSourceDetail})` : ''}`
+  const summary = `Book ${fields.firstName} ${fields.lastName} (${fields.email}) — ${lineSummary} at ${fields.street1}, ${fields.city} ${fields.zipCode} on ${fields.preferredDate} at ${fields.preferredTime} — via ${via} — total $${quote.total.toFixed(2)}`
   return { payload, summary }
 }
 
@@ -197,6 +203,7 @@ export async function executeBooking(
     booking_channel: 'sms_harry',
     source_label: 'Harry (SMS)',
     lead_source: payload.lead_source,
+    lead_source_detail: payload.lead_source_detail,
     actor_label: 'Harry-next',
     admin_heading: 'Harry booked a job',
   })

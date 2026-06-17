@@ -8,6 +8,10 @@
  * owner's approval. Code, not the model, decides when the booking is complete.
  */
 import type { RequestedService } from './quote'
+import {
+  normalizeLeadSource,
+  validateLeadSourceDetail,
+} from '@/lib/lead-sources'
 
 export type BookingFields = {
   firstName?: string
@@ -17,6 +21,7 @@ export type BookingFields = {
   city?: string
   zipCode?: string
   leadSource?: string
+  leadSourceDetail?: string
   services: RequestedService[]
   preferredDate?: string
   preferredTime?: string
@@ -37,14 +42,35 @@ export const REQUIRED_BOOKING_FIELDS = [
 
 export type RequiredBookingField = (typeof REQUIRED_BOOKING_FIELDS)[number]
 
-export function missingBookingFields(
-  fields: BookingFields,
-): RequiredBookingField[] {
-  return REQUIRED_BOOKING_FIELDS.filter((field) => {
+export function missingBookingFields(fields: BookingFields): string[] {
+  const missing: string[] = REQUIRED_BOOKING_FIELDS.filter((field) => {
     if (field === 'services') return (fields.services?.length || 0) === 0
     const value = fields[field]
     return typeof value !== 'string' || value.trim().length === 0
   })
+
+  // Email must actually look like an email — guards against a blank or
+  // placeholder value being treated as "provided".
+  if (
+    !missing.includes('email') &&
+    !/^.+@.+\..+$/.test((fields.email || '').trim())
+  ) {
+    missing.push('email')
+  }
+
+  // Conditional requirement, straight from the canonical lead-source rules the
+  // booking function itself enforces: referral / realtor / nfc / other need a
+  // detail (e.g. "Who referred you?"). This is what was missing — Harry proposed
+  // before collecting it, so booking rejected on approval.
+  if (!missing.includes('leadSource') && fields.leadSource) {
+    const normalized = normalizeLeadSource(
+      fields.leadSource,
+      fields.leadSourceDetail,
+    )
+    if (validateLeadSourceDetail(normalized)) missing.push('leadSourceDetail')
+  }
+
+  return missing
 }
 
 export function isBookingComplete(fields: BookingFields): boolean {
@@ -96,6 +122,16 @@ export function nextBookingPrompt(fields: BookingFields): string | null {
 
   if (missing.includes('leadSource')) {
     return 'Last thing — how did you hear about us? (Google, Nextdoor, a referral, etc.)'
+  }
+
+  if (missing.includes('leadSourceDetail')) {
+    const normalized = normalizeLeadSource(
+      fields.leadSource,
+      fields.leadSourceDetail,
+    )
+    return normalized.detail_label
+      ? `${normalized.detail_label}`
+      : 'Could you give me a bit more detail on how you heard about us?'
   }
 
   return 'Could you share a little more so I can finish setting this up?'

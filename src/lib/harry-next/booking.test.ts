@@ -68,3 +68,42 @@ describe('nextBookingPrompt', () => {
     expect(nextBookingPrompt(complete)).toBeNull()
   })
 })
+
+describe('conditional lead-source detail (the booking-failed-on-approval bug)', () => {
+  it('a referral source with NO detail is incomplete and asks for the detail (no price)', () => {
+    const fields: BookingFields = {
+      ...complete,
+      leadSource: 'referral',
+      leadSourceDetail: undefined,
+    }
+    expect(missingBookingFields(fields)).toContain('leadSourceDetail')
+    expect(isBookingComplete(fields)).toBe(false)
+    const prompt = nextBookingPrompt(fields)
+    expect(prompt).toBeTruthy()
+    expect(prompt).not.toMatch(/\$\d/)
+  })
+
+  it('a referral source WITH a detail is complete', () => {
+    expect(
+      isBookingComplete({
+        ...complete,
+        leadSource: 'referral',
+        leadSourceDetail: 'Jane next door',
+      }),
+    ).toBe(true)
+  })
+
+  it('a source that needs no detail (Nextdoor) stays complete', () => {
+    expect(isBookingComplete({ ...complete, leadSource: 'Nextdoor' })).toBe(
+      true,
+    )
+  })
+})
+
+describe('email validation', () => {
+  it('treats a non-email value as missing', () => {
+    expect(
+      missingBookingFields({ ...complete, email: 'not-an-email' }),
+    ).toContain('email')
+  })
+})
