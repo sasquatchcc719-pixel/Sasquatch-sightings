@@ -21,8 +21,11 @@ import {
   type DecideResult,
 } from './orchestrator'
 import { runBookingIntake } from './booking-flow'
+import { answerFromKnowledge, loadKnowledgeBlocks } from './knowledge'
 import { openAiIntentModel } from './model'
 import type { IntentModel } from './read-intent'
+import { sendCustomerSMS } from '@/lib/twilio'
+import { sendToCharles } from '@/lib/harry-command-bot'
 
 const PENDING_TABLE = 'harry_next_pending_actions'
 
@@ -82,6 +85,50 @@ export async function maybeRunBookingIntake(params: {
     message: params.message,
     model: params.model ?? openAiIntentModel(),
   })
+}
+
+// Relay boilerplate Harry should never answer or escalate on.
+const RELAY_BOILERPLATE_RE =
+  /Replies to this number|Google Local Services|g\.co\/homeservices/i
+
+// General company-knowledge Q&A — only reached when the message isn't a removal
+// or a booking. Answers plain questions from the knowledge base on its own and
+// escalates anything risky/uncovered to Charles. Never touches a job.
+export async function maybeAnswerGeneralQuestion(params: {
+  supabase: SupabaseClient
+  phone: string
+  message: string
+  model?: IntentModel
+}): Promise<{ handled: boolean; status?: string }> {
+  if (RELAY_BOILERPLATE_RE.test(params.message)) return { handled: false }
+
+  const blocks = await loadKnowledgeBlocks(params.supabase)
+  if (blocks.length === 0) return { handled: false }
+
+  const answer = await answerFromKnowledge({
+    message: params.message,
+    blocks,
+    model: params.model ?? openAiIntentModel(),
+  })
+
+  if (answer.status === 'none') return { handled: false }
+
+  if (answer.status === 'answer') {
+    await sendCustomerSMS(params.phone, answer.reply, undefined, 'harry_next')
+    return { handled: true, status: 'answered' }
+  }
+
+  // Escalate: alert Charles and give the customer an honest handoff (no guessing).
+  await sendToCharles(
+    `🔔 Customer ${params.phone} asked something Harry shouldn't answer alone (${answer.reason}):\n"${params.message}"`,
+  )
+  await sendCustomerSMS(
+    params.phone,
+    "Great question — let me have Charles get back to you on that. He'll follow up shortly!",
+    undefined,
+    'harry_next',
+  )
+  return { handled: true, status: 'escalated' }
 }
 
 // Strict: only the exact words on the approval card trigger a decision, so a
