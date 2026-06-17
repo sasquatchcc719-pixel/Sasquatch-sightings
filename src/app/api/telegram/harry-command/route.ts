@@ -712,6 +712,29 @@ export async function POST(request: NextRequest) {
       if (isDuplicate) return NextResponse.json({ ok: true, duplicate: true })
     }
 
+    // Harry-next (flag-gated): intercept "approve"/"reject" for pending
+    // service-edit approvals before the old command handler sees them. Anything
+    // that isn't a decision falls through untouched.
+    if (process.env.HARRY_NEXT_ENABLED === 'true' && update.message?.text) {
+      try {
+        const { decideFromTelegramText } =
+          await import('@/lib/harry-next/inbound')
+        const decision = await decideFromTelegramText({
+          supabase,
+          text: update.message.text,
+        })
+        if (decision.handled) {
+          await sendToCharles(decision.message ?? 'Done.')
+          return NextResponse.json({ ok: true })
+        }
+      } catch (error) {
+        console.error(
+          '[Harry-next] telegram decide hook error (continuing):',
+          error,
+        )
+      }
+    }
+
     // Handle text commands
     if (update.message?.text) {
       if (!thread) throw new Error('Missing Telegram thread')
