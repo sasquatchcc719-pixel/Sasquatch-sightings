@@ -111,6 +111,7 @@ export function TechJobDetail({
   const [squareLinkFeedback, setSquareLinkFeedback] = useState<string | null>(
     null,
   )
+  const [streetViewFailed, setStreetViewFailed] = useState(false)
   const [showSignatureModal, setShowSignatureModal] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
@@ -122,14 +123,6 @@ export function TechJobDetail({
     ? null
     : (appointment.invoice?.total ?? appointment.quotedTotal)
   const squareAmount = formatSquareAmount(payableTotal)
-  const areaMap =
-    appointment.recurringTemplateId &&
-    FLOOR_PLAN_MAPS[appointment.recurringTemplateId]
-      ? FLOOR_PLAN_MAPS[appointment.recurringTemplateId]
-      : null
-  const invoiceVisual =
-    appointment.photos.find((photo) => photo.publicUrl)?.publicUrl ??
-    (areaMap ? `/maps/${areaMap.file}` : null)
 
   async function updateJob(body: Record<string, unknown>) {
     setError(null)
@@ -423,6 +416,25 @@ export function TechJobDetail({
         </div>
       </section>
 
+      {fullAddress && !streetViewFailed ? (
+        <section className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.06]">
+          <Image
+            src={`/api/admin/streetview?address=${encodeURIComponent(
+              fullAddress,
+            )}`}
+            alt={`Street view of ${fullAddress}`}
+            width={900}
+            height={360}
+            className="h-52 w-full object-cover"
+            unoptimized
+            onError={() => setStreetViewFailed(true)}
+          />
+          <div className="border-t border-white/10 px-4 py-2 text-xs text-slate-400">
+            Street View · {fullAddress}
+          </div>
+        </section>
+      ) : null}
+
       {appointment.recurringTemplateId &&
       FLOOR_PLAN_MAPS[appointment.recurringTemplateId] ? (
         <section className="rounded-2xl border border-white/10 bg-white/[0.06] p-4">
@@ -508,30 +520,6 @@ export function TechJobDetail({
             </span>
           )}
         </div>
-
-        {appointment.hidePricing && invoiceVisual ? (
-          <div className="mb-3 overflow-hidden rounded-xl border border-white/10 bg-slate-950/50">
-            <Image
-              src={invoiceVisual}
-              alt={
-                areaMap
-                  ? `${areaMap.label} property area`
-                  : 'Recovery Village property photo'
-              }
-              width={900}
-              height={420}
-              className="max-h-64 w-full object-cover"
-            />
-            <div className="border-t border-white/10 px-3 py-2">
-              <p className="text-xs font-semibold tracking-wide text-slate-300 uppercase">
-                Property Area
-              </p>
-              <p className="text-sm text-slate-100">
-                {areaMap?.label ?? 'Job photos'}
-              </p>
-            </div>
-          </div>
-        ) : null}
 
         <div className="space-y-2">
           {appointment.lineItems.map((line, index) => (
