@@ -100,10 +100,21 @@ export function TechJobDetail({
     return result.appointment as TechAppointment
   }
 
-  async function updateStatus(status: string) {
-    setLoadingStatus(status)
+  async function updateStatus(
+    status: string,
+    options: { skipCustomerCommunications?: boolean } = {},
+  ) {
+    const loadingKey = options.skipCustomerCommunications
+      ? `${status}_quiet`
+      : status
+    setLoadingStatus(loadingKey)
     try {
-      await updateJob({ status })
+      await updateJob({
+        status,
+        ...(options.skipCustomerCommunications
+          ? { skip_customer_communications: true }
+          : {}),
+      })
       router.refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Update failed')
@@ -370,7 +381,12 @@ export function TechJobDetail({
         <h2 className="mb-3 font-semibold">Job Actions</h2>
         <div className="grid grid-cols-2 gap-2">
           {[
-            ['on_my_way', 'On My Way'],
+            [
+              appointment.status === 'on_my_way' ? 'booked' : 'on_my_way',
+              appointment.status === 'on_my_way'
+                ? 'Back to Scheduled'
+                : 'On My Way',
+            ],
             ['in_progress', 'Start Job'],
             ['completed', 'Complete'],
           ].map(([status, label]) => (
@@ -393,6 +409,23 @@ export function TechJobDetail({
               {label}
             </Button>
           ))}
+          <Button
+            variant="outline"
+            className="border-white/20 bg-white/5 text-white"
+            disabled={loadingStatus !== null}
+            onClick={() =>
+              void updateStatus('completed', {
+                skipCustomerCommunications: true,
+              })
+            }
+          >
+            {loadingStatus === 'completed_quiet' ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <CheckCircle2 className="h-4 w-4" />
+            )}
+            Quiet Close
+          </Button>
         </div>
       </section>
 

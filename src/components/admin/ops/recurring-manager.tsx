@@ -2401,13 +2401,22 @@ function RecurringVisitPanel({
     0,
   )
 
-  const handleStatusChange = async (newStatus: 'on_my_way' | 'completed') => {
+  const handleStatusChange = async (
+    newStatus: 'booked' | 'on_my_way' | 'completed',
+    options: { skipCustomerCommunications?: boolean } = {},
+  ) => {
     setSaving(true)
     try {
       const res = await fetch(`/api/admin/ops/appointments/${appointment.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({
+          status: newStatus,
+          ...(newStatus === 'booked' ? { on_my_way_at: null } : {}),
+          ...(options.skipCustomerCommunications
+            ? { skip_customer_communications: true }
+            : {}),
+        }),
       })
       if (res.ok) {
         const data = await res.json()
@@ -2417,6 +2426,10 @@ function RecurringVisitPanel({
           setStatus('on_my_way')
           setOnMyWayAt(t)
           onUpdated({ status: 'on_my_way', on_my_way_at: t })
+        } else if (newStatus === 'booked') {
+          setStatus('booked')
+          setOnMyWayAt(null)
+          onUpdated({ status: 'booked', on_my_way_at: null })
         } else {
           const t = data.appointment?.completed_at ?? nowIso
           setStatus('completed')
@@ -2642,6 +2655,36 @@ function RecurringVisitPanel({
                       <CheckCircle className="mr-2 h-4 w-4" />
                     )}
                     Close Out Job
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() =>
+                      handleStatusChange('completed', {
+                        skipCustomerCommunications: true,
+                      })
+                    }
+                    disabled={saving}
+                    className="w-full"
+                  >
+                    {saving ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <CheckCircle className="mr-2 h-4 w-4" />
+                    )}
+                    Quiet Close
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => handleStatusChange('booked')}
+                    disabled={saving}
+                    className="w-full"
+                  >
+                    {saving ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Truck className="mr-2 h-4 w-4" />
+                    )}
+                    Back to Scheduled
                   </Button>
                 </div>
               ) : (

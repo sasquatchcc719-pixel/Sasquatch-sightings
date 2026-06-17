@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { getAssignedTechAppointment } from '@/lib/tech/appointments'
 import { createAdminClient } from '@/supabase/server'
+import { suppressPostJobReviewRequest } from '@/lib/ops/review-requests'
 import { enrollCustomerInDrip } from '@/lib/ops/drip-campaign'
 
 export async function GET(
@@ -70,9 +71,17 @@ export async function PATCH(
       updates.status = status
       if (status === 'on_my_way')
         updates.on_my_way_at = new Date().toISOString()
+      if (
+        current.status === 'on_my_way' &&
+        (status === 'booked' || status === 'confirmed')
+      )
+        updates.on_my_way_at = null
       if (status === 'completed')
         updates.completed_at = new Date().toISOString()
     }
+
+    const skipCustomerCommunications =
+      body.skip_customer_communications === true
 
     if (body.internal_notes !== undefined) {
       updates.internal_notes = String(body.internal_notes || '').trim() || null
@@ -98,6 +107,14 @@ export async function PATCH(
         changed_by: access.id,
         notes: 'Updated from tech portal',
       })
+
+      if (String(body.status) === 'completed' && skipCustomerCommunications) {
+        await suppressPostJobReviewRequest(
+          supabase,
+          id,
+          'manual quiet close - post-job communications skipped',
+        )
+      }
     }
 
     const appointment = await getAssignedTechAppointment(

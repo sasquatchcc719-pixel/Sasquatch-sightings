@@ -712,6 +712,7 @@ export function InvoiceDetail({
     status?: string
     payment_status?: string
     label: string
+    on_my_way_at?: string | null
   }) => {
     const appointment = unwrapRelation(invoice?.ops_appointments)
     if (!appointment?.id) return
@@ -727,6 +728,9 @@ export function InvoiceDetail({
             ...(updates.status ? { status: updates.status } : {}),
             ...(updates.payment_status
               ? { payment_status: updates.payment_status }
+              : {}),
+            ...(updates.on_my_way_at !== undefined
+              ? { on_my_way_at: updates.on_my_way_at }
               : {}),
           }),
         },
@@ -758,6 +762,9 @@ export function InvoiceDetail({
         const t = Date.now()
         setDriveStartedAtMs(t)
         sessionStorage.setItem(`ops_onmyway_${appointment.id}`, String(t))
+      } else if (updates.status === 'booked') {
+        setDriveStartedAtMs(null)
+        sessionStorage.removeItem(`ops_onmyway_${appointment.id}`)
       }
       await loadInvoice()
       router.refresh()
@@ -1069,7 +1076,9 @@ export function InvoiceDetail({
     return null
   }
 
-  const handleFinishAndCloseJob = async () => {
+  const handleFinishAndCloseJob = async (
+    skipCustomerCommunications = false,
+  ) => {
     setStatsRecordLoading(true)
     setStatsRecordMessage(null)
     setError(null)
@@ -1083,6 +1092,9 @@ export function InvoiceDetail({
           body: JSON.stringify({
             ...(driveMinutes != null ? { drive_minutes: driveMinutes } : {}),
             mark_completed: true,
+            ...(skipCustomerCommunications
+              ? { skip_customer_communications: true }
+              : {}),
           }),
         },
       )
@@ -1102,7 +1114,9 @@ export function InvoiceDetail({
         )
       } else {
         setStatsRecordMessage(
-          'Job closed: revenue, stats, and QuickBooks updated. You can still combine photos below if you want a post later.',
+          skipCustomerCommunications
+            ? 'Job closed quietly: revenue, stats, and QuickBooks updated. Customer follow-ups and review request were skipped.'
+            : 'Job closed: revenue, stats, and QuickBooks updated. You can still combine photos below if you want a post later.',
         )
       }
       await loadInvoice()
@@ -1598,15 +1612,27 @@ export function InvoiceDetail({
                   disabled={Boolean(actionLoading)}
                   onClick={() =>
                     void runAppointmentAction({
-                      label: 'On My Way',
-                      status: 'on_my_way',
+                      label:
+                        appointment.status === 'on_my_way'
+                          ? 'Back to Scheduled'
+                          : 'On My Way',
+                      status:
+                        appointment.status === 'on_my_way'
+                          ? 'booked'
+                          : 'on_my_way',
+                      ...(appointment.status === 'on_my_way'
+                        ? { on_my_way_at: null }
+                        : {}),
                     })
                   }
                 >
-                  {actionLoading === 'On My Way' ? (
+                  {actionLoading === 'On My Way' ||
+                  actionLoading === 'Back to Scheduled' ? (
                     <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                   ) : null}
-                  On My Way
+                  {appointment.status === 'on_my_way'
+                    ? 'Back to Scheduled'
+                    : 'On My Way'}
                 </Button>
                 {appointment.status === 'on_my_way' &&
                 driveStartedAtMs != null ? (
@@ -2489,17 +2515,31 @@ export function InvoiceDetail({
             </p>
           ) : null}
         </div>
-        <Button
-          type="button"
-          className="mt-4 h-14 w-full border-green-600 bg-green-600 text-base font-semibold text-white hover:bg-green-700"
-          disabled={statsRecordLoading}
-          onClick={() => void handleFinishAndCloseJob()}
-        >
-          {statsRecordLoading ? (
-            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-          ) : null}
-          {statsRecordLoading ? 'Closing out…' : 'Finish & close job'}
-        </Button>
+        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+          <Button
+            type="button"
+            className="h-14 border-green-600 bg-green-600 text-base font-semibold text-white hover:bg-green-700"
+            disabled={statsRecordLoading}
+            onClick={() => void handleFinishAndCloseJob()}
+          >
+            {statsRecordLoading ? (
+              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+            ) : null}
+            {statsRecordLoading ? 'Closing out…' : 'Finish & close job'}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-14 text-base font-semibold"
+            disabled={statsRecordLoading}
+            onClick={() => void handleFinishAndCloseJob(true)}
+          >
+            {statsRecordLoading ? (
+              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+            ) : null}
+            Quiet close
+          </Button>
+        </div>
         {statsRecordMessage ? (
           <p className="text-muted-foreground mt-3 text-center text-sm">
             {statsRecordMessage}

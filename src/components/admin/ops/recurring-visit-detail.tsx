@@ -352,13 +352,22 @@ export default function RecurringVisitDetail({
   }
 
   const handleOnMyWay = async () => {
-    setActionLoading('on_my_way')
+    const nextStatus = status === 'on_my_way' ? 'booked' : 'on_my_way'
+    setActionLoading(nextStatus)
     try {
-      await patchAppointment({ status: 'on_my_way' })
-      const now = Date.now()
-      setStatus('on_my_way')
-      setDriveStartMs(now)
-      sessionStorage.setItem(`omw_recurring_${appointmentId}`, String(now))
+      await patchAppointment({
+        status: nextStatus,
+        ...(nextStatus === 'booked' ? { on_my_way_at: null } : {}),
+      })
+      setStatus(nextStatus)
+      if (nextStatus === 'on_my_way') {
+        const now = Date.now()
+        setDriveStartMs(now)
+        sessionStorage.setItem(`omw_recurring_${appointmentId}`, String(now))
+      } else {
+        setDriveStartMs(null)
+        sessionStorage.removeItem(`omw_recurring_${appointmentId}`)
+      }
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Failed')
     } finally {
@@ -366,10 +375,17 @@ export default function RecurringVisitDetail({
     }
   }
 
-  const handleCloseOut = async () => {
-    setActionLoading('completed')
+  const handleCloseOut = async (skipCustomerCommunications = false) => {
+    setActionLoading(
+      skipCustomerCommunications ? 'quiet_completed' : 'completed',
+    )
     try {
-      await patchAppointment({ status: 'completed' })
+      await patchAppointment({
+        status: 'completed',
+        ...(skipCustomerCommunications
+          ? { skip_customer_communications: true }
+          : {}),
+      })
       setStatus('completed')
       if (driveStartMs != null) {
         const driveMin = Math.round((Date.now() - driveStartMs) / 60000)
@@ -714,15 +730,15 @@ export default function RecurringVisitDetail({
             disabled={actionLoading !== null}
             onClick={() => void handleOnMyWay()}
           >
-            {actionLoading === 'on_my_way' ? (
+            {actionLoading === 'on_my_way' || actionLoading === 'booked' ? (
               <Loader2 className="mr-2 h-5 w-5 animate-spin" />
             ) : (
               <Truck className="mr-2 h-5 w-5" />
             )}
-            {actionLoading === 'on_my_way'
+            {actionLoading === 'on_my_way' || actionLoading === 'booked'
               ? 'Updating…'
               : status === 'on_my_way'
-                ? 'En Route'
+                ? 'Back to Scheduled'
                 : 'On My Way'}
           </Button>
           {status === 'on_my_way' && driveStartMs != null && (
@@ -773,18 +789,35 @@ export default function RecurringVisitDetail({
                 invoice.
               </p>
             )}
-            <Button
-              className="mt-4 h-14 w-full border-green-600 bg-green-600 text-base font-semibold text-white hover:bg-green-700"
-              disabled={actionLoading !== null}
-              onClick={() => void handleCloseOut()}
-            >
-              {actionLoading === 'completed' ? (
-                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-              ) : (
-                <CheckCircle className="mr-2 h-5 w-5" />
-              )}
-              {actionLoading === 'completed' ? 'Closing out…' : 'Close Out Job'}
-            </Button>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <Button
+                className="h-14 border-green-600 bg-green-600 text-base font-semibold text-white hover:bg-green-700"
+                disabled={actionLoading !== null}
+                onClick={() => void handleCloseOut()}
+              >
+                {actionLoading === 'completed' ? (
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                ) : (
+                  <CheckCircle className="mr-2 h-5 w-5" />
+                )}
+                {actionLoading === 'completed'
+                  ? 'Closing out…'
+                  : 'Close Out Job'}
+              </Button>
+              <Button
+                variant="outline"
+                className="h-14 text-base font-semibold"
+                disabled={actionLoading !== null}
+                onClick={() => void handleCloseOut(true)}
+              >
+                {actionLoading === 'quiet_completed' ? (
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                ) : (
+                  <CheckCircle className="mr-2 h-5 w-5" />
+                )}
+                Quiet Close
+              </Button>
+            </div>
           </>
         )}
       </Card>

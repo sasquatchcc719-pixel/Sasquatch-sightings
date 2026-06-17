@@ -511,6 +511,8 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
     status?: string
     payment_status?: string
     label: string
+    on_my_way_at?: string | null
+    skip_customer_communications?: boolean
   }) => {
     setActionLoading(updates.label)
     setError(null)
@@ -524,6 +526,12 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
             ...(updates.status ? { status: updates.status } : {}),
             ...(updates.payment_status
               ? { payment_status: updates.payment_status }
+              : {}),
+            ...(updates.on_my_way_at !== undefined
+              ? { on_my_way_at: updates.on_my_way_at }
+              : {}),
+            ...(updates.skip_customer_communications
+              ? { skip_customer_communications: true }
               : {}),
           }),
         },
@@ -556,6 +564,9 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
         setDriveStartedAtMs(t)
         sessionStorage.setItem(`ops_onmyway_${appointmentId}`, String(t))
         setAutoArrivedTriggered(false) // Reset for next time
+      } else if (updates.status === 'booked') {
+        setDriveStartedAtMs(null)
+        sessionStorage.removeItem(`ops_onmyway_${appointmentId}`)
       }
       if (updates.status === 'in_progress') {
         const t = Date.now()
@@ -1000,15 +1011,25 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
               disabled={Boolean(actionLoading)}
               onClick={() =>
                 void runQuickAction({
-                  label: 'On My Way',
-                  status: 'on_my_way',
+                  label:
+                    appointment.status === 'on_my_way'
+                      ? 'Back to Scheduled'
+                      : 'On My Way',
+                  status:
+                    appointment.status === 'on_my_way' ? 'booked' : 'on_my_way',
+                  ...(appointment.status === 'on_my_way'
+                    ? { on_my_way_at: null }
+                    : {}),
                 })
               }
             >
-              {actionLoading === 'On My Way' ? (
+              {actionLoading === 'On My Way' ||
+              actionLoading === 'Back to Scheduled' ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : null}
-              On My Way
+              {appointment.status === 'on_my_way'
+                ? 'Back to Scheduled'
+                : 'On My Way'}
             </Button>
             <Button
               variant="outline"
@@ -1024,6 +1045,22 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : null}
               Complete
+            </Button>
+            <Button
+              variant="outline"
+              disabled={Boolean(actionLoading)}
+              onClick={() =>
+                void runQuickAction({
+                  label: 'Quiet Close',
+                  status: 'completed',
+                  skip_customer_communications: true,
+                })
+              }
+            >
+              {actionLoading === 'Quiet Close' ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : null}
+              Quiet Close
             </Button>
             <Button
               variant="outline"

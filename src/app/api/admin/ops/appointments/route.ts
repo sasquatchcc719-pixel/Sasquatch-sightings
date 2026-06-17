@@ -12,6 +12,7 @@ import {
 import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
 import { enrollCustomerInDrip } from '@/lib/ops/drip-campaign'
 import { cancelReactivationForCustomer } from '@/lib/ops/reactivation-campaign'
+import { suppressPostJobReviewRequest } from '@/lib/ops/review-requests'
 import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
 import { scheduleJobReminder } from '@/lib/onesignal'
 import { normalizeOpsPhone, opsPhoneLookupVariants } from '@/lib/ops/phone'
@@ -560,6 +561,8 @@ export async function PATCH(request: NextRequest) {
     if (appointmentError) throw appointmentError
 
     const nextStatus = body.status ? String(body.status) : appointment.status
+    const skipCustomerCommunications =
+      body.skip_customer_communications === true
     const paymentStatus = body.payment_status
       ? String(body.payment_status)
       : appointment.payment_status
@@ -683,7 +686,7 @@ export async function PATCH(request: NextRequest) {
       if (marketingError) throw marketingError
     }
 
-    if (nextStatus !== appointment.status) {
+    if (nextStatus !== appointment.status && !skipCustomerCommunications) {
       if (nextStatus === 'on_my_way') {
         await sendOpsLifecycleCommunications({
           event: 'on_my_way',
@@ -705,6 +708,18 @@ export async function PATCH(request: NextRequest) {
           )
         }
       }
+    }
+
+    if (
+      nextStatus !== appointment.status &&
+      nextStatus === 'completed' &&
+      skipCustomerCommunications
+    ) {
+      await suppressPostJobReviewRequest(
+        supabase,
+        appointmentId,
+        'manual quiet close - post-job communications skipped',
+      )
     }
 
     return NextResponse.json({ success: true })

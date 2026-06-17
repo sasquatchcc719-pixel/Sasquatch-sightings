@@ -8,6 +8,7 @@ import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
 import { ensureInvoiceQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
 import { enrollCustomerInDrip } from '@/lib/ops/drip-campaign'
 import { assertTechInvoiceAccess } from '@/lib/ops/tech-job-access'
+import { suppressPostJobReviewRequest } from '@/lib/ops/review-requests'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -25,6 +26,7 @@ export async function POST(request: NextRequest, { params }: Params) {
 
     let driveMinutes: number | null = null
     let markCompleted = true
+    let skipCustomerCommunications = false
     try {
       const body = await request.json()
       if (body?.drive_minutes != null) {
@@ -32,6 +34,9 @@ export async function POST(request: NextRequest, { params }: Params) {
         if (Number.isFinite(n)) driveMinutes = Math.max(0, Math.round(n))
       }
       if (body?.mark_completed === false) markCompleted = false
+      if (body?.skip_customer_communications === true) {
+        skipCustomerCommunications = true
+      }
     } catch {
       /* empty body ok */
     }
@@ -78,10 +83,18 @@ export async function POST(request: NextRequest, { params }: Params) {
             updated_at: new Date().toISOString(),
           })
           .eq('id', inv.appointment_id)
-        await sendOpsLifecycleCommunications({
-          event: 'job_finished',
-          appointmentId: inv.appointment_id,
-        })
+        if (skipCustomerCommunications) {
+          await suppressPostJobReviewRequest(
+            supabase,
+            inv.appointment_id,
+            'manual quiet close - post-job communications skipped',
+          )
+        } else {
+          await sendOpsLifecycleCommunications({
+            event: 'job_finished',
+            appointmentId: inv.appointment_id,
+          })
+        }
       } else if (appt && !appt.completed_at) {
         await supabase
           .from('ops_appointments')
@@ -92,7 +105,15 @@ export async function POST(request: NextRequest, { params }: Params) {
           .eq('id', inv.appointment_id)
       }
 
-      await enrollCustomerInDrip(inv.appointment_id)
+      if (skipCustomerCommunications) {
+        await suppressPostJobReviewRequest(
+          supabase,
+          inv.appointment_id,
+          'manual quiet close - post-job communications skipped',
+        )
+      } else {
+        await enrollCustomerInDrip(inv.appointment_id)
+      }
 
       const { data: invRow } = await supabase
         .from('ops_invoices')

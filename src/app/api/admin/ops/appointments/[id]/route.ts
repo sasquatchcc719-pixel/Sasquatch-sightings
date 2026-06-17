@@ -19,6 +19,7 @@ import { ensureInvoiceQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
 import { recordRevenueFromOpsInvoice } from '@/lib/ops/revenue-from-invoice'
 import { sendCustomerSMS } from '@/lib/twilio'
 import { Resend } from 'resend'
+import { suppressPostJobReviewRequest } from '@/lib/ops/review-requests'
 import {
   leadSourceUpdatePayload,
   normalizeLeadSourceForWrite,
@@ -342,6 +343,8 @@ export async function PATCH(
     }
 
     const nextStatus = body.status ? String(body.status) : current.status
+    const skipCustomerCommunications =
+      body.skip_customer_communications === true
     const nextPaymentStatus = body.payment_status
       ? String(body.payment_status)
       : current.payment_status
@@ -370,14 +373,19 @@ export async function PATCH(
       (current as { on_my_way_at?: string | null }).on_my_way_at ?? null
     const completedAtExisting =
       (current as { completed_at?: string | null }).completed_at ?? null
+    const revertingOnMyWayToScheduled =
+      current.status === 'on_my_way' &&
+      (nextStatus === 'booked' || nextStatus === 'confirmed')
 
     // Allow admin to explicitly override on_my_way_at (e.g. duration correction from recurring manager)
     const nextOnMyWayAt =
       body.on_my_way_at !== undefined
         ? (body.on_my_way_at as string | null)
-        : nextStatus === 'on_my_way' && !firstOnMyWayAt
-          ? nowIso
-          : firstOnMyWayAt
+        : revertingOnMyWayToScheduled
+          ? null
+          : nextStatus === 'on_my_way' && !firstOnMyWayAt
+            ? nowIso
+            : firstOnMyWayAt
     const nextCompletedAt =
       nextStatus === 'completed' && !completedAtExisting
         ? nowIso
@@ -639,7 +647,11 @@ export async function PATCH(
       ReturnType<typeof sendAppointmentCancellationNotifications>
     > | null = null
 
-    if (current.status !== nextStatus && !isBatchMonthlyRecurring) {
+    if (
+      current.status !== nextStatus &&
+      !isBatchMonthlyRecurring &&
+      !skipCustomerCommunications
+    ) {
       if (nextStatus === 'on_my_way') {
         const { sent } = await sendOpsLifecycleCommunications({
           event: 'on_my_way',
@@ -675,6 +687,18 @@ export async function PATCH(
           )
         }
       }
+    }
+
+    if (
+      current.status !== nextStatus &&
+      nextStatus === 'completed' &&
+      skipCustomerCommunications
+    ) {
+      await suppressPostJobReviewRequest(
+        supabase,
+        id,
+        'manual quiet close - post-job communications skipped',
+      )
     }
 
     if (

@@ -43,6 +43,46 @@ type ReviewCustomer = {
   phone: string | null
 }
 
+export async function suppressPostJobReviewRequest(
+  supabase: SupabaseClient,
+  appointmentId: string,
+  reason = 'manual suppression - do not contact',
+): Promise<void> {
+  const { data: appointment, error } = await supabase
+    .from('ops_appointments')
+    .select(
+      `
+      id,
+      customer_id,
+      ops_customers!ops_appointments_customer_id_fkey(phone)
+    `,
+    )
+    .eq('id', appointmentId)
+    .maybeSingle()
+
+  if (error) throw error
+  if (!appointment) return
+
+  const customer = Array.isArray(appointment.ops_customers)
+    ? appointment.ops_customers[0]
+    : appointment.ops_customers
+
+  const { error: upsertError } = await supabase.from('review_requests').upsert(
+    {
+      appointment_id: appointment.id,
+      customer_id: appointment.customer_id,
+      phone: customer?.phone ?? null,
+      status: 'skipped',
+      skip_reason: reason,
+      scheduled_for: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'appointment_id' },
+  )
+
+  if (upsertError) throw upsertError
+}
+
 export function isWithinSendWindow(now: Date = new Date()): boolean {
   const hour = Number(
     now.toLocaleString('en-US', {
