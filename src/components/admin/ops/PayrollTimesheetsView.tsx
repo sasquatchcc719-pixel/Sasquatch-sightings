@@ -34,6 +34,8 @@ type TimesheetEntry = {
   source: string
   status: string
   notes: string | null
+  clockState: 'active' | 'on_break' | 'complete'
+  breakStartedAt: string | null
 }
 
 type EntryFormState = {
@@ -723,12 +725,30 @@ export function PayrollTimesheetsView() {
               <div key={entry.id} className="px-4 py-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="font-medium text-white">
-                      {entry.staffDisplayName}
-                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-medium text-white">
+                        {entry.staffDisplayName}
+                      </p>
+                      {entry.clockState !== 'complete' && (
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                            entry.clockState === 'on_break'
+                              ? 'bg-amber-500/15 text-amber-200'
+                              : 'bg-emerald-500/15 text-emerald-200'
+                          }`}
+                        >
+                          {entry.clockState === 'on_break'
+                            ? 'On break'
+                            : 'Clocked in'}
+                        </span>
+                      )}
+                    </div>
                     <p className="text-sm text-slate-400">
                       {viewMode === 'period' ? `${entry.workDate} · ` : ''}
-                      {fmtTime(entry.startedAt)} → {fmtTime(entry.endedAt)}
+                      {fmtTime(entry.startedAt)} →{' '}
+                      {entry.clockState === 'complete'
+                        ? fmtTime(entry.endedAt)
+                        : 'Now'}
                       {entry.breakMinutes > 0
                         ? `, ${entry.breakMinutes}m break`
                         : ''}
@@ -759,7 +779,10 @@ export function PayrollTimesheetsView() {
                           : ''}
                       </p>
                       <p className="text-xs text-slate-500 capitalize">
-                        {entry.workType} · {entry.status}
+                        {entry.workType} ·{' '}
+                        {entry.clockState === 'complete'
+                          ? entry.status
+                          : entry.clockState.replace('_', ' ')}
                       </p>
                     </div>
 
@@ -771,12 +794,15 @@ export function PayrollTimesheetsView() {
                       disabled={
                         isSaving ||
                         entry.status === 'paid' ||
-                        entry.hourlyRate <= 0
+                        entry.hourlyRate <= 0 ||
+                        entry.clockState !== 'complete'
                       }
                       title={
-                        entry.hourlyRate <= 0
-                          ? 'Add an hourly rate before approving this entry'
-                          : undefined
+                        entry.clockState !== 'complete'
+                          ? 'Clocked-in entries can be approved after clock out'
+                          : entry.hourlyRate <= 0
+                            ? 'Add an hourly rate before approving this entry'
+                            : undefined
                       }
                       className="rounded-lg border border-white/10 bg-slate-800/60 px-2 py-1.5 text-sm text-white disabled:opacity-50"
                     >
@@ -787,18 +813,34 @@ export function PayrollTimesheetsView() {
 
                     <button
                       onClick={() => startEditing(entry)}
-                      disabled={isSaving || entry.status === 'paid'}
+                      disabled={
+                        isSaving ||
+                        entry.status === 'paid' ||
+                        entry.clockState !== 'complete'
+                      }
                       className="rounded-lg border border-blue-500/20 p-2 text-blue-300 hover:bg-blue-500/10 disabled:opacity-40"
-                      title="Edit entry"
+                      title={
+                        entry.clockState !== 'complete'
+                          ? 'Clocked-in entries can be edited after clock out'
+                          : 'Edit entry'
+                      }
                     >
                       <Pencil className="h-4 w-4" />
                     </button>
 
                     <button
                       onClick={() => deleteEntry(entry)}
-                      disabled={isSaving || entry.status === 'paid'}
+                      disabled={
+                        isSaving ||
+                        entry.status === 'paid' ||
+                        entry.clockState !== 'complete'
+                      }
                       className="rounded-lg border border-red-500/20 p-2 text-red-300 hover:bg-red-500/10 disabled:opacity-40"
-                      title="Delete entry"
+                      title={
+                        entry.clockState !== 'complete'
+                          ? 'Clocked-in entries can be deleted after clock out'
+                          : 'Delete entry'
+                      }
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>

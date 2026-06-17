@@ -39,6 +39,27 @@ function calculatePayableMinutes(
   return { payableMinutes }
 }
 
+function minutesBetween(startedAt: string, endedAt: Date) {
+  return Math.max(
+    0,
+    Math.round((endedAt.getTime() - new Date(startedAt).getTime()) / 60000),
+  )
+}
+
+function liveBreakMinutes(entry: {
+  clock_state?: string | null
+  break_started_at?: string | null
+  break_minutes: number
+}) {
+  if (entry.clock_state !== 'on_break' || !entry.break_started_at) return 0
+  return Math.max(
+    0,
+    Math.round(
+      (Date.now() - new Date(entry.break_started_at).getTime()) / 60000,
+    ),
+  )
+}
+
 export async function GET(request: NextRequest) {
   try {
     await requireAnyRole(['admin', 'owner'])
@@ -71,6 +92,8 @@ export async function GET(request: NextRequest) {
         source,
         status,
         notes,
+        clock_state,
+        break_started_at,
         created_at,
         updated_at,
         staff_users (
@@ -97,6 +120,18 @@ export async function GET(request: NextRequest) {
         ? entry.staff_users[0]
         : entry.staff_users
 
+      const clockState = entry.clock_state || 'complete'
+      const breakMinutes =
+        Number(entry.break_minutes || 0) + liveBreakMinutes(entry)
+      const payableMinutes =
+        clockState === 'complete'
+          ? Number(entry.payable_minutes || 0)
+          : Math.max(
+              0,
+              minutesBetween(entry.started_at, new Date()) - breakMinutes,
+            )
+      const hourlyRate = Number(entry.hourly_rate || 0)
+
       return {
         id: entry.id,
         staffUserId: entry.staff_user_id,
@@ -104,16 +139,22 @@ export async function GET(request: NextRequest) {
         staffRole: staff?.role ?? 'tech',
         workDate: entry.work_date,
         startedAt: entry.started_at,
-        endedAt: entry.ended_at,
-        breakMinutes: entry.break_minutes,
-        payableMinutes: entry.payable_minutes,
-        hourlyRate: Number(entry.hourly_rate || 0),
-        grossPay: Number(entry.gross_pay || 0),
+        endedAt:
+          clockState === 'complete' ? entry.ended_at : new Date().toISOString(),
+        breakMinutes,
+        payableMinutes,
+        hourlyRate,
+        grossPay:
+          clockState === 'complete'
+            ? Number(entry.gross_pay || 0)
+            : Math.round((payableMinutes / 60) * hourlyRate * 100) / 100,
         gpsShiftId: entry.gps_shift_id,
         workType: entry.work_type,
         source: entry.source,
         status: entry.status,
         notes: entry.notes,
+        clockState,
+        breakStartedAt: entry.break_started_at,
         createdAt: entry.created_at,
         updatedAt: entry.updated_at,
       }

@@ -3,6 +3,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { getUserWithRole } from '@/lib/auth'
 import { AuthButton } from '@/components/auth-button'
+import { TechClockControl } from '@/components/tech/tech-clock-control'
 
 const techNavItems = [
   { href: '/tech', label: 'Jobs' },
@@ -27,7 +28,7 @@ export default async function TechLayout({
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 pb-24 text-slate-50">
+    <main className="min-h-screen bg-slate-950 pb-32 text-slate-50">
       <div className="mx-auto flex min-h-screen w-full max-w-3xl flex-col">
         <header className="sticky top-0 z-20 border-b border-white/10 bg-slate-950/90 px-4 py-3 backdrop-blur">
           <div className="flex items-center justify-between gap-4">
@@ -59,6 +60,7 @@ export default async function TechLayout({
         </header>
         <div className="flex-1 px-4 py-5">{children}</div>
       </div>
+      <TechClockControl />
     </main>
   )
 }
