@@ -99,6 +99,22 @@ export async function extractBookingFields(params: {
     quantity: Math.max(1, Math.floor(s.quantity) || 1),
   }))
 
+  // Anti-fabrication: only accept a date/time if the CUSTOMER actually said
+  // something temporal. The model was inventing these, so it claimed "I've got
+  // everything" without ever asking for a day or time.
+  const customerText = params.transcript
+    .filter((m) => m.role === 'user')
+    .map((m) => m.content)
+    .join(' ')
+  const hasDate =
+    /\b(today|tonight|tomorrow|mon|tues?|wed(?:nes)?|thur?s?|fri|sat(?:ur)?|sun)(day)?\b|\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b|\b\d{1,2}(st|nd|rd|th)\b|\b\d{1,2}\/\d{1,2}\b|\b\d{4}-\d{2}-\d{2}\b|\bnext\s+(week|mon|tues?|wed|thur?s?|fri|sat|sun)/i.test(
+      customerText,
+    )
+  const hasTime =
+    /\b\d{1,2}\s*(:\d{2})?\s*(a\.?m\.?|p\.?m\.?)\b|\b\d{1,2}:\d{2}\b|\b(morning|afternoon|evening|noon|midday)\b/i.test(
+      customerText,
+    )
+
   return {
     isBooking: parsed.is_booking,
     fields: {
@@ -110,8 +126,8 @@ export async function extractBookingFields(params: {
       zipCode: parsed.zip_code,
       leadSource: parsed.lead_source,
       leadSourceDetail: parsed.lead_source_detail,
-      preferredDate: parsed.preferred_date,
-      preferredTime: parsed.preferred_time,
+      preferredDate: hasDate ? parsed.preferred_date : undefined,
+      preferredTime: hasTime ? parsed.preferred_time : undefined,
       services,
     },
   }

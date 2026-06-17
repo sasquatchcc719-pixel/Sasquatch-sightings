@@ -66,6 +66,34 @@ const KEYWORD_RULES: Array<{ match: RegExp; nameFragment: string }> = [
   { match: /\b(pre.?vacuum|vacuum)/, nameFragment: 'pre-vacuum' },
 ]
 
+// Square-footage → room tier (the catalog is sqft-banded). "living room 350 ft²"
+// maps deterministically to the Sasquatch tier, no keyword guessing.
+const SQFT_TIERS: Array<{ maxSqft: number; nameFragment: string }> = [
+  { maxSqft: 100, nameFragment: 'hall/bathroom/closet' },
+  { maxSqft: 200, nameFragment: 'regular size room' },
+  { maxSqft: 400, nameFragment: 'sasquatch size room' },
+  { maxSqft: 600, nameFragment: 'monster size room' },
+  { maxSqft: 800, nameFragment: 'jumbo' },
+  { maxSqft: Infinity, nameFragment: 'oversized' },
+]
+
+// Explicit size-tier names, even when phrased as "area"/"space" instead of "room".
+const TIER_NAME_SIGNALS: Array<{ re: RegExp; nameFragment: string }> = [
+  { re: /\bregular\s*size\b/, nameFragment: 'regular size room' },
+  { re: /\bsasquatch\b/, nameFragment: 'sasquatch size room' },
+  { re: /\bmonster\b/, nameFragment: 'monster size room' },
+  { re: /\b(jumbo|humongous)\b/, nameFragment: 'jumbo' },
+  { re: /\boversized\b/, nameFragment: 'oversized' },
+]
+
+function parseSqft(raw: string): number | null {
+  const match =
+    /(\d{2,5})\s*(?:sq\.?\s*ft|sqft|ft\s*²|ft²|ft2|ft\^2|sf|square\s*f(?:ee|oo)t)/i.exec(
+      raw,
+    )
+  return match ? Number(match[1]) : null
+}
+
 /**
  * Map one plain-words service descriptor to exactly one catalog item. Quantity
  * is taken from the descriptor's caller (the model's segmentation), defaulting
@@ -92,7 +120,31 @@ export function matchServiceDescription(
     }
   }
 
-  // 2) Room sizing rule: a generic room/bedroom defaults to Regular; only an
+  // 2) Square footage → tier (deterministic). "living room 350 ft²" → Sasquatch.
+  const sqft = parseSqft(descriptor)
+  if (sqft != null) {
+    const tier = SQFT_TIERS.find((t) => sqft <= t.maxSqft)
+    if (tier) {
+      const hits = findByName(catalog, tier.nameFragment)
+      if (hits.length === 1)
+        return { status: 'matched', item: hits[0], quantity: qty }
+      if (hits.length > 1)
+        return { status: 'ambiguous', descriptor, candidates: hits }
+    }
+  }
+
+  // 3) Explicit size-tier name ("Sasquatch size area", "monster room").
+  for (const tier of TIER_NAME_SIGNALS) {
+    if (tier.re.test(text)) {
+      const hits = findByName(catalog, tier.nameFragment)
+      if (hits.length === 1)
+        return { status: 'matched', item: hits[0], quantity: qty }
+      if (hits.length > 1)
+        return { status: 'ambiguous', descriptor, candidates: hits }
+    }
+  }
+
+  // 4) Room sizing rule: a generic room/bedroom defaults to Regular; only an
   //    explicit large signal upgrades it to Sasquatch.
   if (/\b(bedroom|room|den|office|nursery|basement)s?\b/.test(text)) {
     const isLarge = LARGE_ROOM_SIGNALS.some((signal) => text.includes(signal))

@@ -93,3 +93,14 @@ describe('matchServiceDescription — refuses to guess', () => {
     expect(matchServiceDescription(catalog(), '   ').status).toBe('none')
   })
 })
+
+describe('matchServiceDescription — square footage + size names (the loop bug)', () => {
+  it('maps square footage to the right tier', () => {
+    expect(matchedId('living room 350 ft²')).toBe('id-sasquatch')
+    expect(matchedId('the living room, about 150 sqft')).toBe('id-regular')
+  })
+
+  it('matches a size-tier name even when phrased as "area"', () => {
+    expect(matchedId('Sasquatch size area')).toBe('id-sasquatch')
+  })
+})
