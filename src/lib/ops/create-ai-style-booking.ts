@@ -2,9 +2,8 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   applyAppointmentBuffer,
   calculateAppointmentDurationFromTotal,
-  calendarEventsToAppointmentWindows,
-  getAvailableSlots,
 } from '@/lib/ops/availability'
+import { getAllStaffSlots, getUnionedSlots } from '@/lib/ops/staff-availability'
 import { getAgentPromoSettings } from '@/lib/agent-auth'
 import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
 import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
@@ -400,77 +399,37 @@ export async function createAiStyleBooking(
   }
   const endTotal = sh * 60 + sm + buffered
   const endTime = `${String(Math.floor(endTotal / 60) % 24).padStart(2, '0')}:${String(endTotal % 60).padStart(2, '0')}:00`
-  const [templatesResult, overridesResult, appointmentsResult, eventsResult] =
-    await Promise.all([
-      supabase.from('availability_templates').select('*').eq('is_active', true),
-      supabase
-        .from('availability_overrides')
-        .select('*')
-        .eq('override_date', appointmentDate),
-      supabase
-        .from('ops_appointments')
-        .select('appointment_date, start_time, end_time, status')
-        .eq('appointment_date', appointmentDate),
-      supabase
-        .from('ops_calendar_events')
-        .select(
-          'event_kind, start_date, end_date, start_time, end_time, is_all_day',
-        )
-        .lte('start_date', appointmentDate)
-        .gte('end_date', appointmentDate),
-    ])
-
-  if (templatesResult.error) {
-    console.error('[createAiStyleBooking] templates:', templatesResult.error)
-    return { ok: false, error: 'Could not load schedule availability' }
-  }
-  if (overridesResult.error) {
-    console.error('[createAiStyleBooking] overrides:', overridesResult.error)
-    return { ok: false, error: 'Could not load schedule availability' }
-  }
-  if (appointmentsResult.error) {
-    console.error(
-      '[createAiStyleBooking] appointments:',
-      appointmentsResult.error,
-    )
-    return { ok: false, error: 'Could not load schedule availability' }
-  }
-  if (eventsResult.error) {
-    console.error('[createAiStyleBooking] calendar events:', eventsResult.error)
-    return { ok: false, error: 'Could not load schedule availability' }
-  }
-
-  const availableSlots = getAvailableSlots({
+  // Per-staff availability — the same logic the public booking widget uses. A
+  // time is open if ANY active crew is free for the whole job, and we assign that
+  // crew. The old check pooled every appointment onto one calendar, so a single
+  // crew's full day wrongly blocked the entire schedule even when others were free.
+  const requestedStart = `${String(sh).padStart(2, '0')}:${String(sm).padStart(2, '0')}:00`
+  const staffSlots = await getAllStaffSlots({
+    supabase,
     date: appointmentDate,
     requiredMinutes: buffered,
-    templates: templatesResult.data || [],
-    overrides: overridesResult.data || [],
-    appointments: [
-      ...(appointmentsResult.data || []),
-      ...calendarEventsToAppointmentWindows(
-        appointmentDate,
-        eventsResult.data || [],
-      ),
-    ],
-    maxResults: 48,
   })
-  const requestedStart = `${String(sh).padStart(2, '0')}:${String(sm).padStart(2, '0')}:00`
-  const slotIsAvailable = availableSlots.some(
-    (slot) => slot.start_time === requestedStart,
+  const freeStaff = staffSlots.find((result) =>
+    result.slots.some((slot) => slot.start_time === requestedStart),
   )
-  if (!slotIsAvailable) {
-    const suggestedSlots = availableSlots
-      .slice(0, 8)
-      .map((slot) => slot.start_time.slice(0, 5))
+  if (!freeStaff) {
+    const union = await getUnionedSlots({
+      supabase,
+      date: appointmentDate,
+      requiredMinutes: buffered,
+      maxResults: 8,
+    })
     const suggestionText =
-      suggestedSlots.length > 0
-        ? ` Available times: ${suggestedSlots.join(', ')}.`
+      union.length > 0
+        ? ` Available times: ${union.map((slot) => slot.start_time.slice(0, 5)).join(', ')}.`
         : ''
     return {
       ok: false,
       error: `That start time is not available on ${appointmentDate}.${suggestionText}`,
     }
   }
+  const resolvedStaffUserId =
+    input.assigned_staff_user_id || freeStaff.staffUserId
 
   const fullName = `${firstName} ${lastName}`.trim()
   let customerId: string
@@ -523,9 +482,7 @@ export async function createAiStyleBooking(
       source: sourceLabel,
       ...leadSourceUpdatePayload(resolvedLeadSource.source),
       kind: 'service',
-      ...(input.assigned_staff_user_id
-        ? { assigned_staff_user_id: input.assigned_staff_user_id }
-        : {}),
+      assigned_staff_user_id: resolvedStaffUserId,
     })
     .select('id')
     .single()
