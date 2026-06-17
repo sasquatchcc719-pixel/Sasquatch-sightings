@@ -9,8 +9,9 @@
 create table if not exists harry_next_pending_actions (
   id uuid primary key default gen_random_uuid(),
 
-  -- The inbound thread this action belongs to, and the locked recipient.
-  conversation_id uuid not null,
+  -- The inbound thread this action belongs to (optional), and the locked
+  -- recipient phone — the recipient is always bound at creation time.
+  conversation_id uuid,
   recipient_phone text not null,
 
   -- The validated, typed intent the model proposed (see src/lib/harry-next/intents.ts).

@@ -81,7 +81,7 @@ export type ProposeResult =
 export async function proposeServiceEdit(params: {
   supabase: SupabaseClient
   model: IntentModel
-  conversationId: string
+  conversationId: string | null
   appointmentId: string
   customerName: string | null
   recipientPhone: string
@@ -129,6 +129,21 @@ export async function proposeServiceEdit(params: {
     intent: read.intent,
     appointmentId: params.appointmentId,
     expectedNewTotal: exec.newQuotedTotal,
+  }
+
+  // Idempotency: a Twilio retry of the same inbound must not create a second
+  // card. If an identical pending proposal already exists for this recipient,
+  // reuse it instead of inserting and re-notifying.
+  const { data: existing } = await params.supabase
+    .from(PENDING_TABLE)
+    .select('id')
+    .eq('recipient_phone', params.recipientPhone)
+    .eq('proposed_reply', reply)
+    .eq('status', 'pending')
+    .gte('created_at', new Date(Date.now() - 15 * 60 * 1000).toISOString())
+    .maybeSingle()
+  if (existing?.id) {
+    return { status: 'proposed', pendingActionId: String(existing.id) }
   }
 
   const { data: inserted, error } = await params.supabase

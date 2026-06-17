@@ -1013,6 +1013,34 @@ export async function POST(request: NextRequest) {
     }
     // ─────────────────────────────────────────────────────────────────────────
 
+    // ── Harry-next (flag-gated) ──────────────────────────────────────────────
+    // Approval-first service edits for known customers. Sends nothing to the
+    // customer; on success, suppresses all other handling. Runs even while the
+    // old Harry is disabled, and any error falls through to normal handling.
+    if (process.env.HARRY_NEXT_ENABLED === 'true') {
+      try {
+        const { maybeProposeServiceEditFromSms } =
+          await import('@/lib/harry-next/inbound')
+        const harryNext = await maybeProposeServiceEditFromSms({
+          supabase,
+          phone: normalizedPhone,
+          message: messageBody,
+        })
+        if (harryNext.handled) {
+          console.log(
+            '[Harry-next] Proposed a service edit for approval — suppressing other handling',
+          )
+          return emptyTwiml
+        }
+      } catch (error) {
+        console.error(
+          '[Harry-next] inbound hook error (continuing normally):',
+          error,
+        )
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     const { sourceType, matchedPartner } = await determineSourceType(
       messageBody,
       supabase,
