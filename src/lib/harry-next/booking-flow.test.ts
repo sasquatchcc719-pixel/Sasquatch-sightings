@@ -65,6 +65,44 @@ describe('extractBookingFields', () => {
     expect(fields.services).toEqual([{ description: 'bedroom', quantity: 2 }])
   })
 
+  it('ignores a date/time the customer never actually stated (anti-fabrication)', async () => {
+    const model = fakeModel(
+      JSON.stringify({
+        is_booking: true,
+        preferred_date: '2026-06-20',
+        preferred_time: '10:00',
+        services: [{ description: 'bedroom', quantity: 1 }],
+      }),
+    )
+    const { fields } = await extractBookingFields({
+      transcript: [{ role: 'user', content: 'I want a bedroom cleaned' }],
+      today: '2026-06-17',
+      catalogNames: [],
+      model,
+    })
+    expect(fields.preferredDate).toBeUndefined()
+    expect(fields.preferredTime).toBeUndefined()
+  })
+
+  it('keeps a date/time the customer DID state', async () => {
+    const model = fakeModel(
+      JSON.stringify({
+        is_booking: true,
+        preferred_date: '2026-06-20',
+        preferred_time: '10:00',
+        services: [{ description: 'bedroom', quantity: 1 }],
+      }),
+    )
+    const { fields } = await extractBookingFields({
+      transcript: [{ role: 'user', content: 'Saturday at 10am works' }],
+      today: '2026-06-17',
+      catalogNames: [],
+      model,
+    })
+    expect(fields.preferredDate).toBe('2026-06-20')
+    expect(fields.preferredTime).toBe('10:00')
+  })
+
   it('returns isBooking=false on non-booking or unparseable output', async () => {
     const bad = await extractBookingFields({
       transcript: [],
