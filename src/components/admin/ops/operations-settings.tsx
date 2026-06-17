@@ -91,6 +91,17 @@ function StaffPhotoCard() {
 
   async function openPortalAs(member: StaffMember) {
     if (!member.user_id) return
+    const portalWindow = window.open('', '_blank')
+    if (!portalWindow) {
+      setError(
+        'Popup blocked. Allow popups, then try opening the portal again.',
+      )
+      return
+    }
+
+    portalWindow.document.write(
+      '<!doctype html><title>Opening tech portal</title><body style="margin:0;background:#020617;color:#cbd5e1;font-family:system-ui;display:grid;min-height:100vh;place-items:center"><p>Opening tech portal...</p></body>',
+    )
     setImpersonating(member.id)
     try {
       const res = await fetch('/api/admin/impersonate', {
@@ -100,8 +111,10 @@ function StaffPhotoCard() {
       })
       const data = (await res.json()) as { url?: string; error?: string }
       if (!res.ok) throw new Error(data.error || 'Failed')
-      window.open(data.url, '_blank')
+      if (!data.url) throw new Error('No portal link returned')
+      portalWindow.location.href = data.url
     } catch (err) {
+      portalWindow.close()
       setError(err instanceof Error ? err.message : 'Failed to open portal')
     } finally {
       setImpersonating(null)
