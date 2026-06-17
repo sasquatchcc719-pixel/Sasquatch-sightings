@@ -11,7 +11,6 @@ import {
   MapPin,
   Navigation,
   Phone,
-  ShieldAlert,
   Trash2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -490,12 +489,7 @@ export function TechJobDetail({
       <section className="rounded-2xl border border-white/10 bg-white/[0.06] p-4">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="font-semibold">Invoice</h2>
-          {appointment.hidePricing ? (
-            <span className="flex items-center gap-1.5 rounded-full bg-amber-300/10 px-2.5 py-1 text-xs text-amber-200">
-              <ShieldAlert className="h-3.5 w-3.5" />
-              Price hidden
-            </span>
-          ) : (
+          {appointment.hidePricing ? null : (
             <span className="flex items-center gap-1.5 text-lg font-bold text-emerald-300">
               <DollarSign className="h-5 w-5" />
               {Number(payableTotal ?? 0).toFixed(2)}

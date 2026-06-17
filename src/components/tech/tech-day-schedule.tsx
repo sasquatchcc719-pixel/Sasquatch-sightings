@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { DollarSign, MapPin, ShieldAlert } from 'lucide-react'
+import { DollarSign, MapPin } from 'lucide-react'
 import type { TechAppointment } from '@/lib/tech/appointments'
 import {
   getTechAppointmentPlacement,
@@ -81,10 +81,7 @@ function JobContent({ appointment }: { appointment: TechAppointment }) {
       ) : null}
       <div className="mt-auto flex items-center justify-between pt-1 text-[11px] font-semibold">
         {appointment.hidePricing ? (
-          <span className="flex items-center gap-1 text-amber-700">
-            <ShieldAlert className="h-3 w-3" />
-            Price hidden
-          </span>
+          <span />
         ) : (
           <span className="flex items-center gap-0.5">
             <DollarSign className="h-3 w-3" />
