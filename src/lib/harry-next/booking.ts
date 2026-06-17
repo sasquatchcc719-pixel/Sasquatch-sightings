@@ -7,7 +7,7 @@
  * final booking action — the part with the total and the calendar — needs the
  * owner's approval. Code, not the model, decides when the booking is complete.
  */
-import type { RequestedService } from './quote'
+import type { ServiceSelection } from './quote'
 import {
   normalizeLeadSource,
   validateLeadSourceDetail,
@@ -22,7 +22,7 @@ export type BookingFields = {
   zipCode?: string
   leadSource?: string
   leadSourceDetail?: string
-  services: RequestedService[]
+  services: ServiceSelection[]
   preferredDate?: string
   preferredTime?: string
 }

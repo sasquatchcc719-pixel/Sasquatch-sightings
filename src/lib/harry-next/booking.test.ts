@@ -18,7 +18,7 @@ const complete: BookingFields = {
   city: 'Monument',
   zipCode: '80132',
   leadSource: 'Nextdoor',
-  services: [{ description: 'bedroom', quantity: 2 }],
+  services: [{ item: 1, quantity: 2 }],
   preferredDate: '2026-06-18',
   preferredTime: '10:00',
 }
@@ -49,7 +49,7 @@ describe('nextBookingPrompt', () => {
 
   it('asks for the missing contact info and never includes a price', () => {
     const prompt = nextBookingPrompt(
-      partial({ services: [{ description: 'bedroom', quantity: 2 }] }),
+      partial({ services: [{ item: 1, quantity: 2 }] }),
     )
     expect(prompt).toMatch(/name|email|address/i)
     expect(prompt).not.toMatch(/\$\d/)
