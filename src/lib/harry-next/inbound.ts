@@ -16,6 +16,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { opsPhoneLookupVariants } from '@/lib/ops/phone'
 import { decidePendingAction, proposeServiceEdit } from './orchestrator'
+import { runBookingIntake } from './booking-flow'
 import { openAiIntentModel } from './model'
 import type { IntentModel } from './read-intent'
 
@@ -63,6 +64,20 @@ export async function maybeProposeServiceEditFromSms(params: {
   })
 
   return { handled: result.status === 'proposed', status: result.status }
+}
+
+export async function maybeRunBookingIntake(params: {
+  supabase: SupabaseClient
+  phone: string
+  message: string
+  model?: IntentModel
+}): Promise<{ handled: boolean; status?: string }> {
+  return runBookingIntake({
+    supabase: params.supabase,
+    phone: params.phone,
+    message: params.message,
+    model: params.model ?? openAiIntentModel(),
+  })
 }
 
 // Strict: only the exact words on the approval card trigger a decision, so a

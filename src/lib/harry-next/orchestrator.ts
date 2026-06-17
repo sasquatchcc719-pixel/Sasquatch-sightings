@@ -18,6 +18,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { sendTelegramNotification } from '@/lib/telegram'
 import { sendCustomerSMS } from '@/lib/twilio'
 import { applyServiceRemoval } from './apply-removal'
+import { executeBooking, type BookingStoredPayload } from './booking-flow'
 import { planRemovalExecution, type ExistingAppointmentLine } from './executor'
 import { serviceEditIntent, type RemoveServiceIntent } from './intents'
 import { buildApprovalCard } from './proposal-card'
@@ -210,6 +211,40 @@ export async function decidePendingAction(params: {
       })
       .eq('id', row.id)
     return { status: 'rejected' }
+  }
+
+  // Booking approvals: create the job via the proven booking function, fed the
+  // real service IDs the matcher resolved (so the old collapse can't happen).
+  if ((row.intent as { kind?: string })?.kind === 'book') {
+    const bp = row.intent as BookingStoredPayload
+    const booked = await executeBooking(params.supabase, bp)
+    if (!booked.ok) {
+      await markFailed(
+        params.supabase,
+        row.id,
+        now,
+        booked.reason ?? 'booking failed',
+      )
+      return { status: 'failed', reason: booked.reason }
+    }
+    const total = (booked.total ?? bp.expectedTotal).toFixed(2)
+    const confirmation = `You're booked! Your Sasquatch Carpet Cleaning is set for ${bp.appointment_date} at ${bp.start_time}. Estimated total $${total}${booked.confirmation ? ` (confirmation #${booked.confirmation})` : ''}. See you then!`
+    await sendCustomerSMS(
+      String(row.recipient_phone),
+      confirmation,
+      undefined,
+      'harry_next',
+    )
+    await params.supabase
+      .from(PENDING_TABLE)
+      .update({
+        status: 'executed',
+        decided_at: now,
+        decided_by: params.decidedBy ?? null,
+        executed_at: now,
+      })
+      .eq('id', row.id)
+    return { status: 'executed' }
   }
 
   const payload = row.intent as StoredPayload
