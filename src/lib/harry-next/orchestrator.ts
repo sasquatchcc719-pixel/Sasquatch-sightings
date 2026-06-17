@@ -15,7 +15,7 @@
  * unit-tested.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { sendTelegramNotification } from '@/lib/telegram'
+import { sendToCharles } from '@/lib/harry-command-bot'
 import { sendCustomerSMS } from '@/lib/twilio'
 import { applyServiceRemoval } from './apply-removal'
 import { executeBooking, type BookingStoredPayload } from './booking-flow'
@@ -173,8 +173,16 @@ export async function proposeServiceEdit(params: {
     actionSummary,
     proposedReply: reply,
   })
-  // Plain text (no Markdown) so a stray * or _ in a service name can't break it.
-  await sendTelegramNotification(`${card}\n\nid: ${inserted.id}`)
+  // Send via the COMMAND bot (the interactive one) with Approve/Reject buttons —
+  // the notifications bot is one-way and can't process a reply.
+  await sendToCharles(card, {
+    buttons: [
+      [
+        { text: '✅ Approve', data: `hn:approve:${inserted.id}` },
+        { text: '🚫 Reject', data: `hn:reject:${inserted.id}` },
+      ],
+    ],
+  })
 
   return { status: 'proposed', pendingActionId: String(inserted.id) }
 }

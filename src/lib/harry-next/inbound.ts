@@ -15,7 +15,11 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { opsPhoneLookupVariants } from '@/lib/ops/phone'
-import { decidePendingAction, proposeServiceEdit } from './orchestrator'
+import {
+  decidePendingAction,
+  proposeServiceEdit,
+  type DecideResult,
+} from './orchestrator'
 import { runBookingIntake } from './booking-flow'
 import { openAiIntentModel } from './model'
 import type { IntentModel } from './read-intent'
@@ -125,13 +129,35 @@ export async function decideFromTelegramText(params: {
     decidedBy: 'telegram',
   })
 
+  return { handled: true, message: decisionMessage(result) }
+}
+
+function decisionMessage(result: DecideResult): string {
   const messages: Record<string, string> = {
-    executed: '✅ Sent — the change is applied and the customer was messaged.',
+    executed: '✅ Done — applied, and the customer was messaged.',
     rejected: '🚫 Rejected — nothing was changed or sent.',
-    already_decided: 'That approval was already handled.',
+    already_decided: 'That one was already handled.',
     stale:
       '⚠️ The job changed since this was proposed, so I did not send it. Please take a look.',
     failed: `⚠️ Could not complete it${result.reason ? `: ${result.reason}` : ''}.`,
   }
-  return { handled: true, message: messages[result.status] ?? 'Done.' }
+  return messages[result.status] ?? 'Done.'
+}
+
+// Inline-button callbacks: data is "hn:approve:<uuid>" / "hn:reject:<uuid>".
+const BUTTON_RE = /^hn:(approve|reject):([0-9a-f-]{36})$/i
+
+export async function decideFromTelegramButton(params: {
+  supabase: SupabaseClient
+  data: string
+}): Promise<{ handled: boolean; message?: string }> {
+  const match = BUTTON_RE.exec(params.data || '')
+  if (!match) return { handled: false }
+  const result = await decidePendingAction({
+    supabase: params.supabase,
+    pendingActionId: match[2],
+    decision: match[1].toLowerCase() === 'approve' ? 'approve' : 'reject',
+    decidedBy: 'telegram_button',
+  })
+  return { handled: true, message: decisionMessage(result) }
 }

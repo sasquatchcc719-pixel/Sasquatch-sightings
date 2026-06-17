@@ -14,7 +14,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 import { sendCustomerSMS } from '@/lib/twilio'
-import { sendTelegramNotification } from '@/lib/telegram'
+import { sendToCharles } from '@/lib/harry-command-bot'
 import {
   createAiStyleBooking,
   type AiStyleBookingLineRequest,
@@ -360,7 +360,15 @@ export async function runBookingIntake(params: {
     proposedReply:
       '(books the job on approve; customer gets a confirmation text)',
   })
-  await sendTelegramNotification(`${card}\n\nid: ${inserted.id}`)
+  // Command bot + buttons so the approval is actionable (notifications bot is one-way).
+  await sendToCharles(card, {
+    buttons: [
+      [
+        { text: '✅ Approve', data: `hn:approve:${inserted.id}` },
+        { text: '🚫 Reject', data: `hn:reject:${inserted.id}` },
+      ],
+    ],
+  })
 
   const holding =
     "Perfect — I've got everything I need. Let me confirm this with the office and I'll lock it in shortly!"
