@@ -58,6 +58,7 @@ type TapStats = {
   formSubmits: number
   saveContactClicks: number
   shareClicks: number
+  contractorClicks: number
   todayTaps: number
   weekTaps: number
   monthTaps: number
@@ -297,6 +298,9 @@ export default function TapAnalyticsPage() {
       const shareClicks = clickData.filter(
         (c) => c.button_type === 'share',
       ).length
+      const contractorClicks = clickData.filter(
+        (c) => c.button_type === 'recommended_contractors',
+      ).length
 
       // Time-based stats
       const todayStart = new Date()
@@ -347,6 +351,7 @@ export default function TapAnalyticsPage() {
         formSubmits,
         saveContactClicks,
         shareClicks,
+        contractorClicks,
         todayTaps,
         weekTaps,
         monthTaps,
@@ -503,7 +508,7 @@ export default function TapAnalyticsPage() {
         <h2 className="mb-3 text-lg font-bold sm:mb-4 sm:text-xl">
           Button Engagement
         </h2>
-        <div className="grid grid-cols-3 gap-3 sm:gap-4 md:grid-cols-6">
+        <div className="grid grid-cols-3 gap-3 sm:gap-4 md:grid-cols-7">
           <div className="text-center">
             <div className="mx-auto mb-1 flex h-8 w-8 items-center justify-center rounded-full bg-green-100 sm:mb-2 sm:h-12 sm:w-12 dark:bg-green-900">
               <span className="text-lg sm:text-2xl">📅</span>
@@ -541,6 +546,17 @@ export default function TapAnalyticsPage() {
             <FileText className="mx-auto mb-1 h-6 w-6 text-purple-500 sm:mb-2 sm:h-8 sm:w-8" />
             <p className="text-lg font-bold sm:text-2xl">{stats.formSubmits}</p>
             <p className="text-xs text-gray-600 dark:text-gray-400">Forms</p>
+          </div>
+          <div className="text-center">
+            <div className="mx-auto mb-1 flex h-8 w-8 items-center justify-center rounded-full bg-yellow-100 sm:mb-2 sm:h-12 sm:w-12 dark:bg-yellow-900">
+              <span className="text-lg sm:text-2xl">🔧</span>
+            </div>
+            <p className="text-lg font-bold sm:text-2xl">
+              {stats.contractorClicks}
+            </p>
+            <p className="text-xs text-gray-600 dark:text-gray-400">
+              Contractors
+            </p>
           </div>
         </div>
       </Card>

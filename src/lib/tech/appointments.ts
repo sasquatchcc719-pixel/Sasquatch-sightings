@@ -27,6 +27,7 @@ export type TechAppointment = {
   endTime: string | null
   status: string
   paymentStatus: string | null
+  recurringTemplateId: string | null
   customerName: string
   customerPhone: string | null
   customerEmail: string | null
@@ -279,6 +280,9 @@ export function mapTechAppointment(
     endTime: row.end_time ? String(row.end_time) : null,
     status: String(row.status),
     paymentStatus: row.payment_status ? String(row.payment_status) : null,
+    recurringTemplateId: row.recurring_template_id
+      ? String(row.recurring_template_id)
+      : null,
     customerName:
       customer?.full_name?.trim() ||
       fallbackName ||

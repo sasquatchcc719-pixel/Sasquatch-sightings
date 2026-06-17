@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Loader2,
+  LogIn,
   Mail,
   MessageSquare,
   Play,
@@ -71,6 +72,7 @@ function formatEmailTemplateLabel(key: string) {
 
 type StaffMember = {
   id: string
+  user_id: string | null
   display_name: string
   role: string
   profile_image_url: string | null
@@ -79,12 +81,32 @@ type StaffMember = {
 function StaffPhotoCard() {
   const [staff, setStaff] = useState<StaffMember[]>([])
   const [uploading, setUploading] = useState<string | null>(null)
+  const [impersonating, setImpersonating] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [cropTarget, setCropTarget] = useState<{
     staffId: string
     imageSrc: string
   } | null>(null)
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({})
+
+  async function openPortalAs(member: StaffMember) {
+    if (!member.user_id) return
+    setImpersonating(member.id)
+    try {
+      const res = await fetch('/api/admin/impersonate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: member.user_id }),
+      })
+      const data = (await res.json()) as { url?: string; error?: string }
+      if (!res.ok) throw new Error(data.error || 'Failed')
+      window.open(data.url, '_blank')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to open portal')
+    } finally {
+      setImpersonating(null)
+    }
+  }
 
   useEffect(() => {
     fetch('/api/admin/ops/staff')
@@ -189,19 +211,36 @@ function StaffPhotoCard() {
                   e.target.value = ''
                 }}
               />
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={uploading === member.id}
-                onClick={() => inputRefs.current[member.id]?.click()}
-              >
-                {uploading === member.id ? (
-                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Upload className="mr-1.5 h-3.5 w-3.5" />
-                )}
-                {member.profile_image_url ? 'Replace' : 'Upload'} photo
-              </Button>
+              <div className="flex items-center gap-2">
+                {member.user_id ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={impersonating === member.id}
+                    onClick={() => void openPortalAs(member)}
+                    title="Open tech portal as this user"
+                  >
+                    {impersonating === member.id ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <LogIn className="h-3.5 w-3.5" />
+                    )}
+                  </Button>
+                ) : null}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={uploading === member.id}
+                  onClick={() => inputRefs.current[member.id]?.click()}
+                >
+                  {uploading === member.id ? (
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Upload className="mr-1.5 h-3.5 w-3.5" />
+                  )}
+                  {member.profile_image_url ? 'Replace' : 'Upload'} photo
+                </Button>
+              </div>
             </div>
           ))}
           {staff.length === 0 && !error && (

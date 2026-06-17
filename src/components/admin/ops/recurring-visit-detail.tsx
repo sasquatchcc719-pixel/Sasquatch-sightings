@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Image from 'next/image'
 import {
   ArrowLeft,
   CheckCircle,
@@ -21,6 +22,45 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+
+const FLOOR_PLAN_MAPS: Record<string, { file: string; label: string }> = {
+  'c3ba2b05-b816-4fab-b9a7-35bff32f2451': {
+    file: 'map_common_areas.jpg',
+    label: 'Common Areas + Steps',
+  },
+  'd12374f9-3d2f-4711-8034-0346ff85f8cd': {
+    file: 'map_kitchen.jpg',
+    label: 'Kitchen & Pantry',
+  },
+  '0be48a79-d3bb-4e97-92e8-d29b90aaf9c5': {
+    file: 'map_yoga_dining.jpg',
+    label: 'Yoga / Dining / Family Room',
+  },
+  'c32f23a1-26bb-4997-be32-b0906b37a42d': {
+    file: 'map_offices.jpg',
+    label: 'Offices + Bears Den + Eagles Nest',
+  },
+  'f5b12000-6768-4854-bb7e-1606e699af57': {
+    file: 'map_rec_fortitude.jpg',
+    label: 'Rec Room + Fortitude',
+  },
+  '15531b8e-445b-46c3-83e5-5e7b7a119996': {
+    file: 'map_pool.jpg',
+    label: 'Pool Deck',
+  },
+  '4e7349a7-e74f-4f34-bca6-ed0fe1f2ab99': {
+    file: 'map_c_building.jpg',
+    label: 'C Building',
+  },
+  '7492bd31-9b72-4571-b7a1-b5c6222f2e67': {
+    file: 'map_d_building.jpg',
+    label: 'D Building',
+  },
+  '40a6c284-ecde-47ea-8f93-223898be88d8': {
+    file: 'map_e_building.jpg',
+    label: 'E Building',
+  },
+}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -713,6 +753,24 @@ export default function RecurringVisitDetail({
                 {template.internal_notes}
               </p>
             </div>
+          </div>
+        </Card>
+      )}
+
+      {FLOOR_PLAN_MAPS[appointment.recurring_template_id] && (
+        <Card className="border-border/60 bg-card/80 overflow-hidden p-5 shadow-sm backdrop-blur">
+          <h2 className="mb-3 text-lg font-semibold">
+            Area Map —{' '}
+            {FLOOR_PLAN_MAPS[appointment.recurring_template_id].label}
+          </h2>
+          <div className="overflow-hidden rounded-xl">
+            <Image
+              src={`/maps/${FLOOR_PLAN_MAPS[appointment.recurring_template_id].file}`}
+              alt={FLOOR_PLAN_MAPS[appointment.recurring_template_id].label}
+              width={1300}
+              height={900}
+              className="w-full"
+            />
           </div>
         </Card>
       )}

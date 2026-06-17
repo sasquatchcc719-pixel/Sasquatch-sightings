@@ -175,7 +175,7 @@ export function RecentJobsCarousel() {
 
       {/* View All Link */}
       <Link
-        href="/work/colorado-springs/all"
+        href="/"
         target="_blank"
         rel="noopener noreferrer"
         className="flex items-center justify-center gap-2 text-sm font-semibold text-blue-600 transition-colors hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"

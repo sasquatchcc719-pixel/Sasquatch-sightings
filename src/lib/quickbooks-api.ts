@@ -17,15 +17,22 @@ async function qbFetch(
   options: RequestInit = {},
 ): Promise<Response> {
   const url = `${QB_BASE_URL}/${realmId}${path}`
-  return fetch(url, {
-    ...options,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      ...(options.headers || {}),
-    },
-  })
+  const headers = {
+    Authorization: `Bearer ${accessToken}`,
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+    ...(options.headers || {}),
+  }
+
+  let lastRes: Response | undefined
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const res = await fetch(url, { ...options, headers })
+    if (res.status !== 429) return res
+    lastRes = res
+    // Back off 1s, 2s, 4s before retrying
+    await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt)))
+  }
+  return lastRes!
 }
 
 export async function findQBCustomerByDisplayName(
@@ -300,33 +307,32 @@ export async function createQBInvoice(params: {
   }
 
   const itemRefCache = new Map<string, { value: string; name: string } | null>()
-  const lines: Record<string, unknown>[] = await Promise.all(
-    params.lineItems.map(async (item) => {
-      const productName = String(item.product_name || item.description || '')
-        .trim()
-        .replace(/\s+/g, ' ')
-      const itemRef = productName
-        ? await findQBItemRefByName(
-            auth.realmId,
-            auth.accessToken,
-            productName,
-            itemRefCache,
-          )
-        : null
+  const lines: Record<string, unknown>[] = []
+  for (const item of params.lineItems) {
+    const productName = String(item.product_name || item.description || '')
+      .trim()
+      .replace(/\s+/g, ' ')
+    const itemRef = productName
+      ? await findQBItemRefByName(
+          auth.realmId,
+          auth.accessToken,
+          productName,
+          itemRefCache,
+        )
+      : null
 
-      return {
-        Amount: item.line_total,
-        DetailType: 'SalesItemLineDetail',
-        Description: item.description,
-        SalesItemLineDetail: {
-          ...(itemRef ? { ItemRef: itemRef } : {}),
-          Qty: item.quantity,
-          UnitPrice: item.unit_price,
-          ServiceDate: item.service_date || params.serviceDate,
-        },
-      }
-    }),
-  )
+    lines.push({
+      Amount: item.line_total,
+      DetailType: 'SalesItemLineDetail',
+      Description: item.description,
+      SalesItemLineDetail: {
+        ...(itemRef ? { ItemRef: itemRef } : {}),
+        Qty: item.quantity,
+        UnitPrice: item.unit_price,
+        ServiceDate: item.service_date || params.serviceDate,
+      },
+    })
+  }
 
   if (params.discountAmount && params.discountAmount > 0) {
     lines.push({

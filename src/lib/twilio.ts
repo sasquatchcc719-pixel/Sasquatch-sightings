@@ -18,6 +18,18 @@ if (accountSid && authToken) {
   client = twilio(accountSid, authToken)
 }
 
+export function normalizeSmsBody(message: string): string {
+  return message
+    .replace(/\\r\\n/g, '\n')
+    .replace(/\\n/g, '\n')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
 /**
  * Log SMS to database for tracking and history
  */
@@ -59,9 +71,11 @@ export async function sendAdminSMS(
     return
   }
 
+  const normalizedMessage = normalizeSmsBody(message)
+
   try {
     const result = await client.messages.create({
-      body: message,
+      body: normalizedMessage,
       from: twilioPhone,
       to: adminPhone,
     })
@@ -71,7 +85,7 @@ export async function sendAdminSMS(
     await logSMS({
       recipientPhone: adminPhone,
       messageType,
-      messageContent: message,
+      messageContent: normalizedMessage,
       twilioSid: result.sid,
     })
   } catch (error) {
@@ -81,7 +95,7 @@ export async function sendAdminSMS(
     await logSMS({
       recipientPhone: adminPhone,
       messageType,
-      messageContent: message,
+      messageContent: normalizedMessage,
       status: 'failed',
     })
   }
@@ -101,9 +115,11 @@ export async function sendPartnerSMS(
     return
   }
 
+  const normalizedMessage = normalizeSmsBody(message)
+
   try {
     const result = await client.messages.create({
-      body: message,
+      body: normalizedMessage,
       from: twilioPhone,
       to: partnerPhone,
     })
@@ -114,7 +130,7 @@ export async function sendPartnerSMS(
       partnerId,
       recipientPhone: partnerPhone,
       messageType,
-      messageContent: message,
+      messageContent: normalizedMessage,
       twilioSid: result.sid,
     })
   } catch (error) {
@@ -125,7 +141,7 @@ export async function sendPartnerSMS(
       partnerId,
       recipientPhone: partnerPhone,
       messageType,
-      messageContent: message,
+      messageContent: normalizedMessage,
       status: 'failed',
     })
   }
@@ -150,10 +166,12 @@ export async function sendCustomerSMS(
   messageType: string = 'customer_notification',
   fromNumber?: string,
 ): Promise<void> {
+  const normalizedMessage = normalizeSmsBody(message)
+
   try {
     await sendCustomerSMSWithResult(
       customerPhone,
-      message,
+      normalizedMessage,
       leadId,
       messageType,
       fromNumber,
@@ -168,7 +186,7 @@ export async function sendCustomerSMS(
       leadId,
       recipientPhone: toE164(customerPhone),
       messageType,
-      messageContent: message,
+      messageContent: normalizedMessage,
       status: 'failed',
     })
   }
@@ -191,14 +209,15 @@ export async function sendCustomerSMSWithResult(
     )
   }
 
+  const normalizedMessage = normalizeSmsBody(message)
   const toPhone = toE164(customerPhone)
   const from = fromNumber ? toE164(fromNumber) : twilioPhone
 
   console.log(`📤 SENDING SMS: From=${from} To=${toPhone}`)
-  console.log(`   Message: ${message.substring(0, 50)}...`)
+  console.log(`   Message: ${normalizedMessage.substring(0, 50)}...`)
 
   const result = await client.messages.create({
-    body: message,
+    body: normalizedMessage,
     from: from,
     to: toPhone,
   })
@@ -215,7 +234,7 @@ export async function sendCustomerSMSWithResult(
     leadId,
     recipientPhone: toPhone,
     messageType,
-    messageContent: message,
+    messageContent: normalizedMessage,
     twilioSid: result.sid,
   })
 

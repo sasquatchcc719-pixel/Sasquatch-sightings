@@ -7,6 +7,7 @@ export async function middleware(request: NextRequest) {
   // Skip middleware for public routes
   if (
     pathname.startsWith('/auth/') ||
+    pathname === '/tech-preview' ||
     pathname.startsWith('/sightings') ||
     pathname.startsWith('/work/') ||
     pathname.startsWith('/api/') ||

@@ -68,6 +68,13 @@ export const contractorCategories: ContractorCategory[] = [
     description: 'Small repairs, punch lists, drywall touch-ups, and odd jobs.',
     companies: [
       {
+        name: 'Red Feather Handyman Services, LLC',
+        phone: '827-715-5533',
+        whyRecommended:
+          "Evan is one of those guys who can fix just about anything — and everyone in the area seems to know him. Whether it's a door that won't close right, drywall that needs patching, or a dozen little things on your punch list, Evan shows up and gets it done.",
+        notes: 'No website — call or email EvanCox308@gmail.com to reach him.',
+      },
+      {
         name: 'Hand & Hammer Home Services',
         phone: '719-722-7040',
         website: 'https://www.handhammerhomeservices.com/',
@@ -143,6 +150,20 @@ export const contractorCategories: ContractorCategory[] = [
           'Revival Roofing is the roofing company Sasquatch recommends for roof-related work.',
         notes:
           'Residential and commercial roofing contractor serving the Colorado Springs area.',
+      },
+    ],
+  },
+  {
+    id: 'gunsmithing',
+    label: 'Gunsmithing',
+    shortLabel: 'Gunsmithing',
+    description: 'Firearms service, repairs, and custom work.',
+    companies: [
+      {
+        name: 'Red Feather Firearms',
+        website: 'https://redfeatherfirearms.com/',
+        whyRecommended:
+          'Custom rifle builds, gunsmithing, and firearms finishing for all makes and models. Evan specializes in lightweight hunting rifles, long-range precision builds, custom AR platforms, and Cerakote finishing. FFL services available. Veterans, first responders, and teachers get 10% off.',
       },
     ],
   },

@@ -207,6 +207,15 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Deduplicate by image_url so the carousel doesn't show the same photo repeatedly
+    const seenImages = new Set<string>()
+    filteredJobs = filteredJobs.filter((job) => {
+      if (!job.image_url) return true
+      if (seenImages.has(job.image_url)) return false
+      seenImages.add(job.image_url)
+      return true
+    })
+
     // Limit results
     filteredJobs = filteredJobs.slice(0, limit)
 

@@ -2,6 +2,51 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 import { sendTelegramNotification } from '@/lib/telegram'
 
+type AppointmentLineItem = {
+  name_snapshot: string | null
+  quantity: number | string | null
+  unit_price: number | string | null
+  line_total: number | string | null
+  notes: string | null
+}
+
+function firstRelated<T>(value: T | T[] | null | undefined): T | null {
+  return Array.isArray(value) ? (value[0] ?? null) : (value ?? null)
+}
+
+function formatDate(value: string): string {
+  return new Date(`${value}T00:00:00`).toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
+function formatTime(value: string | null): string | null {
+  if (!value) return null
+
+  return new Date(`2000-01-01T${value}`).toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
+function formatMoney(value: number | string | null | undefined): string {
+  const amount = Number(value ?? 0)
+  return `$${amount.toFixed(2)}`
+}
+
+function htmlEscape(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 export async function POST(request: NextRequest) {
   try {
     const payload = await request.json()
@@ -16,33 +61,55 @@ export async function POST(request: NextRequest) {
     const appointmentId = record.id
     const supabase = createAdminClient()
 
-    // Fetch full appointment details with customer and address
-    const { data: appointment, error } = await supabase
-      .from('ops_appointments')
-      .select(
-        `
-        id,
-        appointment_date,
-        start_time,
-        end_time,
-        internal_notes,
-        status,
-        kind,
-        ops_customers!ops_appointments_customer_id_fkey (
-          full_name,
-          phone,
-          email
-        ),
-        ops_service_addresses (
-          street_1,
-          city,
-          state,
-          zip_code
+    const fetchAppointment = () =>
+      supabase
+        .from('ops_appointments')
+        .select(
+          `
+          id,
+          appointment_date,
+          start_time,
+          end_time,
+          internal_notes,
+          status,
+          kind,
+          quoted_total,
+          ops_customers!ops_appointments_customer_id_fkey (
+            full_name,
+            phone,
+            email
+          ),
+          ops_service_addresses (
+            street_1,
+            city,
+            state,
+            zip_code
+          ),
+          ops_appointment_line_items (
+            name_snapshot,
+            quantity,
+            unit_price,
+            line_total,
+            notes
+          )
+        `,
         )
-      `,
-      )
-      .eq('id', appointmentId)
-      .single()
+        .eq('id', appointmentId)
+        .single()
+
+    let { data: appointment, error } = await fetchAppointment()
+
+    for (const delay of [250, 500, 1000]) {
+      const lineItems = Array.isArray(appointment?.ops_appointment_line_items)
+        ? appointment.ops_appointment_line_items
+        : []
+      if (lineItems.length > 0 || error) break
+
+      await sleep(delay)
+      const retry = await fetchAppointment()
+      appointment = retry.data
+      error = retry.error
+    }
 
     if (error || !appointment) {
       console.error('[appointment-booked] Failed to fetch appointment:', error)
@@ -61,12 +128,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Build notification message
-    const customer = Array.isArray(appointment.ops_customers)
-      ? appointment.ops_customers[0]
-      : appointment.ops_customers
-    const address = Array.isArray(appointment.ops_service_addresses)
-      ? appointment.ops_service_addresses[0]
-      : appointment.ops_service_addresses
+    const customer = firstRelated(appointment.ops_customers)
+    const address = firstRelated(appointment.ops_service_addresses)
+    const lineItems = Array.isArray(appointment.ops_appointment_line_items)
+      ? (appointment.ops_appointment_line_items as AppointmentLineItem[])
+      : []
 
     const customerName = customer?.full_name || 'Unknown Customer'
     const customerPhone = customer?.phone || 'No phone'
@@ -75,35 +141,41 @@ export async function POST(request: NextRequest) {
       ? `${address.street_1}, ${address.city}, ${address.state} ${address.zip_code}`
       : 'No address'
 
-    const timeFormatted = new Date(
-      `2000-01-01 ${appointment.start_time}`,
-    ).toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-    })
+    const startTime = formatTime(appointment.start_time) || 'No start time'
+    const endTime = formatTime(appointment.end_time)
+    const timeSlot = endTime ? `${startTime} - ${endTime}` : startTime
+    const dateFormatted = formatDate(appointment.appointment_date)
+    const servicesList =
+      lineItems.length > 0
+        ? lineItems
+            .map((item) => {
+              const quantity = Number(item.quantity || 1)
+              const quantityLabel = quantity !== 1 ? `${quantity}x ` : ''
+              const name = item.name_snapshot || 'Service'
+              const total = formatMoney(item.line_total)
+              const notes = item.notes ? ` (${item.notes})` : ''
+              return `• ${htmlEscape(quantityLabel)}${htmlEscape(name)} - ${htmlEscape(total)}${htmlEscape(notes)}`
+            })
+            .join('\n')
+        : '• No line items found yet'
 
-    const dateFormatted = new Date(
-      appointment.appointment_date,
-    ).toLocaleDateString('en-US', {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-    })
-
-    let message = `📅 *New Job Booked!*\n\n`
-    message += `📆 ${dateFormatted} at ${timeFormatted}\n`
-    message += `👤 ${customerName}\n`
-    message += `📱 ${customerPhone}\n`
-    message += `📧 ${customerEmail}\n`
-    message += `📍 ${addressLine}\n`
-    message += `🔖 Status: ${appointment.status}`
+    let message = `<b>📅 New Job Booked!</b>\n\n`
+    message += `📆 <b>${htmlEscape(dateFormatted)}</b>\n`
+    message += `🕐 <b>${htmlEscape(timeSlot)}</b>\n`
+    message += `💰 <b>Quoted:</b> ${htmlEscape(formatMoney(appointment.quoted_total))}\n\n`
+    message += `📋 <b>Line items:</b>\n${servicesList}\n\n`
+    message += `👤 ${htmlEscape(customerName)}\n`
+    message += `📱 ${htmlEscape(customerPhone)}\n`
+    message += `📧 ${htmlEscape(customerEmail)}\n`
+    message += `📍 ${htmlEscape(addressLine)}\n`
+    message += `🔖 Status: ${htmlEscape(appointment.status)}`
 
     if (appointment.internal_notes) {
-      message += `\n\n📝 ${appointment.internal_notes}`
+      message += `\n\n📝 ${htmlEscape(appointment.internal_notes)}`
     }
 
     // Send Telegram notification
-    await sendTelegramNotification(message, { parseMode: 'Markdown' })
+    await sendTelegramNotification(message, { parseMode: 'HTML' })
 
     return NextResponse.json({ success: true })
   } catch (error) {
