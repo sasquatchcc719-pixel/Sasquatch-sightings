@@ -5,6 +5,7 @@
 
 import twilio from 'twilio'
 import { createAdminClient } from '@/supabase/server'
+import { isBlacklisted, notifyBlockedAttempt } from '@/lib/blacklist'
 
 const accountSid = process.env.TWILIO_ACCOUNT_SID
 const authToken = process.env.TWILIO_AUTH_TOKEN
@@ -212,6 +213,11 @@ export async function sendCustomerSMSWithResult(
   const normalizedMessage = normalizeSmsBody(message)
   const toPhone = toE164(customerPhone)
   const from = fromNumber ? toE164(fromNumber) : twilioPhone
+
+  if (await isBlacklisted(toPhone)) {
+    notifyBlockedAttempt(toPhone, 'outbound SMS')
+    throw new Error('Suppressed: customer is blacklisted')
+  }
 
   console.log(`📤 SENDING SMS: From=${from} To=${toPhone}`)
   console.log(`   Message: ${normalizedMessage.substring(0, 50)}...`)

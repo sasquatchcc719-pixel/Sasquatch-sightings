@@ -3,6 +3,7 @@ import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { Resend } from 'resend'
 import { buildEmailHtml } from '@/lib/ops/communications'
+import { isBlacklisted } from '@/lib/blacklist'
 
 type EmailType = 'booking_confirmation' | 'quote'
 
@@ -123,7 +124,7 @@ export async function POST(
         end_time,
         quoted_total,
         ops_customers!ops_appointments_customer_id_fkey (
-          id, full_name, first_name, email
+          id, full_name, first_name, email, phone, email_opt_out
         ),
         ops_service_addresses (
           street_1, city, state, zip_code
@@ -157,6 +158,16 @@ export async function POST(
       return NextResponse.json(
         { error: 'Customer has no email address — add one first.' },
         { status: 400 },
+      )
+    }
+
+    if (
+      customer.email_opt_out === true ||
+      (customer.phone && (await isBlacklisted(customer.phone)))
+    ) {
+      return NextResponse.json(
+        { error: 'Customer is suppressed from email communications.' },
+        { status: 409 },
       )
     }
 

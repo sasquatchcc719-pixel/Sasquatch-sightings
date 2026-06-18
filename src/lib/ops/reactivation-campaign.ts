@@ -1,6 +1,7 @@
 import { Resend } from 'resend'
 import { generateUnsubscribeToken } from '@/lib/ops/drip-campaign'
 import { createAdminClient } from '@/supabase/server'
+import { isBlacklisted } from '@/lib/blacklist'
 
 const BOOK_URL = 'https://www.sasquatchcarpet.com'
 const UNSUB_BASE =
@@ -715,6 +716,18 @@ export async function processReactivationEmails(): Promise<ReactivationResults> 
         customerId: customer.id,
         status: 'suppressed_unsubscribed',
         reason: 'email_opt_out',
+      })
+      results.skipped++
+      continue
+    }
+
+    if (customer.phone && (await isBlacklisted(customer.phone))) {
+      await suppressEnrollment({
+        supabase,
+        enrollmentId: enrollment.id,
+        customerId: customer.id,
+        status: 'suppressed_blacklisted',
+        reason: 'blacklisted_at_send_time',
       })
       results.skipped++
       continue

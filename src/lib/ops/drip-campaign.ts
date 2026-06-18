@@ -2,6 +2,7 @@ import { createHmac } from 'crypto'
 import { Resend } from 'resend'
 import { createAdminClient } from '@/supabase/server'
 import { isDeliverableCustomerEmail } from '@/lib/ops/email'
+import { isBlacklisted } from '@/lib/blacklist'
 
 const BOOK_URL = 'https://sightings.sasquatchcarpet.com/book'
 const UNSUB_BASE =
@@ -191,12 +192,7 @@ export async function enrollCustomerInDrip(
     .eq('id', appointmentId)
     .single()
 
-  if (
-    !appt ||
-    appt.status !== 'completed' ||
-    appt.recurring_template_id
-  )
-    return
+  if (!appt || appt.status !== 'completed' || appt.recurring_template_id) return
 
   const customer = Array.isArray(appt.ops_customers)
     ? appt.ops_customers[0]
@@ -337,9 +333,28 @@ export async function processDripEmails(): Promise<{
     // Get customer info
     const { data: customer } = await supabase
       .from('ops_customers')
-      .select('id, email, first_name, full_name, email_opt_out')
+      .select('id, email, phone, first_name, full_name, email_opt_out')
       .eq('id', enrollment.customer_id)
       .single()
+
+    if (customer?.phone && (await isBlacklisted(customer.phone))) {
+      await supabase.from('drip_email_log').insert({
+        enrollment_id: enrollment.id,
+        step: enrollment.current_step,
+        template_label: template.label,
+        status: 'skipped',
+        error_message: 'blacklisted',
+      })
+      await supabase
+        .from('drip_campaign_enrollments')
+        .update({
+          status: 'cancelled',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', enrollment.id)
+      results.skipped++
+      continue
+    }
 
     if (
       !customer ||

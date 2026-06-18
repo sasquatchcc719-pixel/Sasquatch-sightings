@@ -15,6 +15,7 @@ import {
   leadSourceUpdatePayload,
   normalizeLeadSourceForWrite,
 } from '@/lib/server/lead-sources'
+import { isBlacklisted } from '@/lib/blacklist'
 
 const INVOICE_SELECT = `
   *,
@@ -524,7 +525,7 @@ export async function PATCH(
               appointment_date,
               recurring_template_id,
               ops_recurring_templates ( invoice_mode ),
-              ops_customers!ops_appointments_customer_id_fkey ( full_name, business_name, email ),
+              ops_customers!ops_appointments_customer_id_fkey ( full_name, business_name, email, phone, email_opt_out ),
               ops_service_addresses ( street_1, city, state, zip_code )
             `,
             )
@@ -543,6 +544,12 @@ export async function PATCH(
             : rawCustomer
           const customerEmail = customer?.email ?? null
           if (!customerEmail) return
+          if (
+            customer?.email_opt_out === true ||
+            (customer?.phone && (await isBlacklisted(customer.phone)))
+          ) {
+            return
+          }
 
           const customerName =
             customer?.business_name || customer?.full_name || 'Valued Customer'

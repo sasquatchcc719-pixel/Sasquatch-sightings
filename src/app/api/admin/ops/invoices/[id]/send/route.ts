@@ -12,6 +12,7 @@ import { getQBConnectionStatus } from '@/lib/quickbooks-auth'
 import { generateInvoicePDF } from '@/lib/ops/pdf/generate'
 import { createSquarePaymentLink } from '@/lib/payments/square'
 import { buildVenmoPaymentLink } from '@/lib/payments/venmo'
+import { isBlacklisted } from '@/lib/blacklist'
 
 const VENMO_USERNAME = process.env.VENMO_BUSINESS_USERNAME ?? 'SasquatchCarpet'
 
@@ -188,7 +189,8 @@ export async function POST(
             full_name,
             business_name,
             email,
-            phone
+            phone,
+            email_opt_out
           ),
           ops_service_addresses (
             street_1,
@@ -232,6 +234,10 @@ export async function POST(
       customer?.business_name || customer?.full_name || 'Valued Customer'
     const customerPhone = customer?.phone ?? null
     const customerEmail = customer?.email ?? null
+    const customerEmailOptOut = customer?.email_opt_out === true
+    const customerBlacklisted = customerPhone
+      ? await isBlacklisted(customerPhone)
+      : false
     const total = Number(invoice.total || 0)
     const invoiceNumber = Number(invoice.invoice_number || 0)
     if (!invoiceNumber) {
@@ -469,6 +475,8 @@ export async function POST(
     if (channel === 'email' || channel === 'both') {
       if (!customerEmail) {
         errors.push('No email address on file for this customer.')
+      } else if (customerEmailOptOut || customerBlacklisted) {
+        errors.push('Customer is suppressed from email communications.')
       } else {
         const resendKey = process.env.RESEND_API_KEY
         if (!resendKey) {

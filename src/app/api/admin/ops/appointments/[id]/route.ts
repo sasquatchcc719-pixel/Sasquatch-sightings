@@ -20,6 +20,7 @@ import { recordRevenueFromOpsInvoice } from '@/lib/ops/revenue-from-invoice'
 import { sendCustomerSMS } from '@/lib/twilio'
 import { Resend } from 'resend'
 import { suppressPostJobReviewRequest } from '@/lib/ops/review-requests'
+import { isBlacklisted } from '@/lib/blacklist'
 import {
   leadSourceUpdatePayload,
   normalizeLeadSourceForWrite,
@@ -64,6 +65,7 @@ const APPOINTMENT_SELECT = `
     business_name,
     email,
     phone,
+    email_opt_out,
     notes
   ),
   ops_service_addresses (
@@ -123,7 +125,8 @@ async function sendAppointmentCancellationNotifications(
           full_name,
           first_name,
           email,
-          phone
+          phone,
+          email_opt_out
         ),
         ops_service_addresses (
           street_1,
@@ -170,7 +173,11 @@ async function sendAppointmentCancellationNotifications(
     )
   }
 
-  if (customer.email) {
+  const customerBlacklisted = customer.phone
+    ? await isBlacklisted(customer.phone)
+    : false
+
+  if (customer.email && !customer.email_opt_out && !customerBlacklisted) {
     const resendKey = process.env.RESEND_API_KEY
     if (resendKey) {
       const resend = new Resend(resendKey)
@@ -894,7 +901,8 @@ export async function DELETE(
           full_name,
           first_name,
           email,
-          phone
+          phone,
+          email_opt_out
         ),
         ops_service_addresses (
           street_1,
@@ -939,7 +947,11 @@ export async function DELETE(
         )
       }
 
-      if (customer.email) {
+      const customerBlacklisted = customer.phone
+        ? await isBlacklisted(customer.phone)
+        : false
+
+      if (customer.email && !customer.email_opt_out && !customerBlacklisted) {
         const resendKey = process.env.RESEND_API_KEY
         if (resendKey) {
           const resend = new Resend(resendKey)

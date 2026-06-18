@@ -2,6 +2,7 @@ import { Resend } from 'resend'
 import { sendCustomerSMS } from '@/lib/twilio'
 import { createAdminClient } from '@/supabase/server'
 import { isDeliverableCustomerEmail } from '@/lib/ops/email'
+import { isBlacklisted, normalizePhone } from '@/lib/blacklist'
 
 export const OPS_TEMPLATE_KEYS = [
   'job_scheduled_sms',
@@ -624,6 +625,13 @@ export async function sendOpsLifecycleCommunications(params: {
     ? customer.email
     : ''
   const customerEmailOptOut = customer?.email_opt_out ?? false
+  const customerBlacklisted = customerPhone
+    ? await isBlacklisted(customerPhone)
+    : false
+
+  if (customerBlacklisted) {
+    return { sent: [] }
+  }
 
   const resendApiKey = process.env.RESEND_API_KEY
   const resend = resendApiKey ? new Resend(resendApiKey) : null
@@ -797,6 +805,50 @@ export async function processOpsCommunicationQueue(params?: {
     (templatesRaw || []).map((row) => [row.template_key, row.channel]),
   )
 
+  const customerIds = [...new Set(dueItems.map((item) => item.customer_id))]
+  const { data: customersRaw, error: customersError } = await supabase
+    .from('ops_customers')
+    .select('id, phone, email_opt_out')
+    .in('id', customerIds)
+
+  if (customersError) {
+    throw new Error(
+      `Failed to load queued customers: ${customersError.message}`,
+    )
+  }
+
+  const customerById = new Map(
+    (customersRaw || []).map((row) => [
+      row.id,
+      {
+        phone: String(row.phone || ''),
+        emailOptOut: row.email_opt_out === true,
+      },
+    ]),
+  )
+  const queuedPhones = [
+    ...new Set(
+      (customersRaw || [])
+        .map((row) => normalizePhone(String(row.phone || '')))
+        .filter((phone) => phone.length === 10),
+    ),
+  ]
+  const { data: blacklistRaw, error: blacklistError } =
+    queuedPhones.length > 0
+      ? await supabase
+          .from('blacklist')
+          .select('phone')
+          .in('phone', queuedPhones)
+      : { data: [], error: null }
+
+  if (blacklistError) {
+    throw new Error(`Failed to load blacklist: ${blacklistError.message}`)
+  }
+
+  const blacklistedPhones = new Set(
+    (blacklistRaw || []).map((row) => normalizePhone(String(row.phone || ''))),
+  )
+
   const resendApiKey = process.env.RESEND_API_KEY
   const resend = resendApiKey ? new Resend(resendApiKey) : null
   const fromEmail =
@@ -815,6 +867,10 @@ export async function processOpsCommunicationQueue(params?: {
     const channel = templateChannelByKey.get(item.template_key)
     const payload = item.payload || {}
     const body = String(payload.body || '').trim()
+    const customer = customerById.get(item.customer_id)
+    const normalizedPhone = normalizePhone(customer?.phone || '')
+    const isQueuedCustomerBlacklisted =
+      normalizedPhone.length === 10 && blacklistedPhones.has(normalizedPhone)
 
     try {
       if (!channel) {
@@ -825,6 +881,12 @@ export async function processOpsCommunicationQueue(params?: {
       }
 
       if (channel === 'email') {
+        if (customer?.emailOptOut) {
+          throw new Error('Suppressed: customer has email opt-out enabled')
+        }
+        if (isQueuedCustomerBlacklisted) {
+          throw new Error('Suppressed: customer is blacklisted')
+        }
         const to = String(payload.to || '').trim()
         const subject = String(
           payload.subject || 'Update from Sasquatch Carpet Cleaning',
@@ -857,6 +919,9 @@ export async function processOpsCommunicationQueue(params?: {
           body_text: body,
         })
       } else {
+        if (isQueuedCustomerBlacklisted) {
+          throw new Error('Suppressed: customer is blacklisted')
+        }
         const toPhone = String(payload.to_phone || '').trim()
         if (!toPhone) {
           throw new Error('Missing recipient phone')
