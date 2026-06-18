@@ -1,11 +1,12 @@
 'use client'
 
 import { useState } from 'react'
-import { Download, Share2, Lock, X } from 'lucide-react'
+import { Download, Share2, Lock, X, CalendarCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { RecentJobsCarousel } from '@/components/nfc/recent-jobs-carousel'
+import { NfcBookingWidget } from '@/components/nfc/NfcBookingWidget'
 import { VideoBackground } from '@/components/public/VideoBackground'
 import { CONTEST_SMS_NUMBER, CONTEST_SMS_NUMBER_E164 } from '@/lib/phone'
 
@@ -57,6 +58,7 @@ export function PartnerLandingLayout({
   const [pin, setPin] = useState('')
   const [showShareToast, setShowShareToast] = useState(false)
   const [isTapsExpanded, setIsTapsExpanded] = useState(false)
+  const [showWidget, setShowWidget] = useState(false)
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -423,26 +425,25 @@ END:VCARD`
 
         {/* 3. THE ACTION: Buttons */}
         <div className="mb-8 space-y-4">
-          {/* PRIMARY CTA - Text us now for $20 off (opens SMS to toll-free, Harry responds) */}
-          <a
-            href={`sms:${CONTEST_SMS_NUMBER_E164}?body=${encodeURIComponent(
-              `Hi! I found you at ${partnerDisplayName} and want my $20 off (code ${displayCouponCode}). I'm interested in carpet cleaning.`,
-            )}`}
-            onClick={() => void onTrackClick('text_us')}
+          {/* PRIMARY CTA - Get a Free Estimate (opens the booking widget; $20 auto-applied) */}
+          <button
+            type="button"
+            onClick={() => {
+              setShowWidget((v) => !v)
+              if (!showWidget) void onTrackClick('booking_widget_open')
+            }}
             className="group relative block w-full overflow-hidden rounded-2xl shadow-2xl transition-all hover:scale-[1.02] hover:shadow-green-900/50"
           >
             <div className="relative bg-gradient-to-b from-green-500 to-green-700 px-6 py-6 text-center transition-all group-hover:from-green-500 group-hover:to-green-700">
               <div className="absolute inset-x-0 top-0 h-2 bg-gradient-to-b from-white/30 to-transparent" />
               <div className="relative flex flex-col items-center justify-center gap-1">
                 <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-bold tracking-wider text-white uppercase backdrop-blur-sm">
-                  Exclusive Offer
+                  {showWidget ? 'Hide Estimator' : 'Exclusive Offer'}
                 </span>
-                <div className="flex flex-col items-center gap-1 sm:flex-row sm:items-baseline sm:gap-2">
+                <div className="flex flex-col items-center gap-1">
                   <span className="text-3xl font-black text-white drop-shadow-md sm:text-4xl">
-                    Text us now
-                  </span>
-                  <span className="text-xl font-bold text-white/90">
-                    for $20 OFF
+                    <CalendarCheck className="mr-2 inline-block h-8 w-8" />
+                    {showWidget ? 'Hide Estimator' : 'Get a Free Estimate'}
                   </span>
                 </div>
                 <p className="text-sm font-medium text-white/80">
@@ -450,13 +451,22 @@ END:VCARD`
                   <span className="text-white underline">
                     {displayCouponCode}
                   </span>{' '}
-                  – we&apos;ll reply and help you book
+                  saves you $20 — auto-applied
                 </p>
               </div>
               <div className="absolute inset-x-0 bottom-0 h-3 bg-gradient-to-t from-black/20 to-transparent" />
             </div>
             <div className="absolute inset-0 translate-x-[-100%] bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-1000 group-hover:translate-x-[100%]" />
-          </a>
+          </button>
+
+          {/* Inline booking widget — expands below the CTA */}
+          {showWidget && (
+            <NfcBookingWidget
+              couponCode={displayCouponCode}
+              cardId={null}
+              onTrackClick={onTrackClick}
+            />
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             {/* Save Contact */}

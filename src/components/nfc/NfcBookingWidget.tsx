@@ -1026,7 +1026,7 @@ export function NfcBookingWidget({
           You&apos;re booked!
         </h3>
         <p className="mb-6 text-sm text-white/60">
-          Check your phone — Harry will text you a reminder the day before.
+          Check your phone — we&apos;ll text you a reminder the day before.
         </p>
 
         <div className="mb-4 rounded-xl border border-white/10 bg-white/5 p-4 text-left">
@@ -1075,7 +1075,7 @@ export function NfcBookingWidget({
         </div>
 
         <p className="text-xs text-white/40">
-          Need to make changes? Text Harry at (719) 249-8791
+          Need to make changes? Text us at (719) 249-8791
         </p>
       </div>
     )
