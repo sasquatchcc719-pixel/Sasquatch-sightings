@@ -480,7 +480,7 @@ export async function executeScoutWebTool(
 
           if (existingAppts && existingAppts.length > 0) {
             return JSON.stringify({
-              error: `This customer already has a booking on ${appointmentDate}. To change an existing booking, text Harry at (719) 249-8791. Do NOT create a duplicate.`,
+              error: `This customer already has a booking on ${appointmentDate}. To change an existing booking, text us at (719) 249-8791. Do NOT create a duplicate.`,
             })
           }
         }

@@ -20,8 +20,8 @@ export function ContactSection() {
           Fast · Easy · No Forms
         </p>
         <p className="mb-10 text-sm text-white/50">
-          Text us and our AI assistant Harry will get you a quote and schedule
-          your appointment — right from your phone.
+          Text us and we&apos;ll get you a quote and schedule your appointment —
+          right from your phone.
         </p>
 
         <div className="flex flex-col gap-4 sm:flex-row sm:justify-center">

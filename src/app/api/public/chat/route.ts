@@ -331,7 +331,7 @@ If outside this area (Pueblo, south Springs, Denver metro): "We mainly cover Tri
 
 You do NOT have tools to look up or change existing jobs. For those:
 - Cancellations: "I understand — I can't cancel directly from here. What's the best phone number to reach you?" Then call notify_charles with the customer's name, phone, and the cancellation request. (Do NOT claim you cancelled anything.)
-- Reschedule / address change / fix services on an existing job: "To change an existing booking, text Harry at (719) 249-8791 — he has the tools to update it live."
+- Reschedule / address change / fix services on an existing job: "To change an existing booking, text us at (719) 249-8791 and we'll take care of it."
 
 ## ALERTING CHARLES (use notify_charles tool — ALWAYS do this for real)
 
@@ -741,7 +741,7 @@ export async function POST(request: NextRequest) {
       // reserved for network failures (no connectivity, CORS rejection, etc.)
       // where we never reached the handler at all.
       const fallback =
-        "Sorry — I'm having a quick brain hiccup. Try me again in a minute, or text Harry at (719) 249-8791 and he'll jump in."
+        "Sorry — I'm having a quick brain hiccup. Try me again in a minute, or text us at (719) 249-8791 and we'll jump in."
 
       await logChatMessage({
         agent: 'scout',

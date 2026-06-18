@@ -846,8 +846,8 @@ export default function BookPage() {
               <p className="mb-1 font-semibold">What happens next?</p>
               <ul className="list-inside list-disc space-y-1 text-green-700">
                 <li>A confirmation email is on its way</li>
-                <li>Harry will text you a reminder the day before</li>
-                <li>Need to make changes? Text Harry at (719) 249-8791</li>
+                <li>We&apos;ll text you a reminder the day before</li>
+                <li>Need to make changes? Text us at (719) 249-8791</li>
               </ul>
             </div>
 

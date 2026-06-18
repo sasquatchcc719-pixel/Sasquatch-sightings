@@ -10,7 +10,7 @@ import { createAdminClient } from '@/supabase/server'
 import { sendCustomerSMS } from '@/lib/twilio'
 
 const BOOKING_PROMPT =
-  'Reply to this text and our assistant Harry will get you a quote and book you in — no links needed!'
+  'Reply to this text and we will get you a quote and book you in — no links needed!'
 
 export async function GET(request: NextRequest) {
   try {
