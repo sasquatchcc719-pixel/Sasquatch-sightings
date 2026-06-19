@@ -854,7 +854,7 @@ export function NewJobWorkspace() {
         className="grid gap-6 xl:grid-cols-[1.15fr,0.85fr]"
         onSubmit={handleSubmit}
       >
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
           <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
             <div className="flex items-center justify-between gap-3">
               <div>

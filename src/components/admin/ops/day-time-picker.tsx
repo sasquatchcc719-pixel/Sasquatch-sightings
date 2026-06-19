@@ -1,7 +1,6 @@
 'use client'
 
-import { useMemo, useRef } from 'react'
-import { Button } from '@/components/ui/button'
+import { useEffect, useMemo, useState } from 'react'
 
 export type DayPickerAppointment = {
   id: string
@@ -32,19 +31,17 @@ type DayTimePickerProps = {
   staffClosed?: boolean
 }
 
-const PX_PER_MIN = 0.95 // vertical scale of the timeline
-const DEFAULT_OPEN_MIN = 8 * 60 // 8:00 AM
-const DEFAULT_CLOSE_MIN = 18 * 60 // 6:00 PM
+const DEFAULT_AVAIL_MINUTES = 120
 
 function toMinutes(time: string): number {
   const [h, m] = time.slice(0, 5).split(':').map(Number)
   return (h || 0) * 60 + (m || 0)
 }
 
-function formatClock(totalMinutes: number): string {
-  const normalized = ((totalMinutes % 1440) + 1440) % 1440
-  const h24 = Math.floor(normalized / 60)
-  const m = normalized % 60
+function formatClock(time: string): string {
+  const total = toMinutes(time)
+  const h24 = Math.floor(total / 60)
+  const m = total % 60
   const period = h24 >= 12 ? 'PM' : 'AM'
   const h12 = h24 % 12 === 0 ? 12 : h24 % 12
   return `${h12}:${String(m).padStart(2, '0')} ${period}`
@@ -56,6 +53,184 @@ function formatDateKey(date: Date): string {
   const day = String(date.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
 }
+
+// ─── Month calendar with green (open) / red (full) day coding ──────────────────
+
+function MonthCalendar({
+  selected,
+  onSelect,
+  requiredMinutes,
+}: {
+  selected: string
+  onSelect: (dateKey: string) => void
+  requiredMinutes: number
+}) {
+  const today = useMemo(() => {
+    const d = new Date()
+    d.setHours(0, 0, 0, 0)
+    return d
+  }, [])
+  const todayKey = useMemo(() => formatDateKey(today), [today])
+
+  const [availabilityByDate, setAvailabilityByDate] = useState<
+    Record<string, number>
+  >({})
+  const [loading, setLoading] = useState(false)
+
+  const [viewMonth, setViewMonth] = useState<Date>(() => {
+    if (selected) {
+      const [y, m] = selected.split('-').map(Number)
+      return new Date(y, m - 1, 1)
+    }
+    return new Date(today.getFullYear(), today.getMonth(), 1)
+  })
+
+  const year = viewMonth.getFullYear()
+  const month = viewMonth.getMonth()
+  const firstDay = new Date(year, month, 1).getDay()
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const cells: (number | null)[] = [
+    ...Array(firstDay).fill(null),
+    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+  ]
+  const startDate = formatDateKey(new Date(year, month, 1))
+  const endDate = formatDateKey(new Date(year, month, daysInMonth))
+  const monthLabel = viewMonth.toLocaleDateString('en-US', {
+    month: 'long',
+    year: 'numeric',
+  })
+
+  const availMinutes =
+    requiredMinutes > 0 ? requiredMinutes : DEFAULT_AVAIL_MINUTES
+
+  useEffect(() => {
+    let ignore = false
+    const controller = new AbortController()
+    async function load() {
+      setLoading(true)
+      try {
+        const params = new URLSearchParams({
+          start_date: startDate,
+          end_date: endDate,
+          required_minutes: String(availMinutes),
+        })
+        const res = await fetch(`/api/public/availability?${params}`, {
+          cache: 'no-store',
+          signal: controller.signal,
+        })
+        if (!res.ok) throw new Error('availability failed')
+        const data = (await res.json()) as {
+          days?: { date: string; slots?: number }[]
+        }
+        if (ignore) return
+        setAvailabilityByDate(
+          (data.days || []).reduce<Record<string, number>>((acc, d) => {
+            acc[d.date] = Number(d.slots || 0)
+            return acc
+          }, {}),
+        )
+      } catch {
+        if (!ignore) setAvailabilityByDate({})
+      } finally {
+        if (!ignore) setLoading(false)
+      }
+    }
+    void load()
+    return () => {
+      ignore = true
+      controller.abort()
+    }
+  }, [startDate, endDate, availMinutes])
+
+  return (
+    <div className="select-none">
+      <div className="mb-3 flex items-center justify-between">
+        <button
+          type="button"
+          aria-label="Previous month"
+          onClick={() => setViewMonth(new Date(year, month - 1, 1))}
+          className="hover:bg-muted rounded-lg p-2 text-base transition-colors"
+        >
+          ‹
+        </button>
+        <span className="text-base font-semibold">{monthLabel}</span>
+        <button
+          type="button"
+          aria-label="Next month"
+          onClick={() => setViewMonth(new Date(year, month + 1, 1))}
+          className="hover:bg-muted rounded-lg p-2 text-base transition-colors"
+        >
+          ›
+        </button>
+      </div>
+
+      <div className="mb-1 grid grid-cols-7">
+        {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d) => (
+          <div
+            key={d}
+            className="text-muted-foreground py-1 text-center text-xs font-semibold"
+          >
+            {d}
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-7 gap-1.5">
+        {cells.map((day, idx) => {
+          if (!day) return <div key={`empty-${idx}`} />
+          const cellDate = new Date(year, month, day)
+          const iso = formatDateKey(cellDate)
+          const isPast = cellDate < today
+          const slotsForDay = availabilityByDate[iso]
+          const hasSlots = typeof slotsForDay === 'number' && slotsForDay > 0
+          const isFull = typeof slotsForDay === 'number' && slotsForDay === 0
+          const isSelected = iso === selected
+          const isToday = iso === todayKey
+
+          return (
+            <button
+              key={iso}
+              type="button"
+              disabled={isPast}
+              onClick={() => onSelect(iso)}
+              className={`flex min-h-[56px] w-full flex-col items-center justify-center rounded-xl border px-0.5 text-center transition-all ${
+                isSelected
+                  ? 'border-primary bg-primary text-primary-foreground shadow-sm'
+                  : isPast
+                    ? 'text-muted-foreground/30 cursor-not-allowed border-transparent'
+                    : isFull
+                      ? 'border-rose-400/50 bg-rose-500/10 text-rose-600 hover:bg-rose-500/20 dark:text-rose-300'
+                      : hasSlots
+                        ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300'
+                        : 'border-border/60 hover:border-primary/50'
+              } ${isToday && !isSelected ? 'ring-primary/40 ring-1' : ''}`}
+            >
+              <span className="text-base leading-none font-bold">{day}</span>
+              {!isSelected && hasSlots ? (
+                <span className="mt-1 text-[9px] leading-none font-bold">
+                  Open
+                </span>
+              ) : null}
+              {!isSelected && isFull ? (
+                <span className="mt-1 text-[9px] leading-none font-bold">
+                  Full
+                </span>
+              ) : null}
+            </button>
+          )
+        })}
+      </div>
+
+      <p className="text-muted-foreground mt-3 text-center text-xs">
+        {loading
+          ? 'Checking openings…'
+          : 'Green = open · Red = fully booked (tap to stack work anyway)'}
+      </p>
+    </div>
+  )
+}
+
+// ─── Full day + time picker ────────────────────────────────────────────────────
 
 export function DayTimePicker({
   selectedDate,
@@ -72,155 +247,96 @@ export function DayTimePicker({
   onToggleCustomTime,
   staffClosed = false,
 }: DayTimePickerProps) {
-  const dateInputRef = useRef<HTMLInputElement>(null)
+  const sortedAppointments = useMemo(
+    () =>
+      [...appointments].sort(
+        (a, b) => toMinutes(a.start_time) - toMinutes(b.start_time),
+      ),
+    [appointments],
+  )
 
-  // Quick-pick strip: today + next 13 days.
-  const upcomingDays = useMemo(() => {
-    const base = new Date(`${formatDateKey(new Date())}T12:00:00`)
-    return Array.from({ length: 14 }, (_, index) => {
-      const day = new Date(base)
-      day.setDate(day.getDate() + index)
-      return day
-    })
-  }, [])
-
-  const todayKey = useMemo(() => formatDateKey(new Date()), [])
-
-  // Timeline vertical range — stretch to cover any early/late booking or slot.
-  const { rangeStart, rangeEnd } = useMemo(() => {
-    let start = DEFAULT_OPEN_MIN
-    let end = DEFAULT_CLOSE_MIN
-    for (const appt of appointments) {
-      start = Math.min(start, toMinutes(appt.start_time))
-      end = Math.max(end, toMinutes(appt.end_time))
-    }
-    for (const slot of availableSlots) {
-      start = Math.min(start, toMinutes(slot.start_time))
-      end = Math.max(end, toMinutes(slot.end_time))
-    }
-    if (selectedTime) {
-      start = Math.min(start, toMinutes(selectedTime))
-      end = Math.max(
-        end,
-        toMinutes(selectedTime) + Math.max(requiredMinutes, 30),
-      )
-    }
-    // Snap to whole hours with a little padding.
-    start = Math.floor(start / 60) * 60
-    end = Math.ceil(end / 60) * 60
-    return { rangeStart: start, rangeEnd: end }
-  }, [appointments, availableSlots, selectedTime, requiredMinutes])
-
-  const totalMinutes = Math.max(60, rangeEnd - rangeStart)
-  const timelineHeight = totalMinutes * PX_PER_MIN
-
-  const hourMarks = useMemo(() => {
-    const marks: number[] = []
-    for (let m = rangeStart; m <= rangeEnd; m += 60) marks.push(m)
-    return marks
-  }, [rangeStart, rangeEnd])
-
-  const selectedStartMin = selectedTime ? toMinutes(selectedTime) : null
-  const previewHeight = Math.max(requiredMinutes, 30) * PX_PER_MIN
-
-  const topFor = (minutes: number) => (minutes - rangeStart) * PX_PER_MIN
+  const longDate = new Date(`${selectedDate}T12:00:00`).toLocaleDateString(
+    'en-US',
+    { weekday: 'long', month: 'long', day: 'numeric' },
+  )
 
   return (
-    <div className="space-y-4">
-      {/* ---- Day selection ---- */}
-      <div>
-        <div className="mb-2 flex items-center justify-between">
-          <span className="text-sm font-medium">Pick a day</span>
-          <button
-            type="button"
-            className="text-primary text-xs font-medium underline-offset-2 hover:underline"
-            onClick={() => {
-              const el = dateInputRef.current
-              if (!el) return
-              // showPicker() is supported on iOS Safari + modern browsers.
-              if (typeof el.showPicker === 'function') el.showPicker()
-              else el.focus()
-            }}
-          >
-            📅 Pick a specific date →
-          </button>
-        </div>
-
-        <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-          {upcomingDays.map((day) => {
-            const key = formatDateKey(day)
-            const active = key === selectedDate
-            const isToday = key === todayKey
-            return (
-              <button
-                key={key}
-                type="button"
-                onClick={() => onSelectDate(key)}
-                className={`flex min-w-[60px] flex-col items-center rounded-2xl border px-3 py-2 transition ${
-                  active
-                    ? 'border-primary bg-primary text-primary-foreground shadow-sm'
-                    : 'border-border/60 bg-background/70 hover:border-primary/50'
-                }`}
-              >
-                <span className="text-[10px] font-medium tracking-[0.15em] uppercase opacity-80">
-                  {day.toLocaleDateString('en-US', { weekday: 'short' })}
-                </span>
-                <span className="mt-0.5 text-lg leading-none font-semibold">
-                  {day.getDate()}
-                </span>
-                <span className="mt-0.5 text-[10px] opacity-80">
-                  {isToday
-                    ? 'Today'
-                    : day.toLocaleDateString('en-US', { month: 'short' })}
-                </span>
-              </button>
-            )
-          })}
-        </div>
-
-        {/* Hidden native date input drives the "specific date" picker. */}
-        <input
-          ref={dateInputRef}
-          type="date"
-          className="sr-only"
-          value={selectedDate}
-          onChange={(event) => {
-            if (event.target.value) onSelectDate(event.target.value)
-          }}
+    <div className="space-y-5">
+      {/* Month calendar */}
+      <div className="border-border/60 bg-background/40 rounded-2xl border p-4">
+        <MonthCalendar
+          selected={selectedDate}
+          onSelect={onSelectDate}
+          requiredMinutes={requiredMinutes}
         />
-
-        <p className="text-muted-foreground mt-2 text-xs">
-          {new Date(`${selectedDate}T12:00:00`).toLocaleDateString('en-US', {
-            weekday: 'long',
-            month: 'long',
-            day: 'numeric',
-          })}
-        </p>
       </div>
 
-      {/* ---- Time selection ---- */}
-      <div>
-        <div className="mb-2 flex items-center justify-between">
-          <span className="text-sm font-medium">Pick a start time</span>
+      {/* What's already booked that day */}
+      <div className="border-border/60 bg-background/40 rounded-2xl border p-4">
+        <p className="text-muted-foreground mb-3 text-xs font-semibold tracking-wide uppercase">
+          Already on the schedule — {longDate}
+        </p>
+        {staffClosed ? (
+          <div className="mb-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
+            The assigned technician is closed this day. You can still book with
+            a custom time.
+          </div>
+        ) : null}
+        {sortedAppointments.length === 0 ? (
+          <p className="text-muted-foreground py-2 text-sm">
+            Nothing booked yet — wide open.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {sortedAppointments.map((appt) => (
+              <div
+                key={appt.id}
+                className="border-border/60 bg-card flex items-start gap-3 rounded-xl border px-3 py-2"
+              >
+                <div className="text-sm font-semibold whitespace-nowrap">
+                  {formatClock(appt.start_time)}
+                </div>
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium">
+                    {appt.label}
+                  </div>
+                  {appt.detail ? (
+                    <div className="text-muted-foreground truncate text-xs">
+                      {appt.detail}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Open time windows */}
+      <div className="border-border/60 bg-background/40 rounded-2xl border p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <p className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+            Pick a start time
+          </p>
           <button
             type="button"
             className="text-xs text-blue-600 underline-offset-2 hover:underline"
             onClick={onToggleCustomTime}
           >
-            {useCustomTime ? '← Back to open times' : 'Custom time →'}
+            {useCustomTime ? '← Back to open windows' : 'Custom time →'}
           </button>
         </div>
 
         {requiredMinutes <= 0 ? (
-          <div className="border-border/60 text-muted-foreground rounded-2xl border border-dashed p-4 text-sm">
-            Add services above first — we&apos;ll calculate the openings that
-            fit this job.
-          </div>
+          <p className="text-muted-foreground py-2 text-sm">
+            Add services above first — we&apos;ll show the windows that fit this
+            job.
+          </p>
         ) : useCustomTime ? (
-          <div className="border-border/60 rounded-2xl border p-4">
+          <div>
             <input
               type="time"
-              className="border-input bg-background h-11 w-full rounded-md border px-3 text-base"
+              className="border-input bg-background h-12 w-full rounded-lg border px-3 text-base"
               value={selectedTime}
               onChange={(event) => onSelectTime(event.target.value)}
             />
@@ -228,120 +344,46 @@ export function DayTimePicker({
               Admin override — any time accepted, no conflict check.
             </p>
           </div>
+        ) : loadingSlots ? (
+          <div className="grid grid-cols-2 gap-2">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="bg-muted h-12 animate-pulse rounded-lg" />
+            ))}
+          </div>
+        ) : availableSlots.length === 0 ? (
+          <p className="text-muted-foreground py-2 text-sm">
+            No open windows this day. Tap “Custom time” to stack a job anyway,
+            or pick another day.
+          </p>
         ) : (
-          <>
-            {staffClosed ? (
-              <div className="mb-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
-                The assigned technician is closed this day. Switch the day, pick
-                a different tech, or use a custom time.
-              </div>
-            ) : null}
-
-            {/* Open-slot quick taps */}
-            <div className="mb-3 flex flex-wrap gap-2">
-              {loadingSlots ? (
-                <span className="text-muted-foreground text-sm">
-                  Loading open times…
-                </span>
-              ) : availableSlots.length === 0 ? (
-                <span className="text-muted-foreground text-sm">
-                  No open times this day — try another day or a custom time.
-                </span>
-              ) : (
-                availableSlots.map((slot) => {
-                  const start = slot.start_time.slice(0, 5)
-                  const active = start === selectedTime
-                  return (
-                    <button
-                      key={slot.start_time}
-                      type="button"
-                      onClick={() => onSelectTime(start)}
-                      className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
-                        active
-                          ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
-                          : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300'
-                      }`}
-                    >
-                      {formatClock(toMinutes(slot.start_time))}
-                    </button>
-                  )
-                })
-              )}
-            </div>
-
-            {/* Live day timeline */}
-            <div className="border-border/60 bg-background/40 relative overflow-hidden rounded-2xl border">
-              <div
-                className="relative"
-                style={{ height: `${timelineHeight}px` }}
-              >
-                {/* Hour gridlines + labels */}
-                {hourMarks.map((mark) => (
-                  <div
-                    key={mark}
-                    className="border-border/40 absolute right-0 left-14 border-t"
-                    style={{ top: `${topFor(mark)}px` }}
-                  >
-                    <span className="text-muted-foreground absolute -top-2 -left-14 w-12 text-right text-[10px]">
-                      {formatClock(mark)}
-                    </span>
-                  </div>
-                ))}
-
-                {/* Existing booked jobs */}
-                {appointments.map((appt) => {
-                  const start = toMinutes(appt.start_time)
-                  const end = toMinutes(appt.end_time)
-                  const height = Math.max(18, (end - start) * PX_PER_MIN)
-                  return (
-                    <div
-                      key={appt.id}
-                      className="border-border bg-muted text-muted-foreground absolute right-2 left-16 overflow-hidden rounded-lg border px-2 py-1"
-                      style={{
-                        top: `${topFor(start)}px`,
-                        height: `${height}px`,
-                      }}
-                    >
-                      <div className="truncate text-[11px] font-semibold">
-                        {formatClock(start)} · {appt.label}
-                      </div>
-                      {appt.detail ? (
-                        <div className="truncate text-[10px] opacity-80">
-                          {appt.detail}
-                        </div>
-                      ) : null}
-                    </div>
-                  )
-                })}
-
-                {/* Preview of the job being booked */}
-                {selectedStartMin !== null ? (
-                  <div
-                    className="border-primary bg-primary/15 text-primary absolute right-2 left-16 z-10 overflow-hidden rounded-lg border-2 px-2 py-1 shadow-sm"
-                    style={{
-                      top: `${topFor(selectedStartMin)}px`,
-                      height: `${previewHeight}px`,
-                    }}
-                  >
-                    <div className="truncate text-[11px] font-bold">
-                      {formatClock(selectedStartMin)} –{' '}
-                      {formatClock(selectedStartMin + requiredMinutes)}
-                    </div>
-                    <div className="truncate text-[10px] font-medium opacity-90">
-                      This job
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-
-            <p className="text-muted-foreground mt-2 text-xs">
-              {requiredMinutes > 0
-                ? `Job runs ~${serviceMinutes} min + ${bufferMinutes} min travel buffer = ${requiredMinutes} min. Green chips are real openings.`
-                : 'Pick services first so we can calculate valid openings.'}
-            </p>
-          </>
+          <div className="grid grid-cols-2 gap-2">
+            {availableSlots.map((slot) => {
+              const start = slot.start_time.slice(0, 5)
+              const active = start === selectedTime
+              return (
+                <button
+                  key={slot.start_time}
+                  type="button"
+                  onClick={() => onSelectTime(start)}
+                  className={`rounded-xl border py-3 text-sm font-semibold transition-all ${
+                    active
+                      ? 'border-emerald-500 bg-emerald-600 text-white shadow-sm'
+                      : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300'
+                  }`}
+                >
+                  {formatClock(slot.start_time)}
+                </button>
+              )
+            })}
+          </div>
         )}
+
+        {requiredMinutes > 0 ? (
+          <p className="text-muted-foreground mt-3 text-xs">
+            This job needs ~{serviceMinutes} min + {bufferMinutes} min travel ={' '}
+            {requiredMinutes} min.
+          </p>
+        ) : null}
       </div>
     </div>
   )
