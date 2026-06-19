@@ -99,12 +99,14 @@ type Appointment = {
         status: string
         total?: number
         payment_status?: string
+        payment_method?: string | null
       }
     | {
         id: string
         status: string
         total?: number
         payment_status?: string
+        payment_method?: string | null
       }[]
     | null
 }
@@ -213,6 +215,41 @@ function calendarDisplayAmount(appointment: Appointment): string {
     ops_appointment_line_items: appointment.ops_appointment_line_items,
   })
   return Number.isFinite(n) ? n.toFixed(2) : '0.00'
+}
+
+// Payment methods recorded when a job is marked paid (see the tech payment
+// route). Color-coded so the calendar can be scanned at a glance.
+const PAYMENT_METHOD_STYLES: Record<
+  string,
+  { label: string; className: string }
+> = {
+  venmo: { label: 'Venmo', className: 'bg-blue-100 text-blue-700' },
+  check: { label: 'Check', className: 'bg-amber-100 text-amber-800' },
+  cash: { label: 'Cash', className: 'bg-emerald-100 text-emerald-700' },
+  card: { label: 'Card', className: 'bg-sky-100 text-sky-700' },
+  square: { label: 'Square', className: 'bg-violet-100 text-violet-700' },
+}
+
+/**
+ * A payment-method chip for a completed job whose invoice records how it was
+ * paid. Returns null otherwise (not completed, or no method recorded yet).
+ */
+function paymentMethodChip(appointment: Appointment) {
+  if (appointment.status !== 'completed') return null
+  const invoice = unwrapRelation(appointment.ops_invoices)
+  const raw = invoice?.payment_method?.trim().toLowerCase()
+  if (!raw) return null
+  const style = PAYMENT_METHOD_STYLES[raw] ?? {
+    label: raw.replace(/\b\w/g, (c) => c.toUpperCase()),
+    className: 'bg-slate-100 text-slate-700',
+  }
+  return (
+    <span
+      className={`rounded px-1.5 py-0.5 text-[9px] font-semibold ${style.className}`}
+    >
+      {style.label}
+    </span>
+  )
 }
 
 function humanizeSourceLabel(value: string | null | undefined): string | null {
@@ -2119,14 +2156,17 @@ export function OperationsSchedule() {
                 .join(', ')}
             </div>
             {recurringLineItemDescriptionBoxes(appointment, false)}
-            <div
-              className={`mt-auto pt-2 text-right font-semibold tabular-nums ${
-                appointment.status === 'completed'
-                  ? 'text-slate-600'
-                  : 'text-slate-800'
-              }`}
-            >
-              ${calendarDisplayAmount(appointment)}
+            <div className="mt-auto flex items-center justify-between gap-1 pt-2">
+              <span>{paymentMethodChip(appointment)}</span>
+              <span
+                className={`text-right font-semibold tabular-nums ${
+                  appointment.status === 'completed'
+                    ? 'text-slate-600'
+                    : 'text-slate-800'
+                }`}
+              >
+                ${calendarDisplayAmount(appointment)}
+              </span>
             </div>
           </Link>
           {!isEstimate && appointment.status !== 'completed' && (

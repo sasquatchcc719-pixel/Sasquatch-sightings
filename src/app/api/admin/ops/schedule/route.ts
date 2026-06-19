@@ -40,6 +40,7 @@ const APPOINTMENT_SELECT = `
     id,
     status,
     payment_status,
+    payment_method,
     sync_status,
     subtotal,
     total,
