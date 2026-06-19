@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import {
@@ -111,37 +111,10 @@ export function TechJobDetail({
   const [squareLinkFeedback, setSquareLinkFeedback] = useState<string | null>(
     null,
   )
-  const [startingTap, setStartingTap] = useState(false)
   const [streetViewFailed, setStreetViewFailed] = useState(false)
   const [showSignatureModal, setShowSignatureModal] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
-
-  // When Square Point of Sale switches back after a tap-to-pay charge, show
-  // the result and refresh so the paid status reflects. Clears the query param
-  // afterward so the message doesn't re-appear on later refreshes.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const payment = params.get('payment')
-    if (!payment) return
-    if (payment === 'success' || payment === 'received') {
-      setSquareLinkFeedback(
-        payment === 'success'
-          ? 'Card payment received — invoice marked paid.'
-          : 'Card payment received. Refresh in a moment to confirm.',
-      )
-      router.refresh()
-    } else if (payment === 'canceled') {
-      setError('Payment was canceled in Square.')
-    } else if (payment === 'error') {
-      setError('Square could not complete the payment. Please try again.')
-    }
-    params.delete('payment')
-    const clean =
-      window.location.pathname + (params.toString() ? `?${params}` : '')
-    window.history.replaceState(null, '', clean)
-  }, [router])
-
   const fullAddress = addressLine(appointment)
   const mapsHref = fullAddress
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress)}`
@@ -331,28 +304,6 @@ export function TechJobDetail({
       setError(err instanceof Error ? err.message : 'Could not record payment')
     } finally {
       setRecordingPayment(null)
-    }
-  }
-
-  async function chargeByTap() {
-    setStartingTap(true)
-    setSquareLinkFeedback(null)
-    setError(null)
-    try {
-      const response = await fetch(
-        `/api/tech/appointments/${appointment.id}/square-pos-url`,
-        { method: 'POST' },
-      )
-      const result = (await response.json()) as { error?: string; url?: string }
-      if (!response.ok || !result.url) {
-        throw new Error(result.error || 'Could not start Square payment')
-      }
-      // Hand off to the Square Point of Sale app (pre-loaded with the amount).
-      // Square switches back to the square-pos-return route when finished.
-      window.location.href = result.url
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not start payment')
-      setStartingTap(false)
     }
   }
 
@@ -695,30 +646,6 @@ export function TechJobDetail({
               ) : null}
               Save Invoice Changes
             </Button>
-            {squareAmount ? (
-              <Button
-                className="w-full bg-emerald-600 text-white hover:bg-emerald-700"
-                disabled={
-                  startingTap || sendingSquareLink || recordingPayment !== null
-                }
-                onClick={() => void chargeByTap()}
-              >
-                {startingTap ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <SquareLogoMark className="h-4 w-4" />
-                )}
-                {startingTap
-                  ? 'Opening Square...'
-                  : `Tap Card · ${squareAmount}`}
-              </Button>
-            ) : null}
-            {squareAmount ? (
-              <p className="text-center text-xs text-slate-400">
-                Opens Square to tap the customer&apos;s card; comes right back
-                here and marks this invoice paid.
-              </p>
-            ) : null}
             {squareAmount ? (
               <Button
                 className="w-full bg-black text-white hover:bg-neutral-800"
