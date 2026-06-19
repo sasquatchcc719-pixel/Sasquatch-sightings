@@ -52,6 +52,9 @@ export interface NfcBookingWidgetProps {
   couponCode: string
   cardId: string | null
   onTrackClick: (buttonType: string) => void
+  /** Where this booking came from, for stats — e.g. a partner location name.
+   *  Falls back to the NFC card id, then a generic label. */
+  leadSourceDetail?: string
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -687,6 +690,7 @@ export function NfcBookingWidget({
   couponCode,
   cardId,
   onTrackClick,
+  leadSourceDetail,
 }: NfcBookingWidgetProps) {
   const [step, setStep] = useState(1)
 
@@ -966,7 +970,7 @@ export function NfcBookingWidget({
         appointment_date: selectedDate,
         start_time: selectedSlot!.start_time,
         lead_source_key: 'nfc_partner',
-        lead_source_detail: cardId || 'NFC card',
+        lead_source_detail: leadSourceDetail || cardId || 'NFC card',
       },
       line_items: lineItems,
       percentage_discount:
