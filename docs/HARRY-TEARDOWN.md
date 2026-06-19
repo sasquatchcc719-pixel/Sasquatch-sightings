@@ -21,7 +21,14 @@ Deterministic no-LLM pipe on **Sasquatchnotificationsbot** (`TELEGRAM_BOT_TOKEN`
 - **Note:** an unrelated in-progress harry-command reliability fix (2h staleness TTL on "this customer" context) is still **uncommitted** in the working tree (`harry-command/route.ts`, `command-guards.test.ts`, a reorder in `sms-incoming`) — left as found; commit separately when ready.
 
 ## TODO — Phase 4: remove Harry's code (the careful one)
-Harry's already off (dead code now), but it threads through many files — **plan before deleting.** Remove: harry-next agent logic (`src/lib/harry-next/`), HarryCommandbot (`src/app/api/telegram/harry-command/route.ts`), old Harry SMS agent, dead auto-lead-creation. **Keep** shared plumbing: Twilio, Supabase, `createAiStyleBooking`, `availability`/`staff-availability`, `lead-sources`, `promo-discount`, `bookable-catalog`, Scout (website chat is separate).
+Harry's already off (dead code now), but it threads through many files — **plan before deleting.** Remove: harry-next agent logic (`src/lib/harry-next/`), HarryCommandbot (`src/app/api/telegram/harry-command/route.ts` + `src/lib/harry-command-bot.ts`), old Harry SMS agent, dead auto-lead-creation. **Keep** shared plumbing: Twilio, Supabase, `createAiStyleBooking`, `availability`/`staff-availability`, `lead-sources`, `promo-discount`, `bookable-catalog`, Scout (website chat is separate).
+
+**Decisions (Charles, Jun 18):**
+- **Archive method:** tag `harry-archive-2026-06` (or branch) at the pre-removal commit, then DELETE the files from the working tree — recover via the tag, no dead code in the live tree. (Not an `/_archive/` folder.)
+- **Uncommitted harry-command reliability fix** (2h staleness TTL — `harry-command/route.ts`, `command-guards.test.ts`, `sms-incoming` reorder): **drop as moot** — we're deleting HarryCommandbot anyway. Discard those working-tree changes as part of teardown.
+- **Tables stay** (`harry_control_settings`, `harry_next_pending_actions`, conversation history) — stop writing, don't drop (dropping is the only irreversible step).
+
+**DONE — Phase 4 prereq (`6f02a12`, deployed):** moved the 3 legit owner notifications off HarryCommandbot's `sendToCharles` → notification bot (`sendTelegramNotification`), so deleting the command bot loses nothing: **⭐ review-request sent** (`ops/review-requests.ts`), **🌟 new Google review (X★)** (`cron/track-serps`), **🔎 GSC anomaly digest** (`gsc-watch.ts`). Verified live (landed on Sasquatchnotificationsbot in Charles's DM). Harry's own escalations/replies (`notifyNewCustomerMessage`, `harry-next/*`, the `harry-command` route) stay on the command bot and die with it.
 
 ## Key facts
 - Supabase project `zoabgmsbvzcqpzlrhsfz`. Vercel project `sasquatch-sightings`.
