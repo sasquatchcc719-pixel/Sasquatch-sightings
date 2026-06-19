@@ -10,7 +10,7 @@
 
 import { createAdminClient } from '@/supabase/server'
 
-export type AiAgent = 'harry' | 'scout' | 'harry_owner'
+export type AiAgent = 'harry' | 'scout' | 'harry_owner' | 'inbound_sms'
 export type AiChannel = 'sms' | 'web' | 'admin'
 export type AiRole = 'user' | 'assistant' | 'system' | 'owner' | 'tool'
 
