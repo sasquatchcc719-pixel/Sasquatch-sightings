@@ -239,29 +239,8 @@ export function AdminNavigation() {
     },
   ]
 
-  // AI controls (Harry + George + AI Chats)
+  // AI tools (Ranger hiring + AI Chats)
   const aiTabs: NavTab[] = [
-    {
-      name: 'Control',
-      href: '/admin/harry/control',
-      icon: Bot,
-      active: pathname === '/admin/harry/control',
-      description: 'Runtime toggles, logic profiles, and knowledge controls',
-    },
-    {
-      name: 'George Henderson',
-      href: '/admin/harry/george',
-      icon: Bot,
-      active: pathname === '/admin/harry/george',
-      description: 'Smart field copilot with confirmation-gated actions',
-    },
-    {
-      name: 'Rabecca Voice',
-      href: '/admin/rabecca',
-      icon: Phone,
-      active: pathname === '/admin/rabecca',
-      description: 'Voice agent tool logs and booking audit trail',
-    },
     {
       name: 'Ranger Hiring',
       href: '/admin/ranger',
@@ -275,13 +254,6 @@ export function AdminNavigation() {
       icon: MessageSquare,
       active: pathname === '/admin/conversations' && isAIChatsSource,
       description: 'All AI-initiated chats (vendor, card, contest)',
-    },
-    {
-      name: 'Capabilities',
-      href: '/admin/harry/capabilities',
-      icon: ClipboardList,
-      active: pathname === '/admin/harry/capabilities',
-      description: 'What Harry and George can and cannot do',
     },
   ]
 

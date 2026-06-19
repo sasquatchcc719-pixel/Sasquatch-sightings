@@ -211,18 +211,6 @@ const navSections: NavSection[] = [
     icon: Bot,
     items: [
       {
-        name: 'Control',
-        href: '/admin/harry/control',
-        icon: Bot,
-        description: 'Runtime toggles',
-      },
-      {
-        name: 'George Henderson',
-        href: '/admin/harry/george',
-        icon: Bot,
-        description: 'Field copilot',
-      },
-      {
         name: 'Ranger Hiring',
         href: '/admin/ranger',
         icon: UserRoundSearch,
@@ -233,12 +221,6 @@ const navSections: NavSection[] = [
         href: '/admin/conversations?source=ai_chats',
         icon: MessageSquare,
         description: 'AI-initiated chats',
-      },
-      {
-        name: 'Capabilities',
-        href: '/admin/harry/capabilities',
-        icon: ClipboardList,
-        description: 'Harry & George abilities',
       },
     ],
   },
