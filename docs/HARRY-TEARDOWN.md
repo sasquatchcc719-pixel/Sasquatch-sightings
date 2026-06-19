@@ -20,14 +20,21 @@ Deterministic no-LLM pipe on **Sasquatchnotificationsbot** (`TELEGRAM_BOT_TOKEN`
 - **Last human check (do once):** text **719-249-8791** (and **866-536-7148**) from a real phone → confirm a topic appears in **Customers** with the card, reply in it → confirm the SMS arrives **from the same number** you texted.
 - **Note:** an unrelated in-progress harry-command reliability fix (2h staleness TTL on "this customer" context) is still **uncommitted** in the working tree (`harry-command/route.ts`, `command-guards.test.ts`, a reorder in `sms-incoming`) — left as found; commit separately when ready.
 
-## TODO — Phase 4: remove Harry's code (the careful one)
-**Full written plan: [`AI-TEARDOWN-PHASE4-PLAN.md`](./AI-TEARDOWN-PHASE4-PLAN.md)** — now covers Harry **+ George + Rabecca/Retell** (all abandoned), keeps Scout + Analyst/Radar + Ranger, and treats the admin AI dashboard as a hard "no orphaned switches" requirement. Awaiting Charles's go + decisions D1–D4.
-Harry's already off (dead code now), but it threads through many files — **plan before deleting.** Remove: harry-next agent logic (`src/lib/harry-next/`), HarryCommandbot (`src/app/api/telegram/harry-command/route.ts` + `src/lib/harry-command-bot.ts`), old Harry SMS agent, dead auto-lead-creation. **Keep** shared plumbing: Twilio, Supabase, `createAiStyleBooking`, `availability`/`staff-availability`, `lead-sources`, `promo-discount`, `bookable-catalog`, Scout (website chat is separate).
+## DONE — Phase 4: removed Harry + George + Rabecca (`6010a1e..` , deployed)
+Full plan: [`AI-TEARDOWN-PHASE4-PLAN.md`](./AI-TEARDOWN-PHASE4-PLAN.md). Pre-removal snapshot tagged **`harry-archive-2026-06`** (recover any deleted code via that tag).
 
-**Decisions (Charles, Jun 18):**
-- **Archive method:** tag `harry-archive-2026-06` (or branch) at the pre-removal commit, then DELETE the files from the working tree — recover via the tag, no dead code in the live tree. (Not an `/_archive/` folder.)
-- **Uncommitted harry-command reliability fix** (2h staleness TTL — `harry-command/route.ts`, `command-guards.test.ts`, `sms-incoming` reorder): **drop as moot** — we're deleting HarryCommandbot anyway. Discard those working-tree changes as part of teardown.
-- **Tables stay** (`harry_control_settings`, `harry_next_pending_actions`, conversation history) — stop writing, don't drop (dropping is the only irreversible step).
+**What shipped (6 stages, one deploy):**
+- **A** — `sms-incoming` rewritten to a no-LLM pipe (2102→870 lines): log → forward to relay → Ranger routing → LSA tracking; no auto-reply. Deleted `harry-next/`, HarryCommandbot, `openai-chat.ts`, `ops/sms-harry-tools.ts`, harry-draft, and `harry/{workflow,recovery,minimum-disclaimer,recipient-safety,replay-cases}` + tests.
+- **B** — Analyst disentangled from the Harry control endpoint via new `/api/admin/analyst/status`.
+- **C** — George removed (`lib/george`, `api/admin/george`, dashboard, page; George flags pulled from `harry/features.ts`).
+- **D** — Harry admin control surface deleted (control page + dashboard + control/knowledge/profiles routes + `harry/control.ts`). Call-after-hours + voicemail decoupled from `harry_control_settings` → **new env `MISSED_CALL_AUTO_SMS_ENABLED`** (default OFF, rebranded off "Harry"; pairs with the relay).
+- **E** — Rabecca/Retell removed (`lib/retell`, `api/retell`, `rabecca-fallback`, `admin/rabecca`, retell-bridge, dead `rabeccaSipUri`). Kept the `retell_rabecca` booking label + `RETELL_FUNCTION_SECRET` (slot tokens).
+- **F** — dashboard hygiene: dead nav entries (Control/George/Rabecca/Capabilities) + Capabilities page removed. Sweep confirms zero refs to any removed agent.
+- **G** — env vars retired (REBECCA_*, RETELL_API_KEY, HARRY_COMMAND_BOT_TOKEN, GEORGE_HENDERSON_ROLLOUT_MODE); **15 dead tables dropped** (`20260619060000_drop_harry_retell_tables.sql`).
+
+**KEPT (verify before assuming gone):** Scout (own engine), Analyst/Radar — incl. its `harry_conversations` + `harry_memory` tables (just historically named) — Ranger, the relay, call routing, `createAiStyleBooking`, booking labels.
+
+**Leftover note:** HarryCommandbot's Telegram webhook still points at the now-deleted `/api/telegram/harry-command` route (inert 404s). Its token was already pulled from prod/`.env.local`, so the webhook can't be deleted via CLI from here — kill it from BotFather or by calling `deleteWebhook` with the bot token if you still have it. Harmless either way.
 
 **DONE — Phase 4 prereq (`6f02a12`, deployed):** moved the 3 legit owner notifications off HarryCommandbot's `sendToCharles` → notification bot (`sendTelegramNotification`), so deleting the command bot loses nothing: **⭐ review-request sent** (`ops/review-requests.ts`), **🌟 new Google review (X★)** (`cron/track-serps`), **🔎 GSC anomaly digest** (`gsc-watch.ts`). Verified live (landed on Sasquatchnotificationsbot in Charles's DM). Harry's own escalations/replies (`notifyNewCustomerMessage`, `harry-next/*`, the `harry-command` route) stay on the command bot and die with it.
 
