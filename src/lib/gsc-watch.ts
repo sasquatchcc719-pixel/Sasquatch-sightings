@@ -17,7 +17,7 @@ import {
   GSC_SIGHTINGS_PROPERTY,
   type GscInspection,
 } from '@/lib/gsc'
-import { sendToCharles } from '@/lib/harry-command-bot'
+import { sendTelegramNotification } from '@/lib/telegram'
 
 const MAX_INSPECTIONS = 80
 const INSPECT_CONCURRENCY = 4
@@ -77,7 +77,7 @@ export async function runGscWatch(
   } = {},
 ): Promise<GscWatchResult> {
   const notifyOwner =
-    options.notifyOwner ?? ((text: string) => sendToCharles(text))
+    options.notifyOwner ?? ((text: string) => sendTelegramNotification(text))
   const sc = getSearchConsoleClient()
   const targets = options.targets ?? (await collectTargets())
 

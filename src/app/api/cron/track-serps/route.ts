@@ -9,7 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { runRadarScan } from '@/lib/radar-scan'
 import { syncGbpReviews } from '@/lib/gbp-reviews'
 import { createAdminClient } from '@/supabase/server'
-import { sendToCharles } from '@/lib/harry-command-bot'
+import { sendTelegramNotification } from '@/lib/telegram'
 
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization')
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
         const quote = review.snippet
           ? `\n"${review.snippet.slice(0, 200)}"`
           : ''
-        await sendToCharles(
+        await sendTelegramNotification(
           `🌟 New Google review — ${review.author || 'Anonymous'} (${stars})${quote}${
             sync.totalOnGoogle != null
               ? `\nTotal reviews: ${sync.totalOnGoogle}`

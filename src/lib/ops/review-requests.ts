@@ -11,7 +11,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { sendCustomerSMSWithResult } from '@/lib/twilio'
 import { isBlacklisted } from '@/lib/blacklist'
-import { sendToCharles } from '@/lib/harry-command-bot'
+import { sendTelegramNotification } from '@/lib/telegram'
 import { opsPhoneLookupVariants } from '@/lib/ops/phone'
 import { reviewerMatchesCustomer } from '@/lib/gbp-reviews'
 
@@ -264,7 +264,7 @@ export async function processDueReviewRequests(
     ((phone: string, message: string) =>
       sendCustomerSMSWithResult(phone, message, undefined, 'review_request'))
   const notifyOwner =
-    options.notifyOwner ?? ((text: string) => sendToCharles(text))
+    options.notifyOwner ?? ((text: string) => sendTelegramNotification(text))
 
   const { data: due, error } = await supabase
     .from('review_requests')
