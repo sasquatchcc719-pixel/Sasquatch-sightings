@@ -21,6 +21,7 @@ Deterministic no-LLM pipe on **Sasquatchnotificationsbot** (`TELEGRAM_BOT_TOKEN`
 - **Note:** an unrelated in-progress harry-command reliability fix (2h staleness TTL on "this customer" context) is still **uncommitted** in the working tree (`harry-command/route.ts`, `command-guards.test.ts`, a reorder in `sms-incoming`) — left as found; commit separately when ready.
 
 ## TODO — Phase 4: remove Harry's code (the careful one)
+**Full written plan: [`AI-TEARDOWN-PHASE4-PLAN.md`](./AI-TEARDOWN-PHASE4-PLAN.md)** — now covers Harry **+ George + Rabecca/Retell** (all abandoned), keeps Scout + Analyst/Radar + Ranger, and treats the admin AI dashboard as a hard "no orphaned switches" requirement. Awaiting Charles's go + decisions D1–D4.
 Harry's already off (dead code now), but it threads through many files — **plan before deleting.** Remove: harry-next agent logic (`src/lib/harry-next/`), HarryCommandbot (`src/app/api/telegram/harry-command/route.ts` + `src/lib/harry-command-bot.ts`), old Harry SMS agent, dead auto-lead-creation. **Keep** shared plumbing: Twilio, Supabase, `createAiStyleBooking`, `availability`/`staff-availability`, `lead-sources`, `promo-discount`, `bookable-catalog`, Scout (website chat is separate).
 
 **Decisions (Charles, Jun 18):**
