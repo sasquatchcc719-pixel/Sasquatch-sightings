@@ -82,8 +82,8 @@ Detailed, reviewable removal plan. **Nothing here has been executed** — this i
 
 ---
 
-## Decisions needed from Charles
-- **D1 — Stages at once or in chunks?** Recommend landing A→B→C→D→F as one reviewed PR-to-main with a deploy + verify, then E (Rabecca) separately. (Smaller blast radius, your call to debug alone.)
-- **D2 — Rabecca:** fully remove the voice code + nav + logs UI (recommended — cleanest, nothing points at a dead agent), **or** keep the read-only `/admin/rabecca` call/transcript logs for history?
-- **D3 — Capabilities page:** keep a trimmed Harry/Scout reference, or delete the page entirely?
-- **D4 — DB tables:** leave `harry_*`/`george_*`/retell-log tables in place (recommended), or drop them in a final irreversible migration once you're confident?
+## Decisions (Charles, answered — executing)
+- **D1 — Everything in one pass.** A→F as a single change + one deploy/verify; Rabecca (E) included, not deferred.
+- **D2 — Remove Rabecca fully** — voice code + nav + logs UI. Keep the `retell_rabecca` booking label and `RETELL_FUNCTION_SECRET` (slot tokens).
+- **D3 — Delete the AI Capabilities page** + its nav link.
+- **D4 — Drop the dead tables** in a final migration (last step, irreversible). Only tables confirmed orphaned (`harry_*`, `george_*`, retell logs) — never shared (`conversations`, `sms_logs`, `ops_*`, `phone_settings`, `radar_*`). Verify each has no remaining reader before dropping; the `harry/control.ts` booking-link helpers that call-routing keeps must not read a dropped table.
