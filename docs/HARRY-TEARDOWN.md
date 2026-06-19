@@ -10,17 +10,15 @@
 - **Email/copy rebrand** (`b7e7bf5`) — customer-facing "Text Harry" → "Text us at (719) 249-8791" (book page, ContactSection, nurture-leads, Scout chat). Remaining "Harry" = internal comments/prompts only.
 - **Milano lead recovery** — +17209801562 (found at Milano, MILA20; Harry escalated/dropped it) got a recovery SMS with the booking link (from 719). Note: Michelle Tsirlis (+12524221396, Milano) — Harry failed her Jun-12 reschedule; her appt is Jun-16 1pm, status completed.
 
-## IN PROGRESS — Telegram relay (Phase 2)
-**Design:** Telegram **group + Topics** = one thread per customer (contact card + history at top). Charles replies in-thread → relays to SMS. No LLM.
-- **Groups created** by Charles: **"LSA Leads"** and **"Customers"**, both with **Sasquatchnotificationsbot** as **admin**, Topics on.
-- Bot has an **active webhook** already (getUpdates 409s) — so it receives updates; "has no access to messages" label is likely moot since it's admin.
-
-**Resume here — build the relay:**
-1. Get the two group chat IDs — the relay endpoint should log `chat.id` on first message (don't `deleteWebhook` casually; a webhook is live). Bot token = `TELEGRAM_BOT_TOKEN` in `.env.local`.
-2. New table: phone ↔ telegram topic_id ↔ group_id mapping.
-3. Inbound SMS (Twilio webhook, `src/app/api/twilio/sms-incoming/route.ts`) → find/create the customer's topic in the right group (LSA leads → "LSA Leads" group; everyone else → "Customers"), post their text + a contact card (name/address/history from `ops_customers`).
-4. Point Sasquatchnotificationsbot's webhook at a relay route; on a message in a topic, look up the phone and **send SMS from the SAME business number the customer texted** (Milano lesson: customer texted 866-536-7148, Harry replied from 719 → split thread).
-5. Forward **all** inbound (Charles's choice).
+## DONE — Telegram relay (Phase 2) — `70b7cad`, deployed + verified live
+Deterministic no-LLM pipe on **Sasquatchnotificationsbot** (`TELEGRAM_BOT_TOKEN`). Inbound SMS → a forum **topic** (one per phone) in the right group with a contact card; Charles replies in the topic → SMS back **from the same business number** the customer texted.
+- **Webhook:** `https://sightings.sasquatchcarpet.com/api/telegram/relay`, secret-verified via env **`TELEGRAM_RELAY_SECRET_TOKEN`** (set in Vercel prod). Repointed off the stale `ranger-command` URL (which was 401ing). `RangerEmploymentBot` is a *separate* bot with its own token/webhook — untouched.
+- **Group IDs** (auto-discovered by the webhook from a group message; table `telegram_relay_groups`, self-healing): **Customers** `-1004446520884`, **LSA Leads** `-1004421258596`.
+- **Tables:** `telegram_relay_groups` (role→chat_id) and `telegram_relay_threads` (phone ↔ group+topic, `business_number`). Migration `20260618130000_telegram_relay.sql`.
+- **Code:** `src/lib/telegram/relay.ts` (all logic), `src/app/api/telegram/relay/route.ts` (webhook), and a `forwardInboundToRelay()` call in `sms-incoming/route.ts` after `determineSourceType` (fails soft — never affects SMS). Routing: `sourceType === 'lsa'` → LSA group, else Customers. One topic per phone, reused regardless of group/number.
+- **Verified live in prod:** simulated inbound created a Customers topic + card; a synthetic topic reply sent a real SMS (`sms_logs`, type `telegram_relay`, real SID) from the 719 line; wrong webhook secret → 401. Test artifacts cleaned up. Unit/integration tests in `src/lib/telegram/relay.test.ts` (5 passing, real DB, no SMS/Telegram side effects).
+- **Last human check (do once):** text **719-249-8791** (and **866-536-7148**) from a real phone → confirm a topic appears in **Customers** with the card, reply in it → confirm the SMS arrives **from the same number** you texted.
+- **Note:** an unrelated in-progress harry-command reliability fix (2h staleness TTL on "this customer" context) is still **uncommitted** in the working tree (`harry-command/route.ts`, `command-guards.test.ts`, a reorder in `sms-incoming`) — left as found; commit separately when ready.
 
 ## TODO — Phase 4: remove Harry's code (the careful one)
 Harry's already off (dead code now), but it threads through many files — **plan before deleting.** Remove: harry-next agent logic (`src/lib/harry-next/`), HarryCommandbot (`src/app/api/telegram/harry-command/route.ts`), old Harry SMS agent, dead auto-lead-creation. **Keep** shared plumbing: Twilio, Supabase, `createAiStyleBooking`, `availability`/`staff-availability`, `lead-sources`, `promo-discount`, `bookable-catalog`, Scout (website chat is separate).
