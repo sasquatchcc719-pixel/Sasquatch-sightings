@@ -63,6 +63,7 @@ type SchedulePreview = {
     start_time: string
     end_time: string
     status: string
+    assigned_staff_user_id: string | null
     ops_customers:
       | {
           full_name: string
@@ -521,7 +522,10 @@ export function NewJobWorkspace() {
     return schedulePreview.appointments
       .filter(
         (appointment) =>
-          appointment.appointment_date === appointmentForm.appointment_date,
+          appointment.appointment_date === appointmentForm.appointment_date &&
+          (!appointmentForm.assigned_staff_user_id ||
+            appointment.assigned_staff_user_id ===
+              appointmentForm.assigned_staff_user_id),
       )
       .map((appointment) => {
         const customer = unwrapRelation(appointment.ops_customers)
@@ -538,7 +542,11 @@ export function NewJobWorkspace() {
             .join(', '),
         }
       })
-  }, [schedulePreview.appointments, appointmentForm.appointment_date])
+  }, [
+    schedulePreview.appointments,
+    appointmentForm.appointment_date,
+    appointmentForm.assigned_staff_user_id,
+  ])
 
   const selectedStaffClosedForDay = useMemo(() => {
     if (!appointmentForm.assigned_staff_user_id) return false
@@ -802,6 +810,12 @@ export function NewJobWorkspace() {
           date: appointmentForm.appointment_date,
           required_minutes: String(requiredMinutesForCurrentSelection),
         })
+        if (appointmentForm.assigned_staff_user_id) {
+          searchParams.set(
+            'staff_user_id',
+            appointmentForm.assigned_staff_user_id,
+          )
+        }
         const response = await fetch(
           `/api/admin/ops/slots?${searchParams.toString()}`,
           { cache: 'no-store' },
@@ -840,7 +854,11 @@ export function NewJobWorkspace() {
     }
 
     void loadAvailableTimes()
-  }, [appointmentForm.appointment_date, requiredMinutesForCurrentSelection])
+  }, [
+    appointmentForm.appointment_date,
+    appointmentForm.assigned_staff_user_id,
+    requiredMinutesForCurrentSelection,
+  ])
 
   return (
     <div className="space-y-6">
@@ -1184,6 +1202,7 @@ export function NewJobWorkspace() {
                 useCustomTime={useCustomTime}
                 onToggleCustomTime={() => setUseCustomTime((v) => !v)}
                 staffClosed={selectedStaffClosedForDay}
+                staffUserId={appointmentForm.assigned_staff_user_id}
               />
             </div>
 

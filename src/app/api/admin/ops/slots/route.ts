@@ -5,7 +5,7 @@ import {
   applyAppointmentBuffer,
   calculateAppointmentDurationFromTotal,
 } from '@/lib/ops/availability'
-import { getUnionedSlots } from '@/lib/ops/staff-availability'
+import { getSlotsForStaff, getUnionedSlots } from '@/lib/ops/staff-availability'
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,6 +13,7 @@ export async function GET(request: NextRequest) {
     const supabase = createAdminClient()
     const { searchParams } = new URL(request.url)
     const date = searchParams.get('date')
+    const staffUserId = searchParams.get('staff_user_id')
     const serviceId = searchParams.get('service_id')
     const requiredMinutesParam = searchParams.get('required_minutes')
     const quantity = Number(searchParams.get('quantity') || '1')
@@ -74,12 +75,20 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const slots = await getUnionedSlots({
-      supabase,
-      date,
-      requiredMinutes: requiredMinutesWithBuffer,
-      maxResults: 8,
-    })
+    const slots = staffUserId
+      ? await getSlotsForStaff({
+          supabase,
+          date,
+          staffUserId,
+          requiredMinutes: requiredMinutesWithBuffer,
+          maxResults: 8,
+        })
+      : await getUnionedSlots({
+          supabase,
+          date,
+          requiredMinutes: requiredMinutesWithBuffer,
+          maxResults: 8,
+        })
 
     return NextResponse.json({
       slots,

@@ -29,6 +29,7 @@ type DayTimePickerProps = {
   useCustomTime: boolean
   onToggleCustomTime: () => void
   staffClosed?: boolean
+  staffUserId?: string
 }
 
 const DEFAULT_AVAIL_MINUTES = 120
@@ -60,10 +61,12 @@ function MonthCalendar({
   selected,
   onSelect,
   requiredMinutes,
+  staffUserId,
 }: {
   selected: string
   onSelect: (dateKey: string) => void
   requiredMinutes: number
+  staffUserId?: string
 }) {
   const today = useMemo(() => {
     const d = new Date()
@@ -114,7 +117,8 @@ function MonthCalendar({
           end_date: endDate,
           required_minutes: String(availMinutes),
         })
-        const res = await fetch(`/api/public/availability?${params}`, {
+        if (staffUserId) params.set('staff_user_id', staffUserId)
+        const res = await fetch(`/api/admin/ops/month-availability?${params}`, {
           cache: 'no-store',
           signal: controller.signal,
         })
@@ -140,7 +144,7 @@ function MonthCalendar({
       ignore = true
       controller.abort()
     }
-  }, [startDate, endDate, availMinutes])
+  }, [startDate, endDate, availMinutes, staffUserId])
 
   return (
     <div className="select-none">
@@ -246,6 +250,7 @@ export function DayTimePicker({
   useCustomTime,
   onToggleCustomTime,
   staffClosed = false,
+  staffUserId,
 }: DayTimePickerProps) {
   const sortedAppointments = useMemo(
     () =>
@@ -268,6 +273,7 @@ export function DayTimePicker({
           selected={selectedDate}
           onSelect={onSelectDate}
           requiredMinutes={requiredMinutes}
+          staffUserId={staffUserId}
         />
       </div>
 

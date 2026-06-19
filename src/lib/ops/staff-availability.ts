@@ -111,6 +111,49 @@ export async function getAllStaffSlots(params: {
   return results
 }
 
+/**
+ * Slots for ONE specific tech. Returns only that tech's openings (empty if the
+ * tech is closed that day) so the admin booking UI never offers a window that
+ * would double-book the assigned technician.
+ */
+export async function getSlotsForStaff(params: {
+  supabase: SupabaseClient
+  date: string
+  requiredMinutes: number
+  staffUserId: string
+  excludeAppointmentId?: string
+  minStartMinutes?: number
+  maxResults?: number
+}): Promise<SlotOption[]> {
+  const {
+    supabase,
+    date,
+    requiredMinutes,
+    staffUserId,
+    excludeAppointmentId,
+    minStartMinutes,
+    maxResults = 12,
+  } = params
+
+  const openStaff = await getOpenStaffForDate(supabase, date)
+  if (!openStaff.some((s) => s.id === staffUserId)) return []
+
+  const bundle = await loadAvailabilityBundle(supabase, date, {
+    excludeAppointmentId,
+    staffUserId,
+  })
+
+  return getAvailableSlots({
+    date,
+    requiredMinutes,
+    templates: bundle.templates,
+    overrides: bundle.overrides,
+    appointments: bundle.appointments,
+    minStartMinutes,
+    maxResults,
+  })
+}
+
 export async function getUnionedSlots(params: {
   supabase: SupabaseClient
   date: string
