@@ -378,3 +378,63 @@ export async function getAssignedTechAppointment(
   if (error) throw error
   return data ? mapTechAppointment(data) : null
 }
+
+/**
+ * Resolve the invoice a given user is allowed to take payment on for an
+ * appointment. Back-office roles (admin/owner/dispatcher) can charge ANY
+ * invoice; a tech is limited to jobs assigned to them (and never hidden-pricing
+ * accounts). Returns null when there is no chargeable invoice with a positive
+ * total. Shared by the Square tap-to-pay routes so payment works on every
+ * invoice, not just the assigned tech's.
+ */
+export async function getChargeableInvoice(
+  supabase: SupabaseAdminClient,
+  params: { role: string; userId: string; appointmentId: string },
+): Promise<{
+  invoiceId: string
+  total: number
+  invoiceNumber: number | null
+} | null> {
+  const { role, userId, appointmentId } = params
+  const privileged =
+    role === 'admin' || role === 'owner' || role === 'dispatcher'
+
+  if (privileged) {
+    const { data, error } = await supabase
+      .from('ops_appointments')
+      .select('id, ops_invoices ( id, invoice_number, total )')
+      .eq('id', appointmentId)
+      .maybeSingle()
+    if (error) throw error
+    const inv = unwrapRelation(
+      (data as { ops_invoices?: unknown } | null)?.ops_invoices as
+        | { id: string; invoice_number: number | null; total: number | null }
+        | { id: string; invoice_number: number | null; total: number | null }[]
+        | null,
+    )
+    if (!inv) return null
+    const total = Number(inv.total || 0)
+    if (!Number.isFinite(total) || total <= 0) return null
+    return {
+      invoiceId: inv.id,
+      total,
+      invoiceNumber: inv.invoice_number ?? null,
+    }
+  }
+
+  const appointment = await getAssignedTechAppointment(
+    supabase,
+    userId,
+    appointmentId,
+  )
+  if (!appointment || appointment.hidePricing || !appointment.invoice) {
+    return null
+  }
+  const total = Number(appointment.invoice.total || 0)
+  if (!Number.isFinite(total) || total <= 0) return null
+  return {
+    invoiceId: appointment.invoice.id,
+    total,
+    invoiceNumber: appointment.invoice.invoiceNumber ?? null,
+  }
+}

@@ -982,7 +982,12 @@ export function InvoiceDetail({
     try {
       const response = await fetch(
         `/api/tech/appointments/${apptId}/square-pos-url`,
-        { method: 'POST' },
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          // Come back to whatever page we started on (admin invoice or tech job).
+          body: JSON.stringify({ returnTo: window.location.pathname }),
+        },
       )
       const result = (await response.json()) as { error?: string; url?: string }
       if (!response.ok || !result.url) {
@@ -1002,7 +1007,6 @@ export function InvoiceDetail({
   // When Square Point of Sale switches back after a tap-to-pay charge, surface
   // the result and refresh so the paid status reflects, then clear the param.
   useEffect(() => {
-    if (!isTechMode) return
     const params = new URLSearchParams(window.location.search)
     const payment = params.get('payment')
     if (!payment) return
@@ -1955,27 +1959,24 @@ export function InvoiceDetail({
                   Square Pay
                 </p>
                 <p className="mt-1 text-xs text-neutral-300">
-                  {isTechMode
-                    ? `Tap the customer's card here, or text them a checkout link for $${squareAmount}.`
-                    : `Text a Square checkout link for $${squareAmount}, then mark this invoice Square paid above after payment.`}
+                  Tap the customer&apos;s card here, or text them a checkout
+                  link for ${squareAmount}.
                 </p>
                 <div className="mt-3 flex gap-2">
-                  {isTechMode ? (
-                    <Button
-                      className="flex-1 gap-2 bg-emerald-500 text-white hover:bg-emerald-600"
-                      disabled={startingTap || paymentLinkLoading !== null}
-                      onClick={() => void chargeByTap()}
-                    >
-                      {startingTap ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <SquareLogoMark className="h-4 w-4" />
-                      )}
-                      {startingTap ? 'Opening…' : `Tap Card · $${squareAmount}`}
-                    </Button>
-                  ) : null}
                   <Button
-                    className={`${isTechMode ? 'flex-1' : 'w-full'} gap-2 bg-white text-black hover:bg-neutral-200`}
+                    className="flex-1 gap-2 bg-emerald-500 text-white hover:bg-emerald-600"
+                    disabled={startingTap || paymentLinkLoading !== null}
+                    onClick={() => void chargeByTap()}
+                  >
+                    {startingTap ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <SquareLogoMark className="h-4 w-4" />
+                    )}
+                    {startingTap ? 'Opening…' : `Tap Card · $${squareAmount}`}
+                  </Button>
+                  <Button
+                    className="flex-1 gap-2 bg-white text-black hover:bg-neutral-200"
                     disabled={startingTap || paymentLinkLoading !== null}
                     onClick={() => void handleSendPaymentLink('square')}
                   >
@@ -1984,11 +1985,7 @@ export function InvoiceDetail({
                     ) : (
                       <SquareLogoMark className="h-4 w-4" />
                     )}
-                    {paymentLinkLoading === 'square'
-                      ? 'Sending…'
-                      : isTechMode
-                        ? 'Text Link'
-                        : 'Text Square Pay Link'}
+                    {paymentLinkLoading === 'square' ? 'Sending…' : 'Text Link'}
                   </Button>
                 </div>
                 {paymentLinkFeedback?.type === 'square' ? (

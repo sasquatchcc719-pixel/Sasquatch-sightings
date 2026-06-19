@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
-import { getAssignedTechAppointment } from '@/lib/tech/appointments'
+import { getChargeableInvoice } from '@/lib/tech/appointments'
 import { parseSquarePosReturn } from '@/lib/payments/square-pos'
 import { createAdminClient } from '@/supabase/server'
 
@@ -16,7 +16,14 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params
-  const jobUrl = new URL(`/tech/jobs/${id}`, request.nextUrl.origin)
+  // Return to the page the charge was started from (admin invoice or tech job);
+  // only same-origin relative paths are honored.
+  const rawReturn = request.nextUrl.searchParams.get('return_to')
+  const returnPath =
+    rawReturn && rawReturn.startsWith('/') && !rawReturn.startsWith('//')
+      ? rawReturn
+      : `/tech/jobs/${id}`
+  const jobUrl = new URL(returnPath, request.nextUrl.origin)
 
   const result = parseSquarePosReturn(request.nextUrl.searchParams)
 
@@ -29,16 +36,20 @@ export async function GET(
   }
 
   try {
-    const access = await requireAnyRole(['admin', 'owner', 'tech'])
+    const access = await requireAnyRole([
+      'admin',
+      'owner',
+      'dispatcher',
+      'tech',
+    ])
     const supabase = createAdminClient()
-    const staffUserId = access.staff?.id ?? access.id
-    const appointment = await getAssignedTechAppointment(
-      supabase,
-      staffUserId,
-      id,
-    )
+    const invoice = await getChargeableInvoice(supabase, {
+      role: access.role,
+      userId: access.staff?.id ?? access.id,
+      appointmentId: id,
+    })
 
-    if (appointment?.invoice && !appointment.hidePricing) {
+    if (invoice) {
       const nowIso = new Date().toISOString()
       await supabase
         .from('ops_invoices')
@@ -48,13 +59,13 @@ export async function GET(
           payment_method: 'square',
           updated_at: nowIso,
         })
-        .eq('id', appointment.invoice.id)
+        .eq('id', invoice.invoiceId)
       await supabase
         .from('ops_appointments')
         .update({ payment_status: 'paid', updated_at: nowIso })
         .eq('id', id)
       console.log(
-        `[square-pos-return] Marked invoice ${appointment.invoice.id} paid (txn ${result.transactionId ?? 'n/a'})`,
+        `[square-pos-return] Marked invoice ${invoice.invoiceId} paid (txn ${result.transactionId ?? 'n/a'})`,
       )
     }
     jobUrl.searchParams.set('payment', 'success')
