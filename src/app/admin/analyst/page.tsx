@@ -55,10 +55,10 @@ export default function AnalystChatPage() {
   useEffect(() => {
     async function loadControlState() {
       try {
-        const response = await fetch('/api/admin/harry/control')
+        const response = await fetch('/api/admin/analyst/status')
         const result = await response.json()
         if (response.ok) {
-          setAnalystEnabled(Boolean(result?.runtime?.analyst_enabled))
+          setAnalystEnabled(Boolean(result?.analystEnabled))
         }
       } catch {
         setAnalystEnabled(false)
@@ -266,13 +266,9 @@ export default function AnalystChatPage() {
               </Button>
             </>
           ) : (
-            <Button
-              asChild
-              variant="outline"
-              className="border-white/20 bg-white/10 text-white hover:bg-white/20"
-            >
-              <Link href="/admin/harry/control">Open Harry Control</Link>
-            </Button>
+            <span className="text-sm text-white/60">
+              Analyst is disabled. Set HARRY_ANALYST_ENABLED=true to enable.
+            </span>
           )}
         </div>
       </div>

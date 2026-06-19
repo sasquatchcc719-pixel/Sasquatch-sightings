@@ -140,10 +140,10 @@ export default function TargetsPage() {
   useEffect(() => {
     async function loadState() {
       try {
-        const response = await fetch('/api/admin/harry/control')
+        const response = await fetch('/api/admin/analyst/status')
         const result = await response.json()
         if (response.ok) {
-          setAnalystEnabled(Boolean(result?.runtime?.analyst_enabled))
+          setAnalystEnabled(Boolean(result?.analystEnabled))
         }
       } catch {
         setAnalystEnabled(false)
@@ -265,11 +265,9 @@ export default function TargetsPage() {
           variant="outline"
           className="border-white/20 bg-white/10 text-white hover:bg-white/20"
         >
-          <Link
-            href={analystEnabled ? '/admin/analyst' : '/admin/harry/control'}
-          >
+          <Link href="/admin/analyst">
             <MessageSquare className="mr-2 h-4 w-4" />
-            {analystEnabled ? 'Chat with Harry' : 'Open Harry Control'}
+            Open Analyst
           </Link>
         </Button>
       </div>
