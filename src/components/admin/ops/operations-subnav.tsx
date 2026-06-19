@@ -19,6 +19,7 @@ import {
   MapPin,
   Timer,
   Footprints,
+  Fuel,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -121,6 +122,12 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Payroll Timesheets',
     description: 'Manual payable time entries and daily totals',
     icon: DollarSign,
+  },
+  {
+    href: '/admin/operations/receipts',
+    label: 'Tech Receipts',
+    description: 'Field gas & expense receipts forwarded to QuickBooks',
+    icon: Fuel,
   },
   {
     href: '/admin/operations/my-day',

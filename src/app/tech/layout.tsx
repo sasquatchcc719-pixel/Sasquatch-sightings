@@ -7,6 +7,7 @@ import { TechClockControl } from '@/components/tech/tech-clock-control'
 
 const techNavItems = [
   { href: '/tech', label: 'Jobs' },
+  { href: '/tech/receipts', label: 'Receipts' },
   { href: '/tech/profile', label: 'Profile' },
 ]
 
