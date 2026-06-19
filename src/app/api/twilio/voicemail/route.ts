@@ -2,14 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import twilio from 'twilio'
-import {
-  getHarryControlSnapshot,
-  isHarryChannelEnabled,
-  isHarryFunctionEnabled,
-} from '@/lib/harry/control'
 import { createAdminClient } from '@/supabase/server'
 
-/** Twilio may run 120s+; default Vercel timeout would kill Harry before SMS. */
+/** Twilio may run 120s+; default Vercel timeout would kill the SMS send. */
 export const maxDuration = 300
 
 const resend = new Resend(process.env.RESEND_API_KEY)
@@ -97,7 +92,7 @@ function getLatestVoicemailTranscription(
 function buildVoicemailAutoReply(latestTranscript: string | null): string {
   // Keep replies concise and natural; never quote transcript text back.
   const base =
-    'Hi! This is Harry from Sasquatch Carpet Cleaning. Thanks for your voicemail.'
+    'Hi! This is Sasquatch Carpet Cleaning. Thanks for your voicemail.'
 
   if (!latestTranscript) {
     return `${base} I can help by text, or Charles can call you back shortly.`
@@ -236,17 +231,11 @@ export async function POST(request: NextRequest) {
     // Wait briefly for transcription callback data, then send a reply that references
     // what the caller said. We skip if transcription isn't meaningful.
     try {
-      const controlSnapshot = await getHarryControlSnapshot()
-      // Same bar as SMS Harry: inbound intake + main channel + auto-reply.
-      // Not tied to "missed call SMS" — that toggle only affects call-after-hours dial callbacks.
+      // Deterministic voicemail follow-up text (no LLM). Shares the
+      // MISSED_CALL_AUTO_SMS_ENABLED switch; off by default. Replies land in
+      // the Telegram relay where Charles answers.
       const canRunVoicemailAutoReply =
-        isHarryFunctionEnabled(controlSnapshot, 'global_enabled') &&
-        isHarryFunctionEnabled(
-          controlSnapshot,
-          'inbound_channel_intake_enabled',
-        ) &&
-        isHarryFunctionEnabled(controlSnapshot, 'auto_reply_enabled') &&
-        isHarryChannelEnabled(controlSnapshot, 'inbound')
+        process.env.MISSED_CALL_AUTO_SMS_ENABLED === 'true'
 
       if (canRunVoicemailAutoReply && conversationId) {
         await new Promise((resolve) =>
@@ -285,7 +274,7 @@ export async function POST(request: NextRequest) {
               ? String(transcriptionText).trim()
               : null)
 
-          const harryMessage = buildVoicemailAutoReply(latestTranscript)
+          const voicemailReply = buildVoicemailAutoReply(latestTranscript)
 
           const twilioClient = twilio(
             process.env.TWILIO_ACCOUNT_SID,
@@ -293,7 +282,7 @@ export async function POST(request: NextRequest) {
           )
 
           const sms = await twilioClient.messages.create({
-            body: harryMessage,
+            body: voicemailReply,
             to: normalizedPhone,
             from: process.env.TWILIO_PHONE_NUMBER,
           })
@@ -301,7 +290,7 @@ export async function POST(request: NextRequest) {
           const nextMessages = [...latestMessages]
           nextMessages.push({
             role: 'assistant',
-            content: harryMessage,
+            content: voicemailReply,
             timestamp: new Date().toISOString(),
             twilio_sid: sms.sid,
           })
@@ -317,7 +306,7 @@ export async function POST(request: NextRequest) {
           await supabase.from('sms_logs').insert({
             recipient_phone: normalizedPhone,
             message_type: 'ai_dispatcher',
-            message_content: harryMessage,
+            message_content: voicemailReply,
             status: 'sent',
             twilio_sid: sms.sid,
             sent_at: new Date().toISOString(),

@@ -1,11 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import twilio from 'twilio'
-import {
-  getHarryControlSnapshot,
-  isHarryChannelEnabled,
-  isHarryFunctionEnabled,
-} from '@/lib/harry/control'
 import { createAdminClient } from '@/supabase/server'
 import {
   classifyCallOutcome,
@@ -101,22 +96,22 @@ export async function POST(request: NextRequest) {
         .then()
     }
 
-    const controlSnapshot = await getHarryControlSnapshot()
-    const canRunHarryCallSms =
-      isHarryFunctionEnabled(controlSnapshot, 'global_enabled') &&
-      isHarryFunctionEnabled(controlSnapshot, 'call_missed_auto_sms_enabled') &&
-      isHarryChannelEnabled(controlSnapshot, 'inbound')
+    // Deterministic missed-call auto-text (no LLM). Off by default; set
+    // MISSED_CALL_AUTO_SMS_ENABLED=true to send it. The caller's reply lands
+    // in the Telegram relay, where Charles answers by hand.
+    const canSendMissedCallSms =
+      process.env.MISSED_CALL_AUTO_SMS_ENABLED === 'true'
 
-    // Send Harry SMS any time this handler owns a non-answered call.
+    // Send the missed-call text any time this handler owns a non-answered call.
     // After-hours/LSA fallback redirects often arrive without DialCallStatus,
     // so missing status is treated as a missed/voicemail call here.
     // Very short completed forwarding legs are commonly carrier voicemail or
     // another automated pickup, not a person actually handling the caller.
-    const shouldSendSMS = canRunHarryCallSms && !forwardedCallWasHandled
+    const shouldSendSMS = canSendMissedCallSms && !forwardedCallWasHandled
 
     if (shouldSendSMS) {
       console.log(
-        `[Call Handler] Sending Harry SMS (dialCallStatus: ${dialCallStatus || 'none - after hours'}, dialCallDuration: ${dialCallDuration ?? 'unknown'}s)`,
+        `[Call Handler] Sending missed-call SMS (dialCallStatus: ${dialCallStatus || 'none - after hours'}, dialCallDuration: ${dialCallDuration ?? 'unknown'}s)`,
       )
 
       try {
@@ -125,8 +120,8 @@ export async function POST(request: NextRequest) {
         }
 
         const missedCallMessageType = `missed_call_auto_reply:${callSid}`
-        const harryMessage =
-          'Hi! This is Harry from Sasquatch Carpet Cleaning. I saw you just called. How can I help you today?'
+        const missedCallMessage =
+          "Hi! This is Sasquatch Carpet Cleaning — we saw you just called and couldn't catch you. How can we help? Text us right here, or call us back at (719) 249-8791."
 
         // Claim this call before sending. The partial unique index on
         // message_type makes retries and concurrent Twilio callbacks harmless.
@@ -135,7 +130,7 @@ export async function POST(request: NextRequest) {
           .insert({
             recipient_phone: normalizedPhone,
             message_type: missedCallMessageType,
-            message_content: harryMessage,
+            message_content: missedCallMessage,
             status: 'queued',
             sent_at: new Date().toISOString(),
           })
@@ -210,7 +205,7 @@ export async function POST(request: NextRequest) {
         )
 
         const sms = await twilioClient.messages.create({
-          body: harryMessage,
+          body: missedCallMessage,
           to: normalizedPhone,
           from: process.env.TWILIO_PHONE_NUMBER,
         })
@@ -219,11 +214,11 @@ export async function POST(request: NextRequest) {
           `[Call Handler] SMS sent to ${normalizedPhone}, SID: ${sms.sid}`,
         )
 
-        // Update conversation with Harry's message
+        // Record the outbound missed-call text on the conversation thread
         const messages = existingConvo?.messages || []
         messages.push({
           role: 'assistant',
-          content: harryMessage,
+          content: missedCallMessage,
           timestamp: new Date().toISOString(),
           twilio_sid: sms.sid,
           metadata: {
@@ -248,7 +243,7 @@ export async function POST(request: NextRequest) {
           .eq('id', claim.id)
       } catch (smsError) {
         console.error(
-          '[Call Handler] Failed to send Harry missed-call SMS:',
+          '[Call Handler] Failed to send missed-call SMS:',
           smsError,
         )
         if (callSid) {
@@ -257,14 +252,14 @@ export async function POST(request: NextRequest) {
             .update({
               status: 'failed',
               message_content:
-                'Harry missed-call SMS failed before it could be sent.',
+                'Missed-call SMS failed before it could be sent.',
             })
             .eq('message_type', `missed_call_auto_reply:${callSid}`)
         }
       }
     } else {
       console.log(
-        `[Call Handler] SMS suppressed — shouldSendSMS=${shouldSendSMS}, canRunHarryCallSms=${canRunHarryCallSms}, dialCallStatus=${dialCallStatus}, dialCallDuration=${dialCallDuration ?? 'unknown'}s`,
+        `[Call Handler] SMS suppressed — shouldSendSMS=${shouldSendSMS}, canSendMissedCallSms=${canSendMissedCallSms}, dialCallStatus=${dialCallStatus}, dialCallDuration=${dialCallDuration ?? 'unknown'}s`,
       )
     }
 
@@ -283,38 +278,38 @@ export async function POST(request: NextRequest) {
 
 async function buildVoicemailResponse(): Promise<NextResponse> {
   // Fetch phone settings from database for voicemail
-    let voicemailMessage =
-      "Thanks for calling Sasquatch Carpet Cleaning. You've either reached us after business hours or we're currently assisting other customers. You can book immediately at sasquatch carpet dot com and add any questions to the notes. Or leave a message after the beep and we'll get back to you as soon as possible."
-    let voicemailVoice = 'Polly.Joanna-Neural'
+  let voicemailMessage =
+    "Thanks for calling Sasquatch Carpet Cleaning. You've either reached us after business hours or we're currently assisting other customers. You can book immediately at sasquatch carpet dot com and add any questions to the notes. Or leave a message after the beep and we'll get back to you as soon as possible."
+  let voicemailVoice = 'Polly.Joanna-Neural'
 
-    try {
-      const { data: phoneSettings } = await supabase
-        .from('phone_settings')
-        .select('voicemail_message, voicemail_voice')
-        .limit(1)
-        .single()
+  try {
+    const { data: phoneSettings } = await supabase
+      .from('phone_settings')
+      .select('voicemail_message, voicemail_voice')
+      .limit(1)
+      .single()
 
-      if (phoneSettings) {
-        voicemailMessage = phoneSettings.voicemail_message
-        voicemailVoice = phoneSettings.voicemail_voice
-      }
-    } catch (dbError) {
-      console.error(
-        '[Call Handler] Failed to fetch voicemail settings, using defaults:',
-        dbError,
-      )
+    if (phoneSettings) {
+      voicemailMessage = phoneSettings.voicemail_message
+      voicemailVoice = phoneSettings.voicemail_voice
     }
+  } catch (dbError) {
+    console.error(
+      '[Call Handler] Failed to fetch voicemail settings, using defaults:',
+      dbError,
+    )
+  }
 
-    // Base URL for callbacks (this deployment; avoid hardcoded git branch URL)
-    const url = (
-      process.env.NEXT_PUBLIC_APP_URL ||
-      process.env.VERCEL_URL ||
-      'sightings.sasquatchcarpet.com'
-    ).trim()
-    const baseUrl = url.startsWith('http') ? url : `https://${url}`
-    const voicemailUrl = `${baseUrl}/api/twilio/voicemail`
+  // Base URL for callbacks (this deployment; avoid hardcoded git branch URL)
+  const url = (
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.VERCEL_URL ||
+    'sightings.sasquatchcarpet.com'
+  ).trim()
+  const baseUrl = url.startsWith('http') ? url : `https://${url}`
+  const voicemailUrl = `${baseUrl}/api/twilio/voicemail`
 
-    // Return voicemail TwiML - let caller leave a message
+  // Return voicemail TwiML - let caller leave a message
   const voicemailTwiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Say voice="${voicemailVoice}">${voicemailMessage}</Say>
@@ -322,7 +317,7 @@ async function buildVoicemailResponse(): Promise<NextResponse> {
     <Say voice="${voicemailVoice}">We didn't receive your message. Please try calling back during business hours. Goodbye.</Say>
 </Response>`
 
-    console.log('[Call Handler] Returning voicemail TwiML')
+  console.log('[Call Handler] Returning voicemail TwiML')
 
   return new NextResponse(voicemailTwiml, {
     status: 200,
