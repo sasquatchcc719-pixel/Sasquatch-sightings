@@ -231,14 +231,27 @@ const PAYMENT_METHOD_STYLES: Record<
 }
 
 /**
- * A payment-method chip for a completed job whose invoice records how it was
- * paid. Returns null otherwise (not completed, or no method recorded yet).
+ * A status chip for a completed job's invoice: the payment method when it's
+ * been paid (Venmo/Check/…), or a red "Unpaid" tag when it hasn't. Returns
+ * null when the job isn't completed or has no invoice yet.
  */
 function paymentMethodChip(appointment: Appointment) {
   if (appointment.status !== 'completed') return null
   const invoice = unwrapRelation(appointment.ops_invoices)
-  const raw = invoice?.payment_method?.trim().toLowerCase()
-  if (!raw) return null
+  if (!invoice) return null
+  const raw = invoice.payment_method?.trim().toLowerCase()
+  const isPaid = invoice.payment_status?.trim().toLowerCase() === 'paid'
+
+  if (!raw) {
+    // Completed but nothing recorded as paid yet → flag it.
+    if (isPaid) return null
+    return (
+      <span className="rounded bg-red-100 px-1.5 py-0.5 text-[9px] font-semibold text-red-700">
+        Unpaid
+      </span>
+    )
+  }
+
   const style = PAYMENT_METHOD_STYLES[raw] ?? {
     label: raw.replace(/\b\w/g, (c) => c.toUpperCase()),
     className: 'bg-slate-100 text-slate-700',
@@ -3320,6 +3333,20 @@ export function OperationsSchedule() {
                       ? dayLanes.map((staff, idx) => {
                           const dateKey = formatDateKey(anchorDate)
                           const isOpen = isStaffOpenForDate(staff.id, dateKey)
+                          const laneTotal = (
+                            appointmentsByDate.get(dateKey) || []
+                          )
+                            .filter(
+                              (a) =>
+                                a.assigned_staff_user_id === staff.id ||
+                                (!a.assigned_staff_user_id &&
+                                  staff.id === staffList[0]?.id),
+                            )
+                            .reduce(
+                              (sum, appt) =>
+                                sum + appointmentDisplayRevenue(appt),
+                              0,
+                            )
                           const color =
                             STAFF_LANE_COLORS[
                               staffList.indexOf(staff) %
@@ -3365,11 +3392,18 @@ export function OperationsSchedule() {
                               <div className="mt-1 text-xs font-medium tracking-[0.2em] text-slate-500 uppercase">
                                 {WEEKDAY_LABELS[anchorDate.getDay()]}
                               </div>
-                              <div className="mt-0.5 text-lg font-semibold text-slate-700">
-                                {anchorDate.toLocaleDateString('en-US', {
-                                  month: 'short',
-                                  day: 'numeric',
-                                })}
+                              <div className="mt-0.5 flex items-baseline justify-between gap-2">
+                                <span className="text-lg font-semibold text-slate-700">
+                                  {anchorDate.toLocaleDateString('en-US', {
+                                    month: 'short',
+                                    day: 'numeric',
+                                  })}
+                                </span>
+                                {laneTotal > 0 && (
+                                  <span className="text-sm font-semibold text-green-700">
+                                    ${laneTotal.toFixed(2)}
+                                  </span>
+                                )}
                               </div>
                             </div>
                           )
@@ -3377,6 +3411,13 @@ export function OperationsSchedule() {
                       : displayedDays.map((date) => {
                           const dk = formatDateKey(date)
                           const isSunday = date.getDay() === 0
+                          const dayTotal = (
+                            appointmentsByDate.get(dk) || []
+                          ).reduce(
+                            (sum, appt) =>
+                              sum + appointmentDisplayRevenue(appt),
+                            0,
+                          )
                           if (isSunday) {
                             return (
                               <div
@@ -3397,11 +3438,18 @@ export function OperationsSchedule() {
                               <div className="text-xs font-medium tracking-[0.2em] text-slate-500 uppercase">
                                 {WEEKDAY_LABELS[date.getDay()]}
                               </div>
-                              <div className="mt-1 text-lg font-semibold text-slate-700">
-                                {date.toLocaleDateString('en-US', {
-                                  month: 'short',
-                                  day: 'numeric',
-                                })}
+                              <div className="mt-1 flex items-baseline justify-between gap-2">
+                                <span className="text-lg font-semibold text-slate-700">
+                                  {date.toLocaleDateString('en-US', {
+                                    month: 'short',
+                                    day: 'numeric',
+                                  })}
+                                </span>
+                                {dayTotal > 0 && (
+                                  <span className="text-sm font-semibold text-green-700">
+                                    ${dayTotal.toFixed(2)}
+                                  </span>
+                                )}
                               </div>
                               {staffList.length > 1 && (
                                 <div className="mt-2 flex gap-1">
