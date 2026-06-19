@@ -27,6 +27,7 @@ import {
 import { logChatMessage } from '@/lib/ai/logging'
 import { opsPhoneLookupVariants } from '@/lib/ops/phone'
 import { sendCancellationAlert, sendLSALeadNotification } from '@/lib/telegram'
+import { forwardInboundToRelay } from '@/lib/telegram/relay'
 import { notifyNewCustomerMessage } from '@/lib/harry-command-bot'
 import { recordHarryAssistantMessage } from '@/lib/harry/workflow'
 import {
@@ -1074,6 +1075,23 @@ export async function POST(request: NextRequest) {
       supabase,
       normalizedPhone,
     )
+
+    // ── Telegram relay ───────────────────────────────────────────────────────
+    // Forward EVERY inbound text into the customer's Telegram topic (one thread
+    // per phone) so Charles can reply by hand. No LLM. Fails soft — a relay
+    // problem never affects SMS handling. LSA leads land in the "LSA Leads"
+    // group, everyone else in "Customers". `toNumber` is the business line they
+    // texted (719 vs 866) so the reply goes back from the same number.
+    await forwardInboundToRelay({
+      supabase,
+      phone: normalizedPhone,
+      message: messageBody,
+      businessNumber: toNumber || null,
+      isLsa: sourceType === 'lsa',
+      today: mountainDateIso(),
+    })
+    // ─────────────────────────────────────────────────────────────────────────
+
     const controlSnapshot = await getHarryControlSnapshot()
     const channelKey = sourceTypeToChannelKey(sourceType)
     const isHarryGlobalEnabled = isHarryFunctionEnabled(
