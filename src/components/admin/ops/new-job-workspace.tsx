@@ -19,6 +19,7 @@ import {
   PublicLeadSourceOption,
   getPublicLeadSourceOptions,
 } from '@/lib/lead-sources'
+import { DayTimePicker } from './day-time-picker'
 
 type ServiceItem = {
   id: string
@@ -514,6 +515,42 @@ export function NewJobWorkspace() {
     },
     [schedulePreview.dailyAvailability, staffMembers],
   )
+
+  // Booked jobs on the currently selected day — context for the live timeline.
+  const selectedDayAppointments = useMemo(() => {
+    return schedulePreview.appointments
+      .filter(
+        (appointment) =>
+          appointment.appointment_date === appointmentForm.appointment_date,
+      )
+      .map((appointment) => {
+        const customer = unwrapRelation(appointment.ops_customers)
+        return {
+          id: appointment.id,
+          start_time: appointment.start_time,
+          end_time: appointment.end_time,
+          label:
+            customer?.business_name ||
+            customer?.full_name ||
+            'Booked appointment',
+          detail: appointment.ops_appointment_line_items
+            .map((item) => item.name_snapshot)
+            .join(', '),
+        }
+      })
+  }, [schedulePreview.appointments, appointmentForm.appointment_date])
+
+  const selectedStaffClosedForDay = useMemo(() => {
+    if (!appointmentForm.assigned_staff_user_id) return false
+    return !isStaffOpenForPreviewDate(
+      appointmentForm.assigned_staff_user_id,
+      appointmentForm.appointment_date,
+    )
+  }, [
+    appointmentForm.assigned_staff_user_id,
+    appointmentForm.appointment_date,
+    isStaffOpenForPreviewDate,
+  ])
 
   const subtotalQuote = lineItems.reduce((sum, item) => {
     const quantity = Number(item.quantity || 1)
@@ -1094,6 +1131,115 @@ export function NewJobWorkspace() {
             </div>
           </Card>
 
+          {/* Schedule — sits right under pricing: pick the day, then the time. */}
+          <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
+            <h3 className="text-lg font-semibold">Schedule</h3>
+
+            <div className="mt-4">
+              <Label htmlFor="appointment-tech">Assigned Technician</Label>
+              <select
+                id="appointment-tech"
+                className="border-input bg-background mt-1 h-10 w-full rounded-md border px-3 text-sm"
+                value={appointmentForm.assigned_staff_user_id}
+                onChange={(event) =>
+                  setAppointmentForm((current) => ({
+                    ...current,
+                    assigned_staff_user_id: event.target.value,
+                  }))
+                }
+              >
+                {staffMembers.map((staff) => (
+                  <option key={staff.id} value={staff.id}>
+                    {staff.display_name}
+                  </option>
+                ))}
+                {staffMembers.length === 0 && (
+                  <option value="">Loading...</option>
+                )}
+              </select>
+            </div>
+
+            <div className="mt-4">
+              <DayTimePicker
+                selectedDate={appointmentForm.appointment_date}
+                onSelectDate={(dateKey) =>
+                  setAppointmentForm((current) => ({
+                    ...current,
+                    appointment_date: dateKey,
+                  }))
+                }
+                selectedTime={appointmentForm.start_time}
+                onSelectTime={(time) =>
+                  setAppointmentForm((current) => ({
+                    ...current,
+                    start_time: time,
+                  }))
+                }
+                appointments={selectedDayAppointments}
+                availableSlots={availableSlots}
+                requiredMinutes={requiredMinutesForCurrentSelection}
+                serviceMinutes={serviceMinutesForCurrentSelection}
+                bufferMinutes={bufferMinutesForCurrentSelection}
+                loadingSlots={loadingSlots}
+                useCustomTime={useCustomTime}
+                onToggleCustomTime={() => setUseCustomTime((v) => !v)}
+                staffClosed={selectedStaffClosedForDay}
+              />
+            </div>
+
+            <div className="mt-5 grid gap-3 md:grid-cols-2">
+              <div>
+                <Label htmlFor="lead-source">Lead Source *</Label>
+                <select
+                  id="lead-source"
+                  className="border-input bg-background mt-1 h-10 w-full rounded-md border px-3 text-sm"
+                  value={leadSource}
+                  onChange={(event) => {
+                    setLeadSource(event.target.value)
+                    setLeadSourceDetail('')
+                  }}
+                >
+                  <option value="">— Select source —</option>
+                  {leadSourceOptions.map((option) => (
+                    <option key={option.key} value={option.value}>
+                      {option.customer_label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {selectedLeadSource?.requires_detail ? (
+                <div>
+                  <Label htmlFor="lead-source-detail">
+                    {selectedLeadSource.detail_label || 'Lead Source Detail'} *
+                  </Label>
+                  <Input
+                    id="lead-source-detail"
+                    className="mt-1"
+                    value={leadSourceDetail}
+                    onChange={(event) =>
+                      setLeadSourceDetail(event.target.value)
+                    }
+                  />
+                </div>
+              ) : null}
+              <div className="md:col-span-2">
+                <Label htmlFor="internal-notes">Internal Notes</Label>
+                <Textarea
+                  id="internal-notes"
+                  className="mt-1"
+                  value={appointmentForm.internal_notes}
+                  onChange={(event) =>
+                    setAppointmentForm((current) => ({
+                      ...current,
+                      internal_notes: event.target.value,
+                    }))
+                  }
+                  placeholder="Crew notes, quoting details, access reminders"
+                />
+              </div>
+            </div>
+          </Card>
+
           <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -1510,169 +1656,6 @@ export function NewJobWorkspace() {
             ) : null}
           </Card>
 
-          <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
-            <h3 className="text-lg font-semibold">Schedule</h3>
-            <div className="mt-4 grid gap-3 md:grid-cols-3">
-              <div>
-                <Label htmlFor="appointment-date">Date *</Label>
-                <Input
-                  id="appointment-date"
-                  type="date"
-                  value={appointmentForm.appointment_date}
-                  onChange={(event) =>
-                    setAppointmentForm((current) => ({
-                      ...current,
-                      appointment_date: event.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <Label htmlFor="appointment-time">Start Time *</Label>
-                <select
-                  id="appointment-time"
-                  className="border-input bg-background h-10 w-full rounded-md border px-3 text-sm"
-                  value={appointmentForm.start_time}
-                  onChange={(event) =>
-                    setAppointmentForm((current) => ({
-                      ...current,
-                      start_time: event.target.value,
-                    }))
-                  }
-                  disabled={
-                    loadingSlots ||
-                    requiredMinutesForCurrentSelection <= 0 ||
-                    availableSlots.length === 0
-                  }
-                >
-                  {loadingSlots ? (
-                    <option value={appointmentForm.start_time}>
-                      Loading available times...
-                    </option>
-                  ) : availableSlots.length === 0 ? (
-                    <option value="">
-                      {requiredMinutesForCurrentSelection <= 0
-                        ? 'Add services with duration first'
-                        : 'No open times for this day'}
-                    </option>
-                  ) : (
-                    availableSlots.map((slot) => {
-                      const start = String(slot.start_time).slice(0, 5)
-                      const end = String(slot.end_time).slice(0, 5)
-                      return (
-                        <option key={slot.start_time} value={start}>
-                          {start} - {end}
-                        </option>
-                      )
-                    })
-                  )}
-                </select>
-                <div className="text-muted-foreground mt-1 text-xs">
-                  {requiredMinutesForCurrentSelection > 0
-                    ? `Only open times are shown (service: ${serviceMinutesForCurrentSelection} min + one travel buffer: ${bufferMinutesForCurrentSelection} min = ${requiredMinutesForCurrentSelection} min).`
-                    : 'Pick services first so we can calculate valid openings.'}
-                </div>
-                <button
-                  type="button"
-                  className="mt-1 text-xs text-blue-600 underline hover:text-blue-800"
-                  onClick={() => setUseCustomTime((v) => !v)}
-                >
-                  {useCustomTime
-                    ? '← Back to available slots'
-                    : 'Book outside business hours →'}
-                </button>
-                {useCustomTime && (
-                  <div className="mt-2">
-                    <input
-                      type="time"
-                      className="border-input bg-background h-10 w-full rounded-md border px-3 text-sm"
-                      value={appointmentForm.start_time}
-                      onChange={(event) =>
-                        setAppointmentForm((current) => ({
-                          ...current,
-                          start_time: event.target.value,
-                        }))
-                      }
-                    />
-                    <p className="text-muted-foreground mt-1 text-xs">
-                      Admin override — any time accepted, no conflict check.
-                    </p>
-                  </div>
-                )}
-              </div>
-              <div>
-                <Label htmlFor="appointment-tech">Assigned Technician</Label>
-                <select
-                  id="appointment-tech"
-                  className="border-input bg-background h-10 w-full rounded-md border px-3 text-sm"
-                  value={appointmentForm.assigned_staff_user_id}
-                  onChange={(event) =>
-                    setAppointmentForm((current) => ({
-                      ...current,
-                      assigned_staff_user_id: event.target.value,
-                    }))
-                  }
-                >
-                  {staffMembers.map((staff) => (
-                    <option key={staff.id} value={staff.id}>
-                      {staff.display_name}
-                    </option>
-                  ))}
-                  {staffMembers.length === 0 && (
-                    <option value="">Loading...</option>
-                  )}
-                </select>
-              </div>
-              <div>
-                <Label htmlFor="lead-source">Lead Source *</Label>
-                <select
-                  id="lead-source"
-                  className="border-input bg-background h-10 w-full rounded-md border px-3 text-sm"
-                  value={leadSource}
-                  onChange={(event) => {
-                    setLeadSource(event.target.value)
-                    setLeadSourceDetail('')
-                  }}
-                >
-                  <option value="">— Select source —</option>
-                  {leadSourceOptions.map((option) => (
-                    <option key={option.key} value={option.value}>
-                      {option.customer_label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {selectedLeadSource?.requires_detail ? (
-                <div>
-                  <Label htmlFor="lead-source-detail">
-                    {selectedLeadSource.detail_label || 'Lead Source Detail'} *
-                  </Label>
-                  <Input
-                    id="lead-source-detail"
-                    value={leadSourceDetail}
-                    onChange={(event) =>
-                      setLeadSourceDetail(event.target.value)
-                    }
-                  />
-                </div>
-              ) : null}
-              <div className="md:col-span-3">
-                <Label htmlFor="internal-notes">Internal Notes</Label>
-                <Textarea
-                  id="internal-notes"
-                  value={appointmentForm.internal_notes}
-                  onChange={(event) =>
-                    setAppointmentForm((current) => ({
-                      ...current,
-                      internal_notes: event.target.value,
-                    }))
-                  }
-                  placeholder="Crew notes, quoting details, access reminders"
-                />
-              </div>
-            </div>
-          </Card>
-
           <div className="flex flex-wrap gap-2">
             <Button type="submit" disabled={saving || loading}>
               {saving ? (
@@ -1705,7 +1688,7 @@ export function NewJobWorkspace() {
           </Card>
         </div>
 
-        <div className="space-y-6">
+        <div className="hidden space-y-6 xl:block">
           <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
             <h3 className="text-lg font-semibold">Live Week Context</h3>
             <p className="text-muted-foreground mt-1 text-sm">
