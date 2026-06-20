@@ -84,6 +84,15 @@ function fmtMoney(amount: number): string {
   })
 }
 
+function fmtDate(dateKey: string): string {
+  return new Date(`${dateKey}T12:00:00Z`).toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  })
+}
+
 function toIso(date: string, time: string): string {
   return mountainLocalDateTimeToIso(date, time) ?? new Date().toISOString()
 }
@@ -120,6 +129,35 @@ async function fetchEntries(
     `/api/admin/ops/payroll/timesheet-entries?${params.toString()}`,
   )
   if (!res.ok) throw new Error('Failed to load payroll timesheets')
+  return res.json()
+}
+
+type PremiumRow = {
+  appointmentId: string
+  workDate: string
+  staffUserId: string
+  staffName: string
+  jobStartedAt: string
+  completedAt: string
+  customerName: string
+  minutes: number
+  premiumRate: number
+  premiumPay: number
+  applied: boolean
+  premiumId: string | null
+  status: string | null
+  appliedPay: number | null
+}
+
+async function fetchPremiums(
+  startDate: string,
+  endDate: string,
+): Promise<{ premiums: PremiumRow[]; totalAppliedPay: number }> {
+  const params = new URLSearchParams({ startDate, endDate })
+  const res = await fetch(
+    `/api/admin/ops/payroll/after-hours-premiums?${params.toString()}`,
+  )
+  if (!res.ok) throw new Error('Failed to load after-hours premiums')
   return res.json()
 }
 
@@ -164,6 +202,22 @@ export function PayrollTimesheetsView() {
     refetchInterval: 60_000,
   })
 
+  const premiumsQuery = useQuery({
+    queryKey: [
+      'payroll-after-hours-premiums',
+      viewMode,
+      date,
+      payPeriod.startDate,
+      payPeriod.endDate,
+    ],
+    queryFn: () =>
+      fetchPremiums(
+        viewMode === 'day' ? date : payPeriod.startDate,
+        viewMode === 'day' ? date : payPeriod.endDate,
+      ),
+    refetchInterval: 60_000,
+  })
+
   const staff = staffQuery.data || []
   const entries = useMemo(
     () => entriesQuery.data?.entries ?? [],
@@ -172,23 +226,48 @@ export function PayrollTimesheetsView() {
   const totalPayableMinutes = entriesQuery.data?.totalPayableMinutes || 0
   const totalGrossPay = entriesQuery.data?.totalGrossPay || 0
 
+  const premiums = useMemo(() => {
+    const all = premiumsQuery.data?.premiums ?? []
+    return staffFilter ? all.filter((p) => p.staffUserId === staffFilter) : all
+  }, [premiumsQuery.data?.premiums, staffFilter])
+
+  const totalAppliedPremiumPay = useMemo(
+    () =>
+      premiums
+        .filter((p) => p.applied)
+        .reduce((sum, p) => sum + Number(p.appliedPay || 0), 0),
+    [premiums],
+  )
+
   const totalsByStaff = useMemo(() => {
     const totals = new Map<
       string,
-      { name: string; minutes: number; grossPay: number }
+      { name: string; minutes: number; grossPay: number; premiumPay: number }
     >()
     for (const entry of entries) {
       const existing = totals.get(entry.staffUserId) || {
         name: entry.staffDisplayName,
         minutes: 0,
         grossPay: 0,
+        premiumPay: 0,
       }
       existing.minutes += entry.payableMinutes
       existing.grossPay += entry.grossPay
       totals.set(entry.staffUserId, existing)
     }
+    for (const premium of premiums) {
+      if (!premium.applied) continue
+      const existing = totals.get(premium.staffUserId) || {
+        name: premium.staffName,
+        minutes: 0,
+        grossPay: 0,
+        premiumPay: 0,
+      }
+      existing.premiumPay += Number(premium.appliedPay || 0)
+      totals.set(premium.staffUserId, existing)
+    }
     return [...totals.values()].sort((a, b) => a.name.localeCompare(b.name))
-  }, [entries])
+  }, [entries, premiums])
 
   function changeDate(offset: number) {
     if (viewMode === 'period') {
@@ -221,6 +300,49 @@ export function PayrollTimesheetsView() {
   function stopEditing() {
     setEditingEntryId(null)
     setEditForm(null)
+  }
+
+  async function applyPremium(appointmentId: string) {
+    setIsSaving(true)
+    setMessage(null)
+    try {
+      const res = await fetch('/api/admin/ops/payroll/after-hours-premiums', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ appointmentId }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Failed to apply premium')
+      await premiumsQuery.refetch()
+      setMessage('After-hours premium applied to the pay period.')
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : 'Failed to apply premium',
+      )
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  async function removePremium(premiumId: string) {
+    setIsSaving(true)
+    setMessage(null)
+    try {
+      const res = await fetch(
+        `/api/admin/ops/payroll/after-hours-premiums?id=${premiumId}`,
+        { method: 'DELETE' },
+      )
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Failed to remove premium')
+      await premiumsQuery.refetch()
+      setMessage('After-hours premium removed.')
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : 'Failed to remove premium',
+      )
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   function updateEditForm(field: keyof EditFormState, value: string) {
@@ -661,8 +783,13 @@ export function PayrollTimesheetsView() {
               <div className="text-right">
                 <p className="text-sm text-slate-400">Gross pay</p>
                 <p className="mt-1 text-3xl font-bold text-emerald-300">
-                  {fmtMoney(totalGrossPay)}
+                  {fmtMoney(totalGrossPay + totalAppliedPremiumPay)}
                 </p>
+                {totalAppliedPremiumPay > 0 && (
+                  <p className="mt-0.5 text-xs text-emerald-200/80">
+                    incl. {fmtMoney(totalAppliedPremiumPay)} after-hours
+                  </p>
+                )}
               </div>
             </div>
             {totalsByStaff.length > 0 && (
@@ -674,7 +801,14 @@ export function PayrollTimesheetsView() {
                   >
                     <span>{total.name}</span>
                     <span className="font-mono">
-                      {fmtMin(total.minutes)} · {fmtMoney(total.grossPay)}
+                      {fmtMin(total.minutes)} ·{' '}
+                      {fmtMoney(total.grossPay + total.premiumPay)}
+                      {total.premiumPay > 0 && (
+                        <span className="text-emerald-300/80">
+                          {' '}
+                          (+{fmtMoney(total.premiumPay)})
+                        </span>
+                      )}
                     </span>
                   </div>
                 ))}
@@ -687,6 +821,75 @@ export function PayrollTimesheetsView() {
       {message && (
         <div className="rounded-xl border border-white/10 bg-slate-900/80 px-4 py-3 text-sm text-slate-200">
           {message}
+        </div>
+      )}
+
+      {premiums.length > 0 && (
+        <div className="overflow-hidden rounded-2xl border border-emerald-400/25 bg-emerald-500/5">
+          <div className="border-b border-white/10 bg-slate-900/70 px-4 py-3">
+            <h3 className="font-semibold text-white">
+              Recovery Village after-hours premiums
+            </h3>
+            <p className="mt-0.5 text-xs text-slate-400">
+              +$10/hr on worked time after 5 PM (Start Job → Complete). Apply to
+              add it to this pay period.
+            </p>
+          </div>
+          <div className="divide-y divide-white/5">
+            {premiums.map((premium) => (
+              <div
+                key={premium.appointmentId}
+                className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-white">
+                    {premium.staffName} · {premium.customerName}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    {fmtDate(premium.workDate)} ·{' '}
+                    {fmtTime(premium.jobStartedAt)}–
+                    {fmtTime(premium.completedAt)} · {fmtMin(premium.minutes)}{' '}
+                    after 5 PM × ${premium.premiumRate} ={' '}
+                    <span className="font-semibold text-emerald-300">
+                      {fmtMoney(
+                        premium.applied
+                          ? (premium.appliedPay ?? premium.premiumPay)
+                          : premium.premiumPay,
+                      )}
+                    </span>
+                  </p>
+                </div>
+                {premium.applied ? (
+                  <div className="flex items-center gap-3">
+                    <span className="rounded-full bg-emerald-400/15 px-2 py-0.5 text-xs font-medium text-emerald-200">
+                      {premium.status === 'paid' ? 'Paid' : 'Applied'}
+                    </span>
+                    {premium.status !== 'paid' && premium.premiumId && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          removePremium(premium.premiumId as string)
+                        }
+                        disabled={isSaving}
+                        className="text-xs text-slate-400 hover:text-white disabled:opacity-50"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => applyPremium(premium.appointmentId)}
+                    disabled={isSaving}
+                    className="rounded-lg bg-emerald-500 px-3 py-1.5 text-sm font-semibold text-emerald-950 hover:bg-emerald-400 disabled:opacity-50"
+                  >
+                    Apply +{fmtMoney(premium.premiumPay)}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

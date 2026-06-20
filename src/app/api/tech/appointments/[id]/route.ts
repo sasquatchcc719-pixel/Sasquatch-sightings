@@ -76,6 +76,11 @@ export async function PATCH(
         (status === 'booked' || status === 'confirmed')
       )
         updates.on_my_way_at = null
+      // "Start Job" tap — records the real worked-window start (used for the
+      // Recovery Village after-hours premium). Stamp on each entry into
+      // in_progress so the most recent start wins.
+      if (status === 'in_progress')
+        updates.job_started_at = new Date().toISOString()
       if (status === 'completed')
         updates.completed_at = new Date().toISOString()
     }
