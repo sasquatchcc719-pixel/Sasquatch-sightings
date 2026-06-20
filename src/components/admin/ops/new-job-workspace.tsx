@@ -600,11 +600,6 @@ export function NewJobWorkspace() {
     )
   }, [lineItems])
 
-  const selectedWeekDays = useMemo(() => {
-    const start = startOfWeek(appointmentForm.appointment_date)
-    return Array.from({ length: 7 }, (_, index) => addDays(start, index))
-  }, [appointmentForm.appointment_date])
-
   const isStaffOpenForPreviewDate = useCallback(
     (staffId: string, dateKey: string): boolean => {
       const override = schedulePreview.dailyAvailability.find(
@@ -1032,11 +1027,8 @@ export function NewJobWorkspace() {
         </Card>
       ) : null}
 
-      <form
-        className="grid gap-6 xl:grid-cols-[1.15fr,0.85fr]"
-        onSubmit={handleSubmit}
-      >
-        <div className="min-w-0 space-y-6">
+      <form className="grid gap-6" onSubmit={handleSubmit}>
+        <div className="mx-auto w-full max-w-4xl min-w-0 space-y-6">
           <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -1963,147 +1955,6 @@ export function NewJobWorkspace() {
                 </p>
               </div>
               <div className="text-2xl font-bold">${totalQuote.toFixed(2)}</div>
-            </div>
-          </Card>
-        </div>
-
-        <div className="hidden space-y-6 xl:block">
-          <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
-            <h3 className="text-lg font-semibold">Live Week Context</h3>
-            <p className="text-muted-foreground mt-1 text-sm">
-              Pick the start time on the left while keeping the current week
-              visible here.
-            </p>
-          </Card>
-
-          <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
-            <div className="grid gap-3">
-              {selectedWeekDays.map((day) => {
-                const dateKey = formatDateKey(day)
-                const dayAppointments = schedulePreview.appointments.filter(
-                  (appointment) => appointment.appointment_date === dateKey,
-                )
-                const dayEvents = schedulePreview.events.filter(
-                  (event) =>
-                    event.start_date <= dateKey && event.end_date >= dateKey,
-                )
-                const selectedStaff = staffMembers.find(
-                  (staff) =>
-                    staff.id === appointmentForm.assigned_staff_user_id,
-                )
-                const selectedStaffClosed = Boolean(
-                  selectedStaff &&
-                  !isStaffOpenForPreviewDate(selectedStaff.id, dateKey),
-                )
-                const closedStaff = staffMembers.filter(
-                  (staff) => !isStaffOpenForPreviewDate(staff.id, dateKey),
-                )
-                const allStaffClosed =
-                  staffMembers.length > 0 &&
-                  closedStaff.length === staffMembers.length
-                const closedStaffLabel =
-                  selectedStaff?.display_name || 'Assigned technician'
-
-                return (
-                  <div
-                    key={dateKey}
-                    className={`rounded-2xl border p-4 ${
-                      appointmentForm.appointment_date === dateKey
-                        ? 'border-primary bg-primary/5'
-                        : 'border-border/60 bg-background/70'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <div className="text-muted-foreground text-xs font-medium tracking-[0.2em] uppercase">
-                          {day.toLocaleDateString('en-US', {
-                            weekday: 'short',
-                          })}
-                        </div>
-                        <div className="mt-1 text-base font-semibold">
-                          {day.toLocaleDateString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                          })}
-                        </div>
-                      </div>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          setAppointmentForm((current) => ({
-                            ...current,
-                            appointment_date: dateKey,
-                          }))
-                        }
-                      >
-                        Use This Day
-                      </Button>
-                    </div>
-
-                    <div className="mt-3 space-y-2">
-                      {selectedStaffClosed || allStaffClosed ? (
-                        <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
-                          <div className="font-medium">
-                            {allStaffClosed
-                              ? 'Schedule blocked'
-                              : `${closedStaffLabel} closed`}
-                          </div>
-                          <div className="text-muted-foreground mt-1">
-                            {allStaffClosed
-                              ? 'All technicians are closed for this day.'
-                              : 'The assigned technician is closed for this day.'}
-                          </div>
-                        </div>
-                      ) : null}
-
-                      {dayEvents.map((event) => (
-                        <div
-                          key={event.id}
-                          className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm"
-                        >
-                          {event.title}
-                        </div>
-                      ))}
-
-                      {dayAppointments.length === 0 &&
-                      dayEvents.length === 0 &&
-                      !selectedStaffClosed &&
-                      !allStaffClosed ? (
-                        <div className="text-muted-foreground text-sm">
-                          No conflicts yet.
-                        </div>
-                      ) : null}
-
-                      {dayAppointments.map((appointment) => {
-                        const customer = unwrapRelation(
-                          appointment.ops_customers,
-                        )
-                        return (
-                          <div
-                            key={appointment.id}
-                            className="border-border/60 bg-card rounded-xl border px-3 py-2 text-sm"
-                          >
-                            <div className="font-medium">
-                              {appointment.start_time.slice(0, 5)} -{' '}
-                              {appointment.end_time.slice(0, 5)}
-                            </div>
-                            <div className="text-muted-foreground mt-1">
-                              {customer?.business_name || customer?.full_name}
-                            </div>
-                            <div className="text-muted-foreground mt-1">
-                              {appointment.ops_appointment_line_items
-                                .map((item) => item.name_snapshot)
-                                .join(', ')}
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )
-              })}
             </div>
           </Card>
         </div>
