@@ -9,9 +9,25 @@ function unwrap<T>(value: T | T[] | null | undefined): T | null {
   return value ?? null
 }
 
+type OutLineItem = {
+  service_catalog_item_id: string | null
+  name_snapshot: string
+  quantity: number
+  unit_price: number
+  duration_minutes: number
+  buffer_minutes: number
+  line_total: number
+}
+
 /**
  * Past completed jobs for a customer, with their line items + address, so the
  * New Job form can repeat a previous job in one tap.
+ *
+ * Source of truth is the INVOICE line items (what was actually billed), falling
+ * back to the appointment line items (the original quote) only when no invoice
+ * lines exist. The appointment quote can be edited up/down before billing, and
+ * its stored quantity/unit_price are not always self-consistent, so the invoice
+ * is what we reproduce.
  */
 export async function GET(_request: NextRequest, { params }: Params) {
   try {
@@ -36,7 +52,10 @@ export async function GET(_request: NextRequest, { params }: Params) {
             service_catalog_item_id, name_snapshot, quantity, unit_price,
             duration_minutes, buffer_minutes, line_total
           ),
-          ops_invoices ( id, total, status, payment_status )
+          ops_invoices (
+            id, total, status, payment_status,
+            ops_invoice_line_items ( description, quantity, unit_price, line_total )
+          )
         `,
       )
       .eq('customer_id', id)
@@ -50,7 +69,42 @@ export async function GET(_request: NextRequest, { params }: Params) {
       .map((row) => {
         const address = unwrap(row.ops_service_addresses)
         const invoice = unwrap(row.ops_invoices)
-        const lineItems = row.ops_appointment_line_items || []
+        const invoiceLines = invoice?.ops_invoice_line_items || []
+        const apptLines = row.ops_appointment_line_items || []
+
+        let lineItems: OutLineItem[]
+        if (invoiceLines.length > 0) {
+          // Billed work — prices already consistent (qty × unit_price = total).
+          lineItems = invoiceLines.map((li) => ({
+            service_catalog_item_id: null,
+            name_snapshot: li.description,
+            quantity: Number(li.quantity || 1),
+            unit_price: Number(li.unit_price || 0),
+            duration_minutes: 0,
+            buffer_minutes: 0,
+            line_total: Number(li.line_total || 0),
+          }))
+        } else {
+          // Fallback: original quote. Derive unit_price from the line total so
+          // the form's live math matches what was quoted, even if the stored
+          // quantity/unit_price were inconsistent.
+          lineItems = apptLines.map((li) => {
+            const quantity = Number(li.quantity || 1)
+            const lineTotal = Number(li.line_total || 0)
+            const unitPrice =
+              quantity > 0 ? lineTotal / quantity : Number(li.unit_price || 0)
+            return {
+              service_catalog_item_id: li.service_catalog_item_id,
+              name_snapshot: li.name_snapshot,
+              quantity,
+              unit_price: unitPrice,
+              duration_minutes: Number(li.duration_minutes || 0),
+              buffer_minutes: Number(li.buffer_minutes || 0),
+              line_total: lineTotal,
+            }
+          })
+        }
+
         const lineItemsTotal = lineItems.reduce(
           (sum, li) => sum + Number(li.line_total || 0),
           0,
@@ -78,18 +132,10 @@ export async function GET(_request: NextRequest, { params }: Params) {
                 notes: address.notes,
               }
             : null,
-          line_items: lineItems.map((li) => ({
-            service_catalog_item_id: li.service_catalog_item_id,
-            name_snapshot: li.name_snapshot,
-            quantity: Number(li.quantity || 1),
-            unit_price: Number(li.unit_price || 0),
-            duration_minutes: Number(li.duration_minutes || 0),
-            buffer_minutes: Number(li.buffer_minutes || 0),
-            line_total: Number(li.line_total || 0),
-          })),
+          line_items: lineItems,
         }
       })
-      // Only completed jobs that actually have line items can be repeated.
+      // Only jobs that actually have line items can be repeated.
       .filter((job) => job.line_items.length > 0)
 
     return NextResponse.json({ jobs })

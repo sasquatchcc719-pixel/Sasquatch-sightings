@@ -560,6 +560,16 @@ export function NewJobWorkspace() {
     [services],
   )
 
+  // Match a past invoice line (which only carries a name) back to a catalog
+  // service so we can recover its duration/buffer for scheduling.
+  const serviceByName = useMemo(
+    () =>
+      new Map(
+        services.map((service) => [service.name.trim().toLowerCase(), service]),
+      ),
+    [services],
+  )
+
   const categories = useMemo(() => {
     return [
       ...new Set(services.map((service) => service.category.trim())),
@@ -754,16 +764,26 @@ export function NewJobWorkspace() {
   }
 
   const handleUsePastJob = (job: PastJob) => {
-    // Copy the past job's line items into the editable form.
+    // Copy the past job's line items into the editable form, keeping the price
+    // that was actually billed. When a line came from an invoice it has no
+    // catalog link, so match it back to a service by name to recover the
+    // catalog id + duration/buffer for scheduling (price stays the billed one).
     setLineItems(
-      job.line_items.map((li) => ({
-        service_catalog_item_id: li.service_catalog_item_id || '',
-        name_snapshot: li.name_snapshot,
-        quantity: String(li.quantity || 1),
-        unit_price: li.unit_price != null ? String(li.unit_price) : '',
-        duration_minutes: li.duration_minutes || 0,
-        buffer_minutes: li.buffer_minutes || 0,
-      })),
+      job.line_items.map((li) => {
+        const matched = li.service_catalog_item_id
+          ? servicesById.get(li.service_catalog_item_id)
+          : serviceByName.get(li.name_snapshot.trim().toLowerCase())
+        return {
+          service_catalog_item_id:
+            li.service_catalog_item_id || matched?.id || '',
+          name_snapshot: li.name_snapshot,
+          quantity: String(li.quantity || 1),
+          unit_price: li.unit_price != null ? String(li.unit_price) : '',
+          duration_minutes:
+            li.duration_minutes || matched?.default_duration_minutes || 0,
+          buffer_minutes: li.buffer_minutes || matched?.buffer_minutes || 0,
+        }
+      }),
     )
 
     // Use that job's service address when we have it saved on the customer.
