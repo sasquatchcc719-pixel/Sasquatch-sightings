@@ -103,6 +103,56 @@ type LineItemForm = {
   buffer_minutes: number
 }
 
+type PastJobLineItem = {
+  service_catalog_item_id: string | null
+  name_snapshot: string
+  quantity: number
+  unit_price: number
+  duration_minutes: number
+  buffer_minutes: number
+  line_total: number
+}
+
+type PastJob = {
+  id: string
+  appointment_date: string
+  start_time: string | null
+  total: number
+  payment_status: string | null
+  service_address_id: string | null
+  address: {
+    id: string
+    label: string | null
+    street_1: string
+    street_2: string | null
+    city: string
+    state: string
+    zip_code: string
+    gate_code: string | null
+    notes: string | null
+  } | null
+  line_items: PastJobLineItem[]
+}
+
+function formatPastJobDate(dateKey: string): string {
+  return new Date(`${dateKey}T12:00:00Z`).toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  })
+}
+
+function summarizePastJob(job: PastJob): string {
+  const parts = job.line_items.map((li) => {
+    const qty = li.quantity && li.quantity !== 1 ? `${li.quantity}× ` : ''
+    return `${qty}${li.name_snapshot}`
+  })
+  const shown = parts.slice(0, 3).join(', ')
+  return parts.length > 3 ? `${shown} +${parts.length - 3} more` : shown
+}
+
 function formatDateKey(date: Date): string {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
@@ -195,6 +245,13 @@ export function NewJobWorkspace() {
   // After a customer is picked, collapse the results list (with a brief
   // highlight) so the form fields underneath become visible.
   const [resultsCollapsed, setResultsCollapsed] = useState(false)
+  // Past completed jobs for the selected customer, for one-tap repeat.
+  const [pastJobs, setPastJobs] = useState<PastJob[]>([])
+  const [pastJobsLoading, setPastJobsLoading] = useState(false)
+  const [appliedPastJobId, setAppliedPastJobId] = useState<string | null>(null)
+  // Bumped each time a past job is applied, to retrigger the populate animation.
+  const [populateKey, setPopulateKey] = useState(0)
+  const jobDetailsRef = useRef<HTMLDivElement | null>(null)
   const [schedulePreview, setSchedulePreview] = useState<SchedulePreview>({
     appointments: [],
     events: [],
@@ -468,6 +525,36 @@ export function NewJobWorkspace() {
     return () => window.clearTimeout(timeoutId)
   }, [customerQuery])
 
+  // Load the selected customer's past completed jobs for one-tap repeat.
+  const selectedCustomerId = selectedCustomer?.id
+  useEffect(() => {
+    if (!selectedCustomerId) {
+      setPastJobs([])
+      setAppliedPastJobId(null)
+      return
+    }
+    let cancelled = false
+    setPastJobsLoading(true)
+    setAppliedPastJobId(null)
+    fetch(`/api/admin/ops/customers/${selectedCustomerId}/past-jobs`, {
+      cache: 'no-store',
+    })
+      .then((response) => response.json())
+      .then((data) => {
+        if (cancelled) return
+        setPastJobs(Array.isArray(data.jobs) ? data.jobs : [])
+      })
+      .catch(() => {
+        if (!cancelled) setPastJobs([])
+      })
+      .finally(() => {
+        if (!cancelled) setPastJobsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedCustomerId])
+
   const servicesById = useMemo(
     () => new Map(services.map((service) => [service.id, service])),
     [services],
@@ -664,6 +751,55 @@ export function NewJobWorkspace() {
       gate_code: selectedAddress.gate_code || '',
       notes: selectedAddress.notes || '',
     })
+  }
+
+  const handleUsePastJob = (job: PastJob) => {
+    // Copy the past job's line items into the editable form.
+    setLineItems(
+      job.line_items.map((li) => ({
+        service_catalog_item_id: li.service_catalog_item_id || '',
+        name_snapshot: li.name_snapshot,
+        quantity: String(li.quantity || 1),
+        unit_price: li.unit_price != null ? String(li.unit_price) : '',
+        duration_minutes: li.duration_minutes || 0,
+        buffer_minutes: li.buffer_minutes || 0,
+      })),
+    )
+
+    // Use that job's service address when we have it saved on the customer.
+    if (job.service_address_id) {
+      const saved = selectedCustomer?.ops_service_addresses?.find(
+        (address) => address.id === job.service_address_id,
+      )
+      if (saved) {
+        handleAddressSelectionChange(job.service_address_id)
+      } else if (job.address) {
+        setAddressSelection('new')
+        setAddressForm({
+          label: job.address.label || 'Service Address',
+          street_1: job.address.street_1,
+          street_2: job.address.street_2 || '',
+          city: job.address.city,
+          state: job.address.state,
+          zip_code: job.address.zip_code,
+          gate_code: job.address.gate_code || '',
+          notes: job.address.notes || '',
+        })
+      }
+    }
+
+    setAppliedPastJobId(job.id)
+    setResultsCollapsed(true)
+    // Retrigger the populate animation and bring the pricing card into view.
+    setPopulateKey((key) => key + 1)
+    if (typeof window !== 'undefined') {
+      window.requestAnimationFrame(() => {
+        jobDetailsRef.current?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+        })
+      })
+    }
   }
 
   const handleLineItemChange = (
@@ -884,17 +1020,148 @@ export function NewJobWorkspace() {
           <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h2 className="text-xl font-semibold">Standard Job</h2>
+                <h2 className="text-xl font-semibold">
+                  Repeat a Customer&apos;s Job
+                </h2>
                 <p className="text-muted-foreground mt-1 text-sm">
-                  Start with price and scope, then finish customer and address
-                  details.
+                  Look up a returning customer to reuse a past job — or start
+                  fresh below.
                 </p>
               </div>
               <Badge variant="outline">${totalQuote.toFixed(2)} quote</Badge>
             </div>
+
+            <div className="mt-4">
+              <Label htmlFor="customer-lookup">Find customer</Label>
+              <div className="relative">
+                <Search className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
+                <Input
+                  id="customer-lookup"
+                  className="pl-9"
+                  value={customerQuery}
+                  onChange={(event) => setCustomerQuery(event.target.value)}
+                  placeholder="Search by name, business, phone, or email"
+                />
+              </div>
+              {searchingCustomers ? (
+                <div className="text-muted-foreground mt-2 flex items-center gap-2 text-sm">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Searching customers...
+                </div>
+              ) : null}
+              {customerResults.length > 0 ? (
+                <div
+                  className={`overflow-hidden transition-all ease-out ${
+                    resultsCollapsed
+                      ? 'pointer-events-none max-h-0 opacity-0 delay-150 duration-300'
+                      : 'max-h-[640px] opacity-100 duration-200'
+                  }`}
+                >
+                  <div className="mt-3 grid gap-2">
+                    {customerResults.map((customer) => (
+                      <button
+                        key={customer.id}
+                        type="button"
+                        className={`rounded-2xl border p-3 text-left transition ${
+                          selectedCustomer?.id === customer.id
+                            ? 'border-primary bg-primary/5'
+                            : 'border-border/60 bg-background/70 hover:bg-muted/60'
+                        }`}
+                        onClick={() => handleSelectCustomer(customer)}
+                      >
+                        <div className="font-medium">
+                          {customer.business_name || customer.full_name}
+                        </div>
+                        <div className="text-muted-foreground mt-1 text-sm">
+                          {customer.full_name} · {customer.phone}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              {selectedCustomer && resultsCollapsed ? (
+                <button
+                  type="button"
+                  onClick={() => setResultsCollapsed(false)}
+                  className="text-muted-foreground hover:text-foreground mt-2 inline-flex items-center gap-2 text-sm transition"
+                >
+                  <Check className="text-primary h-4 w-4" />
+                  Using{' '}
+                  <span className="text-foreground font-medium">
+                    {selectedCustomer.business_name ||
+                      selectedCustomer.full_name}
+                  </span>
+                  {customerResults.length > 1 ? (
+                    <span className="text-muted-foreground/70">
+                      · tap to change
+                    </span>
+                  ) : null}
+                </button>
+              ) : null}
+            </div>
+
+            {selectedCustomer ? (
+              <div className="border-border/60 mt-5 border-t pt-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold">Previous jobs</h3>
+                  {pastJobsLoading ? (
+                    <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
+                  ) : null}
+                </div>
+                {!pastJobsLoading && pastJobs.length === 0 ? (
+                  <p className="text-muted-foreground mt-2 text-sm">
+                    No completed jobs on file for this customer yet — build the
+                    job below.
+                  </p>
+                ) : null}
+                {pastJobs.length > 0 ? (
+                  <div className="mt-3 grid gap-2">
+                    {pastJobs.map((job) => (
+                      <button
+                        key={job.id}
+                        type="button"
+                        onClick={() => handleUsePastJob(job)}
+                        className={`rounded-2xl border p-3 text-left transition ${
+                          appliedPastJobId === job.id
+                            ? 'border-emerald-400/70 bg-emerald-400/10'
+                            : 'border-border/60 bg-background/70 hover:bg-muted/60'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="font-medium">
+                            {formatPastJobDate(job.appointment_date)}
+                          </div>
+                          <div className="text-sm font-semibold">
+                            ${job.total.toFixed(2)}
+                          </div>
+                        </div>
+                        <div className="text-muted-foreground mt-1 text-sm">
+                          {summarizePastJob(job)}
+                        </div>
+                        {job.address ? (
+                          <div className="text-muted-foreground/80 mt-0.5 text-xs">
+                            {job.address.street_1}, {job.address.city}
+                          </div>
+                        ) : null}
+                        {appliedPastJobId === job.id ? (
+                          <div className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-emerald-500">
+                            <Check className="h-3 w-3" /> Loaded into the job
+                            below
+                          </div>
+                        ) : null}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </Card>
 
-          <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
+          <Card
+            ref={jobDetailsRef}
+            className="border-border/60 bg-card/80 scroll-mt-4 p-5 shadow-sm backdrop-blur"
+          >
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h3 className="text-lg font-semibold">Job Details + Pricing</h3>
@@ -943,172 +1210,179 @@ export function NewJobWorkspace() {
                 </select>
               </div>
 
-              <div className="grid gap-2">
-                {servicesInSelectedCategory.map((service) => {
-                  const quantity =
-                    Number(
-                      lineItemByServiceId.get(service.id)?.quantity || '0',
-                    ) || 0
-                  const lineSubtotal =
-                    Number(service.base_price || 0) * quantity
-                  return (
-                    <div
-                      key={service.id}
-                      className="border-border/60 bg-background/70 flex items-center justify-between rounded-2xl border px-3 py-2"
-                    >
-                      <div>
-                        <div className="font-medium">{service.name}</div>
-                        <div className="text-muted-foreground text-xs">
-                          {service.base_price !== null
-                            ? `$${Number(service.base_price).toFixed(2)} each`
-                            : 'Set price manually'}
-                        </div>
-                        {quantity > 0 ? (
-                          <div className="text-xs font-semibold">
-                            Running line total: ${lineSubtotal.toFixed(2)}
+              <div
+                key={`job-items-${populateKey}`}
+                className="animate-in fade-in-50 slide-in-from-top-1 space-y-4 duration-500"
+              >
+                <div className="grid gap-2">
+                  {servicesInSelectedCategory.map((service) => {
+                    const quantity =
+                      Number(
+                        lineItemByServiceId.get(service.id)?.quantity || '0',
+                      ) || 0
+                    const lineSubtotal =
+                      Number(service.base_price || 0) * quantity
+                    return (
+                      <div
+                        key={service.id}
+                        className="border-border/60 bg-background/70 flex items-center justify-between rounded-2xl border px-3 py-2"
+                      >
+                        <div>
+                          <div className="font-medium">{service.name}</div>
+                          <div className="text-muted-foreground text-xs">
+                            {service.base_price !== null
+                              ? `$${Number(service.base_price).toFixed(2)} each`
+                              : 'Set price manually'}
                           </div>
-                        ) : null}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          onClick={() =>
-                            upsertLineItemQuantity(service, quantity - 1)
-                          }
-                        >
-                          <Minus className="h-4 w-4" />
-                        </Button>
-                        <Input
-                          type="number"
-                          min="0"
-                          step="1"
-                          value={String(quantity)}
-                          aria-label={`${service.name} quantity`}
-                          className="h-9 w-20 text-center font-semibold tabular-nums"
-                          onChange={(event) => {
-                            const nextQuantity = Number(event.target.value || 0)
-                            if (
-                              Number.isFinite(nextQuantity) &&
-                              nextQuantity >= 0
-                            ) {
-                              upsertLineItemQuantity(service, nextQuantity)
+                          {quantity > 0 ? (
+                            <div className="text-xs font-semibold">
+                              Running line total: ${lineSubtotal.toFixed(2)}
+                            </div>
+                          ) : null}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            onClick={() =>
+                              upsertLineItemQuantity(service, quantity - 1)
                             }
-                          }}
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          onClick={() =>
-                            upsertLineItemQuantity(service, quantity + 1)
+                          >
+                            <Minus className="h-4 w-4" />
+                          </Button>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={String(quantity)}
+                            aria-label={`${service.name} quantity`}
+                            className="h-9 w-20 text-center font-semibold tabular-nums"
+                            onChange={(event) => {
+                              const nextQuantity = Number(
+                                event.target.value || 0,
+                              )
+                              if (
+                                Number.isFinite(nextQuantity) &&
+                                nextQuantity >= 0
+                              ) {
+                                upsertLineItemQuantity(service, nextQuantity)
+                              }
+                            }}
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            onClick={() =>
+                              upsertLineItemQuantity(service, quantity + 1)
+                            }
+                          >
+                            <Plus className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {lineItems.map((item, index) => (
+                  <div
+                    key={`${item.service_catalog_item_id}-${index}`}
+                    className="border-border/60 bg-background/70 rounded-2xl border p-4"
+                  >
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                      <div>
+                        <Label htmlFor={`service-${index}`}>Service</Label>
+                        <select
+                          id={`service-${index}`}
+                          className="border-input bg-background h-10 w-full rounded-md border px-3 text-sm"
+                          value={item.service_catalog_item_id}
+                          onChange={(event) =>
+                            handleLineItemChange(
+                              index,
+                              'service_catalog_item_id',
+                              event.target.value,
+                            )
                           }
                         >
-                          <Plus className="h-4 w-4" />
-                        </Button>
+                          <option value="">Select service</option>
+                          {services.map((service) => (
+                            <option key={service.id} value={service.id}>
+                              {service.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <Label htmlFor={`name-${index}`}>Display Name</Label>
+                        <Input
+                          id={`name-${index}`}
+                          value={item.name_snapshot}
+                          onChange={(event) =>
+                            handleLineItemChange(
+                              index,
+                              'name_snapshot',
+                              event.target.value,
+                            )
+                          }
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor={`qty-${index}`}>Quantity</Label>
+                        <Input
+                          id={`qty-${index}`}
+                          type="number"
+                          value={item.quantity}
+                          onChange={(event) =>
+                            handleLineItemChange(
+                              index,
+                              'quantity',
+                              event.target.value,
+                            )
+                          }
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor={`price-${index}`}>Unit Price</Label>
+                        <Input
+                          id={`price-${index}`}
+                          type="number"
+                          step="0.01"
+                          value={item.unit_price}
+                          onChange={(event) =>
+                            handleLineItemChange(
+                              index,
+                              'unit_price',
+                              event.target.value,
+                            )
+                          }
+                        />
                       </div>
                     </div>
-                  )
-                })}
-              </div>
 
-              {lineItems.map((item, index) => (
-                <div
-                  key={`${item.service_catalog_item_id}-${index}`}
-                  className="border-border/60 bg-background/70 rounded-2xl border p-4"
-                >
-                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                    <div>
-                      <Label htmlFor={`service-${index}`}>Service</Label>
-                      <select
-                        id={`service-${index}`}
-                        className="border-input bg-background h-10 w-full rounded-md border px-3 text-sm"
-                        value={item.service_catalog_item_id}
-                        onChange={(event) =>
-                          handleLineItemChange(
-                            index,
-                            'service_catalog_item_id',
-                            event.target.value,
-                          )
-                        }
-                      >
-                        <option value="">Select service</option>
-                        {services.map((service) => (
-                          <option key={service.id} value={service.id}>
-                            {service.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <Label htmlFor={`name-${index}`}>Display Name</Label>
-                      <Input
-                        id={`name-${index}`}
-                        value={item.name_snapshot}
-                        onChange={(event) =>
-                          handleLineItemChange(
-                            index,
-                            'name_snapshot',
-                            event.target.value,
-                          )
-                        }
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor={`qty-${index}`}>Quantity</Label>
-                      <Input
-                        id={`qty-${index}`}
-                        type="number"
-                        value={item.quantity}
-                        onChange={(event) =>
-                          handleLineItemChange(
-                            index,
-                            'quantity',
-                            event.target.value,
-                          )
-                        }
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor={`price-${index}`}>Unit Price</Label>
-                      <Input
-                        id={`price-${index}`}
-                        type="number"
-                        step="0.01"
-                        value={item.unit_price}
-                        onChange={(event) =>
-                          handleLineItemChange(
-                            index,
-                            'unit_price',
-                            event.target.value,
-                          )
-                        }
-                      />
-                    </div>
+                    {lineItems.length > 1 ? (
+                      <div className="mt-3">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            setLineItems((current) =>
+                              current.filter(
+                                (_, itemIndex) => itemIndex !== index,
+                              ),
+                            )
+                          }
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Remove Line
+                        </Button>
+                      </div>
+                    ) : null}
                   </div>
-
-                  {lineItems.length > 1 ? (
-                    <div className="mt-3">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() =>
-                          setLineItems((current) =>
-                            current.filter(
-                              (_, itemIndex) => itemIndex !== index,
-                            ),
-                          )
-                        }
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Remove Line
-                      </Button>
-                    </div>
-                  ) : null}
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
 
             <div className="border-border/60 bg-background/80 mt-4 rounded-2xl border p-3">
@@ -1272,82 +1546,13 @@ export function NewJobWorkspace() {
               <div>
                 <h3 className="text-lg font-semibold">Customer</h3>
                 <p className="text-muted-foreground mt-1 text-sm">
-                  Search a returning customer or enter a new one below.
+                  Auto-filled from the lookup above — or enter a new customer
+                  here.
                 </p>
               </div>
             </div>
 
             <div className="mt-4 space-y-4">
-              <div>
-                <Label htmlFor="customer-search">Find returning customer</Label>
-                <div className="relative">
-                  <Search className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
-                  <Input
-                    id="customer-search"
-                    className="pl-9"
-                    value={customerQuery}
-                    onChange={(event) => setCustomerQuery(event.target.value)}
-                    placeholder="Search by name, business, phone, or email"
-                  />
-                </div>
-                {searchingCustomers ? (
-                  <div className="text-muted-foreground mt-2 flex items-center gap-2 text-sm">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Searching customers...
-                  </div>
-                ) : null}
-                {customerResults.length > 0 ? (
-                  <div
-                    className={`overflow-hidden transition-all ease-out ${
-                      resultsCollapsed
-                        ? 'pointer-events-none max-h-0 opacity-0 delay-150 duration-300'
-                        : 'max-h-[640px] opacity-100 duration-200'
-                    }`}
-                  >
-                    <div className="mt-3 grid gap-2">
-                      {customerResults.map((customer) => (
-                        <button
-                          key={customer.id}
-                          type="button"
-                          className={`rounded-2xl border p-3 text-left transition ${
-                            selectedCustomer?.id === customer.id
-                              ? 'border-primary bg-primary/5'
-                              : 'border-border/60 bg-background/70 hover:bg-muted/60'
-                          }`}
-                          onClick={() => handleSelectCustomer(customer)}
-                        >
-                          <div className="font-medium">
-                            {customer.business_name || customer.full_name}
-                          </div>
-                          <div className="text-muted-foreground mt-1 text-sm">
-                            {customer.full_name} · {customer.phone}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-                {selectedCustomer && resultsCollapsed ? (
-                  <button
-                    type="button"
-                    onClick={() => setResultsCollapsed(false)}
-                    className="text-muted-foreground hover:text-foreground mt-2 inline-flex items-center gap-2 text-sm transition"
-                  >
-                    <Check className="text-primary h-4 w-4" />
-                    Using{' '}
-                    <span className="text-foreground font-medium">
-                      {selectedCustomer.business_name ||
-                        selectedCustomer.full_name}
-                    </span>
-                    {customerResults.length > 1 ? (
-                      <span className="text-muted-foreground/70">
-                        · tap to change
-                      </span>
-                    ) : null}
-                  </button>
-                ) : null}
-              </div>
-
               <div className="grid gap-3 md:grid-cols-2">
                 <div>
                   <Label htmlFor="first-name">First Name *</Label>
