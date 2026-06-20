@@ -2413,7 +2413,7 @@ export function OperationsSchedule() {
         </>
       ) : null}
 
-      <Card className="border-border/60 bg-card/80 p-4 shadow-sm backdrop-blur">
+      <Card className="glass-accent-ring via-card/80 relative overflow-visible border-transparent bg-gradient-to-br from-emerald-500/10 to-cyan-500/10 p-4 shadow-lg shadow-emerald-950/25 backdrop-blur">
         {/* Row 1: navigation on the left, actions on the right */}
         <div className="flex items-center gap-2">
           <Button
@@ -2456,10 +2456,17 @@ export function OperationsSchedule() {
 
           <div className="flex-1" />
 
-          <Button asChild size="sm" className="gap-2">
+          <Button
+            asChild
+            className="book-job-cta group relative h-11 overflow-hidden rounded-xl border-0 px-6 text-base font-bold tracking-wide text-white transition-transform duration-300 hover:scale-[1.04] focus-visible:scale-[1.04]"
+          >
             <Link href="/admin/operations/new-job">
-              <Plus className="h-4 w-4" />
-              New Job
+              <span
+                aria-hidden
+                className="book-job-sheen pointer-events-none absolute inset-0 -translate-x-full transition-transform duration-700 ease-out group-hover:translate-x-full"
+              />
+              <Plus className="h-5 w-5" />
+              Book Job
             </Link>
           </Button>
           <Button
