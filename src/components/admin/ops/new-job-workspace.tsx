@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Loader2, Minus, Plus, Search, Trash2 } from 'lucide-react'
+import { Check, Loader2, Minus, Plus, Search, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -192,6 +192,9 @@ export function NewJobWorkspace() {
     CustomerSearchResult[]
   >([])
   const [searchingCustomers, setSearchingCustomers] = useState(false)
+  // After a customer is picked, collapse the results list (with a brief
+  // highlight) so the form fields underneath become visible.
+  const [resultsCollapsed, setResultsCollapsed] = useState(false)
   const [schedulePreview, setSchedulePreview] = useState<SchedulePreview>({
     appointments: [],
     events: [],
@@ -428,6 +431,8 @@ export function NewJobWorkspace() {
   }, [loadSchedulePreview])
 
   useEffect(() => {
+    // A new search query means the user wants to pick again — re-open the list.
+    setResultsCollapsed(false)
     async function searchCustomers() {
       setSearchingCustomers(true)
       try {
@@ -611,6 +616,9 @@ export function NewJobWorkspace() {
     setAddrSuggestions([])
     const derivedName = splitFullName(customer.full_name)
     setSelectedCustomer(customer)
+    // Highlight the chosen card, then collapse the list out of the way so the
+    // customer's details below are visible (CSS handles the brief delay).
+    setResultsCollapsed(true)
     setCustomerForm({
       first_name: customer.first_name || derivedName.firstName,
       last_name: customer.last_name || derivedName.lastName,
@@ -1289,27 +1297,54 @@ export function NewJobWorkspace() {
                   </div>
                 ) : null}
                 {customerResults.length > 0 ? (
-                  <div className="mt-3 grid gap-2">
-                    {customerResults.map((customer) => (
-                      <button
-                        key={customer.id}
-                        type="button"
-                        className={`rounded-2xl border p-3 text-left transition ${
-                          selectedCustomer?.id === customer.id
-                            ? 'border-primary bg-primary/5'
-                            : 'border-border/60 bg-background/70 hover:bg-muted/60'
-                        }`}
-                        onClick={() => handleSelectCustomer(customer)}
-                      >
-                        <div className="font-medium">
-                          {customer.business_name || customer.full_name}
-                        </div>
-                        <div className="text-muted-foreground mt-1 text-sm">
-                          {customer.full_name} · {customer.phone}
-                        </div>
-                      </button>
-                    ))}
+                  <div
+                    className={`overflow-hidden transition-all ease-out ${
+                      resultsCollapsed
+                        ? 'pointer-events-none max-h-0 opacity-0 delay-150 duration-300'
+                        : 'max-h-[640px] opacity-100 duration-200'
+                    }`}
+                  >
+                    <div className="mt-3 grid gap-2">
+                      {customerResults.map((customer) => (
+                        <button
+                          key={customer.id}
+                          type="button"
+                          className={`rounded-2xl border p-3 text-left transition ${
+                            selectedCustomer?.id === customer.id
+                              ? 'border-primary bg-primary/5'
+                              : 'border-border/60 bg-background/70 hover:bg-muted/60'
+                          }`}
+                          onClick={() => handleSelectCustomer(customer)}
+                        >
+                          <div className="font-medium">
+                            {customer.business_name || customer.full_name}
+                          </div>
+                          <div className="text-muted-foreground mt-1 text-sm">
+                            {customer.full_name} · {customer.phone}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
                   </div>
+                ) : null}
+                {selectedCustomer && resultsCollapsed ? (
+                  <button
+                    type="button"
+                    onClick={() => setResultsCollapsed(false)}
+                    className="text-muted-foreground hover:text-foreground mt-2 inline-flex items-center gap-2 text-sm transition"
+                  >
+                    <Check className="text-primary h-4 w-4" />
+                    Using{' '}
+                    <span className="text-foreground font-medium">
+                      {selectedCustomer.business_name ||
+                        selectedCustomer.full_name}
+                    </span>
+                    {customerResults.length > 1 ? (
+                      <span className="text-muted-foreground/70">
+                        · tap to change
+                      </span>
+                    ) : null}
+                  </button>
                 ) : null}
               </div>
 
