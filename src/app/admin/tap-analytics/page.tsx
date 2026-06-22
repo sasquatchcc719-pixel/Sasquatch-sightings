@@ -1,8 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Card } from '@/components/ui/card'
-import { createClient } from '@/supabase/client'
 import {
   Phone,
   MessageSquare,
@@ -20,32 +19,6 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-
-type NfcCardTap = {
-  id: string
-  card_id: string | null
-  partner_id: string | null
-  tap_type: string
-  ip_address: string
-  user_agent: string
-  device_type: string
-  location_city: string | null
-  location_region: string | null
-  location_country: string | null
-  converted: boolean
-  lead_id: string | null
-  conversion_type: string | null
-  tapped_at: string
-  converted_at: string | null
-  created_at: string
-}
-
-type NfcButtonClick = {
-  id: string
-  tap_id: string
-  button_type: string
-  clicked_at: string
-}
 
 type TapStats = {
   totalTaps: number
@@ -108,26 +81,38 @@ export default function TapAnalyticsPage() {
   const [replyText, setReplyText] = useState('')
   const [sending, setSending] = useState(false)
 
-  useEffect(() => {
-    fetchStats()
-    fetchConversations()
+  const fetchStats = useCallback(async () => {
+    setIsLoading(true)
+    try {
+      const response = await fetch(
+        `/api/admin/tap-analytics?timeframe=${timeframe}`,
+      )
+
+      if (!response.ok) throw new Error('Failed to load analytics')
+      setStats((await response.json()) as TapStats)
+    } catch (error) {
+      console.error('Failed to fetch stats:', error)
+    } finally {
+      setIsLoading(false)
+    }
   }, [timeframe])
 
-  const fetchConversations = async () => {
+  const fetchConversations = useCallback(async () => {
     try {
-      const supabase = createClient()
-      const { data, error } = await supabase
-        .from('conversations')
-        .select('*, lead:leads(id, name, source, status)')
-        .eq('source', 'Business Card')
-        .order('updated_at', { ascending: false })
+      const response = await fetch('/api/admin/tap-analytics/conversations')
 
-      if (error) throw error
-      setConversations((data as Conversation[]) || [])
+      if (!response.ok) throw new Error('Failed to load conversations')
+      const data = await response.json()
+      setConversations((data.conversations as Conversation[]) || [])
     } catch (error) {
       console.error('Failed to fetch conversations:', error)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    fetchStats()
+    fetchConversations()
+  }, [fetchConversations, fetchStats])
 
   const handleSendReply = async () => {
     if (!selectedConvo || !replyText.trim()) return
@@ -234,135 +219,6 @@ export default function TapAnalyticsPage() {
     filterStatus === 'all'
       ? conversations
       : conversations.filter((c) => c.status === filterStatus)
-
-  const fetchStats = async () => {
-    setIsLoading(true)
-    try {
-      const supabase = createClient()
-
-      // Calculate date range
-      const now = new Date()
-      let startDate = new Date(0) // Beginning of time
-      if (timeframe === 'today') {
-        startDate = new Date(now.setHours(0, 0, 0, 0))
-      } else if (timeframe === 'week') {
-        startDate = new Date(now.setDate(now.getDate() - 7))
-      } else if (timeframe === 'month') {
-        startDate = new Date(now.setDate(now.getDate() - 30))
-      }
-
-      // Fetch taps - only business card taps (no vendor attached)
-      const { data: taps, error: tapsError } = await supabase
-        .from('nfc_card_taps')
-        .select('*')
-        .is('partner_id', null)
-        .gte('tapped_at', startDate.toISOString())
-
-      if (tapsError) throw tapsError
-
-      // Fetch button clicks
-      const tapIds = (taps as NfcCardTap[])?.map((t) => t.id) || []
-      const { data: clicks, error: clicksError } = await supabase
-        .from('nfc_button_clicks')
-        .select('*')
-        .in('tap_id', tapIds)
-
-      if (clicksError) throw clicksError
-
-      // Cast to proper types
-      const tapData = (taps as NfcCardTap[]) || []
-      const clickData = (clicks as NfcButtonClick[]) || []
-
-      // Calculate stats
-      const totalTaps = tapData.length
-      const uniqueTaps = new Set(tapData.map((t) => t.ip_address)).size
-      const conversions = tapData.filter((t) => t.converted).length
-      const conversionRate = totalTaps > 0 ? (conversions / totalTaps) * 100 : 0
-
-      const bookingClicks = clickData.filter(
-        (c) => c.button_type === 'booking_page',
-      ).length
-      const callClicks = clickData.filter(
-        (c) => c.button_type === 'call',
-      ).length
-      const textClicks = clickData.filter(
-        (c) => c.button_type === 'text',
-      ).length
-      const formSubmits = clickData.filter(
-        (c) => c.button_type === 'form_submit',
-      ).length
-      const saveContactClicks = clickData.filter(
-        (c) => c.button_type === 'save_contact',
-      ).length
-      const shareClicks = clickData.filter(
-        (c) => c.button_type === 'share',
-      ).length
-
-      // Time-based stats
-      const todayStart = new Date()
-      todayStart.setHours(0, 0, 0, 0)
-      const todayTaps = tapData.filter(
-        (t) => new Date(t.tapped_at) >= todayStart,
-      ).length
-
-      const weekStart = new Date()
-      weekStart.setDate(weekStart.getDate() - 7)
-      const weekTaps = tapData.filter(
-        (t) => new Date(t.tapped_at) >= weekStart,
-      ).length
-
-      const monthStart = new Date()
-      monthStart.setDate(monthStart.getDate() - 30)
-      const monthTaps = tapData.filter(
-        (t) => new Date(t.tapped_at) >= monthStart,
-      ).length
-
-      // Top cities
-      const cityCount: Record<string, number> = {}
-      tapData.forEach((t) => {
-        if (t.location_city) {
-          cityCount[t.location_city] = (cityCount[t.location_city] || 0) + 1
-        }
-      })
-      const topCities = Object.entries(cityCount)
-        .map(([city, count]) => ({ city, count }))
-        .sort((a, b) => b.count - a.count)
-        .slice(0, 5)
-
-      // Device breakdown
-      const deviceBreakdown = {
-        mobile: tapData.filter((t) => t.device_type === 'mobile').length,
-        tablet: tapData.filter((t) => t.device_type === 'tablet').length,
-        desktop: tapData.filter((t) => t.device_type === 'desktop').length,
-      }
-
-      setStats({
-        totalTaps,
-        uniqueTaps,
-        conversions,
-        conversionRate,
-        bookingClicks,
-        callClicks,
-        textClicks,
-        formSubmits,
-        saveContactClicks,
-        shareClicks,
-        todayTaps,
-        weekTaps,
-        monthTaps,
-        topCities,
-        deviceBreakdown,
-        cardScans: tapData.filter((t) => t.card_id !== 'truck-qr-contest')
-          .length,
-        contestScans: tapData.filter((t) => t.card_id === 'truck-qr-contest')
-          .length,
-      })
-    } catch (error) {
-      console.error('Failed to fetch stats:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
 
   if (isLoading) {
     return (
