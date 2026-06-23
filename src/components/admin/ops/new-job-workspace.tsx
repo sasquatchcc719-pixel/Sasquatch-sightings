@@ -658,8 +658,11 @@ export function NewJobWorkspace() {
   ])
 
   const subtotalQuote = lineItems.reduce((sum, item) => {
-    const quantity = Number(item.quantity || 1)
-    const unitPrice = Number(item.unit_price || 0)
+    const service = servicesById.get(item.service_catalog_item_id)
+    const quantity = Number(item.quantity || 0)
+    const unitPrice = Number(item.unit_price || service?.base_price || 0)
+    if (!Number.isFinite(quantity) || quantity <= 0) return sum
+    if (!Number.isFinite(unitPrice) || unitPrice <= 0) return sum
     return sum + quantity * unitPrice
   }, 0)
   const discountAmount = Math.max(0, Number(discount || 0))
@@ -1943,7 +1946,7 @@ export function NewJobWorkspace() {
             </Button>
           </div>
 
-          <Card className="border-border/60 bg-card/95 sticky bottom-[calc(5rem+env(safe-area-inset-bottom))] z-20 p-3 shadow-lg backdrop-blur sm:bottom-3">
+          <Card className="border-border/60 bg-card/95 sticky bottom-20 z-20 p-3 shadow-lg backdrop-blur sm:bottom-3">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-muted-foreground text-xs font-medium uppercase">
