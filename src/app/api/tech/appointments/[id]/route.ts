@@ -4,6 +4,7 @@ import { getAssignedTechAppointment } from '@/lib/tech/appointments'
 import { createAdminClient } from '@/supabase/server'
 import { suppressPostJobReviewRequest } from '@/lib/ops/review-requests'
 import { enrollCustomerInDrip } from '@/lib/ops/drip-campaign'
+import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
 
 export async function GET(
   _request: NextRequest,
@@ -104,6 +105,9 @@ export async function PATCH(
       await enrollCustomerInDrip(id)
     }
 
+    const statusChanged =
+      body.status !== undefined && String(body.status) !== current.status
+
     if (body.status !== undefined) {
       await supabase.from('ops_appointment_status_events').insert({
         appointment_id: id,
@@ -120,6 +124,17 @@ export async function PATCH(
           'manual quiet close - post-job communications skipped',
         )
       }
+    }
+
+    if (
+      statusChanged &&
+      String(body.status) === 'on_my_way' &&
+      !skipCustomerCommunications
+    ) {
+      await sendOpsLifecycleCommunications({
+        event: 'on_my_way',
+        appointmentId: id,
+      })
     }
 
     const appointment = await getAssignedTechAppointment(

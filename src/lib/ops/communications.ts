@@ -246,7 +246,7 @@ async function resolveTechnicianEmailProfile(
     const { data } = await supabase
       .from('staff_users')
       .select('display_name, profile_image_url')
-      .eq('id', staffUserId)
+      .or(`id.eq.${staffUserId},user_id.eq.${staffUserId}`)
       .maybeSingle()
 
     const displayName = data?.display_name || 'Your technician'
