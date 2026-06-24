@@ -567,7 +567,7 @@ export function buildEmailHtml(
         <tr>
           <td style="background:#f9f9f9;padding:20px 32px;border-top:1px solid #eeeeee;text-align:center;color:#888888;font-size:12px;">
             <p style="margin:0 0 6px 0;">
-              Questions or changes? <strong>Text us at (719) 249-8791</strong> — our scheduling assistant Harry responds 24/7.
+              Questions or changes? <strong>Text us at (719) 249-8791</strong> and we'll help.
             </p>
             <p style="margin:0;">Sasquatch Carpet Cleaning · Colorado Springs, CO</p>
           </td>

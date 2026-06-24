@@ -47,7 +47,7 @@ function buildBookingConfirmationBody(params: {
     `Thank you so much for reaching out to Sasquatch Carpet Cleaning — we truly appreciate the opportunity to earn your business.`,
     `We're looking forward to visiting your property to take a look at everything and provide you with a detailed, no-obligation estimate. Here are your appointment details:\n\n- Date: ${date}\n- Time: ${startTime} – ${endTime}\n- Address: ${address}`,
     `Our goal is to give you a thorough, honest assessment of what your carpets need and what it will cost — no pressure, no surprises. We take pride in treating every home like our own.`,
-    `If anything changes or you have questions before we arrive, don't hesitate to reach out. You can reply to this email or text us anytime at (719) 249-8791 — our scheduling assistant responds 24/7.`,
+    `If anything changes or you have questions before we arrive, please text us at (719) 249-8791 and we'll help.`,
     `We'll see you soon!\n\nWith appreciation,\nThe Sasquatch Carpet Cleaning Team`,
   ].join('\n\n')
 }
