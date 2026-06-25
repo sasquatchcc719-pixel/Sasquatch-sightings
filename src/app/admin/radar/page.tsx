@@ -502,31 +502,41 @@ export default function RadarPage() {
   }
 
   const myDomain = domains.find((d) => d.is_my_domain)
-  const top3KeywordIds = myDomain
-    ? keywords
-        .map((k) => ({
-          id: k.id,
-          rank: latestMap.get(`${k.id}:${myDomain.id}`) ?? 100,
-        }))
-        .sort((a, b) => a.rank - b.rank)
-        .slice(0, 3)
-        .map((x) => x.id)
-    : []
-
-  const chartRankings = rankings.filter(
+  // Map-pack rank history. Organic blue-link position is useless for a local
+  // business — head terms like "carpet cleaning" are owned by directories and
+  // national chains, so we sit at 50+ forever. What matters is our spot in
+  // Google's local 3-pack, so we chart map_rank instead. Out-of-pack shows as a
+  // sentinel just below #3 so a drop is visible rather than a confusing gap.
+  const OUT_OF_PACK = 4
+  const myMapRows = rankings.filter(
     (r) =>
-      r.domain_id === myDomain?.id &&
-      top3KeywordIds.includes(r.keyword_id) &&
-      new Date(r.created_at) >= cutoffForChart,
+      r.domain_id === myDomain?.id && new Date(r.created_at) >= cutoffForChart,
   )
+  const townLabel = (loc: string) => loc.split(',')[0].trim()
+  // Only chart towns where we've been in the pack at least once in the window —
+  // towns we never rank in would just be a flat "Out" line cluttering the chart.
+  const chartKeywordIds = [
+    ...new Set(
+      myMapRows.filter((r) => r.map_rank != null).map((r) => r.keyword_id),
+    ),
+  ]
+  const SERIES_COLORS = ['#22c55e', '#3b82f6', '#a855f7', '#f59e0b', '#ec4899']
+  const chartSeries = chartKeywordIds.map((id, i) => {
+    const k = keywords.find((kk) => kk.id === id)
+    return {
+      id,
+      label: k ? townLabel(k.location) : String(id),
+      color: SERIES_COLORS[i % SERIES_COLORS.length],
+    }
+  })
   const byDate = new Map<string, Record<string, number | string>>()
-  for (const r of chartRankings) {
+  for (const r of myMapRows) {
+    const series = chartSeries.find((s) => s.id === r.keyword_id)
+    if (!series) continue
     const date = r.created_at.slice(0, 10)
-    const kw =
-      keywords.find((k) => k.id === r.keyword_id)?.keyword ?? r.keyword_id
     if (!byDate.has(date)) byDate.set(date, { date })
     const row = byDate.get(date)!
-    if (row[kw] == null) row[kw] = r.rank_position
+    if (row[series.label] == null) row[series.label] = r.map_rank ?? OUT_OF_PACK
   }
   const chartData = Array.from(byDate.entries())
     .map(([, v]) => v)
@@ -1205,15 +1215,17 @@ export default function RadarPage() {
       {activeSection === 'history' && (
         <div className="space-y-8">
           {/* Rankings chart */}
-          {hasData && chartData.length > 0 && top3KeywordIds.length > 0 && (
+          {hasData && chartData.length > 0 && chartSeries.length > 0 && (
             <Card className="border-white/20 bg-black/40 p-4 backdrop-blur-sm">
               <h2 className="mb-1 text-lg font-semibold text-white">
-                Rank history – Your domain (last 30 days)
+                Map-pack rank – Your domain (last 30 days)
               </h2>
               <p className="mb-4 text-sm text-white/60">
-                Line chart for your site’s position over time for your top 3
-                keywords. Lower position number = higher on Google. Data appears
-                after the cron runs at least once.
+                Your spot in Google’s local 3-pack per town — #1 at the top,
+                “Out” = not in the 3-pack. This is what drives local calls;
+                organic blue-link rank for head terms isn’t shown (local shops
+                live in the map pack, not the blue links). One line per town
+                you’ve appeared in. Data appears after the daily scan runs.
               </p>
               <div className="h-[300px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
@@ -1232,7 +1244,11 @@ export default function RadarPage() {
                     />
                     <YAxis
                       reversed
-                      domain={[1, 100]}
+                      domain={[1, OUT_OF_PACK]}
+                      ticks={[1, 2, 3, OUT_OF_PACK]}
+                      tickFormatter={(v) =>
+                        v >= OUT_OF_PACK ? 'Out' : `#${v}`
+                      }
                       stroke="rgba(255,255,255,0.6)"
                       fontSize={12}
                     />
@@ -1244,22 +1260,18 @@ export default function RadarPage() {
                       labelStyle={{ color: '#e5e5e5' }}
                     />
                     <Legend />
-                    {top3KeywordIds.map((kid, i) => {
-                      const kw =
-                        keywords.find((k) => k.id === kid)?.keyword ?? kid
-                      const colors = ['#22c55e', '#3b82f6', '#a855f7']
-                      return (
-                        <Line
-                          key={kid}
-                          type="monotone"
-                          dataKey={kw}
-                          stroke={colors[i % 3]}
-                          strokeWidth={2}
-                          dot={false}
-                          connectNulls
-                        />
-                      )
-                    })}
+                    {chartSeries.map((s) => (
+                      <Line
+                        key={s.id}
+                        type="monotone"
+                        dataKey={s.label}
+                        name={s.label}
+                        stroke={s.color}
+                        strokeWidth={2}
+                        dot={false}
+                        connectNulls
+                      />
+                    ))}
                   </LineChart>
                 </ResponsiveContainer>
               </div>
