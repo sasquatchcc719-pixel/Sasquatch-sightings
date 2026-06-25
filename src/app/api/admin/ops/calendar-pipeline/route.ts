@@ -116,6 +116,19 @@ export async function GET() {
       .lte('entry_date', yearEnd)
     if (standaloneErr) throw standaloneErr
 
+    // Pre-ops history: jobs from the prior software (e.g. Jan–Mar, before
+    // Operations existed). Only applied to months with NO completed ops jobs,
+    // so ops-tracked months never double-count. Linked jobs are excluded since
+    // their ops appointment is already counted.
+    const { data: legacyJobs, error: legacyErr } = await supabase
+      .from('jobs')
+      .select('invoice_amount, created_at')
+      .not('invoice_amount', 'is', null)
+      .is('ops_invoice_id', null)
+      .gte('created_at', `${yearStart}T00:00:00`)
+      .lte('created_at', `${yearEnd}T23:59:59`)
+    if (legacyErr) throw legacyErr
+
     const buckets: CalendarPipelineMonth[] = Array.from(
       { length: 12 },
       (_, i) => ({
@@ -129,16 +142,35 @@ export async function GET() {
     )
 
     // Completed ops jobs → bucket by appointment month.
+    const opsCompletedCount = new Array(12).fill(0)
     for (const appt of completed ?? []) {
       const m = new Date(appt.appointment_date + 'T12:00:00').getMonth()
       buckets[m].completedRevenue += apptAmount(appt)
       buckets[m].completedJobCount += 1
+      opsCompletedCount[m] += 1
     }
 
     // Standalone commercial entries → bucket by entry month.
     for (const row of standalone ?? []) {
       const m = new Date(row.entry_date + 'T12:00:00').getMonth()
       buckets[m].completedRevenue += Number(row.invoice_amount || 0)
+      buckets[m].completedJobCount += 1
+    }
+
+    // Legacy jobs fill ONLY months Operations doesn't cover (no completed ops
+    // jobs that month) — i.e. the pre-switch period. Bucketed by Mountain-time
+    // month to match how those numbers were originally recorded.
+    const denverMonth = (iso: string) =>
+      Number(
+        new Date(iso).toLocaleString('en-US', {
+          timeZone: 'America/Denver',
+          month: 'numeric',
+        }),
+      ) - 1
+    for (const job of legacyJobs ?? []) {
+      const m = denverMonth(job.created_at)
+      if (opsCompletedCount[m] > 0) continue
+      buckets[m].completedRevenue += Number(job.invoice_amount || 0)
       buckets[m].completedJobCount += 1
     }
 

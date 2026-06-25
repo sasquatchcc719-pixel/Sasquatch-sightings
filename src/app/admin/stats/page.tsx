@@ -849,131 +849,68 @@ export default function StatsPage() {
                       const completed =
                         pipeline?.months[i]?.completedRevenue ?? 0
                       const booked = pipeline?.months[i]?.bookedRevenue ?? 0
-                      const bookedCount =
-                        pipeline?.months[i]?.bookedJobCount ?? 0
-                      const isPast = month < currentMonth
+                      const total = completed + booked
                       const isCurrent = month === currentMonth
-                      const isFuture = month > currentMonth
-
-                      if (isPast) {
-                        const pct = Math.round((completed / maxVal) * 100)
-                        return (
-                          <div key={month} className="flex items-center gap-3">
-                            <span className="text-muted-foreground w-9 shrink-0 text-right text-xs font-medium">
-                              {label}
-                            </span>
-                            <div className="relative h-5 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                              {completed > 0 && (
-                                <div
-                                  className="absolute inset-y-0 left-0 rounded-full bg-slate-400/60"
-                                  style={{ width: `${pct}%` }}
-                                />
-                              )}
-                            </div>
-                            <div className="w-28 shrink-0 text-right">
-                              {completed > 0 ? (
-                                <span className="text-muted-foreground text-sm font-medium">
-                                  {formatCurrency(completed)}
-                                </span>
-                              ) : (
-                                <span className="text-muted-foreground text-xs">
-                                  —
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        )
-                      }
-
-                      if (isCurrent) {
-                        const collectedPct = Math.round(
-                          (completed / maxVal) * 100,
-                        )
-                        const bookedPct = Math.round((booked / maxVal) * 100)
-                        const total = completed + booked
-                        return (
-                          <div key={month} className="flex items-center gap-3">
-                            <span className="w-9 shrink-0 text-right text-xs font-bold text-blue-600 dark:text-blue-400">
-                              {label}
-                              <span className="ml-0.5 text-[9px]">▶</span>
-                            </span>
-                            <div className="relative h-5 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                              {completed > 0 && (
-                                <div
-                                  className="absolute inset-y-0 left-0 bg-orange-400/80"
-                                  style={{
-                                    width: `${collectedPct}%`,
-                                    borderRadius:
-                                      booked > 0
-                                        ? '9999px 0 0 9999px'
-                                        : '9999px',
-                                  }}
-                                />
-                              )}
-                              {booked > 0 && (
-                                <div
-                                  className="absolute inset-y-0 bg-blue-400/70"
-                                  style={{
-                                    left: `${collectedPct}%`,
-                                    width: `${bookedPct}%`,
-                                    borderRadius:
-                                      completed > 0
-                                        ? '0 9999px 9999px 0'
-                                        : '9999px',
-                                  }}
-                                />
-                              )}
-                            </div>
-                            <div className="w-28 shrink-0 text-right">
-                              {total > 0 ? (
-                                <>
-                                  <span className="text-sm font-semibold">
-                                    {formatCurrency(total)}
-                                  </span>
-                                  {completed > 0 && booked > 0 && (
-                                    <span className="text-muted-foreground ml-1 text-[10px]">
-                                      +{formatCurrency(booked)}
-                                    </span>
-                                  )}
-                                </>
-                              ) : (
-                                <span className="text-muted-foreground text-xs">
-                                  —
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        )
-                      }
-
-                      // future
-                      const pct = Math.round((booked / maxVal) * 100)
+                      const completedPct = Math.round(
+                        (completed / maxVal) * 100,
+                      )
+                      const bookedPct = Math.round((booked / maxVal) * 100)
+                      // Past months = slate (collected); current = orange (done now)
+                      const completedColor = isCurrent
+                        ? 'bg-orange-400/80'
+                        : 'bg-slate-400/60'
                       return (
                         <div key={month} className="flex items-center gap-3">
-                          <span className="text-muted-foreground w-9 shrink-0 text-right text-xs font-medium">
+                          <span
+                            className={`w-9 shrink-0 text-right text-xs ${
+                              isCurrent
+                                ? 'font-bold text-blue-600 dark:text-blue-400'
+                                : 'text-muted-foreground font-medium'
+                            }`}
+                          >
                             {label}
+                            {isCurrent && (
+                              <span className="ml-0.5 text-[9px]">▶</span>
+                            )}
                           </span>
                           <div className="relative h-5 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                            {completed > 0 && (
+                              <div
+                                className={`absolute inset-y-0 left-0 flex items-center ${completedColor}`}
+                                style={{
+                                  width: `${completedPct}%`,
+                                  borderRadius:
+                                    booked > 0 ? '9999px 0 0 9999px' : '9999px',
+                                }}
+                              >
+                                <span className="truncate pr-1 pl-2 text-[10px] font-semibold whitespace-nowrap text-white">
+                                  {formatCurrency(completed)}
+                                </span>
+                              </div>
+                            )}
                             {booked > 0 && (
                               <div
-                                className="absolute inset-y-0 left-0 rounded-full bg-blue-400/50"
-                                style={{ width: `${pct}%` }}
-                              />
-                            )}
-                          </div>
-                          <div className="w-28 shrink-0 text-right">
-                            {booked > 0 ? (
-                              <>
-                                <span className="text-sm font-semibold text-blue-600 dark:text-blue-400">
+                                className="absolute inset-y-0 flex items-center bg-blue-400/70"
+                                style={{
+                                  left: `${completedPct}%`,
+                                  width: `${bookedPct}%`,
+                                  borderRadius:
+                                    completed > 0
+                                      ? '0 9999px 9999px 0'
+                                      : '9999px',
+                                }}
+                              >
+                                <span className="truncate pr-1 pl-2 text-[10px] font-semibold whitespace-nowrap text-white">
                                   {formatCurrency(booked)}
                                 </span>
-                                {isFuture && bookedCount > 0 && (
-                                  <span className="text-muted-foreground ml-1.5 text-xs">
-                                    {bookedCount} job
-                                    {bookedCount !== 1 ? 's' : ''}
-                                  </span>
-                                )}
-                              </>
+                              </div>
+                            )}
+                          </div>
+                          <div className="w-24 shrink-0 text-right">
+                            {total > 0 ? (
+                              <span className="text-sm font-semibold">
+                                {formatCurrency(total)}
+                              </span>
                             ) : (
                               <span className="text-muted-foreground text-xs">
                                 —
