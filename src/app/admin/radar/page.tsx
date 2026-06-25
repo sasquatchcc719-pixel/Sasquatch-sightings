@@ -37,6 +37,7 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
+  Brush,
 } from 'recharts'
 
 type Keyword = { id: string; keyword: string; location: string }
@@ -74,7 +75,12 @@ type DossierProfile = {
 }
 
 const SIXTY_DAYS_MS = 60 * 24 * 60 * 60 * 1000
-const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
+const CHART_RANGES: { label: string; days: number | null }[] = [
+  { label: '7d', days: 7 },
+  { label: '30d', days: 30 },
+  { label: '60d', days: 60 },
+  { label: 'All', days: null },
+]
 
 export default function RadarPage() {
   const [keywords, setKeywords] = useState<Keyword[]>([])
@@ -83,7 +89,13 @@ export default function RadarPage() {
   const [snapshots, setSnapshots] = useState<SerpSnapshotRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [cutoffForChart] = useState(() => new Date(Date.now() - THIRTY_DAYS_MS))
+  // Chart time window. null = all the history we have (capped by the 60-day
+  // data fetch). The Brush under the chart zooms/scrolls within this window.
+  const [rangeDays, setRangeDays] = useState<number | null>(null)
+  const cutoffForChart =
+    rangeDays == null
+      ? new Date(0)
+      : new Date(Date.now() - rangeDays * 24 * 60 * 60 * 1000)
 
   // Form state
   const [newKeyword, setNewKeyword] = useState('')
@@ -1217,15 +1229,34 @@ export default function RadarPage() {
           {/* Rankings chart */}
           {hasData && chartData.length > 0 && chartSeries.length > 0 && (
             <Card className="border-white/20 bg-black/40 p-4 backdrop-blur-sm">
-              <h2 className="mb-1 text-lg font-semibold text-white">
-                Map-pack rank – Your domain (last 30 days)
-              </h2>
+              <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-lg font-semibold text-white">
+                  Map-pack rank – Your domain
+                </h2>
+                <div className="flex gap-1">
+                  {CHART_RANGES.map((r) => (
+                    <button
+                      key={r.label}
+                      onClick={() => setRangeDays(r.days)}
+                      className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
+                        rangeDays === r.days
+                          ? 'bg-white/20 text-white'
+                          : 'bg-white/5 text-white/60 hover:bg-white/10'
+                      }`}
+                    >
+                      {r.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <p className="mb-4 text-sm text-white/60">
                 Your spot in Google’s local 3-pack per town — #1 at the top,
                 “Out” = not in the 3-pack. This is what drives local calls;
                 organic blue-link rank for head terms isn’t shown (local shops
                 live in the map pack, not the blue links). One line per town
-                you’ve appeared in. Data appears after the daily scan runs.
+                you’ve appeared in. Pick a range above, or drag the slider under
+                the chart to zoom and scroll. Tracking started 2026-06-06, so
+                history fills in daily from there.
               </p>
               <div className="h-[300px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
@@ -1272,6 +1303,15 @@ export default function RadarPage() {
                         connectNulls
                       />
                     ))}
+                    {chartData.length > 2 && (
+                      <Brush
+                        dataKey="date"
+                        height={22}
+                        travellerWidth={8}
+                        stroke="rgba(255,255,255,0.35)"
+                        fill="rgba(255,255,255,0.04)"
+                      />
+                    )}
                   </LineChart>
                 </ResponsiveContainer>
               </div>
