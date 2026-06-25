@@ -153,7 +153,8 @@ type BusinessHoursRow = {
   end_time: string
 }
 
-const HOURS = Array.from({ length: 13 }, (_, index) => 7 + index)
+// Grid runs 9am–7pm — work starts at 9, so the earlier rows were dead space.
+const HOURS = Array.from({ length: 11 }, (_, index) => 9 + index)
 const HOUR_HEIGHT = 84
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const STAFF_LANE_COLORS = [
