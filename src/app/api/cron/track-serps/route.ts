@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { runRadarScan } from '@/lib/radar-scan'
+import { runRadarScan, buildRadarDigest } from '@/lib/radar-scan'
 import { syncGbpReviews } from '@/lib/gbp-reviews'
 import { createAdminClient } from '@/supabase/server'
 import { sendTelegramNotification } from '@/lib/telegram'
@@ -49,7 +49,20 @@ export async function GET(request: NextRequest) {
       console.error('[Radar Cron] GBP review sync failed:', reviewErr)
     }
 
-    return NextResponse.json({ ...result, review_sync: reviewSync })
+    // Daily Telegram digest of where we rank in each town's Maps 3-pack.
+    // Never let a digest failure break rank tracking.
+    let digestSent = false
+    try {
+      const digest = await buildRadarDigest()
+      if (digest) {
+        await sendTelegramNotification(digest)
+        digestSent = true
+      }
+    } catch (digestErr) {
+      console.error('[Radar Cron] digest send failed:', digestErr)
+    }
+
+    return NextResponse.json({ ...result, review_sync: reviewSync, digestSent })
   } catch (err) {
     console.error('[Radar Cron] Error:', err)
     return NextResponse.json(
