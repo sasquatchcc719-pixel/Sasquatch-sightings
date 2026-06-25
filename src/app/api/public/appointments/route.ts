@@ -38,6 +38,38 @@ const CORS = {
 
 const MINIMUM_SAME_DAY_LEAD_MINUTES = 60
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+function formatLeadSourceForNotification(params: {
+  leadSource: string | null | undefined
+  leadSourceDetail: string | null | undefined
+}): string {
+  const source = String(params.leadSource || '').trim()
+  const detail = String(params.leadSourceDetail || '').trim()
+  if (!source) return 'Not captured'
+  return detail ? `${source} - ${detail}` : source
+}
+
+function formatBookingMethodForNotification(params: {
+  source: string | null | undefined
+  bookingChannel: string | null | undefined
+}): string {
+  const source = String(params.source || '').trim()
+  const channel = String(params.bookingChannel || '')
+    .trim()
+    .replace(/_/g, ' ')
+  if (source && channel && source.toLowerCase() !== channel.toLowerCase()) {
+    return `${source} (${channel})`
+  }
+  return source || channel || 'Unknown'
+}
+
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS })
 }
@@ -381,6 +413,19 @@ export async function POST(request: NextRequest) {
     }
 
     const assignedStaffUserId = staffResult?.staffUserId ?? null
+    let technicianSchedule = 'Unassigned'
+    if (assignedStaffUserId) {
+      const { data: staffUser, error: staffError } = await supabase
+        .from('staff_users')
+        .select('display_name')
+        .eq('id', assignedStaffUserId)
+        .maybeSingle()
+
+      if (staffError) {
+        console.error('[public/appointments] Staff lookup error:', staffError)
+      }
+      technicianSchedule = staffUser?.display_name || 'Unassigned'
+    }
 
     // --- Determine appointment status ---
     const appointmentStatus = serviceAreaCheck.requiresApproval
@@ -533,9 +578,20 @@ export async function POST(request: NextRequest) {
     const statusLabel =
       appointmentStatus === 'pending_approval' ? ' (NEEDS APPROVAL)' : ''
     const adminHeading = `New job booked${statusLabel}!`
+    const notificationLeadSource = formatLeadSourceForNotification({
+      leadSource: normalizedLeadSource.source.lead_source,
+      leadSourceDetail: normalizedLeadSource.source.lead_source_detail,
+    })
+    const notificationBookingMethod = formatBookingMethodForNotification({
+      source: 'website',
+      bookingChannel: 'website',
+    })
     const adminMsg = [
       adminHeading,
       `${fullName} — $${total.toFixed(2)}`,
+      `Lead source: ${notificationLeadSource}`,
+      `Booking method: ${notificationBookingMethod}`,
+      `Technician schedule: ${technicianSchedule}`,
       `${serviceNames}`,
       `${street1}, ${city}, ${state} ${zipCode}`,
       `${appointmentDate} at ${startTime.slice(0, 5)}`,
@@ -577,6 +633,9 @@ export async function POST(request: NextRequest) {
     <tr><td style="color:#6b7280;padding-right:12px;">Email</td><td>${email}</td></tr>
     <tr><td style="color:#6b7280;padding-right:12px;">Address</td><td>${street1}, ${city}, ${state} ${zipCode}</td></tr>
     <tr><td style="color:#6b7280;padding-right:12px;">Date</td><td>${appointmentDate} at ${startTime.slice(0, 5)}</td></tr>
+    <tr><td style="color:#6b7280;padding-right:12px;">Lead source</td><td>${escapeHtml(notificationLeadSource)}</td></tr>
+    <tr><td style="color:#6b7280;padding-right:12px;">Booking method</td><td>${escapeHtml(notificationBookingMethod)}</td></tr>
+    <tr><td style="color:#6b7280;padding-right:12px;">Technician schedule</td><td>${escapeHtml(technicianSchedule)}</td></tr>
     <tr><td style="color:#6b7280;padding-right:12px;">Services</td><td>${serviceNames}</td></tr>
     <tr><td style="color:#6b7280;padding-right:12px;">Total</td><td><strong>$${total.toFixed(2)}</strong></td></tr>
   </table>

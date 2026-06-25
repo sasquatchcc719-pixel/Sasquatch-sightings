@@ -81,6 +81,8 @@ export async function sendBookingNotification(params: {
   startTime: string
   total: number
   leadSource?: string
+  bookingMethod?: string
+  technicianSchedule?: string | null
   services: string[]
 }): Promise<void> {
   const {
@@ -90,6 +92,8 @@ export async function sendBookingNotification(params: {
     startTime,
     total,
     leadSource,
+    bookingMethod,
+    technicianSchedule,
     services,
   } = params
 
@@ -100,14 +104,18 @@ export async function sendBookingNotification(params: {
   })
 
   const servicesList = services.join('\n• ')
-  const source = leadSource ? `\n📍 Source: ${leadSource}` : ''
+  const source = leadSource ? `\n📍 Lead source: ${leadSource}` : ''
+  const booking = bookingMethod ? `\n🧭 Booking method: ${bookingMethod}` : ''
+  const technician = technicianSchedule
+    ? `\n🧰 Technician schedule: ${technicianSchedule}`
+    : ''
 
   const message = `🎉 *NEW BOOKING*
 
 👤 ${customerName}
 📞 ${phone}
 📅 ${date} at ${startTime}
-💰 $${total.toFixed(2)}${source}
+💰 $${total.toFixed(2)}${source}${booking}${technician}
 
 📋 Services:
 • ${servicesList}`

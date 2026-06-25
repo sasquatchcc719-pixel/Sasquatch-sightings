@@ -91,6 +91,30 @@ export type CreateAiStyleBookingFailure = {
 const REBECCA_RETELL_CHANNEL_LEAD_SOURCE = 'retell_rabecca'
 export const GOOGLE_LSA_LEAD_RECOVERY_AMOUNT = 40
 
+function formatLeadSourceForNotification(params: {
+  leadSource: string | null | undefined
+  leadSourceDetail: string | null | undefined
+}): string {
+  const source = String(params.leadSource || '').trim()
+  const detail = String(params.leadSourceDetail || '').trim()
+  if (!source) return 'Not captured'
+  return detail ? `${source} - ${detail}` : source
+}
+
+function formatBookingMethodForNotification(params: {
+  source: string | null | undefined
+  bookingChannel: string | null | undefined
+}): string {
+  const source = String(params.source || '').trim()
+  const channel = String(params.bookingChannel || '')
+    .trim()
+    .replace(/_/g, ' ')
+  if (source && channel && source.toLowerCase() !== channel.toLowerCase()) {
+    return `${source} (${channel})`
+  }
+  return source || channel || 'Unknown'
+}
+
 function normalizePartnerLookup(value: string): string {
   return value
     .toLowerCase()
@@ -430,6 +454,19 @@ export async function createAiStyleBooking(
   }
   const resolvedStaffUserId =
     input.assigned_staff_user_id || freeStaff.staffUserId
+  let technicianSchedule = 'Unassigned'
+  if (resolvedStaffUserId) {
+    const { data: staffUser, error: staffError } = await supabase
+      .from('staff_users')
+      .select('display_name')
+      .eq('id', resolvedStaffUserId)
+      .maybeSingle()
+
+    if (staffError) {
+      console.error('[createAiStyleBooking] staff lookup:', staffError)
+    }
+    technicianSchedule = staffUser?.display_name || 'Unassigned'
+  }
 
   const fullName = `${firstName} ${lastName}`.trim()
   let customerId: string
@@ -625,7 +662,15 @@ export async function createAiStyleBooking(
       appointmentDate,
       startTime: startTime.slice(0, 5),
       total,
-      leadSource: resolvedLeadSource.source.lead_source,
+      leadSource: formatLeadSourceForNotification({
+        leadSource: resolvedLeadSource.source.lead_source,
+        leadSourceDetail: resolvedLeadSource.source.lead_source_detail,
+      }),
+      bookingMethod: formatBookingMethodForNotification({
+        source: sourceLabel,
+        bookingChannel,
+      }),
+      technicianSchedule,
       services: lineItems.map((item) => item.name_snapshot),
     }),
   ])

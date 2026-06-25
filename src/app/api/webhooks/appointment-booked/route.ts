@@ -43,6 +43,30 @@ function htmlEscape(value: string): string {
     .replace(/>/g, '&gt;')
 }
 
+function formatLeadSource(params: {
+  leadSource: string | null | undefined
+  leadSourceDetail: string | null | undefined
+}): string {
+  const source = String(params.leadSource || '').trim()
+  const detail = String(params.leadSourceDetail || '').trim()
+  if (!source) return 'Not captured'
+  return detail ? `${source} - ${detail}` : source
+}
+
+function formatBookingMethod(params: {
+  source: string | null | undefined
+  bookingChannel: string | null | undefined
+}): string {
+  const source = String(params.source || '').trim()
+  const channel = String(params.bookingChannel || '')
+    .trim()
+    .replace(/_/g, ' ')
+  if (source && channel && source.toLowerCase() !== channel.toLowerCase()) {
+    return `${source} (${channel})`
+  }
+  return source || channel || 'Unknown'
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -74,6 +98,11 @@ export async function POST(request: NextRequest) {
           status,
           kind,
           quoted_total,
+          lead_source,
+          lead_source_detail,
+          booking_channel,
+          source,
+          assigned_staff_user_id,
           ops_customers!ops_appointments_customer_id_fkey (
             full_name,
             phone,
@@ -145,6 +174,27 @@ export async function POST(request: NextRequest) {
     const endTime = formatTime(appointment.end_time)
     const timeSlot = endTime ? `${startTime} - ${endTime}` : startTime
     const dateFormatted = formatDate(appointment.appointment_date)
+    const leadSource = formatLeadSource({
+      leadSource: appointment.lead_source,
+      leadSourceDetail: appointment.lead_source_detail,
+    })
+    const bookingMethod = formatBookingMethod({
+      source: appointment.source,
+      bookingChannel: appointment.booking_channel,
+    })
+    let technicianSchedule = 'Unassigned'
+    if (appointment.assigned_staff_user_id) {
+      const { data: staffUser, error: staffError } = await supabase
+        .from('staff_users')
+        .select('display_name')
+        .eq('id', appointment.assigned_staff_user_id)
+        .maybeSingle()
+
+      if (staffError) {
+        console.error('[appointment-booked] Staff lookup failed:', staffError)
+      }
+      technicianSchedule = staffUser?.display_name || 'Unassigned'
+    }
     const servicesList =
       lineItems.length > 0
         ? lineItems
@@ -163,6 +213,9 @@ export async function POST(request: NextRequest) {
     message += `📆 <b>${htmlEscape(dateFormatted)}</b>\n`
     message += `🕐 <b>${htmlEscape(timeSlot)}</b>\n`
     message += `💰 <b>Quoted:</b> ${htmlEscape(formatMoney(appointment.quoted_total))}\n\n`
+    message += `📍 <b>Lead source:</b> ${htmlEscape(leadSource)}\n`
+    message += `🧭 <b>Booking method:</b> ${htmlEscape(bookingMethod)}\n`
+    message += `🧰 <b>Technician schedule:</b> ${htmlEscape(technicianSchedule)}\n\n`
     message += `📋 <b>Line items:</b>\n${servicesList}\n\n`
     message += `👤 ${htmlEscape(customerName)}\n`
     message += `📱 ${htmlEscape(customerPhone)}\n`
