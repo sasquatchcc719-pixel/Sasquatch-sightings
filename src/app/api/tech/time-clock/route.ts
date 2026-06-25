@@ -4,6 +4,7 @@ import { mountainDateKey } from '@/lib/ops/timesheet-pay'
 import { createAdminClient } from '@/supabase/server'
 
 const DEFAULT_HOURLY_RATE = 22
+const RECENT_CLOCK_OUT_GRACE_MS = 90_000
 
 type ClockState = 'active' | 'on_break' | 'complete'
 
@@ -107,6 +108,25 @@ async function getActiveEntry(
   return data as TimesheetEntry | null
 }
 
+async function getLatestCompletedEntry(
+  supabase: ReturnType<typeof createAdminClient>,
+  staffUserId: string,
+) {
+  const { data, error } = await supabase
+    .from('ops_timesheet_entries')
+    .select(
+      'id, staff_user_id, work_date, started_at, ended_at, break_minutes, payable_minutes, hourly_rate, gross_pay, work_type, status, source, notes, clock_state, break_started_at',
+    )
+    .eq('staff_user_id', staffUserId)
+    .eq('clock_state', 'complete')
+    .order('ended_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) throw error
+  return data as TimesheetEntry | null
+}
+
 async function getHourlyRate(
   supabase: ReturnType<typeof createAdminClient>,
   staffUserId: string,
@@ -154,6 +174,26 @@ export async function POST(request: NextRequest) {
 
     if (action === 'clock_in') {
       if (activeEntry) return jsonError('Already clocked in', 409)
+
+      const latestCompletedEntry = await getLatestCompletedEntry(
+        supabase,
+        access.staff.id,
+      )
+      const latestEndedAtMs = latestCompletedEntry
+        ? new Date(latestCompletedEntry.ended_at).getTime()
+        : null
+
+      if (
+        latestEndedAtMs !== null &&
+        Number.isFinite(latestEndedAtMs) &&
+        now.getTime() - latestEndedAtMs >= 0 &&
+        now.getTime() - latestEndedAtMs < RECENT_CLOCK_OUT_GRACE_MS
+      ) {
+        return jsonError(
+          'You just clocked out. Wait a minute before clocking in again.',
+          409,
+        )
+      }
 
       const hourlyRate = await getHourlyRate(supabase, access.staff.id)
       const { data, error } = await supabase

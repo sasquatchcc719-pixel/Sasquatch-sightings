@@ -29,6 +29,9 @@ export function TechClockControl() {
   const [loading, setLoading] = useState<string | null>('status')
   const [error, setError] = useState<string | null>(null)
   const [confirmOut, setConfirmOut] = useState(false)
+  const [clockInBlockedUntil, setClockInBlockedUntil] = useState<number | null>(
+    null,
+  )
 
   useEffect(() => {
     let alive = true
@@ -80,6 +83,9 @@ export function TechClockControl() {
       const payload = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(payload.error || 'Unable to update clock')
       setEntry(payload.entry?.clockState === 'complete' ? null : payload.entry)
+      if (action === 'clock_out') {
+        setClockInBlockedUntil(Date.now() + 5000)
+      }
       setConfirmOut(false)
     } catch (actionError) {
       setError(
@@ -103,6 +109,8 @@ export function TechClockControl() {
 
   const isClocked = Boolean(entry)
   const isOnBreak = entry?.clockState === 'on_break'
+  const isClockInBlocked =
+    !isClocked && clockInBlockedUntil !== null && nowMs < clockInBlockedUntil
 
   return (
     <div className="fixed right-0 bottom-0 left-0 z-[220] border-t border-white/10 bg-slate-950/95 px-4 py-3 backdrop-blur">
@@ -147,7 +155,7 @@ export function TechClockControl() {
 
         <button
           type="button"
-          disabled={loading !== null}
+          disabled={loading !== null || isClockInBlocked}
           onClick={() =>
             isClocked ? void handleClockOut() : void runAction('clock_in')
           }
@@ -168,9 +176,11 @@ export function TechClockControl() {
             ? 'Saving...'
             : confirmOut
               ? 'Confirm'
-              : isClocked
-                ? 'Clock Out'
-                : 'Clock In'}
+              : isClockInBlocked
+                ? 'Clocked Out'
+                : isClocked
+                  ? 'Clock Out'
+                  : 'Clock In'}
         </button>
       </div>
       {error ? (
