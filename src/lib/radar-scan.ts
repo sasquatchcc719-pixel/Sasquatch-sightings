@@ -144,8 +144,8 @@ export async function runRadarScan(): Promise<RadarScanResult> {
   }
 }
 
-function normDomain(d: string): string {
-  return d
+function normDomain(d: string | null | undefined): string {
+  return (d ?? '')
     .toLowerCase()
     .replace(/^https?:\/\//, '')
     .replace(/^www\./, '')
@@ -163,9 +163,11 @@ export async function buildRadarDigest(): Promise<string | null> {
   const { data: domains } = await supabase
     .from('radar_domains')
     .select('domain, is_my_domain')
-  const mine = domains?.find((d) => d.is_my_domain)
-  if (!mine) return null
-  const myCore = normDomain(mine.domain)
+  const myCores = (domains ?? [])
+    .filter((d) => d.is_my_domain)
+    .map((d) => normDomain(d.domain))
+    .filter(Boolean)
+  if (myCores.length === 0) return null
 
   const { data: keywords } = await supabase
     .from('radar_keywords')
@@ -196,7 +198,10 @@ export async function buildRadarDigest(): Promise<string | null> {
     const rankIn = (ts?: string): number | null => {
       if (!ts) return null
       const r = rows.find(
-        (x) => x.created_at === ts && normDomain(x.domain).includes(myCore),
+        (x) =>
+          x.created_at === ts &&
+          x.domain &&
+          myCores.some((c) => normDomain(x.domain).includes(c)),
       )
       return r ? r.position : null
     }
