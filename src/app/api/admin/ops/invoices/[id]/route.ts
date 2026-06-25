@@ -5,7 +5,6 @@ import { createAdminClient } from '@/supabase/server'
 import { assertTechInvoiceAccess } from '@/lib/ops/tech-job-access'
 import {
   voidQBInvoice,
-  createQBPayment,
   resyncInvoiceToQuickBooks,
   syncAppointmentToQuickBooks,
 } from '@/lib/quickbooks-api'
@@ -409,46 +408,11 @@ export async function PATCH(
     const isBeingMarkedPaid =
       body.status === 'paid' && current.status !== 'paid'
     const method = body.payment_method || current.payment_method
-    const isNonCardPayment = method && method !== 'card'
-    const shouldRecordQbPayment =
-      isBeingMarkedPaid &&
-      isNonCardPayment &&
-      current.quickbooks_invoice_id &&
-      method !== 'cash'
 
-    if (shouldRecordQbPayment) {
-      try {
-        const { data: apptData } = await supabase
-          .from('ops_appointments')
-          .select('customer_id')
-          .eq('id', current.appointment_id)
-          .single()
-
-        let qbCustId: string | null = null
-        if (apptData?.customer_id) {
-          const { data: custData } = await supabase
-            .from('ops_customers')
-            .select('quickbooks_customer_id')
-            .eq('id', apptData.customer_id)
-            .single()
-          qbCustId = custData?.quickbooks_customer_id ?? null
-        }
-
-        if (qbCustId) {
-          await createQBPayment({
-            qbCustomerId: qbCustId,
-            qbInvoiceId: current.quickbooks_invoice_id,
-            amount: total,
-            paymentMethod: method as string,
-          })
-        }
-      } catch (qbErr) {
-        console.error(
-          '[ops/invoices/:id][PATCH] QB payment record failed:',
-          qbErr,
-        )
-      }
-    }
+    // NOTE: Marking an invoice paid in the app no longer records a payment in
+    // QuickBooks. The payment-method selection is an internal record only;
+    // invoices stay open/unpaid in QB so Charles reconciles payments there.
+    // (Cash is still handled separately below — it's kept out of QB entirely.)
 
     // Cash stays in-app only: remove any QuickBooks invoice/payment linkage.
     if (
