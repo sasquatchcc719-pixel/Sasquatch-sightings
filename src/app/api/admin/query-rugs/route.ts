@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server'
+import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 
 export async function GET() {
   try {
+    await requireAnyRole(['admin', 'owner', 'dispatcher', 'marketing', 'tech'])
+
     const supabase = createAdminClient()
 
     const { data, error } = await supabase
