@@ -17,6 +17,57 @@ function unwrap<T>(value: T | T[] | null | undefined): T | null {
   return Array.isArray(value) ? (value[0] ?? null) : (value ?? null)
 }
 
+type ApprovedTimesheetEndMap = Map<string, string>
+
+function approvedTimesheetEndKey(staffUserId: string, workDate: string) {
+  return `${staffUserId}:${workDate}`
+}
+
+function capToApprovedTimesheetEnd(
+  completedAt: string | null | undefined,
+  approvedTimesheetEnd: string | null | undefined,
+): string | null | undefined {
+  if (!completedAt || !approvedTimesheetEnd) return completedAt
+  return new Date(approvedTimesheetEnd).getTime() <
+    new Date(completedAt).getTime()
+    ? approvedTimesheetEnd
+    : completedAt
+}
+
+async function loadApprovedTimesheetEnds(
+  supabase: ReturnType<typeof createAdminClient>,
+  staffIds: string[],
+  startDate: string,
+  endDate: string,
+): Promise<ApprovedTimesheetEndMap> {
+  const ends: ApprovedTimesheetEndMap = new Map()
+  if (staffIds.length === 0) return ends
+
+  const { data, error } = await supabase
+    .from('ops_timesheet_entries')
+    .select('staff_user_id, work_date, ended_at')
+    .in('staff_user_id', staffIds)
+    .gte('work_date', startDate)
+    .lte('work_date', endDate)
+    .eq('clock_state', 'complete')
+    .not('ended_at', 'is', null)
+
+  if (error) throw error
+
+  for (const entry of data || []) {
+    const key = approvedTimesheetEndKey(entry.staff_user_id, entry.work_date)
+    const existing = ends.get(key)
+    if (
+      !existing ||
+      new Date(entry.ended_at).getTime() > new Date(existing).getTime()
+    ) {
+      ends.set(key, entry.ended_at)
+    }
+  }
+
+  return ends
+}
+
 type QualifyingJob = {
   appointmentId: string
   workDate: string
@@ -77,6 +128,12 @@ async function findQualifyingJobs(
       staffById.set(s.id, { display_name: s.display_name, role: s.role })
     }
   }
+  const approvedEnds = await loadApprovedTimesheetEnds(
+    supabase,
+    staffIds as string[],
+    startDate,
+    endDate,
+  )
 
   const jobs: QualifyingJob[] = []
   for (const row of rows) {
@@ -87,19 +144,26 @@ async function findQualifyingJobs(
     // Premium is for the field tech, never the owner doing the job himself.
     if (!staff || staff.role !== 'tech') continue
 
+    const workDate = mountainDateKey(row.job_started_at as string)
+    const effectiveCompletedAt = capToApprovedTimesheetEnd(
+      row.completed_at,
+      approvedEnds.get(
+        approvedTimesheetEndKey(row.assigned_staff_user_id as string, workDate),
+      ),
+    )
     const minutes = computeAfterHoursMinutes(
       row.job_started_at,
-      row.completed_at,
+      effectiveCompletedAt,
     )
     if (minutes <= 0) continue
 
     jobs.push({
       appointmentId: row.id,
-      workDate: mountainDateKey(row.job_started_at as string),
+      workDate,
       staffUserId: row.assigned_staff_user_id as string,
       staffName: staff.display_name,
       jobStartedAt: row.job_started_at as string,
-      completedAt: row.completed_at as string,
+      completedAt: effectiveCompletedAt as string,
       customerName:
         customer?.business_name?.trim() ||
         customer?.full_name ||
@@ -159,6 +223,7 @@ export async function GET(request: NextRequest) {
         status: applied?.status ?? null,
         // Show the snapshotted pay once applied, the live computation otherwise.
         appliedPay: applied?.premium_pay ?? null,
+        appliedMinutes: applied?.premium_minutes ?? null,
       }
     })
 
@@ -221,9 +286,22 @@ export async function POST(request: NextRequest) {
     if (!staff || staff.role !== 'tech') {
       return jsonError('Premium applies only to field techs', 400)
     }
+    const workDate = mountainDateKey(appt.job_started_at as string)
+    const approvedEnds = await loadApprovedTimesheetEnds(
+      supabase,
+      [appt.assigned_staff_user_id],
+      workDate,
+      workDate,
+    )
+    const effectiveCompletedAt = capToApprovedTimesheetEnd(
+      appt.completed_at,
+      approvedEnds.get(
+        approvedTimesheetEndKey(appt.assigned_staff_user_id, workDate),
+      ),
+    )
     const minutes = computeAfterHoursMinutes(
       appt.job_started_at,
-      appt.completed_at,
+      effectiveCompletedAt,
     )
     if (minutes <= 0) {
       return jsonError('Job has no worked time after 5pm', 400)
@@ -235,7 +313,7 @@ export async function POST(request: NextRequest) {
         {
           appointment_id: appointmentId,
           staff_user_id: appt.assigned_staff_user_id,
-          work_date: mountainDateKey(appt.job_started_at as string),
+          work_date: workDate,
           premium_minutes: minutes,
           premium_rate: AFTER_HOURS_PREMIUM_RATE,
           status: 'approved',
@@ -254,6 +332,45 @@ export async function POST(request: NextRequest) {
     const status =
       error instanceof Error && error.message === 'Not authorized' ? 401 : 500
     return jsonError('Failed to apply premium', status)
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    await requireAnyRole(['admin', 'owner'])
+    const supabase = createAdminClient()
+    const body = await request.json().catch(() => ({}))
+    const id = String(body.id || '')
+    const minutes = Number(body.premiumMinutes)
+
+    if (!id) return jsonError('id is required', 400)
+    if (!Number.isInteger(minutes) || minutes < 0 || minutes > 1440) {
+      return jsonError(
+        'premiumMinutes must be a whole number from 0 to 1440',
+        400,
+      )
+    }
+
+    const { data: premium, error } = await supabase
+      .from('ops_after_hours_premiums')
+      .update({
+        premium_minutes: minutes,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .neq('status', 'paid')
+      .select()
+      .maybeSingle()
+
+    if (error) throw error
+    if (!premium) return jsonError('Editable premium was not found', 404)
+
+    return NextResponse.json({ premium })
+  } catch (error) {
+    console.error('[payroll/after-hours-premiums][PATCH]', error)
+    const status =
+      error instanceof Error && error.message === 'Not authorized' ? 401 : 500
+    return jsonError('Failed to update premium', status)
   }
 }
 

@@ -147,6 +147,7 @@ type PremiumRow = {
   premiumId: string | null
   status: string | null
   appliedPay: number | null
+  appliedMinutes: number | null
 }
 
 async function fetchPremiums(
@@ -174,6 +175,9 @@ export function PayrollTimesheetsView() {
   const [newWorkerName, setNewWorkerName] = useState('')
   const [message, setMessage] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+  const [premiumMinutesDraft, setPremiumMinutesDraft] = useState<
+    Record<string, string>
+  >({})
   const payPeriod = useMemo(
     () => getSemiMonthlyPayPeriod(periodAnchor),
     [periodAnchor],
@@ -339,6 +343,36 @@ export function PayrollTimesheetsView() {
     } catch (error) {
       setMessage(
         error instanceof Error ? error.message : 'Failed to remove premium',
+      )
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  async function updatePremium(premiumId: string, currentMinutes: number) {
+    const premiumMinutes = Number(
+      premiumMinutesDraft[premiumId] ?? String(currentMinutes),
+    )
+    if (!Number.isInteger(premiumMinutes) || premiumMinutes < 0) {
+      setMessage('Premium minutes must be a whole number.')
+      return
+    }
+
+    setIsSaving(true)
+    setMessage(null)
+    try {
+      const res = await fetch('/api/admin/ops/payroll/after-hours-premiums', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: premiumId, premiumMinutes }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Failed to update premium')
+      await premiumsQuery.refetch()
+      setMessage('After-hours premium updated.')
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : 'Failed to update premium',
       )
     } finally {
       setIsSaving(false)
@@ -867,21 +901,61 @@ export function PayrollTimesheetsView() {
                   </p>
                 </div>
                 {premium.applied ? (
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
                     <span className="rounded-full bg-emerald-400/15 px-2 py-0.5 text-xs font-medium text-emerald-200">
                       {premium.status === 'paid' ? 'Paid' : 'Applied'}
                     </span>
                     {premium.status !== 'paid' && premium.premiumId && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          removePremium(premium.premiumId as string)
-                        }
-                        disabled={isSaving}
-                        className="text-xs text-slate-400 hover:text-white disabled:opacity-50"
-                      >
-                        Remove
-                      </button>
+                      <>
+                        <label className="flex items-center gap-2 text-xs text-slate-300">
+                          Minutes
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={
+                              premiumMinutesDraft[premium.premiumId] ??
+                              String(premium.appliedMinutes ?? premium.minutes)
+                            }
+                            onChange={(event) =>
+                              setPremiumMinutesDraft((current) => ({
+                                ...current,
+                                [premium.premiumId as string]:
+                                  event.target.value,
+                              }))
+                            }
+                            className="w-20 rounded-lg border border-white/10 bg-slate-950/50 px-2 py-1 text-xs text-white"
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updatePremium(
+                              premium.premiumId as string,
+                              premium.appliedMinutes ?? premium.minutes,
+                            )
+                          }
+                          disabled={isSaving}
+                          className="text-xs text-emerald-200 hover:text-white disabled:opacity-50"
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            removePremium(premium.premiumId as string)
+                          }
+                          disabled={isSaving}
+                          className="text-xs text-slate-400 hover:text-white disabled:opacity-50"
+                        >
+                          Remove
+                        </button>
+                      </>
+                    )}
+                    {premium.status === 'paid' && (
+                      <span className="text-xs text-slate-400">
+                        {fmtMin(premium.appliedMinutes ?? premium.minutes)}
+                      </span>
                     )}
                   </div>
                 ) : (
