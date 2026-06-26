@@ -106,13 +106,9 @@ export async function getUserWithRole(): Promise<{
     }
   }
 
-  // No staff or partner record - legacy admin fallback
-  // Tech users are explicitly added to staff_users so they will never hit
-  // this fallback. Only true admin/owner accounts without a staff_users
-  // record will land here.
   return {
     user: { id: user.id, email: user.email || '' },
-    role: 'admin',
+    role: null,
     partner: null,
     staff: null,
   }
