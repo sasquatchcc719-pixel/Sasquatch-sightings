@@ -62,7 +62,13 @@ export async function POST(
 
     const cents = Math.round(invoice.total * 100)
     const origin = request.nextUrl.origin
-    const callbackUrl = `${origin}/api/tech/appointments/${id}/square-pos-return?return_to=${encodeURIComponent(returnTo)}`
+    // Square matches this callback_url against the EXACT URL registered in the
+    // Developer Console — no wildcards, no dynamic path, and no extra query
+    // string. So the callback is the bare registered path, and the per-job data
+    // (appointment id + where to return the tech) rides in Square's `state`
+    // field, which Square round-trips back to us untouched.
+    const callbackUrl = `${origin}/api/tech/square-pos-return`
+    const state = JSON.stringify({ a: id, r: returnTo })
     const platform = detectMobilePlatform(request.headers.get('user-agent'))
 
     const url = buildSquarePosUrl({
@@ -74,7 +80,7 @@ export async function POST(
       note: invoice.invoiceNumber
         ? `Invoice #${invoice.invoiceNumber}`
         : `Job ${id}`,
-      state: id,
+      state,
     })
 
     return NextResponse.json({ url, platform, amount: invoice.total })
