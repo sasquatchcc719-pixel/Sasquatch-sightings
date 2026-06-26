@@ -5,22 +5,16 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, createAdminClient } from '@/supabase/server'
+import { requireAnyRole } from '@/lib/auth'
+import { createAdminClient } from '@/supabase/server'
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    // Check authentication
-    const supabase = await createClient()
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    await requireAnyRole(['admin', 'owner'])
+    const supabase = createAdminClient()
 
     const { id } = await params
 
@@ -28,7 +22,7 @@ export async function DELETE(
     if (!id) {
       return NextResponse.json(
         { error: 'Sighting ID is required' },
-        { status: 400 }
+        { status: 400 },
       )
     }
 
@@ -41,10 +35,7 @@ export async function DELETE(
 
     if (fetchError || !sighting) {
       console.error('Sighting fetch error:', fetchError)
-      return NextResponse.json(
-        { error: 'Sighting not found' },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: 'Sighting not found' }, { status: 404 })
     }
 
     // Delete the image from storage first
@@ -52,7 +43,7 @@ export async function DELETE(
       // Extract filename from URL (format: .../storage/v1/object/public/sighting-images/filename.jpg)
       const urlParts = sighting.image_url.split('/')
       const filename = urlParts[urlParts.length - 1]
-      
+
       if (filename) {
         const { error: storageError } = await supabase.storage
           .from('sighting-images')
@@ -76,7 +67,7 @@ export async function DELETE(
       console.error('Database deletion error:', deleteError)
       return NextResponse.json(
         { error: 'Failed to delete sighting' },
-        { status: 500 }
+        { status: 500 },
       )
     }
 
@@ -86,13 +77,13 @@ export async function DELETE(
         success: true,
         message: 'Sighting, associated lead, and image deleted successfully',
       },
-      { status: 200 }
+      { status: 200 },
     )
   } catch (error) {
     console.error('Delete API error:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }
