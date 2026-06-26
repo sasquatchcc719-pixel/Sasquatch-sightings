@@ -48,7 +48,10 @@ async function findQualifyingJobs(
         job_started_at,
         completed_at,
         assigned_staff_user_id,
-        ops_customers ( business_name, full_name )
+        ops_customers!ops_appointments_customer_id_fkey (
+          business_name,
+          full_name
+        )
       `,
     )
     .eq('status', 'completed')
@@ -191,7 +194,7 @@ export async function POST(request: NextRequest) {
         `
           id, appointment_date, status, job_started_at, completed_at,
           assigned_staff_user_id,
-          ops_customers ( business_name )
+          ops_customers!ops_appointments_customer_id_fkey ( business_name )
         `,
       )
       .eq('id', appointmentId)

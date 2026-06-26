@@ -824,7 +824,14 @@ export function PayrollTimesheetsView() {
         </div>
       )}
 
-      {premiums.length > 0 && (
+      {premiumsQuery.isError && (
+        <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+          Recovery Village premium check failed. Refresh payroll after the issue
+          is fixed so after-hours bonuses can be reviewed.
+        </div>
+      )}
+
+      {!premiumsQuery.isError && premiums.length > 0 && (
         <div className="overflow-hidden rounded-2xl border border-emerald-400/25 bg-emerald-500/5">
           <div className="border-b border-white/10 bg-slate-900/70 px-4 py-3">
             <h3 className="font-semibold text-white">
