@@ -220,12 +220,17 @@ async function generateAndUploadImage(
 
 export async function GET(request: NextRequest) {
   try {
-    // Optional secret to prevent random people from triggering image generation
-    const secret = request.nextUrl.searchParams.get('secret')
-    if (
-      process.env.PROMOTIONAL_FEED_SECRET &&
-      secret !== process.env.PROMOTIONAL_FEED_SECRET
-    ) {
+    const promotionalFeedSecret = process.env.PROMOTIONAL_FEED_SECRET?.trim()
+    if (!promotionalFeedSecret) {
+      console.error('Promotional posts feed is missing PROMOTIONAL_FEED_SECRET')
+      return NextResponse.json(
+        { error: 'Promotional feed is not configured' },
+        { status: 503 },
+      )
+    }
+
+    const secret = request.nextUrl.searchParams.get('secret')?.trim()
+    if (secret !== promotionalFeedSecret) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
