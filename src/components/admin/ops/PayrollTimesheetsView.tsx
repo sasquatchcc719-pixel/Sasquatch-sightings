@@ -243,6 +243,16 @@ export function PayrollTimesheetsView() {
     [premiums],
   )
 
+  const premiumByDayAndStaff = useMemo(() => {
+    const map = new Map<string, PremiumRow>()
+    for (const p of premiums) {
+      if (p.applied) {
+        map.set(`${p.staffUserId}::${p.workDate}`, p)
+      }
+    }
+    return map
+  }, [premiums])
+
   const totalsByStaff = useMemo(() => {
     const totals = new Map<
       string,
@@ -1051,23 +1061,45 @@ export function PayrollTimesheetsView() {
 
                   <div className="flex items-center gap-3">
                     <div className="text-right">
-                      <p className="font-mono text-lg font-semibold text-emerald-300">
-                        {entry.hourlyRate > 0
-                          ? fmtMoney(entry.grossPay)
-                          : 'Rate needed'}
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        {fmtMin(entry.payableMinutes)}
-                        {entry.hourlyRate > 0
-                          ? ` at ${fmtMoney(entry.hourlyRate)}/hr`
-                          : ''}
-                      </p>
-                      <p className="text-xs text-slate-500 capitalize">
-                        {entry.workType} ·{' '}
-                        {entry.clockState === 'complete'
-                          ? entry.status
-                          : entry.clockState.replace('_', ' ')}
-                      </p>
+                      {(() => {
+                        const premium = premiumByDayAndStaff.get(
+                          `${entry.staffUserId}::${entry.workDate}`,
+                        )
+                        const premiumPay = premium
+                          ? Number(premium.appliedPay ?? premium.premiumPay)
+                          : 0
+                        return (
+                          <>
+                            <p className="font-mono text-lg font-semibold text-emerald-300">
+                              {entry.hourlyRate > 0
+                                ? fmtMoney(entry.grossPay + premiumPay)
+                                : 'Rate needed'}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              {fmtMin(entry.payableMinutes)}
+                              {entry.hourlyRate > 0
+                                ? ` at ${fmtMoney(entry.hourlyRate)}/hr`
+                                : ''}
+                            </p>
+                            {premium && (
+                              <p className="text-xs text-emerald-300/80">
+                                {fmtMoney(entry.grossPay)} base +{' '}
+                                {fmtMoney(premiumPay)} after-hrs (
+                                {fmtMin(
+                                  premium.appliedMinutes ?? premium.minutes,
+                                )}{' '}
+                                × ${premium.premiumRate})
+                              </p>
+                            )}
+                            <p className="text-xs text-slate-500 capitalize">
+                              {entry.workType} ·{' '}
+                              {entry.clockState === 'complete'
+                                ? entry.status
+                                : entry.clockState.replace('_', ' ')}
+                            </p>
+                          </>
+                        )
+                      })()}
                     </div>
 
                     <select
