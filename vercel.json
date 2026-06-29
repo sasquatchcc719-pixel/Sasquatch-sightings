@@ -61,6 +61,10 @@
       "schedule": "0 14 * * 1"
     },
     {
+      "path": "/api/cron/gsc-opportunities",
+      "schedule": "0 15 1 * *"
+    },
+    {
       "path": "/api/cron/promo-repost",
       "schedule": "0 15 * * 1"
     }

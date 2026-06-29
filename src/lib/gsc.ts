@@ -100,6 +100,48 @@ export async function queryTotals(
   }
 }
 
+export type GscKeywordRow = {
+  keyword: string
+  page: string
+  clicks: number
+  impressions: number
+  ctr: number
+  position: number
+}
+
+/**
+ * Per-keyword, per-page search analytics (the data the page-2 opportunity
+ * report runs on). Returns every query+page pair with its average position,
+ * impressions, clicks and CTR over the window.
+ */
+export async function queryKeywordRows(
+  sc: searchconsole_v1.Searchconsole,
+  property: string,
+  startDaysAgo: number,
+  endDaysAgo: number,
+  rowLimit = 5000,
+): Promise<GscKeywordRow[]> {
+  const day = (d: number) =>
+    new Date(Date.now() - d * 86_400_000).toISOString().slice(0, 10)
+  const { data } = await sc.searchanalytics.query({
+    siteUrl: property,
+    requestBody: {
+      startDate: day(startDaysAgo),
+      endDate: day(endDaysAgo),
+      dimensions: ['query', 'page'],
+      rowLimit,
+    },
+  })
+  return (data.rows || []).map((r) => ({
+    keyword: r.keys?.[0] ?? '',
+    page: r.keys?.[1] ?? '',
+    clicks: Number(r.clicks || 0),
+    impressions: Number(r.impressions || 0),
+    ctr: Number(r.ctr || 0),
+    position: Number(r.position || 0),
+  }))
+}
+
 /** Extract <loc> URLs from a live sitemap XML. */
 export async function fetchSitemapUrls(sitemapUrl: string): Promise<string[]> {
   const res = await fetch(sitemapUrl, { next: { revalidate: 0 } })
