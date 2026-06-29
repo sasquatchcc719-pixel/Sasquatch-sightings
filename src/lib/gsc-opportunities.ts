@@ -139,14 +139,21 @@ ${it.text || '(could not read page content)'}`,
     )
     .join('\n\n---\n\n')
 
-  const prompt = `You are an SEO content strategist for Sasquatch Carpet Cleaning, a local carpet/upholstery/tile cleaning company serving Monument, Palmer Lake, Castle Rock, Colorado Springs, Black Forest, Woodmoor, Gleneagle, and Larkspur, Colorado.
+  const prompt = `You are an SEO content strategist for Sasquatch Carpet Cleaning, a PREMIUM carpet/upholstery/tile-&-grout cleaning company serving Monument, Palmer Lake, Castle Rock, Colorado Springs, Black Forest, Woodmoor, Gleneagle, and Larkspur, Colorado. Sasquatch competes on QUALITY and expertise, NOT on price.
 
-Each item below is a keyword where our page is stuck on page 2 of Google (positions 8-20). For each one, look at what the page ACTUALLY says and identify the specific, concrete content gap keeping it off page 1 — then say exactly what to add or change.
+Each item below is a keyword where our page is stuck on page 2 of Google (positions 8-20). For each one, look at what the page ACTUALLY says and recommend a specific WORDING / CONTENT change that would better match the keyword's intent and push the page onto page 1.
 
-Rules:
-- Be specific and actionable. "Add an upholstery section with pricing and 2 photos" — NOT "improve content".
-- Ground every recommendation in what the current page is missing relative to the keyword's intent. Do not invent prices, phone numbers, or facts.
-- If the keyword intent doesn't truly match the page (e.g. wrong service or wrong city), say so plainly and recommend skipping rather than forcing it.
+Recommend content gaps around things like:
+- The service explained in depth (process, method, what makes the result better, what surfaces/fabrics/situations are handled)
+- Proof and trust (before/after results, reviews, guarantees, owner-on-site, equipment)
+- Local relevance (genuine specifics about the city/area, the kinds of homes or jobs there)
+- Better headings, intro wording, and on-page phrasing that naturally include the keyword's intent
+
+HARD RULES — follow exactly:
+- NEVER mention price, pricing, cost, rates, "$", "starting at", price tables, or anything about money. Price is irrelevant to these recommendations. Do not recommend adding, removing, or changing any pricing content under any circumstances.
+- Be specific and actionable. "Add a tile & grout section describing your process and 2 before/after photos" — NOT "improve content".
+- Do not invent facts, phone numbers, or claims.
+- If the keyword is a bargain/price-shopper search (e.g. contains "cheap", "cost", "price", "affordable") or its intent does not match the page (wrong service or wrong city), recommend SKIPPING it and briefly say why — do not force a change.
 - Keep each recommendation to 1-2 sentences.
 
 Items:
