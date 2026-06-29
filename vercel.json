@@ -65,6 +65,10 @@
       "schedule": "0 15 1 * *"
     },
     {
+      "path": "/api/cron/gsc-index-sweep",
+      "schedule": "0 16 * * 4"
+    },
+    {
       "path": "/api/cron/promo-repost",
       "schedule": "0 15 * * 1"
     }
