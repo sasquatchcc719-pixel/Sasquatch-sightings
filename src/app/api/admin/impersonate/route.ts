@@ -6,11 +6,18 @@ export async function POST(request: NextRequest) {
   try {
     await requireAnyRole(['admin', 'owner'])
     const supabase = createAdminClient()
-    const { userId } = (await request.json()) as { userId?: string }
+    const { userId, portal } = (await request.json()) as {
+      userId?: string
+      portal?: 'tech' | 'client'
+    }
 
     if (!userId) {
       return NextResponse.json({ error: 'userId required' }, { status: 400 })
     }
+
+    // Whitelist the landing route — never accept an arbitrary redirect target.
+    const previewPath =
+      portal === 'client' ? '/client-preview' : '/tech-preview'
 
     const { data: authUser, error: userError } =
       await supabase.auth.admin.getUserById(userId)
@@ -26,7 +33,7 @@ export async function POST(request: NextRequest) {
         type: 'magiclink',
         email: authUser.user.email,
         options: {
-          redirectTo: 'https://sightings.sasquatchcarpet.com/tech-preview',
+          redirectTo: `https://sightings.sasquatchcarpet.com${previewPath}`,
         },
       })
     if (linkError || !linkData?.properties?.action_link) {

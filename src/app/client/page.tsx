@@ -1,0 +1,33 @@
+import { getUserWithRole } from '@/lib/auth'
+import { createAdminClient, createClient } from '@/supabase/server'
+import { loadClientPortalData } from '@/lib/ops/client-portal'
+import { ClientPortal } from '@/components/client/client-portal'
+import { redirect } from 'next/navigation'
+
+export default async function ClientPortalPage() {
+  const { user, role, client } = await getUserWithRole()
+  if (!user || role !== 'client_manager' || !client) {
+    redirect('/redirect')
+  }
+
+  const admin = createAdminClient()
+  const data = await loadClientPortalData(admin, client.customer_id)
+
+  // Read the temporary-password flag from the session user's metadata.
+  const sb = await createClient()
+  const {
+    data: { user: authUser },
+  } = await sb.auth.getUser()
+  const mustChangePassword = Boolean(
+    authUser?.app_metadata?.must_change_password,
+  )
+
+  return (
+    <ClientPortal
+      businessName="Recovery Village"
+      managerName={client.display_name}
+      initialData={data}
+      mustChangePassword={mustChangePassword}
+    />
+  )
+}

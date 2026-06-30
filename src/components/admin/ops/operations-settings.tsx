@@ -265,6 +265,107 @@ function StaffPhotoCard() {
   )
 }
 
+type ClientPortalUser = {
+  id: string
+  user_id: string | null
+  display_name: string
+  email: string
+  customer_label: string
+}
+
+function ClientPortalAccessCard() {
+  const [clients, setClients] = useState<ClientPortalUser[]>([])
+  const [opening, setOpening] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/admin/ops/client-users')
+      .then((r) => r.json())
+      .then((data: { clients?: ClientPortalUser[] }) =>
+        setClients(data.clients || []),
+      )
+      .catch(() => setError('Failed to load client users'))
+      .finally(() => setLoaded(true))
+  }, [])
+
+  async function openPortalAs(member: ClientPortalUser) {
+    if (!member.user_id) return
+    const portalWindow = window.open('', '_blank')
+    if (!portalWindow) {
+      setError('Popup blocked. Allow popups, then try again.')
+      return
+    }
+    portalWindow.document.write(
+      '<!doctype html><title>Opening client portal</title><body style="margin:0;background:#020617;color:#cbd5e1;font-family:system-ui;display:grid;min-height:100vh;place-items:center"><p>Opening client portal...</p></body>',
+    )
+    setOpening(member.id)
+    try {
+      const res = await fetch('/api/admin/impersonate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: member.user_id, portal: 'client' }),
+      })
+      const data = (await res.json()) as { url?: string; error?: string }
+      if (!res.ok || !data.url) throw new Error(data.error || 'Failed')
+      portalWindow.location.href = data.url
+    } catch (err) {
+      portalWindow.close()
+      setError(err instanceof Error ? err.message : 'Failed to open portal')
+    } finally {
+      setOpening(null)
+    }
+  }
+
+  // Hide the card when there are no client-portal users yet.
+  if (loaded && clients.length === 0 && !error) return null
+
+  return (
+    <Card className="border-border/60 bg-card/80 p-6 shadow-sm backdrop-blur">
+      <h3 className="text-lg font-semibold">Client Portal Access</h3>
+      <p className="text-muted-foreground mt-1 text-sm">
+        Commercial contacts with a scoped login. Open their portal to see
+        exactly what they see (preview for maintenance).
+      </p>
+      {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
+      <div className="mt-4 flex flex-col gap-3">
+        {clients.map((member) => (
+          <div key={member.id} className="flex items-center gap-4">
+            <div className="border-border/60 bg-muted flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border">
+              <User className="text-muted-foreground h-6 w-6" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="font-medium">{member.display_name}</p>
+              <p className="text-muted-foreground truncate text-sm">
+                {member.customer_label
+                  ? `${member.customer_label} · ${member.email}`
+                  : member.email}
+              </p>
+            </div>
+            {member.user_id && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={opening === member.id}
+                onClick={() => void openPortalAs(member)}
+                title="Open client portal as this user"
+              >
+                {opening === member.id ? (
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <LogIn className="mr-1.5 h-3.5 w-3.5" />
+                )}
+                Open portal
+              </Button>
+            )}
+          </div>
+        ))}
+        {!loaded && <p className="text-muted-foreground text-sm">Loading…</p>}
+      </div>
+    </Card>
+  )
+}
+
 function ChannelSwitch({
   label,
   enabled,
@@ -463,6 +564,8 @@ export function OperationsSettings() {
       </Card>
 
       <StaffPhotoCard />
+
+      <ClientPortalAccessCard />
 
       <Card className="border-border/60 bg-card/80 p-6 shadow-sm backdrop-blur">
         <h3 className="text-lg font-semibold">AI Agent Booking API</h3>

@@ -40,5 +40,16 @@ export default async function RedirectPage() {
     redirect('/partners')
   }
 
+  const { data: clientUser } = await admin
+    .from('ops_client_users')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('is_active', true)
+    .maybeSingle()
+
+  if (clientUser) {
+    redirect('/client')
+  }
+
   redirect('/admin')
 }

@@ -2,7 +2,7 @@ import { createAdminClient, createClient } from '@/supabase/server'
 
 export const STAFF_ROLES = ['owner', 'dispatcher', 'tech', 'marketing'] as const
 export type StaffRole = (typeof STAFF_ROLES)[number]
-export type UserRole = 'admin' | 'partner' | StaffRole | null
+export type UserRole = 'admin' | 'partner' | 'client_manager' | StaffRole | null
 
 export type PartnerData = {
   id: string
@@ -25,6 +25,17 @@ export type StaffUserData = {
   user_id: string | null
   display_name: string
   role: StaffRole
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type ClientUserData = {
+  id: string
+  user_id: string
+  customer_id: string
+  display_name: string
+  email: string
   is_active: boolean
   created_at: string
   updated_at: string
@@ -56,6 +67,7 @@ export async function getUserWithRole(): Promise<{
   role: UserRole
   partner: PartnerData | null
   staff: StaffUserData | null
+  client: ClientUserData | null
 }> {
   const supabase = await createClient()
 
@@ -64,7 +76,7 @@ export async function getUserWithRole(): Promise<{
   } = await supabase.auth.getUser()
 
   if (!user) {
-    return { user: null, role: null, partner: null, staff: null }
+    return { user: null, role: null, partner: null, staff: null, client: null }
   }
 
   // Use admin client for role lookup to avoid RLS timing issues right after login.
@@ -88,6 +100,7 @@ export async function getUserWithRole(): Promise<{
       role: staff.role,
       partner: null,
       staff: staff as StaffUserData,
+      client: null,
     }
   }
 
@@ -103,6 +116,24 @@ export async function getUserWithRole(): Promise<{
       role: partner.role as UserRole,
       partner: partner as PartnerData,
       staff: null,
+      client: null,
+    }
+  }
+
+  const { data: client } = await admin
+    .from('ops_client_users')
+    .select('*')
+    .eq('user_id', user.id)
+    .eq('is_active', true)
+    .maybeSingle()
+
+  if (client) {
+    return {
+      user: { id: user.id, email: user.email || '' },
+      role: 'client_manager',
+      partner: null,
+      staff: null,
+      client: client as ClientUserData,
     }
   }
 
@@ -111,7 +142,27 @@ export async function getUserWithRole(): Promise<{
     role: null,
     partner: null,
     staff: null,
+    client: null,
   }
+}
+
+/**
+ * Require the current user to be an active client_manager.
+ * Returns the user and their scoped client record (which carries customer_id).
+ * Throws 'Not a client manager' otherwise — every client-portal API must call this
+ * and scope all queries by the returned customer_id.
+ */
+export async function requireClientManager(): Promise<{
+  user: { id: string; email: string }
+  client: ClientUserData
+}> {
+  const { user, role, client } = await getUserWithRole()
+
+  if (!user || role !== 'client_manager' || !client) {
+    throw new Error('Not a client manager')
+  }
+
+  return { user, client }
 }
 
 /**

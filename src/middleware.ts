@@ -8,6 +8,7 @@ export async function middleware(request: NextRequest) {
   if (
     pathname.startsWith('/auth/') ||
     pathname === '/tech-preview' ||
+    pathname === '/client-preview' ||
     pathname.startsWith('/sightings') ||
     pathname.startsWith('/work/') ||
     pathname.startsWith('/api/') ||
@@ -37,6 +38,7 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/admin') ||
     pathname.startsWith('/partners') ||
     pathname.startsWith('/tech') ||
+    pathname.startsWith('/client') ||
     pathname === '/redirect'
 
   if (!isProtected) {
