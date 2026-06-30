@@ -70,6 +70,14 @@ function ordinalSuffix(n: number): string {
   return s[(v - 20) % 10] ?? s[v] ?? s[0]
 }
 
+/** Format a dollar amount, e.g. 875 -> "$875.00", 0.35 -> "$0.35". */
+export function formatMoney(n: number): string {
+  return `$${n.toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`
+}
+
 /** Format a TIME string (HH:MM:SS) into a friendly 12-hour label. */
 export function formatTime(time: string | null | undefined): string {
   if (!time) return ''
@@ -86,6 +94,8 @@ export type ClientLineItem = {
   id: string
   name_snapshot: string
   quantity: number
+  unit_price: number
+  line_total: number
   duration_minutes: number
   notes: string | null
 }
@@ -105,6 +115,8 @@ export type ClientAppointment = {
 export type ClientTemplateLineItem = {
   name: string
   notes: string | null
+  quantity: number
+  unitPrice: number
 }
 
 export type ClientTemplate = {
@@ -114,6 +126,8 @@ export type ClientTemplate = {
   is_active: boolean
   schedule: string[]
   lineItems: ClientTemplateLineItem[]
+  discount: number
+  total: number
   address: string | null
 }
 
@@ -144,7 +158,7 @@ export async function loadClientPortalData(
   const { data: templateRows } = await supabase
     .from('ops_recurring_templates')
     .select(
-      `id, label, start_time, is_active, line_items,
+      `id, label, start_time, is_active, line_items, discount_amount,
        ops_recurrence_rules (*),
        ops_service_addresses (label, street_1, city, state, zip_code)`,
     )
@@ -161,23 +175,35 @@ export async function loadClientPortalData(
       zip_code: string | null
     } | null
     const rules = (t.ops_recurrence_rules ?? []) as RecurrenceRuleRow[]
-    const lineItems = (t.line_items ?? []) as Array<{
+    const rawItems = (t.line_items ?? []) as Array<{
       name_snapshot?: string
       name?: string
       notes?: string | null
+      quantity?: number | string
+      unit_price?: number | string
     }>
+    const lineItems = rawItems
+      .map((li) => ({
+        name: li.name_snapshot || li.name || '',
+        notes: li.notes ?? null,
+        quantity: Number(li.quantity ?? 0),
+        unitPrice: Number(li.unit_price ?? 0),
+      }))
+      .filter((li) => li.name)
+    const discount = Number(t.discount_amount ?? 0)
+    const subtotal = lineItems.reduce(
+      (sum, li) => sum + li.quantity * li.unitPrice,
+      0,
+    )
     return {
       id: t.id as string,
       label: t.label as string,
       start_time: t.start_time as string,
       is_active: t.is_active as boolean,
       schedule: rules.map((r) => describeRule(r)),
-      lineItems: lineItems
-        .map((li) => ({
-          name: li.name_snapshot || li.name || '',
-          notes: li.notes ?? null,
-        }))
-        .filter((li) => li.name),
+      lineItems,
+      discount,
+      total: Math.max(0, subtotal - discount),
       address: addr
         ? [addr.label, addr.street_1, addr.city].filter(Boolean).join(' · ') ||
           null
@@ -191,7 +217,7 @@ export async function loadClientPortalData(
     .select(
       `id, appointment_date, start_time, end_time, status, client_note, recurring_template_id,
        ops_recurring_templates ( label ),
-       ops_appointment_line_items ( id, name_snapshot, quantity, duration_minutes, notes )`,
+       ops_appointment_line_items ( id, name_snapshot, quantity, unit_price, line_total, duration_minutes, notes )`,
     )
     .eq('customer_id', customerId)
     .neq('status', 'cancelled')
@@ -216,6 +242,8 @@ export async function loadClientPortalData(
         id: li.id,
         name_snapshot: li.name_snapshot,
         quantity: Number(li.quantity),
+        unit_price: Number(li.unit_price),
+        line_total: Number(li.line_total),
         duration_minutes: Number(li.duration_minutes),
         notes: li.notes ?? null,
       })),

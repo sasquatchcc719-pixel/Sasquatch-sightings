@@ -11,6 +11,7 @@ import Image from 'next/image'
 import { createClient } from '@/supabase/client'
 import {
   formatTime,
+  formatMoney,
   type ClientPortalData,
   type ClientAppointment,
   type ClientTemplate,
@@ -217,17 +218,40 @@ export function ClientPortal({
                   <ul className="mt-2 space-y-1.5">
                     {t.lineItems.map((li, i) => (
                       <li key={i} className="text-xs">
-                        <span className="font-medium text-slate-200">
-                          {li.name}
-                        </span>
+                        <div className="flex justify-between gap-2">
+                          <span className="font-medium text-slate-200">
+                            {li.name}
+                          </span>
+                          <span className="shrink-0 text-slate-300">
+                            {formatMoney(li.quantity * li.unitPrice)}
+                          </span>
+                        </div>
                         {li.notes && (
                           <span className="block text-slate-400">
                             {li.notes}
                           </span>
                         )}
+                        <span className="block text-slate-500">
+                          {li.quantity.toLocaleString()} ×{' '}
+                          {formatMoney(li.unitPrice)}
+                        </span>
                       </li>
                     ))}
                   </ul>
+                )}
+                {(t.total > 0 || t.discount > 0) && (
+                  <div className="mt-2 border-t border-white/10 pt-2 text-xs">
+                    {t.discount > 0 && (
+                      <div className="flex justify-between text-slate-400">
+                        <span>Discount</span>
+                        <span>−{formatMoney(t.discount)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between font-semibold text-emerald-300">
+                      <span>Per visit</span>
+                      <span>{formatMoney(t.total)}</span>
+                    </div>
+                  </div>
                 )}
                 {t.address && (
                   <p className="mt-2 flex items-center gap-1 text-xs text-slate-500">
@@ -479,17 +503,38 @@ function VisitCard({
         <p className="mt-1 text-sm text-slate-300">{appt.template_label}</p>
       )}
       {appt.line_items.length > 0 && (
-        <ul className="mt-1 space-y-1">
+        <ul className="mt-1 space-y-1.5">
           {appt.line_items.map((li) => (
             <li key={li.id} className="text-xs">
-              <span className="font-medium text-slate-300">
-                {li.name_snapshot}
-              </span>
+              <div className="flex justify-between gap-2">
+                <span className="font-medium text-slate-300">
+                  {li.name_snapshot}
+                </span>
+                <span className="shrink-0 text-slate-300">
+                  {formatMoney(li.line_total)}
+                </span>
+              </div>
               {li.notes && (
                 <span className="block text-slate-400">{li.notes}</span>
               )}
+              <span className="block text-slate-500">
+                {li.quantity.toLocaleString()} × {formatMoney(li.unit_price)}
+              </span>
             </li>
           ))}
+          {(() => {
+            const total = appt.line_items.reduce(
+              (sum, li) => sum + li.line_total,
+              0,
+            )
+            if (total <= 0) return null
+            return (
+              <li className="flex justify-between border-t border-white/10 pt-1.5 text-xs font-semibold text-emerald-300">
+                <span>Visit total</span>
+                <span>{formatMoney(total)}</span>
+              </li>
+            )
+          })()}
         </ul>
       )}
 
