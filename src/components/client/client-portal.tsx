@@ -13,6 +13,7 @@ import {
   formatTime,
   type ClientPortalData,
   type ClientAppointment,
+  type ClientTemplate,
 } from '@/lib/ops/client-portal'
 import { getFloorPlanMap } from '@/lib/ops/floor-plan-maps'
 import {
@@ -26,6 +27,7 @@ import {
   StickyNote,
   CircleSlash,
   Send,
+  X,
 } from 'lucide-react'
 
 type Props = {
@@ -90,6 +92,9 @@ export function ClientPortal({
   const [selectedDate, setSelectedDate] = useState<string>(firstUpcoming)
 
   const [showPasswordGate, setShowPasswordGate] = useState(mustChangePassword)
+  const [datesTemplate, setDatesTemplate] = useState<ClientTemplate | null>(
+    null,
+  )
 
   async function refresh() {
     try {
@@ -145,6 +150,17 @@ export function ClientPortal({
         <PasswordGate onDone={() => setShowPasswordGate(false)} />
       )}
 
+      {datesTemplate && (
+        <TemplateDatesModal
+          template={datesTemplate}
+          appointments={data.appointments.filter(
+            (a) => a.recurring_template_id === datesTemplate.id,
+          )}
+          today={today}
+          onClose={() => setDatesTemplate(null)}
+        />
+      )}
+
       {/* Intro */}
       <div>
         <h1 className="text-2xl font-bold">Welcome, {managerName}</h1>
@@ -165,11 +181,18 @@ export function ClientPortal({
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
             {data.templates.map((t) => (
-              <div
+              <button
                 key={t.id}
-                className="rounded-lg border border-white/10 bg-black/20 p-3"
+                type="button"
+                onClick={() => setDatesTemplate(t)}
+                className="rounded-lg border border-white/10 bg-black/20 p-3 text-left transition hover:border-emerald-500/40 hover:bg-black/30"
               >
-                <p className="font-medium">{t.label}</p>
+                <div className="flex items-start justify-between gap-2">
+                  <p className="font-medium">{t.label}</p>
+                  <span className="flex shrink-0 items-center gap-1 text-xs whitespace-nowrap text-emerald-400">
+                    <CalendarDays className="h-3 w-3" /> View dates
+                  </span>
+                </div>
                 <div className="mt-1 flex flex-wrap gap-1.5">
                   {t.schedule.map((s, i) => (
                     <Badge
@@ -190,17 +213,28 @@ export function ClientPortal({
                     </Badge>
                   )}
                 </div>
-                {t.services.length > 0 && (
-                  <p className="mt-2 text-xs text-slate-400">
-                    {t.services.join(' · ')}
-                  </p>
+                {t.lineItems.length > 0 && (
+                  <ul className="mt-2 space-y-1.5">
+                    {t.lineItems.map((li, i) => (
+                      <li key={i} className="text-xs">
+                        <span className="font-medium text-slate-200">
+                          {li.name}
+                        </span>
+                        {li.notes && (
+                          <span className="block text-slate-400">
+                            {li.notes}
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
                 )}
                 {t.address && (
-                  <p className="mt-1 flex items-center gap-1 text-xs text-slate-500">
+                  <p className="mt-2 flex items-center gap-1 text-xs text-slate-500">
                     <MapPin className="h-3 w-3" /> {t.address}
                   </p>
                 )}
-              </div>
+              </button>
             ))}
           </div>
         )}
@@ -445,9 +479,18 @@ function VisitCard({
         <p className="mt-1 text-sm text-slate-300">{appt.template_label}</p>
       )}
       {appt.line_items.length > 0 && (
-        <p className="mt-1 text-xs text-slate-400">
-          {appt.line_items.map((li) => li.name_snapshot).join(' · ')}
-        </p>
+        <ul className="mt-1 space-y-1">
+          {appt.line_items.map((li) => (
+            <li key={li.id} className="text-xs">
+              <span className="font-medium text-slate-300">
+                {li.name_snapshot}
+              </span>
+              {li.notes && (
+                <span className="block text-slate-400">{li.notes}</span>
+              )}
+            </li>
+          ))}
+        </ul>
       )}
 
       {/* Area map — building diagram with the cleaning areas highlighted */}
@@ -701,6 +744,127 @@ function RequestForm({
         </div>
       )}
     </Card>
+  )
+}
+
+function TemplateDatesModal({
+  template,
+  appointments,
+  today,
+  onClose,
+}: {
+  template: ClientTemplate
+  appointments: ClientAppointment[]
+  today: string
+  onClose: () => void
+}) {
+  const sorted = [...appointments].sort((a, b) =>
+    a.appointment_date.localeCompare(b.appointment_date),
+  )
+  const upcomingCount = sorted.filter((a) => a.appointment_date >= today).length
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur"
+      onClick={onClose}
+    >
+      <Card
+        className="flex max-h-[85vh] w-full max-w-lg flex-col border-white/10 bg-slate-900 p-0 text-slate-100"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-white/10 p-5">
+          <div>
+            <h2 className="text-lg font-semibold">{template.label}</h2>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {template.schedule.map((s, i) => (
+                <Badge
+                  key={i}
+                  variant="secondary"
+                  className="bg-emerald-500/15 text-emerald-300"
+                >
+                  {s}
+                </Badge>
+              ))}
+              {template.start_time && (
+                <Badge
+                  variant="secondary"
+                  className="bg-white/10 text-slate-300"
+                >
+                  <Clock className="mr-1 h-3 w-3" />
+                  {formatTime(template.start_time)}
+                </Badge>
+              )}
+            </div>
+            {template.lineItems.length > 0 && (
+              <ul className="mt-2 space-y-0.5">
+                {template.lineItems.map((li, i) => (
+                  <li key={i} className="text-xs text-slate-400">
+                    {li.name}
+                    {li.notes ? ` — ${li.notes}` : ''}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            className="shrink-0 px-2"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+
+        <div className="overflow-y-auto p-5">
+          <p className="mb-3 text-sm text-slate-400">
+            {sorted.length} visit{sorted.length === 1 ? '' : 's'} on the
+            calendar
+            {upcomingCount > 0 ? ` · ${upcomingCount} upcoming` : ''}
+          </p>
+          {sorted.length === 0 ? (
+            <p className="text-sm text-slate-400">No dates scheduled yet.</p>
+          ) : (
+            <ol className="space-y-1.5">
+              {sorted.map((a) => {
+                const isPast = a.appointment_date < today
+                return (
+                  <li
+                    key={a.id}
+                    className={[
+                      'flex items-center justify-between rounded-md border px-3 py-2 text-sm',
+                      isPast
+                        ? 'border-white/5 bg-black/20 text-slate-500'
+                        : 'border-emerald-500/20 bg-emerald-500/5 text-slate-200',
+                    ].join(' ')}
+                  >
+                    <span className="flex items-center gap-2">
+                      <CalendarDays
+                        className={
+                          isPast
+                            ? 'h-3.5 w-3.5 text-slate-600'
+                            : 'h-3.5 w-3.5 text-emerald-400'
+                        }
+                      />
+                      {isoToDate(a.appointment_date).toLocaleDateString(
+                        'en-US',
+                        {
+                          weekday: 'short',
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                        },
+                      )}
+                    </span>
+                    <span className="text-xs">{formatTime(a.start_time)}</span>
+                  </li>
+                )
+              })}
+            </ol>
+          )}
+        </div>
+      </Card>
+    </div>
   )
 }
 

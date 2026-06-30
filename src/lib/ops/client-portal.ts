@@ -102,13 +102,18 @@ export type ClientAppointment = {
   line_items: ClientLineItem[]
 }
 
+export type ClientTemplateLineItem = {
+  name: string
+  notes: string | null
+}
+
 export type ClientTemplate = {
   id: string
   label: string
   start_time: string
   is_active: boolean
   schedule: string[]
-  services: string[]
+  lineItems: ClientTemplateLineItem[]
   address: string | null
 }
 
@@ -159,6 +164,7 @@ export async function loadClientPortalData(
     const lineItems = (t.line_items ?? []) as Array<{
       name_snapshot?: string
       name?: string
+      notes?: string | null
     }>
     return {
       id: t.id as string,
@@ -166,9 +172,12 @@ export async function loadClientPortalData(
       start_time: t.start_time as string,
       is_active: t.is_active as boolean,
       schedule: rules.map((r) => describeRule(r)),
-      services: lineItems
-        .map((li) => li.name_snapshot || li.name || '')
-        .filter(Boolean),
+      lineItems: lineItems
+        .map((li) => ({
+          name: li.name_snapshot || li.name || '',
+          notes: li.notes ?? null,
+        }))
+        .filter((li) => li.name),
       address: addr
         ? [addr.label, addr.street_1, addr.city].filter(Boolean).join(' · ') ||
           null
