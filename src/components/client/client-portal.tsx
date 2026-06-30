@@ -7,12 +7,14 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
+import Image from 'next/image'
 import { createClient } from '@/supabase/client'
 import {
   formatTime,
   type ClientPortalData,
   type ClientAppointment,
 } from '@/lib/ops/client-portal'
+import { getFloorPlanMap } from '@/lib/ops/floor-plan-maps'
 import {
   CalendarDays,
   ChevronLeft,
@@ -447,6 +449,29 @@ function VisitCard({
           {appt.line_items.map((li) => li.name_snapshot).join(' · ')}
         </p>
       )}
+
+      {/* Area map — building diagram with the cleaning areas highlighted */}
+      {(() => {
+        const map = getFloorPlanMap(appt.recurring_template_id)
+        if (!map) return null
+        return (
+          <div className="mt-3">
+            <p className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-slate-300">
+              <MapPin className="h-3.5 w-3.5 text-emerald-400" />
+              Area map — {map.label}
+            </p>
+            <div className="overflow-hidden rounded-lg border border-white/10">
+              <Image
+                src={`/maps/${map.file}`}
+                alt={`Area map — ${map.label}`}
+                width={1300}
+                height={900}
+                className="w-full"
+              />
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Note */}
       {editingNote ? (
