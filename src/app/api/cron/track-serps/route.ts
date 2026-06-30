@@ -11,6 +11,10 @@ import { syncGbpReviews } from '@/lib/gbp-reviews'
 import { createAdminClient } from '@/supabase/server'
 import { sendTelegramNotification } from '@/lib/telegram'
 
+// Two SerpApi calls per keyword (web 3-pack + deep Maps finder) with pacing
+// delays, plus GBP review sync — give it room like the other SERP/GSC crons.
+export const maxDuration = 300
+
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization')
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {

@@ -517,9 +517,10 @@ export default function RadarPage() {
   // Map-pack rank history. Organic blue-link position is useless for a local
   // business — head terms like "carpet cleaning" are owned by directories and
   // national chains, so we sit at 50+ forever. What matters is our spot in
-  // Google's local 3-pack, so we chart map_rank instead. Out-of-pack shows as a
-  // sentinel just below #3 so a drop is visible rather than a confusing gap.
-  const OUT_OF_PACK = 4
+  // Google's Maps local finder (top ~20), so we chart map_rank instead.
+  // Out-of-top-20 shows as a sentinel just below #20 so a drop is visible
+  // rather than a confusing gap.
+  const OUT_OF_PACK = 21
   const myMapRows = rankings.filter(
     (r) =>
       r.domain_id === myDomain?.id && new Date(r.created_at) >= cutoffForChart,
@@ -1250,13 +1251,14 @@ export default function RadarPage() {
                 </div>
               </div>
               <p className="mb-4 text-sm text-white/60">
-                Your spot in Google’s local 3-pack per town — #1 at the top,
-                “Out” = not in the 3-pack. This is what drives local calls;
-                organic blue-link rank for head terms isn’t shown (local shops
-                live in the map pack, not the blue links). One line per town
-                you’ve appeared in. Pick a range above, or drag the slider under
-                the chart to zoom and scroll. Tracking started 2026-06-06, so
-                history fills in daily from there.
+                Your spot in Google’s Maps local finder per town — #1 at the
+                top, “Out” = not in the top 20. The top 3 is the coveted 3-pack
+                that drives local calls; everything below shows how close you
+                are to breaking in. Organic blue-link rank for head terms isn’t
+                shown (local shops live in the map pack, not the blue links).
+                One line per town you’ve appeared in. Pick a range above, or
+                drag the slider under the chart to zoom and scroll. Tracking
+                started 2026-06-06, so history fills in daily from there.
               </p>
               <div className="h-[300px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
@@ -1276,7 +1278,7 @@ export default function RadarPage() {
                     <YAxis
                       reversed
                       domain={[1, OUT_OF_PACK]}
-                      ticks={[1, 2, 3, OUT_OF_PACK]}
+                      ticks={[1, 3, 5, 10, 15, 20, OUT_OF_PACK]}
                       tickFormatter={(v) =>
                         v >= OUT_OF_PACK ? 'Out' : `#${v}`
                       }

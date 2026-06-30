@@ -234,6 +234,111 @@ export async function fetchSerpRanks(
   return { ranks, snapshot, mapPack }
 }
 
+/** How deep into the Maps local finder we track. Google returns ~20 per page. */
+const MAPS_NUM_RESULTS = 20
+
+export type SerpMapsLocalFinder = {
+  /** Full ranked local-finder list (every place), capped at MAPS_NUM_RESULTS */
+  mapPack: SerpMapPackPlace[]
+  /** Local-finder position for each tracked domain that appears in the list */
+  ranksByDomainId: Map<string, number>
+}
+
+/**
+ * Fetch the full Google Maps local-finder ranking for a keyword — the deep,
+ * scrollable list (top ~20) behind the 3-pack. Unlike the web 3-pack, this lets
+ * us see real positions like #7 and track daily movement below the top 3.
+ *
+ * The google_maps engine targets by query text (it ignores the `location`
+ * param, and we intentionally avoid geocoding), so the town is folded into `q`.
+ */
+export async function fetchMapsLocalFinder(
+  keyword: string,
+  location: string,
+  domains: RadarDomain[],
+): Promise<SerpMapsLocalFinder> {
+  const apiKey = process.env.SERPAPI_API_KEY
+  if (!apiKey) {
+    throw new Error('SERPAPI_API_KEY is not set')
+  }
+
+  // "monument, Colorado, United States" → "monument, Colorado" so the query
+  // reads naturally as "carpet cleaning monument, Colorado".
+  const area = location
+    .replace(/,\s*United States\s*$/i, '')
+    .replace(/\s+,/g, ',')
+    .trim()
+
+  const params = new URLSearchParams({
+    engine: 'google_maps',
+    type: 'search',
+    q: `${keyword} ${area}`.trim(),
+    gl: 'us',
+    hl: 'en',
+    api_key: apiKey,
+  })
+
+  const res = await fetch(`https://serpapi.com/search?${params.toString()}`, {
+    next: { revalidate: 0 },
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`SerpApi maps request failed: ${res.status} ${text}`)
+  }
+
+  const data = (await res.json()) as {
+    local_results?: Array<{
+      position?: number
+      title?: string
+      rating?: number
+      reviews?: number
+      address?: string
+      website?: string
+      links?: { website?: string }
+    }>
+    error?: string
+  }
+
+  if (data.error) {
+    // "no results" for a town is a normal empty case, not a hard failure.
+    if (/didn'?t return|hasn'?t returned|no results/i.test(data.error)) {
+      return { mapPack: [], ranksByDomainId: new Map() }
+    }
+    throw new Error(`SerpApi maps error: ${data.error}`)
+  }
+
+  const results = data.local_results ?? []
+  const mapPack: SerpMapPackPlace[] = []
+  const ranksByDomainId = new Map<string, number>()
+
+  for (const place of results) {
+    const pos = place.position ?? 0
+    if (!pos || pos > MAPS_NUM_RESULTS) continue
+    const website = place.website ?? place.links?.website
+    const placeDomain = website ? normalizeDomain(website) : null
+    mapPack.push({
+      position: pos,
+      title: (place.title ?? '').trim() || null,
+      domain: placeDomain,
+      rating: place.rating ?? null,
+      reviews: place.reviews ?? null,
+      address: (place.address ?? '').trim() || null,
+    })
+    // Match by website or business name (Maps often omits the website URL, so
+    // name matching against display_name carries the load here).
+    const domainId = matchPlaceToDomainId(
+      { title: place.title, links: { website } },
+      domains,
+    )
+    if (domainId && !ranksByDomainId.has(domainId)) {
+      ranksByDomainId.set(domainId, pos)
+    }
+  }
+
+  return { mapPack, ranksByDomainId }
+}
+
 export type SerpDomainWithPosition = {
   domain: string
   position: number
