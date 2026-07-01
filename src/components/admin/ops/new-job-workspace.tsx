@@ -1948,8 +1948,18 @@ export function NewJobWorkspace() {
             </Button>
           </div>
 
-          <Card className="border-border/60 bg-card/95 sticky bottom-20 z-20 p-3 shadow-lg backdrop-blur sm:bottom-3">
-            <div className="flex items-center justify-between gap-3">
+          {/*
+            Opaque background (no backdrop-blur): a sticky element with
+            backdrop-blur caches its composited layer on mobile Safari and
+            paints stale totals even though the underlying state is correct.
+            The key on the inner row forces a fresh repaint whenever the totals
+            change, so the number can never go stale.
+          */}
+          <Card className="border-border/60 bg-card sticky bottom-20 z-20 p-3 shadow-lg sm:bottom-3">
+            <div
+              key={`quick-quote-${totalSelectedUnits}-${totalQuote.toFixed(2)}`}
+              className="flex items-center justify-between gap-3"
+            >
               <div>
                 <p className="text-muted-foreground text-xs font-medium uppercase">
                   Quick Quote
@@ -1959,7 +1969,9 @@ export function NewJobWorkspace() {
                   total
                 </p>
               </div>
-              <div className="text-2xl font-bold">${totalQuote.toFixed(2)}</div>
+              <div className="text-2xl font-bold tabular-nums">
+                ${totalQuote.toFixed(2)}
+              </div>
             </div>
           </Card>
         </div>
