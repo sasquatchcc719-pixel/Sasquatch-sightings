@@ -944,7 +944,8 @@ export function NewJobWorkspace() {
         throw new Error(result.error || 'Failed to create job')
       }
 
-      router.push('/admin/operations')
+      // Land on the calendar at the booked day so the job is right there to confirm.
+      router.push(`/admin/operations?date=${appointmentForm.appointment_date}`)
       router.refresh()
     } catch (submitError) {
       setError(
