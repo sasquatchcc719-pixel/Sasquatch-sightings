@@ -35,6 +35,7 @@ type ConversationMessage = {
     recording_sid?: string | null
     duration?: string | null
     voicemail_harry_reply_for?: string | null
+    email_sent?: boolean
   } | null
 }
 
@@ -49,18 +50,6 @@ function hasMeaningfulTranscription(transcriptionText: string | null): boolean {
     '(none)',
     'none',
   ].includes(normalized)
-}
-
-function shouldEmailVoicemail(
-  transcriptionText: string | null,
-  recordingDuration: string | null,
-): boolean {
-  const durationSeconds = Number(recordingDuration ?? '0')
-
-  return (
-    hasMeaningfulTranscription(transcriptionText) ||
-    durationSeconds >= MIN_VOICEMAIL_EMAIL_DURATION_SECONDS
-  )
 }
 
 function getBaseUrl(): string {
@@ -133,6 +122,12 @@ export async function POST(request: NextRequest) {
     const callerPhone = formData.get('From') as string
     const callSid = formData.get('CallSid') as string
     const recordingDuration = formData.get('RecordingDuration') as string
+    // Only the transcribe callback carries TranscriptionStatus (completed |
+    // failed). The earlier recording/status callbacks don't — we use this to
+    // send a single notification once transcription has finished.
+    const transcriptionStatus = formData.get('TranscriptionStatus') as
+      | string
+      | null
 
     console.log('[Voicemail] Received:', {
       from: callerPhone,
@@ -184,36 +179,55 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Add or merge voicemail (Twilio may POST recording first, transcription later — same RecordingSid)
-    let messages = (existingConvo?.messages || []) as ConversationMessage[]
-    const voicemailMeta = {
-      type: 'voicemail' as const,
-      recording_url: audioUrl,
-      recording_sid: recordingSid,
-      duration: recordingDuration,
-      transcription: transcriptionText,
-    }
+    // Add or merge voicemail. Twilio hits this endpoint more than once for a
+    // single voicemail — the recording/status callbacks first (duration, no
+    // transcript), then the transcribe callback later (transcript, no
+    // duration). Merge by RecordingSid, always keeping the best-known value so
+    // a later callback never clobbers good data with a blank.
+    const messages = (existingConvo?.messages || []) as ConversationMessage[]
+    const priorVoicemail = recordingSid
+      ? messages.find(
+          (m) =>
+            m?.role === 'user' &&
+            m?.metadata?.type === 'voicemail' &&
+            m?.metadata?.recording_sid === recordingSid,
+        )
+      : undefined
+
+    const mergedTranscription =
+      transcriptionText || priorVoicemail?.metadata?.transcription || null
+    const mergedDuration =
+      recordingDuration || priorVoicemail?.metadata?.duration || null
+    const mergedAudioUrl =
+      audioUrl || priorVoicemail?.metadata?.recording_url || null
+    const alreadyEmailed = priorVoicemail?.metadata?.email_sent === true
+
+    // Notify exactly once, when transcription has finished (success or
+    // failure). Only the transcribe callback sets TranscriptionStatus, so the
+    // earlier recording callbacks are skipped — this is what kills the old
+    // "blank first email" duplicate.
+    const isTranscriptionCallback = transcriptionStatus != null
+    const willEmail = isTranscriptionCallback && !alreadyEmailed
+
     if (conversationId && recordingSid) {
-      const idx = messages.findIndex(
-        (m) =>
-          m?.role === 'user' &&
-          m?.metadata?.type === 'voicemail' &&
-          m?.metadata?.recording_sid === recordingSid,
-      )
-      const line = `[VOICEMAIL - ${recordingDuration}s] ${transcriptionText || '(No transcription available)'}`
-      if (idx >= 0) {
-        const prev = messages[idx]
-        messages[idx] = {
-          ...prev,
-          content: line,
-          metadata: { ...prev.metadata, ...voicemailMeta },
-        }
+      const line = `[VOICEMAIL - ${mergedDuration ?? '?'}s] ${mergedTranscription || '(No transcription available)'}`
+      const mergedMeta = {
+        type: 'voicemail' as const,
+        recording_url: mergedAudioUrl,
+        recording_sid: recordingSid,
+        duration: mergedDuration,
+        transcription: mergedTranscription,
+        email_sent: alreadyEmailed || willEmail,
+      }
+      if (priorVoicemail) {
+        priorVoicemail.content = line
+        priorVoicemail.metadata = { ...priorVoicemail.metadata, ...mergedMeta }
       } else {
         messages.push({
           role: 'user',
           content: line,
           timestamp: new Date().toISOString(),
-          metadata: voicemailMeta,
+          metadata: mergedMeta,
         })
       }
 
@@ -360,33 +374,58 @@ export async function POST(request: NextRequest) {
       hour12: true,
     })
 
-    if (shouldEmailVoicemail(transcriptionText, recordingDuration)) {
+    if (willEmail) {
+      // Decide what actually happened: a real message, a recording we can't
+      // transcribe, or a caller who reached voicemail and left nothing.
+      const hasTranscript = hasMeaningfulTranscription(mergedTranscription)
+      const durationSeconds = Number(mergedDuration ?? '0')
+      const leftAMessage =
+        hasTranscript || durationSeconds >= MIN_VOICEMAIL_EMAIL_DURATION_SECONDS
+      const durationLabel = mergedDuration ? `${mergedDuration} seconds` : '—'
+
+      const transcriptionBlock = hasTranscript
+        ? `
+              <h3 style="color: #166534;">Transcription</h3>
+              <div style="background: #f3f4f6; border-radius: 8px; padding: 16px; margin: 16px 0;">
+                <p style="margin: 0; white-space: pre-wrap;">${mergedTranscription}</p>
+              </div>`
+        : leftAMessage
+          ? `
+              <div style="background: #f3f4f6; border-radius: 8px; padding: 16px; margin: 16px 0;">
+                <p style="margin: 0; color: #6b7280;">A message was left, but no transcription is available. Tap below to listen.</p>
+              </div>`
+          : `
+              <div style="background: #fef3c7; border-radius: 8px; padding: 16px; margin: 16px 0;">
+                <p style="margin: 0; color: #92400e;">The caller reached your voicemail but did not leave a message.</p>
+              </div>`
+
+      const listenBlock = mergedAudioUrl
+        ? `
+              <div style="margin: 24px 0;">
+                <a href="${mergedAudioUrl}" style="display: inline-block; background: #166534; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold;">
+                  🔊 Listen to Voicemail
+                </a>
+              </div>`
+        : ''
+
       try {
         await resend.emails.send({
           from: voicemailFromEmail,
           to: voicemailNotifyEmail,
-          subject: `🎤 New Voicemail from ${normalizedPhone}`,
+          subject: leftAMessage
+            ? `🎤 New Voicemail from ${normalizedPhone}`
+            : `📞 Missed call (no message) from ${normalizedPhone}`,
           html: `
             <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-              <h2 style="color: #166534;">New Voicemail Received</h2>
-              
+              <h2 style="color: #166534;">${leftAMessage ? 'New Voicemail Received' : 'Missed Call — No Message Left'}</h2>
+
               <div style="background: #f0fdf4; border-radius: 8px; padding: 16px; margin: 16px 0;">
                 <p style="margin: 0 0 8px 0;"><strong>📞 From:</strong> <a href="tel:${normalizedPhone}">${normalizedPhone}</a></p>
-                <p style="margin: 0 0 8px 0;"><strong>⏱️ Duration:</strong> ${recordingDuration} seconds</p>
+                <p style="margin: 0 0 8px 0;"><strong>⏱️ Duration:</strong> ${durationLabel}</p>
                 <p style="margin: 0;"><strong>🕐 Time:</strong> ${timestamp}</p>
               </div>
-              
-              <h3 style="color: #166534;">Transcription</h3>
-              <div style="background: #f3f4f6; border-radius: 8px; padding: 16px; margin: 16px 0;">
-                <p style="margin: 0; white-space: pre-wrap;">${transcriptionText || '(No transcription available)'}</p>
-              </div>
-              
-              <div style="margin: 24px 0;">
-                <a href="${audioUrl}" style="display: inline-block; background: #166534; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold;">
-                  🔊 Listen to Voicemail
-                </a>
-              </div>
-              
+              ${transcriptionBlock}
+              ${listenBlock}
               <p style="color: #6b7280; font-size: 14px;">
                 View in admin: <a href="${adminBaseUrl}/admin/conversations?source=phone">Phone Calls</a>
               </p>
@@ -399,11 +438,13 @@ export async function POST(request: NextRequest) {
       }
     } else {
       console.log(
-        '[Voicemail] Skipping email for likely junk voicemail:',
+        '[Voicemail] No email this callback:',
         JSON.stringify({
           from: normalizedPhone,
-          duration: recordingDuration,
-          transcription: transcriptionText || '(none)',
+          isTranscriptionCallback,
+          alreadyEmailed,
+          duration: mergedDuration ?? '(none)',
+          transcription: mergedTranscription || '(none)',
         }),
       )
     }
