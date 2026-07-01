@@ -16,7 +16,7 @@ const HARRY_KNOWLEDGE_DEFAULTS = [
     content: `Pricing model (per room/area — NEVER combine sqft across rooms):
 
 Standard carpet tiers:
-- Small area under 100 sq ft: $25 each (hallways, closets, half baths only).
+- Small area under 100 sq ft: $30 each (hallways, closets, half baths only).
 - Standard room (100-200 sq ft): $46 each.
 - Sasquatch size (200-400 sq ft): $90 each.
 - Monster size (400-600 sq ft): $138 each (single large space only).
@@ -48,7 +48,7 @@ Hard surfaces and rugs:
 - Area rugs: $0.80/sq ft (cleaned in-home).
 
 Pet treatment:
-- Urine Eliminator: $25 per room (enzyme injection).
+- Urine Eliminator: $30 per room (enzyme injection).
 
 Minimum dispatch fee: $150.
 - If total is under $150, mention minimum and suggest adding more items.

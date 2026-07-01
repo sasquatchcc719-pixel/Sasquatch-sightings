@@ -1,6 +1,6 @@
 /**
  * Sasquatch Carpet Cleaning Price Book
- * Last updated: Feb 2, 2026
+ * Last updated: Jul 1, 2026
  * Note: These are ballpark prices - actual quotes may vary
  */
 
@@ -17,7 +17,7 @@ export const PRICE_BOOK = {
       },
       {
         name: 'Small Area Hall/Closet (50-100 sqft)',
-        price: 25,
+        price: 30,
         unit: 'per area',
         description: 'Small hallway or closet carpet cleaning',
       },
@@ -335,7 +335,7 @@ export const PRICE_BOOK = {
       },
       {
         name: 'Urine Eliminator Treatment',
-        price: 25,
+        price: 30,
         unit: 'per room',
         description: 'UV inspection, Bio Release injection, Pre Spray',
       },

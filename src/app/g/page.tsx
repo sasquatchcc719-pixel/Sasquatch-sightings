@@ -27,12 +27,12 @@ const GOOGLE_REVIEW_URL =
   'https://search.google.com/local/writereview?placeid=ChIJw1Fmyv9_EQIRSsL80280NoQ'
 
 const STANDARD_PRICING = [
-  { label: 'Small Area / Hall (50–100 sqft)', price: '$25' },
+  { label: 'Small Area / Hall (50–100 sqft)', price: '$30' },
   { label: 'Regular Room (100–200 sqft)', price: '$46' },
   { label: 'Sasquatch Size (200–400 sqft)', price: '$90' },
   { label: 'Monster Size (400–600 sqft)', price: '$138' },
   { label: 'Stairs', price: '$4/step' },
-  { label: 'Pet Treatment', price: '+$25/room' },
+  { label: 'Pet Treatment', price: '+$30/room' },
 ]
 
 const DEEP_PRICING = [

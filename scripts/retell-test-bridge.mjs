@@ -687,9 +687,9 @@ You only want the quote and available time window in this test. Do not provide b
           input_match_rule: { type: 'any' },
           output: JSON.stringify({
             success: true,
-            message: 'Estimated total is $640.',
+            message: 'Estimated total is $645.',
             data: {
-              quote_total: 640,
+              quote_total: 645,
               minimum_booking_amount: 150,
               meets_minimum: true,
               can_offer_slots: true,
@@ -707,7 +707,7 @@ You only want the quote and available time window in this test. Do not provide b
                 {
                   service_name: 'Urine Eliminator Treatment',
                   quantity: 1,
-                  total: 25,
+                  total: 30,
                 },
               ],
               slots: [
@@ -842,8 +842,8 @@ When the assistant says the two-bedroom quote is below the minimum, add one hall
 If the updated total is still below minimum, do not add more services. Ask what exactly is needed next. Also ask whether you can be put on a waitlist or notified about cancellations for the below-minimum job. If the assistant repeats that it needs the earliest available date, point out that you are asking the assistant for that date, not giving one.`,
       metrics: [
         'The agent quotes $92 for two regular bedrooms.',
-        'After the hallway is added, the agent quotes $117.',
-        'The agent says the updated job is still below the $150 minimum and $33 short.',
+        'After the hallway is added, the agent quotes $122.',
+        'The agent says the updated job is still below the $150 minimum and $28 short.',
         'The agent does not ask the caller to provide the earliest available date.',
         'The agent does not offer appointment slots or claim a booking while the job is below minimum.',
         'The agent does not offer a waitlist, cancellation hold, or notification for a below-minimum job.',
@@ -855,11 +855,11 @@ If the updated total is still below minimum, do not add more services. Ask what 
           input_match_rule: { type: 'partial_match', args: { hall_count: 1 } },
           output: JSON.stringify({
             success: true,
-            message: 'Estimated total is $117.',
+            message: 'Estimated total is $122.',
             data: {
-              quote_total: 117,
+              quote_total: 122,
               minimum_booking_amount: 150,
-              amount_needed_to_minimum: 33,
+              amount_needed_to_minimum: 28,
               meets_minimum: false,
               can_offer_slots: false,
               line_items: [
@@ -875,13 +875,13 @@ If the updated total is still below minimum, do not add more services. Ask what 
                   service_name:
                     'Hall/Bathroom/Closet Carpet cleaning 30 to 100 sqft',
                   quantity: 1,
-                  unit_price: 25,
-                  total: 25,
+                  unit_price: 30,
+                  total: 30,
                 },
               ],
               missing_fields: [],
               caller_script:
-                'The updated estimate is $117. That is $33 below our $150 minimum, so I cannot check appointment availability or finalize a booking yet. Would you like to add another area, stairs, urine treatment for pet spots, or another service to meet the minimum?',
+                'The updated estimate is $122. That is $28 below our $150 minimum, so I cannot check appointment availability or finalize a booking yet. Would you like to add another area, stairs, urine treatment for pet spots, or another service to meet the minimum?',
             },
           }),
         },
@@ -893,11 +893,11 @@ If the updated total is still below minimum, do not add more services. Ask what 
           },
           output: JSON.stringify({
             success: true,
-            message: 'Estimated total is $117.',
+            message: 'Estimated total is $122.',
             data: {
-              quote_total: 117,
+              quote_total: 122,
               minimum_booking_amount: 150,
-              amount_needed_to_minimum: 33,
+              amount_needed_to_minimum: 28,
               meets_minimum: false,
               can_offer_slots: false,
               line_items: [
@@ -913,13 +913,13 @@ If the updated total is still below minimum, do not add more services. Ask what 
                   service_name:
                     'Hall/Bathroom/Closet Carpet cleaning 30 to 100 sqft',
                   quantity: 1,
-                  unit_price: 25,
-                  total: 25,
+                  unit_price: 30,
+                  total: 30,
                 },
               ],
               missing_fields: [],
               caller_script:
-                'The updated estimate is $117. That is $33 below our $150 minimum, so I cannot check appointment availability or finalize a booking yet. Would you like to add another area, stairs, urine treatment for pet spots, or another service to meet the minimum?',
+                'The updated estimate is $122. That is $28 below our $150 minimum, so I cannot check appointment availability or finalize a booking yet. Would you like to add another area, stairs, urine treatment for pet spots, or another service to meet the minimum?',
             },
           }),
         },
@@ -1584,9 +1584,9 @@ If the assistant offers 3:00 PM to 5:00 PM, accept it. Provide contact details w
 End after the booking is confirmed.`,
       metrics: [
         'The agent calls quote_and_prepare_booking with living_room_sqft, stairs_count, and urine_treatment_room_count.',
-        'The agent quotes $167 from the tool and includes all three services.',
+        'The agent quotes $172 from the tool and includes all three services.',
         'The agent calls book_prepared_slot before saying the appointment is booked.',
-        'The final booking confirmation includes the living room, stairs, urine treatment, and $167 total.',
+        'The final booking confirmation includes the living room, stairs, urine treatment, and $172 total.',
         'The agent calls end_call after the customer is done.',
       ],
       tool_mocks: [
@@ -1595,11 +1595,11 @@ End after the booking is confirmed.`,
           input_match_rule: { type: 'any' },
           output: JSON.stringify({
             success: true,
-            message: 'Estimated total is $167.',
+            message: 'Estimated total is $172.',
             data: {
-              quote_total: 167,
+              quote_total: 172,
               discount_applied: 0,
-              total: 167,
+              total: 172,
               minimum_booking_amount: 150,
               meets_minimum: true,
               can_offer_slots: true,
@@ -1607,7 +1607,7 @@ End after the booking is confirmed.`,
               line_items: [
                 { service_name: 'Sasquatch Size Room', quantity: 1, total: 90 },
                 { service_name: 'Step Carpet Cleaning (Per Step Charge)', quantity: 13, total: 52 },
-                { service_name: 'Urine Eliminator Treatment', quantity: 1, total: 25 },
+                { service_name: 'Urine Eliminator Treatment', quantity: 1, total: 30 },
               ],
               slots: [
                 {
@@ -1617,7 +1617,7 @@ End after the booking is confirmed.`,
                 },
               ],
               caller_script:
-                'The estimate is $167. I found 2026-05-04 from 15:00:00 to 17:00:00.',
+                'The estimate is $172. I found 2026-05-04 from 15:00:00 to 17:00:00.',
             },
           }),
         },
@@ -1632,14 +1632,14 @@ End after the booking is confirmed.`,
               appointment_date: '2026-05-04',
               start_time: '15:00:00',
               end_time: '17:00:00',
-              total: 167,
+              total: 172,
               line_items: [
                 { service_name: 'Sasquatch Size Room', quantity: 1, total: 90 },
                 { service_name: 'Step Carpet Cleaning (Per Step Charge)', quantity: 13, total: 52 },
-                { service_name: 'Urine Eliminator Treatment', quantity: 1, total: 25 },
+                { service_name: 'Urine Eliminator Treatment', quantity: 1, total: 30 },
               ],
               caller_script:
-                'You are all set for 2026-05-04 at 15:00:00. Total: $167.',
+                'You are all set for 2026-05-04 at 15:00:00. Total: $172.',
             },
           }),
         },

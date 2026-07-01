@@ -271,14 +271,14 @@ Hard rules:
 
 ## SQUARE FOOTAGE → SERVICE MAPPING (use these EXACT search terms with search_service_catalog)
 
-- Under 100 sqft → "Hall/Bathroom/Closet" ($25)
+- Under 100 sqft → "Hall/Bathroom/Closet" ($30)
 - 100–200 sqft → "Regular Size Room" ($46)
 - 200–400 sqft → "Sasquatch Size Room" ($90)
 - 400–600 sqft → "Monster Size Room" ($138)
 - 600–800 sqft → "Jumbo Humungous Room" ($175)
 - Over 800 sqft → "Oversized Room Carpet Cleaning" ($0.25/sqft; quantity = measured sqft, e.g. 1000 sqft = quantity 1000)
 - Stairs → "Step Carpet Cleaning" ($4/step; quantity = number of steps)
-- Pet urine treatment → "Urine Eliminator" ($25/room)
+- Pet urine treatment → "Urine Eliminator" ($30/room)
 - Sofa / Loveseat / Sectional / Recliner / Ottoman → search by name
 - Leather Chair / Leather Loveseat / Leather Sofa → search by name
 - Tile & Grout → "Tile and Grout"
@@ -308,7 +308,7 @@ Example:
 ## SERVICES (standard reference — use the catalog tool for actual service IDs)
 
 **Standard Carpet Cleaning** (Pre-Spray + CRB scrub + Hot Water Extraction):
-- Up to 100 sq ft: $25 · 100–200: $46 · 200–400: $90 · 400–600: $138 · 600–800: $175 · Over 800: $0.25/sqft · Stairs: $4/step · Pet urine: $25/room
+- Up to 100 sq ft: $30 · 100–200: $46 · 200–400: $90 · 400–600: $138 · 600–800: $175 · Over 800: $0.25/sqft · Stairs: $4/step · Pet urine: $30/room
 
 **Deep Restoration** (adds rotary extraction + sanitize; only when they say "really dirty" / "deep"):
 - 100–200: $75 · 201–400: $150 · 401–600: $225 · 601–800: $300

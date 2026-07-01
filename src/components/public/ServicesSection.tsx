@@ -7,12 +7,12 @@ function scrollToContact() {
 }
 
 const STANDARD_PRICING = [
-  { label: 'Urine Eliminator Treatment', price: '$25' },
+  { label: 'Urine Eliminator Treatment', price: '$30' },
   { label: 'Step / Landing', price: '$4', unit: 'per step' },
   {
     label: 'Small Area / Hall / Closet',
     sublabel: '50–100 sqft',
-    price: '$25',
+    price: '$30',
   },
   { label: 'Regular Room', sublabel: '100–200 sqft', price: '$46' },
   { label: 'Sasquatch Size Room', sublabel: '200–400 sqft', price: '$90' },
