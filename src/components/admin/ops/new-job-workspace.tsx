@@ -944,15 +944,9 @@ export function NewJobWorkspace() {
         throw new Error(result.error || 'Failed to create job')
       }
 
-      // Go straight to the booking just created so it can be confirmed
-      // immediately — no hunting on the calendar. Falls back to the calendar on
-      // the booked day if the id isn't returned for any reason.
-      const newAppointmentId = result?.appointment?.id
-      router.push(
-        newAppointmentId
-          ? `/admin/operations/appointments/${newAppointmentId}`
-          : `/admin/operations?date=${appointmentForm.appointment_date}`,
-      )
+      // Land on the schedule at the booked day so the new job is visible in
+      // context with the day's other jobs (and its start/stop can be tweaked).
+      router.push(`/admin/operations?date=${appointmentForm.appointment_date}`)
       router.refresh()
     } catch (submitError) {
       setError(
