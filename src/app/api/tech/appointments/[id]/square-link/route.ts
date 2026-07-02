@@ -5,11 +5,23 @@ import {
   shouldHideTechPricing,
 } from '@/lib/tech/appointments'
 import { createSquarePaymentLink } from '@/lib/payments/square'
+import {
+  buildPublicPaymentUrl,
+  createInvoicePaymentToken,
+} from '@/lib/payments/signed-payment-link'
 import { sendCustomerSMSWithResult } from '@/lib/twilio'
 import { createAdminClient } from '@/supabase/server'
 
+function publicSiteOrigin(request: Request): string {
+  return (
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.SITE_URL ||
+    new URL(request.url).origin
+  ).replace(/\/+$/, '')
+}
+
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
@@ -89,13 +101,20 @@ export async function POST(
       customerName,
       description: `Job ${appointment.id}`,
     })
+    const customerPaymentUrl = buildPublicPaymentUrl(
+      publicSiteOrigin(request),
+      createInvoicePaymentToken({
+        invoiceId: appointment.invoice.id,
+        provider: 'square',
+      }),
+    )
 
     const smsBody = [
       `Hi ${customerName} — here's your invoice from Sasquatch Carpet Cleaning.`,
       ``,
       `Invoice #${invoiceNumber}`,
       `Total due: $${total.toFixed(2)}`,
-      `Pay securely by card: ${paymentUrl}`,
+      `Pay securely by card: ${customerPaymentUrl}`,
       ``,
       `Questions? Call or text us anytime. Thank you!`,
     ].join('\n')
@@ -107,7 +126,12 @@ export async function POST(
       'square_payment_link',
     )
 
-    return NextResponse.json({ ok: true, payment_url: paymentUrl, sms })
+    return NextResponse.json({
+      ok: true,
+      payment_url: customerPaymentUrl,
+      provider_payment_url: paymentUrl,
+      sms,
+    })
   } catch (error) {
     console.error('[tech/appointments/:id/square-link][POST]', error)
     const status =

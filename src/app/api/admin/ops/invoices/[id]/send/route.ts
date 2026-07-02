@@ -12,9 +12,36 @@ import { getQBConnectionStatus } from '@/lib/quickbooks-auth'
 import { generateInvoicePDF } from '@/lib/ops/pdf/generate'
 import { createSquarePaymentLink } from '@/lib/payments/square'
 import { buildVenmoPaymentLink } from '@/lib/payments/venmo'
+import {
+  buildPublicPaymentUrl,
+  createInvoicePaymentToken,
+} from '@/lib/payments/signed-payment-link'
 import { isBlacklisted } from '@/lib/blacklist'
 
 const VENMO_USERNAME = process.env.VENMO_BUSINESS_USERNAME ?? 'SasquatchCarpet'
+
+function publicSiteOrigin(request: NextRequest): string {
+  return (
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.SITE_URL ||
+    request.nextUrl.origin
+  ).replace(/\/+$/, '')
+}
+
+function invoicePaymentUrl(
+  request: NextRequest,
+  invoiceId: string,
+  provider: 'square' | 'venmo',
+): string {
+  return buildPublicPaymentUrl(
+    publicSiteOrigin(request),
+    createInvoicePaymentToken({ invoiceId, provider }),
+  )
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Failed to send invoice'
+}
 
 function buildSmsBody(
   customerName: string,
@@ -302,13 +329,14 @@ export async function POST(
         customerName,
         description: addressText,
       })
+      const customerPaymentUrl = invoicePaymentUrl(request, id, 'square')
 
       const linkBody = [
         `Hi ${customerName} — here's your invoice from Sasquatch Carpet Cleaning.`,
         ``,
         `Invoice #${invoiceNumber}`,
         `Total due: $${total.toFixed(2)}`,
-        `Pay securely by card: ${paymentUrl}`,
+        `Pay securely by card: ${customerPaymentUrl}`,
         ``,
         `Questions? Call or text us anytime. Thank you!`,
       ].join('\n')
@@ -319,7 +347,12 @@ export async function POST(
         id,
         'square_payment_link',
       )
-      return NextResponse.json({ ok: true, payment_url: paymentUrl, sms })
+      return NextResponse.json({
+        ok: true,
+        payment_url: customerPaymentUrl,
+        provider_payment_url: paymentUrl,
+        sms,
+      })
     }
 
     if (type === 'venmo_payment_link') {
@@ -329,13 +362,14 @@ export async function POST(
           { status: 422 },
         )
       }
+      const customerPaymentUrl = invoicePaymentUrl(request, id, 'venmo')
 
       const linkBody = [
         `Hi ${customerName} — here's your invoice from Sasquatch Carpet Cleaning.`,
         ``,
         `Invoice #${invoiceNumber}`,
         `Total due: $${total.toFixed(2)}`,
-        `Pay with Venmo: ${venmoUrl}`,
+        `Pay with Venmo: ${customerPaymentUrl}`,
         ``,
         `Questions? Call or text us anytime. Thank you!`,
       ].join('\n')
@@ -348,7 +382,8 @@ export async function POST(
       )
       return NextResponse.json({
         ok: true,
-        payment_url: venmoUrl,
+        payment_url: customerPaymentUrl,
+        provider_payment_url: venmoUrl,
         sms,
       })
     }
@@ -572,9 +607,11 @@ export async function POST(
     })
   } catch (error) {
     console.error('[ops/invoices/:id/send][POST] Error:', error)
+    const message = errorMessage(error)
+    const status = message === 'Not authorized' ? 401 : 500
     return NextResponse.json(
-      { error: 'Failed to send invoice' },
-      { status: 500 },
+      { error: status === 401 ? 'Unauthorized' : message },
+      { status },
     )
   }
 }

@@ -10,6 +10,7 @@ import { isBlacklisted, notifyBlockedAttempt } from '@/lib/blacklist'
 const accountSid = process.env.TWILIO_ACCOUNT_SID
 const authToken = process.env.TWILIO_AUTH_TOKEN
 const twilioPhone = process.env.TWILIO_PHONE_NUMBER
+const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID
 const adminPhone = process.env.ADMIN_PHONE_NUMBER
 
 let client: ReturnType<typeof twilio> | null = null
@@ -204,29 +205,42 @@ export async function sendCustomerSMSWithResult(
   messageType: string = 'customer_notification',
   fromNumber?: string,
 ): Promise<{ sid: string; to: string; from: string }> {
-  if (!client || !twilioPhone) {
+  if (!client || (!twilioPhone && !messagingServiceSid)) {
     throw new Error(
-      `Twilio credentials not configured (SID=${!!accountSid}, token=${!!authToken}, from=${!!twilioPhone})`,
+      `Twilio credentials not configured (SID=${!!accountSid}, token=${!!authToken}, from=${!!twilioPhone}, messagingService=${!!messagingServiceSid})`,
     )
   }
 
   const normalizedMessage = normalizeSmsBody(message)
   const toPhone = toE164(customerPhone)
   const from = fromNumber ? toE164(fromNumber) : twilioPhone
+  const useMessagingService = !fromNumber && !!messagingServiceSid
+  const sender = useMessagingService ? messagingServiceSid : from
+  if (!sender) {
+    throw new Error('Twilio sender is not configured')
+  }
 
   if (await isBlacklisted(toPhone)) {
     notifyBlockedAttempt(toPhone, 'outbound SMS')
     throw new Error('Suppressed: customer is blacklisted')
   }
 
-  console.log(`📤 SENDING SMS: From=${from} To=${toPhone}`)
+  console.log(`📤 SENDING SMS: From=${sender} To=${toPhone}`)
   console.log(`   Message: ${normalizedMessage.substring(0, 50)}...`)
 
-  const result = await client.messages.create({
-    body: normalizedMessage,
-    from: from,
-    to: toPhone,
-  })
+  const result = await client.messages.create(
+    useMessagingService
+      ? {
+          body: normalizedMessage,
+          messagingServiceSid,
+          to: toPhone,
+        }
+      : {
+          body: normalizedMessage,
+          from: sender,
+          to: toPhone,
+        },
+  )
 
   if (!result.sid) {
     throw new Error('Twilio did not return a message SID')
@@ -244,5 +258,9 @@ export async function sendCustomerSMSWithResult(
     twilioSid: result.sid,
   })
 
-  return { sid: result.sid, to: toPhone, from }
+  return {
+    sid: result.sid,
+    to: toPhone,
+    from: sender,
+  }
 }
