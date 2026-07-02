@@ -71,6 +71,43 @@ async function getJob(slug: string) {
   return job
 }
 
+// The services join is many-to-one, so supabase-js returns an object — but
+// older rows/types have surfaced it as a one-element array. Handle both so the
+// real service name always reaches the title (the array-only read left every
+// page titled generic "Carpet Cleaning", which made same-city pages exact
+// duplicates in Google's eyes).
+function getServiceName(job: { service: unknown }): string {
+  const svc = job.service as { name?: string } | { name?: string }[] | null
+  if (Array.isArray(svc)) return svc[0]?.name || 'Carpet Cleaning'
+  return svc?.name || 'Carpet Cleaning'
+}
+
+/** Other recent published jobs in the same city (for internal links). */
+async function getRelatedJobs(city: string | null, excludeId: string) {
+  if (!city || isUnknownCity(city)) return []
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from('jobs')
+    .select('id, slug, city, published_at, service:services(name)')
+    .eq('status', 'published')
+    .eq('city', city)
+    .neq('id', excludeId)
+    .not('slug', 'ilike', '%unknown%')
+    .order('published_at', { ascending: false })
+    .limit(6)
+  return data ?? []
+}
+
+function formatDate(iso: string | null): string | null {
+  return iso
+    ? new Date(iso).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      })
+    : null
+}
+
 export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
@@ -83,14 +120,19 @@ export async function generateMetadata({
     }
   }
 
-  const serviceName = (job.service as any)?.[0]?.name || 'Carpet Cleaning'
+  const serviceName = getServiceName(job)
   const cityDisplay = isUnknownCity(job.city)
     ? 'Colorado'
     : (job.city ?? 'Colorado')
   const location = job.neighborhood
     ? `${job.neighborhood}, ${cityDisplay}`
     : cityDisplay
-  const title = `${serviceName} in ${location} | Sasquatch Carpet Cleaning`
+  // Completion date in the title keeps same-city, same-service jobs from
+  // sharing an identical title (Google was deduping them as one page).
+  const titleDate = formatDate(job.published_at)
+  const title = titleDate
+    ? `${serviceName} in ${location} — ${titleDate} | Sasquatch Carpet Cleaning`
+    : `${serviceName} in ${location} | Sasquatch Carpet Cleaning`
   const description =
     job.ai_description?.substring(0, 160) ||
     `Professional ${serviceName.toLowerCase()} services in ${location}. Quality results from Sasquatch Carpet Cleaning.`
@@ -135,23 +177,18 @@ export default async function JobPage({ params }: PageProps) {
     notFound()
   }
 
-  const serviceName = (job.service as any)?.[0]?.name || 'Carpet Cleaning'
+  const serviceName = getServiceName(job)
   const cityDisplay = isUnknownCity(job.city)
     ? 'Colorado'
     : (job.city ?? 'Colorado')
   const location = job.neighborhood
     ? `${job.neighborhood}, ${cityDisplay}`
     : cityDisplay
-  const publishedDate = job.published_at
-    ? new Date(job.published_at).toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      })
-    : null
+  const publishedDate = formatDate(job.published_at)
 
   const canonicalUrl = buildJobUrl(job.city ?? 'Colorado', job.slug)
   const areaPageUrl = serviceAreaUrl(job.city)
+  const relatedJobs = await getRelatedJobs(job.city, job.id)
 
   // JSON-LD: the completed job as a Service performed by the business.
   // Business identity fields (phone, base address, url) match the marketing
@@ -182,11 +219,44 @@ export default async function JobPage({ params }: PageProps) {
     },
   }
 
+  const breadcrumbLd = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      {
+        '@type': 'ListItem',
+        position: 1,
+        name: 'Sightings',
+        item: 'https://www.sasquatchcarpet.com/sightings',
+      },
+      ...(areaPageUrl
+        ? [
+            {
+              '@type': 'ListItem',
+              position: 2,
+              name: cityDisplay,
+              item: areaPageUrl,
+            },
+          ]
+        : []),
+      {
+        '@type': 'ListItem',
+        position: areaPageUrl ? 3 : 2,
+        name: `${serviceName} in ${location}`,
+        item: canonicalUrl,
+      },
+    ],
+  }
+
   return (
     <>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbLd) }}
       />
 
       <div className="min-h-screen bg-gray-50">
@@ -328,6 +398,33 @@ export default async function JobPage({ params }: PageProps) {
               </div>
             </div>
           </Card>
+
+          {/* Recent work in the same city — server-rendered links so Google
+              can crawl job-to-job instead of relying on the sitemap alone. */}
+          {relatedJobs.length > 0 && (
+            <Card className="mt-8 bg-white p-6 md:p-8">
+              <h2 className="mb-4 text-xl font-semibold text-gray-900">
+                More Recent Work in {cityDisplay}
+              </h2>
+              <ul className="space-y-3">
+                {relatedJobs.map((r) => {
+                  const rService = getServiceName(r)
+                  const rDate = formatDate(r.published_at)
+                  return (
+                    <li key={r.id}>
+                      <a
+                        href={buildJobUrl(r.city ?? 'Colorado', r.slug)}
+                        className="text-green-700 hover:underline"
+                      >
+                        {rService} in {r.city}
+                        {rDate ? ` — ${rDate}` : ''}
+                      </a>
+                    </li>
+                  )
+                })}
+              </ul>
+            </Card>
+          )}
 
           {/* Back to Map */}
           <div className="mt-8 text-center">
