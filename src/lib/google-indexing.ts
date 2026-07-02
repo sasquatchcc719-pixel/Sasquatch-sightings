@@ -47,6 +47,36 @@ export type IndexingPingResult = {
  * (Official API scope is JobPosting/BroadcastEvent pages — for other pages
  * this acts as a crawl nudge, not a guarantee.)
  */
+/**
+ * The service-account JSON in Vercel was pasted with the pretty-printed
+ * layout, so the PEM private key contains raw newlines inside its string
+ * literal — invalid JSON, and every ping since setup failed with "not valid
+ * JSON". Escape control characters that sit inside string literals so both
+ * the correctly-pasted and pretty-pasted forms parse.
+ */
+export function parseServiceAccountJson(raw: string): object {
+  try {
+    return JSON.parse(raw)
+  } catch {
+    let out = ''
+    let inString = false
+    let escaped = false
+    for (const ch of raw) {
+      if (inString) {
+        if (escaped) escaped = false
+        else if (ch === '\\') escaped = true
+        else if (ch === '"') inString = false
+        else if (ch === '\n') {
+          out += '\\n'
+          continue
+        } else if (ch === '\r') continue
+      } else if (ch === '"') inString = true
+      out += ch
+    }
+    return JSON.parse(out)
+  }
+}
+
 export async function pingGoogleIndexing(
   url: string,
 ): Promise<IndexingPingResult> {
@@ -57,7 +87,7 @@ export async function pingGoogleIndexing(
 
   let credentials: object
   try {
-    credentials = JSON.parse(saJson)
+    credentials = parseServiceAccountJson(saJson)
   } catch {
     return {
       url,
