@@ -3,7 +3,11 @@ import { Resend } from 'resend'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { assertTechInvoiceAccess } from '@/lib/ops/tech-job-access'
-import { sendCustomerSMS, sendCustomerSMSWithResult } from '@/lib/twilio'
+import {
+  normalizeUsPhoneInput,
+  sendCustomerSMS,
+  sendCustomerSMSWithResult,
+} from '@/lib/twilio'
 import {
   getQBInvoicePaymentLink,
   syncAppointmentToQuickBooks,
@@ -189,11 +193,24 @@ export async function POST(
         | 'venmo_payment_link'
         | 'square_payment_link'
         | 'receipt'
+      send_to_phone?: string
     }
     const { channel, type } = body
 
     if (!channel || !['sms', 'email', 'both'].includes(channel)) {
       return NextResponse.json({ error: 'Invalid channel' }, { status: 400 })
+    }
+
+    const rawSendToPhone =
+      typeof body.send_to_phone === 'string' ? body.send_to_phone.trim() : ''
+    const sendToPhoneOverride = rawSendToPhone
+      ? normalizeUsPhoneInput(rawSendToPhone)
+      : null
+    if (rawSendToPhone && !sendToPhoneOverride) {
+      return NextResponse.json(
+        { error: 'Enter a valid 10-digit US phone number to send to.' },
+        { status: 422 },
+      )
     }
 
     // Fetch invoice with all data needed for the message
@@ -259,7 +276,7 @@ export async function POST(
 
     const customerName =
       customer?.business_name || customer?.full_name || 'Valued Customer'
-    const customerPhone = customer?.phone ?? null
+    const customerPhone = sendToPhoneOverride ?? customer?.phone ?? null
     const customerEmail = customer?.email ?? null
     const customerEmailOptOut = customer?.email_opt_out === true
     const customerBlacklisted = customerPhone

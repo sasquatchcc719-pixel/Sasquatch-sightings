@@ -149,6 +149,14 @@ export async function sendPartnerSMS(
   }
 }
 
+/** Normalize a user-entered US phone number to E.164, or null if invalid. */
+export function normalizeUsPhoneInput(raw: string): string | null {
+  const digits = raw.replace(/\D/g, '')
+  if (digits.length === 10) return `+1${digits}`
+  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`
+  return null
+}
+
 /** Normalize US phone to E.164 for Twilio */
 function toE164(phone: string): string {
   const digits = phone.replace(/\D/g, '')

@@ -73,6 +73,9 @@ export function TechJobDetail({
   const [squareLinkFeedback, setSquareLinkFeedback] = useState<string | null>(
     null,
   )
+  const [squareLinkPhone, setSquareLinkPhone] = useState(
+    appointment.customerPhone ?? '',
+  )
   const [streetViewFailed, setStreetViewFailed] = useState(false)
   const [showSignatureModal, setShowSignatureModal] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -276,7 +279,13 @@ export function TechJobDetail({
     try {
       const response = await fetch(
         `/api/tech/appointments/${appointment.id}/square-link`,
-        { method: 'POST' },
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            send_to_phone: squareLinkPhone.trim() || undefined,
+          }),
+        },
       )
       const result = (await response.json()) as {
         error?: string
@@ -608,6 +617,29 @@ export function TechJobDetail({
               ) : null}
               Save Invoice Changes
             </Button>
+            {squareAmount ? (
+              <div>
+                <label
+                  htmlFor="square-link-phone"
+                  className="text-xs font-semibold text-slate-300"
+                >
+                  Text payment link to
+                </label>
+                <Input
+                  id="square-link-phone"
+                  type="tel"
+                  inputMode="tel"
+                  placeholder="(719) 555-0123"
+                  value={squareLinkPhone}
+                  onChange={(e) => setSquareLinkPhone(e.target.value)}
+                  className="mt-1 border-white/20 bg-white/5 text-white placeholder:text-slate-500"
+                />
+                <p className="mt-1 text-xs text-slate-400">
+                  Prefilled from the customer&apos;s number — edit it to send
+                  the link to a different phone.
+                </p>
+              </div>
+            ) : null}
             {squareAmount ? (
               <Button
                 className="w-full bg-black text-white hover:bg-neutral-800"

@@ -9,7 +9,7 @@ import {
   buildPublicPaymentUrl,
   createInvoicePaymentToken,
 } from '@/lib/payments/signed-payment-link'
-import { sendCustomerSMSWithResult } from '@/lib/twilio'
+import { normalizeUsPhoneInput, sendCustomerSMSWithResult } from '@/lib/twilio'
 import { createAdminClient } from '@/supabase/server'
 
 function publicSiteOrigin(request: Request): string {
@@ -71,6 +71,21 @@ export async function POST(
       )
     }
 
+    const body = (await request.json().catch(() => null)) as {
+      send_to_phone?: string
+    } | null
+    const rawSendToPhone =
+      typeof body?.send_to_phone === 'string' ? body.send_to_phone.trim() : ''
+    const sendToPhoneOverride = rawSendToPhone
+      ? normalizeUsPhoneInput(rawSendToPhone)
+      : null
+    if (rawSendToPhone && !sendToPhoneOverride) {
+      return NextResponse.json(
+        { error: 'Enter a valid 10-digit US phone number to send to' },
+        { status: 422 },
+      )
+    }
+
     const total = Number(appointment.invoice.total || 0)
     if (!Number.isFinite(total) || total <= 0) {
       return NextResponse.json(
@@ -78,7 +93,8 @@ export async function POST(
         { status: 422 },
       )
     }
-    if (!appointment.customerPhone) {
+    const destinationPhone = sendToPhoneOverride ?? appointment.customerPhone
+    if (!destinationPhone) {
       return NextResponse.json(
         { error: 'No phone number on file for this customer' },
         { status: 422 },
@@ -127,7 +143,7 @@ export async function POST(
     ].join('\n')
 
     const sms = await sendCustomerSMSWithResult(
-      appointment.customerPhone,
+      destinationPhone,
       smsBody,
       appointment.invoice.id,
       'square_payment_link',

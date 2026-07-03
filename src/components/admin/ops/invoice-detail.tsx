@@ -217,6 +217,7 @@ export function InvoiceDetail({
     ok: boolean
     message: string
   } | null>(null)
+  const [paymentLinkPhone, setPaymentLinkPhone] = useState('')
   const [startingTap, setStartingTap] = useState(false)
   const [serviceCatalog, setServiceCatalog] = useState<
     Array<{
@@ -442,6 +443,13 @@ export function InvoiceDetail({
       const appt = Array.isArray(result.invoice.ops_appointments)
         ? result.invoice.ops_appointments[0]
         : result.invoice.ops_appointments
+
+      const custForPhone = appt
+        ? Array.isArray(appt.ops_customers)
+          ? appt.ops_customers[0]
+          : appt.ops_customers
+        : null
+      setPaymentLinkPhone((prev) => prev || custForPhone?.phone || '')
 
       // Load GPS coordinates if they exist
       if (
@@ -1058,6 +1066,7 @@ export function InvoiceDetail({
                 : type === 'square'
                   ? 'square_payment_link'
                   : 'venmo_payment_link',
+            send_to_phone: paymentLinkPhone.trim() || undefined,
           }),
         },
       )
@@ -1950,6 +1959,28 @@ export function InvoiceDetail({
                   {method}
                 </Button>
               ))}
+            </div>
+
+            <div className="mt-4">
+              <Label
+                htmlFor="payment-link-phone"
+                className="text-xs font-semibold"
+              >
+                Text payment links to
+              </Label>
+              <Input
+                id="payment-link-phone"
+                type="tel"
+                inputMode="tel"
+                placeholder="(719) 555-0123"
+                value={paymentLinkPhone}
+                onChange={(e) => setPaymentLinkPhone(e.target.value)}
+                className="mt-1"
+              />
+              <p className="text-muted-foreground mt-1 text-xs">
+                Prefilled from the customer&apos;s number on file — edit it to
+                send the Square, Venmo, or QuickBooks link somewhere else.
+              </p>
             </div>
 
             {squareAmount ? (
