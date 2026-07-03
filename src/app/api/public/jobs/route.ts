@@ -157,7 +157,10 @@ export async function GET(request: NextRequest) {
       .eq('status', 'published')
       .order('published_at', { ascending: false })
 
-    const { data: jobs, error } = await query.limit(limit * 3) // Fetch extra for filtering
+    // Fetch the full published set before area filtering. The old `limit * 3`
+    // window only scanned the newest rows table-wide, which made older jobs
+    // invisible to every area (Castle Rock returned 1 of its 4 jobs).
+    const { data: jobs, error } = await query.limit(500)
 
     if (error) {
       console.error('Error fetching public jobs:', error)
