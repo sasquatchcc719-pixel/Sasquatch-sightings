@@ -1,12 +1,19 @@
 #!/usr/bin/env node
-/** Google Search Console OAuth — mint a read-only refresh token.
- *  Usage: node scripts/gsc-auth.mjs url   |   node scripts/gsc-auth.mjs exchange "CODE"
- *  Reuses the Ranger OAuth client (same one used for Gmail). Separate token. */
+/** Google Search Console OAuth — mint a refresh token.
+ *  Usage: node scripts/gsc-auth.mjs url [--full]   |   node scripts/gsc-auth.mjs exchange "CODE" [--full]
+ *  --full requests the full webmasters scope (needed for sitemap resubmit);
+ *  default is read-only. Reuses the Ranger OAuth client (same one used for
+ *  Gmail). Separate token. */
 import { config } from 'dotenv'
 import { google } from 'googleapis'
 config({ path: '.env.local' })
 
-const SCOPES = ['https://www.googleapis.com/auth/webmasters.readonly']
+const FULL = process.argv.includes('--full')
+const SCOPES = [
+  FULL
+    ? 'https://www.googleapis.com/auth/webmasters'
+    : 'https://www.googleapis.com/auth/webmasters.readonly',
+]
 const REDIRECT_URI = 'https://developers.google.com/oauthplayground'
 
 function client() {
