@@ -63,6 +63,8 @@ async function loadPaymentDestination(
         id,
         invoice_number,
         total,
+        square_payment_link_url,
+        square_payment_link_cents,
         ops_appointments (
           id,
           ops_customers!ops_appointments_customer_id_fkey (
@@ -101,21 +103,41 @@ async function loadPaymentDestination(
     customer?.business_name || customer?.full_name || 'Valued Customer'
 
   try {
-    const targetUrl =
-      verified.provider === 'square'
-        ? await createSquarePaymentLink({
-            invoiceId: verified.invoiceId,
-            invoiceNumber,
-            amount,
-            customerName,
-            description: `Invoice #${invoiceNumber}`,
+    let targetUrl: string
+    if (verified.provider === 'square') {
+      const cents = Math.round(amount * 100)
+      const storedUrl = invoice.square_payment_link_url
+      const storedCents = Number(invoice.square_payment_link_cents)
+      if (storedUrl && storedCents === cents) {
+        // Reuse the link created when the invoice was sent. Creating a new
+        // one here with the send-time idempotency key trips Square's
+        // IDEMPOTENCY_KEY_REUSED protection (the request bodies differ).
+        targetUrl = storedUrl
+      } else {
+        targetUrl = await createSquarePaymentLink({
+          invoiceId: verified.invoiceId,
+          invoiceNumber,
+          amount,
+          customerName,
+          description: `Invoice #${invoiceNumber}`,
+          idempotencyKey: `ops-invoice-pay-${verified.invoiceId}-${cents}-${Date.now()}`,
+        })
+        await supabase
+          .from('ops_invoices')
+          .update({
+            square_payment_link_url: targetUrl,
+            square_payment_link_cents: cents,
           })
-        : buildVenmoPaymentLink({
-            username: VENMO_USERNAME,
-            invoiceNumber,
-            amount,
-            customerName,
-          })
+          .eq('id', verified.invoiceId)
+      }
+    } else {
+      targetUrl = buildVenmoPaymentLink({
+        username: VENMO_USERNAME,
+        invoiceNumber,
+        amount,
+        customerName,
+      })
+    }
 
     return {
       ok: true,

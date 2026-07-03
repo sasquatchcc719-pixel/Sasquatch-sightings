@@ -101,6 +101,13 @@ export async function POST(
       customerName,
       description: `Job ${appointment.id}`,
     })
+    await supabase
+      .from('ops_invoices')
+      .update({
+        square_payment_link_url: paymentUrl,
+        square_payment_link_cents: Math.round(total * 100),
+      })
+      .eq('id', appointment.invoice.id)
     const customerPaymentUrl = buildPublicPaymentUrl(
       publicSiteOrigin(request),
       createInvoicePaymentToken({

@@ -329,6 +329,13 @@ export async function POST(
         customerName,
         description: addressText,
       })
+      await supabase
+        .from('ops_invoices')
+        .update({
+          square_payment_link_url: paymentUrl,
+          square_payment_link_cents: Math.round(total * 100),
+        })
+        .eq('id', id)
       const customerPaymentUrl = invoicePaymentUrl(request, id, 'square')
 
       const linkBody = [

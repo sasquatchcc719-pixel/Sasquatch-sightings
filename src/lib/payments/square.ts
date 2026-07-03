@@ -18,6 +18,7 @@ export async function createSquarePaymentLink(params: {
   amount: number
   customerName: string
   description?: string | null
+  idempotencyKey?: string
 }): Promise<string> {
   const accessToken = process.env.SQUARE_ACCESS_TOKEN
   const locationId = process.env.SQUARE_LOCATION_ID
@@ -42,7 +43,8 @@ export async function createSquarePaymentLink(params: {
         'Square-Version': '2025-04-16',
       },
       body: JSON.stringify({
-        idempotency_key: `ops-invoice-${params.invoiceId}-${cents}`,
+        idempotency_key:
+          params.idempotencyKey ?? `ops-invoice-${params.invoiceId}-${cents}`,
         quick_pay: {
           name: `Sasquatch ${invoiceReference} - ${params.customerName}`,
           price_money: {
