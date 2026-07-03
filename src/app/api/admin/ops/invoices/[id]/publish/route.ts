@@ -276,7 +276,9 @@ export async function POST(request: NextRequest, { params }: Params) {
         gps_fuzzy_lng: fuzzLng,
         city: resolvedCity,
         neighborhood,
-        raw_voice_input: description,
+        // Provenance: the factual inputs the description was generated from
+        // (was a duplicate of ai_description, which destroyed the audit trail).
+        raw_voice_input: lineItemNames.filter(Boolean).join(', ') || null,
         ai_description: description,
         slug,
         status: 'published',

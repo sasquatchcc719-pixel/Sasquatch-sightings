@@ -1119,8 +1119,8 @@ export function InvoiceDetail({
     const serviceType = lineItems[0]?.description || 'Carpet Cleaning'
     const city = addr?.city || 'Colorado Springs'
     const notes = lineItems
-      .map((li) => li.description)
-      .filter(Boolean)
+      .filter((li) => li.description)
+      .map((li) => `${li.description} x${li.quantity || 1}`)
       .join(', ')
 
     setAiDescLoading(true)
@@ -1133,6 +1133,7 @@ export function InvoiceDetail({
           city,
           neighborhood: '',
           notes,
+          month: new Date().toISOString().slice(0, 7),
         }),
       })
       const data = await res.json()

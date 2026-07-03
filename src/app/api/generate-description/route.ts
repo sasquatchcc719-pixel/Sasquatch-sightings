@@ -1,6 +1,11 @@
 /**
  * AI Job Description Generator API
- * Generates unique, SEO-friendly job completion descriptions
+ * Writes the public job-page description (a permanent SEO page, NOT a social
+ * post — social copy has its own pipeline). Facts-only: the copy is grounded
+ * in the invoice line items and never invents customers, backstories, or
+ * circumstances. July 2026 rewrite — the previous prompt asked the model to
+ * imagine homeowner situations, which produced 131 near-identical AI-slop
+ * pages that Google refused to index.
  */
 
 import OpenAI from 'openai'
@@ -10,9 +15,26 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
 
+/** Derive the angle from what was actually on the invoice, so structure
+ *  varies with the work instead of a random style wheel. */
+function pickAngle(notes: string): string {
+  const n = notes.toLowerCase()
+  if (n.includes('urine'))
+    return 'Lead with the odor/urine treatment work and how the treatment process differs from regular cleaning.'
+  if (n.includes('step') || n.includes('stair'))
+    return 'Lead with the stairs — they take the most wear per square foot in a home and show it first.'
+  if (n.includes('rug'))
+    return 'Lead with the area rug(s) and what proper rug cleaning involves versus wall-to-wall carpet.'
+  if (n.includes('furniture') || n.includes('upholstery'))
+    return 'Lead with the upholstery work and how fabric cleaning differs from carpet.'
+  if (n.includes('sasquatch size') || n.includes('jumbo'))
+    return 'Lead with the size of the job — large rooms and what covering that square footage properly takes.'
+  return 'Lead with the scope of the job — what areas were cleaned, plainly stated.'
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const { serviceType, neighborhood, city, rooms, notes } =
+    const { serviceType, neighborhood, city, rooms, notes, month, hours } =
       await request.json()
 
     if (!serviceType || !city) {
@@ -25,97 +47,49 @@ export async function POST(request: NextRequest) {
     const isRestoration =
       serviceType === 'Flood Restoration' || serviceType === 'Water Restoration'
 
-    // 6 rotating post styles for carpet cleaning — picked randomly so posts never sound the same
-    const carpetStyles = [
-      {
-        name: 'before_after',
-        instruction: `Write a BEFORE/AFTER storytelling post. Open with a vivid 1-sentence picture of the problem (pet traffic, years of buildup, staining, etc.) then pivot to the result. Make the transformation feel satisfying. Mention the neighborhood naturally.`,
-      },
-      {
-        name: 'the_challenge',
-        instruction: `Lead with EMPATHY for the homeowner's situation — kids, pets, high traffic, years of neglect, or a specific struggle. Make the reader feel understood before you mention what we did. Mention the neighborhood naturally.`,
-      },
-      {
-        name: 'educational',
-        instruction: `Open with an EDUCATIONAL hook — something most people don't know about carpet cleaning (e.g. why CRB agitation matters, why pH-balanced rinse prevents re-soiling, why hot water extraction beats dry cleaning). Then tie it naturally to this specific job and location. Teach, don't sell.`,
-      },
-      {
-        name: 'local_shoutout',
-        instruction: `Write a warm LOCAL COMMUNITY shoutout post. Mention the specific neighborhood prominently and with pride — like you're part of the community, not just passing through. Reference something local or seasonal if possible (Colorado weather, allergen season, school year, etc.).`,
-      },
-      {
-        name: 'the_result',
-        instruction: `Focus entirely on THE OUTCOME and how the homeowner felt. Write it almost like a near-testimonial — what the space looks and feels like now. Use sensory language (fluffy, bright, fresh). Mention the neighborhood naturally.`,
-      },
-      {
-        name: 'myth_buster',
-        instruction: `Open with a CONTRARIAN or surprising hook — bust a common myth about carpet cleaning (e.g. "waiting until it looks dirty costs you more," "store-bought cleaners make it worse long-term," "not all steam cleaning is the same"). Then connect it to the job. Make people think.`,
-      },
-    ]
-
-    const selectedStyle = isRestoration
-      ? null
-      : carpetStyles[Math.floor(Math.random() * carpetStyles.length)]
+    const location = neighborhood ? `${neighborhood}, ${city}` : city
+    const factLines = [
+      `Service: ${serviceType}`,
+      `City: ${location}`,
+      rooms ? `Rooms/Areas: ${rooms}` : null,
+      notes ? `Invoice line items (what was actually done): ${notes}` : null,
+      month ? `Month of job: ${month}` : null,
+      hours ? `Hours on site: ${hours}` : null,
+    ].filter(Boolean)
 
     const systemPrompt = isRestoration
-      ? `You write SEO-optimized social media descriptions for Sasquatch Water Restoration job completion posts.
+      ? `You write the description for a completed water-restoration job page on Sasquatch Carpet Cleaning's website. It is a permanent SEO page about one real job.
 
-CRITICAL SEO RULES:
-- ALWAYS mention the neighborhood/area in the first sentence (e.g., "Kings Deer", "Briargate", "Monument")
-- Use Urgent, Professional, and Reassuring language
-- 2-4 sentences max
-- End with 🦶 emoji (Sasquatch footprint brand element)
+USE ONLY THE FACTS PROVIDED. Never invent the cause of the water damage, the customer, or their circumstances. Describe the work, not a story.
 
-Process details to weave in naturally (Focus on the SCIENCE of drying):
-- Daily monitoring: we return EVERY DAY to take moisture readings and adjust equipment.
-- Equipment: LGR Dehumidifiers and Commercial Air Movers.
-- Efficiency: Structural Drying — saving drywall/floors/cabinets so they don't need replacement.
-- Speed: Rapid response to stop secondary damage.
-- The Goal: "We dry it faster so you can get your home back sooner."
+Real process facts you may draw on: daily moisture readings, LGR dehumidifiers, commercial air movers, structural drying that saves drywall/floors/cabinets from replacement.
 
-Style:
-- Specialized and Technical (show we are experts, not just cleaners)
-- Reassuring but serious about the process
-- NO generic "we cleaned it" language. We RESTORED and SAVED it.
-- NO hashtags (added separately)`
-      : `You write social media posts for Sasquatch Carpet Cleaning job completions. Posts go to Google Business and Facebook.
+- 60-100 words, 1 paragraph
+- Mention ${location} once, naturally
+- Plain confident prose. No hype, no emoji, no hashtags, no pricing
+- Never open with a question`
+      : `You write the description for a completed job page on Sasquatch Carpet Cleaning's website. It is a permanent SEO page about one real job in ${location}.
 
-TODAY'S POST STYLE: ${selectedStyle!.name.toUpperCase().replace('_', ' ')}
-${selectedStyle!.instruction}
-
-ALWAYS:
-- 2-4 sentences max
-- Mention the neighborhood/area naturally (not forced)
-- End with 🦶 emoji (Sasquatch footprint brand element)
-- Include location name for SEO (${neighborhood ? neighborhood + ', ' : ''}${city})
-- NO hashtags (added separately)
-- NO pricing
-- NO excessive exclamation points
-
-Process details to weave in when relevant:
-- Pre-spray to break down grime
-- CRB (counter-rotating brush) agitation to lift dirt from fibers
-- Hot water extraction
-- Acid rinse for soft, residue-free results
-
-If the user provides existing notes, use them as context for the story — don't ignore details they gave you.`
+HARD RULES — every violation makes the page worse for SEO:
+- USE ONLY THE FACTS PROVIDED (line items, quantities, city, month, hours). NEVER invent the customer, their pets or kids, how a stain happened, what the homeowner felt, or how long dirt "built up". No fictional narrative of any kind.
+- BANNED: opening with a question; "Did you know"; "cozy"; "we had the pleasure"; "transformation"; "magic"; "refresh/refreshed"; "nestled"; "vibrant"; "not only... but also"; "look no further"; "whether you"; exclamation points; emoji; hashtags; pricing.
+- 60-100 words, 1 paragraph. Shorter is better than padded.
+- Mention ${location} once or twice, naturally — never forced.
+- State quantities from the line items exactly (e.g. "five rooms, twelve stairs, two hallways").
+- ${pickAngle(String(notes ?? rooms ?? ''))}
+- You may include real process detail where it fits: pre-spray, CRB (counter-rotating brush) agitation, hot water extraction, acid-side rinse that leaves no detergent residue. One or two process facts, not the whole list every time.
+- Month may be used for season context ("late June") — never invent weather.
+- Round hours conversationally ("about two hours", "a half-day job") — never decimals.
+- Never open with the company name, the date, or "In [month]". Open with the work itself.
+- Write like a competent tradesperson summarizing the day's work: concrete, specific, zero marketing voice. No closing summary sentence — end when the facts end.`
 
     const response = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
-      max_tokens: 200,
-      temperature: 0.85,
+      max_tokens: 220,
+      temperature: 0.6,
       messages: [
-        {
-          role: 'system',
-          content: systemPrompt,
-        },
-        {
-          role: 'user',
-          content: `Service: ${serviceType}
-Location: ${neighborhood ? neighborhood + ', ' : ''}${city}
-${rooms ? 'Rooms/Areas: ' + rooms : ''}
-${notes ? 'Job notes:\n' + notes : 'No additional notes'}`,
-        },
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: factLines.join('\n') },
       ],
     })
 
