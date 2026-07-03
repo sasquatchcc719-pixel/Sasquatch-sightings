@@ -76,8 +76,31 @@ export default function LocationPartnerPage() {
     }
   }
 
-  // Track the tap and get partner info on page load
+  // Load partner display info (name/coupon) separately from tracking:
+  // content blockers filter "track" URLs, and the coupon code + booking
+  // attribution must survive that.
   useEffect(() => {
+    const loadPartnerInfo = async () => {
+      try {
+        const response = await fetch(
+          `/api/location-partner/info?id=${partnerId}`,
+        )
+        if (!response.ok) return
+        const data = await response.json()
+        if (data.partnerName) {
+          setPartner({
+            id: partnerId,
+            location_name: data.partnerName,
+            company_name: data.partnerName,
+            location_type: data.locationType || null,
+            couponCode: data.couponCode,
+          })
+        }
+      } catch (error) {
+        console.error('Failed to load partner info:', error)
+      }
+    }
+
     const trackTap = async () => {
       try {
         const response = await fetch('/api/tap/track', {
@@ -92,21 +115,13 @@ export default function LocationPartnerPage() {
         if (data.tapId) {
           setTapId(data.tapId)
         }
-        if (data.partnerName) {
-          setPartner({
-            id: partnerId,
-            location_name: data.partnerName,
-            company_name: data.partnerName,
-            location_type: data.locationType || null,
-            couponCode: data.couponCode,
-          })
-        }
       } catch (error) {
         console.error('Failed to track tap:', error)
       }
     }
 
     if (partnerId) {
+      void loadPartnerInfo()
       void trackTap()
     }
   }, [partnerId])
