@@ -20,7 +20,9 @@ import {
   CheckCircle,
   Loader2,
   Store,
+  QrCode,
 } from 'lucide-react'
+import QRCode from 'qrcode'
 import { createClient } from '@/supabase/client'
 import {
   Select,
@@ -436,6 +438,20 @@ export default function LocationPartnersPage() {
     void navigator.clipboard.writeText(url)
     setCopiedId(partnerId)
     setTimeout(() => setCopiedId(null), 2000)
+  }
+
+  // Print-quality QR: 1024px, high error correction so print wear doesn't break scans
+  const downloadQr = async (url: string, filename: string) => {
+    const dataUrl = await QRCode.toDataURL(url, {
+      width: 1024,
+      margin: 2,
+      errorCorrectionLevel: 'H',
+      color: { dark: '#000000', light: '#ffffff' },
+    })
+    const a = document.createElement('a')
+    a.href = dataUrl
+    a.download = `${filename.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-qr.png`
+    a.click()
   }
 
   const copyReviewUrl = (partnerId: string) => {
@@ -1258,18 +1274,34 @@ export default function LocationPartnersPage() {
                           <span className="text-xs font-semibold text-blue-700 dark:text-blue-300">
                             Sasquatch Station
                           </span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 px-2 text-xs"
-                            onClick={() => copyUrl(partner.id)}
-                          >
-                            {copiedId === partner.id ? (
-                              '✓'
-                            ) : (
-                              <Copy className="h-3 w-3" />
-                            )}
-                          </Button>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-2 text-xs"
+                              title="Download print-ready QR code"
+                              onClick={() =>
+                                void downloadQr(
+                                  `${window.location.origin}/tap?partner=${partner.id}`,
+                                  `${partner.company_name}-station`,
+                                )
+                              }
+                            >
+                              <QrCode className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-2 text-xs"
+                              onClick={() => copyUrl(partner.id)}
+                            >
+                              {copiedId === partner.id ? (
+                                '✓'
+                              ) : (
+                                <Copy className="h-3 w-3" />
+                              )}
+                            </Button>
+                          </div>
                         </div>
                         <code className="block overflow-x-auto text-xs whitespace-nowrap text-blue-600 dark:text-blue-400">
                           /tap?partner={partner.id}
@@ -1287,16 +1319,33 @@ export default function LocationPartnersPage() {
                             Google Review Station
                           </span>
                           {partner.google_review_url ? (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 shrink-0 px-2 text-xs"
-                              onClick={() => copyReviewUrl(partner.id)}
-                            >
-                              {copiedReviewId === partner.id
-                                ? 'Copied'
-                                : 'Copy'}
-                            </Button>
+                            <div className="flex shrink-0 items-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 px-2 text-xs"
+                                title="Download print-ready QR code"
+                                onClick={() =>
+                                  void downloadQr(
+                                    partner.google_review_url ??
+                                      `${window.location.origin}/review/${partner.id}`,
+                                    `${partner.company_name}-review`,
+                                  )
+                                }
+                              >
+                                <QrCode className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 px-2 text-xs"
+                                onClick={() => copyReviewUrl(partner.id)}
+                              >
+                                {copiedReviewId === partner.id
+                                  ? 'Copied'
+                                  : 'Copy'}
+                              </Button>
+                            </div>
                           ) : null}
                         </div>
                         {partner.google_review_url ? (
