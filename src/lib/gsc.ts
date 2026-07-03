@@ -75,7 +75,12 @@ export async function listSitemapStatuses(
   }))
 }
 
-export type GscTotals = { clicks: number; impressions: number }
+export type GscTotals = {
+  clicks: number
+  impressions: number
+  ctr: number
+  position: number
+}
 
 export async function queryTotals(
   sc: searchconsole_v1.Searchconsole,
@@ -97,6 +102,8 @@ export async function queryTotals(
   return {
     clicks: Number(row?.clicks || 0),
     impressions: Number(row?.impressions || 0),
+    ctr: Number(row?.ctr || 0),
+    position: Number(row?.position || 0),
   }
 }
 
