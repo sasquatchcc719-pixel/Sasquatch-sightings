@@ -4,13 +4,17 @@ import { ECHO_STYLES, type EchoStyle, type EchoJobContext } from './types'
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
+// Styles are STRUCTURAL variations only — every one is bound by the same
+// facts-only rule in the system prompt. The old style wheel instructed the
+// model to invent homeowner situations, which produced the same AI slop the
+// July 2026 job-page rewrite purged. Keys are stored in the DB; do not rename.
 const STYLE_INSTRUCTIONS: Record<EchoStyle, string> = {
-  before_after: `Write a BEFORE/AFTER storytelling post. Open with a vivid 1-sentence picture of the problem (pet traffic, years of buildup, staining, etc.) then pivot to the result. Make the transformation feel satisfying. Mention the neighborhood naturally.`,
-  the_challenge: `Lead with EMPATHY for the homeowner's situation — kids, pets, high traffic, years of neglect, or a specific struggle. Make the reader feel understood before you mention what we did. Mention the neighborhood naturally.`,
-  educational: `Open with an EDUCATIONAL hook — something most people don't know about carpet cleaning (e.g. why CRB agitation matters, why pH-balanced rinse prevents re-soiling, why hot water extraction beats dry cleaning). Then tie it naturally to this specific job and location. Teach, don't sell.`,
-  local_shoutout: `Write a warm LOCAL COMMUNITY shoutout post. Mention the specific neighborhood prominently and with pride — like you're part of the community, not just passing through. Reference something local or seasonal if possible (Colorado weather, allergen season, school year, etc.).`,
-  the_result: `Focus entirely on THE OUTCOME and how the homeowner felt. Write it almost like a near-testimonial — what the space looks and feels like now. Use sensory language (fluffy, bright, fresh). Mention the neighborhood naturally.`,
-  myth_buster: `Open with a CONTRARIAN or surprising hook — bust a common myth about carpet cleaning. Then connect it to the job. Make people think.`,
+  before_after: `Open with what the carpet looked like before ONLY if the field notes state it; otherwise open with the scope of work (areas and quantities), then the result visible in the photo. Never invent the "before" condition.`,
+  the_challenge: `Open with the specific cleaning problem THE FIELD NOTES mention (e.g. urine treatment on the invoice = pet odor job). If the notes name no problem, open with the scope of work instead. Never invent a problem or a customer situation.`,
+  educational: `Open with one real process fact relevant to this job (why CRB agitation matters, why an acid-side rinse prevents re-soiling, why enzyme treatment must reach the pad) and tie it to what was actually done here. Teach, don't sell.`,
+  local_shoutout: `Mention the city prominently and plainly — matter-of-fact local presence. Use ONLY location facts provided. No invented weather, seasons, or community events.`,
+  the_result: `Describe the visible outcome — what the carpet in the photo looks like now (clean pile, brightened traffic lanes, uniform color). Physical observations only; never describe how the homeowner felt.`,
+  myth_buster: `State one common carpet-cleaning misconception and correct it with a real process fact, tied to what was done on this job. No rhetorical questions as the opener.`,
 }
 
 const BANNED_OPENERS = [
@@ -60,21 +64,22 @@ export async function generatePostBody(
 TODAY'S STYLE: ${style.toUpperCase().replace(/_/g, ' ')}
 ${STYLE_INSTRUCTIONS[style]}
 
+HARD RULE — FACTS ONLY: use only the service items, location, and field notes provided. NEVER invent the customer, their pets or kids, how a stain happened, what the homeowner felt, years of buildup, weather, or seasons. If the notes don't say it, it doesn't go in the post.
+
 FORBIDDEN OPENERS — do NOT start with these or anything that pattern-matches them:
 ${BANNED_OPENERS.map((o) => `- "${o}..."`).join('\n')}
+Also never open with a question.
+
+BANNED WORDS/PHRASES: "cozy", "transformation", "magic", "refresh"/"refreshed", "nestled", "vibrant", "Did you know", "Think again", "we had the pleasure".
 
 ALWAYS:
-- 2-4 sentences max
+- 2-3 sentences max. Shorter beats padded.
 - Use the REAL service performed (${lineItems}) — never say "Standard Carpet Cleaning"
 - Mention the location naturally (${location})
 - Vary the first 5 words from anything you might typically write
-- NO hashtags
-- NO pricing
-- NO phone numbers
-- NO excessive exclamation points
-- Use the field notes / existing description if provided — don't ignore real specifics
-
-If the field notes contain a specific problem (pet odor, water damage, heavy stains, etc.), weave it in.`
+- NO hashtags, NO pricing, NO phone numbers, NO exclamation points
+- The field notes are factual — use their specifics, add nothing beyond them
+- Voice: a competent tradesperson noting the day's work. Concrete and plain.`
 
   const userPrompt = `Service performed: ${lineItems}
 Location: ${location}
@@ -83,7 +88,7 @@ ${job.ai_description ? 'Existing description / field notes:\n' + job.ai_descript
   const response = await openai.chat.completions.create({
     model: 'gpt-4o-mini',
     max_tokens: 220,
-    temperature: 0.9,
+    temperature: 0.7,
     messages: [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt },
