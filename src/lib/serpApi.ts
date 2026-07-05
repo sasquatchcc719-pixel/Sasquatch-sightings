@@ -4,6 +4,8 @@
  * accuracy (see real ranks 21–50) with credits. Uses gl/hl for US English.
  */
 
+import { fetchSerpApiJson } from '@/lib/serpapi-budget'
+
 export type SerpApiOrganicResult = {
   position: number
   link: string
@@ -102,11 +104,6 @@ export async function fetchSerpRanks(
   location: string,
   domains: RadarDomain[],
 ): Promise<SerpRanksWithSnapshot> {
-  const apiKey = process.env.SERPAPI_API_KEY
-  if (!apiKey) {
-    throw new Error('SERPAPI_API_KEY is not set')
-  }
-
   const params = new URLSearchParams({
     engine: 'google',
     q: keyword,
@@ -114,19 +111,9 @@ export async function fetchSerpRanks(
     num: String(SERP_NUM_RESULTS),
     gl: 'us',
     hl: 'en',
-    api_key: apiKey,
   })
 
-  const res = await fetch(`https://serpapi.com/search?${params.toString()}`, {
-    next: { revalidate: 0 },
-  })
-
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`SerpApi request failed: ${res.status} ${text}`)
-  }
-
-  const data = (await res.json()) as {
+  const data = await fetchSerpApiJson<{
     organic_results?: Array<{ position?: number; link?: string }>
     local_results?: {
       places?: Array<{
@@ -139,7 +126,11 @@ export async function fetchSerpRanks(
       }>
     }
     error?: string
-  }
+  }>({
+    source: 'radar-web-rank',
+    query: `${keyword} | ${location}`,
+    params,
+  })
 
   if (data.error) {
     throw new Error(`SerpApi error: ${data.error}`)
@@ -257,11 +248,6 @@ export async function fetchMapsLocalFinder(
   location: string,
   domains: RadarDomain[],
 ): Promise<SerpMapsLocalFinder> {
-  const apiKey = process.env.SERPAPI_API_KEY
-  if (!apiKey) {
-    throw new Error('SERPAPI_API_KEY is not set')
-  }
-
   // "monument, Colorado, United States" → "monument, Colorado" so the query
   // reads naturally as "carpet cleaning monument, Colorado".
   const area = location
@@ -275,19 +261,9 @@ export async function fetchMapsLocalFinder(
     q: `${keyword} ${area}`.trim(),
     gl: 'us',
     hl: 'en',
-    api_key: apiKey,
   })
 
-  const res = await fetch(`https://serpapi.com/search?${params.toString()}`, {
-    next: { revalidate: 0 },
-  })
-
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`SerpApi maps request failed: ${res.status} ${text}`)
-  }
-
-  const data = (await res.json()) as {
+  const data = await fetchSerpApiJson<{
     local_results?: Array<{
       position?: number
       title?: string
@@ -298,7 +274,11 @@ export async function fetchMapsLocalFinder(
       links?: { website?: string }
     }>
     error?: string
-  }
+  }>({
+    source: 'radar-maps-local-finder',
+    query: `${keyword} | ${area}`,
+    params,
+  })
 
   if (data.error) {
     // "no results" for a town is a normal empty case, not a hard failure.
@@ -355,11 +335,6 @@ export async function fetchSerpDomains(
   keyword: string,
   location: string,
 ): Promise<SerpDomainWithPosition[]> {
-  const apiKey = process.env.SERPAPI_API_KEY
-  if (!apiKey) {
-    throw new Error('SERPAPI_API_KEY is not set')
-  }
-
   const params = new URLSearchParams({
     engine: 'google',
     q: keyword,
@@ -367,22 +342,16 @@ export async function fetchSerpDomains(
     num: String(SERP_NUM_RESULTS),
     gl: 'us',
     hl: 'en',
-    api_key: apiKey,
   })
 
-  const res = await fetch(`https://serpapi.com/search?${params.toString()}`, {
-    next: { revalidate: 0 },
-  })
-
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`SerpApi request failed: ${res.status} ${text}`)
-  }
-
-  const data = (await res.json()) as {
+  const data = await fetchSerpApiJson<{
     organic_results?: Array<{ position?: number; link?: string }>
     error?: string
-  }
+  }>({
+    source: 'radar-discover',
+    query: `${keyword} | ${location}`,
+    params,
+  })
 
   if (data.error) {
     throw new Error(`SerpApi error: ${data.error}`)
@@ -415,11 +384,6 @@ export async function fetchSerpSnippets(
   query: string,
   location = 'Colorado Springs, Colorado, United States',
 ): Promise<SerpSnippet[]> {
-  const apiKey = process.env.SERPAPI_API_KEY
-  if (!apiKey) {
-    throw new Error('SERPAPI_API_KEY is not set')
-  }
-
   const params = new URLSearchParams({
     engine: 'google',
     q: query,
@@ -427,22 +391,16 @@ export async function fetchSerpSnippets(
     num: '10',
     gl: 'us',
     hl: 'en',
-    api_key: apiKey,
   })
 
-  const res = await fetch(`https://serpapi.com/search?${params.toString()}`, {
-    next: { revalidate: 0 },
-  })
-
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`SerpApi request failed: ${res.status} ${text}`)
-  }
-
-  const data = (await res.json()) as {
+  const data = await fetchSerpApiJson<{
     organic_results?: Array<{ title?: string; snippet?: string }>
     error?: string
-  }
+  }>({
+    source: 'radar-dossier-snippets',
+    query: `${query} | ${location}`,
+    params,
+  })
 
   if (data.error) {
     throw new Error(`SerpApi error: ${data.error}`)

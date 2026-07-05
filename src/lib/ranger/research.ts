@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { fetchSerpApiJson } from '@/lib/serpapi-budget'
 import type {
   RangerApplicant,
   RangerConfidence,
@@ -208,26 +209,30 @@ async function searchWithFirecrawl(
 async function searchWithSerpApi(
   query: string,
 ): Promise<FirecrawlSearchResult[]> {
-  const apiKey = process.env.SERPAPI_API_KEY
-  if (!apiKey) return []
+  if (!process.env.SERPAPI_API_KEY) return []
 
-  const url = new URL('https://serpapi.com/search.json')
-  url.searchParams.set('engine', 'google')
-  url.searchParams.set('q', query)
-  url.searchParams.set('api_key', apiKey)
-  url.searchParams.set('num', '5')
+  const params = new URLSearchParams({
+    engine: 'google',
+    q: query,
+    num: '5',
+  })
 
-  const response = await fetch(url)
-  if (!response.ok) {
-    throw new Error(`SerpAPI search failed: ${response.status}`)
-  }
-
-  const result = (await response.json()) as {
+  const result = await fetchSerpApiJson<{
     organic_results?: Array<{
       title?: string
       link?: string
       snippet?: string
     }>
+    error?: string
+  }>({
+    source: 'ranger-public-research',
+    query,
+    params,
+    endpoint: 'https://serpapi.com/search.json',
+  })
+
+  if (result.error) {
+    throw new Error(`SerpAPI search failed: ${result.error}`)
   }
 
   return (result.organic_results || []).map((item) => ({

@@ -5,23 +5,99 @@
 
 import { createAdminClient } from '@/supabase/server'
 import { fetchSerpRanks, fetchMapsLocalFinder } from '@/lib/serpApi'
+import { SerpApiQuotaError } from '@/lib/serpapi-budget'
 
 const DELAY_MS = 2000
+const SERPAPI_CREDITS_PER_KEYWORD = 2
+const DEFAULT_RADAR_SERPAPI_DAILY_CREDIT_BUDGET = 6
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+type RadarKeyword = {
+  id: string
+  keyword: string
+  location: string
+}
+
+export type RadarScanOptions = {
+  maxSerpApiCredits?: number
+}
+
 export type RadarScanResult = {
   success: boolean
   keywords_processed: number
+  keywords_available?: number
+  keywords_deferred?: number
+  serpapi_credits_budgeted?: number
+  serpapi_credits_planned?: number
   rankings_inserted: number
   message?: string
   /** When rankings_inserted is 0 but we had keywords/domains, the first error from SerpApi or insert */
   error_detail?: string
 }
 
-export async function runRadarScan(): Promise<RadarScanResult> {
+export function getRadarSerpApiDailyCreditBudget(): number {
+  const parsed = Number.parseInt(
+    process.env.RADAR_SERP_DAILY_CREDIT_BUDGET || '',
+    10,
+  )
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return DEFAULT_RADAR_SERPAPI_DAILY_CREDIT_BUDGET
+  }
+  return Math.min(parsed, 20)
+}
+
+async function loadLatestScanByKeyword(
+  supabase: ReturnType<typeof createAdminClient>,
+  keywordIds: string[],
+): Promise<Map<string, string>> {
+  if (keywordIds.length === 0) return new Map()
+
+  const { data, error } = await supabase
+    .from('radar_rankings')
+    .select('keyword_id, created_at')
+    .in('keyword_id', keywordIds)
+    .order('created_at', { ascending: false })
+    .limit(Math.min(Math.max(keywordIds.length * 40, 100), 5000))
+
+  if (error) {
+    console.warn('[Radar Scan] Could not load latest scan timestamps:', error)
+    return new Map()
+  }
+
+  const latest = new Map<string, string>()
+  for (const row of data ?? []) {
+    if (!latest.has(row.keyword_id)) {
+      latest.set(row.keyword_id, row.created_at)
+    }
+  }
+  return latest
+}
+
+function oldestScannedFirst(
+  keywords: RadarKeyword[],
+  latestScanByKeyword: Map<string, string>,
+): RadarKeyword[] {
+  const scanTime = (keywordId: string) => {
+    const value = latestScanByKeyword.get(keywordId)
+    const time = value ? Date.parse(value) : 0
+    return Number.isFinite(time) ? time : 0
+  }
+
+  return [...keywords].sort((a, b) => {
+    const timeDiff = scanTime(a.id) - scanTime(b.id)
+    if (timeDiff !== 0) return timeDiff
+    return `${a.keyword} ${a.location}`.localeCompare(
+      `${b.keyword} ${b.location}`,
+    )
+  })
+}
+
+export async function runRadarScan(
+  options: RadarScanOptions = {},
+): Promise<RadarScanResult> {
   const supabase = createAdminClient()
 
   const { data: keywords, error: kwError } = await supabase
@@ -54,11 +130,43 @@ export async function runRadarScan(): Promise<RadarScanResult> {
     }
   }
 
+  const maxCredits =
+    options.maxSerpApiCredits ?? getRadarSerpApiDailyCreditBudget()
+  const keywordLimit = Math.floor(
+    Math.max(maxCredits, 0) / SERPAPI_CREDITS_PER_KEYWORD,
+  )
+
+  if (keywordLimit < 1) {
+    return {
+      success: true,
+      keywords_processed: 0,
+      keywords_available: keywords.length,
+      keywords_deferred: keywords.length,
+      serpapi_credits_budgeted: maxCredits,
+      serpapi_credits_planned: 0,
+      rankings_inserted: 0,
+      message:
+        'Radar scan skipped because the SerpApi daily budget is below one keyword.',
+    }
+  }
+
+  const latestScanByKeyword = await loadLatestScanByKeyword(
+    supabase,
+    keywords.map((kw) => kw.id),
+  )
+  const keywordsToProcess = oldestScannedFirst(
+    keywords,
+    latestScanByKeyword,
+  ).slice(0, keywordLimit)
+
   let rankingsInserted = 0
   let firstError: string | undefined
+  let keywordsProcessed = 0
+  let quotaExhausted = false
 
-  for (let i = 0; i < keywords.length; i++) {
-    const kw = keywords[i]
+  for (let i = 0; i < keywordsToProcess.length; i++) {
+    const kw = keywordsToProcess[i]
+    keywordsProcessed += 1
     try {
       const { ranks, snapshot } = await fetchSerpRanks(
         kw.keyword,
@@ -140,18 +248,40 @@ export async function runRadarScan(): Promise<RadarScanResult> {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       if (!firstError) firstError = msg
+      if (err instanceof SerpApiQuotaError) {
+        quotaExhausted = true
+        console.warn(`[Radar Scan] SerpApi budget stopped scan: ${msg}`)
+        break
+      }
       console.error(`[Radar Scan] SerpApi error for "${kw.keyword}":`, err)
     }
 
-    if (i < keywords.length - 1) {
+    if (i < keywordsToProcess.length - 1) {
       await sleep(DELAY_MS)
     }
   }
 
+  const keywordsDeferred = Math.max(keywords.length - keywordsProcessed, 0)
+  const messageParts: string[] = []
+  if (keywordsDeferred > 0) {
+    messageParts.push(
+      `Processed ${keywordsProcessed} of ${keywords.length} active keywords; ${keywordsDeferred} deferred for the SerpApi budget.`,
+    )
+  }
+  if (quotaExhausted) {
+    messageParts.push('SerpApi monthly quota gate stopped the scan.')
+  }
+
   return {
     success: true,
-    keywords_processed: keywords.length,
+    keywords_processed: keywordsProcessed,
+    keywords_available: keywords.length,
+    keywords_deferred: keywordsDeferred,
+    serpapi_credits_budgeted: maxCredits,
+    serpapi_credits_planned:
+      keywordsToProcess.length * SERPAPI_CREDITS_PER_KEYWORD,
     rankings_inserted: rankingsInserted,
+    ...(messageParts.length > 0 && { message: messageParts.join(' ') }),
     error_detail: rankingsInserted === 0 && firstError ? firstError : undefined,
   }
 }

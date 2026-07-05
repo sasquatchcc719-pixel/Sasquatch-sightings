@@ -11,8 +11,9 @@ import { syncGbpReviews } from '@/lib/gbp-reviews'
 import { createAdminClient } from '@/supabase/server'
 import { sendTelegramNotification } from '@/lib/telegram'
 
-// Two SerpApi calls per keyword (web 3-pack + deep Maps finder) with pacing
-// delays, plus GBP review sync — give it room like the other SERP/GSC crons.
+// Radar spends two SerpApi credits per keyword (web results + deep Maps finder).
+// runRadarScan now processes the oldest keyword slice within a daily credit
+// budget, and GBP review sync is capped separately to protect the 250/mo plan.
 export const maxDuration = 300
 
 export async function GET(request: NextRequest) {

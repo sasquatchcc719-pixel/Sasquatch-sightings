@@ -6,12 +6,13 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { fetchSerpApiJson } from '@/lib/serpapi-budget'
 
 // Sasquatch Carpet Cleaning, LLC — data_id from the Maps listing URL.
 const GBP_DATA_ID =
   process.env.GBP_DATA_ID || '0x2117fffca6651c3:0x8436346fd3fcc24a'
-/** Safety cap; incremental sync normally stops after 1-2 pages. */
-const MAX_PAGES = 12
+/** One newest-first page is enough for normal daily incremental sync. */
+const DEFAULT_MAX_PAGES = 1
 
 export type GbpReview = {
   review_id: string
@@ -37,29 +38,34 @@ type SerpReviewsPage = {
 async function fetchReviewsPage(
   pageToken: string | null,
 ): Promise<SerpReviewsPage> {
-  const apiKey = process.env.SERPAPI_API_KEY
-  if (!apiKey) throw new Error('SERPAPI_API_KEY is not set')
-
   const params = new URLSearchParams({
     engine: 'google_maps_reviews',
     data_id: GBP_DATA_ID,
     sort_by: 'newestFirst',
-    api_key: apiKey,
   })
   if (pageToken) {
     params.set('next_page_token', pageToken)
     params.set('num', '20')
   }
 
-  const res = await fetch(`https://serpapi.com/search?${params.toString()}`, {
-    next: { revalidate: 0 },
+  const data = await fetchSerpApiJson<SerpReviewsPage>({
+    source: 'gbp-reviews',
+    query: pageToken
+      ? `GBP reviews page ${pageToken.slice(0, 16)}`
+      : 'GBP reviews newest',
+    params,
   })
-  if (!res.ok) {
-    throw new Error(`SerpApi reviews request failed: ${res.status}`)
-  }
-  const data = (await res.json()) as SerpReviewsPage
   if (data.error) throw new Error(`SerpApi reviews error: ${data.error}`)
   return data
+}
+
+function getMaxPages(): number {
+  const parsed = Number.parseInt(
+    process.env.GBP_REVIEW_SYNC_MAX_PAGES || '',
+    10,
+  )
+  if (!Number.isFinite(parsed) || parsed < 1) return DEFAULT_MAX_PAGES
+  return Math.min(parsed, 5)
 }
 
 /**
@@ -74,7 +80,8 @@ export async function syncGbpReviews(supabase: SupabaseClient): Promise<{
   let totalOnGoogle: number | null = null
   let pageToken: string | null = null
 
-  for (let page = 0; page < MAX_PAGES; page += 1) {
+  const maxPages = getMaxPages()
+  for (let page = 0; page < maxPages; page += 1) {
     const data = await fetchReviewsPage(pageToken)
     if (totalOnGoogle == null && data.place_info?.reviews != null) {
       totalOnGoogle = data.place_info.reviews
