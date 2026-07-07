@@ -271,7 +271,7 @@ Hard rules:
 
 ## SQUARE FOOTAGE → SERVICE MAPPING (use these EXACT search terms with search_service_catalog)
 
-- Under 100 sqft → "Hall/Bathroom/Closet" ($30)
+- Under 100 sqft → "Small Area / Walk-in Closet" ($30)
 - 100–200 sqft → "Regular Size Room" ($46)
 - 200–400 sqft → "Sasquatch Size Room" ($90)
 - 400–600 sqft → "Monster Size Room" ($138)

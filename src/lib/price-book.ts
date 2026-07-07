@@ -16,10 +16,11 @@ export const PRICE_BOOK = {
         description: 'Stairway steps and landings',
       },
       {
-        name: 'Small Area Hall/Closet (50-100 sqft)',
+        name: 'Small Area / Walk-in Closet (up to 100 sqft)',
         price: 30,
         unit: 'per area',
-        description: 'Small hallway or closet carpet cleaning',
+        description:
+          'Small hallways, closets, or bathrooms under 100 sqft only',
       },
       {
         name: 'Regular Room (100-200 sqft)',
@@ -90,10 +91,11 @@ export const PRICE_BOOK = {
         description: 'Stairway steps and landings',
       },
       {
-        name: 'Small Area Hall/Closet (50-100 sqft)',
+        name: 'Small Area / Walk-in Closet (up to 100 sqft)',
         price: 50,
         unit: 'per area',
-        description: 'Deep restoration for small hallway or closet',
+        description:
+          'Deep restoration for small hallways, closets, or bathrooms under 100 sqft only',
       },
       {
         name: 'Regular Room (100-200 sqft)',

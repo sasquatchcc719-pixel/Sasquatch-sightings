@@ -10,8 +10,8 @@ const STANDARD_PRICING = [
   { label: 'Urine Eliminator Treatment', price: '$30' },
   { label: 'Step / Landing', price: '$4', unit: 'per step' },
   {
-    label: 'Small Area / Hall / Closet',
-    sublabel: '50–100 sqft',
+    label: 'Small Area / Walk-in Closet',
+    sublabel: 'up to 100 sqft',
     price: '$30',
   },
   { label: 'Regular Room', sublabel: '100–200 sqft', price: '$46' },
@@ -23,8 +23,8 @@ const STANDARD_PRICING = [
 const LEGENDARY_PRICING = [
   { label: 'Step / Landing', price: '$6', unit: 'per step' },
   {
-    label: 'Small Area / Hall / Closet',
-    sublabel: '50–100 sqft',
+    label: 'Small Area / Walk-in Closet',
+    sublabel: 'up to 100 sqft',
     price: '$50',
   },
   { label: 'Regular Room', sublabel: '100–200 sqft', price: '$75' },
