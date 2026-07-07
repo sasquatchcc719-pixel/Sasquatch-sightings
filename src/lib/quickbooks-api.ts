@@ -265,6 +265,7 @@ export async function createQBInvoice(params: {
   lineItems: Array<{
     description: string
     product_name?: string | null
+    service_catalog_item_id?: string | null
     quantity: number
     unit_price: number
     line_total: number
@@ -312,14 +313,13 @@ export async function createQBInvoice(params: {
     const productName = String(item.product_name || item.description || '')
       .trim()
       .replace(/\s+/g, ' ')
-    const itemRef = productName
-      ? await findQBItemRefByName(
-          auth.realmId,
-          auth.accessToken,
-          productName,
-          itemRefCache,
-        )
-      : null
+    const itemRef = await resolveQBItemRef(
+      auth.realmId,
+      auth.accessToken,
+      item.service_catalog_item_id,
+      productName,
+      itemRefCache,
+    )
 
     lines.push({
       Amount: item.line_total,
@@ -379,7 +379,53 @@ export async function createQBInvoice(params: {
   return data.Invoice.Id
 }
 
-async function findQBItemRefByName(
+// Resolves a QuickBooks Item ref for an invoice line. Prefers the cached
+// `service_catalog_items.quickbooks_item_id` (immune to catalog renames);
+// falls back to a name lookup and persists the result so future lines for
+// the same catalog item skip the name lookup entirely.
+async function resolveQBItemRef(
+  realmId: string,
+  accessToken: string,
+  catalogItemId: string | null | undefined,
+  fallbackName: string,
+  cache: Map<string, { value: string; name: string } | null>,
+): Promise<{ value: string; name: string } | null> {
+  if (!catalogItemId) {
+    return fallbackName
+      ? findQBItemRefByName(realmId, accessToken, fallbackName, cache)
+      : null
+  }
+
+  const cacheKey = `id:${catalogItemId}`
+  if (cache.has(cacheKey)) return cache.get(cacheKey) ?? null
+
+  const supabase = createAdminClient()
+  const { data: catalogItem } = await supabase
+    .from('service_catalog_items')
+    .select('quickbooks_item_id')
+    .eq('id', catalogItemId)
+    .single()
+
+  if (catalogItem?.quickbooks_item_id) {
+    const ref = { value: catalogItem.quickbooks_item_id, name: fallbackName }
+    cache.set(cacheKey, ref)
+    return ref
+  }
+
+  const ref = fallbackName
+    ? await findQBItemRefByName(realmId, accessToken, fallbackName, cache)
+    : null
+  if (ref) {
+    await supabase
+      .from('service_catalog_items')
+      .update({ quickbooks_item_id: ref.value })
+      .eq('id', catalogItemId)
+  }
+  cache.set(cacheKey, ref)
+  return ref
+}
+
+export async function findQBItemRefByName(
   realmId: string,
   accessToken: string,
   name: string,
@@ -514,9 +560,11 @@ export async function syncBatchInvoiceToQuickBooks(batchInvoiceId: string) {
         quantity: number
         unit_price: number
         line_total: number
+        service_catalog_item_id?: string | null
       }) => ({
         description: `${datePrefix} — ${line.notes || line.name_snapshot}`,
         product_name: line.name_snapshot,
+        service_catalog_item_id: line.service_catalog_item_id,
         quantity: Number(line.quantity || 1),
         unit_price: Number(line.unit_price || 0),
         line_total: Number(line.line_total || 0),
@@ -718,7 +766,7 @@ export async function syncAppointmentToQuickBooks(appointmentId: string) {
       ),
       ops_invoices (
         id, status, payment_method, subtotal, total, discount_amount, percentage_discount_amount, invoice_number, quickbooks_invoice_id,
-        ops_invoice_line_items ( description, quantity, unit_price, line_total )
+        ops_invoice_line_items ( description, quantity, unit_price, line_total, service_catalog_item_id )
       )
     `,
     )

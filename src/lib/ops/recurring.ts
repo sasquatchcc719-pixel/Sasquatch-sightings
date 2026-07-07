@@ -719,7 +719,7 @@ export async function generateBatchInvoice(
       `
       id, appointment_date, quoted_total,
       ops_appointment_line_items (
-        name_snapshot, quantity, unit_price, line_total
+        name_snapshot, quantity, unit_price, line_total, service_catalog_item_id
       )
     `,
     )
