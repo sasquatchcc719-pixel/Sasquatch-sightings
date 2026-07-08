@@ -74,6 +74,15 @@ export async function GET(request: NextRequest) {
           `id, status, appointment_date, start_time,
            ops_invoices ( id ),
            ops_service_addresses ( street_1, city ),
+           ops_job_photos (
+             id,
+             public_url,
+             label,
+             source,
+             uploaded_by_label,
+             original_filename,
+             created_at
+           ),
            customer_id`,
         )
         .in('customer_id', customerIds)

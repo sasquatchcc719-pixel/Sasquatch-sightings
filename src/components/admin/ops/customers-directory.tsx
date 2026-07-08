@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { useEffect, useState } from 'react'
 import {
   Briefcase,
@@ -11,6 +12,7 @@ import {
   Clock,
   DollarSign,
   ExternalLink,
+  Image as ImageIcon,
   Loader2,
   Pencil,
   Search,
@@ -41,6 +43,17 @@ type CustomerJob = {
   start_time: string | null
   ops_invoices: { id: string } | null
   ops_service_addresses: { street_1: string; city: string } | null
+  ops_job_photos?: CustomerJobPhoto[]
+}
+
+type CustomerJobPhoto = {
+  id: string
+  public_url: string | null
+  label: string | null
+  source: string | null
+  uploaded_by_label: string | null
+  original_filename: string | null
+  created_at: string
 }
 
 type CustomerRow = {
@@ -99,6 +112,8 @@ const UPCOMING_STATUSES = new Set([
   'on_my_way',
   'in_progress',
 ])
+const STAT_TOGGLE_CLASS =
+  'inline-flex cursor-pointer items-center gap-1 rounded-md border border-transparent bg-secondary px-2.5 py-0.5 text-xs font-normal text-secondary-foreground transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2'
 
 function formatJobDate(iso: string): string {
   const [year, month, day] = iso.split('-').map(Number)
@@ -117,6 +132,29 @@ function formatTime(hhmm: string | null): string {
   return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
 }
 
+function getJobPhotos(job: CustomerJob): CustomerJobPhoto[] {
+  return (job.ops_job_photos || [])
+    .filter((photo) => Boolean(photo.public_url))
+    .sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    )
+}
+
+function getCustomerPhotoCount(customer: CustomerRow): number {
+  return (customer.jobs || []).reduce(
+    (count, job) => count + getJobPhotos(job).length,
+    0,
+  )
+}
+
+function formatJobAddress(
+  address: CustomerJob['ops_service_addresses'],
+): string | null {
+  if (!address) return null
+  return [address.street_1, address.city].filter(Boolean).join(', ') || null
+}
+
 export function CustomersDirectory() {
   const [loading, setLoading] = useState(true)
   const [searching, setSearching] = useState(false)
@@ -129,6 +167,9 @@ export function CustomersDirectory() {
   const [expandedJobs, setExpandedJobs] = useState<
     Record<string, 'upcoming' | 'completed' | null>
   >({})
+  const [expandedPhotos, setExpandedPhotos] = useState<Record<string, boolean>>(
+    {},
+  )
 
   const fetchCustomers = async () => {
     const hasQuery = query.trim().length > 0
@@ -636,12 +677,23 @@ export function CustomersDirectory() {
                       const completed = allJobs.filter(
                         (j) => j.status === 'completed',
                       )
+                      const photoCount = getCustomerPhotoCount(customer)
+                      const photoJobs = allJobs.filter(
+                        (job) => getJobPhotos(job).length > 0,
+                      )
                       const expanded = expandedJobs[customer.id] ?? null
+                      const photosExpanded =
+                        expandedPhotos[customer.id] === true
                       const toggleExpand = (type: 'upcoming' | 'completed') =>
                         setExpandedJobs((prev) => ({
                           ...prev,
                           [customer.id]:
                             prev[customer.id] === type ? null : type,
+                        }))
+                      const togglePhotos = () =>
+                        setExpandedPhotos((prev) => ({
+                          ...prev,
+                          [customer.id]: !prev[customer.id],
                         }))
                       const expandedList =
                         expanded === 'upcoming'
@@ -654,9 +706,9 @@ export function CustomersDirectory() {
                         <>
                           <div className="mt-3 flex flex-wrap gap-2">
                             {upcoming.length > 0 ? (
-                              <Badge
-                                variant="secondary"
-                                className="cursor-pointer gap-1 text-xs font-normal text-blue-300 hover:bg-blue-500/20"
+                              <button
+                                type="button"
+                                className={`${STAT_TOGGLE_CLASS} text-blue-300 hover:bg-blue-500/20`}
                                 onClick={() => toggleExpand('upcoming')}
                               >
                                 <Clock className="h-3 w-3" />
@@ -666,12 +718,12 @@ export function CustomersDirectory() {
                                 ) : (
                                   <ChevronDown className="h-3 w-3" />
                                 )}
-                              </Badge>
+                              </button>
                             ) : null}
                             {completed.length > 0 ? (
-                              <Badge
-                                variant="secondary"
-                                className="cursor-pointer gap-1 text-xs font-normal hover:bg-green-500/20"
+                              <button
+                                type="button"
+                                className={`${STAT_TOGGLE_CLASS} hover:bg-green-500/20`}
                                 onClick={() => toggleExpand('completed')}
                               >
                                 <CheckCircle2 className="h-3 w-3" />
@@ -681,7 +733,23 @@ export function CustomersDirectory() {
                                 ) : (
                                   <ChevronDown className="h-3 w-3" />
                                 )}
-                              </Badge>
+                              </button>
+                            ) : null}
+                            {photoCount > 0 ? (
+                              <button
+                                type="button"
+                                className={`${STAT_TOGGLE_CLASS} hover:bg-sky-500/20`}
+                                onClick={togglePhotos}
+                              >
+                                <ImageIcon className="h-3 w-3" />
+                                {photoCount} photo
+                                {photoCount === 1 ? '' : 's'}
+                                {photosExpanded ? (
+                                  <ChevronUp className="h-3 w-3" />
+                                ) : (
+                                  <ChevronDown className="h-3 w-3" />
+                                )}
+                              </button>
                             ) : null}
                             {customer.last_job_date ? (
                               <Badge
@@ -775,6 +843,98 @@ export function CustomersDirectory() {
                                   <div key={job.id}>{content}</div>
                                 )
                               })}
+                            </div>
+                          ) : null}
+
+                          {photosExpanded && photoJobs.length > 0 ? (
+                            <div className="border-border/60 bg-background/70 mt-3 rounded-xl border p-3">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 text-sm font-medium">
+                                  <ImageIcon className="text-muted-foreground h-4 w-4" />
+                                  Job Photos
+                                </div>
+                                <Badge
+                                  variant="outline"
+                                  className="text-xs font-normal"
+                                >
+                                  {photoCount} total
+                                </Badge>
+                              </div>
+                              <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
+                                {photoJobs.flatMap((job) => {
+                                  const invoiceId = job.ops_invoices?.id
+                                  const address = formatJobAddress(
+                                    job.ops_service_addresses,
+                                  )
+
+                                  return getJobPhotos(job).map((photo) => {
+                                    const photoUrl = photo.public_url || ''
+
+                                    return (
+                                      <div
+                                        key={photo.id}
+                                        className="border-border/60 bg-card/70 overflow-hidden rounded-lg border"
+                                      >
+                                        <a
+                                          href={photoUrl}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="bg-muted relative block aspect-[4/3]"
+                                        >
+                                          <Image
+                                            src={photoUrl}
+                                            alt={`${photo.source === 'customer' ? 'Customer-submitted' : 'Staff-uploaded'} job photo from ${formatJobDate(job.appointment_date)}`}
+                                            fill
+                                            sizes="(max-width: 768px) 50vw, (max-width: 1280px) 33vw, 25vw"
+                                            className="object-cover"
+                                          />
+                                        </a>
+                                        <div className="space-y-1.5 p-2">
+                                          <div className="flex items-center justify-between gap-2">
+                                            <span className="truncate text-xs font-medium">
+                                              {formatJobDate(
+                                                job.appointment_date,
+                                              )}
+                                            </span>
+                                            {photo.source === 'customer' ? (
+                                              <Badge className="shrink-0 bg-emerald-500/15 text-[10px] font-medium text-emerald-300">
+                                                Customer
+                                              </Badge>
+                                            ) : null}
+                                          </div>
+                                          {address ? (
+                                            <div
+                                              className="text-muted-foreground truncate text-xs"
+                                              title={address}
+                                            >
+                                              {address}
+                                            </div>
+                                          ) : null}
+                                          {invoiceId ? (
+                                            <Button
+                                              asChild
+                                              size="sm"
+                                              variant="ghost"
+                                              className="h-7 w-full justify-start px-2 text-xs"
+                                            >
+                                              <Link
+                                                href={`/admin/operations/invoices/${invoiceId}`}
+                                              >
+                                                Open invoice
+                                                <ExternalLink className="ml-auto h-3 w-3" />
+                                              </Link>
+                                            </Button>
+                                          ) : (
+                                            <div className="text-muted-foreground px-2 text-xs">
+                                              No invoice
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    )
+                                  })
+                                })}
+                              </div>
                             </div>
                           ) : null}
                         </>
