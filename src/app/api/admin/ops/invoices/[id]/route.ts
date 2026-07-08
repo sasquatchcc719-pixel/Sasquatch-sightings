@@ -59,6 +59,9 @@ const INVOICE_SELECT = `
       public_url,
       label,
       watermarked,
+      source,
+      uploaded_by_label,
+      original_filename,
       created_at
     )
   ),

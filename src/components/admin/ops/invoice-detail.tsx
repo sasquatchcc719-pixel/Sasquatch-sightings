@@ -41,6 +41,9 @@ type JobPhoto = {
   public_url: string
   label: 'before' | 'after' | 'general'
   watermarked: boolean
+  source?: 'staff' | 'customer' | null
+  uploaded_by_label?: string | null
+  original_filename?: string | null
   created_at: string
 }
 
@@ -2492,6 +2495,14 @@ export function InvoiceDetail({
                   />
                 </a>
                 <div className="mt-1 flex justify-end px-0.5">
+                  {photo.source === 'customer' ? (
+                    <Badge
+                      variant="outline"
+                      className="mr-auto bg-sky-500/10 text-sky-600"
+                    >
+                      Customer
+                    </Badge>
+                  ) : null}
                   <button
                     type="button"
                     className="text-muted-foreground hover:text-destructive p-1"

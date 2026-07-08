@@ -17,6 +17,8 @@ export type TechPhoto = {
   publicUrl: string
   label: string | null
   watermarked: boolean
+  source: 'staff' | 'customer'
+  uploadedByLabel: string | null
   createdAt: string
 }
 
@@ -119,6 +121,8 @@ const TECH_APPOINTMENT_SELECT = `
     public_url,
     label,
     watermarked,
+    source,
+    uploaded_by_label,
     created_at
   ),
   ops_recurring_templates (
@@ -261,6 +265,8 @@ export function mapTechAppointment(
         public_url?: string | null
         label?: string | null
         watermarked?: boolean | null
+        source?: string | null
+        uploaded_by_label?: string | null
         created_at?: string | null
       }>)
     : []
@@ -341,6 +347,8 @@ export function mapTechAppointment(
       publicUrl: photo.public_url ?? '',
       label: photo.label ?? null,
       watermarked: photo.watermarked === true,
+      source: photo.source === 'customer' ? 'customer' : 'staff',
+      uploadedByLabel: photo.uploaded_by_label ?? null,
       createdAt: photo.created_at ?? '',
     })),
   }

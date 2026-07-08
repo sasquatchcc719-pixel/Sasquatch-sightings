@@ -29,6 +29,7 @@ import {
   leadSourceUpdatePayload,
   normalizeLeadSourceForWrite,
 } from '@/lib/server/lead-sources'
+import { createCustomerPhotoUploadToken } from '@/lib/ops/customer-photo-upload-token'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -667,6 +668,10 @@ export async function POST(request: NextRequest) {
         appointment_id: appointment.id,
         invoice_id: invoice.id,
         confirmation_number: confirmationNumber,
+        photo_upload_token: createCustomerPhotoUploadToken({
+          appointmentId: appointment.id,
+          invoiceId: invoice.id,
+        }),
         total,
         discount_applied: discountAmount + percentageDiscountAmount,
         percentage_discount_applied: percentageDiscountAmount,
