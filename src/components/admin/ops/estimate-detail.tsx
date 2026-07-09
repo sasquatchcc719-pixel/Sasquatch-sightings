@@ -796,6 +796,10 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
     addrStreet1 && addrCity
       ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${addrStreet1}, ${addrCity}, ${addrState} ${addrZip}`)}`
       : null
+  const appleMapsHref =
+    addrStreet1 && addrCity
+      ? `https://maps.apple.com/?daddr=${encodeURIComponent(`${addrStreet1}, ${addrCity}, ${addrState} ${addrZip}`)}&dirflg=d`
+      : null
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-4 md:p-6">
@@ -979,16 +983,32 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
           </div>
         </div>
         {mapsHref ? (
-          <Button
-            size="default"
-            className="w-full gap-2 bg-green-600 font-bold tracking-widest text-white uppercase hover:bg-green-500"
-            asChild
-          >
-            <a href={mapsHref} target="_blank" rel="noopener noreferrer">
-              <MapPin className="h-4 w-4" />
-              Get Directions
-            </a>
-          </Button>
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              size="default"
+              className="w-full gap-2 bg-green-600 font-bold tracking-widest text-white uppercase hover:bg-green-500"
+              asChild
+            >
+              <a href={mapsHref} target="_blank" rel="noopener noreferrer">
+                <MapPin className="h-4 w-4" />
+                Google Maps
+              </a>
+            </Button>
+            <Button
+              size="default"
+              className="w-full gap-2 bg-sky-600 font-bold tracking-widest text-white uppercase hover:bg-sky-500"
+              asChild
+            >
+              <a
+                href={appleMapsHref!}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <MapPin className="h-4 w-4" />
+                Apple Maps
+              </a>
+            </Button>
+          </div>
         ) : null}
       </Card>
 

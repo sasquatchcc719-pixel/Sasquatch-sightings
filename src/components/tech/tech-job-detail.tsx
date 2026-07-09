@@ -84,6 +84,9 @@ export function TechJobDetail({
   const mapsHref = fullAddress
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress)}`
     : null
+  const appleMapsHref = fullAddress
+    ? `https://maps.apple.com/?q=${encodeURIComponent(fullAddress)}`
+    : null
   const payableTotal = appointment.hidePricing
     ? null
     : (appointment.invoice?.total ?? appointment.quotedTotal)
@@ -371,7 +374,18 @@ export function TechJobDetail({
             >
               <a href={mapsHref} target="_blank" rel="noopener noreferrer">
                 <Navigation className="h-4 w-4" />
-                Directions
+                Google Maps
+              </a>
+            </Button>
+          ) : null}
+          {appleMapsHref ? (
+            <Button
+              asChild
+              className="bg-sky-500 text-slate-950 hover:bg-sky-400"
+            >
+              <a href={appleMapsHref} target="_blank" rel="noopener noreferrer">
+                <Navigation className="h-4 w-4" />
+                Apple Maps
               </a>
             </Button>
           ) : null}

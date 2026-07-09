@@ -1824,20 +1824,36 @@ export function InvoiceDetail({
                       </p>
                     </div>
                   ) : null}
-                  <Button
-                    size="default"
-                    className="w-full gap-2 bg-green-600 font-bold tracking-widest text-white uppercase hover:bg-green-500"
-                    asChild
-                  >
-                    <a
-                      href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${address.street_1}, ${address.city}, ${address.state} ${address.zip_code}`)}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      size="default"
+                      className="w-full gap-2 bg-green-600 font-bold tracking-widest text-white uppercase hover:bg-green-500"
+                      asChild
                     >
-                      <MapPin className="h-4 w-4" />
-                      Get Directions
-                    </a>
-                  </Button>
+                      <a
+                        href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${address.street_1}, ${address.city}, ${address.state} ${address.zip_code}`)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <MapPin className="h-4 w-4" />
+                        Google Maps
+                      </a>
+                    </Button>
+                    <Button
+                      size="default"
+                      className="w-full gap-2 bg-sky-600 font-bold tracking-widest text-white uppercase hover:bg-sky-500"
+                      asChild
+                    >
+                      <a
+                        href={`https://maps.apple.com/?daddr=${encodeURIComponent(`${address.street_1}, ${address.city}, ${address.state} ${address.zip_code}`)}&dirflg=d`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <MapPin className="h-4 w-4" />
+                        Apple Maps
+                      </a>
+                    </Button>
+                  </div>
                 </div>
               ) : null}
               {appointment?.lead_source ? (

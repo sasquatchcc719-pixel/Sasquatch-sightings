@@ -161,6 +161,9 @@ export default async function FieldPage({ searchParams }: FieldPageProps) {
               const mapsHref = address
                 ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
                 : null
+              const appleMapsHref = address
+                ? `https://maps.apple.com/?q=${encodeURIComponent(address)}`
+                : null
               const total = appointment.hidePricing
                 ? null
                 : (appointment.invoice?.total ?? appointment.quotedTotal)
@@ -214,7 +217,18 @@ export default async function FieldPage({ searchParams }: FieldPageProps) {
                         className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/10 px-3 py-3 text-sm font-semibold text-slate-100"
                       >
                         <MapPin className="h-4 w-4" />
-                        Maps
+                        Google Maps
+                      </a>
+                    ) : null}
+                    {appleMapsHref ? (
+                      <a
+                        href={appleMapsHref}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/10 px-3 py-3 text-sm font-semibold text-slate-100"
+                      >
+                        <MapPin className="h-4 w-4" />
+                        Apple Maps
                       </a>
                     ) : null}
                     <Link
