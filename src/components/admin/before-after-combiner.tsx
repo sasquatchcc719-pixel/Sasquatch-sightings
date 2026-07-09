@@ -11,9 +11,14 @@ import imageCompression from 'browser-image-compression'
 
 interface BeforeAfterCombinerProps {
   onCombined: (dataUrl: string) => void
+  /** When true, render without the outer Card + title so it can nest inside another tool. */
+  embedded?: boolean
 }
 
-export function BeforeAfterCombiner({ onCombined }: BeforeAfterCombinerProps) {
+export function BeforeAfterCombiner({
+  onCombined,
+  embedded = false,
+}: BeforeAfterCombinerProps) {
   const [beforeImage, setBeforeImage] = useState<File | null>(null)
   const [afterImage, setAfterImage] = useState<File | null>(null)
   const [beforePreview, setBeforePreview] = useState<string | null>(null)
@@ -102,16 +107,20 @@ export function BeforeAfterCombiner({ onCombined }: BeforeAfterCombinerProps) {
     }
   }
 
-  return (
-    <Card className="space-y-6 p-6">
-      <h2 className="flex items-center gap-2 text-xl font-semibold">
-        <ImageIcon className="h-5 w-5" />
-        Before / After Combiner
-      </h2>
-      <p className="text-muted-foreground text-sm">
-        Upload both images to create a before/after comparison, or just one
-        image to add a watermark.
-      </p>
+  const body = (
+    <>
+      {!embedded && (
+        <>
+          <h2 className="flex items-center gap-2 text-xl font-semibold">
+            <ImageIcon className="h-5 w-5" />
+            Before / After Combiner
+          </h2>
+          <p className="text-muted-foreground text-sm">
+            Upload both images to create a before/after comparison, or just one
+            image to add a watermark.
+          </p>
+        </>
+      )}
 
       <div className="grid grid-cols-2 gap-4">
         {/* Before */}
@@ -203,6 +212,12 @@ export function BeforeAfterCombiner({ onCombined }: BeforeAfterCombinerProps) {
           />
         </div>
       )}
-    </Card>
+    </>
   )
+
+  if (embedded) {
+    return <div className="space-y-6">{body}</div>
+  }
+
+  return <Card className="space-y-6 p-6">{body}</Card>
 }

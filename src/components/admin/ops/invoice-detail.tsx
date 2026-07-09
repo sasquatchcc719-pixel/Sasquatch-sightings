@@ -5,7 +5,9 @@ import { useRouter } from 'next/navigation'
 import {
   CalendarClock,
   Camera,
+  Check,
   CheckCircle2,
+  Image as ImageIcon,
   Loader2,
   Mail,
   MapPin,
@@ -16,6 +18,7 @@ import {
   Sparkles,
   Trash2,
   X,
+  type LucideIcon,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -33,6 +36,96 @@ import {
   normalizeLeadSource,
 } from '@/lib/lead-sources'
 import { SignatureModal } from './signature-modal'
+
+/** A ring-within-a-ring progress node for the Sightings Map Post stepper. */
+function PublishStepNode({
+  step,
+  label,
+  icon: Icon,
+  done,
+  active,
+}: {
+  step: number
+  label: string
+  icon: LucideIcon
+  done: boolean
+  active: boolean
+}) {
+  return (
+    <div className="flex flex-col items-center gap-1.5 text-center">
+      <div
+        className={`relative flex h-12 w-12 items-center justify-center rounded-full transition-all duration-500 ${
+          done
+            ? 'bg-emerald-500 ring-4 ring-emerald-500/25'
+            : active
+              ? 'animate-pulse bg-emerald-50 ring-2 ring-emerald-400'
+              : 'bg-muted ring-border ring-2'
+        }`}
+      >
+        {done ? (
+          <Check className="h-6 w-6 text-white" />
+        ) : (
+          <Icon
+            className={`h-5 w-5 ${active ? 'text-emerald-600' : 'text-muted-foreground'}`}
+          />
+        )}
+        <span
+          className={`absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold ${
+            done
+              ? 'bg-emerald-600 text-white'
+              : active
+                ? 'bg-emerald-500 text-white'
+                : 'bg-foreground/70 text-background'
+          }`}
+        >
+          {step}
+        </span>
+      </div>
+      <span
+        className={`text-[11px] leading-tight font-medium ${
+          done
+            ? 'text-emerald-600'
+            : active
+              ? 'text-foreground'
+              : 'text-muted-foreground'
+        }`}
+      >
+        {label}
+      </span>
+    </div>
+  )
+}
+
+/** Numbered header for each step inside the Sightings Map Post bubble. */
+function StepSectionHeader({
+  step,
+  title,
+  done,
+}: {
+  step: number
+  title: string
+  done: boolean
+}) {
+  return (
+    <div className="flex items-center gap-2.5">
+      <span
+        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold transition-colors ${
+          done
+            ? 'bg-emerald-500 text-white'
+            : 'bg-foreground/10 text-foreground'
+        }`}
+      >
+        {done ? <Check className="h-3.5 w-3.5" /> : step}
+      </span>
+      <h3 className="text-base font-semibold">{title}</h3>
+      {done ? (
+        <span className="ml-auto text-xs font-semibold text-emerald-600">
+          Done
+        </span>
+      ) : null}
+    </div>
+  )
+}
 
 type JobPhoto = {
   id: string
@@ -2693,182 +2786,262 @@ export function InvoiceDetail({
         ) : null}
       </Card>
 
-      {/* ── Before / After Combiner ──────────────────────── */}
-      <BeforeAfterCombiner
-        onCombined={(dataUrl) => setCombinedImageDataUrl(dataUrl)}
-      />
-
-      {/* ── AI Description ────────────────────────────────── */}
-      <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
-        <div className="flex items-center justify-between gap-3">
-          <h3 className="text-lg font-semibold">AI Description</h3>
-          <Button
-            size="sm"
-            variant="outline"
-            className="gap-1.5"
-            disabled={aiDescLoading}
-            onClick={() => void handleGenerateDescription()}
-          >
-            {aiDescLoading ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Sparkles className="h-3.5 w-3.5" />
-            )}
-            {aiDescLoading ? 'Generating…' : 'Generate'}
-          </Button>
+      {/* ── Sightings Map Post — one tool, three steps ─────── */}
+      <Card className="bg-card/80 relative space-y-5 overflow-hidden border-emerald-500/40 p-5 shadow-sm ring-2 ring-emerald-400/40 backdrop-blur">
+        {/* Header */}
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600 ring-1 ring-emerald-500/30">
+            <ImageIcon className="h-5 w-5" />
+          </span>
+          <div>
+            <h2 className="text-lg font-bold">Sightings Map Post</h2>
+            <p className="text-muted-foreground text-xs">
+              One tool, three steps — drops a public before/after pin on your
+              map.
+            </p>
+          </div>
         </div>
-        <textarea
-          className="border-border/60 bg-background/70 mt-3 w-full rounded-xl border p-3 text-sm"
-          rows={4}
-          placeholder="Generated description will appear here. You can also type your own."
-          value={aiDescription}
-          onChange={(e) => setAiDescription(e.target.value)}
-        />
-      </Card>
 
-      {/* ── Social publish (optional) ───────────────────── */}
-      {!publishSuccess ? (
-        <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
-          <p className="text-muted-foreground mb-3 text-sm leading-relaxed">
-            Optional: create a public before/after post. Your utilization stats
-            already count from the job record when you publish; use{' '}
-            <strong>Finish &amp; close job</strong> above if you are skipping
-            social media.
-          </p>
-          <div className="bg-muted/50 border-border/60 mb-3 rounded-md border p-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <MapPin className="h-4 w-4" />
-                <span className="text-sm font-medium">
-                  {gpsCoords
-                    ? 'GPS: Using device location'
-                    : 'GPS: Not captured'}
-                </span>
+        {/* Progress rings */}
+        <div className="grid grid-cols-3 gap-2">
+          <PublishStepNode
+            step={1}
+            label="Combine photos"
+            icon={ImageIcon}
+            done={!!combinedImageDataUrl || publishSuccess}
+            active={!combinedImageDataUrl && !publishSuccess}
+          />
+          <PublishStepNode
+            step={2}
+            label="Description"
+            icon={Sparkles}
+            done={aiDescription.trim().length > 0 || publishSuccess}
+            active={
+              !!combinedImageDataUrl &&
+              aiDescription.trim().length === 0 &&
+              !publishSuccess
+            }
+          />
+          <PublishStepNode
+            step={3}
+            label="Locate & publish"
+            icon={MapPin}
+            done={publishSuccess}
+            active={
+              !!combinedImageDataUrl &&
+              aiDescription.trim().length > 0 &&
+              !publishSuccess
+            }
+          />
+        </div>
+
+        {/* ── Step 1: Combine before / after ── */}
+        <section className="border-border/60 bg-background/40 space-y-3 rounded-xl border p-4">
+          <StepSectionHeader
+            step={1}
+            title="Combine before & after"
+            done={!!combinedImageDataUrl || publishSuccess}
+          />
+          <BeforeAfterCombiner
+            embedded
+            onCombined={(dataUrl) => setCombinedImageDataUrl(dataUrl)}
+          />
+        </section>
+
+        {/* ── Step 2: Write the description ── */}
+        <section className="border-border/60 bg-background/40 space-y-3 rounded-xl border p-4">
+          <StepSectionHeader
+            step={2}
+            title="Write the description"
+            done={aiDescription.trim().length > 0 || publishSuccess}
+          />
+          <div className="flex justify-end">
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5"
+              disabled={aiDescLoading}
+              onClick={() => void handleGenerateDescription()}
+            >
+              {aiDescLoading ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Sparkles className="h-3.5 w-3.5" />
+              )}
+              {aiDescLoading ? 'Generating…' : 'Generate'}
+            </Button>
+          </div>
+          <textarea
+            className="border-border/60 bg-background/70 w-full rounded-xl border p-3 text-sm"
+            rows={4}
+            placeholder="Generated description will appear here. You can also type your own."
+            value={aiDescription}
+            onChange={(e) => setAiDescription(e.target.value)}
+          />
+        </section>
+
+        {/* ── Step 3: Locate & publish ── */}
+        <section className="border-border/60 bg-background/40 space-y-3 rounded-xl border p-4">
+          <StepSectionHeader
+            step={3}
+            title="Drop the map pin & publish"
+            done={publishSuccess}
+          />
+          {!publishSuccess ? (
+            <>
+              <p className="text-muted-foreground text-sm leading-relaxed">
+                Optional: create a public before/after post. Your utilization
+                stats already count from the job record when you publish; use{' '}
+                <strong>Finish &amp; close job</strong> above if you are
+                skipping social media.
+              </p>
+              <div className="bg-muted/50 border-border/60 rounded-md border p-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <MapPin className="h-4 w-4" />
+                    <span className="text-sm font-medium">
+                      {gpsCoords
+                        ? 'GPS: Using device location'
+                        : 'GPS: Not captured'}
+                    </span>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void handleCaptureGps()}
+                    disabled={gpsCapturing}
+                  >
+                    {gpsCapturing ? (
+                      <>
+                        <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                        Getting...
+                      </>
+                    ) : (
+                      <>
+                        <MapPin className="mr-2 h-3 w-3" />
+                        Use Current Location
+                      </>
+                    )}
+                  </Button>
+                </div>
+
+                {/* Manual GPS input */}
+                <div className="mt-3 space-y-2">
+                  <p className="text-muted-foreground text-xs">
+                    Or paste coordinates manually (for when you don&apos;t have
+                    service):
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="39.2703, -104.99486"
+                      value={manualGpsInput}
+                      onChange={(e) => setManualGpsInput(e.target.value)}
+                      className="border-border/60 bg-background/70 flex-1 rounded-lg border px-3 py-2 text-sm"
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="default"
+                      disabled={manualGpsSaving || !manualGpsInput.trim()}
+                      onClick={() => void handleSaveManualGps()}
+                    >
+                      {manualGpsSaving ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        'Save'
+                      )}
+                    </Button>
+                  </div>
+                </div>
+
+                {gpsFeedback ? (
+                  <p
+                    className={`mt-2 text-sm ${gpsFeedback.ok ? 'text-green-600' : 'text-red-500'}`}
+                  >
+                    {gpsFeedback.message}
+                  </p>
+                ) : gpsCoords ? (
+                  <p className="text-muted-foreground mt-2 text-xs">
+                    Coordinates: {gpsCoords.lat.toFixed(6)},{' '}
+                    {gpsCoords.lng.toFixed(6)}
+                  </p>
+                ) : (
+                  <p className="text-muted-foreground mt-2 text-xs">
+                    Publishing is blocked until this is captured, so it cannot
+                    drop another pin in central Colorado Springs.
+                  </p>
+                )}
               </div>
               <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => void handleCaptureGps()}
-                disabled={gpsCapturing}
+                className={`h-14 w-full gap-2 bg-green-600 text-lg font-bold text-white transition-all hover:bg-green-700 ${
+                  !publishLoading &&
+                  combinedImageDataUrl &&
+                  aiDescription.trim() &&
+                  gpsCoords
+                    ? 'animate-pulse shadow-lg ring-4 shadow-green-500/40 ring-green-400/50'
+                    : ''
+                }`}
+                disabled={
+                  publishLoading ||
+                  !combinedImageDataUrl ||
+                  !aiDescription.trim() ||
+                  !gpsCoords
+                }
+                onClick={() => void handleFinishAndPublish()}
               >
-                {gpsCapturing ? (
-                  <>
-                    <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-                    Getting...
-                  </>
+                {publishLoading ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
                 ) : (
-                  <>
-                    <MapPin className="mr-2 h-3 w-3" />
-                    Use Current Location
-                  </>
+                  <CheckCircle2 className="h-5 w-5" />
                 )}
+                {publishLoading
+                  ? 'Publishing…'
+                  : 'Publish to social & create post'}
               </Button>
-            </div>
-
-            {/* Manual GPS input */}
-            <div className="mt-3 space-y-2">
-              <p className="text-muted-foreground text-xs">
-                Or paste coordinates manually (for when you don&apos;t have
-                service):
-              </p>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="39.2703, -104.99486"
-                  value={manualGpsInput}
-                  onChange={(e) => setManualGpsInput(e.target.value)}
-                  className="border-border/60 bg-background/70 flex-1 rounded-lg border px-3 py-2 text-sm"
-                />
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="default"
-                  disabled={manualGpsSaving || !manualGpsInput.trim()}
-                  onClick={() => void handleSaveManualGps()}
-                >
-                  {manualGpsSaving ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    'Save'
-                  )}
-                </Button>
-              </div>
-            </div>
-
-            {gpsFeedback ? (
+              {!combinedImageDataUrl || !aiDescription.trim() || !gpsCoords ? (
+                <p className="text-muted-foreground text-center text-xs">
+                  {!gpsCoords
+                    ? 'Use Current Location before publishing the map post'
+                    : !combinedImageDataUrl && !aiDescription.trim()
+                      ? 'Combine photos and generate a description to publish'
+                      : !combinedImageDataUrl
+                        ? 'Combine before/after photos to continue'
+                        : 'Generate or write a description to continue'}
+                </p>
+              ) : null}
+            </>
+          ) : (
+            <div
+              className={`rounded-xl border p-5 text-center ${
+                publishNeedsAttention
+                  ? 'border-amber-200 bg-amber-50'
+                  : 'border-green-200 bg-green-50'
+              }`}
+            >
+              <CheckCircle2
+                className={`mx-auto h-10 w-10 ${
+                  publishNeedsAttention ? 'text-amber-600' : 'text-green-600'
+                }`}
+              />
               <p
-                className={`mt-2 text-sm ${gpsFeedback.ok ? 'text-green-600' : 'text-red-500'}`}
+                className={`mt-2 text-lg font-bold ${
+                  publishNeedsAttention ? 'text-amber-900' : 'text-green-800'
+                }`}
               >
-                {gpsFeedback.message}
+                {publishNeedsAttention
+                  ? 'Job page published'
+                  : 'Post published!'}
               </p>
-            ) : gpsCoords ? (
-              <p className="text-muted-foreground mt-2 text-xs">
-                Coordinates: {gpsCoords.lat.toFixed(6)},{' '}
-                {gpsCoords.lng.toFixed(6)}
+              <p className="text-muted-foreground mt-1 text-sm">
+                {publishMessage ||
+                  'The before/after is live and stats include this job from the published record.'}
               </p>
-            ) : (
-              <p className="text-muted-foreground mt-2 text-xs">
-                Publishing is blocked until this is captured, so it cannot drop
-                another pin in central Colorado Springs.
-              </p>
-            )}
-          </div>
-          <Button
-            className="h-14 w-full gap-2 bg-green-600 text-lg font-bold text-white hover:bg-green-700"
-            disabled={
-              publishLoading ||
-              !combinedImageDataUrl ||
-              !aiDescription.trim() ||
-              !gpsCoords
-            }
-            onClick={() => void handleFinishAndPublish()}
-          >
-            {publishLoading ? (
-              <Loader2 className="h-5 w-5 animate-spin" />
-            ) : (
-              <CheckCircle2 className="h-5 w-5" />
-            )}
-            {publishLoading ? 'Publishing…' : 'Publish to social & create post'}
-          </Button>
-          {!combinedImageDataUrl || !aiDescription.trim() || !gpsCoords ? (
-            <p className="text-muted-foreground mt-2 text-center text-xs">
-              {!gpsCoords
-                ? 'Use Current Location before publishing the map post'
-                : !combinedImageDataUrl && !aiDescription.trim()
-                  ? 'Combine photos and generate a description to publish'
-                  : !combinedImageDataUrl
-                    ? 'Combine before/after photos to continue'
-                    : 'Generate or write a description to continue'}
-            </p>
-          ) : null}
-        </Card>
-      ) : (
-        <Card
-          className={`p-5 text-center shadow-sm ${
-            publishNeedsAttention
-              ? 'border-amber-200 bg-amber-50'
-              : 'border-border/60 bg-green-50'
-          }`}
-        >
-          <CheckCircle2
-            className={`mx-auto h-10 w-10 ${
-              publishNeedsAttention ? 'text-amber-600' : 'text-green-600'
-            }`}
-          />
-          <p
-            className={`mt-2 text-lg font-bold ${
-              publishNeedsAttention ? 'text-amber-900' : 'text-green-800'
-            }`}
-          >
-            {publishNeedsAttention ? 'Job page published' : 'Post published!'}
-          </p>
-          <p className="text-muted-foreground mt-1 text-sm">
-            {publishMessage ||
-              'The before/after is live and stats include this job from the published record.'}
-          </p>
-        </Card>
-      )}
+            </div>
+          )}
+        </section>
+      </Card>
 
       {/* Signature Modal */}
       <SignatureModal
