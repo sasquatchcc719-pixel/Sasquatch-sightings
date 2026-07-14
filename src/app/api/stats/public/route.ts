@@ -6,6 +6,8 @@
 
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
+import { loadScheduleCapacity } from '@/lib/ops/capacity'
+import { loadUtilizationSupplementRows } from '@/lib/ops/utilization-supplement'
 
 const DEFAULT_SETTINGS = {
   annual_revenue_goal: 150000,
@@ -47,8 +49,6 @@ export async function GET(request: Request) {
         }
       : DEFAULT_SETTINGS
 
-    const userId = settingsRow?.user_id ?? null
-
     // Jobs with revenue/hours
     const { data: jobs } = await supabase
       .from('jobs')
@@ -57,21 +57,17 @@ export async function GET(request: Request) {
       .not('hours_worked', 'is', null)
       .order('created_at', { ascending: false })
 
-    // Revenue entries for the settings owner (if we have one)
-    let entries: {
-      invoice_amount: number
-      hours_worked: number
-      entry_date: string
-      drive_minutes?: number | null
-    }[] = []
-    if (userId) {
-      const { data: rev } = await supabase
-        .from('revenue_entries')
-        .select('invoice_amount, hours_worked, entry_date, drive_minutes')
-        .eq('user_id', userId)
-        .order('entry_date', { ascending: false })
-      entries = rev ?? []
-    }
+    // Business-wide: every user's revenue entries (techs' auto-created
+    // entries included), plus completed ops jobs not covered by either.
+    const { data: rev } = await supabase
+      .from('revenue_entries')
+      .select('invoice_amount, hours_worked, entry_date, drive_minutes')
+      .order('entry_date', { ascending: false })
+    const entries = rev ?? []
+
+    const supplementRows = await loadUtilizationSupplementRows(supabase).catch(
+      () => [],
+    )
 
     const allRevenue = [
       ...(jobs || []).map((j) => ({
@@ -83,6 +79,11 @@ export async function GET(request: Request) {
         invoice_amount: e.invoice_amount,
         hours_worked: (e.hours_worked || 0) + (e.drive_minutes || 0) / 60,
         date: e.entry_date,
+      })),
+      ...supplementRows.map((r) => ({
+        invoice_amount: r.invoice_amount,
+        hours_worked: r.hours_worked,
+        date: r.date,
       })),
     ]
 
@@ -104,7 +105,13 @@ export async function GET(request: Request) {
     const weeksElapsed = Math.ceil(
       (now.getTime() - startOfYear.getTime()) / (7 * 24 * 60 * 60 * 1000),
     )
+    // Prefer schedule-based capacity (all techs' open days); flat setting is
+    // the fallback when schedule data is unavailable.
+    const scheduleCapacity = await loadScheduleCapacity(supabase).catch(
+      () => null,
+    )
     const availableHoursYTD =
+      scheduleCapacity?.ytdAvailableHours ??
       weeksElapsed * userSettings.available_hours_per_week
     const utilizationRate =
       availableHoursYTD > 0

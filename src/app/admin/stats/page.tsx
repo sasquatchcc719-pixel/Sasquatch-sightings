@@ -88,7 +88,16 @@ type Stats = {
     annualRevenueAtFullUtilization: number
     annualRevenueLeftOnTable: number
     totalAvailableHoursAnnual: number
+    scheduleBased: boolean
+    currentWeeklyCapacity: number | null
   }
+}
+
+type ScheduleCapacity = {
+  ytdAvailableHours: number
+  annualAvailableHours: number
+  currentWeeklyCapacity: number
+  lastToggleDate: string | null
 }
 
 export default function StatsPage() {
@@ -290,18 +299,32 @@ export default function StatsPage() {
         hours_worked: number
         date: string
       }[] = []
-      try {
-        const supRes = await fetch('/api/admin/stats/utilization-supplement', {
+      let scheduleCapacity: ScheduleCapacity | null = null
+      const [supRes, capRes] = await Promise.allSettled([
+        fetch('/api/admin/stats/utilization-supplement', {
           cache: 'no-store',
-        })
-        if (supRes.ok) {
-          const supJson = (await supRes.json()) as {
+        }),
+        fetch('/api/admin/stats/capacity', { cache: 'no-store' }),
+      ])
+      if (supRes.status === 'fulfilled' && supRes.value.ok) {
+        try {
+          const supJson = (await supRes.value.json()) as {
             rows?: typeof supplementRows
           }
           supplementRows = supJson.rows || []
+        } catch {
+          /* non-fatal */
         }
-      } catch {
-        /* non-fatal */
+      }
+      if (capRes.status === 'fulfilled' && capRes.value.ok) {
+        try {
+          const capJson = (await capRes.value.json()) as {
+            capacity?: ScheduleCapacity | null
+          }
+          scheduleCapacity = capJson.capacity || null
+        } catch {
+          /* non-fatal */
+        }
       }
 
       // Combine jobs, manual/quick entries, and completed ops not yet in jobs/revenue_entries
@@ -368,18 +391,21 @@ export default function StatsPage() {
         0,
       )
 
-      // Calculations
-      const weeksElapsed = Math.ceil(
+      // Calculations — capacity comes from the live tech schedule when
+      // available (every tech's open days), else the flat settings fallback.
+      const weeksElapsed = Math.max(
         (now.getTime() - startOfYear.getTime()) / (7 * 24 * 60 * 60 * 1000),
+        1,
       )
       const availableHoursYTD =
-        weeksElapsed * userSettings.available_hours_per_week
+        scheduleCapacity?.ytdAvailableHours ??
+        Math.ceil(weeksElapsed) * userSettings.available_hours_per_week
       const utilization =
         availableHoursYTD > 0 ? (ytdHours / availableHoursYTD) * 100 : 0
 
       const weeklyTarget =
         userSettings.annual_revenue_goal / userSettings.work_weeks_per_year
-      const weeklyAverage = weeksElapsed > 0 ? ytdRevenue / weeksElapsed : 0
+      const weeklyAverage = ytdRevenue / weeksElapsed
       const projectedAnnual = weeklyAverage * userSettings.work_weeks_per_year
       const onPace = projectedAnnual >= userSettings.annual_revenue_goal
       const percentOfGoal =
@@ -388,6 +414,7 @@ export default function StatsPage() {
       // Potential revenue calculations
       const revenuePerHour = ytdHours > 0 ? ytdRevenue / ytdHours : 0
       const totalAvailableHoursAnnual =
+        scheduleCapacity?.annualAvailableHours ??
         userSettings.available_hours_per_week * userSettings.work_weeks_per_year
       const revenueAtFullUtilizationYTD = revenuePerHour * availableHoursYTD
       const revenueLeftOnTableYTD = revenueAtFullUtilizationYTD - ytdRevenue
@@ -427,6 +454,9 @@ export default function StatsPage() {
           annualRevenueAtFullUtilization,
           annualRevenueLeftOnTable,
           totalAvailableHoursAnnual,
+          scheduleBased: !!scheduleCapacity,
+          currentWeeklyCapacity:
+            scheduleCapacity?.currentWeeklyCapacity ?? null,
         },
       })
     } catch (err) {
@@ -570,6 +600,10 @@ export default function StatsPage() {
                     placeholder="40"
                     required
                   />
+                  <p className="text-muted-foreground mt-1 text-xs">
+                    Fallback only — capacity normally comes from the tech
+                    schedule
+                  </p>
                 </div>
                 <div>
                   <Label htmlFor="editWeeksPerYear">Work Weeks/Year</Label>
@@ -1213,9 +1247,33 @@ export default function StatsPage() {
 
       {/* Potential Revenue - Money Left on Table */}
       <div className="mb-8">
-        <h2 className="text-gradient-rose mb-4 text-xl font-semibold tracking-tight">
+        <h2 className="text-gradient-rose mb-1 text-xl font-semibold tracking-tight">
           Potential at 100% Utilization
         </h2>
+        <p className="text-muted-foreground mb-4 max-w-3xl text-sm leading-relaxed">
+          {stats.potential.scheduleBased ? (
+            <>
+              Available hours come from the <strong>live tech schedule</strong>{' '}
+              — every open day for every tech, so adding a technician or taking
+              days off changes capacity automatically.
+              {stats.potential.currentWeeklyCapacity != null && (
+                <>
+                  {' '}
+                  Current capacity:{' '}
+                  <strong>
+                    {Math.round(stats.potential.currentWeeklyCapacity)} hrs/week
+                  </strong>{' '}
+                  across all techs (trailing 4 weeks).
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              Schedule data unavailable — using the flat Available Hours/Week
+              setting from Goals.
+            </>
+          )}
+        </p>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
           <Card className="border-green-200 bg-green-50 p-4 dark:border-green-900 dark:bg-green-950">
             <div className="mb-1 flex items-center gap-2 text-green-700 dark:text-green-400">
@@ -1253,7 +1311,7 @@ export default function StatsPage() {
             </p>
             <p className="mt-1 text-xs text-green-600 dark:text-green-500">
               At ${stats.yearToDate.revenuePerHour.toFixed(0)}/hr ×{' '}
-              {stats.potential.totalAvailableHoursAnnual} hrs
+              {Math.round(stats.potential.totalAvailableHoursAnnual)} hrs
             </p>
           </Card>
 
