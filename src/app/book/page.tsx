@@ -7,6 +7,7 @@ import {
   PublicLeadSourceOption,
   getPublicLeadSourceOptions,
 } from '@/lib/lead-sources'
+import { calculateAppointmentDurationFromTotal } from '@/lib/ops/availability'
 
 // ─────────────────────────────────────────────
 //  Types
@@ -149,14 +150,13 @@ function formatDateDisplay(iso: string) {
   })
 }
 
+// The reserved calendar block is sized by the cart's dollar subtotal (2h / 3h /
+// 4h tiers) — exactly what POST /api/public/appointments stores and re-validates
+// against. Availability MUST be checked with that same block, or the widget
+// shows slots the server then rejects with "no longer available" (or hides real
+// openings). Mirrors the NFC business-card widget; keep both on the shared fn.
 function calculateRequiredMinutes(cart: CartItem[]): number {
-  const totalMinutes = cart.reduce((sum, ci) => {
-    const duration =
-      (ci.service as ServiceItem & { duration_minutes?: number })
-        .duration_minutes || 60
-    return sum + duration * ci.quantity
-  }, 0)
-  return Math.max(totalMinutes, 60)
+  return calculateAppointmentDurationFromTotal(cartTotal(cart))
 }
 
 /** Returns YYYY-MM-DD for a Date in local time */
