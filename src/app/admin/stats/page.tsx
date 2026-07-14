@@ -1254,8 +1254,9 @@ export default function StatsPage() {
           {stats.potential.scheduleBased ? (
             <>
               Available hours come from the <strong>live tech schedule</strong>{' '}
-              — every open day for every tech, so adding a technician or taking
-              days off changes capacity automatically.
+              — techs count on their open days, and your time counts every
+              scheduled day even when your toggle is off (that&apos;s booking
+              routing, not time off).
               {stats.potential.currentWeeklyCapacity != null && (
                 <>
                   {' '}

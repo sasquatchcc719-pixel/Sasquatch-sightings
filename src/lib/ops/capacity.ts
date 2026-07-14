@@ -8,11 +8,13 @@ import type { SupabaseClient } from '@supabase/supabase-js'
  *  - staff_users (is_active, default_open)
  *  - staff_daily_availability (per-day open/closed toggles per tech)
  *
- * A day's capacity is the sum of template hours for every tech open that day,
- * so adding a second tech (or Charles taking days off) changes capacity
- * automatically. Days beyond the last recorded toggle are projected at the
- * trailing 4-week average, since default_open alone misrepresents techs whose
- * schedule is driven by toggles.
+ * A day's capacity is the sum of template hours for every tech available that
+ * day. Availability for capacity is NOT the same as booking availability:
+ * default-open staff (Charles) toggle themselves closed only so the primary
+ * tech's calendar fills first — that's routing, not time off — so they count
+ * as available on every templated day regardless of toggles. Default-closed
+ * staff (hired techs) count only on their toggled-open days. Days beyond the
+ * last recorded toggle are projected at the trailing 4-week average.
  */
 
 export type CapacityTemplate = {
@@ -99,8 +101,11 @@ export function computeScheduleCapacity(params: {
   const dayCapacity = (day: string, dow: number): number => {
     let total = 0
     for (const s of staff) {
-      const open = toggleMap.get(`${s.id}|${day}`) ?? s.default_open
-      if (!open) continue
+      // Default-open staff count every templated day — their closed toggles
+      // are booking routing (fill the primary tech first), not time off.
+      const available =
+        s.default_open || toggleMap.get(`${s.id}|${day}`) === true
+      if (!available) continue
       const perStaff = staffHours.get(s.id)
       total += perStaff ? perStaff[dow] : globalHours[dow]
     }

@@ -44,14 +44,27 @@ describe('computeScheduleCapacity', () => {
     expect(withTech.ytdAvailableHours).toBe(72 + 16)
   })
 
-  it('closed toggle removes a default-open tech from that day', () => {
+  it('closed toggle does NOT remove a default-open tech — it is booking routing, not time off', () => {
     const r = computeScheduleCapacity({
       templates: TEMPLATES,
       staff: [OWNER],
       toggles: [{ staff_user_id: 'owner', date: '2026-01-02', is_open: false }],
       today: '2026-01-10',
     })
-    expect(r.ytdAvailableHours).toBe(64)
+    expect(r.ytdAvailableHours).toBe(72)
+  })
+
+  it('closed toggle does remove a default-closed tech from a previously opened day', () => {
+    const r = computeScheduleCapacity({
+      templates: TEMPLATES,
+      staff: [TECH],
+      toggles: [
+        { staff_user_id: 'tech', date: '2026-01-05', is_open: true },
+        { staff_user_id: 'tech', date: '2026-01-06', is_open: false },
+      ],
+      today: '2026-01-10',
+    })
+    expect(r.ytdAvailableHours).toBe(8)
   })
 
   it('Sunday has no template hours', () => {
