@@ -11,7 +11,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import {
   applyAppointmentBuffer,
-  calculateLineItemDurationMinutes,
+  calculateAppointmentDurationFromTotal,
   DEFAULT_APPOINTMENT_BUFFER_MINUTES,
 } from '@/lib/ops/availability'
 import {
@@ -671,25 +671,16 @@ export function NewJobWorkspace() {
     (sum, item) => sum + Math.max(0, Number(item.quantity || 0)),
     0,
   )
-  const serviceMinutesForCurrentSelection = lineItems.reduce((sum, item) => {
-    const service = servicesById.get(item.service_catalog_item_id)
-    const durationMinutes = Number(service?.default_duration_minutes || 0)
-    const quantity = Number(item.quantity || 0)
-    if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return sum
-    if (!Number.isFinite(quantity) || quantity <= 0) return sum
-    const unitPrice = Number(item.unit_price || service?.base_price || 0)
-    return (
-      sum +
-      calculateLineItemDurationMinutes({
-        durationMinutes,
-        quantity,
-        pricingUnit: service?.pricing_unit ?? null,
-        unitPrice,
-        catalogSlug: service?.slug ?? null,
-        nameSnapshot: service?.name ?? '',
-      })
-    )
-  }, 0)
+  // The reserved calendar block is sized by the dollar subtotal (2h / 3h / 4h
+  // tiers) — exactly what the server stores when it creates the appointment
+  // (see calculateAppointmentDurationFromTotal in /api/admin/ops/appointments).
+  // Availability MUST be checked against that same block. Sizing it off summed
+  // line-item minutes let a 3–4 hour job be offered a 2-hour gap and double-book
+  // the next appointment (e.g. a 4-hour 9 AM job slotted in front of an 11 AM).
+  const serviceMinutesForCurrentSelection =
+    totalSelectedUnits > 0
+      ? calculateAppointmentDurationFromTotal(subtotalQuote)
+      : 0
   const bufferMinutesForCurrentSelection =
     serviceMinutesForCurrentSelection > 0
       ? DEFAULT_APPOINTMENT_BUFFER_MINUTES

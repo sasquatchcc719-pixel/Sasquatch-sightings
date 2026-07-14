@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   applyAppointmentBuffer,
+  calculateAppointmentDurationFromTotal,
   calendarEventsToAppointmentWindows,
   DEFAULT_FALLBACK_AVAILABILITY_TEMPLATES,
   getAvailableSlots,
@@ -43,6 +44,42 @@ describe('availability gap fill', () => {
     expect(slots).toEqual([
       {
         start_time: '14:00:00',
+        end_time: '17:00:00',
+      },
+    ])
+  })
+
+  it('does not offer a 2-hour gap to a dollar-sized 4-hour job (double-book guard)', () => {
+    // A $601+ job stores a 4-hour block on the server (dollar tiers). The admin
+    // picker must size availability by that same block, or it will offer the
+    // 09:00 gap in front of an 11:00 appointment and double-book the tech.
+    const requiredMinutes = applyAppointmentBuffer(
+      calculateAppointmentDurationFromTotal(650),
+    )
+    expect(requiredMinutes).toBe(240)
+
+    const slots = getAvailableSlots({
+      date: '2026-05-04',
+      requiredMinutes,
+      templates: DEFAULT_FALLBACK_AVAILABILITY_TEMPLATES,
+      overrides: [],
+      appointments: [
+        {
+          appointment_date: '2026-05-04',
+          start_time: '11:00:00',
+          end_time: '13:00:00',
+          status: 'booked',
+        },
+      ],
+      maxResults: 8,
+    })
+
+    // The only opening long enough for 4 hours starts at 13:00 (13:00–17:00).
+    // 09:00 must NOT appear — it would run to 13:00 and collide with the 11:00.
+    expect(slots.every((slot) => slot.start_time !== '09:00:00')).toBe(true)
+    expect(slots).toEqual([
+      {
+        start_time: '13:00:00',
         end_time: '17:00:00',
       },
     ])
