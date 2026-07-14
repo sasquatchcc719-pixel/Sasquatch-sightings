@@ -20,6 +20,7 @@ import {
   Rocket,
   CalendarCheck,
   CalendarDays,
+  HardHat,
 } from 'lucide-react'
 
 type OpsStats = {
@@ -100,6 +101,26 @@ type ScheduleCapacity = {
   lastToggleDate: string | null
 }
 
+type TechMonthRow = {
+  month: string
+  jobs: number
+  revenue: number
+  jobHours: number
+  paidHours: number
+  grossWages: number
+  revenuePerPaidHour: number
+  laborPercent: number
+  billableEfficiency: number
+  profitAfterWages: number
+}
+
+type TechPerformance = {
+  staffUserId: string
+  displayName: string
+  months: TechMonthRow[]
+  totals: Omit<TechMonthRow, 'month'>
+}
+
 export default function StatsPage() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [stats, setStats] = useState<Stats | null>(null)
@@ -109,6 +130,7 @@ export default function StatsPage() {
   const [opsLoading, setOpsLoading] = useState(true)
   const [pipeline, setPipeline] = useState<CalendarPipeline | null>(null)
   const [pipelineLoading, setPipelineLoading] = useState(true)
+  const [techPerf, setTechPerf] = useState<TechPerformance[]>([])
 
   // Quick entry form state
   const [showQuickEntry, setShowQuickEntry] = useState(false)
@@ -488,6 +510,23 @@ export default function StatsPage() {
       }
     }
     void fetchOpsStats()
+  }, [])
+
+  useEffect(() => {
+    async function fetchTechPerf() {
+      try {
+        const res = await fetch('/api/admin/stats/tech-performance', {
+          cache: 'no-store',
+        })
+        if (res.ok) {
+          const json = (await res.json()) as { techs?: TechPerformance[] }
+          setTechPerf(json.techs || [])
+        }
+      } catch {
+        // Non-fatal — section simply hides
+      }
+    }
+    void fetchTechPerf()
   }, [])
 
   useEffect(() => {
@@ -1330,6 +1369,182 @@ export default function StatsPage() {
           </Card>
         </div>
       </div>
+
+      {/* Tech Profitability */}
+      {techPerf.length > 0 && (
+        <div className="mb-8">
+          <div className="mb-1 flex items-center gap-2">
+            <HardHat className="h-5 w-5 text-orange-400" />
+            <h2 className="text-gradient-amber text-xl font-semibold tracking-tight">
+              Tech Profitability
+            </h2>
+          </div>
+          <p className="text-muted-foreground mb-4 max-w-3xl text-sm leading-relaxed">
+            What each tech generates (completed-job revenue) vs what they cost
+            (timesheet paid hours × wage). Wages are <strong>gross pay</strong>{' '}
+            from timesheets — employer payroll taxes and workers comp typically
+            add roughly 10–15% on top. Field-service rule of thumb: keep tech
+            labor under <strong>30–35%</strong> of the revenue they produce.
+          </p>
+
+          {techPerf.map((tech) => {
+            const t = tech.totals
+            const laborColor =
+              t.laborPercent <= 30
+                ? 'text-green-600 dark:text-green-400'
+                : t.laborPercent <= 40
+                  ? 'text-amber-600 dark:text-amber-400'
+                  : 'text-red-600 dark:text-red-400'
+            return (
+              <div key={tech.staffUserId} className="space-y-4">
+                <h3 className="text-lg font-semibold">{tech.displayName}</h3>
+
+                {/* Headline cards */}
+                <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                  <Card className="card-interactive animate-slide-up border-border/60 bg-card/80 p-4 backdrop-blur">
+                    <div className="mb-1 flex items-center gap-2 text-emerald-400/80">
+                      <DollarSign className="h-4 w-4" />
+                      <p className="text-sm font-medium">Revenue / Paid Hr</p>
+                    </div>
+                    <p className="stat-value text-2xl font-bold text-emerald-300">
+                      {formatCurrency(t.revenuePerPaidHour)}
+                    </p>
+                    <p className="text-muted-foreground mt-0.5 text-xs">
+                      vs ~
+                      {t.paidHours > 0
+                        ? formatCurrency(t.grossWages / t.paidHours)
+                        : '—'}
+                      /hr wage
+                    </p>
+                  </Card>
+
+                  <Card className="card-interactive animate-slide-up-delay-1 border-border/60 bg-card/80 p-4 backdrop-blur">
+                    <div className="mb-1 flex items-center gap-2 text-amber-400/80">
+                      <Target className="h-4 w-4" />
+                      <p className="text-sm font-medium">Labor % of Revenue</p>
+                    </div>
+                    <p
+                      className={`stat-value text-2xl font-bold ${laborColor}`}
+                    >
+                      {t.laborPercent.toFixed(1)}%
+                    </p>
+                    <p className="text-muted-foreground mt-0.5 text-xs">
+                      target: under 30–35%
+                    </p>
+                  </Card>
+
+                  <Card className="card-interactive animate-slide-up-delay-2 border-border/60 bg-card/80 p-4 backdrop-blur">
+                    <div className="mb-1 flex items-center gap-2 text-cyan-400/80">
+                      <Clock className="h-4 w-4" />
+                      <p className="text-sm font-medium">Billable Efficiency</p>
+                    </div>
+                    <p className="stat-value text-2xl font-bold text-cyan-300">
+                      {t.billableEfficiency > 0
+                        ? `${t.billableEfficiency.toFixed(0)}%`
+                        : '—'}
+                    </p>
+                    <p className="text-muted-foreground mt-0.5 text-xs">
+                      job hours ÷ paid clock hours
+                    </p>
+                  </Card>
+
+                  <Card className="card-interactive animate-slide-up-delay-3 border-green-200 bg-green-50 p-4 dark:border-green-900 dark:bg-green-950">
+                    <div className="mb-1 flex items-center gap-2 text-green-700 dark:text-green-400">
+                      <TrendingUp className="h-4 w-4" />
+                      <p className="text-sm font-medium">Profit After Wages</p>
+                    </div>
+                    <p className="stat-value text-2xl font-bold text-green-700 dark:text-green-400">
+                      {formatCurrency(t.profitAfterWages)}
+                    </p>
+                    <p className="text-muted-foreground mt-0.5 text-xs">
+                      {formatCurrency(t.revenue)} revenue −{' '}
+                      {formatCurrency(t.grossWages)} wages
+                    </p>
+                  </Card>
+                </div>
+
+                {/* Monthly table */}
+                <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
+                  <h4 className="mb-3 text-sm font-semibold">Month by Month</h4>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[560px] text-sm">
+                      <thead>
+                        <tr className="text-muted-foreground border-b text-left text-xs">
+                          <th className="pr-3 pb-2 font-medium">Month</th>
+                          <th className="pr-3 pb-2 text-right font-medium">
+                            Jobs
+                          </th>
+                          <th className="pr-3 pb-2 text-right font-medium">
+                            Revenue
+                          </th>
+                          <th className="pr-3 pb-2 text-right font-medium">
+                            Paid Hrs
+                          </th>
+                          <th className="pr-3 pb-2 text-right font-medium">
+                            Wages
+                          </th>
+                          <th className="pr-3 pb-2 text-right font-medium">
+                            $/Paid Hr
+                          </th>
+                          <th className="pr-3 pb-2 text-right font-medium">
+                            Labor %
+                          </th>
+                          <th className="pb-2 text-right font-medium">
+                            Profit
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {tech.months.map((m) => {
+                          const [y, mo] = m.month.split('-').map(Number)
+                          const label = new Date(y, mo - 1, 1).toLocaleString(
+                            'en-US',
+                            { month: 'short', year: 'numeric' },
+                          )
+                          const rowLabor =
+                            m.laborPercent <= 30
+                              ? 'text-green-600 dark:text-green-400'
+                              : m.laborPercent <= 40
+                                ? 'text-amber-600 dark:text-amber-400'
+                                : 'text-red-600 dark:text-red-400'
+                          return (
+                            <tr key={m.month} className="border-b/50 border-b">
+                              <td className="py-2 pr-3 font-medium">{label}</td>
+                              <td className="py-2 pr-3 text-right">{m.jobs}</td>
+                              <td className="py-2 pr-3 text-right">
+                                {formatCurrency(m.revenue)}
+                              </td>
+                              <td className="py-2 pr-3 text-right">
+                                {m.paidHours.toFixed(1)}
+                              </td>
+                              <td className="py-2 pr-3 text-right">
+                                {formatCurrency(m.grossWages)}
+                              </td>
+                              <td className="py-2 pr-3 text-right">
+                                {formatCurrency(m.revenuePerPaidHour)}
+                              </td>
+                              <td
+                                className={`py-2 pr-3 text-right font-medium ${m.revenue > 0 ? rowLabor : ''}`}
+                              >
+                                {m.revenue > 0
+                                  ? `${m.laborPercent.toFixed(1)}%`
+                                  : '—'}
+                              </td>
+                              <td className="py-2 text-right font-semibold">
+                                {formatCurrency(m.profitAfterWages)}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </Card>
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       {/* Pace Tracking */}
       <div>
