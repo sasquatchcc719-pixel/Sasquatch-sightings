@@ -812,6 +812,10 @@ export async function processReactivationEmails(): Promise<ReactivationResults> 
     const html = buildReactivationEmailHtml(body, customer.id)
     const sendNumber = enrollment.messages_sent + 1
 
+    // Resend rate-limits at a few requests/second — the June 2026 blast
+    // lost 124 of 400 emails to 429s by sending full speed. Space sends out.
+    await new Promise((resolve) => setTimeout(resolve, 400))
+
     const emailResult = await resend.emails.send(
       {
         from: fromEmail,
