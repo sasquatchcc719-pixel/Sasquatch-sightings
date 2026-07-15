@@ -334,6 +334,7 @@ export async function PUT(request: NextRequest) {
         'engine_enabled',
         'daily_send_cap',
         'cadence_days',
+        'max_messages',
         'dormancy_months',
         'default_offer',
         'strong_offer_enabled',

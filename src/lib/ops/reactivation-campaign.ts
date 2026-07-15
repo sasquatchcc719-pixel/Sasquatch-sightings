@@ -18,6 +18,8 @@ type ReactivationSettings = {
   engine_enabled: boolean
   daily_send_cap: number
   cadence_days: number
+  /** Stop the sequence after this many emails per customer. */
+  max_messages: number
   dormancy_months: number
   default_offer: string
   strong_offer_enabled: boolean
@@ -249,6 +251,7 @@ async function getSettings(
     engine_enabled: data?.engine_enabled ?? true,
     daily_send_cap: data?.daily_send_cap ?? 35,
     cadence_days: data?.cadence_days ?? 30,
+    max_messages: data?.max_messages ?? 6,
     dormancy_months: data?.dormancy_months ?? 6,
     default_offer: data?.default_offer ?? '$20 off your next cleaning',
     strong_offer_enabled: data?.strong_offer_enabled ?? false,
@@ -712,6 +715,8 @@ export async function processReactivationEmails(): Promise<ReactivationResults> 
     `,
     )
     .eq('status', 'active')
+    // Sequence complete — every template used; stop emailing this customer.
+    .lt('messages_sent', Math.max(1, settings.max_messages))
     .lte('next_send_at', todayDate())
     // Highest lifetime value first — with a small daily cap, the $10k
     // property manager gets contacted before the $99 one-timer.

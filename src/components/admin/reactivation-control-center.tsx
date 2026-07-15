@@ -27,6 +27,7 @@ type Settings = {
   engine_enabled: boolean
   daily_send_cap: number
   cadence_days: number
+  max_messages: number
   dormancy_months: number
   default_offer: string
   strong_offer_enabled: boolean
@@ -147,6 +148,7 @@ function defaultSettings(): Settings {
     engine_enabled: true,
     daily_send_cap: 35,
     cadence_days: 30,
+    max_messages: 6,
     dormancy_months: 6,
     default_offer: '$20 off your next cleaning',
     strong_offer_enabled: false,
@@ -227,6 +229,35 @@ export function ReactivationControlCenter() {
       .finally(() => setLoading(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  async function toggleEngine() {
+    // Persist immediately — a toggle that only changes local state until a
+    // separate Save click is how the engine "got turned on" without saving.
+    const next = { ...settings, engine_enabled: !settings.engine_enabled }
+    setSettings(next)
+    setSaving(true)
+    setError(null)
+    setNotice(null)
+    try {
+      const res = await fetch('/api/admin/comms/reactivation', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'settings', ...next }),
+      })
+      const result = await res.json()
+      if (!res.ok) throw new Error(result.error || 'Failed to save')
+      setNotice(
+        next.engine_enabled
+          ? 'Engine ENABLED — emails go out with the daily 9:30am send.'
+          : 'Engine paused — no emails will send.',
+      )
+      await loadData()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to toggle engine')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   async function saveSettings() {
     setSaving(true)
@@ -409,12 +440,7 @@ export function ReactivationControlCenter() {
               variant={settings.engine_enabled ? 'outline' : 'default'}
               size="sm"
               disabled={saving}
-              onClick={() =>
-                setSettings((prev) => ({
-                  ...prev,
-                  engine_enabled: !prev.engine_enabled,
-                }))
-              }
+              onClick={toggleEngine}
             >
               {settings.engine_enabled ? (
                 <Pause className="h-4 w-4" />
@@ -477,7 +503,7 @@ export function ReactivationControlCenter() {
           </div>
         </div>
 
-        <div className="mt-5 grid gap-3 lg:grid-cols-4">
+        <div className="mt-5 grid gap-3 lg:grid-cols-5">
           <label className="space-y-1 text-xs text-white/50">
             Daily send cap
             <Input
@@ -504,6 +530,21 @@ export function ReactivationControlCenter() {
                 setSettings((prev) => ({
                   ...prev,
                   cadence_days: Number(e.target.value),
+                }))
+              }
+            />
+          </label>
+          <label className="space-y-1 text-xs text-white/50">
+            Max emails per customer
+            <Input
+              type="number"
+              min={1}
+              max={24}
+              value={settings.max_messages}
+              onChange={(e) =>
+                setSettings((prev) => ({
+                  ...prev,
+                  max_messages: Number(e.target.value),
                 }))
               }
             />
