@@ -172,6 +172,217 @@ type LeadSourceRevenue = {
   percentage: number
 }
 
+type DueRow = BusinessHealth['retention']['dueList'][number]
+type DueSortKey =
+  | 'name'
+  | 'lastService'
+  | 'monthsSince'
+  | 'jobs'
+  | 'lifetimeValue'
+  | 'reactivationStatus'
+
+const usd = (n: number) =>
+  new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(n)
+
+function reactivationLabel(rs?: string | null) {
+  if (!rs) return 'not enrolled'
+  if (rs === 'active') return 'queued'
+  if (rs.startsWith('suppressed')) return 'suppressed'
+  return rs.replace(/_/g, ' ')
+}
+
+function DueRecleanTable({ rows }: { rows: DueRow[] }) {
+  const [sortKey, setSortKey] = useState<DueSortKey>('lifetimeValue')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const [query, setQuery] = useState('')
+  const [bucket, setBucket] = useState<'all' | 'due' | 'overdue'>('all')
+
+  const toggleSort = (key: DueSortKey, defaultDir: 'asc' | 'desc') => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(key)
+      setSortDir(defaultDir)
+    }
+  }
+
+  const q = query.trim().toLowerCase()
+  const filtered = rows.filter((r) => {
+    if (bucket === 'due' && r.monthsSince >= 6) return false
+    if (bucket === 'overdue' && r.monthsSince < 6) return false
+    if (q && !r.name.toLowerCase().includes(q)) return false
+    return true
+  })
+
+  const sorted = [...filtered].sort((a, b) => {
+    let av: string | number
+    let bv: string | number
+    switch (sortKey) {
+      case 'name':
+        av = a.name.toLowerCase()
+        bv = b.name.toLowerCase()
+        break
+      case 'lastService':
+        av = a.lastService
+        bv = b.lastService
+        break
+      case 'reactivationStatus':
+        av = reactivationLabel(a.reactivationStatus)
+        bv = reactivationLabel(b.reactivationStatus)
+        break
+      default:
+        av = a[sortKey]
+        bv = b[sortKey]
+    }
+    if (av < bv) return sortDir === 'asc' ? -1 : 1
+    if (av > bv) return sortDir === 'asc' ? 1 : -1
+    // Tie-break by lifetime value so order is stable.
+    return b.lifetimeValue - a.lifetimeValue
+  })
+
+  const arrow = (key: DueSortKey) =>
+    sortKey === key ? (sortDir === 'asc' ? ' ↑' : ' ↓') : ''
+
+  // Plain JSX helper (not a nested component) so header cells don't remount.
+  const headerCell = (
+    label: string,
+    sortKeyName: DueSortKey,
+    defaultDir: 'asc' | 'desc',
+    opts?: { align?: 'left' | 'right'; last?: boolean },
+  ) => {
+    const align = opts?.align ?? 'right'
+    return (
+      <th
+        className={`pb-2 font-medium ${opts?.last ? '' : 'pr-3'} ${
+          align === 'left' ? 'text-left' : 'text-right'
+        }`}
+      >
+        <button
+          type="button"
+          onClick={() => toggleSort(sortKeyName, defaultDir)}
+          className={`hover:text-foreground inline-flex items-center gap-0.5 ${
+            sortKey === sortKeyName ? 'text-foreground font-semibold' : ''
+          } ${align === 'right' ? 'flex-row-reverse' : ''}`}
+        >
+          <span>{label}</span>
+          <span className="w-2 text-[10px]">{arrow(sortKeyName)}</span>
+        </button>
+      </th>
+    )
+  }
+
+  return (
+    <Card className="border-border/60 bg-card/80 mt-4 p-4 backdrop-blur">
+      <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h4 className="text-sm font-semibold">
+          Due-for-Reclean Customers{' '}
+          <span className="text-muted-foreground font-normal">
+            ({filtered.length}
+            {filtered.length !== rows.length ? ` of ${rows.length}` : ''})
+          </span>
+        </h4>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex overflow-hidden rounded-md border text-xs">
+            {(
+              [
+                ['all', 'All'],
+                ['due', 'Due soon'],
+                ['overdue', 'Overdue'],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setBucket(key)}
+                className={`px-2.5 py-1 ${
+                  bucket === key
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:bg-muted'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search name…"
+            className="h-8 w-40 text-xs"
+          />
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[600px] text-sm">
+          <thead>
+            <tr className="text-muted-foreground border-b text-xs">
+              {headerCell('Customer', 'name', 'asc', { align: 'left' })}
+              {headerCell('Last Clean', 'lastService', 'asc')}
+              {headerCell('Months Ago', 'monthsSince', 'desc')}
+              {headerCell('Visits', 'jobs', 'desc')}
+              {headerCell('Lifetime Value', 'lifetimeValue', 'desc')}
+              {headerCell('Reactivation', 'reactivationStatus', 'asc', {
+                last: true,
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((c) => {
+              const rs = c.reactivationStatus
+              const rsColor =
+                rs === 'active'
+                  ? 'text-emerald-500'
+                  : !rs || rs.startsWith('excluded')
+                    ? 'text-muted-foreground'
+                    : 'text-amber-600 dark:text-amber-400'
+              return (
+                <tr key={c.customerId} className="border-b/50 border-b">
+                  <td className="py-2 pr-3 font-medium">{c.name}</td>
+                  <td className="py-2 pr-3 text-right whitespace-nowrap">
+                    {new Date(c.lastService + 'T12:00:00').toLocaleDateString(
+                      'en-US',
+                      { month: 'short', day: 'numeric', year: 'numeric' },
+                    )}
+                  </td>
+                  <td
+                    className={`py-2 pr-3 text-right font-medium ${c.monthsSince >= 6 ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}`}
+                  >
+                    {c.monthsSince.toFixed(1)}
+                  </td>
+                  <td className="py-2 pr-3 text-right">{c.jobs}</td>
+                  <td className="py-2 pr-3 text-right font-semibold">
+                    {usd(c.lifetimeValue)}
+                  </td>
+                  <td
+                    className={`py-2 text-right text-xs font-medium ${rsColor}`}
+                  >
+                    {reactivationLabel(rs)}
+                  </td>
+                </tr>
+              )
+            })}
+            {sorted.length === 0 && (
+              <tr>
+                <td
+                  colSpan={6}
+                  className="text-muted-foreground py-6 text-center text-xs"
+                >
+                  No customers match this filter.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  )
+}
+
 export default function StatsPage() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [stats, setStats] = useState<Stats | null>(null)
@@ -1776,80 +1987,7 @@ export default function StatsPage() {
           )}
 
           {health.retention.dueList.length > 0 && (
-            <Card className="border-border/60 bg-card/80 mt-4 p-4 backdrop-blur">
-              <h4 className="mb-3 text-sm font-semibold">
-                Top Due-for-Reclean Customers (by lifetime value)
-              </h4>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[560px] text-sm">
-                  <thead>
-                    <tr className="text-muted-foreground border-b text-left text-xs">
-                      <th className="pr-3 pb-2 font-medium">Customer</th>
-                      <th className="pr-3 pb-2 text-right font-medium">
-                        Last Clean
-                      </th>
-                      <th className="pr-3 pb-2 text-right font-medium">
-                        Months Ago
-                      </th>
-                      <th className="pr-3 pb-2 text-right font-medium">
-                        Visits
-                      </th>
-                      <th className="pr-3 pb-2 text-right font-medium">
-                        Lifetime Value
-                      </th>
-                      <th className="pb-2 text-right font-medium">
-                        Reactivation
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {health.retention.dueList.map((c) => {
-                      const rs = c.reactivationStatus
-                      const rsLabel = !rs
-                        ? 'not enrolled'
-                        : rs === 'active'
-                          ? 'queued'
-                          : rs.startsWith('suppressed')
-                            ? 'suppressed'
-                            : rs.replace(/_/g, ' ')
-                      const rsColor =
-                        rs === 'active'
-                          ? 'text-emerald-500'
-                          : !rs || rs.startsWith('excluded')
-                            ? 'text-muted-foreground'
-                            : 'text-amber-600 dark:text-amber-400'
-                      return (
-                        <tr key={c.customerId} className="border-b/50 border-b">
-                          <td className="py-2 pr-3 font-medium">{c.name}</td>
-                          <td className="py-2 pr-3 text-right">
-                            {new Date(
-                              c.lastService + 'T12:00:00',
-                            ).toLocaleDateString('en-US', {
-                              month: 'short',
-                              day: 'numeric',
-                            })}
-                          </td>
-                          <td
-                            className={`py-2 pr-3 text-right font-medium ${c.monthsSince >= 6 ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}`}
-                          >
-                            {c.monthsSince.toFixed(1)}
-                          </td>
-                          <td className="py-2 pr-3 text-right">{c.jobs}</td>
-                          <td className="py-2 pr-3 text-right font-semibold">
-                            {formatCurrency(c.lifetimeValue)}
-                          </td>
-                          <td
-                            className={`py-2 text-right text-xs font-medium ${rsColor}`}
-                          >
-                            {rsLabel}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
+            <DueRecleanTable rows={health.retention.dueList} />
           )}
         </div>
       )}

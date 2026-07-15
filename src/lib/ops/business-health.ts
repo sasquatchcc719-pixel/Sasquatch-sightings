@@ -260,7 +260,8 @@ export function computeRetention(
     crossSystemRepeats,
     dueSoonCount: due.filter((d) => d.monthsSince < 6).length,
     overdueCount: due.filter((d) => d.monthsSince >= 6).length,
-    dueList: due.slice(0, 20),
+    // Full due list — the stats page sorts/filters it client-side.
+    dueList: due.slice(0, 1000),
   }
 }
 
