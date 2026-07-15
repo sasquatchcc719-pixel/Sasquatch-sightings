@@ -394,7 +394,14 @@ export function ReactivationControlCenter() {
               </Badge>
             </div>
             <p className="mt-1 text-sm text-white/50">
-              Automatic monthly email nurture for dormant customers.
+              Automatic monthly email nurture for dormant customers. Sends go
+              highest lifetime value first.{' '}
+              <a
+                href="/admin/stats"
+                className="text-emerald-400 hover:text-emerald-300 hover:underline"
+              >
+                See who&apos;s due in Statistics &rarr;
+              </a>
             </p>
           </div>
           <div className="flex flex-wrap gap-2">

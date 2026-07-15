@@ -212,7 +212,9 @@ export default function EmailOutboxPage() {
         <Mail className="h-5 w-5 text-white/30" />
       </div>
 
-      <ReactivationControlCenter />
+      <div id="reactivation" className="scroll-mt-6">
+        <ReactivationControlCenter />
+      </div>
 
       <Card className="p-4">
         <div className="grid gap-3 md:grid-cols-4">

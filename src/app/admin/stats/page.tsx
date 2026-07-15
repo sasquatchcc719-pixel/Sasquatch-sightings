@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -21,6 +21,8 @@ import {
   CalendarCheck,
   CalendarDays,
   HardHat,
+  ChevronDown,
+  Mail,
 } from 'lucide-react'
 
 type OpsStats = {
@@ -196,11 +198,70 @@ function reactivationLabel(rs?: string | null) {
   return rs.replace(/_/g, ' ')
 }
 
+type CustomerEmailEntry = {
+  source: 'reactivation' | 'drip' | 'transactional'
+  subject: string | null
+  to_email: string | null
+  status: string | null
+  sent_at: string | null
+  template: string | null
+}
+
+type EmailHistoryState = {
+  loading: boolean
+  emails: CustomerEmailEntry[]
+  counts: Record<string, number>
+}
+
+const EMAIL_SOURCE_LABEL: Record<CustomerEmailEntry['source'], string> = {
+  reactivation: 'Reactivation',
+  drip: 'Post-job drip',
+  transactional: 'Job emails',
+}
+
 function DueRecleanTable({ rows }: { rows: DueRow[] }) {
+  const [expanded, setExpanded] = useState(false)
+  const [showAll, setShowAll] = useState(false)
   const [sortKey, setSortKey] = useState<DueSortKey>('lifetimeValue')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [query, setQuery] = useState('')
   const [bucket, setBucket] = useState<'all' | 'due' | 'overdue'>('all')
+  const [openCustomerId, setOpenCustomerId] = useState<string | null>(null)
+  const [emailHistory, setEmailHistory] = useState<
+    Record<string, EmailHistoryState>
+  >({})
+
+  const toggleCustomer = (customerId: string) => {
+    const next = openCustomerId === customerId ? null : customerId
+    setOpenCustomerId(next)
+    if (next && !emailHistory[next]) {
+      setEmailHistory((h) => ({
+        ...h,
+        [next]: { loading: true, emails: [], counts: {} },
+      }))
+      fetch(
+        `/api/admin/stats/customer-emails?customerId=${encodeURIComponent(next)}`,
+        { cache: 'no-store' },
+      )
+        .then(async (res) => (res.ok ? res.json() : { emails: [], counts: {} }))
+        .catch(() => ({ emails: [], counts: {} }))
+        .then(
+          (json: {
+            emails?: CustomerEmailEntry[]
+            counts?: Record<string, number>
+          }) => {
+            setEmailHistory((h) => ({
+              ...h,
+              [next]: {
+                loading: false,
+                emails: json.emails || [],
+                counts: json.counts || {},
+              },
+            }))
+          },
+        )
+    }
+  }
 
   const toggleSort = (key: DueSortKey, defaultDir: 'asc' | 'desc') => {
     if (sortKey === key) {
@@ -276,109 +337,248 @@ function DueRecleanTable({ rows }: { rows: DueRow[] }) {
     )
   }
 
+  const visible = showAll ? sorted : sorted.slice(0, 25)
+
   return (
     <Card className="border-border/60 bg-card/80 mt-4 p-4 backdrop-blur">
-      <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h4 className="text-sm font-semibold">
-          Due-for-Reclean Customers{' '}
-          <span className="text-muted-foreground font-normal">
-            ({filtered.length}
-            {filtered.length !== rows.length ? ` of ${rows.length}` : ''})
-          </span>
-        </h4>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex overflow-hidden rounded-md border text-xs">
-            {(
-              [
-                ['all', 'All'],
-                ['due', 'Due soon'],
-                ['overdue', 'Overdue'],
-              ] as const
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setBucket(key)}
-                className={`px-2.5 py-1 ${
-                  bucket === key
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-muted-foreground hover:bg-muted'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search name…"
-            className="h-8 w-40 text-xs"
+      {/* Always-visible header: summary + expand toggle + jump to the tool */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <button
+          type="button"
+          onClick={() => setExpanded((e) => !e)}
+          className="flex items-center gap-2 text-left"
+        >
+          <ChevronDown
+            className={`text-muted-foreground h-4 w-4 shrink-0 transition-transform ${
+              expanded ? '' : '-rotate-90'
+            }`}
           />
-        </div>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[600px] text-sm">
-          <thead>
-            <tr className="text-muted-foreground border-b text-xs">
-              {headerCell('Customer', 'name', 'asc', { align: 'left' })}
-              {headerCell('Last Clean', 'lastService', 'asc')}
-              {headerCell('Months Ago', 'monthsSince', 'desc')}
-              {headerCell('Visits', 'jobs', 'desc')}
-              {headerCell('Lifetime Value', 'lifetimeValue', 'desc')}
-              {headerCell('Reactivation', 'reactivationStatus', 'asc', {
-                last: true,
-              })}
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.map((c) => {
-              const rs = c.reactivationStatus
-              const rsColor =
-                rs === 'active'
-                  ? 'text-emerald-500'
-                  : !rs || rs.startsWith('excluded')
-                    ? 'text-muted-foreground'
-                    : 'text-amber-600 dark:text-amber-400'
-              return (
-                <tr key={c.customerId} className="border-b/50 border-b">
-                  <td className="py-2 pr-3 font-medium">{c.name}</td>
-                  <td className="py-2 pr-3 text-right whitespace-nowrap">
-                    {new Date(c.lastService + 'T12:00:00').toLocaleDateString(
-                      'en-US',
-                      { month: 'short', day: 'numeric', year: 'numeric' },
-                    )}
-                  </td>
-                  <td
-                    className={`py-2 pr-3 text-right font-medium ${c.monthsSince >= 6 ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}`}
-                  >
-                    {c.monthsSince.toFixed(1)}
-                  </td>
-                  <td className="py-2 pr-3 text-right">{c.jobs}</td>
-                  <td className="py-2 pr-3 text-right font-semibold">
-                    {usd(c.lifetimeValue)}
-                  </td>
-                  <td
-                    className={`py-2 text-right text-xs font-medium ${rsColor}`}
-                  >
-                    {reactivationLabel(rs)}
-                  </td>
-                </tr>
+          <h4 className="text-sm font-semibold">
+            Due-for-Reclean Customers{' '}
+            <span className="text-muted-foreground font-normal">
+              ({rows.length} customers
+              {expanded && filtered.length !== rows.length
+                ? ` · showing ${filtered.length}`
+                : ''}
               )
-            })}
-            {sorted.length === 0 && (
-              <tr>
-                <td
-                  colSpan={6}
-                  className="text-muted-foreground py-6 text-center text-xs"
-                >
-                  No customers match this filter.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+            </span>
+          </h4>
+        </button>
+        <a
+          href="/admin/email-outbox#reactivation"
+          className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/40 px-3 py-1.5 text-xs font-medium text-emerald-500 hover:bg-emerald-500/10"
+        >
+          <Mail className="h-3.5 w-3.5" />
+          Open Reactivation Center →
+        </a>
       </div>
+
+      {!expanded && (
+        <p className="text-muted-foreground mt-2 ml-6 text-xs">
+          Click to expand — sortable and searchable list of everyone due for a
+          reclean.
+        </p>
+      )}
+
+      {expanded && (
+        <>
+          <div className="mt-3 mb-3 flex flex-wrap items-center gap-2">
+            <div className="flex overflow-hidden rounded-md border text-xs">
+              {(
+                [
+                  ['all', 'All'],
+                  ['due', 'Due soon'],
+                  ['overdue', 'Overdue'],
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setBucket(key)}
+                  className={`px-2.5 py-1 ${
+                    bucket === key
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:bg-muted'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search name…"
+              className="h-8 w-40 text-xs"
+            />
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[600px] text-sm">
+              <thead>
+                <tr className="text-muted-foreground border-b text-xs">
+                  {headerCell('Customer', 'name', 'asc', { align: 'left' })}
+                  {headerCell('Last Clean', 'lastService', 'asc')}
+                  {headerCell('Months Ago', 'monthsSince', 'desc')}
+                  {headerCell('Visits', 'jobs', 'desc')}
+                  {headerCell('Lifetime Value', 'lifetimeValue', 'desc')}
+                  {headerCell('Reactivation', 'reactivationStatus', 'asc', {
+                    last: true,
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map((c) => {
+                  const rs = c.reactivationStatus
+                  const rsColor =
+                    rs === 'active'
+                      ? 'text-emerald-500'
+                      : !rs || rs.startsWith('excluded')
+                        ? 'text-muted-foreground'
+                        : 'text-amber-600 dark:text-amber-400'
+                  const isOpen = openCustomerId === c.customerId
+                  const history = emailHistory[c.customerId]
+                  return (
+                    <Fragment key={c.customerId}>
+                      <tr
+                        onClick={() => toggleCustomer(c.customerId)}
+                        className={`border-b/50 hover:bg-muted/40 cursor-pointer border-b ${isOpen ? 'bg-muted/30' : ''}`}
+                      >
+                        <td className="py-2 pr-3 font-medium">
+                          <span className="inline-flex items-center gap-1.5">
+                            <ChevronDown
+                              className={`text-muted-foreground h-3 w-3 shrink-0 transition-transform ${isOpen ? '' : '-rotate-90'}`}
+                            />
+                            {c.name}
+                          </span>
+                        </td>
+                        <td className="py-2 pr-3 text-right whitespace-nowrap">
+                          {new Date(
+                            c.lastService + 'T12:00:00',
+                          ).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                          })}
+                        </td>
+                        <td
+                          className={`py-2 pr-3 text-right font-medium ${c.monthsSince >= 6 ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}`}
+                        >
+                          {c.monthsSince.toFixed(1)}
+                        </td>
+                        <td className="py-2 pr-3 text-right">{c.jobs}</td>
+                        <td className="py-2 pr-3 text-right font-semibold">
+                          {usd(c.lifetimeValue)}
+                        </td>
+                        <td
+                          className={`py-2 text-right text-xs font-medium ${rsColor}`}
+                        >
+                          {reactivationLabel(rs)}
+                        </td>
+                      </tr>
+                      {isOpen && (
+                        <tr className="border-b/50 border-b">
+                          <td colSpan={6} className="bg-muted/20 px-4 py-3">
+                            {!history || history.loading ? (
+                              <div className="text-muted-foreground flex items-center gap-2 text-xs">
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                                Loading email history…
+                              </div>
+                            ) : history.emails.length === 0 ? (
+                              <p className="text-muted-foreground text-xs">
+                                No emails have ever been sent to this customer
+                                through the system
+                                {c.customerId.includes(':')
+                                  ? ' (historical-import customer — not in the CRM yet)'
+                                  : ''}
+                                .
+                              </p>
+                            ) : (
+                              <div className="space-y-2">
+                                <p className="text-xs font-medium">
+                                  {history.emails.length} email
+                                  {history.emails.length !== 1 ? 's' : ''} sent
+                                  {Object.entries(history.counts)
+                                    .map(
+                                      ([src, n]) =>
+                                        ` · ${EMAIL_SOURCE_LABEL[src as CustomerEmailEntry['source']] ?? src}: ${n}`,
+                                    )
+                                    .join('')}
+                                </p>
+                                <div className="max-h-48 space-y-1 overflow-y-auto">
+                                  {history.emails.map((e, i) => (
+                                    <div
+                                      key={i}
+                                      className="flex items-baseline gap-2 text-xs"
+                                    >
+                                      <span className="text-muted-foreground w-20 shrink-0 whitespace-nowrap">
+                                        {e.sent_at
+                                          ? new Date(
+                                              e.sent_at,
+                                            ).toLocaleDateString('en-US', {
+                                              month: 'short',
+                                              day: 'numeric',
+                                              year: 'numeric',
+                                            })
+                                          : '—'}
+                                      </span>
+                                      <span
+                                        className={`w-24 shrink-0 rounded px-1.5 py-0.5 text-center text-[10px] font-medium ${
+                                          e.source === 'reactivation'
+                                            ? 'bg-emerald-500/15 text-emerald-500'
+                                            : e.source === 'drip'
+                                              ? 'bg-blue-500/15 text-blue-400'
+                                              : 'bg-slate-500/15 text-slate-400'
+                                        }`}
+                                      >
+                                        {EMAIL_SOURCE_LABEL[e.source]}
+                                      </span>
+                                      <span className="truncate">
+                                        {e.subject ||
+                                          e.template ||
+                                          '(no subject)'}
+                                      </span>
+                                      {e.status && e.status !== 'sent' && (
+                                        <span className="text-amber-500">
+                                          {e.status}
+                                        </span>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  )
+                })}
+                {sorted.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={6}
+                      className="text-muted-foreground py-6 text-center text-xs"
+                    >
+                      No customers match this filter.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          {!showAll && sorted.length > 25 && (
+            <div className="mt-3 text-center">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowAll(true)}
+              >
+                Show all {sorted.length} customers
+              </Button>
+            </div>
+          )}
+        </>
+      )}
     </Card>
   )
 }
