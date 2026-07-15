@@ -53,7 +53,10 @@ export async function GET(request: NextRequest) {
 
     const emails: CustomerEmailEntry[] = [
       ...(reactRes.data || [])
-        .filter((r) => r.event_type === 'sent' || r.event_type === 'failed')
+        // 'sent' = automated engine, 'email' = the June 2026 bulk blast.
+        .filter((r) =>
+          ['sent', 'email', 'failed'].includes(String(r.event_type)),
+        )
         .map((r) => ({
           source: 'reactivation' as const,
           subject: r.subject,

@@ -2180,8 +2180,9 @@ export default function StatsPage() {
               </p>
               <p className="text-muted-foreground mt-1 text-xs">
                 Customers below are enrolled and prioritized by lifetime value,
-                but no emails go out until the engine is enabled in the
-                reactivation settings. It has never sent an email.
+                but no automated emails go out until the engine is enabled in
+                the reactivation settings. The only send so far was the one-time
+                bulk blast on June 8, 2026 (276 delivered, ~13 bookings back).
               </p>
             </Card>
           )}

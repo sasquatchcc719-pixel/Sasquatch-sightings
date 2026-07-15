@@ -17,6 +17,7 @@ import {
 
 type EmailLogEntry = {
   id: string
+  source?: 'jobs' | 'reactivation' | 'drip'
   template_key: string
   to_email: string
   subject: string | null
@@ -35,6 +36,15 @@ const TEMPLATE_LABELS: Record<string, string> = {
   satisfaction_checkin_email: 'Satisfaction Check-in',
 }
 
+const SOURCE_META: Record<string, { label: string; className: string }> = {
+  jobs: { label: 'Job email', className: 'bg-slate-500/15 text-slate-300' },
+  reactivation: {
+    label: 'Reactivation',
+    className: 'bg-emerald-500/15 text-emerald-400',
+  },
+  drip: { label: 'Post-job drip', className: 'bg-blue-500/15 text-blue-400' },
+}
+
 function EmailRow({ email }: { email: EmailLogEntry }) {
   const [expanded, setExpanded] = useState(false)
   const [showPreview, setShowPreview] = useState(false)
@@ -48,7 +58,9 @@ function EmailRow({ email }: { email: EmailLogEntry }) {
     }
     setPreviewLoading(true)
     try {
-      const res = await fetch(`/api/admin/comms/email-log/${email.id}/preview`)
+      const res = await fetch(
+        `/api/admin/comms/email-log/${email.id}/preview?source=${email.source || 'jobs'}`,
+      )
       if (res.ok) {
         setPreviewHtml(await res.text())
         setShowPreview(true)
@@ -80,6 +92,11 @@ function EmailRow({ email }: { email: EmailLogEntry }) {
             <Badge variant="outline" className="text-xs">
               {TEMPLATE_LABELS[email.template_key] || email.template_key}
             </Badge>
+            <span
+              className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${SOURCE_META[email.source || 'jobs']?.className || ''}`}
+            >
+              {SOURCE_META[email.source || 'jobs']?.label || email.source}
+            </span>
             {email.status === 'failed' && (
               <Badge variant="destructive" className="text-xs">
                 Failed
@@ -181,6 +198,7 @@ export default function EmailOutboxPage() {
   const [search, setSearch] = useState('')
   const [templateKey, setTemplateKey] = useState('')
   const [status, setStatus] = useState('')
+  const [source, setSource] = useState('all')
 
   useEffect(() => {
     const query = new URLSearchParams()
@@ -188,6 +206,7 @@ export default function EmailOutboxPage() {
     if (search.trim()) query.set('q', search.trim())
     if (templateKey) query.set('template_key', templateKey)
     if (status) query.set('status', status)
+    if (source && source !== 'all') query.set('source', source)
 
     fetch(`/api/admin/comms/email-log?${query.toString()}`, {
       cache: 'no-store',
@@ -198,7 +217,7 @@ export default function EmailOutboxPage() {
         setTotal(data.total || 0)
       })
       .finally(() => setLoading(false))
-  }, [search, templateKey, status])
+  }, [search, templateKey, status, source])
 
   return (
     <div className="space-y-6 p-6">
@@ -217,13 +236,23 @@ export default function EmailOutboxPage() {
       </div>
 
       <Card className="p-4">
-        <div className="grid gap-3 md:grid-cols-4">
+        <div className="grid gap-3 md:grid-cols-5">
           <input
             className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm"
             placeholder="Search customer, email, or subject"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
+          <select
+            className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm"
+            value={source}
+            onChange={(e) => setSource(e.target.value)}
+          >
+            <option value="all">All sources</option>
+            <option value="jobs">Job emails</option>
+            <option value="reactivation">Reactivation</option>
+            <option value="drip">Post-job drip</option>
+          </select>
           <select
             className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm"
             value={templateKey}
@@ -252,6 +281,7 @@ export default function EmailOutboxPage() {
               setSearch('')
               setTemplateKey('')
               setStatus('')
+              setSource('all')
             }}
           >
             Clear filters
