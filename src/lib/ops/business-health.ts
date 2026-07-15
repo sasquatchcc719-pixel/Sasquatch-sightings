@@ -6,9 +6,12 @@ import { getActiveStaff } from '@/lib/ops/staff'
 
 /**
  * Retention, recurring-base, and booked-out metrics for the stats page.
- * All figures are ops-era only (ops_appointments began ~April 2026) — there
- * is no pre-ops service history in the DB, so repeat rates will read low
- * until the data covers a full recleaning cycle (6–12 months).
+ *
+ * Retention blends two eras: ops_appointments (April 2026+) and
+ * hcp_customer_history — last service date + lifetime value per customer
+ * from the Housecall Pro years, recovered from the June 2026 exports. A
+ * customer with an HCP service date who later completed an ops job counts
+ * as a repeat (they came back across systems).
  */
 
 export type DueCustomer = {
@@ -28,10 +31,23 @@ export type RetentionSummary = {
   repeatRevenue: number
   totalRevenue: number
   avgCustomerValue: number
+  /** Average per-visit ticket (ops completed jobs) — used for pipeline value. */
+  avgTicket: number
   medianDaysBetweenVisits: number | null
+  hcpCustomers: number
+  crossSystemRepeats: number
   dueSoonCount: number // last clean 3–6 months ago
   overdueCount: number // last clean 6+ months ago
   dueList: DueCustomer[] // top by lifetime value, due soon + overdue
+}
+
+export type HcpHistoryRow = {
+  hcp_id: string
+  customer_name: string | null
+  last_service_date_hcp: string | null
+  lifetime_value: number
+  ops_customer_id: string | null
+  do_not_contact: boolean
 }
 
 export type RecurringSummary = {
@@ -71,28 +87,75 @@ const DAY_MS = 86400000
 export function computeRetention(
   jobs: CompletedJob[],
   today: string,
+  options?: {
+    hcp?: HcpHistoryRow[]
+    /** ops customer ids with a future booking — not "due", they're coming. */
+    bookedCustomerIds?: Set<string>
+  },
 ): RetentionSummary {
   type Cust = {
     name: string
     dates: string[]
     revenue: number
+    hcpDate: string | null
+    hcpValue: number
+    doNotContact: boolean
   }
   const byCustomer = new Map<string, Cust>()
   let sinceDate = today
+  let opsJobCount = 0
+  let opsRevenue = 0
 
   for (const job of jobs) {
     if (job.appointment_date < sinceDate) sinceDate = job.appointment_date
     let c = byCustomer.get(job.customer_id)
     if (!c) {
-      c = { name: job.customer_name, dates: [], revenue: 0 }
+      c = {
+        name: job.customer_name,
+        dates: [],
+        revenue: 0,
+        hcpDate: null,
+        hcpValue: 0,
+        doNotContact: false,
+      }
       byCustomer.set(job.customer_id, c)
     }
     c.dates.push(job.appointment_date)
     c.revenue += job.revenue
+    opsJobCount++
+    opsRevenue += job.revenue
   }
 
-  const customers = byCustomer.size
+  // Blend Housecall Pro history. Rows without a service date and without ops
+  // jobs are contacts, not customers — they don't join the universe.
+  let hcpCustomers = 0
+  for (const h of options?.hcp || []) {
+    const key = h.ops_customer_id || `hcp:${h.hcp_id}`
+    const existing = byCustomer.get(key)
+    if (existing) {
+      existing.hcpDate = h.last_service_date_hcp
+      existing.hcpValue = h.lifetime_value || 0
+      existing.doNotContact = existing.doNotContact || h.do_not_contact
+      if (h.last_service_date_hcp) hcpCustomers++
+    } else if (h.last_service_date_hcp) {
+      hcpCustomers++
+      byCustomer.set(key, {
+        name: h.customer_name || 'Unknown',
+        dates: [],
+        revenue: 0,
+        hcpDate: h.last_service_date_hcp,
+        hcpValue: h.lifetime_value || 0,
+        doNotContact: h.do_not_contact,
+      })
+      if (h.last_service_date_hcp < sinceDate) {
+        sinceDate = h.last_service_date_hcp
+      }
+    }
+  }
+
+  let customers = 0
   let repeatCustomers = 0
+  let crossSystemRepeats = 0
   let repeatRevenue = 0
   let totalRevenue = 0
   const gaps: number[] = []
@@ -101,12 +164,26 @@ export function computeRetention(
 
   for (const [id, c] of byCustomer) {
     c.dates.sort()
-    totalRevenue += c.revenue
     // Distinct service days — same-day multi-appointments are one visit.
     const days = [...new Set(c.dates)]
-    if (days.length > 1) {
+    if (days.length === 0 && !c.hcpDate) continue // contact, never serviced
+    customers++
+    const lifetime = c.revenue + c.hcpValue
+    totalRevenue += lifetime
+
+    const cameBackAcrossSystems = !!c.hcpDate && days.length > 0
+    if (days.length > 1 || cameBackAcrossSystems) {
       repeatCustomers++
-      repeatRevenue += c.revenue
+      repeatRevenue += lifetime
+      if (cameBackAcrossSystems) {
+        crossSystemRepeats++
+        const gap = Math.round(
+          (Date.parse(`${days[0]}T00:00:00Z`) -
+            Date.parse(`${c.hcpDate}T00:00:00Z`)) /
+            DAY_MS,
+        )
+        if (gap > 0) gaps.push(gap)
+      }
       for (let i = 1; i < days.length; i++) {
         gaps.push(
           Math.round(
@@ -117,16 +194,23 @@ export function computeRetention(
         )
       }
     }
-    const last = days[days.length - 1]
+
+    const last =
+      days.length > 0
+        ? c.hcpDate && c.hcpDate > days[days.length - 1]
+          ? c.hcpDate
+          : days[days.length - 1]
+        : (c.hcpDate as string)
     const monthsSince =
       (todayMs - Date.parse(`${last}T00:00:00Z`)) / DAY_MS / 30.44
-    if (monthsSince >= 3) {
+    const hasFutureBooking = options?.bookedCustomerIds?.has(id) ?? false
+    if (monthsSince >= 3 && !c.doNotContact && !hasFutureBooking) {
       due.push({
         customerId: id,
         name: c.name,
         lastService: last,
-        jobs: days.length,
-        lifetimeValue: round2(c.revenue),
+        jobs: days.length + (c.hcpDate ? 1 : 0),
+        lifetimeValue: round2(lifetime),
         monthsSince: round1(monthsSince),
       })
     }
@@ -151,10 +235,13 @@ export function computeRetention(
     repeatRevenue: round2(repeatRevenue),
     totalRevenue: round2(totalRevenue),
     avgCustomerValue: customers > 0 ? round2(totalRevenue / customers) : 0,
+    avgTicket: opsJobCount > 0 ? round2(opsRevenue / opsJobCount) : 0,
     medianDaysBetweenVisits,
+    hcpCustomers,
+    crossSystemRepeats,
     dueSoonCount: due.filter((d) => d.monthsSince < 6).length,
     overdueCount: due.filter((d) => d.monthsSince >= 6).length,
-    dueList: due.slice(0, 15),
+    dueList: due.slice(0, 20),
   }
 }
 
@@ -181,7 +268,14 @@ export async function loadBusinessHealth(
 
   if (apptsError) throw apptsError
 
+  const { data: hcpRows } = await supabase
+    .from('hcp_customer_history')
+    .select(
+      'hcp_id, customer_name, last_service_date_hcp, lifetime_value, ops_customer_id, do_not_contact',
+    )
+
   const completed: CompletedJob[] = []
+  const bookedCustomerIds = new Set<string>()
   let recurringCompletedRevenue = 0
   let recurringCompletedJobs = 0
   let recurringBookedRevenue = 0
@@ -213,6 +307,14 @@ export async function loadBusinessHealth(
       [cust?.first_name, cust?.last_name].filter(Boolean).join(' ') ||
       'Unknown'
 
+    if (
+      a.status !== 'completed' &&
+      a.appointment_date >= today &&
+      a.customer_id
+    ) {
+      bookedCustomerIds.add(String(a.customer_id))
+    }
+
     if (a.status === 'completed') {
       // Retention tracks one-time/residential behavior — recurring contract
       // visits are scheduled, not "the customer came back", and belong to
@@ -238,7 +340,13 @@ export async function loadBusinessHealth(
     }
   }
 
-  const retention = computeRetention(completed, today)
+  const retention = computeRetention(completed, today, {
+    hcp: (hcpRows || []).map((h) => ({
+      ...h,
+      lifetime_value: Number(h.lifetime_value || 0),
+    })) as HcpHistoryRow[],
+    bookedCustomerIds,
+  })
 
   const recurring: RecurringSummary = {
     completedRevenue: round2(recurringCompletedRevenue),

@@ -130,7 +130,10 @@ type BusinessHealth = {
     repeatRevenue: number
     totalRevenue: number
     avgCustomerValue: number
+    avgTicket: number
     medianDaysBetweenVisits: number | null
+    hcpCustomers: number
+    crossSystemRepeats: number
     dueSoonCount: number
     overdueCount: number
     dueList: {
@@ -1644,11 +1647,12 @@ export default function StatsPage() {
                 year: 'numeric',
               })}
             </strong>{' '}
-            (Operations launch), excluding recurring contract work (that&apos;s
-            the Recurring Base below). Carpets get recleaned every 6–12 months,
-            so the repeat rate will read low until the data covers a full cycle
-            — the number to act on now is the <strong>due-for-reclean</strong>{' '}
-            list.
+            — blends <strong>Housecall Pro history</strong> (
+            {health.retention.hcpCustomers} customers with prior service dates)
+            with the live system, so cross-system returns count as repeats.
+            Excludes recurring contract work (that&apos;s the Recurring Base
+            below); customers with a future booking or marked do-not-contact are
+            left off the due list.
           </p>
 
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
@@ -1662,7 +1666,8 @@ export default function StatsPage() {
               </p>
               <p className="text-muted-foreground mt-0.5 text-xs">
                 {health.retention.repeatCustomers} of{' '}
-                {health.retention.customers} customers came back
+                {health.retention.customers} came back (
+                {health.retention.crossSystemRepeats} from the HCP era)
               </p>
             </Card>
 
@@ -1746,11 +1751,11 @@ export default function StatsPage() {
                 {formatCurrency(
                   (health.retention.dueSoonCount +
                     health.retention.overdueCount) *
-                    health.retention.avgCustomerValue,
+                    health.retention.avgTicket,
                 )}
               </p>
               <p className="text-muted-foreground mt-0.5 text-xs">
-                due customers × avg value — cheapest revenue there is
+                due customers × avg ticket — cheapest revenue there is
               </p>
             </Card>
           </div>

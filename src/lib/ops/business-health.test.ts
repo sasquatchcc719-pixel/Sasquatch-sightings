@@ -75,4 +75,77 @@ describe('computeRetention', () => {
     expect(r.medianDaysBetweenVisits).toBeNull()
     expect(r.dueList).toEqual([])
   })
+
+  it('counts HCP customer who booked an ops job as a cross-system repeat', () => {
+    const r = computeRetention(
+      [job('ops-1', '2026-05-01', 300, 'Alex')],
+      '2026-07-14',
+      {
+        hcp: [
+          {
+            hcp_id: 'h1',
+            customer_name: 'Alex',
+            last_service_date_hcp: '2025-05-01',
+            lifetime_value: 900,
+            ops_customer_id: 'ops-1',
+            do_not_contact: false,
+          },
+        ],
+      },
+    )
+    expect(r.customers).toBe(1)
+    expect(r.repeatCustomers).toBe(1)
+    expect(r.crossSystemRepeats).toBe(1)
+    expect(r.totalRevenue).toBe(1200) // ops 300 + hcp 900
+    expect(r.medianDaysBetweenVisits).toBe(365)
+  })
+
+  it('adds HCP-only customers with a date to the universe and due list', () => {
+    const r = computeRetention([], '2026-07-14', {
+      hcp: [
+        {
+          hcp_id: 'h2',
+          customer_name: 'Old HCP Customer',
+          last_service_date_hcp: '2025-09-01',
+          lifetime_value: 500,
+          ops_customer_id: null,
+          do_not_contact: false,
+        },
+        {
+          hcp_id: 'h3',
+          customer_name: 'Contact Only',
+          last_service_date_hcp: null,
+          lifetime_value: 0,
+          ops_customer_id: null,
+          do_not_contact: false,
+        },
+      ],
+    })
+    expect(r.customers).toBe(1) // dateless contact excluded
+    expect(r.overdueCount).toBe(1)
+    expect(r.dueList[0].name).toBe('Old HCP Customer')
+    expect(r.dueList[0].lifetimeValue).toBe(500)
+  })
+
+  it('excludes do-not-contact and currently-booked customers from the due list', () => {
+    const r = computeRetention(
+      [job('booked-cust', '2026-03-01', 300, 'Booked')],
+      '2026-07-14',
+      {
+        hcp: [
+          {
+            hcp_id: 'h4',
+            customer_name: 'DNC Customer',
+            last_service_date_hcp: '2025-01-01',
+            lifetime_value: 400,
+            ops_customer_id: null,
+            do_not_contact: true,
+          },
+        ],
+        bookedCustomerIds: new Set(['booked-cust']),
+      },
+    )
+    expect(r.dueList).toEqual([])
+    expect(r.customers).toBe(2) // both still count as customers
+  })
 })
