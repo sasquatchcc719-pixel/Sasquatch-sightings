@@ -24,6 +24,7 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { getCalendarPopupPosition } from '@/lib/ops/calendar-popup-position'
 import { appointmentDisplayRevenue } from '@/lib/ops/utilization-metrics'
 
 type ScheduleView = 'week' | 'day' | 'month'
@@ -2228,45 +2229,63 @@ export function OperationsSchedule() {
     })
   }
 
+  const notifyPopupPosition =
+    pendingNotify && typeof window !== 'undefined'
+      ? getCalendarPopupPosition({
+          x: pendingNotify.x,
+          y: pendingNotify.y,
+          viewportWidth: window.innerWidth,
+          viewportHeight: window.innerHeight,
+        })
+      : null
+
   return (
     <div className="space-y-6">
       {/* Notify customer popup — anchored near the drop point */}
-      {pendingNotify ? (
-        <div
-          className="pointer-events-none fixed z-50"
-          style={{
-            left: Math.min(pendingNotify.x, window.innerWidth - 340),
-            top: pendingNotify.y + 12,
-          }}
-        >
-          <Card className="border-border/60 bg-card/95 pointer-events-auto flex items-center gap-4 rounded-2xl border p-4 shadow-xl backdrop-blur">
-            <p className="text-sm font-medium">
-              Notify{' '}
-              <span className="font-semibold">
-                {pendingNotify.customerName}
-              </span>{' '}
-              of the new time?
-            </p>
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                onClick={() =>
-                  void sendRescheduleNotification(pendingNotify.appointmentId)
-                }
-              >
-                Yes
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setPendingNotify(null)}
-              >
-                No
-              </Button>
-            </div>
-          </Card>
-        </div>
-      ) : null}
+      {pendingNotify && notifyPopupPosition && typeof document !== 'undefined'
+        ? createPortal(
+            <div
+              className={`pointer-events-none fixed z-[240] ${
+                notifyPopupPosition.placeAbove ? '-translate-y-full' : ''
+              }`}
+              style={{
+                left: notifyPopupPosition.left,
+                top: notifyPopupPosition.top,
+                width: notifyPopupPosition.width,
+              }}
+            >
+              <Card className="border-border/60 bg-card/95 pointer-events-auto flex flex-col items-stretch gap-3 rounded-2xl border p-4 shadow-xl backdrop-blur sm:flex-row sm:items-center sm:gap-4">
+                <p className="min-w-0 flex-1 text-sm font-medium">
+                  Notify{' '}
+                  <span className="font-semibold">
+                    {pendingNotify.customerName}
+                  </span>{' '}
+                  of the new time?
+                </p>
+                <div className="flex shrink-0 justify-end gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() =>
+                      void sendRescheduleNotification(
+                        pendingNotify.appointmentId,
+                      )
+                    }
+                  >
+                    Yes
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setPendingNotify(null)}
+                  >
+                    No
+                  </Button>
+                </div>
+              </Card>
+            </div>,
+            document.body,
+          )
+        : null}
 
       {pendingStatusAction ? (
         <>
