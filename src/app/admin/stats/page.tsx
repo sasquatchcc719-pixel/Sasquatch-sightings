@@ -121,6 +121,52 @@ type TechPerformance = {
   totals: Omit<TechMonthRow, 'month'>
 }
 
+type BusinessHealth = {
+  retention: {
+    sinceDate: string
+    customers: number
+    repeatCustomers: number
+    repeatRatePct: number
+    repeatRevenue: number
+    totalRevenue: number
+    avgCustomerValue: number
+    medianDaysBetweenVisits: number | null
+    dueSoonCount: number
+    overdueCount: number
+    dueList: {
+      customerId: string
+      name: string
+      lastService: string
+      jobs: number
+      lifetimeValue: number
+      monthsSince: number
+    }[]
+  }
+  recurring: {
+    completedRevenue: number
+    completedJobs: number
+    bookedRevenue: number
+    bookedJobs: number
+    pctOfCompletedRevenue: number
+  }
+  bookedOut: {
+    staffUserId: string
+    staffName: string
+    daysOut: number | null
+    nextOpenDate: string | null
+  }[]
+  bookedOutScanDays: number
+}
+
+type LeadSourceRevenue = {
+  lead_source: string
+  booking_count: number
+  completed_count: number
+  total_revenue: number
+  avg_ticket: number
+  percentage: number
+}
+
 export default function StatsPage() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [stats, setStats] = useState<Stats | null>(null)
@@ -131,6 +177,8 @@ export default function StatsPage() {
   const [pipeline, setPipeline] = useState<CalendarPipeline | null>(null)
   const [pipelineLoading, setPipelineLoading] = useState(true)
   const [techPerf, setTechPerf] = useState<TechPerformance[]>([])
+  const [health, setHealth] = useState<BusinessHealth | null>(null)
+  const [sourceRevenue, setSourceRevenue] = useState<LeadSourceRevenue[]>([])
 
   // Quick entry form state
   const [showQuickEntry, setShowQuickEntry] = useState(false)
@@ -527,6 +575,40 @@ export default function StatsPage() {
       }
     }
     void fetchTechPerf()
+  }, [])
+
+  useEffect(() => {
+    async function fetchHealth() {
+      try {
+        const res = await fetch('/api/admin/stats/business-health', {
+          cache: 'no-store',
+        })
+        if (res.ok) setHealth((await res.json()) as BusinessHealth)
+      } catch {
+        // Non-fatal — section simply hides
+      }
+    }
+    async function fetchSourceRevenue() {
+      try {
+        const yearStart = `${new Date().getFullYear()}-01-01`
+        const res = await fetch(
+          `/api/admin/stats/lead-sources?start_date=${yearStart}`,
+          { cache: 'no-store' },
+        )
+        if (res.ok) {
+          const json = (await res.json()) as { sources?: LeadSourceRevenue[] }
+          setSourceRevenue(
+            (json.sources || []).sort(
+              (a, b) => b.total_revenue - a.total_revenue,
+            ),
+          )
+        }
+      } catch {
+        // Non-fatal
+      }
+    }
+    void fetchHealth()
+    void fetchSourceRevenue()
   }, [])
 
   useEffect(() => {
@@ -1543,6 +1625,324 @@ export default function StatsPage() {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* Customer Retention */}
+      {health && health.retention.customers > 0 && (
+        <div className="mb-8">
+          <h2 className="text-gradient mb-1 text-xl font-semibold tracking-tight">
+            Customer Retention
+          </h2>
+          <p className="text-muted-foreground mb-4 max-w-3xl text-sm leading-relaxed">
+            Tracking since{' '}
+            <strong>
+              {new Date(
+                health.retention.sinceDate + 'T12:00:00',
+              ).toLocaleDateString('en-US', {
+                month: 'short',
+                year: 'numeric',
+              })}
+            </strong>{' '}
+            (Operations launch), excluding recurring contract work (that&apos;s
+            the Recurring Base below). Carpets get recleaned every 6–12 months,
+            so the repeat rate will read low until the data covers a full cycle
+            — the number to act on now is the <strong>due-for-reclean</strong>{' '}
+            list.
+          </p>
+
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            <Card className="card-interactive animate-slide-up border-border/60 bg-card/80 p-4 backdrop-blur">
+              <div className="mb-1 flex items-center gap-2 text-emerald-400/80">
+                <Briefcase className="h-4 w-4" />
+                <p className="text-sm font-medium">Repeat Rate</p>
+              </div>
+              <p className="stat-value text-2xl font-bold text-emerald-300">
+                {health.retention.repeatRatePct.toFixed(1)}%
+              </p>
+              <p className="text-muted-foreground mt-0.5 text-xs">
+                {health.retention.repeatCustomers} of{' '}
+                {health.retention.customers} customers came back
+              </p>
+            </Card>
+
+            <Card className="card-interactive animate-slide-up-delay-1 border-border/60 bg-card/80 p-4 backdrop-blur">
+              <div className="mb-1 flex items-center gap-2 text-cyan-400/80">
+                <DollarSign className="h-4 w-4" />
+                <p className="text-sm font-medium">Repeat Revenue Share</p>
+              </div>
+              <p className="stat-value text-2xl font-bold text-cyan-300">
+                {health.retention.totalRevenue > 0
+                  ? (
+                      (health.retention.repeatRevenue /
+                        health.retention.totalRevenue) *
+                      100
+                    ).toFixed(0)
+                  : 0}
+                %
+              </p>
+              <p className="text-muted-foreground mt-0.5 text-xs">
+                {formatCurrency(health.retention.repeatRevenue)} from repeat
+                customers
+              </p>
+            </Card>
+
+            <Card className="card-interactive animate-slide-up-delay-2 border-border/60 bg-card/80 p-4 backdrop-blur">
+              <div className="mb-1 flex items-center gap-2 text-purple-400/80">
+                <TrendingUp className="h-4 w-4" />
+                <p className="text-sm font-medium">Avg Customer Value</p>
+              </div>
+              <p className="stat-value text-2xl font-bold text-purple-300">
+                {formatCurrency(health.retention.avgCustomerValue)}
+              </p>
+              <p className="text-muted-foreground mt-0.5 text-xs">
+                lifetime, per customer
+              </p>
+            </Card>
+
+            <Card className="card-interactive animate-slide-up-delay-3 border-border/60 bg-card/80 p-4 backdrop-blur">
+              <div className="mb-1 flex items-center gap-2 text-amber-400/80">
+                <Clock className="h-4 w-4" />
+                <p className="text-sm font-medium">Days Between Cleans</p>
+              </div>
+              <p className="stat-value text-2xl font-bold text-amber-300">
+                {health.retention.medianDaysBetweenVisits ?? '—'}
+              </p>
+              <p className="text-muted-foreground mt-0.5 text-xs">
+                median, repeat customers
+              </p>
+            </Card>
+          </div>
+
+          {/* Due for re-clean */}
+          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+            <Card className="border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/40">
+              <p className="mb-1 text-sm font-medium text-amber-700 dark:text-amber-400">
+                Due Soon (3–6 months)
+              </p>
+              <p className="text-2xl font-bold text-amber-700 dark:text-amber-400">
+                {health.retention.dueSoonCount}
+              </p>
+              <p className="text-muted-foreground mt-0.5 text-xs">
+                customers approaching reclean time
+              </p>
+            </Card>
+            <Card className="border-red-200 bg-red-50 p-4 dark:border-red-900 dark:bg-red-950/40">
+              <p className="mb-1 text-sm font-medium text-red-700 dark:text-red-400">
+                Overdue (6+ months)
+              </p>
+              <p className="text-2xl font-bold text-red-700 dark:text-red-400">
+                {health.retention.overdueCount}
+              </p>
+              <p className="text-muted-foreground mt-0.5 text-xs">
+                past a typical reclean cycle
+              </p>
+            </Card>
+            <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
+              <p className="text-muted-foreground mb-1 text-sm font-medium">
+                Warm Pipeline Value
+              </p>
+              <p className="text-2xl font-bold">
+                {formatCurrency(
+                  (health.retention.dueSoonCount +
+                    health.retention.overdueCount) *
+                    health.retention.avgCustomerValue,
+                )}
+              </p>
+              <p className="text-muted-foreground mt-0.5 text-xs">
+                due customers × avg value — cheapest revenue there is
+              </p>
+            </Card>
+          </div>
+
+          {health.retention.dueList.length > 0 && (
+            <Card className="border-border/60 bg-card/80 mt-4 p-4 backdrop-blur">
+              <h4 className="mb-3 text-sm font-semibold">
+                Top Due-for-Reclean Customers (by lifetime value)
+              </h4>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[480px] text-sm">
+                  <thead>
+                    <tr className="text-muted-foreground border-b text-left text-xs">
+                      <th className="pr-3 pb-2 font-medium">Customer</th>
+                      <th className="pr-3 pb-2 text-right font-medium">
+                        Last Clean
+                      </th>
+                      <th className="pr-3 pb-2 text-right font-medium">
+                        Months Ago
+                      </th>
+                      <th className="pr-3 pb-2 text-right font-medium">
+                        Visits
+                      </th>
+                      <th className="pb-2 text-right font-medium">
+                        Lifetime Value
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {health.retention.dueList.map((c) => (
+                      <tr key={c.customerId} className="border-b/50 border-b">
+                        <td className="py-2 pr-3 font-medium">{c.name}</td>
+                        <td className="py-2 pr-3 text-right">
+                          {new Date(
+                            c.lastService + 'T12:00:00',
+                          ).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                          })}
+                        </td>
+                        <td
+                          className={`py-2 pr-3 text-right font-medium ${c.monthsSince >= 6 ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}`}
+                        >
+                          {c.monthsSince.toFixed(1)}
+                        </td>
+                        <td className="py-2 pr-3 text-right">{c.jobs}</td>
+                        <td className="py-2 text-right font-semibold">
+                          {formatCurrency(c.lifetimeValue)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {/* Revenue by Lead Source (YTD) */}
+      {sourceRevenue.length > 0 && (
+        <div className="mb-8">
+          <div className="mb-1 flex items-center justify-between">
+            <h2 className="text-gradient-blue text-xl font-semibold tracking-tight">
+              Revenue by Lead Source — {new Date().getFullYear()}
+            </h2>
+            <a
+              href="/admin/stats/lead-sources"
+              className="text-xs text-green-600 hover:text-green-700 hover:underline"
+            >
+              View Detailed Analytics →
+            </a>
+          </div>
+          <p className="text-muted-foreground mb-4 max-w-3xl text-sm leading-relaxed">
+            Where the money comes from, not just the job count — use this to
+            decide where marketing dollars go.
+          </p>
+          <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
+            <div className="space-y-2">
+              {(() => {
+                const maxRev = Math.max(
+                  ...sourceRevenue.map((s) => s.total_revenue),
+                  1,
+                )
+                return sourceRevenue.map((s) => (
+                  <div key={s.lead_source} className="flex items-center gap-3">
+                    <div className="w-32 shrink-0 truncate text-sm">
+                      {s.lead_source}
+                    </div>
+                    <div className="bg-muted h-4 flex-1 overflow-hidden rounded-full">
+                      <div
+                        className="flex h-4 items-center rounded-full bg-blue-500/70"
+                        style={{
+                          width: `${Math.max((s.total_revenue / maxRev) * 100, 2)}%`,
+                        }}
+                      />
+                    </div>
+                    <div className="w-20 shrink-0 text-right text-sm font-semibold">
+                      {formatCurrency(s.total_revenue)}
+                    </div>
+                    <div className="text-muted-foreground w-24 shrink-0 text-right text-xs">
+                      {s.booking_count} jobs · {formatCurrency(s.avg_ticket)}{' '}
+                      avg
+                    </div>
+                  </div>
+                ))
+              })()}
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Recurring Base + Booked Out */}
+      {health && (
+        <div className="mb-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <div>
+            <h2 className="text-gradient mb-1 text-xl font-semibold tracking-tight">
+              Recurring Base
+            </h2>
+            <p className="text-muted-foreground mb-4 text-sm leading-relaxed">
+              Revenue that shows up without marketing — your floor.
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
+                <p className="text-muted-foreground mb-1 text-sm font-medium">
+                  Recurring Revenue YTD
+                </p>
+                <p className="stat-value text-2xl font-bold text-emerald-300">
+                  {formatCurrency(health.recurring.completedRevenue)}
+                </p>
+                <p className="text-muted-foreground mt-0.5 text-xs">
+                  {health.recurring.pctOfCompletedRevenue.toFixed(0)}% of
+                  completed ops revenue
+                </p>
+              </Card>
+              <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
+                <p className="text-muted-foreground mb-1 text-sm font-medium">
+                  Recurring Booked Ahead
+                </p>
+                <p className="stat-value text-2xl font-bold text-blue-300">
+                  {formatCurrency(health.recurring.bookedRevenue)}
+                </p>
+                <p className="text-muted-foreground mt-0.5 text-xs">
+                  {health.recurring.bookedJobs} jobs on the calendar
+                </p>
+              </Card>
+            </div>
+          </div>
+
+          <div>
+            <h2 className="text-gradient-amber mb-1 text-xl font-semibold tracking-tight">
+              Booked Out
+            </h2>
+            <p className="text-muted-foreground mb-4 text-sm leading-relaxed">
+              Days until each tech&apos;s next 2-hour opening. Consistently 10+
+              days out = time to hire.
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              {health.bookedOut.map((b) => {
+                const label =
+                  b.daysOut === null
+                    ? `${health.bookedOutScanDays}+ days`
+                    : b.daysOut === 0
+                      ? 'Today'
+                      : b.daysOut === 1
+                        ? 'Tomorrow'
+                        : `${b.daysOut} days`
+                const color =
+                  b.daysOut === null || b.daysOut >= 10
+                    ? 'text-red-600 dark:text-red-400'
+                    : b.daysOut >= 5
+                      ? 'text-amber-600 dark:text-amber-400'
+                      : 'text-emerald-400'
+                return (
+                  <Card
+                    key={b.staffUserId}
+                    className="border-border/60 bg-card/80 p-4 backdrop-blur"
+                  >
+                    <p className="text-muted-foreground mb-1 truncate text-sm font-medium">
+                      {b.staffName}
+                    </p>
+                    <p className={`stat-value text-2xl font-bold ${color}`}>
+                      {label}
+                    </p>
+                    <p className="text-muted-foreground mt-0.5 text-xs">
+                      next open 2-hr slot
+                    </p>
+                  </Card>
+                )
+              })}
+            </div>
+          </div>
         </div>
       )}
 
