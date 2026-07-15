@@ -225,6 +225,7 @@ Pass one canonical key exactly:
 - grok: Grok
 - perplexity: Perplexity
 - vehicle_wrap: Saw a Sasquatch vehicle
+- door_hanger: Door hanger
 - nfc_partner: NFC card / partner location
 - referral: Word of mouth / referral
 - realtor_property_manager: Realtor / property manager

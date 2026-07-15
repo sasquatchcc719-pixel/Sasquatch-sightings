@@ -139,7 +139,7 @@ export const SCOUT_WEB_TOOLS: OpenAI.ChatCompletionTool[] = [
           lead_source: {
             type: 'string',
             description:
-              'Canonical key for how the customer heard about Sasquatch. Use one of: google_search, google_lsa, nextdoor, facebook, instagram, yelp, chatgpt, gemini, claude, grok, perplexity, vehicle_wrap, nfc_partner, referral, realtor_property_manager, repeat_customer, other. Never use Scout, website chat, Harry, Rabecca, Retell, voice AI, or Telegram as the marketing source.',
+              'Canonical key for how the customer heard about Sasquatch. Use one of: google_search, google_lsa, nextdoor, facebook, instagram, yelp, chatgpt, gemini, claude, grok, perplexity, vehicle_wrap, door_hanger, nfc_partner, referral, realtor_property_manager, repeat_customer, other. Never use Scout, website chat, Harry, Rabecca, Retell, voice AI, or Telegram as the marketing source.',
           },
           lead_source_detail: {
             type: 'string',

@@ -11,6 +11,7 @@ export const LEAD_SOURCE_KEYS = [
   'grok',
   'perplexity',
   'vehicle_wrap',
+  'door_hanger',
   'nfc_partner',
   'referral',
   'realtor_property_manager',
@@ -189,6 +190,17 @@ export const CANONICAL_LEAD_SOURCE_OPTIONS: LeadSourceOption[] = [
     detail_label: null,
   },
   {
+    source_key: 'door_hanger',
+    customer_label: 'Door hanger',
+    internal_label: 'Door hanger',
+    reporting_category: 'offline',
+    display_order: 125,
+    is_active: true,
+    is_public: true,
+    requires_detail: false,
+    detail_label: null,
+  },
+  {
     source_key: 'nfc_partner',
     customer_label: 'NFC card / partner location',
     internal_label: 'NFC card / partner location',
@@ -316,6 +328,14 @@ function keyFromComparable(value: string): LeadSourceKey | null {
   if (dense === 'perplexity') return 'perplexity'
   if (c.includes('truck') || c.includes('vehicle') || c.includes('wrap')) {
     return 'vehicle_wrap'
+  }
+  if (
+    c.includes('door hanger') ||
+    dense === 'doorhanger' ||
+    c.includes('door tag') ||
+    c.includes('door flyer')
+  ) {
+    return 'door_hanger'
   }
   if (
     c.includes('nfc') ||
@@ -459,4 +479,4 @@ export function optionFromDatabaseRow(
 }
 
 export const LEAD_SOURCE_TOOL_OPTIONS_TEXT =
-  'Use canonical lead source keys only: google_search, google_lsa, nextdoor, facebook, instagram, yelp, chatgpt, gemini, claude, grok, perplexity, vehicle_wrap, nfc_partner, referral, realtor_property_manager, repeat_customer, other. Ask for the real marketing source. Never use Harry, Scout, Rabecca, Retell, Telegram, voice AI, or website as the lead source.'
+  'Use canonical lead source keys only: google_search, google_lsa, nextdoor, facebook, instagram, yelp, chatgpt, gemini, claude, grok, perplexity, vehicle_wrap, door_hanger, nfc_partner, referral, realtor_property_manager, repeat_customer, other. Ask for the real marketing source. Never use Harry, Scout, Rabecca, Retell, Telegram, voice AI, or website as the lead source.'

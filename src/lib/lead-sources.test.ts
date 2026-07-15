@@ -13,6 +13,9 @@ describe('lead source normalization', () => {
     ['Google LSA', 'google_lsa'],
     ['Google Local Services', 'google_lsa'],
     ['Nextdoor', 'nextdoor'],
+    ['Door hanger', 'door_hanger'],
+    ['Doorhanger', 'door_hanger'],
+    ['Door flyer', 'door_hanger'],
     ['Repeat customer', 'repeat_customer'],
     ['Word of mouth / Referral', 'referral'],
     ['NFC Card', 'nfc_partner'],
@@ -49,6 +52,7 @@ describe('lead source normalization', () => {
 
     expect(options[0].key).toBe('google_search')
     expect(options.map((option) => option.key)).toContain('google_lsa')
+    expect(options.map((option) => option.key)).toContain('door_hanger')
     expect(options.at(-1)?.key).toBe('other')
   })
 
