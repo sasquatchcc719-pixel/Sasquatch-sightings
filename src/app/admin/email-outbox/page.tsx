@@ -32,6 +32,7 @@ type EmailLogEntry = {
 
 const TEMPLATE_LABELS: Record<string, string> = {
   job_scheduled_email: 'Booking Confirmation',
+  job_rescheduled_email: 'Reschedule Confirmation',
   job_finished_email: 'Job Completed',
   satisfaction_checkin_email: 'Satisfaction Check-in',
 }

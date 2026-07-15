@@ -58,6 +58,7 @@ type EmailLogEntry = {
 
 const OPS_EMAIL_TEMPLATE_LABELS: Record<string, string> = {
   job_scheduled_email: 'Booking confirmation',
+  job_rescheduled_email: 'Reschedule confirmation',
   job_finished_email: 'Job completed',
   satisfaction_checkin_email: 'Satisfaction check-in',
   quote: 'Estimate / quote',

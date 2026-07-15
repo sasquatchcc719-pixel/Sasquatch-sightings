@@ -352,6 +352,8 @@ export async function PATCH(
     const nextStatus = body.status ? String(body.status) : current.status
     const skipCustomerCommunications =
       body.skip_customer_communications === true
+    const notifyCustomerOnReschedule =
+      body.notify_customer_on_reschedule === true
     const nextPaymentStatus = body.payment_status
       ? String(body.payment_status)
       : current.payment_status
@@ -694,6 +696,20 @@ export async function PATCH(
           )
         }
       }
+    }
+
+    if (
+      notifyCustomerOnReschedule &&
+      (dateChanged || startChanged) &&
+      !skipCustomerCommunications &&
+      nextStatus !== 'cancelled' &&
+      nextStatus !== 'completed'
+    ) {
+      const { sent } = await sendOpsLifecycleCommunications({
+        event: 'job_rescheduled',
+        appointmentId: id,
+      })
+      lifecycleNotifications = [...lifecycleNotifications, ...sent]
     }
 
     if (

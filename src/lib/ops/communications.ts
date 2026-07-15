@@ -9,6 +9,7 @@ export const OPS_TEMPLATE_KEYS = [
   'on_my_way_sms',
   'job_finished_sms',
   'job_rescheduled_sms',
+  'job_rescheduled_email',
   'day_before_residential_sms',
   'day_before_recovery_village_sms',
   'job_scheduled_email',
@@ -194,7 +195,9 @@ function renderTemplate(
   )
 }
 
-function eventToTemplateKeys(event: OpsLifecycleEvent): OpsTemplateKey[] {
+export function getOpsTemplateKeysForEvent(
+  event: OpsLifecycleEvent,
+): OpsTemplateKey[] {
   if (event === 'job_scheduled') {
     return ['job_scheduled_sms', 'job_scheduled_email']
   }
@@ -202,7 +205,7 @@ function eventToTemplateKeys(event: OpsLifecycleEvent): OpsTemplateKey[] {
     return ['on_my_way_sms']
   }
   if (event === 'job_rescheduled') {
-    return ['job_rescheduled_sms']
+    return ['job_rescheduled_sms', 'job_rescheduled_email']
   }
   return [
     'job_finished_sms',
@@ -215,7 +218,7 @@ async function getTemplatesForEvent(
   supabase: ReturnType<typeof createAdminClient>,
   event: OpsLifecycleEvent,
 ): Promise<OpsTemplateRow[]> {
-  const keys = eventToTemplateKeys(event)
+  const keys = getOpsTemplateKeysForEvent(event)
   const { data, error } = await supabase
     .from('ops_communication_templates')
     .select('*')

@@ -487,7 +487,10 @@ export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
         {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(form),
+          body: JSON.stringify({
+            ...form,
+            notify_customer_on_reschedule: true,
+          }),
         },
       )
       const result = await response.json()
