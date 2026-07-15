@@ -2,6 +2,10 @@ import { Resend } from 'resend'
 import { generateUnsubscribeToken } from '@/lib/ops/drip-campaign'
 import { createAdminClient } from '@/supabase/server'
 import { isBlacklisted } from '@/lib/blacklist'
+import {
+  loadCustomerValueIndex,
+  type CustomerValueEntry,
+} from '@/lib/ops/business-health'
 
 const BOOK_URL = 'https://www.sasquatchcarpet.com'
 const UNSUB_BASE =
@@ -284,6 +288,7 @@ function isWithinDormancyWindow(params: {
 function statusForCustomer(params: {
   customer: CustomerRow
   latestAppointmentDate: string | null
+  history?: CustomerValueEntry
   emailOwnerByEmail: Map<string, string>
   activeDripCustomerIds: Set<string>
   blacklistedPhones: Set<string>
@@ -331,6 +336,17 @@ function statusForCustomer(params: {
       pausedUntil: null,
       stopReason: 'blacklisted_customer',
       source: 'blacklist',
+    }
+  }
+
+  // Do-not-contact flag carried over from the Housecall Pro import.
+  if (params.history?.doNotContact) {
+    return {
+      status: 'suppressed_manual',
+      nextSendAt: null,
+      pausedUntil: null,
+      stopReason: 'do_not_contact_flag',
+      source: 'hcp_import',
     }
   }
 
@@ -398,9 +414,12 @@ function statusForCustomer(params: {
     nextSendAt: params.existingEnrollment?.next_send_at || params.asOfDate,
     pausedUntil: null,
     stopReason: null,
-    source: params.latestAppointmentDate
-      ? 'six_month_dormant_customer'
-      : 'never_booked_customer',
+    // Blended history (QuickBooks/HCP era) makes the distinction accurate:
+    // a customer last cleaned in 2024 is dormant, not "never booked".
+    source:
+      params.latestAppointmentDate || params.history?.lastKnownService
+        ? 'six_month_dormant_customer'
+        : 'never_booked_customer',
   }
 }
 
@@ -447,8 +466,19 @@ async function loadEligibilityData(supabase: SupabaseAdmin) {
   const appointments = (appointmentsResult.data || []) as AppointmentRow[]
   const enrollments = (enrollmentsResult.data || []) as EnrollmentRow[]
 
+  // Blended history (ops + QuickBooks + HCP): lifetime value for send
+  // priority, last service for dormancy, do-not-contact flags. Non-fatal —
+  // the engine still works without it.
+  let valueIndex = new Map<string, CustomerValueEntry>()
+  try {
+    valueIndex = await loadCustomerValueIndex(supabase)
+  } catch (err) {
+    console.error('[reactivation] value index failed, continuing without', err)
+  }
+
   return {
     customers,
+    valueIndex,
     latestAppointment: latestAppointmentByCustomer(appointments),
     enrollmentsByCustomer: new Map(
       enrollments.map((row) => [row.customer_id, row]),
@@ -487,11 +517,18 @@ export async function enrollEligibleReactivationCustomers(params?: {
 
   for (const customer of data.customers.slice(0, maxCustomers)) {
     const existing = data.enrollmentsByCustomer.get(customer.id)
+    const history = data.valueIndex.get(customer.id)
+    const opsLatest = data.latestAppointment.get(customer.id) || null
+    // Dormancy considers every system's last service, not just ops.
     const latestAppointmentDate =
-      data.latestAppointment.get(customer.id) || null
+      history?.lastKnownService &&
+      (!opsLatest || history.lastKnownService > opsLatest)
+        ? history.lastKnownService
+        : opsLatest
     const computed = statusForCustomer({
       customer,
       latestAppointmentDate,
+      history,
       emailOwnerByEmail,
       activeDripCustomerIds: data.activeDripCustomerIds,
       blacklistedPhones: data.blacklistedPhones,
@@ -506,6 +543,8 @@ export async function enrollEligibleReactivationCustomers(params?: {
       enrollment_source: computed.source,
       next_send_at: computed.nextSendAt,
       latest_appointment_at: latestAppointmentDate,
+      priority_value: Math.round((history?.lifetimeValue || 0) * 100) / 100,
+      last_known_service: history?.lastKnownService || null,
       paused_until: computed.pausedUntil,
       stop_reason: computed.stopReason,
       updated_at: new Date().toISOString(),
@@ -674,6 +713,9 @@ export async function processReactivationEmails(): Promise<ReactivationResults> 
     )
     .eq('status', 'active')
     .lte('next_send_at', todayDate())
+    // Highest lifetime value first — with a small daily cap, the $10k
+    // property manager gets contacted before the $99 one-timer.
+    .order('priority_value', { ascending: false })
     .order('next_send_at', { ascending: true })
     .limit(settings.daily_send_cap)
 

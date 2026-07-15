@@ -143,6 +143,7 @@ type BusinessHealth = {
       jobs: number
       lifetimeValue: number
       monthsSince: number
+      reactivationStatus?: string | null
     }[]
   }
   recurring: {
@@ -159,6 +160,7 @@ type BusinessHealth = {
     nextOpenDate: string | null
   }[]
   bookedOutScanDays: number
+  reactivationEngineEnabled: boolean | null
 }
 
 type LeadSourceRevenue = {
@@ -1760,13 +1762,26 @@ export default function StatsPage() {
             </Card>
           </div>
 
+          {health.reactivationEngineEnabled === false && (
+            <Card className="mt-4 border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/40">
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+                ⚠ The reactivation email engine is turned OFF
+              </p>
+              <p className="text-muted-foreground mt-1 text-xs">
+                Customers below are enrolled and prioritized by lifetime value,
+                but no emails go out until the engine is enabled in the
+                reactivation settings. It has never sent an email.
+              </p>
+            </Card>
+          )}
+
           {health.retention.dueList.length > 0 && (
             <Card className="border-border/60 bg-card/80 mt-4 p-4 backdrop-blur">
               <h4 className="mb-3 text-sm font-semibold">
                 Top Due-for-Reclean Customers (by lifetime value)
               </h4>
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[480px] text-sm">
+                <table className="w-full min-w-[560px] text-sm">
                   <thead>
                     <tr className="text-muted-foreground border-b text-left text-xs">
                       <th className="pr-3 pb-2 font-medium">Customer</th>
@@ -1779,34 +1794,58 @@ export default function StatsPage() {
                       <th className="pr-3 pb-2 text-right font-medium">
                         Visits
                       </th>
-                      <th className="pb-2 text-right font-medium">
+                      <th className="pr-3 pb-2 text-right font-medium">
                         Lifetime Value
+                      </th>
+                      <th className="pb-2 text-right font-medium">
+                        Reactivation
                       </th>
                     </tr>
                   </thead>
                   <tbody>
-                    {health.retention.dueList.map((c) => (
-                      <tr key={c.customerId} className="border-b/50 border-b">
-                        <td className="py-2 pr-3 font-medium">{c.name}</td>
-                        <td className="py-2 pr-3 text-right">
-                          {new Date(
-                            c.lastService + 'T12:00:00',
-                          ).toLocaleDateString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                          })}
-                        </td>
-                        <td
-                          className={`py-2 pr-3 text-right font-medium ${c.monthsSince >= 6 ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}`}
-                        >
-                          {c.monthsSince.toFixed(1)}
-                        </td>
-                        <td className="py-2 pr-3 text-right">{c.jobs}</td>
-                        <td className="py-2 text-right font-semibold">
-                          {formatCurrency(c.lifetimeValue)}
-                        </td>
-                      </tr>
-                    ))}
+                    {health.retention.dueList.map((c) => {
+                      const rs = c.reactivationStatus
+                      const rsLabel = !rs
+                        ? 'not enrolled'
+                        : rs === 'active'
+                          ? 'queued'
+                          : rs.startsWith('suppressed')
+                            ? 'suppressed'
+                            : rs.replace(/_/g, ' ')
+                      const rsColor =
+                        rs === 'active'
+                          ? 'text-emerald-500'
+                          : !rs || rs.startsWith('excluded')
+                            ? 'text-muted-foreground'
+                            : 'text-amber-600 dark:text-amber-400'
+                      return (
+                        <tr key={c.customerId} className="border-b/50 border-b">
+                          <td className="py-2 pr-3 font-medium">{c.name}</td>
+                          <td className="py-2 pr-3 text-right">
+                            {new Date(
+                              c.lastService + 'T12:00:00',
+                            ).toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                            })}
+                          </td>
+                          <td
+                            className={`py-2 pr-3 text-right font-medium ${c.monthsSince >= 6 ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}`}
+                          >
+                            {c.monthsSince.toFixed(1)}
+                          </td>
+                          <td className="py-2 pr-3 text-right">{c.jobs}</td>
+                          <td className="py-2 pr-3 text-right font-semibold">
+                            {formatCurrency(c.lifetimeValue)}
+                          </td>
+                          <td
+                            className={`py-2 text-right text-xs font-medium ${rsColor}`}
+                          >
+                            {rsLabel}
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>

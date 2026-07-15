@@ -21,6 +21,8 @@ export type DueCustomer = {
   jobs: number
   lifetimeValue: number
   monthsSince: number
+  /** Reactivation-engine enrollment status; null = not enrolled. */
+  reactivationStatus?: string | null
 }
 
 export type RetentionSummary = {
@@ -71,6 +73,8 @@ export type BusinessHealth = {
   recurring: RecurringSummary
   bookedOut: BookedOutEntry[]
   bookedOutScanDays: number
+  /** null when the reactivation settings row is missing. */
+  reactivationEngineEnabled: boolean | null
 }
 
 type CompletedJob = {
@@ -434,6 +438,24 @@ export async function loadBusinessHealth(
     bookedCustomerIds,
   })
 
+  // Reactivation-engine coverage of the due list.
+  const [{ data: enrollRows }, { data: reactSettings }] = await Promise.all([
+    supabase
+      .from('reactivation_campaign_enrollments')
+      .select('customer_id, status'),
+    supabase
+      .from('reactivation_settings')
+      .select('engine_enabled')
+      .limit(1)
+      .maybeSingle(),
+  ])
+  const enrollByCustomer = new Map(
+    (enrollRows || []).map((r) => [String(r.customer_id), String(r.status)]),
+  )
+  for (const d of retention.dueList) {
+    d.reactivationStatus = enrollByCustomer.get(d.customerId) ?? null
+  }
+
   const recurring: RecurringSummary = {
     completedRevenue: round2(recurringCompletedRevenue),
     completedJobs: recurringCompletedJobs,
@@ -476,5 +498,136 @@ export async function loadBusinessHealth(
     })
   }
 
-  return { retention, recurring, bookedOut, bookedOutScanDays: SCAN_DAYS }
+  return {
+    retention,
+    recurring,
+    bookedOut,
+    bookedOutScanDays: SCAN_DAYS,
+    reactivationEngineEnabled:
+      typeof reactSettings?.engine_enabled === 'boolean'
+        ? reactSettings.engine_enabled
+        : null,
+  }
+}
+
+/**
+ * Per-ops-customer blended history for the reactivation engine: last known
+ * service across all systems (ops + QuickBooks + HCP snapshot), lifetime
+ * value, and do-not-contact flags from the HCP import.
+ */
+export type CustomerValueEntry = {
+  lastKnownService: string | null
+  lifetimeValue: number
+  doNotContact: boolean
+}
+
+export async function loadCustomerValueIndex(
+  supabase: SupabaseClient,
+): Promise<Map<string, CustomerValueEntry>> {
+  const [
+    { data: appts },
+    { data: hcpRows },
+    { data: qbRows },
+    { data: custRows },
+  ] = await Promise.all([
+    supabase
+      .from('ops_appointments')
+      .select(
+        'customer_id, appointment_date, quoted_total, ops_invoices ( total )',
+      )
+      .eq('status', 'completed'),
+    supabase
+      .from('hcp_customer_history')
+      .select(
+        'hcp_id, customer_name, last_service_date_hcp, lifetime_value, ops_customer_id, do_not_contact',
+      ),
+    supabase
+      .from('qb_historical_transactions')
+      .select('txn_date, total, qb_customer_id, customer_name')
+      .not('txn_date', 'is', null),
+    supabase
+      .from('ops_customers')
+      .select(
+        'id, quickbooks_customer_id, full_name, first_name, last_name, business_name',
+      ),
+  ])
+
+  const normName = (n: string | null | undefined) =>
+    (n || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+  const opsByQbId = new Map<string, string>()
+  const opsByName = new Map<string, string>()
+  for (const c of custRows || []) {
+    if (c.quickbooks_customer_id) {
+      opsByQbId.set(String(c.quickbooks_customer_id), c.id)
+    }
+    for (const n of [
+      c.business_name,
+      c.full_name,
+      [c.first_name, c.last_name].filter(Boolean).join(' '),
+    ]) {
+      const key = normName(n)
+      if (key && !opsByName.has(key)) opsByName.set(key, c.id)
+    }
+  }
+
+  const index = new Map<string, CustomerValueEntry>()
+  const entry = (id: string): CustomerValueEntry => {
+    let e = index.get(id)
+    if (!e) {
+      e = { lastKnownService: null, lifetimeValue: 0, doNotContact: false }
+      index.set(id, e)
+    }
+    return e
+  }
+  const applyVisit = (id: string, date: string | null, amount: number) => {
+    const e = entry(id)
+    e.lifetimeValue += amount
+    if (date && (!e.lastKnownService || date > e.lastKnownService)) {
+      e.lastKnownService = date
+    }
+  }
+
+  let opsEraStart = '9999-12-31'
+  for (const a of appts || []) {
+    if (!a.customer_id || !a.appointment_date) continue
+    if (a.appointment_date < opsEraStart) opsEraStart = a.appointment_date
+    const inv = Array.isArray(a.ops_invoices)
+      ? a.ops_invoices[0]
+      : a.ops_invoices
+    applyVisit(
+      String(a.customer_id),
+      String(a.appointment_date),
+      Number(inv?.total || 0) || Number(a.quoted_total || 0),
+    )
+  }
+
+  const qbCovered = new Set<string>()
+  for (const r of qbRows || []) {
+    if (!r.txn_date || String(r.txn_date) >= opsEraStart) continue
+    const id =
+      (r.qb_customer_id && opsByQbId.get(String(r.qb_customer_id))) ||
+      opsByName.get(normName(r.customer_name))
+    if (!id) continue
+    qbCovered.add(id)
+    applyVisit(id, String(r.txn_date), Number(r.total || 0))
+  }
+
+  for (const h of hcpRows || []) {
+    const id =
+      h.ops_customer_id || opsByName.get(normName(h.customer_name)) || null
+    if (!id) continue
+    const e = entry(id)
+    e.doNotContact = e.doNotContact || !!h.do_not_contact
+    // QB already contains HCP-era invoices — only use the snapshot when the
+    // customer has no QuickBooks history.
+    if (!qbCovered.has(id) && h.last_service_date_hcp) {
+      applyVisit(
+        id,
+        String(h.last_service_date_hcp),
+        Number(h.lifetime_value || 0),
+      )
+    }
+  }
+
+  return index
 }
