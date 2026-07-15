@@ -127,6 +127,71 @@ describe('computeRetention', () => {
     expect(r.dueList[0].lifetimeValue).toBe(500)
   })
 
+  it('builds repeat history from QuickBooks visit-level data', () => {
+    const r = computeRetention(
+      [job('ops-1', '2026-05-01', 300, 'Repeat Customer')],
+      '2026-07-14',
+      {
+        preOpsVisits: [
+          // two QB visits a year apart, plus a multi-day project that
+          // should cluster into ONE episode
+          {
+            customerKey: 'ops-1',
+            name: 'Repeat Customer',
+            date: '2024-06-01',
+            amount: 400,
+          },
+          {
+            customerKey: 'ops-1',
+            name: 'Repeat Customer',
+            date: '2025-06-01',
+            amount: 450,
+          },
+          {
+            customerKey: 'ops-1',
+            name: 'Repeat Customer',
+            date: '2025-06-03',
+            amount: 50,
+          },
+        ],
+      },
+    )
+    expect(r.customers).toBe(1)
+    expect(r.repeatCustomers).toBe(1)
+    expect(r.crossSystemRepeats).toBe(1)
+    // episodes: 2024-06-01, [2025-06-01..03], 2026-05-01 → 3 episodes
+    expect(r.dueList).toEqual([]) // last clean 2026-05-01 is recent
+    expect(r.totalRevenue).toBe(1200)
+    expect(r.medianDaysBetweenVisits).toBe(349) // gaps 365 and 332 → avg 348.5 → 349
+  })
+
+  it('ignores HCP snapshot date when QuickBooks visits already cover the customer', () => {
+    const r = computeRetention([], '2026-07-14', {
+      preOpsVisits: [
+        {
+          customerKey: 'ext:janedoe',
+          name: 'Jane Doe',
+          date: '2025-08-01',
+          amount: 250,
+        },
+      ],
+      hcp: [
+        {
+          hcp_id: 'h9',
+          customer_name: 'Jane Doe',
+          last_service_date_hcp: '2025-08-01',
+          lifetime_value: 250,
+          ops_customer_id: 'ext:janedoe',
+          do_not_contact: false,
+        },
+      ],
+    })
+    expect(r.customers).toBe(1)
+    expect(r.totalRevenue).toBe(250) // not double counted
+    expect(r.repeatCustomers).toBe(0)
+    expect(r.overdueCount).toBe(1)
+  })
+
   it('excludes do-not-contact and currently-booked customers from the due list', () => {
     const r = computeRetention(
       [job('booked-cust', '2026-03-01', 300, 'Booked')],

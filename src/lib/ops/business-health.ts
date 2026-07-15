@@ -84,123 +84,138 @@ const round2 = (n: number) => Math.round(n * 100) / 100
 const round1 = (n: number) => Math.round(n * 10) / 10
 const DAY_MS = 86400000
 
+/** Visit days closer together than this merge into one service episode. */
+const EPISODE_GAP_DAYS = 14
+
+export type PreOpsVisit = {
+  /** Resolved customer key (ops customer id, or ext:/qb: synthetic key). */
+  customerKey: string
+  name: string
+  date: string
+  amount: number
+}
+
 export function computeRetention(
   jobs: CompletedJob[],
   today: string,
   options?: {
+    /** HCP snapshot: DNC flags + fallback last-date/value when no QB visits. */
     hcp?: HcpHistoryRow[]
+    /** Visit-level QuickBooks history from before the ops era. */
+    preOpsVisits?: PreOpsVisit[]
     /** ops customer ids with a future booking — not "due", they're coming. */
     bookedCustomerIds?: Set<string>
   },
 ): RetentionSummary {
   type Cust = {
     name: string
-    dates: string[]
+    visits: Map<string, number> // date → dollars that day
+    opsDays: Set<string>
     revenue: number
-    hcpDate: string | null
-    hcpValue: number
     doNotContact: boolean
   }
   const byCustomer = new Map<string, Cust>()
-  let sinceDate = today
-  let opsJobCount = 0
-  let opsRevenue = 0
-
-  for (const job of jobs) {
-    if (job.appointment_date < sinceDate) sinceDate = job.appointment_date
-    let c = byCustomer.get(job.customer_id)
+  const getCust = (key: string, name: string): Cust => {
+    let c = byCustomer.get(key)
     if (!c) {
       c = {
-        name: job.customer_name,
-        dates: [],
+        name,
+        visits: new Map(),
+        opsDays: new Set(),
         revenue: 0,
-        hcpDate: null,
-        hcpValue: 0,
         doNotContact: false,
       }
-      byCustomer.set(job.customer_id, c)
+      byCustomer.set(key, c)
     }
-    c.dates.push(job.appointment_date)
-    c.revenue += job.revenue
+    return c
+  }
+  const addVisit = (c: Cust, date: string, amount: number) => {
+    c.visits.set(date, (c.visits.get(date) || 0) + amount)
+    c.revenue += amount
+  }
+
+  let opsJobCount = 0
+  let opsRevenue = 0
+  for (const job of jobs) {
+    const c = getCust(job.customer_id, job.customer_name)
+    addVisit(c, job.appointment_date, job.revenue)
+    c.opsDays.add(job.appointment_date)
     opsJobCount++
     opsRevenue += job.revenue
   }
 
-  // Blend Housecall Pro history. Rows without a service date and without ops
-  // jobs are contacts, not customers — they don't join the universe.
-  let hcpCustomers = 0
+  for (const v of options?.preOpsVisits || []) {
+    if (!v.date) continue
+    addVisit(getCust(v.customerKey, v.name), v.date, v.amount)
+  }
+
+  // HCP snapshot: QuickBooks already contains HCP-era invoices, so a customer
+  // with QB visits gets only the DNC flag from here. Customers with no QB
+  // history use the HCP last-date + lifetime value as their one known visit.
   for (const h of options?.hcp || []) {
     const key = h.ops_customer_id || `hcp:${h.hcp_id}`
     const existing = byCustomer.get(key)
     if (existing) {
-      existing.hcpDate = h.last_service_date_hcp
-      existing.hcpValue = h.lifetime_value || 0
       existing.doNotContact = existing.doNotContact || h.do_not_contact
-      if (h.last_service_date_hcp) hcpCustomers++
-    } else if (h.last_service_date_hcp) {
-      hcpCustomers++
-      byCustomer.set(key, {
-        name: h.customer_name || 'Unknown',
-        dates: [],
-        revenue: 0,
-        hcpDate: h.last_service_date_hcp,
-        hcpValue: h.lifetime_value || 0,
-        doNotContact: h.do_not_contact,
-      })
-      if (h.last_service_date_hcp < sinceDate) {
-        sinceDate = h.last_service_date_hcp
+      const hasPreOpsVisits = [...existing.visits.keys()].some(
+        (d) => !existing.opsDays.has(d),
+      )
+      if (!hasPreOpsVisits && h.last_service_date_hcp) {
+        addVisit(existing, h.last_service_date_hcp, h.lifetime_value || 0)
       }
+    } else if (h.last_service_date_hcp) {
+      const c = getCust(key, h.customer_name || 'Unknown')
+      c.doNotContact = h.do_not_contact
+      addVisit(c, h.last_service_date_hcp, h.lifetime_value || 0)
     }
   }
 
+  let sinceDate = today
   let customers = 0
   let repeatCustomers = 0
   let crossSystemRepeats = 0
+  let historicalCustomers = 0
   let repeatRevenue = 0
   let totalRevenue = 0
   const gaps: number[] = []
   const due: DueCustomer[] = []
   const todayMs = Date.parse(`${today}T00:00:00Z`)
+  const dayNum = (d: string) => Date.parse(`${d}T00:00:00Z`) / DAY_MS
 
   for (const [id, c] of byCustomer) {
-    c.dates.sort()
-    // Distinct service days — same-day multi-appointments are one visit.
-    const days = [...new Set(c.dates)]
-    if (days.length === 0 && !c.hcpDate) continue // contact, never serviced
+    const days = [...c.visits.keys()].sort()
+    if (days.length === 0) continue
     customers++
-    const lifetime = c.revenue + c.hcpValue
-    totalRevenue += lifetime
+    totalRevenue += c.revenue
+    if (days[0] < sinceDate) sinceDate = days[0]
 
-    const cameBackAcrossSystems = !!c.hcpDate && days.length > 0
-    if (days.length > 1 || cameBackAcrossSystems) {
-      repeatCustomers++
-      repeatRevenue += lifetime
-      if (cameBackAcrossSystems) {
-        crossSystemRepeats++
-        const gap = Math.round(
-          (Date.parse(`${days[0]}T00:00:00Z`) -
-            Date.parse(`${c.hcpDate}T00:00:00Z`)) /
-            DAY_MS,
-        )
-        if (gap > 0) gaps.push(gap)
+    // Cluster visit days into service episodes (multi-day projects = one job).
+    const episodes: { start: string; end: string }[] = []
+    for (const day of days) {
+      const prev = episodes[episodes.length - 1]
+      if (prev && dayNum(day) - dayNum(prev.end) <= EPISODE_GAP_DAYS) {
+        prev.end = day
+      } else {
+        episodes.push({ start: day, end: day })
       }
-      for (let i = 1; i < days.length; i++) {
+    }
+
+    const hasOps = c.opsDays.size > 0
+    const hasPreOps = days.some((d) => !c.opsDays.has(d))
+    if (hasPreOps) historicalCustomers++
+
+    if (episodes.length > 1) {
+      repeatCustomers++
+      repeatRevenue += c.revenue
+      if (hasOps && hasPreOps) crossSystemRepeats++
+      for (let i = 1; i < episodes.length; i++) {
         gaps.push(
-          Math.round(
-            (Date.parse(`${days[i]}T00:00:00Z`) -
-              Date.parse(`${days[i - 1]}T00:00:00Z`)) /
-              DAY_MS,
-          ),
+          Math.round(dayNum(episodes[i].start) - dayNum(episodes[i - 1].end)),
         )
       }
     }
 
-    const last =
-      days.length > 0
-        ? c.hcpDate && c.hcpDate > days[days.length - 1]
-          ? c.hcpDate
-          : days[days.length - 1]
-        : (c.hcpDate as string)
+    const last = episodes[episodes.length - 1].end
     const monthsSince =
       (todayMs - Date.parse(`${last}T00:00:00Z`)) / DAY_MS / 30.44
     const hasFutureBooking = options?.bookedCustomerIds?.has(id) ?? false
@@ -209,8 +224,8 @@ export function computeRetention(
         customerId: id,
         name: c.name,
         lastService: last,
-        jobs: days.length + (c.hcpDate ? 1 : 0),
-        lifetimeValue: round2(lifetime),
+        jobs: episodes.length,
+        lifetimeValue: round2(c.revenue),
         monthsSince: round1(monthsSince),
       })
     }
@@ -237,7 +252,7 @@ export function computeRetention(
     avgCustomerValue: customers > 0 ? round2(totalRevenue / customers) : 0,
     avgTicket: opsJobCount > 0 ? round2(opsRevenue / opsJobCount) : 0,
     medianDaysBetweenVisits,
-    hcpCustomers,
+    hcpCustomers: historicalCustomers,
     crossSystemRepeats,
     dueSoonCount: due.filter((d) => d.monthsSince < 6).length,
     overdueCount: due.filter((d) => d.monthsSince >= 6).length,
@@ -268,11 +283,23 @@ export async function loadBusinessHealth(
 
   if (apptsError) throw apptsError
 
-  const { data: hcpRows } = await supabase
-    .from('hcp_customer_history')
-    .select(
-      'hcp_id, customer_name, last_service_date_hcp, lifetime_value, ops_customer_id, do_not_contact',
-    )
+  const [{ data: hcpRows }, { data: qbRows }, { data: custRows }] =
+    await Promise.all([
+      supabase
+        .from('hcp_customer_history')
+        .select(
+          'hcp_id, customer_name, last_service_date_hcp, lifetime_value, ops_customer_id, do_not_contact',
+        ),
+      supabase
+        .from('qb_historical_transactions')
+        .select('txn_date, total, qb_customer_id, customer_name')
+        .not('txn_date', 'is', null),
+      supabase
+        .from('ops_customers')
+        .select(
+          'id, quickbooks_customer_id, full_name, first_name, last_name, business_name',
+        ),
+    ])
 
   const completed: CompletedJob[] = []
   const bookedCustomerIds = new Set<string>()
@@ -340,11 +367,70 @@ export async function loadBusinessHealth(
     }
   }
 
+  // Resolve QuickBooks-era transactions to customers: QB id → ops customer,
+  // else normalized name, else a synthetic key. HCP rows get the same name
+  // fallback so one person never appears under two keys.
+  const normName = (n: string | null | undefined) =>
+    (n || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+  const opsByQbId = new Map<string, string>()
+  const opsByName = new Map<string, string>()
+  for (const c of custRows || []) {
+    if (c.quickbooks_customer_id) {
+      opsByQbId.set(String(c.quickbooks_customer_id), c.id)
+    }
+    for (const n of [
+      c.business_name,
+      c.full_name,
+      [c.first_name, c.last_name].filter(Boolean).join(' '),
+    ]) {
+      const key = normName(n)
+      if (key && !opsByName.has(key)) opsByName.set(key, c.id)
+    }
+  }
+  const resolveKey = (
+    qbCustomerId: string | null,
+    name: string | null,
+  ): string => {
+    if (qbCustomerId && opsByQbId.has(qbCustomerId)) {
+      return opsByQbId.get(qbCustomerId)!
+    }
+    const nn = normName(name)
+    if (nn && opsByName.has(nn)) return opsByName.get(nn)!
+    if (nn) return `ext:${nn}`
+    return `qb:${qbCustomerId || 'unknown'}`
+  }
+
+  // Only QB transactions from before the ops era are history — later ones
+  // are the sync mirroring ops invoices and would double count.
+  const opsEraStart =
+    completed.length > 0
+      ? completed.reduce(
+          (min, j) => (j.appointment_date < min ? j.appointment_date : min),
+          today,
+        )
+      : today
+  const preOpsVisits: PreOpsVisit[] = (qbRows || [])
+    .filter((r) => r.txn_date && r.txn_date < opsEraStart)
+    .map((r) => ({
+      customerKey: resolveKey(
+        r.qb_customer_id ? String(r.qb_customer_id) : null,
+        r.customer_name,
+      ),
+      name: r.customer_name || 'Unknown',
+      date: String(r.txn_date),
+      amount: Number(r.total || 0),
+    }))
+
   const retention = computeRetention(completed, today, {
     hcp: (hcpRows || []).map((h) => ({
       ...h,
+      ops_customer_id:
+        h.ops_customer_id ||
+        opsByName.get(normName(h.customer_name)) ||
+        (normName(h.customer_name) ? `ext:${normName(h.customer_name)}` : null),
       lifetime_value: Number(h.lifetime_value || 0),
     })) as HcpHistoryRow[],
+    preOpsVisits,
     bookedCustomerIds,
   })
 
