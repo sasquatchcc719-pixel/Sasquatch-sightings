@@ -56,6 +56,16 @@ type CustomerJobPhoto = {
   created_at: string
 }
 
+type CustomerInboundMedia = {
+  id: string
+  appointment_id: string | null
+  job_photo_id: string | null
+  content_type: string
+  category: string
+  created_at: string
+  signed_url: string
+}
+
 type CustomerRow = {
   id: string
   full_name: string
@@ -73,6 +83,7 @@ type CustomerRow = {
   total_revenue?: number
   lead_source?: string | null
   jobs?: CustomerJob[]
+  customer_media?: CustomerInboundMedia[]
   ops_service_addresses: CustomerAddress[]
 }
 
@@ -142,10 +153,30 @@ function getJobPhotos(job: CustomerJob): CustomerJobPhoto[] {
 }
 
 function getCustomerPhotoCount(customer: CustomerRow): number {
-  return (customer.jobs || []).reduce(
+  const jobPhotoCount = (customer.jobs || []).reduce(
     (count, job) => count + getJobPhotos(job).length,
     0,
   )
+  const conversationOnlyCount = (customer.customer_media || []).filter(
+    (media) => Boolean(media.signed_url) && !media.job_photo_id,
+  ).length
+  return jobPhotoCount + conversationOnlyCount
+}
+
+function getConversationOnlyMedia(
+  customer: CustomerRow,
+): CustomerInboundMedia[] {
+  return (customer.customer_media || []).filter(
+    (media) => Boolean(media.signed_url) && !media.job_photo_id,
+  )
+}
+
+function customerMediaLabel(category: string): string {
+  if (category === 'estimate') return 'Estimate / preliminary'
+  if (category === 'customer_file') return 'Customer file'
+  if (category === 'preexisting_damage') return 'Pre-existing damage'
+  if (category === 'job') return 'Job & invoice'
+  return 'Unclassified text photo'
 }
 
 function formatJobAddress(
@@ -678,6 +709,8 @@ export function CustomersDirectory() {
                         (j) => j.status === 'completed',
                       )
                       const photoCount = getCustomerPhotoCount(customer)
+                      const conversationMedia =
+                        getConversationOnlyMedia(customer)
                       const photoJobs = allJobs.filter(
                         (job) => getJobPhotos(job).length > 0,
                       )
@@ -846,12 +879,14 @@ export function CustomersDirectory() {
                             </div>
                           ) : null}
 
-                          {photosExpanded && photoJobs.length > 0 ? (
+                          {photosExpanded &&
+                          (photoJobs.length > 0 ||
+                            conversationMedia.length > 0) ? (
                             <div className="border-border/60 bg-background/70 mt-3 rounded-xl border p-3">
                               <div className="flex flex-wrap items-center justify-between gap-2">
                                 <div className="flex items-center gap-2 text-sm font-medium">
                                   <ImageIcon className="text-muted-foreground h-4 w-4" />
-                                  Job Photos
+                                  Customer & Job Photos
                                 </div>
                                 <Badge
                                   variant="outline"
@@ -861,6 +896,49 @@ export function CustomersDirectory() {
                                 </Badge>
                               </div>
                               <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
+                                {conversationMedia.map((media) => (
+                                  <div
+                                    key={media.id}
+                                    className="border-border/60 bg-card/70 overflow-hidden rounded-lg border"
+                                  >
+                                    <a
+                                      href={media.signed_url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="bg-muted relative block aspect-[4/3]"
+                                    >
+                                      {media.content_type.startsWith(
+                                        'image/',
+                                      ) ? (
+                                        <Image
+                                          src={media.signed_url}
+                                          alt="Customer-submitted text message photo"
+                                          fill
+                                          unoptimized
+                                          sizes="(max-width: 768px) 50vw, (max-width: 1280px) 33vw, 25vw"
+                                          className="object-cover"
+                                        />
+                                      ) : (
+                                        <div className="flex h-full items-center justify-center p-3 text-center text-xs font-medium">
+                                          Open customer attachment
+                                        </div>
+                                      )}
+                                    </a>
+                                    <div className="space-y-1.5 p-2">
+                                      <Badge className="bg-sky-500/15 text-[10px] font-medium text-sky-300">
+                                        Text message
+                                      </Badge>
+                                      <div className="text-muted-foreground text-xs">
+                                        {customerMediaLabel(media.category)}
+                                      </div>
+                                      <div className="text-muted-foreground text-[10px]">
+                                        {new Date(
+                                          media.created_at,
+                                        ).toLocaleDateString()}
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
                                 {photoJobs.flatMap((job) => {
                                   const invoiceId = job.ops_invoices?.id
                                   const address = formatJobAddress(

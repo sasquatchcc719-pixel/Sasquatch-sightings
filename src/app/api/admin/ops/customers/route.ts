@@ -100,6 +100,44 @@ export async function GET(request: NextRequest) {
           customer.jobs = jobsMap.get(customer.id as string) ?? []
         }
       }
+
+      const { data: mediaRows, error: mediaError } = await supabase
+        .from('ops_customer_media')
+        .select(
+          'id, customer_id, appointment_id, job_photo_id, storage_path, content_type, category, created_at',
+        )
+        .in('customer_id', customerIds)
+        .eq('status', 'available')
+        .order('created_at', { ascending: false })
+
+      if (mediaError) throw mediaError
+      const signedMedia = await Promise.all(
+        (mediaRows || []).map(async (row) => {
+          const { data: signed } = await supabase.storage
+            .from('customer-media')
+            .createSignedUrl(row.storage_path, 60 * 60)
+          return {
+            id: row.id,
+            customer_id: row.customer_id,
+            appointment_id: row.appointment_id,
+            job_photo_id: row.job_photo_id,
+            content_type: row.content_type,
+            category: row.category,
+            created_at: row.created_at,
+            signed_url: signed?.signedUrl || null,
+          }
+        }),
+      )
+      const mediaMap = new Map<string, Record<string, unknown>[]>()
+      for (const media of signedMedia) {
+        if (!media.customer_id || !media.signed_url) continue
+        if (!mediaMap.has(media.customer_id))
+          mediaMap.set(media.customer_id, [])
+        mediaMap.get(media.customer_id)!.push(media)
+      }
+      for (const customer of customers as Record<string, unknown>[]) {
+        customer.customer_media = mediaMap.get(customer.id as string) ?? []
+      }
     }
 
     return NextResponse.json({ customers })

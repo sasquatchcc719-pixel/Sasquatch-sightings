@@ -1,5 +1,6 @@
 'use client'
 
+import Image from 'next/image'
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import {
@@ -32,11 +33,31 @@ import { CallButton } from '@/components/admin/softphone'
 import { useQueryClient } from '@tanstack/react-query'
 import { countUnreadInboundMessages } from '@/lib/conversations-unread'
 
+type ConversationMedia = {
+  id: string
+  customerId: string | null
+  appointmentId: string | null
+  jobPhotoId: string | null
+  twilioMessageSid: string
+  contentType: string
+  status: 'pending' | 'available' | 'failed'
+  category:
+    | 'unclassified'
+    | 'customer_file'
+    | 'estimate'
+    | 'job'
+    | 'preexisting_damage'
+  errorMessage: string | null
+  createdAt: string
+  signedUrl: string | null
+}
+
 type Message = {
   role: 'user' | 'assistant' | 'system'
   content: string
   timestamp: string
   twilio_sid?: string
+  media?: ConversationMedia[]
 }
 
 type CustomerContext = {
@@ -135,6 +156,9 @@ export function ConversationsView({
   const [markingPaidInvoiceId, setMarkingPaidInvoiceId] = useState<
     string | null
   >(null)
+  const [classifyingMediaId, setClassifyingMediaId] = useState<string | null>(
+    null,
+  )
 
   // Optimistic read state: track which conversations have been marked read this session
   const [localReadIds, setLocalReadIds] = useState<Set<string>>(new Set())
@@ -298,6 +322,66 @@ export function ConversationsView({
       alert('Failed to send message')
     } finally {
       setSending(false)
+    }
+  }
+
+  const handleClassifyMedia = async (
+    mediaId: string,
+    action: 'customer_file' | 'estimate' | 'job' | 'preexisting_damage',
+  ) => {
+    if (classifyingMediaId) return
+    setClassifyingMediaId(mediaId)
+    try {
+      const response = await fetch(
+        `/api/admin/customer-media/${mediaId}/classify`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action }),
+        },
+      )
+      const result = (await response.json()) as {
+        ok?: boolean
+        error?: string
+        message?: string
+        category?: ConversationMedia['category']
+        appointmentId?: string
+      }
+      if (!response.ok || !result.ok) {
+        alert(result.message || result.error || 'Failed to classify photo.')
+        return
+      }
+
+      const updateConversationMedia = (conversation: Conversation) => ({
+        ...conversation,
+        messages: conversation.messages.map((message) => ({
+          ...message,
+          media: message.media?.map((item) =>
+            item.id === mediaId
+              ? {
+                  ...item,
+                  category: result.category || action,
+                  appointmentId: result.appointmentId || item.appointmentId,
+                }
+              : item,
+          ),
+        })),
+      })
+      setConversations((current) =>
+        current.map((conversation) =>
+          conversation.id === selectedConvo?.id
+            ? updateConversationMedia(conversation)
+            : conversation,
+        ),
+      )
+      setSelectedConvo((current) =>
+        current ? updateConversationMedia(current) : current,
+      )
+    } catch (error) {
+      console.error('Media classification error:', error)
+      alert('Failed to classify photo.')
+    } finally {
+      setClassifyingMediaId(null)
     }
   }
 
@@ -1170,6 +1254,152 @@ export function ConversationsView({
                         <div className="text-sm whitespace-pre-wrap">
                           {msg.content}
                         </div>
+                        {msg.media && msg.media.length > 0 ? (
+                          <div className="mt-2 space-y-2">
+                            {msg.media.map((media) => (
+                              <div
+                                key={media.id}
+                                className="border-border/70 bg-background/80 overflow-hidden rounded-xl border"
+                              >
+                                {media.status === 'available' &&
+                                media.signedUrl ? (
+                                  media.contentType.startsWith('image/') ? (
+                                    <a
+                                      href={media.signedUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="bg-muted relative block h-52 w-full min-w-64"
+                                    >
+                                      <Image
+                                        src={media.signedUrl}
+                                        alt="Customer-submitted photo"
+                                        fill
+                                        unoptimized
+                                        sizes="(max-width: 768px) 80vw, 520px"
+                                        className="object-contain"
+                                      />
+                                    </a>
+                                  ) : (
+                                    <a
+                                      href={media.signedUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="block p-3 text-xs font-medium text-blue-700 hover:underline dark:text-blue-300"
+                                    >
+                                      Open customer attachment
+                                    </a>
+                                  )
+                                ) : (
+                                  <div className="p-3 text-xs text-amber-700 dark:text-amber-300">
+                                    {media.status === 'failed'
+                                      ? 'Attachment storage failed; the Twilio copy can be recovered.'
+                                      : 'Attachment is processing…'}
+                                  </div>
+                                )}
+
+                                <div className="space-y-2 p-2.5">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <Badge
+                                      variant="outline"
+                                      className="text-[10px]"
+                                    >
+                                      {media.category === 'unclassified'
+                                        ? media.customerId
+                                          ? 'Customer matched'
+                                          : 'New/unknown customer'
+                                        : media.category === 'customer_file'
+                                          ? 'Customer file'
+                                          : media.category === 'estimate'
+                                            ? 'Estimate / preliminary'
+                                            : media.category ===
+                                                'preexisting_damage'
+                                              ? 'Pre-existing damage'
+                                              : 'Job & invoice'}
+                                    </Badge>
+                                    {classifyingMediaId === media.id ? (
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    ) : null}
+                                  </div>
+
+                                  {media.status === 'available' &&
+                                  media.category === 'unclassified' ? (
+                                    <div className="flex flex-wrap gap-1.5">
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-7 px-2 text-[10px]"
+                                        disabled={classifyingMediaId !== null}
+                                        onClick={() =>
+                                          void handleClassifyMedia(
+                                            media.id,
+                                            'customer_file',
+                                          )
+                                        }
+                                      >
+                                        Customer file
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-7 px-2 text-[10px]"
+                                        disabled={classifyingMediaId !== null}
+                                        onClick={() =>
+                                          void handleClassifyMedia(
+                                            media.id,
+                                            'estimate',
+                                          )
+                                        }
+                                      >
+                                        Estimate
+                                      </Button>
+                                      {media.customerId &&
+                                      media.contentType.startsWith('image/') ? (
+                                        <>
+                                          <Button
+                                            type="button"
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-7 px-2 text-[10px]"
+                                            disabled={
+                                              classifyingMediaId !== null
+                                            }
+                                            onClick={() =>
+                                              void handleClassifyMedia(
+                                                media.id,
+                                                'job',
+                                              )
+                                            }
+                                          >
+                                            Job & invoice
+                                          </Button>
+                                          <Button
+                                            type="button"
+                                            size="sm"
+                                            variant="outline"
+                                            className="h-7 px-2 text-[10px]"
+                                            disabled={
+                                              classifyingMediaId !== null
+                                            }
+                                            onClick={() =>
+                                              void handleClassifyMedia(
+                                                media.id,
+                                                'preexisting_damage',
+                                              )
+                                            }
+                                          >
+                                            Pre-existing damage
+                                          </Button>
+                                        </>
+                                      ) : null}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
                         <div
                           className={`mt-1 text-[10px] ${
                             msg.role === 'user'

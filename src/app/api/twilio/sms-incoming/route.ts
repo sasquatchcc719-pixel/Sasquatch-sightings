@@ -17,6 +17,11 @@ import { opsPhoneLookupVariants } from '@/lib/ops/phone'
 import { sendLSALeadNotification } from '@/lib/telegram'
 import { forwardInboundToRelay } from '@/lib/telegram/relay'
 import {
+  inboundMessageContent,
+  parseTwilioInboundMedia,
+  persistInboundMedia,
+} from '@/lib/twilio/inbound-media'
+import {
   buildApplicantReplyTelegramMessage,
   sendRangerTelegramMessage,
 } from '@/lib/ranger/telegram'
@@ -382,12 +387,14 @@ export async function POST(request: NextRequest) {
 
     // Parse Twilio webhook data (form-encoded)
     const formData = await request.formData()
-    const fromPhone = formData.get('From') as string
-    const toNumber = formData.get('To') as string // number they texted (866 vs 719) – reply from this so thread stays correct
-    const messageBody = formData.get('Body') as string
-    const twilioSid = formData.get('MessageSid') as string
+    const fromPhone = String(formData.get('From') || '').trim()
+    const toNumber = String(formData.get('To') || '').trim() // number they texted (866 vs 719) – reply from this so thread stays correct
+    const rawMessageBody = String(formData.get('Body') || '').trim()
+    const inboundMedia = parseTwilioInboundMedia(formData)
+    const messageBody = inboundMessageContent(rawMessageBody, inboundMedia)
+    const twilioSid = String(formData.get('MessageSid') || '').trim()
 
-    if (!fromPhone || !messageBody) {
+    if (!fromPhone || !twilioSid || !messageBody) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 },
@@ -446,26 +453,10 @@ export async function POST(request: NextRequest) {
     // ─────────────────────────────────────────────────────────────────────────
 
     const { sourceType, matchedPartner } = await determineSourceType(
-      messageBody,
+      rawMessageBody,
       supabase,
       normalizedPhone,
     )
-
-    // ── Telegram relay ───────────────────────────────────────────────────────
-    // Forward EVERY inbound text into the customer's Telegram topic (one thread
-    // per phone) so Charles can reply by hand. No LLM. Fails soft — a relay
-    // problem never affects SMS handling. LSA leads land in the "LSA Leads"
-    // group, everyone else in "Customers". `toNumber` is the business line they
-    // texted (719 vs 866) so the reply goes back from the same number.
-    await forwardInboundToRelay({
-      supabase,
-      phone: normalizedPhone,
-      message: messageBody,
-      businessNumber: toNumber || null,
-      isLsa: sourceType === 'lsa',
-      today: mountainDateIso(),
-    })
-    // ─────────────────────────────────────────────────────────────────────────
 
     const channelKey = sourceTypeToChannelKey(sourceType)
 
@@ -527,6 +518,15 @@ export async function POST(request: NextRequest) {
       .in('phone', opsPhoneVariants)
       .maybeSingle()
     const isOpsCustomer = !!opsCustomerMatch
+
+    if (opsCustomerMatch?.id) {
+      // Reconcile retained MMS from before this phone was known as a customer.
+      await supabase
+        .from('ops_customer_media')
+        .update({ customer_id: opsCustomerMatch.id })
+        .eq('sender_phone', normalizedPhone)
+        .is('customer_id', null)
+    }
 
     // Find existing conversation with SAME phone AND SAME source type
     let { data: conversation, error: fetchError } = await supabase
@@ -644,6 +644,29 @@ export async function POST(request: NextRequest) {
       businessNumber: inferredBusinessNumber,
     })
 
+    const linkedCustomerId =
+      (conversation.ops_customer_id as string | null) ||
+      opsCustomerMatch?.id ||
+      null
+    let storedMedia: Awaited<ReturnType<typeof persistInboundMedia>> = []
+    if (inboundMedia.length > 0) {
+      try {
+        storedMedia = await persistInboundMedia({
+          supabase,
+          conversationId: conversation.id,
+          customerId: linkedCustomerId,
+          senderPhone: normalizedPhone,
+          businessNumber: toNumber || null,
+          twilioMessageSid: twilioSid,
+          media: inboundMedia,
+        })
+      } catch (mediaError) {
+        // Never reject the Twilio webhook after Twilio has delivered the MMS.
+        // The source media remains recoverable in Twilio when ingestion fails.
+        console.error('[MMS] Failed to persist inbound media:', mediaError)
+      }
+    }
+
     // Deduplicate: Check if we've already processed this Twilio message
     const alreadyProcessed = messages.some(
       (m) => m.twilio_sid && m.twilio_sid === twilioSid,
@@ -654,6 +677,20 @@ export async function POST(request: NextRequest) {
       )
       return emptyTwiml
     }
+
+    // ── Telegram relay ───────────────────────────────────────────────────────
+    // Forward every inbound message into the customer's Telegram topic. Stored
+    // MMS media is sent as native Telegram media with classification buttons.
+    await forwardInboundToRelay({
+      supabase,
+      phone: normalizedPhone,
+      message: messageBody,
+      businessNumber: toNumber || null,
+      isLsa: sourceType === 'lsa',
+      today: mountainDateIso(),
+      media: storedMedia,
+    })
+    // ─────────────────────────────────────────────────────────────────────────
 
     // LSA disclaimer filter: Google Local Services Ads sends every inbound as
     // TWO SMS — the customer's actual message, then a "Replies to this number
@@ -682,6 +719,10 @@ export async function POST(request: NextRequest) {
         twilio_sid: twilioSid,
         to_number: toNumber || null,
         channel_key: channelKey,
+        media_count: inboundMedia.length,
+        stored_media_count: storedMedia.filter(
+          (item) => item.status === 'available',
+        ).length,
         is_lsa_disclaimer: isLsaDisclaimer,
         is_sms_reaction: isSmsReaction,
       },

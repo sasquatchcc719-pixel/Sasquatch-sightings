@@ -18,6 +18,10 @@ import {
   type InboundSmsCustomerContext,
 } from '@/lib/twilio/inbound-sms-customer-context'
 import { sendCustomerSMSWithResult } from '@/lib/twilio'
+import {
+  classifyCustomerMedia,
+  type StoredInboundMedia,
+} from '@/lib/twilio/inbound-media'
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN
 const ADMIN_BASE_URL = 'https://sightings.sasquatchcarpet.com'
@@ -96,6 +100,56 @@ export async function postToTopic(
     message_thread_id: topicId,
     text,
     disable_web_page_preview: true,
+  })
+  return result !== null
+}
+
+function mediaReplyMarkup(media: StoredInboundMedia) {
+  const id = media.id
+  const rows: Array<
+    Array<{ text: string; callback_data?: string; url?: string }>
+  > = [
+    [
+      { text: 'Customer file', callback_data: `media:customer_file:${id}` },
+      { text: 'Estimate', callback_data: `media:estimate:${id}` },
+    ],
+  ]
+
+  if (media.customerId && media.contentType.startsWith('image/')) {
+    rows.push([
+      { text: 'Job & invoice', callback_data: `media:job:${id}` },
+      {
+        text: 'Pre-existing damage',
+        callback_data: `media:preexisting_damage:${id}`,
+      },
+    ])
+  }
+
+  rows.push([
+    {
+      text: media.customerId ? 'Open customer records' : 'Identify customer',
+      url: `${ADMIN_BASE_URL}/admin/operations/customers`,
+    },
+  ])
+  return { inline_keyboard: rows }
+}
+
+async function postInboundMediaToTopic(params: {
+  chatId: number
+  topicId: number
+  media: StoredInboundMedia
+  caption?: string
+}): Promise<boolean> {
+  const { chatId, topicId, media, caption } = params
+  if (!media.signedUrl || media.status !== 'available') return false
+
+  const isImage = media.contentType.startsWith('image/')
+  const result = await callTelegram(isImage ? 'sendPhoto' : 'sendDocument', {
+    chat_id: chatId,
+    message_thread_id: topicId,
+    [isImage ? 'photo' : 'document']: media.signedUrl,
+    ...(caption ? { caption: caption.slice(0, 1024) } : {}),
+    reply_markup: mediaReplyMarkup(media),
   })
   return result !== null
 }
@@ -343,17 +397,56 @@ export async function forwardInboundToRelay(params: {
   businessNumber: string | null
   isLsa: boolean
   today: string
+  media?: StoredInboundMedia[]
 }): Promise<{ forwarded: boolean; reason?: string }> {
-  const { supabase, phone, message, businessNumber, isLsa, today } = params
+  const {
+    supabase,
+    phone,
+    message,
+    businessNumber,
+    isLsa,
+    today,
+    media = [],
+  } = params
   try {
     const thread = await getOrCreateThread({ supabase, phone, isLsa, today })
     if (!thread) return { forwarded: false, reason: 'no-thread' }
 
-    const posted = await postToTopic(
-      Number(thread.group_chat_id),
-      thread.topic_id,
-      message,
+    const availableMedia = media.filter(
+      (item) => item.status === 'available' && Boolean(item.signedUrl),
     )
+    let posted = false
+    if (availableMedia.length > 0) {
+      for (const [index, item] of availableMedia.entries()) {
+        const mediaPosted = await postInboundMediaToTopic({
+          chatId: Number(thread.group_chat_id),
+          topicId: thread.topic_id,
+          media: item,
+          caption: index === 0 ? message : undefined,
+        })
+        posted = posted || mediaPosted
+      }
+      if (availableMedia.length < media.length) {
+        await postToTopic(
+          Number(thread.group_chat_id),
+          thread.topic_id,
+          '⚠️ One or more customer attachments could not be stored. The Twilio copy remains available for recovery.',
+        )
+      }
+    } else {
+      posted = await postToTopic(
+        Number(thread.group_chat_id),
+        thread.topic_id,
+        message,
+      )
+      if (media.length > 0) {
+        await postToTopic(
+          Number(thread.group_chat_id),
+          thread.topic_id,
+          '⚠️ The customer sent media, but it could not be delivered to Telegram. The Twilio copy remains available for recovery.',
+        )
+      }
+    }
     if (!posted) return { forwarded: false, reason: 'post-failed' }
 
     // Remember which number they texted (719 vs 866) for the reply, and keep
@@ -378,6 +471,57 @@ export async function forwardInboundToRelay(params: {
     console.error('[relay] forwardInboundToRelay error:', error)
     return { forwarded: false, reason: 'exception' }
   }
+}
+
+export async function handleCustomerMediaCallback(params: {
+  supabase: SupabaseClient
+  callbackQueryId: string
+  data: string
+  chatId: number
+  messageId: number
+  topicId?: number
+}): Promise<boolean> {
+  const { supabase, callbackQueryId, data, chatId, messageId, topicId } = params
+  const match = data.match(
+    /^media:(customer_file|estimate|job|preexisting_damage):([0-9a-f-]{36})$/i,
+  )
+  if (!match) return false
+
+  let result: Awaited<ReturnType<typeof classifyCustomerMedia>>
+  try {
+    result = await classifyCustomerMedia(
+      supabase,
+      match[2],
+      match[1] as 'customer_file' | 'estimate' | 'job' | 'preexisting_damage',
+    )
+  } catch (error) {
+    console.error('[relay] Customer media classification failed:', error)
+    await callTelegram('answerCallbackQuery', {
+      callback_query_id: callbackQueryId,
+      text: 'The photo could not be saved. Please try again.',
+      show_alert: true,
+    })
+    return true
+  }
+
+  await callTelegram('answerCallbackQuery', {
+    callback_query_id: callbackQueryId,
+    text: result.message.slice(0, 200),
+    show_alert: !result.ok,
+  })
+
+  if (result.ok) {
+    await callTelegram('editMessageReplyMarkup', {
+      chat_id: chatId,
+      message_id: messageId,
+      reply_markup: { inline_keyboard: [] },
+    })
+    if (typeof topicId === 'number') {
+      await postToTopic(chatId, topicId, `✅ ${result.message}`)
+    }
+  }
+
+  return true
 }
 
 // ── Outbound: Telegram topic reply → SMS ────────────────────────────────────

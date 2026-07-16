@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
-import { rememberRelayGroup, relayTopicReplyToSms } from '@/lib/telegram/relay'
+import {
+  handleCustomerMediaCallback,
+  rememberRelayGroup,
+  relayTopicReplyToSms,
+} from '@/lib/telegram/relay'
 
 export const maxDuration = 30
 
@@ -20,6 +24,7 @@ export const maxDuration = 30
 type TgChat = { id: number; title?: string; type?: string }
 type TgUser = { id: number; is_bot?: boolean }
 type TgMessage = {
+  message_id?: number
   from?: TgUser
   chat: TgChat
   text?: string
@@ -35,6 +40,12 @@ type TelegramUpdate = {
   update_id?: number
   message?: TgMessage
   my_chat_member?: { chat: TgChat }
+  callback_query?: {
+    id: string
+    from: TgUser
+    data?: string
+    message?: TgMessage
+  }
 }
 
 function verifySecret(request: NextRequest): boolean {
@@ -68,6 +79,25 @@ export async function POST(request: NextRequest) {
     if (update.my_chat_member?.chat?.type === 'supergroup') {
       await rememberRelayGroup(supabase, update.my_chat_member.chat)
       return ok
+    }
+
+    const callback = update.callback_query
+    const callbackMessage = callback?.message
+    if (
+      callback?.data &&
+      callbackMessage?.chat.type === 'supergroup' &&
+      typeof callbackMessage.message_id === 'number'
+    ) {
+      await rememberRelayGroup(supabase, callbackMessage.chat)
+      const handled = await handleCustomerMediaCallback({
+        supabase,
+        callbackQueryId: callback.id,
+        data: callback.data,
+        chatId: callbackMessage.chat.id,
+        messageId: callbackMessage.message_id,
+        topicId: callbackMessage.message_thread_id,
+      })
+      if (handled) return ok
     }
 
     const msg = update.message
