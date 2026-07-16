@@ -441,58 +441,70 @@ export function TechJobDetail({
 
       <section className="rounded-2xl border border-white/10 bg-white/[0.06] p-4">
         <h2 className="mb-3 font-semibold">Job Actions</h2>
-        <div className="grid grid-cols-2 gap-2">
-          {[
-            [
-              appointment.status === 'on_my_way' ? 'booked' : 'on_my_way',
-              appointment.status === 'on_my_way'
-                ? 'Back to Scheduled'
-                : 'On My Way',
-            ],
-            ['in_progress', 'Start Job'],
-            ['completed', 'Complete'],
-          ].map(([status, label]) => (
-            <Button
-              key={status}
-              variant={status === 'completed' ? 'default' : 'outline'}
-              className={
-                status === 'completed'
-                  ? `bg-emerald-500 text-slate-950 hover:bg-emerald-400 ${
-                      appointment.hidePricing ? 'col-span-2 h-14 text-base' : ''
-                    }`
-                  : 'border-white/20 bg-white/5 text-white'
-              }
-              disabled={loadingStatus !== null}
-              onClick={() => void updateStatus(status)}
-            >
-              {loadingStatus === status ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : status === 'completed' ? (
-                <CheckCircle2 className="h-4 w-4" />
-              ) : null}
-              {label}
-            </Button>
-          ))}
-          {!appointment.hidePricing ? (
-            <Button
-              variant="outline"
-              className="border-white/20 bg-white/5 text-white"
-              disabled={loadingStatus !== null}
-              onClick={() =>
-                void updateStatus('completed', {
-                  skipCustomerCommunications: true,
-                })
-              }
-            >
-              {loadingStatus === 'completed_quiet' ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <CheckCircle2 className="h-4 w-4" />
-              )}
-              Quiet Close
-            </Button>
-          ) : null}
-        </div>
+        {appointment.status === 'completed' ? (
+          <div className="flex items-center gap-3 rounded-xl border border-emerald-400/25 bg-emerald-400/10 px-4 py-3 text-emerald-100">
+            <CheckCircle2 className="h-5 w-5 shrink-0" />
+            <p className="text-sm font-medium">
+              Job completed. Reopen it from Operations if a correction is
+              needed.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              [
+                appointment.status === 'on_my_way' ? 'booked' : 'on_my_way',
+                appointment.status === 'on_my_way'
+                  ? 'Back to Scheduled'
+                  : 'On My Way',
+              ],
+              ['in_progress', 'Start Job'],
+              ['completed', 'Complete'],
+            ].map(([status, label]) => (
+              <Button
+                key={status}
+                variant={status === 'completed' ? 'default' : 'outline'}
+                className={
+                  status === 'completed'
+                    ? `bg-emerald-500 text-slate-950 hover:bg-emerald-400 ${
+                        appointment.hidePricing
+                          ? 'col-span-2 h-14 text-base'
+                          : ''
+                      }`
+                    : 'border-white/20 bg-white/5 text-white'
+                }
+                disabled={loadingStatus !== null}
+                onClick={() => void updateStatus(status)}
+              >
+                {loadingStatus === status ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : status === 'completed' ? (
+                  <CheckCircle2 className="h-4 w-4" />
+                ) : null}
+                {label}
+              </Button>
+            ))}
+            {!appointment.hidePricing ? (
+              <Button
+                variant="outline"
+                className="border-white/20 bg-white/5 text-white"
+                disabled={loadingStatus !== null}
+                onClick={() =>
+                  void updateStatus('completed', {
+                    skipCustomerCommunications: true,
+                  })
+                }
+              >
+                {loadingStatus === 'completed_quiet' ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="h-4 w-4" />
+                )}
+                Quiet Close
+              </Button>
+            ) : null}
+          </div>
+        )}
       </section>
 
       <section className="rounded-2xl border border-white/10 bg-white/[0.06] p-4">

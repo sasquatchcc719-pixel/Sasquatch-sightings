@@ -26,6 +26,10 @@ import {
   normalizeLeadSourceForWrite,
 } from '@/lib/server/lead-sources'
 import { assertTechAppointmentAccess } from '@/lib/ops/tech-job-access'
+import {
+  getTechStatusTransitionError,
+  isActiveTechJobStatus,
+} from '@/lib/tech/appointments'
 
 function addMinutesToTime(value: string, minutesToAdd: number): string {
   const [hours, minutes] = value.split(':').map(Number)
@@ -350,6 +354,38 @@ export async function PATCH(
     }
 
     const nextStatus = body.status ? String(body.status) : current.status
+    if (access.role === 'tech' && body.status !== undefined) {
+      const transitionError = getTechStatusTransitionError(
+        current.status,
+        nextStatus,
+      )
+      if (transitionError) {
+        return NextResponse.json({ error: transitionError }, { status: 409 })
+      }
+      if (
+        nextStatus !== current.status &&
+        isActiveTechJobStatus(nextStatus) &&
+        current.assigned_staff_user_id
+      ) {
+        const { data: conflictingJob, error: conflictError } = await supabase
+          .from('ops_appointments')
+          .select('id, status')
+          .eq('assigned_staff_user_id', current.assigned_staff_user_id)
+          .in('status', ['on_my_way', 'in_progress'])
+          .neq('id', id)
+          .limit(1)
+          .maybeSingle()
+        if (conflictError) throw conflictError
+        if (conflictingJob) {
+          return NextResponse.json(
+            {
+              error: 'Finish the other active job before starting this one',
+            },
+            { status: 409 },
+          )
+        }
+      }
+    }
     const skipCustomerCommunications =
       body.skip_customer_communications === true
     const notifyCustomerOnReschedule =

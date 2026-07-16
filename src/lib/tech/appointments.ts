@@ -24,6 +24,7 @@ export type TechPhoto = {
 
 export type TechAppointment = {
   id: string
+  assignedStaffUserId: string | null
   appointmentDate: string
   startTime: string | null
   endTime: string | null
@@ -133,6 +134,31 @@ const TECH_APPOINTMENT_SELECT = `
 function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
   if (Array.isArray(value)) return value[0] ?? null
   return value ?? null
+}
+
+export function canViewTechAppointment(
+  role: string,
+  staffId: string | null,
+  assignedStaffId: string | null,
+): boolean {
+  if (role === 'tech') {
+    return Boolean(staffId && assignedStaffId === staffId)
+  }
+  return role === 'admin' || role === 'owner'
+}
+
+export function getTechStatusTransitionError(
+  currentStatus: string,
+  nextStatus: string,
+): string | null {
+  if (currentStatus === 'completed' && nextStatus !== 'completed') {
+    return 'Completed jobs can only be reopened from Operations'
+  }
+  return null
+}
+
+export function isActiveTechJobStatus(status: string): boolean {
+  return status === 'on_my_way' || status === 'in_progress'
 }
 
 function isRecoveryVillageCustomer(
@@ -281,6 +307,9 @@ export function mapTechAppointment(
 
   return {
     id: String(row.id),
+    assignedStaffUserId: row.assigned_staff_user_id
+      ? String(row.assigned_staff_user_id)
+      : null,
     appointmentDate: String(row.appointment_date),
     startTime: row.start_time ? String(row.start_time) : null,
     endTime: row.end_time ? String(row.end_time) : null,
@@ -376,15 +405,38 @@ export async function getAssignedTechAppointment(
   userId: string,
   appointmentId: string,
 ): Promise<TechAppointment | null> {
+  return getTechAppointmentForAccess(supabase, {
+    role: 'tech',
+    staffId: userId,
+    appointmentId,
+  })
+}
+
+export async function getTechAppointmentForAccess(
+  supabase: SupabaseAdminClient,
+  access: {
+    role: string
+    staffId: string | null
+    appointmentId: string
+  },
+): Promise<TechAppointment | null> {
   const { data, error } = await supabase
     .from('ops_appointments')
     .select(TECH_APPOINTMENT_SELECT)
-    .eq('id', appointmentId)
-    .eq('assigned_staff_user_id', userId)
+    .eq('id', access.appointmentId)
     .maybeSingle()
 
   if (error) throw error
-  return data ? mapTechAppointment(data) : null
+  if (!data) return null
+
+  const assignedStaffId = data.assigned_staff_user_id
+    ? String(data.assigned_staff_user_id)
+    : null
+  if (!canViewTechAppointment(access.role, access.staffId, assignedStaffId)) {
+    return null
+  }
+
+  return mapTechAppointment(data)
 }
 
 /**

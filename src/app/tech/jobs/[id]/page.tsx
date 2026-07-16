@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
-import { getAssignedTechAppointment } from '@/lib/tech/appointments'
+import { getTechAppointmentForAccess } from '@/lib/tech/appointments'
 import { InvoiceDetail } from '@/components/admin/ops/invoice-detail'
 import { TechJobDetail } from '@/components/tech/tech-job-detail'
 
@@ -15,12 +15,11 @@ export default async function TechJobPage({
   const access = await requireAnyRole(['admin', 'owner', 'tech'])
   const supabase = createAdminClient()
   const { id } = await params
-  const staffUserId = access.staff?.id ?? access.id
-  const appointment = await getAssignedTechAppointment(
-    supabase,
-    staffUserId,
-    id,
-  )
+  const appointment = await getTechAppointmentForAccess(supabase, {
+    role: access.role,
+    staffId: access.staff?.id ?? null,
+    appointmentId: id,
+  })
 
   if (!appointment) notFound()
 

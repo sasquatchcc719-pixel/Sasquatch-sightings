@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
-import { getAssignedTechAppointment } from '@/lib/tech/appointments'
+import {
+  getTechAppointmentForAccess,
+  getTechStatusTransitionError,
+  isActiveTechJobStatus,
+} from '@/lib/tech/appointments'
 import { createAdminClient } from '@/supabase/server'
 import { suppressPostJobReviewRequest } from '@/lib/ops/review-requests'
 import { enrollCustomerInDrip } from '@/lib/ops/drip-campaign'
@@ -14,12 +18,11 @@ export async function GET(
     const access = await requireAnyRole(['admin', 'owner', 'tech'])
     const supabase = createAdminClient()
     const { id } = await params
-    const staffUserId = access.staff?.id ?? access.id
-    const appointment = await getAssignedTechAppointment(
-      supabase,
-      staffUserId,
-      id,
-    )
+    const appointment = await getTechAppointmentForAccess(supabase, {
+      role: access.role,
+      staffId: access.staff?.id ?? null,
+      appointmentId: id,
+    })
 
     if (!appointment) {
       return NextResponse.json({ error: 'Job not found' }, { status: 404 })
@@ -46,8 +49,11 @@ export async function PATCH(
     const supabase = createAdminClient()
     const { id } = await params
     const body = await request.json()
-    const staffUserId = access.staff?.id ?? access.id
-    const current = await getAssignedTechAppointment(supabase, staffUserId, id)
+    const current = await getTechAppointmentForAccess(supabase, {
+      role: access.role,
+      staffId: access.staff?.id ?? null,
+      appointmentId: id,
+    })
 
     if (!current) {
       return NextResponse.json({ error: 'Job not found' }, { status: 404 })
@@ -68,6 +74,36 @@ export async function PATCH(
       const status = String(body.status)
       if (!allowedStatuses.has(status)) {
         return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
+      }
+      const transitionError = getTechStatusTransitionError(
+        current.status,
+        status,
+      )
+      if (transitionError) {
+        return NextResponse.json({ error: transitionError }, { status: 409 })
+      }
+      if (
+        status !== current.status &&
+        isActiveTechJobStatus(status) &&
+        current.assignedStaffUserId
+      ) {
+        const { data: conflictingJob, error: conflictError } = await supabase
+          .from('ops_appointments')
+          .select('id, status')
+          .eq('assigned_staff_user_id', current.assignedStaffUserId)
+          .in('status', ['on_my_way', 'in_progress'])
+          .neq('id', id)
+          .limit(1)
+          .maybeSingle()
+        if (conflictError) throw conflictError
+        if (conflictingJob) {
+          return NextResponse.json(
+            {
+              error: 'Finish the other active job before starting this one',
+            },
+            { status: 409 },
+          )
+        }
       }
       updates.status = status
       if (status === 'on_my_way')
@@ -93,11 +129,14 @@ export async function PATCH(
       updates.internal_notes = String(body.internal_notes || '').trim() || null
     }
 
-    const { error: updateError } = await supabase
+    let updateQuery = supabase
       .from('ops_appointments')
       .update(updates)
       .eq('id', id)
-      .eq('assigned_staff_user_id', staffUserId)
+    if (access.role === 'tech' && access.staff?.id) {
+      updateQuery = updateQuery.eq('assigned_staff_user_id', access.staff.id)
+    }
+    const { error: updateError } = await updateQuery
 
     if (updateError) throw updateError
 
@@ -137,11 +176,11 @@ export async function PATCH(
       })
     }
 
-    const appointment = await getAssignedTechAppointment(
-      supabase,
-      staffUserId,
-      id,
-    )
+    const appointment = await getTechAppointmentForAccess(supabase, {
+      role: access.role,
+      staffId: access.staff?.id ?? null,
+      appointmentId: id,
+    })
     return NextResponse.json({ appointment })
   } catch (error) {
     console.error('[tech/appointments/:id][PATCH]', error)

@@ -1781,7 +1781,7 @@ export function InvoiceDetail({
             </div>
 
             {/* On My Way button */}
-            {appointment?.id ? (
+            {appointment?.id && appointment.status !== 'completed' ? (
               <div className="border-border/60 bg-muted/30 mt-5 rounded-xl border p-4">
                 <Button
                   variant="outline"

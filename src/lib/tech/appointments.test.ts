@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { mapTechAppointment, shouldHideTechPricing } from './appointments'
+import {
+  canViewTechAppointment,
+  getTechStatusTransitionError,
+  isActiveTechJobStatus,
+  mapTechAppointment,
+  shouldHideTechPricing,
+} from './appointments'
 
 function baseAppointment(overrides: Record<string, unknown> = {}) {
   return {
@@ -110,5 +116,42 @@ describe('tech appointment pricing redaction', () => {
 
     expect(shouldHideTechPricing(row)).toBe(true)
     expect(mapTechAppointment(row).invoice?.total).toBeNull()
+  })
+})
+
+describe('tech appointment access', () => {
+  it('limits technicians to their own assigned jobs', () => {
+    expect(canViewTechAppointment('tech', 'staff-1', 'staff-1')).toBe(true)
+    expect(canViewTechAppointment('tech', 'staff-1', 'staff-2')).toBe(false)
+  })
+
+  it('allows owners and admins to view another technician assignment', () => {
+    expect(canViewTechAppointment('owner', 'owner-staff', 'staff-2')).toBe(true)
+    expect(canViewTechAppointment('admin', null, 'staff-2')).toBe(true)
+  })
+})
+
+describe('tech appointment status safety', () => {
+  it('prevents a completed job from being restarted in the tech portal', () => {
+    expect(getTechStatusTransitionError('completed', 'in_progress')).toBe(
+      'Completed jobs can only be reopened from Operations',
+    )
+    expect(getTechStatusTransitionError('completed', 'on_my_way')).toBe(
+      'Completed jobs can only be reopened from Operations',
+    )
+  })
+
+  it('allows normal forward progress and an idempotent completion', () => {
+    expect(getTechStatusTransitionError('booked', 'on_my_way')).toBeNull()
+    expect(getTechStatusTransitionError('on_my_way', 'in_progress')).toBeNull()
+    expect(getTechStatusTransitionError('in_progress', 'completed')).toBeNull()
+    expect(getTechStatusTransitionError('completed', 'completed')).toBeNull()
+  })
+
+  it('identifies statuses that conflict with another active job', () => {
+    expect(isActiveTechJobStatus('on_my_way')).toBe(true)
+    expect(isActiveTechJobStatus('in_progress')).toBe(true)
+    expect(isActiveTechJobStatus('booked')).toBe(false)
+    expect(isActiveTechJobStatus('completed')).toBe(false)
   })
 })
