@@ -17,6 +17,7 @@ import {
   Phone,
   Sparkles,
   Trash2,
+  UserRoundCheck,
   X,
   type LucideIcon,
 } from 'lucide-react'
@@ -166,6 +167,11 @@ type OpsAddress = {
   notes: string | null
 }
 
+type OpsTechnician = {
+  id: string
+  display_name: string
+}
+
 type OpsAppointment = {
   id: string
   appointment_date: string
@@ -179,6 +185,7 @@ type OpsAppointment = {
   internal_notes: string | null
   gps_lat: number | null
   gps_lng: number | null
+  assigned_staff: OpsTechnician | OpsTechnician[] | null
   ops_customers: OpsCustomer | OpsCustomer[] | null
   ops_service_addresses: OpsAddress | OpsAddress[] | null
 }
@@ -1396,6 +1403,7 @@ export function InvoiceDetail({
   }
 
   const appointment = unwrapRelation(invoice.ops_appointments)
+  const technician = unwrapRelation(appointment?.assigned_staff)
   const customer = unwrapRelation(appointment?.ops_customers)
   const address = unwrapRelation(appointment?.ops_service_addresses)
   const subtotalCalc = lineItems.reduce(
@@ -1778,6 +1786,17 @@ export function InvoiceDetail({
               <p className="text-3xl font-bold tabular-nums">
                 ${billableTotal.toFixed(2)}
               </p>
+            </div>
+            <div className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-sm text-emerald-950">
+              <UserRoundCheck className="h-4 w-4 shrink-0 text-emerald-700" />
+              <span className="font-medium">
+                {appointment?.status === 'completed'
+                  ? 'Completed by:'
+                  : 'Technician:'}
+              </span>
+              <span className="font-semibold">
+                {technician?.display_name || 'Unassigned'}
+              </span>
             </div>
 
             {/* On My Way button */}
