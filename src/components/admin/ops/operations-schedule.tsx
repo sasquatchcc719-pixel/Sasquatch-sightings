@@ -219,6 +219,13 @@ function calendarDisplayAmount(appointment: Appointment): string {
   return Number.isFinite(n) ? n.toFixed(2) : '0.00'
 }
 
+function formatScheduleAmount(amount: number): string {
+  return amount.toLocaleString('en-US', {
+    style: 'currency',
+    currency: 'USD',
+  })
+}
+
 // Payment methods recorded when a job is marked paid (see the tech payment
 // route). Color-coded so the calendar can be scanned at a glance.
 const PAYMENT_METHOD_STYLES: Record<
@@ -412,8 +419,12 @@ function getViewLabel(view: ScheduleView, anchorDate: Date): string {
 
 function getRangeForView(view: ScheduleView, anchorDate: Date) {
   if (view === 'day') {
-    const dateKey = formatDateKey(anchorDate)
-    return { startDate: dateKey, endDate: dateKey }
+    // Mobile day view also shows a team week total, so load the surrounding
+    // week while continuing to render only the selected day.
+    return {
+      startDate: formatDateKey(startOfWeek(anchorDate)),
+      endDate: formatDateKey(endOfWeek(anchorDate)),
+    }
   }
 
   if (view === 'month') {
@@ -1035,9 +1046,37 @@ export function OperationsSchedule() {
     [availabilityTemplates],
   )
 
+  const myStaff = useMemo(
+    () =>
+      staffList.find((staff) => staff.user_id === currentUserId) ??
+      staffList[0] ??
+      null,
+    [currentUserId, staffList],
+  )
+
+  const selectedDateKey = formatDateKey(anchorDate)
+  const selectedDayAppointments = appointmentsByDate.get(selectedDateKey) || []
+  const teamDayTotal = selectedDayAppointments.reduce(
+    (sum, appointment) => sum + appointmentDisplayRevenue(appointment),
+    0,
+  )
+  const myDayTotal = myStaff
+    ? selectedDayAppointments
+        .filter(
+          (appointment) =>
+            appointment.assigned_staff_user_id === myStaff.id ||
+            (!appointment.assigned_staff_user_id &&
+              myStaff.id === staffList[0]?.id),
+        )
+        .reduce(
+          (sum, appointment) => sum + appointmentDisplayRevenue(appointment),
+          0,
+        )
+    : 0
+
   const weeklyTotal = useMemo(() => {
-    if (view !== 'week') return 0
-    const weekAppointments = displayedDays.flatMap((day) => {
+    if (view === 'month') return 0
+    const weekAppointments = buildWeekDays(anchorDate).flatMap((day) => {
       const dateKey = formatDateKey(day)
       return appointmentsByDate.get(dateKey) || []
     })
@@ -1045,7 +1084,22 @@ export function OperationsSchedule() {
       (sum, appt) => sum + appointmentDisplayRevenue(appt),
       0,
     )
-  }, [view, displayedDays, appointmentsByDate])
+  }, [anchorDate, view, appointmentsByDate])
+
+  const visibleAppointmentCount =
+    view === 'month'
+      ? data.appointments.length
+      : displayedDays.reduce(
+          (count, day) =>
+            count + (appointmentsByDate.get(formatDateKey(day)) || []).length,
+          0,
+        )
+  const visibleEventCount =
+    view === 'month'
+      ? data.events.length
+      : data.events.filter((event) =>
+          displayedDays.some((day) => intersectsDay(event, formatDateKey(day))),
+        ).length
 
   const saveBusinessHours = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -3130,6 +3184,35 @@ export function OperationsSchedule() {
         </div>
       ) : null}
 
+      {view === 'day' && isMobile ? (
+        <Card className="grid grid-cols-3 divide-x divide-slate-200 overflow-hidden border-emerald-500/25 bg-white shadow-sm">
+          <div className="min-w-0 bg-emerald-50/70 px-2 py-3 text-center">
+            <span className="block text-[9px] font-semibold tracking-wider text-emerald-700 uppercase">
+              Team Day
+            </span>
+            <span className="mt-1 block text-sm font-bold whitespace-nowrap text-emerald-900 tabular-nums">
+              {formatScheduleAmount(teamDayTotal)}
+            </span>
+          </div>
+          <div className="min-w-0 bg-sky-50/70 px-2 py-3 text-center">
+            <span className="block text-[9px] font-semibold tracking-wider text-sky-700 uppercase">
+              My Day
+            </span>
+            <span className="mt-1 block text-sm font-bold whitespace-nowrap text-sky-900 tabular-nums">
+              {formatScheduleAmount(myDayTotal)}
+            </span>
+          </div>
+          <div className="min-w-0 bg-violet-50/70 px-2 py-3 text-center">
+            <span className="block text-[9px] font-semibold tracking-wider text-violet-700 uppercase">
+              Team Week
+            </span>
+            <span className="mt-1 block text-sm font-bold whitespace-nowrap text-violet-900 tabular-nums">
+              {formatScheduleAmount(weeklyTotal)}
+            </span>
+          </div>
+        </Card>
+      ) : null}
+
       {view === 'week' && staffList.length > 1 ? (
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium text-slate-500">Staff:</span>
@@ -3175,11 +3258,7 @@ export function OperationsSchedule() {
         <div className="flex items-center justify-between gap-3 rounded-xl border border-green-600/20 bg-green-50 px-4 py-3">
           <span className="text-sm font-medium text-green-900">Week Total</span>
           <span className="text-lg font-bold text-green-700">
-            $
-            {weeklyTotal.toLocaleString('en-US', {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}
+            {formatScheduleAmount(weeklyTotal)}
           </span>
         </div>
       ) : null}
@@ -3339,9 +3418,6 @@ export function OperationsSchedule() {
               {(() => {
                 // On mobile day view, collapse all staff lanes to a single lane.
                 // The user picks which tech to view via the pill toggle above the calendar.
-                const myStaff =
-                  staffList.find((s) => s.user_id === currentUserId) ??
-                  staffList[0]
                 const activeDayStaff: StaffMember | null =
                   isMobile && view === 'day' && staffList.length > 0
                     ? staffFilter
@@ -4203,7 +4279,7 @@ export function OperationsSchedule() {
             Appointments
           </div>
           <div className="stat-value stat-glow-emerald mt-2 text-3xl font-bold text-emerald-300">
-            {data.appointments.length}
+            {visibleAppointmentCount}
           </div>
           <p className="text-muted-foreground mt-2 text-sm">
             Interactive jobs that open into their own detail screen.
@@ -4214,7 +4290,7 @@ export function OperationsSchedule() {
             Blocked Time
           </div>
           <div className="stat-value stat-glow-amber mt-2 text-3xl font-bold text-amber-300">
-            {data.events.length}
+            {visibleEventCount}
           </div>
           <p className="text-muted-foreground mt-2 text-sm">
             Vacation, holds, personal events, and any custom schedule block.
