@@ -65,6 +65,7 @@ async function loadPaymentDestination(
         total,
         square_payment_link_url,
         square_payment_link_cents,
+        square_order_id,
         ops_appointments (
           id,
           ops_customers!ops_appointments_customer_id_fkey (
@@ -108,13 +109,13 @@ async function loadPaymentDestination(
       const cents = Math.round(amount * 100)
       const storedUrl = invoice.square_payment_link_url
       const storedCents = Number(invoice.square_payment_link_cents)
-      if (storedUrl && storedCents === cents) {
+      if (storedUrl && storedCents === cents && invoice.square_order_id) {
         // Reuse the link created when the invoice was sent. Creating a new
         // one here with the send-time idempotency key trips Square's
         // IDEMPOTENCY_KEY_REUSED protection (the request bodies differ).
         targetUrl = storedUrl
       } else {
-        targetUrl = await createSquarePaymentLink({
+        const paymentLink = await createSquarePaymentLink({
           invoiceId: verified.invoiceId,
           invoiceNumber,
           amount,
@@ -122,13 +123,17 @@ async function loadPaymentDestination(
           description: `Invoice #${invoiceNumber}`,
           idempotencyKey: `ops-invoice-pay-${verified.invoiceId}-${cents}-${Date.now()}`,
         })
-        await supabase
+        targetUrl = paymentLink.url
+        const { error: squareLinkError } = await supabase
           .from('ops_invoices')
           .update({
-            square_payment_link_url: targetUrl,
+            square_payment_link_id: paymentLink.id,
+            square_order_id: paymentLink.orderId,
+            square_payment_link_url: paymentLink.url,
             square_payment_link_cents: cents,
           })
           .eq('id', verified.invoiceId)
+        if (squareLinkError) throw squareLinkError
       }
     } else {
       targetUrl = buildVenmoPaymentLink({

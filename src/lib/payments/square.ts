@@ -12,6 +12,12 @@ function squareApiBaseUrl(): string {
     : 'https://connect.squareup.com'
 }
 
+export type SquarePaymentLink = {
+  id: string
+  orderId: string
+  url: string
+}
+
 export async function createSquarePaymentLink(params: {
   invoiceId: string
   invoiceNumber: number | string
@@ -19,7 +25,7 @@ export async function createSquarePaymentLink(params: {
   customerName: string
   description?: string | null
   idempotencyKey?: string
-}): Promise<string> {
+}): Promise<SquarePaymentLink> {
   const accessToken = process.env.SQUARE_ACCESS_TOKEN
   const locationId = process.env.SQUARE_LOCATION_ID
 
@@ -75,9 +81,13 @@ export async function createSquarePaymentLink(params: {
     throw new Error(detail)
   }
 
-  const url = result?.payment_link?.url
-  if (!url) {
-    throw new Error('Square did not return a payment link.')
+  const paymentLink = result?.payment_link
+  if (!paymentLink?.id || !paymentLink?.order_id || !paymentLink?.url) {
+    throw new Error('Square did not return a complete payment link.')
   }
-  return url
+  return {
+    id: paymentLink.id,
+    orderId: paymentLink.order_id,
+    url: paymentLink.url,
+  }
 }

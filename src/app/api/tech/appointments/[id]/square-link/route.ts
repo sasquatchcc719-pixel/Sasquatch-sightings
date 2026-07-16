@@ -110,20 +110,23 @@ export async function POST(
         { status: 422 },
       )
     }
-    const paymentUrl = await createSquarePaymentLink({
+    const paymentLink = await createSquarePaymentLink({
       invoiceId: appointment.invoice.id,
       invoiceNumber,
       amount: total,
       customerName,
       description: `Job ${appointment.id}`,
     })
-    await supabase
+    const { error: squareLinkError } = await supabase
       .from('ops_invoices')
       .update({
-        square_payment_link_url: paymentUrl,
+        square_payment_link_id: paymentLink.id,
+        square_order_id: paymentLink.orderId,
+        square_payment_link_url: paymentLink.url,
         square_payment_link_cents: Math.round(total * 100),
       })
       .eq('id', appointment.invoice.id)
+    if (squareLinkError) throw squareLinkError
     const customerPaymentUrl = buildPublicPaymentUrl(
       publicSiteOrigin(request),
       createInvoicePaymentToken({
@@ -152,7 +155,7 @@ export async function POST(
     return NextResponse.json({
       ok: true,
       payment_url: customerPaymentUrl,
-      provider_payment_url: paymentUrl,
+      provider_payment_url: paymentLink.url,
       sms,
     })
   } catch (error) {

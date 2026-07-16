@@ -15,14 +15,18 @@ describe('createSquarePaymentLink', () => {
       vi.fn().mockResolvedValue(
         new Response(
           JSON.stringify({
-            payment_link: { url: 'https://square.link/u/example' },
+            payment_link: {
+              id: 'square-link-id',
+              order_id: 'square-order-id',
+              url: 'https://square.link/u/example',
+            },
           }),
           { status: 200 },
         ),
       ),
     )
 
-    await createSquarePaymentLink({
+    const paymentLink = await createSquarePaymentLink({
       invoiceId: 'internal-invoice-uuid',
       invoiceNumber: 18209,
       amount: 675,
@@ -38,5 +42,10 @@ describe('createSquarePaymentLink', () => {
     expect(body.description).toContain('Invoice #18209')
     expect(body.pre_populated_data.buyer_note).toContain('Invoice #18209')
     expect(body.idempotency_key).toContain('internal-invoice-uuid')
+    expect(paymentLink).toEqual({
+      id: 'square-link-id',
+      orderId: 'square-order-id',
+      url: 'https://square.link/u/example',
+    })
   })
 })
