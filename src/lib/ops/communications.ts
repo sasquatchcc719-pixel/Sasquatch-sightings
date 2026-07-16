@@ -105,6 +105,8 @@ type AppointmentWithRelations = {
     | null
   ops_appointment_line_items: Array<{
     name_snapshot: string
+    quantity: number
+    line_total: number
     notes?: string | null
   }>
   quoted_total: number | null
@@ -145,6 +147,8 @@ const APPOINTMENT_SELECT = `
   ),
   ops_appointment_line_items (
     name_snapshot,
+    quantity,
+    line_total,
     notes
   )
 `
@@ -193,6 +197,41 @@ function renderTemplate(
       return value ?? ''
     },
   )
+}
+
+const SMALL_AREA_SERVICE_NAME = 'Small Area / Walk-in Closet (up to 100 sq ft)'
+
+function customerServiceName(name: string): string {
+  if (/^Hall\s*\/\s*Bathroom\s*\/\s*Closet\b/i.test(name.trim())) {
+    return SMALL_AREA_SERVICE_NAME
+  }
+  return name.trim()
+}
+
+function formatQuantity(quantity: number): string {
+  return quantity.toLocaleString('en-US', { maximumFractionDigits: 2 })
+}
+
+export function formatCustomerServiceSummary(
+  lineItems: Array<{
+    name_snapshot: string
+    quantity: number
+    line_total: number
+  }>,
+): string {
+  const lines = lineItems
+    .filter(
+      (item) =>
+        item.name_snapshot?.trim() &&
+        !CUSTOMER_HIDDEN_LINE_ITEMS.has(item.name_snapshot.trim()),
+    )
+    .map((item) => {
+      const quantity = Number(item.quantity)
+      const lineTotal = Number(item.line_total)
+      return `- ${formatQuantity(Number.isFinite(quantity) ? quantity : 1)} × ${customerServiceName(item.name_snapshot)} — $${(Number.isFinite(lineTotal) ? lineTotal : 0).toFixed(2)}`
+    })
+
+  return lines.join('\n') || 'Service appointment'
 }
 
 export function getOpsTemplateKeysForEvent(
@@ -303,8 +342,12 @@ async function getAppointmentContext(
     customer?.full_name?.split(' ').filter(Boolean)[0] ||
     'there'
   const customerVisibleLineItems = appointment.ops_appointment_line_items
-    ?.map((item) => item.name_snapshot)
-    .filter((name) => name && !CUSTOMER_HIDDEN_LINE_ITEMS.has(name))
+    ?.filter(
+      (item) =>
+        item.name_snapshot?.trim() &&
+        !CUSTOMER_HIDDEN_LINE_ITEMS.has(item.name_snapshot.trim()),
+    )
+    .map((item) => customerServiceName(item.name_snapshot))
   const technician = await resolveTechnicianEmailProfile(
     supabase,
     appointment.assigned_staff_user_id ?? null,
@@ -317,8 +360,9 @@ async function getAppointmentContext(
     appointment_date: toLocalDateString(appointment.appointment_date),
     start_time: toLocalTimeString(String(appointment.start_time)),
     end_time: toLocalTimeString(String(appointment.end_time)),
-    service_summary:
-      customerVisibleLineItems?.join(', ') || 'Service appointment',
+    service_summary: formatCustomerServiceSummary(
+      appointment.ops_appointment_line_items || [],
+    ),
     address_line: address
       ? `${address.street_1}, ${address.city}, ${address.state} ${address.zip_code}`
       : '',

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { getOpsTemplateKeysForEvent } from '@/lib/ops/communications'
+import {
+  formatCustomerServiceSummary,
+  getOpsTemplateKeysForEvent,
+} from '@/lib/ops/communications'
 
 describe('getOpsTemplateKeysForEvent', () => {
   it('sends both SMS and email when a job is rescheduled', () => {
@@ -7,5 +10,44 @@ describe('getOpsTemplateKeysForEvent', () => {
       'job_rescheduled_sms',
       'job_rescheduled_email',
     ])
+  })
+})
+
+describe('formatCustomerServiceSummary', () => {
+  it('shows quantity, customer-facing description, and line price', () => {
+    expect(
+      formatCustomerServiceSummary([
+        {
+          name_snapshot: 'Hall/Bathroom/Closet Carpet cleaning 30 to 100 sqft',
+          quantity: 4,
+          line_total: 100,
+        },
+        {
+          name_snapshot: 'Regular Size Room (100 to 200 Sqft)',
+          quantity: 8,
+          line_total: 368,
+        },
+      ]),
+    ).toBe(
+      '- 4 × Small Area / Walk-in Closet (up to 100 sq ft) — $100.00\n' +
+        '- 8 × Regular Size Room (100 to 200 Sqft) — $368.00',
+    )
+  })
+
+  it('does not expose internal line items to customers', () => {
+    expect(
+      formatCustomerServiceSummary([
+        {
+          name_snapshot: 'Regular Size Room (100 to 200 Sqft)',
+          quantity: 2,
+          line_total: 92,
+        },
+        {
+          name_snapshot: 'Google LSA Lead Charge',
+          quantity: 1,
+          line_total: 45,
+        },
+      ]),
+    ).toBe('- 2 × Regular Size Room (100 to 200 Sqft) — $92.00')
   })
 })

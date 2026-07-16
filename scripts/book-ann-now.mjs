@@ -30,7 +30,7 @@ async function bookAnnBiebel() {
     // Line items
     const lineItems = [
       {
-        name: 'Hall/Bathroom/Closet Carpet cleaning 30 to 100 sqft',
+        name: 'Small Area / Walk-in Closet (up to 100 sq ft)',
         quantity: 3,
         unitPrice: 25,
         durationMinutes: 60,

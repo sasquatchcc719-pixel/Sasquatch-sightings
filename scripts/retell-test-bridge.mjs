@@ -872,8 +872,7 @@ If the updated total is still below minimum, do not add more services. Ask what 
                 },
                 {
                   service_id: '8a5740a1-2681-438e-9248-0309fe92bc15',
-                  service_name:
-                    'Hall/Bathroom/Closet Carpet cleaning 30 to 100 sqft',
+                  service_name: 'Small Area / Walk-in Closet (up to 100 sq ft)',
                   quantity: 1,
                   unit_price: 30,
                   total: 30,
@@ -910,8 +909,7 @@ If the updated total is still below minimum, do not add more services. Ask what 
                 },
                 {
                   service_id: '8a5740a1-2681-438e-9248-0309fe92bc15',
-                  service_name:
-                    'Hall/Bathroom/Closet Carpet cleaning 30 to 100 sqft',
+                  service_name: 'Small Area / Walk-in Closet (up to 100 sq ft)',
                   quantity: 1,
                   unit_price: 30,
                   total: 30,

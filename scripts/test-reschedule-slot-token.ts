@@ -97,7 +97,7 @@ async function main() {
       duration_minutes: 1,
     },
     {
-      name_snapshot: 'Hall/Bathroom/Closet Carpet cleaning 30 to 100 sqft',
+      name_snapshot: 'Small Area / Walk-in Closet (up to 100 sq ft)',
       quantity: 1,
       unit_price: 25,
       duration_minutes: 5,

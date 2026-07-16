@@ -20,7 +20,7 @@ async function bookAnnBiebel() {
 
   // Find the matching services
   const hallService = services.find((s) =>
-    s.name.includes('Hall/Bathroom/Closet'),
+    s.name.includes('Small Area / Walk-in Closet'),
   )
   const regularRoomService = services.find((s) =>
     s.name.includes('Regular Size Room'),
