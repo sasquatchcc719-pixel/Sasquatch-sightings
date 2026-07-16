@@ -33,6 +33,10 @@ const INVOICE_SELECT = `
     lead_source_key,
     lead_source_detail,
     original_lead_source,
+    assigned_staff:staff_users!ops_appointments_assigned_staff_user_id_fkey (
+      id,
+      display_name
+    ),
     ops_customers!ops_appointments_customer_id_fkey (
       id,
       full_name,
