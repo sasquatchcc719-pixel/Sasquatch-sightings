@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import {
+  buildSquarePaymentPushContent,
   buildSquarePaymentTelegramMessage,
   parseCompletedSquarePayment,
+  squarePaymentPushIdempotencyKey,
   verifySquareWebhookSignature,
 } from '@/lib/payments/square-webhook'
+import { sendOneSignalToExternalIds } from '@/lib/onesignal'
 import { sendTelegramNotification } from '@/lib/telegram'
 import { createAdminClient } from '@/supabase/server'
 
@@ -37,6 +40,17 @@ function appOrigin(): string {
     process.env.NEXT_PUBLIC_SITE_URL ||
     'https://sightings.sasquatchcarpet.com'
   ).replace(/\/+$/, '')
+}
+
+function squarePaymentPushRecipientIds(): string[] {
+  return Array.from(
+    new Set(
+      (process.env.SQUARE_PAYMENT_PUSH_RECIPIENT_IDS || '')
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean),
+    ),
+  )
 }
 
 async function releaseTelegramClaim(invoiceId: string, claimedAt: string) {
@@ -220,6 +234,31 @@ export async function POST(request: NextRequest) {
       invoiceUrl,
       paidAt: payment.paidAt,
     })
+
+    const pushRecipients = squarePaymentPushRecipientIds()
+    if (pushRecipients.length > 0) {
+      const pushResult = await sendOneSignalToExternalIds({
+        externalIds: pushRecipients,
+        heading: 'Square payment received',
+        content: buildSquarePaymentPushContent({
+          amountCents: payment.amountCents,
+          customerName,
+          invoiceNumber,
+        }),
+        data: {
+          type: 'square_payment_received',
+          invoice_id: invoice.id,
+          payment_id: payment.paymentId,
+        },
+        idempotencyKey: squarePaymentPushIdempotencyKey(payment.eventId),
+        url: `${appOrigin()}/tech`,
+      })
+      if (!pushResult) {
+        console.error(
+          `[webhooks/square] Push notification was not delivered for invoice ${invoice.id}`,
+        )
+      }
+    }
 
     const telegramSent = await sendTelegramNotification(message, {
       disablePreview: true,

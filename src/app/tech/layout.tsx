@@ -4,6 +4,7 @@ import Image from 'next/image'
 import { getUserWithRole } from '@/lib/auth'
 import { AuthButton } from '@/components/auth-button'
 import { TechClockControl } from '@/components/tech/tech-clock-control'
+import { SquarePaymentPushSetup } from '@/components/tech/square-payment-push-setup'
 
 const techNavItems = [
   { href: '/tech', label: 'Jobs' },
@@ -27,6 +28,9 @@ export default async function TechLayout({
   ) {
     redirect('/admin')
   }
+
+  const oneSignalAppId =
+    process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID || process.env.ONESIGNAL_APP_ID
 
   return (
     <main className="min-h-screen bg-slate-950 pb-32 text-slate-50">
@@ -59,7 +63,15 @@ export default async function TechLayout({
             ))}
           </nav>
         </header>
-        <div className="flex-1 px-4 py-5">{children}</div>
+        <div className="flex-1 px-4 py-5">
+          {role === 'tech' && oneSignalAppId ? (
+            <SquarePaymentPushSetup
+              appId={oneSignalAppId}
+              externalId={user.id}
+            />
+          ) : null}
+          {children}
+        </div>
       </div>
       <TechClockControl />
     </main>
