@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'node:crypto'
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 
 export type CompletedSquarePayment = {
   amountCents: number
@@ -112,4 +112,24 @@ export function buildSquarePaymentTelegramMessage(params: {
     '',
     `View invoice: ${params.invoiceUrl}`,
   ].join('\n')
+}
+
+export function buildSquarePaymentPushContent(params: {
+  amountCents: number
+  customerName: string
+  invoiceNumber: number | string
+}): string {
+  return `$${(params.amountCents / 100).toFixed(2)} from ${params.customerName} · Invoice #${params.invoiceNumber}`
+}
+
+/** OneSignal requires a UUID and reuses it to suppress duplicate retries. */
+export function squarePaymentPushIdempotencyKey(eventId: string): string {
+  const bytes = createHash('sha256')
+    .update(`square-payment-push:${eventId}`)
+    .digest()
+    .subarray(0, 16)
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = bytes.toString('hex')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }

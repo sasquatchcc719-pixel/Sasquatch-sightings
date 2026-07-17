@@ -2,8 +2,10 @@
 import { createHmac } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import {
+  buildSquarePaymentPushContent,
   buildSquarePaymentTelegramMessage,
   parseCompletedSquarePayment,
+  squarePaymentPushIdempotencyKey,
   verifySquareWebhookSignature,
 } from './square-webhook'
 
@@ -110,5 +112,27 @@ describe('Square Telegram confirmation', () => {
     expect(message).toContain('Invoice #18209')
     expect(message).toContain('$325.00')
     expect(message).toContain('/admin/operations/invoices/invoice-1')
+  })
+})
+
+describe('Square push confirmation', () => {
+  it('builds a compact payment summary', () => {
+    expect(
+      buildSquarePaymentPushContent({
+        amountCents: 32500,
+        customerName: 'Tamara Jarka',
+        invoiceNumber: 18209,
+      }),
+    ).toBe('$325.00 from Tamara Jarka · Invoice #18209')
+  })
+
+  it('builds a stable UUID idempotency key per Square event', () => {
+    const key = squarePaymentPushIdempotencyKey('event-1')
+
+    expect(key).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    )
+    expect(squarePaymentPushIdempotencyKey('event-1')).toBe(key)
+    expect(squarePaymentPushIdempotencyKey('event-2')).not.toBe(key)
   })
 })

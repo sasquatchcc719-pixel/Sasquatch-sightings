@@ -4,6 +4,7 @@
  */
 
 const ONESIGNAL_BASE = 'https://onesignal.com/api/v1'
+const ONESIGNAL_CREATE_MESSAGE_URL = 'https://api.onesignal.com/notifications'
 
 export type PushAudience = 'admin' | 'business_card' | 'vendor' | 'contest'
 
@@ -13,6 +14,12 @@ interface OneSignalNotification {
   data?: Record<string, unknown>
 }
 
+interface OneSignalExternalIdNotification extends OneSignalNotification {
+  externalIds: string[]
+  idempotencyKey?: string
+  url?: string
+}
+
 /** Send to all subscribed admin users (existing behavior). */
 export async function sendOneSignalNotification({
   heading,
@@ -20,6 +27,67 @@ export async function sendOneSignalNotification({
   data = {},
 }: OneSignalNotification): Promise<void> {
   await sendOneSignalToAudience('admin', heading, content, data)
+}
+
+/** Send a transactional push to identified users only. */
+export async function sendOneSignalToExternalIds({
+  externalIds,
+  heading,
+  content,
+  data = {},
+  idempotencyKey,
+  url,
+}: OneSignalExternalIdNotification): Promise<{ id: string } | null> {
+  const appId = process.env.ONESIGNAL_APP_ID
+  const apiKey = process.env.ONESIGNAL_API_KEY
+  const recipients = Array.from(
+    new Set(externalIds.map((id) => id.trim()).filter(Boolean)),
+  )
+
+  if (!appId || !apiKey) {
+    console.warn('OneSignal credentials not configured, skipping notification')
+    return null
+  }
+  if (recipients.length === 0) return null
+
+  const body: Record<string, unknown> = {
+    app_id: appId,
+    headings: { en: heading },
+    contents: { en: content },
+    data,
+    include_aliases: { external_id: recipients },
+    target_channel: 'push',
+  }
+  if (idempotencyKey) body.idempotency_key = idempotencyKey
+  if (url) body.url = url
+
+  try {
+    const response = await fetch(ONESIGNAL_CREATE_MESSAGE_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Key ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+    })
+
+    if (!response.ok) {
+      console.error('OneSignal API error:', await response.text())
+      return null
+    }
+
+    const result = (await response.json()) as { id?: string }
+    if (!result.id) {
+      console.warn('OneSignal accepted the request without a notification id')
+      return null
+    }
+
+    console.log('OneSignal transactional notification sent:', result.id)
+    return { id: result.id }
+  } catch (error) {
+    console.error('Failed to send OneSignal transactional notification:', error)
+    return null
+  }
 }
 
 /** Build OneSignal targeting for an audience. */

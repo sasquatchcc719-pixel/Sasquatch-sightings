@@ -8,6 +8,14 @@ export function LogoutButton() {
   const router = useRouter()
 
   const logout = async () => {
+    const oneSignal = (
+      window as unknown as { OneSignal?: { logout?: () => Promise<void> } }
+    ).OneSignal
+    try {
+      await oneSignal?.logout?.()
+    } catch {
+      // Supabase logout must still proceed if push identity cleanup fails.
+    }
     const supabase = createClient()
     await supabase.auth.signOut()
     router.push('/auth/login')
