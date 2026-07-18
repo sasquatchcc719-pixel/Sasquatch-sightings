@@ -17,6 +17,7 @@ type CustomerRow = {
 
 type AppointmentRow = {
   id: string
+  assigned_staff_user_id?: string | null
   ops_customers?: CustomerRow | CustomerRow[] | null
 }
 
@@ -51,6 +52,38 @@ function squarePaymentPushRecipientIds(): string[] {
         .filter(Boolean),
     ),
   )
+}
+
+/**
+ * Decide which opted-in devices get the Square payment PUSH for this job.
+ *
+ * The push must only reach the technician who actually worked the job — a tech
+ * should not be buzzed for another person's payment (e.g. David getting pushes
+ * for Charles's jobs). Telegram delivery to the owner is separate and unchanged.
+ *
+ * Recipient IDs in SQUARE_PAYMENT_PUSH_RECIPIENT_IDS are Sightings auth user_ids
+ * (OneSignal external_ids); `assigned_staff_user_id` is a staff_users.id, so we
+ * resolve it to its user_id and keep only the recipient that matches.
+ */
+async function pushRecipientsForAssignedTech(
+  supabase: ReturnType<typeof createAdminClient>,
+  assignedStaffUserId: string | null | undefined,
+): Promise<string[]> {
+  const allowlist = squarePaymentPushRecipientIds()
+  if (allowlist.length === 0) return []
+  // No assigned tech → push to nobody. The owner still gets the Telegram alert.
+  if (!assignedStaffUserId) return []
+
+  const { data: staff } = await supabase
+    .from('staff_users')
+    .select('user_id')
+    .or(`id.eq.${assignedStaffUserId},user_id.eq.${assignedStaffUserId}`)
+    .limit(1)
+    .maybeSingle()
+  const assignedUserId = (staff?.user_id as string | null | undefined) || null
+  if (!assignedUserId) return []
+
+  return allowlist.filter((id) => id === assignedUserId)
 }
 
 async function releaseTelegramClaim(invoiceId: string, claimedAt: string) {
@@ -113,6 +146,7 @@ export async function POST(request: NextRequest) {
           square_payment_link_cents,
           ops_appointments (
             id,
+            assigned_staff_user_id,
             ops_customers!ops_appointments_customer_id_fkey (
               full_name,
               business_name
@@ -235,7 +269,10 @@ export async function POST(request: NextRequest) {
       paidAt: payment.paidAt,
     })
 
-    const pushRecipients = squarePaymentPushRecipientIds()
+    const pushRecipients = await pushRecipientsForAssignedTech(
+      supabase,
+      appointment?.assigned_staff_user_id,
+    )
     if (pushRecipients.length > 0) {
       const pushResult = await sendOneSignalToExternalIds({
         externalIds: pushRecipients,
