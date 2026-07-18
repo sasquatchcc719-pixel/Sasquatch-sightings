@@ -355,6 +355,14 @@ export function InvoiceDetail({
   const [onMyWaySmsInfo, setOnMyWaySmsInfo] = useState<OnMyWaySmsInfo | null>(
     null,
   )
+  type CustomerMessage = {
+    direction: 'inbound' | 'outbound'
+    content: string
+    timestamp: string | null
+  }
+  const [customerMessages, setCustomerMessages] = useState<CustomerMessage[]>(
+    [],
+  )
   const [driveStartedAtMs, setDriveStartedAtMs] = useState<number | null>(null)
   const [showSignatureModal, setShowSignatureModal] = useState(false)
   const [driveElapsedMs, setDriveElapsedMs] = useState(0)
@@ -534,6 +542,9 @@ export function InvoiceDetail({
       setStatus(result.invoice.status)
       setDiscount(String(result.invoice.discount_amount || 0))
       setPaymentMethod(result.invoice.payment_method ?? null)
+      setCustomerMessages(
+        Array.isArray(result.customerMessages) ? result.customerMessages : [],
+      )
 
       // Load appointment data for GPS and photos
       const appt = Array.isArray(result.invoice.ops_appointments)
@@ -1853,6 +1864,53 @@ export function InvoiceDetail({
                       here so you can confirm what customers receive.
                     </p>
                   )}
+                </div>
+              </div>
+            ) : null}
+
+            {/* Text message history with this customer */}
+            {customerMessages.length > 0 ? (
+              <div className="border-border/60 bg-muted/20 mt-5 rounded-xl border p-4">
+                <p className="text-muted-foreground mb-3 flex items-center gap-2 text-xs font-medium uppercase">
+                  <MessageSquare className="h-3.5 w-3.5 shrink-0" />
+                  Text messages ({customerMessages.length})
+                </p>
+                <div className="max-h-80 space-y-2 overflow-y-auto">
+                  {customerMessages.map((msg, idx) => {
+                    const inbound = msg.direction === 'inbound'
+                    let stamp = ''
+                    if (msg.timestamp) {
+                      const parsed = new Date(msg.timestamp)
+                      if (!Number.isNaN(parsed.getTime())) {
+                        stamp = parsed.toLocaleString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          hour: 'numeric',
+                          minute: '2-digit',
+                        })
+                      }
+                    }
+                    return (
+                      <div
+                        key={idx}
+                        className={`flex flex-col ${inbound ? 'items-start' : 'items-end'}`}
+                      >
+                        <div
+                          className={`max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${
+                            inbound
+                              ? 'bg-background text-foreground border-border/60 border'
+                              : 'bg-green-600 text-white'
+                          }`}
+                        >
+                          {msg.content}
+                        </div>
+                        <span className="text-muted-foreground mt-0.5 text-[11px]">
+                          {inbound ? 'Customer' : 'Us'}
+                          {stamp ? ` · ${stamp}` : ''}
+                        </span>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             ) : null}

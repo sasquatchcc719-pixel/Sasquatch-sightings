@@ -21,6 +21,7 @@ import {
   parseTwilioInboundMedia,
   persistInboundMedia,
 } from '@/lib/twilio/inbound-media'
+import { notifyActiveJobTechOfInboundSms } from '@/lib/twilio/active-job-tech-alert'
 import {
   buildApplicantReplyTelegramMessage,
   sendRangerTelegramMessage,
@@ -698,6 +699,19 @@ export async function POST(request: NextRequest) {
     // context but don't forward/notify on it as a real message.
     const isLsaDisclaimer = isLsaDisclaimerText(messageBody)
     const isSmsReaction = isSmsReactionOnlyMessage(messageBody)
+
+    // If this reply is from a customer whose job a tech is actively on the way
+    // to, ping the shared team Telegram so the assigned tech sees it directly
+    // (e.g. building-access directions) instead of waiting on a manual relay.
+    if (linkedCustomerId && !isLsaDisclaimer && !isSmsReaction) {
+      await notifyActiveJobTechOfInboundSms({
+        supabase,
+        customerId: linkedCustomerId,
+        messageBody,
+        mediaCount: storedMedia.filter((item) => item.status === 'available')
+          .length,
+      })
+    }
 
     // Add customer message to conversation history
     messages.push({
