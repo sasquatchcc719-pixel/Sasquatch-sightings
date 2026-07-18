@@ -79,6 +79,79 @@ const INVOICE_SELECT = `
   )
 `
 
+export type InvoiceCustomerMessage = {
+  direction: 'inbound' | 'outbound'
+  content: string
+  timestamp: string | null
+}
+
+// Build the running text thread shown on the invoice: every message exchanged
+// with this customer, pulled from the conversations the inbound SMS webhook
+// keeps (one row per source/phone). Inbound = the customer; outbound = replies
+// sent from the relay. Never throws — the invoice must load without it.
+async function loadCustomerMessages(
+  supabase: ReturnType<typeof createAdminClient>,
+  invoice: unknown,
+): Promise<InvoiceCustomerMessage[]> {
+  try {
+    const inv = invoice as {
+      ops_appointments?:
+        | { ops_customers?: { id?: string } | { id?: string }[] }
+        | { ops_customers?: { id?: string } | { id?: string }[] }[]
+        | null
+    }
+    const appt = Array.isArray(inv.ops_appointments)
+      ? inv.ops_appointments[0]
+      : inv.ops_appointments
+    const customer = appt
+      ? Array.isArray(appt.ops_customers)
+        ? appt.ops_customers[0]
+        : appt.ops_customers
+      : null
+    const customerId = customer?.id
+    if (!customerId) return []
+
+    const { data: conversations } = await supabase
+      .from('conversations')
+      .select('messages')
+      .eq('ops_customer_id', customerId)
+      .order('updated_at', { ascending: false })
+      .limit(5)
+
+    const collected: InvoiceCustomerMessage[] = []
+    for (const convo of conversations || []) {
+      const rows = Array.isArray(convo.messages)
+        ? (convo.messages as Array<Record<string, unknown>>)
+        : []
+      for (const row of rows) {
+        const content =
+          typeof row.content === 'string' ? row.content.trim() : ''
+        if (!content) continue
+        collected.push({
+          direction: row.role === 'user' ? 'inbound' : 'outbound',
+          content,
+          timestamp: typeof row.timestamp === 'string' ? row.timestamp : null,
+        })
+      }
+    }
+
+    collected.sort((a, b) => {
+      const at = a.timestamp ? Date.parse(a.timestamp) : 0
+      const bt = b.timestamp ? Date.parse(b.timestamp) : 0
+      return at - bt
+    })
+
+    // Cap to the most recent 50 so a long-running thread can't bloat the payload.
+    return collected.slice(-50)
+  } catch (messageError) {
+    console.error(
+      '[ops/invoices/:id][GET] Failed to load customer messages:',
+      messageError,
+    )
+    return []
+  }
+}
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -103,7 +176,9 @@ export async function GET(
 
     if (error) throw error
 
-    return NextResponse.json({ invoice: data })
+    const customerMessages = await loadCustomerMessages(supabase, data)
+
+    return NextResponse.json({ invoice: data, customerMessages })
   } catch (error) {
     console.error('[ops/invoices/:id][GET] Error:', error)
     return NextResponse.json(
