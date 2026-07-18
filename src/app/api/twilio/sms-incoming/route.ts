@@ -708,6 +708,7 @@ export async function POST(request: NextRequest) {
         supabase,
         customerId: linkedCustomerId,
         messageBody,
+        twilioSid,
         mediaCount: storedMedia.filter((item) => item.status === 'available')
           .length,
       })

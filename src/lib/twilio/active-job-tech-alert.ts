@@ -1,16 +1,39 @@
+import { createHash } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { sendTelegramNotification } from '@/lib/telegram'
+import { sendOneSignalToExternalIds } from '@/lib/onesignal'
 
-const ADMIN_BASE_URL = 'https://sightings.sasquatchcarpet.com'
+const DEFAULT_ORIGIN = 'https://sightings.sasquatchcarpet.com'
 
 // A technician is "actively on this job" while en route or working it. These
 // are the same statuses the app uses to enforce one active job per tech.
 const ACTIVE_JOB_STATUSES = ['on_my_way', 'in_progress']
 
+function appOrigin(): string {
+  return (
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    DEFAULT_ORIGIN
+  ).replace(/\/+$/, '')
+}
+
+// Stable UUID derived from the Twilio SID so OneSignal suppresses duplicate
+// deliveries if the push request is retried.
+function inboundPushIdempotencyKey(twilioSid: string): string {
+  const bytes = createHash('sha256')
+    .update(`inbound-sms-tech-push:${twilioSid}`)
+    .digest()
+    .subarray(0, 16)
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = bytes.toString('hex')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
 type NotifyParams = {
   supabase: SupabaseClient
   customerId: string | null
   messageBody: string
+  twilioSid: string
   mediaCount?: number
 }
 
@@ -29,20 +52,23 @@ function resolveCustomerName(customer: CustomerNameRow | null): string {
       .join(' ')
       .trim() ||
     customer?.business_name?.trim() ||
-    'Customer'
+    'Your customer'
   )
 }
 
 /**
  * When a customer replies by SMS while a technician is actively en route to (or
- * working) their job, ping the shared team Telegram so the assigned tech — who
- * already watches that channel for payment alerts — sees the message right away
- * without Charles having to relay it by hand.
+ * working) their job, send a push straight to THAT technician's phone so they
+ * see it (e.g. building-access directions) without Charles having to relay it.
  *
- * Deliberately narrow: this only fires for a KNOWN ops customer who has an
- * appointment currently `on_my_way` or `in_progress`. A tech should only ever
- * hear from the job they're on the way to; every other inbound text stays in
- * Charles's existing relay untouched.
+ * Delivery is via OneSignal to the assigned tech's Sightings user_id — the same
+ * per-device channel their Square payment pushes use. (The `TELEGRAM_CHAT_ID`
+ * alert channel goes only to the owner's personal chat, so it can't reach a
+ * tech.) Charles keeps his existing per-customer Telegram relay untouched.
+ *
+ * Deliberately narrow: only fires for a KNOWN customer who has an appointment
+ * currently `on_my_way`/`in_progress`, and only pushes to that job's assigned
+ * tech. A tech only ever hears from the job they're on the way to.
  *
  * Never throws — a failure here must not break the Twilio webhook response.
  */
@@ -50,6 +76,7 @@ export async function notifyActiveJobTechOfInboundSms({
   supabase,
   customerId,
   messageBody,
+  twilioSid,
   mediaCount = 0,
 }: NotifyParams): Promise<boolean> {
   try {
@@ -57,7 +84,7 @@ export async function notifyActiveJobTechOfInboundSms({
 
     const { data: appts, error: apptError } = await supabase
       .from('ops_appointments')
-      .select('id, status, on_my_way_at, assigned_staff_user_id')
+      .select('id, on_my_way_at, assigned_staff_user_id')
       .eq('customer_id', customerId)
       .in('status', ACTIVE_JOB_STATUSES)
       .order('on_my_way_at', { ascending: false, nullsFirst: false })
@@ -66,21 +93,20 @@ export async function notifyActiveJobTechOfInboundSms({
 
     if (apptError) throw apptError
     const appointment = appts?.[0]
-    if (!appointment) return false // no active job — leave the tech alone
+    if (!appointment?.assigned_staff_user_id) return false // no active tech
 
-    // Resolve the assigned technician's name. The FK points at staff_users.id,
-    // but we match user_id too for safety (mirrors resolveTechnicianEmailProfile).
-    let techName = 'the assigned tech'
-    if (appointment.assigned_staff_user_id) {
-      const { data: staff } = await supabase
-        .from('staff_users')
-        .select('display_name')
-        .or(
-          `id.eq.${appointment.assigned_staff_user_id},user_id.eq.${appointment.assigned_staff_user_id}`,
-        )
-        .limit(1)
-      if (staff?.[0]?.display_name) techName = staff[0].display_name as string
-    }
+    // Resolve the assigned tech to their auth user_id (OneSignal external_id).
+    // assigned_staff_user_id is a staff_users.id; match user_id too for safety.
+    const { data: staff } = await supabase
+      .from('staff_users')
+      .select('user_id')
+      .or(
+        `id.eq.${appointment.assigned_staff_user_id},user_id.eq.${appointment.assigned_staff_user_id}`,
+      )
+      .limit(1)
+      .maybeSingle()
+    const techUserId = (staff?.user_id as string | null | undefined) || null
+    if (!techUserId) return false
 
     const { data: customer } = await supabase
       .from('ops_customers')
@@ -89,33 +115,32 @@ export async function notifyActiveJobTechOfInboundSms({
       .maybeSingle()
     const customerName = resolveCustomerName(customer as CustomerNameRow | null)
 
-    // Deep-link to the invoice for this job, falling back to the appointment.
-    const { data: invoice } = await supabase
-      .from('ops_invoices')
-      .select('id')
-      .eq('appointment_id', appointment.id)
-      .maybeSingle()
-    const link = invoice?.id
-      ? `${ADMIN_BASE_URL}/admin/operations/invoices/${invoice.id}`
-      : `${ADMIN_BASE_URL}/admin/operations/appointments/${appointment.id}`
-
     const trimmedBody = messageBody.trim()
-    const bodyLine = trimmedBody
-      ? `"${trimmedBody}"`
-      : mediaCount > 0
-        ? `(sent ${mediaCount} photo${mediaCount === 1 ? '' : 's'})`
-        : '(no text)'
-    const photoSuffix =
-      trimmedBody && mediaCount > 0
-        ? `\n📷 +${mediaCount} photo${mediaCount === 1 ? '' : 's'}`
-        : ''
+    let content: string
+    if (trimmedBody) {
+      const clipped =
+        trimmedBody.length > 160 ? `${trimmedBody.slice(0, 157)}…` : trimmedBody
+      content = `${customerName}: ${clipped}`
+    } else if (mediaCount > 0) {
+      content = `${customerName} sent ${mediaCount} photo${mediaCount === 1 ? '' : 's'}`
+    } else {
+      content = `${customerName} sent a message`
+    }
 
-    const message =
-      `📩 Reply from ${customerName} — ${techName} is en route\n` +
-      `${bodyLine}${photoSuffix}\n` +
-      `🧾 ${link}`
+    const result = await sendOneSignalToExternalIds({
+      externalIds: [techUserId],
+      heading: 'New text from your customer',
+      content,
+      data: {
+        type: 'inbound_customer_sms',
+        appointment_id: appointment.id,
+        customer_id: customerId,
+      },
+      idempotencyKey: inboundPushIdempotencyKey(twilioSid),
+      url: `${appOrigin()}/tech/jobs/${appointment.id}`,
+    })
 
-    return await sendTelegramNotification(message, { disablePreview: true })
+    return Boolean(result)
   } catch (error) {
     console.error(
       '[active-job-tech-alert] Failed to notify tech of inbound SMS:',
