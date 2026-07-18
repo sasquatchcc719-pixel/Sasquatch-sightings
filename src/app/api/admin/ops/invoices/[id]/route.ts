@@ -79,6 +79,7 @@ export type InvoiceCustomerMessage = {
   direction: 'inbound' | 'outbound'
   content: string
   timestamp: string | null
+  sentBy: string | null
 }
 
 // Build the running text thread shown on the invoice: every message exchanged
@@ -127,6 +128,7 @@ async function loadCustomerMessages(
           direction: row.role === 'user' ? 'inbound' : 'outbound',
           content,
           timestamp: typeof row.timestamp === 'string' ? row.timestamp : null,
+          sentBy: typeof row.sent_by === 'string' ? row.sent_by : null,
         })
       }
     }

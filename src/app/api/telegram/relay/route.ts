@@ -22,7 +22,12 @@ export const maxDuration = 30
  */
 
 type TgChat = { id: number; title?: string; type?: string }
-type TgUser = { id: number; is_bot?: boolean }
+type TgUser = {
+  id: number
+  is_bot?: boolean
+  first_name?: string
+  username?: string
+}
 type TgMessage = {
   message_id?: number
   from?: TgUser
@@ -108,7 +113,8 @@ export async function POST(request: NextRequest) {
       await rememberRelayGroup(supabase, msg.chat)
     }
 
-    // Only Charles's typed replies inside a customer topic become SMS.
+    // Any relay operator's typed reply inside a customer topic becomes SMS.
+    // (Attribution — who sent it — is resolved from relay_operators downstream.)
     if (
       msg.chat.type === 'supergroup' &&
       typeof msg.message_thread_id === 'number' &&
@@ -123,10 +129,12 @@ export async function POST(request: NextRequest) {
         groupChatId: msg.chat.id,
         topicId: msg.message_thread_id,
         text: msg.text,
+        operatorTelegramId: msg.from?.id ?? null,
+        operatorFallbackName: msg.from?.first_name ?? null,
       })
       if (result.sent) {
         console.log(
-          `[relay] Sent topic reply → SMS to ${result.to} from ${result.from}`,
+          `[relay] Sent topic reply → SMS to ${result.to} from ${result.from} by ${result.operator}`,
         )
       } else if (result.reason !== 'unmapped-topic') {
         console.warn(`[relay] Topic reply not sent: ${result.reason}`)
