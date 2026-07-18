@@ -366,6 +366,7 @@ export function InvoiceDetail({
     direction: 'inbound' | 'outbound'
     content: string
     timestamp: string | null
+    sentBy: string | null
   }
   const [customerMessages, setCustomerMessages] = useState<CustomerMessage[]>(
     [],
@@ -1897,6 +1898,24 @@ export function InvoiceDetail({
                 <div className="max-h-80 space-y-2 overflow-y-auto">
                   {customerMessages.map((msg, idx) => {
                     const inbound = msg.direction === 'inbound'
+                    // Show the operator's name on outbound replies when we know
+                    // who sent it (Charles/Tiffany); collapse generic system
+                    // tags (admin, harry, …) to a plain "Us".
+                    const genericSenders = new Set([
+                      'admin',
+                      'admin_external',
+                      'harry',
+                      'system',
+                      'ai',
+                      'assistant',
+                      'bot',
+                    ])
+                    const senderLabel = inbound
+                      ? 'Customer'
+                      : msg.sentBy &&
+                          !genericSenders.has(msg.sentBy.toLowerCase().trim())
+                        ? msg.sentBy
+                        : 'Us'
                     let stamp = ''
                     if (msg.timestamp) {
                       const parsed = new Date(msg.timestamp)
@@ -1924,7 +1943,7 @@ export function InvoiceDetail({
                           {msg.content}
                         </div>
                         <span className="text-muted-foreground mt-0.5 text-[11px]">
-                          {inbound ? 'Customer' : 'Us'}
+                          {senderLabel}
                           {stamp ? ` · ${stamp}` : ''}
                         </span>
                       </div>

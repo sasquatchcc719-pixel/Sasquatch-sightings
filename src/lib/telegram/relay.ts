@@ -531,15 +531,106 @@ export async function handleCustomerMediaCallback(params: {
  * SMS from the same business number they texted (falls back to the default
  * Twilio number if unknown). Fails soft.
  */
+/**
+ * Resolve the display name for whoever typed a relay reply, from their Telegram
+ * user id. Known operators (relay_operators) win; otherwise we fall back to the
+ * sender's Telegram first name, then a generic label. Fail-open by design — the
+ * relay must never refuse to send just because an operator isn't mapped yet.
+ */
+export async function resolveRelayOperator(
+  supabase: SupabaseClient,
+  telegramUserId: number | null,
+  fallbackName?: string | null,
+): Promise<string> {
+  if (telegramUserId) {
+    const { data } = await supabase
+      .from('relay_operators')
+      .select('display_name')
+      .eq('telegram_user_id', telegramUserId)
+      .eq('is_active', true)
+      .maybeSingle()
+    if (data?.display_name) return data.display_name as string
+  }
+  const fallback = fallbackName?.trim()
+  return fallback && fallback.length > 0 ? fallback : 'Team'
+}
+
+/**
+ * Record a relayed outbound reply into the customer's conversation, attributed
+ * to the operator who sent it, so the invoice message log shows who answered.
+ * Stamped with the Twilio SID so the inbound webhook's outbound-sync dedupes it.
+ * Never throws — attribution is best-effort, the SMS has already gone out.
+ */
+async function recordRelayOutbound(params: {
+  supabase: SupabaseClient
+  phone: string
+  text: string
+  twilioSid: string
+  operator: string
+}): Promise<void> {
+  const { supabase, phone, text, twilioSid, operator } = params
+  try {
+    const { data: convo } = await supabase
+      .from('conversations')
+      .select('id, messages')
+      .eq('phone_number', phone)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (!convo?.id) return
+
+    const messages = Array.isArray(convo.messages)
+      ? (convo.messages as Array<Record<string, unknown>>)
+      : []
+    if (messages.some((m) => m?.twilio_sid && m.twilio_sid === twilioSid))
+      return
+
+    messages.push({
+      role: 'assistant',
+      content: text,
+      timestamp: new Date().toISOString(),
+      twilio_sid: twilioSid,
+      sent_by: operator,
+    })
+    await supabase
+      .from('conversations')
+      .update({ messages, updated_at: new Date().toISOString() })
+      .eq('id', convo.id)
+  } catch (error) {
+    console.error('[relay] Failed to record outbound to conversation:', error)
+  }
+}
+
 export async function relayTopicReplyToSms(params: {
   supabase: SupabaseClient
   groupChatId: number
   topicId: number
   text: string
-}): Promise<{ sent: boolean; reason?: string; to?: string; from?: string }> {
-  const { supabase, groupChatId, topicId, text } = params
+  operatorTelegramId?: number | null
+  operatorFallbackName?: string | null
+}): Promise<{
+  sent: boolean
+  reason?: string
+  to?: string
+  from?: string
+  operator?: string
+}> {
+  const {
+    supabase,
+    groupChatId,
+    topicId,
+    text,
+    operatorTelegramId,
+    operatorFallbackName,
+  } = params
   const thread = await findThreadByTopic(supabase, groupChatId, topicId)
   if (!thread) return { sent: false, reason: 'unmapped-topic' }
+
+  const operator = await resolveRelayOperator(
+    supabase,
+    operatorTelegramId ?? null,
+    operatorFallbackName ?? null,
+  )
 
   try {
     const result = await sendCustomerSMSWithResult(
@@ -549,12 +640,26 @@ export async function relayTopicReplyToSms(params: {
       'telegram_relay',
       thread.business_number ?? undefined,
     )
-    return { sent: true, to: result.to, from: result.from }
+    await recordRelayOutbound({
+      supabase,
+      phone: thread.phone,
+      text,
+      twilioSid: result.sid,
+      operator,
+    })
+    // Confirm delivery in the topic, attributed, so the other operator sees the
+    // customer has already been answered (and by whom).
+    await postToTopic(groupChatId, topicId, `✅ Sent to customer · ${operator}`)
+    return { sent: true, to: result.to, from: result.from, operator }
   } catch (error) {
     const reason = error instanceof Error ? error.message : 'send-failed'
     console.error(`[relay] SMS send failed for ${thread.phone}:`, reason)
-    // Let Charles know in the same topic so a failed send is never silent.
-    await postToTopic(groupChatId, topicId, `⚠️ SMS NOT sent: ${reason}`)
-    return { sent: false, reason }
+    // Surface a failed send in the same topic so it is never silent.
+    await postToTopic(
+      groupChatId,
+      topicId,
+      `⚠️ SMS NOT sent (${operator}): ${reason}`,
+    )
+    return { sent: false, reason, operator }
   }
 }
