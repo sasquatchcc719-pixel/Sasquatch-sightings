@@ -89,15 +89,19 @@ async function createForumTopic(
   return result?.message_thread_id ?? null
 }
 
-/** Post a plain-text message into a forum topic. Returns success. */
+/**
+ * Post a plain-text message into a forum topic. Returns success.
+ * `topicId` may be omitted to post in the group's General area (e.g. a reply to
+ * /whoami typed outside any customer topic).
+ */
 export async function postToTopic(
   chatId: number,
-  topicId: number,
+  topicId: number | null | undefined,
   text: string,
 ): Promise<boolean> {
   const result = await callTelegram('sendMessage', {
     chat_id: chatId,
-    message_thread_id: topicId,
+    ...(typeof topicId === 'number' ? { message_thread_id: topicId } : {}),
     text,
     disable_web_page_preview: true,
   })
@@ -553,6 +557,45 @@ export async function resolveRelayOperator(
   }
   const fallback = fallbackName?.trim()
   return fallback && fallback.length > 0 ? fallback : 'Team'
+}
+
+/**
+ * Register whoever typed /whoami in a relay group as a named operator, so their
+ * replies get labeled with their name. This is how a new person (Tiffany, a
+ * future tech) onboards themselves — no copying Telegram ids out of logs.
+ *
+ * Safe by design: everyone in these private groups can already relay SMS, so
+ * registering only sets the display name — it grants no new capability.
+ * Returns the message to post back into the group.
+ */
+export async function registerRelayOperator(params: {
+  supabase: SupabaseClient
+  telegramUserId: number
+  fallbackName?: string | null
+}): Promise<string> {
+  const { supabase, telegramUserId, fallbackName } = params
+
+  const { data: existing } = await supabase
+    .from('relay_operators')
+    .select('display_name')
+    .eq('telegram_user_id', telegramUserId)
+    .maybeSingle()
+
+  if (existing?.display_name) {
+    return `✅ Already set up — your replies show as "${existing.display_name}" (Telegram id ${telegramUserId}).`
+  }
+
+  const name = fallbackName?.trim() || `Operator ${telegramUserId}`
+  const { error } = await supabase
+    .from('relay_operators')
+    .insert({ telegram_user_id: telegramUserId, display_name: name })
+
+  if (error) {
+    console.error('[relay] Failed to register operator:', error.message)
+    return `⚠️ Could not register automatically. Your Telegram id is ${telegramUserId} — send it to Charles.`
+  }
+
+  return `✅ Registered as "${name}" (Telegram id ${telegramUserId}). Your replies to customers will now be labeled with your name.`
 }
 
 /**

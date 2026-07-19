@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 import {
   handleCustomerMediaCallback,
+  postToTopic,
+  registerRelayOperator,
   rememberRelayGroup,
   relayTopicReplyToSms,
 } from '@/lib/telegram/relay'
@@ -111,6 +113,25 @@ export async function POST(request: NextRequest) {
     // Any group message is a chance to learn / refresh the group id.
     if (msg.chat.type === 'supergroup') {
       await rememberRelayGroup(supabase, msg.chat)
+    }
+
+    // `/whoami` — self-onboarding for a new operator. Registers the sender so
+    // their replies get labeled with their name, and confirms their Telegram id.
+    // Handled before the command filter below (which ignores "/" messages).
+    if (
+      msg.chat.type === 'supergroup' &&
+      typeof msg.text === 'string' &&
+      msg.text.trim().toLowerCase().startsWith('/whoami') &&
+      msg.from &&
+      !msg.from.is_bot
+    ) {
+      const reply = await registerRelayOperator({
+        supabase,
+        telegramUserId: msg.from.id,
+        fallbackName: msg.from.first_name ?? null,
+      })
+      await postToTopic(msg.chat.id, msg.message_thread_id, reply)
+      return ok
     }
 
     // Any relay operator's typed reply inside a customer topic becomes SMS.
