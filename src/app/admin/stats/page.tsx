@@ -24,6 +24,16 @@ import {
   ChevronDown,
   Mail,
 } from 'lucide-react'
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
 
 type OpsStats = {
   weekStart: string
@@ -116,9 +126,16 @@ type TechMonthRow = {
   profitAfterWages: number
 }
 
+type TechDayRow = Omit<TechMonthRow, 'month'> & {
+  date: string
+  profitPerHour: number
+  isLive: boolean
+}
+
 type TechPerformance = {
   staffUserId: string
   displayName: string
+  days: TechDayRow[]
   months: TechMonthRow[]
   totals: Omit<TechMonthRow, 'month'>
 }
@@ -163,6 +180,27 @@ type BusinessHealth = {
   }[]
   bookedOutScanDays: number
   reactivationEngineEnabled: boolean | null
+}
+
+type BookingFunnel = {
+  windowDays: number | null
+  steps: {
+    step: string
+    label: string
+    sessions: number
+    pctOfQuotes: number
+    droppedFromPrevious: number
+  }[]
+  quoteSessions: number
+  bookedSessions: number
+  quoteToBookRate: number
+  abandonedQuotes: number
+  abandonedQuoteValue: number
+  bookedQuoteValue: number
+  avgAbandonedQuote: number
+  biggestDropStep: string | null
+  biggestDropCount: number
+  topAbandonedReferrers: { referrer: string; sessions: number }[]
 }
 
 type LeadSourceRevenue = {
@@ -583,6 +621,200 @@ function DueRecleanTable({ rows }: { rows: DueRow[] }) {
   )
 }
 
+type ProfitabilityTooltipProps = {
+  active?: boolean
+  payload?: { payload: TechDayRow }[]
+}
+
+function ProfitabilityTooltip({ active, payload }: ProfitabilityTooltipProps) {
+  if (!active || !payload?.length) return null
+
+  const day = payload[0].payload
+  const hourValue = day.paidHours > 0 ? day.paidHours : day.jobHours
+  return (
+    <div className="border-border/80 bg-popover min-w-44 rounded-lg border p-3 text-xs shadow-xl">
+      <p className="mb-2 font-semibold">
+        {new Date(`${day.date}T12:00:00`).toLocaleDateString('en-US', {
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+        })}
+        {day.isLive && (
+          <span className="ml-2 text-[10px] font-medium text-emerald-400">
+            IN PROGRESS
+          </span>
+        )}
+      </p>
+      <div className="text-muted-foreground space-y-1">
+        <div className="flex justify-between gap-5">
+          <span>Revenue</span>
+          <span className="text-foreground font-medium">
+            {usd(day.revenue)}
+          </span>
+        </div>
+        <div className="flex justify-between gap-5">
+          <span>Gross wages</span>
+          <span className="text-foreground font-medium">
+            {usd(day.grossWages)}
+          </span>
+        </div>
+        <div className="flex justify-between gap-5">
+          <span>{day.paidHours > 0 ? 'Paid hours' : 'Job hours'}</span>
+          <span className="text-foreground font-medium">
+            {hourValue.toFixed(1)}
+          </span>
+        </div>
+        <div className="border-border mt-2 flex justify-between gap-5 border-t pt-2">
+          <span>Profit / hour</span>
+          <span
+            className={`font-semibold ${day.profitPerHour >= 0 ? 'text-emerald-400' : 'text-red-400'}`}
+          >
+            {usd(day.profitPerHour)}
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function DailyProfitabilityChart({ days }: { days: TechDayRow[] }) {
+  const [rangeDays, setRangeDays] = useState<7 | 30 | 90>(30)
+  const cutoff = new Date()
+  cutoff.setHours(0, 0, 0, 0)
+  cutoff.setDate(cutoff.getDate() - rangeDays + 1)
+  const cutoffKey = [
+    cutoff.getFullYear(),
+    String(cutoff.getMonth() + 1).padStart(2, '0'),
+    String(cutoff.getDate()).padStart(2, '0'),
+  ].join('-')
+  const visibleDays = days.filter((day) => day.date >= cutoffKey)
+  const chartData = visibleDays.map((day) => ({
+    ...day,
+    timestamp: new Date(`${day.date}T12:00:00`).getTime(),
+  }))
+  const latest = visibleDays[visibleDays.length - 1]
+
+  return (
+    <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
+      <div className="mb-1 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <h4 className="text-sm font-semibold">Daily Profit / Paid Hr</h4>
+            <span className="flex items-center gap-1 text-[10px] font-medium text-emerald-400">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+              LIVE
+            </span>
+          </div>
+          <p className="text-muted-foreground mt-1 text-xs">
+            Revenue minus gross wages, divided by paid hours.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          {latest && (
+            <div className="text-right">
+              <p
+                className={`text-lg leading-none font-bold ${latest.profitPerHour >= 0 ? 'text-emerald-400' : 'text-red-400'}`}
+              >
+                {usd(latest.profitPerHour)}/hr
+              </p>
+              <p className="text-muted-foreground mt-1 text-[10px]">
+                {latest.isLive ? 'today · in progress' : 'latest workday'}
+              </p>
+            </div>
+          )}
+          <div className="bg-muted/60 flex rounded-md p-0.5">
+            {([7, 30, 90] as const).map((range) => (
+              <button
+                key={range}
+                type="button"
+                onClick={() => setRangeDays(range)}
+                className={`rounded px-2 py-1 text-[11px] font-medium transition-colors ${
+                  rangeDays === range
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                aria-pressed={rangeDays === range}
+              >
+                {range}D
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {chartData.length > 0 ? (
+        <div
+          className="mt-4 h-52 w-full"
+          aria-label="Daily profit per hour chart"
+        >
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart
+              data={chartData}
+              margin={{ top: 6, right: 8, left: 0, bottom: 0 }}
+            >
+              <CartesianGrid
+                vertical={false}
+                strokeDasharray="3 3"
+                stroke="rgba(148,163,184,0.14)"
+              />
+              <XAxis
+                dataKey="timestamp"
+                type="number"
+                scale="time"
+                domain={['dataMin', 'dataMax']}
+                tickFormatter={(value: number) =>
+                  new Date(value).toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                  })
+                }
+                minTickGap={24}
+                axisLine={false}
+                tickLine={false}
+                tick={{ fill: 'currentColor', fontSize: 10 }}
+                className="text-muted-foreground"
+              />
+              <YAxis
+                tickFormatter={(value: number) => `$${Math.round(value)}`}
+                width={48}
+                axisLine={false}
+                tickLine={false}
+                tick={{ fill: 'currentColor', fontSize: 10 }}
+                className="text-muted-foreground"
+              />
+              <ReferenceLine
+                y={0}
+                stroke="rgba(248,113,113,0.55)"
+                strokeDasharray="4 4"
+              />
+              <Tooltip
+                content={<ProfitabilityTooltip />}
+                cursor={{ stroke: 'rgba(52,211,153,0.35)' }}
+              />
+              <Line
+                type="monotone"
+                dataKey="profitPerHour"
+                stroke="#34d399"
+                strokeWidth={2.5}
+                dot={{ r: 3, fill: '#34d399', strokeWidth: 0 }}
+                activeDot={{ r: 5, fill: '#34d399', strokeWidth: 0 }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      ) : (
+        <div className="text-muted-foreground flex h-40 items-center justify-center text-sm">
+          No work or timesheet activity in this range.
+        </div>
+      )}
+      <p className="text-muted-foreground mt-2 text-[10px]">
+        Refreshes every minute. Open shifts use live clock time; days without
+        activity are left blank.
+      </p>
+    </Card>
+  )
+}
+
 export default function StatsPage() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [stats, setStats] = useState<Stats | null>(null)
@@ -595,6 +827,7 @@ export default function StatsPage() {
   const [techPerf, setTechPerf] = useState<TechPerformance[]>([])
   const [health, setHealth] = useState<BusinessHealth | null>(null)
   const [sourceRevenue, setSourceRevenue] = useState<LeadSourceRevenue[]>([])
+  const [funnel, setFunnel] = useState<BookingFunnel | null>(null)
 
   // Quick entry form state
   const [showQuickEntry, setShowQuickEntry] = useState(false)
@@ -977,12 +1210,14 @@ export default function StatsPage() {
   }, [])
 
   useEffect(() => {
+    let active = true
+
     async function fetchTechPerf() {
       try {
         const res = await fetch('/api/admin/stats/tech-performance', {
           cache: 'no-store',
         })
-        if (res.ok) {
+        if (res.ok && active) {
           const json = (await res.json()) as { techs?: TechPerformance[] }
           setTechPerf(json.techs || [])
         }
@@ -991,6 +1226,11 @@ export default function StatsPage() {
       }
     }
     void fetchTechPerf()
+    const interval = window.setInterval(() => void fetchTechPerf(), 60_000)
+    return () => {
+      active = false
+      window.clearInterval(interval)
+    }
   }, [])
 
   useEffect(() => {
@@ -1024,7 +1264,18 @@ export default function StatsPage() {
       }
     }
     void fetchHealth()
+    async function fetchFunnel() {
+      try {
+        const res = await fetch('/api/admin/stats/booking-funnel?days=90', {
+          cache: 'no-store',
+        })
+        if (res.ok) setFunnel((await res.json()) as BookingFunnel)
+      } catch {
+        // Non-fatal — section hides
+      }
+    }
     void fetchSourceRevenue()
+    void fetchFunnel()
   }, [])
 
   useEffect(() => {
@@ -1961,6 +2212,8 @@ export default function StatsPage() {
                   </Card>
                 </div>
 
+                <DailyProfitabilityChart days={tech.days || []} />
+
                 {/* Monthly table */}
                 <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
                   <h4 className="mb-3 text-sm font-semibold">Month by Month</h4>
@@ -2189,6 +2442,176 @@ export default function StatsPage() {
 
           {health.retention.dueList.length > 0 && (
             <DueRecleanTable rows={health.retention.dueList} />
+          )}
+        </div>
+      )}
+
+      {/* Booking Widget Funnel */}
+      {funnel && funnel.steps.some((st) => st.sessions > 0) && (
+        <div className="mb-8">
+          <h2 className="text-gradient-blue mb-1 text-xl font-semibold tracking-tight">
+            Booking Tool Funnel
+          </h2>
+          <p className="text-muted-foreground mb-4 max-w-3xl text-sm leading-relaxed">
+            Website visitors who built a price estimate in the booking widget
+            versus those who finished booking — last {funnel.windowDays ?? 90}{' '}
+            days. A &quot;quote&quot; means they picked services and saw a
+            price.
+          </p>
+
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            <Card className="card-interactive animate-slide-up border-border/60 bg-card/80 p-4 backdrop-blur">
+              <div className="mb-1 flex items-center gap-2 text-cyan-400/80">
+                <Briefcase className="h-4 w-4" />
+                <p className="text-sm font-medium">Quotes Built</p>
+              </div>
+              <p className="stat-value text-2xl font-bold text-cyan-300">
+                {funnel.quoteSessions}
+              </p>
+              <p className="text-muted-foreground mt-0.5 text-xs">
+                visitors who saw a price
+              </p>
+            </Card>
+
+            <Card className="card-interactive animate-slide-up-delay-1 border-border/60 bg-card/80 p-4 backdrop-blur">
+              <div className="mb-1 flex items-center gap-2 text-emerald-400/80">
+                <CalendarCheck className="h-4 w-4" />
+                <p className="text-sm font-medium">Booked</p>
+              </div>
+              <p className="stat-value text-2xl font-bold text-emerald-300">
+                {funnel.bookedSessions}
+              </p>
+              <p className="text-muted-foreground mt-0.5 text-xs">
+                completed the booking
+              </p>
+            </Card>
+
+            <Card
+              className={`card-interactive animate-slide-up-delay-2 p-4 ${
+                funnel.quoteToBookRate >= 30
+                  ? 'border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950'
+                  : 'border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40'
+              }`}
+            >
+              <div className="mb-1 flex items-center gap-2 text-amber-600 dark:text-amber-400">
+                <Target className="h-4 w-4" />
+                <p className="text-sm font-medium">Quote → Book Rate</p>
+              </div>
+              <p
+                className={`stat-value text-2xl font-bold ${
+                  funnel.quoteToBookRate >= 30
+                    ? 'text-green-700 dark:text-green-400'
+                    : 'text-amber-700 dark:text-amber-400'
+                }`}
+              >
+                {funnel.quoteToBookRate.toFixed(1)}%
+              </p>
+              <p className="text-muted-foreground mt-0.5 text-xs">
+                {funnel.abandonedQuotes} walked away
+              </p>
+            </Card>
+
+            <Card className="card-interactive animate-slide-up-delay-3 border-red-200 bg-red-50 p-4 dark:border-red-900 dark:bg-red-950/40">
+              <div className="mb-1 flex items-center gap-2 text-red-700 dark:text-red-400">
+                <TrendingDown className="h-4 w-4" />
+                <p className="text-sm font-medium">Abandoned Quote Value</p>
+              </div>
+              <p className="stat-value text-2xl font-bold text-red-700 dark:text-red-400">
+                {formatCurrency(funnel.abandonedQuoteValue)}
+              </p>
+              <p className="text-muted-foreground mt-0.5 text-xs">
+                avg {formatCurrency(funnel.avgAbandonedQuote)} per lost quote
+              </p>
+            </Card>
+          </div>
+
+          {/* Step-by-step drop-off */}
+          <Card className="border-border/60 bg-card/80 mt-4 p-4 backdrop-blur">
+            <h4 className="mb-3 text-sm font-semibold">
+              Where People Drop Off
+            </h4>
+            <div className="space-y-2">
+              {(() => {
+                const maxSessions = Math.max(
+                  ...funnel.steps.map((st) => st.sessions),
+                  1,
+                )
+                return funnel.steps.map((st) => {
+                  const pct = Math.round((st.sessions / maxSessions) * 100)
+                  const isDropStep = st.step === funnel.biggestDropStep
+                  return (
+                    <div key={st.step} className="flex items-center gap-3">
+                      <div className="w-44 shrink-0 truncate text-xs">
+                        {st.label}
+                      </div>
+                      <div className="bg-muted h-5 flex-1 overflow-hidden rounded-full">
+                        <div
+                          className={`flex h-5 items-center rounded-full ${
+                            st.step === 'booked'
+                              ? 'bg-emerald-500/70'
+                              : 'bg-blue-500/60'
+                          }`}
+                          style={{ width: `${Math.max(pct, 3)}%` }}
+                        >
+                          <span className="truncate pr-1 pl-2 text-[10px] font-semibold whitespace-nowrap text-white">
+                            {st.sessions}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="w-14 shrink-0 text-right text-xs font-medium">
+                        {st.pctOfQuotes > 0 ? `${st.pctOfQuotes}%` : '—'}
+                      </div>
+                      <div className="w-24 shrink-0 text-right text-xs">
+                        {st.droppedFromPrevious > 0 ? (
+                          <span
+                            className={
+                              isDropStep
+                                ? 'font-semibold text-red-600 dark:text-red-400'
+                                : 'text-muted-foreground'
+                            }
+                          >
+                            −{st.droppedFromPrevious} lost
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })
+              })()}
+            </div>
+            {funnel.biggestDropStep && (
+              <p className="text-muted-foreground mt-3 text-xs">
+                Biggest leak: <strong>{funnel.biggestDropCount}</strong>{' '}
+                visitors quit at{' '}
+                <strong>
+                  {funnel.steps
+                    .find((st) => st.step === funnel.biggestDropStep)
+                    ?.label.toLowerCase()}
+                </strong>
+                .
+              </p>
+            )}
+          </Card>
+
+          {funnel.topAbandonedReferrers.length > 0 && (
+            <Card className="border-border/60 bg-card/80 mt-4 p-4 backdrop-blur">
+              <h4 className="mb-3 text-sm font-semibold">
+                Where Abandoned Quotes Came From
+              </h4>
+              <div className="space-y-2">
+                {funnel.topAbandonedReferrers.map((r) => (
+                  <div
+                    key={r.referrer}
+                    className="flex items-center justify-between text-sm"
+                  >
+                    <span className="truncate">{r.referrer}</span>
+                    <span className="font-semibold">{r.sessions}</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
           )}
         </div>
       )}
