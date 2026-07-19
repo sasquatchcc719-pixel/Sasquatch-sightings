@@ -28,9 +28,17 @@ export type TechMonthRow = {
   profitAfterWages: number
 }
 
+export type TechDayRow = Omit<TechMonthRow, 'month'> & {
+  date: string // YYYY-MM-DD
+  /** (revenue - grossWages) / paidHours (falls back to jobHours) */
+  profitPerHour: number
+  isLive: boolean
+}
+
 export type TechPerformance = {
   staffUserId: string
   displayName: string
+  days: TechDayRow[]
   months: TechMonthRow[]
   totals: Omit<TechMonthRow, 'month'>
 }
@@ -45,10 +53,63 @@ type TimesheetInput = {
   work_date: string
   payable_minutes: number
   gross_pay: number
+  isLive?: boolean
+}
+
+type StoredTimesheetInput = TimesheetInput & {
+  started_at?: string | null
+  break_minutes?: number | null
+  hourly_rate?: number | null
+  clock_state?: string | null
+  break_started_at?: string | null
 }
 
 const round1 = (n: number) => Math.round(n * 10) / 10
 const round2 = (n: number) => Math.round(n * 100) / 100
+
+export function timesheetInputAt(
+  timesheet: StoredTimesheetInput,
+  now: Date,
+): TimesheetInput {
+  const isLive = ['active', 'on_break'].includes(timesheet.clock_state || '')
+  if (!isLive || !timesheet.started_at) {
+    return {
+      work_date: timesheet.work_date,
+      payable_minutes: Number(timesheet.payable_minutes || 0),
+      gross_pay: Number(timesheet.gross_pay || 0),
+    }
+  }
+
+  const elapsedMinutes = Math.max(
+    0,
+    Math.round(
+      (now.getTime() - new Date(timesheet.started_at).getTime()) / 60_000,
+    ),
+  )
+  const activeBreakMinutes =
+    timesheet.clock_state === 'on_break' && timesheet.break_started_at
+      ? Math.max(
+          0,
+          Math.round(
+            (now.getTime() - new Date(timesheet.break_started_at).getTime()) /
+              60_000,
+          ),
+        )
+      : 0
+  const payableMinutes = Math.max(
+    0,
+    elapsedMinutes - Number(timesheet.break_minutes || 0) - activeBreakMinutes,
+  )
+
+  return {
+    work_date: timesheet.work_date,
+    payable_minutes: payableMinutes,
+    gross_pay: round2(
+      (payableMinutes / 60) * Number(timesheet.hourly_rate || 0),
+    ),
+    isLive: true,
+  }
+}
 
 function summarize(
   jobs: number,
@@ -70,6 +131,71 @@ function summarize(
       paidHours > 0 ? round1((jobHours / paidHours) * 100) : 0,
     profitAfterWages: round2(revenue - grossWages),
   }
+}
+
+export function buildTechDayRows(
+  appointments: ApptInput[],
+  timesheets: TimesheetInput[],
+): TechDayRow[] {
+  type Acc = {
+    jobs: number
+    revenue: number
+    jobHours: number
+    paidHours: number
+    grossWages: number
+    isLive: boolean
+  }
+  const byDay = new Map<string, Acc>()
+  const acc = (date: string): Acc => {
+    let a = byDay.get(date)
+    if (!a) {
+      a = {
+        jobs: 0,
+        revenue: 0,
+        jobHours: 0,
+        paidHours: 0,
+        grossWages: 0,
+        isLive: false,
+      }
+      byDay.set(date, a)
+    }
+    return a
+  }
+
+  for (const appt of appointments) {
+    const a = acc(appt.appointment_date.slice(0, 10))
+    a.jobs++
+    a.revenue += appt.revenue
+    a.jobHours += appt.hours
+  }
+  for (const ts of timesheets) {
+    const a = acc(ts.work_date.slice(0, 10))
+    a.paidHours += (ts.payable_minutes || 0) / 60
+    a.grossWages += ts.gross_pay || 0
+    a.isLive ||= !!ts.isLive
+  }
+
+  return [...byDay.entries()]
+    .sort((x, y) => (x[0] < y[0] ? -1 : 1))
+    .map(([date, a]) => {
+      const summary = summarize(
+        a.jobs,
+        a.revenue,
+        a.jobHours,
+        a.paidHours,
+        a.grossWages,
+      )
+      const hourBase = a.paidHours > 0 ? a.paidHours : a.jobHours
+      return {
+        date,
+        ...summary,
+        profitPerHour:
+          hourBase > 0
+            ? round2((summary.revenue - summary.grossWages) / hourBase)
+            : 0,
+        isLive: a.isLive,
+      }
+    })
 }
 
 export function buildTechMonthRows(
@@ -168,7 +294,9 @@ export async function loadTechPerformance(
 
     let tsQuery = supabase
       .from('ops_timesheet_entries')
-      .select('work_date, payable_minutes, gross_pay')
+      .select(
+        'work_date, payable_minutes, gross_pay, started_at, break_minutes, hourly_rate, clock_state, break_started_at',
+      )
       .eq('staff_user_id', tech.id)
     if (since) tsQuery = tsQuery.gte('work_date', since)
 
@@ -199,16 +327,19 @@ export async function loadTechPerformance(
         }
       })
 
-    const { months, totals } = buildTechMonthRows(
-      apptInputs,
-      (timesheets || []) as TimesheetInput[],
+    const now = new Date()
+    const timesheetInputs = ((timesheets || []) as StoredTimesheetInput[]).map(
+      (timesheet) => timesheetInputAt(timesheet, now),
     )
+    const { months, totals } = buildTechMonthRows(apptInputs, timesheetInputs)
+    const days = buildTechDayRows(apptInputs, timesheetInputs)
 
     if (months.length === 0) continue
 
     results.push({
       staffUserId: tech.id,
       displayName: tech.display_name,
+      days,
       months,
       totals,
     })
