@@ -56,12 +56,28 @@ type CalendarPipelineMonth = {
   bookedJobCount: number
 }
 
+type RevenueProjectionData = {
+  ytdActual: number
+  bookedRemainder: number
+  projectedRemainder: number
+  projectedAnnual: number
+  method: 'seasonal' | 'linear'
+  annualizedRunRate: number
+  elapsedShare: number
+  remainingShare: number
+  recentWindowLabel: string
+  recentWindowRevenue: number
+  seasonalityYears: number[]
+  bookedIsFloor: boolean
+}
+
 type CalendarPipeline = {
   year: number
   currentMonth: number
   totalCompleted: number
   totalBooked: number
   months: CalendarPipelineMonth[]
+  projection: RevenueProjectionData | null
 }
 
 type Settings = {
@@ -2836,36 +2852,106 @@ export default function StatsPage() {
 
         <Card className="mt-4 p-6">
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <p className="font-medium">Projected Annual Revenue</p>
-              <p className="text-2xl font-bold">
-                {formatCurrency(stats.pace.projectedAnnual)}
-              </p>
-            </div>
+            {(() => {
+              const proj = pipeline?.projection
+              const projected = proj
+                ? proj.projectedAnnual
+                : stats.pace.projectedAnnual
+              return (
+                <>
+                  <div className="flex items-center justify-between">
+                    <p className="font-medium">Projected Annual Revenue</p>
+                    <p className="text-2xl font-bold">
+                      {formatCurrency(projected)}
+                    </p>
+                  </div>
 
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <p className="text-muted-foreground">Progress to Goal</p>
-                <p className="font-medium">
-                  {stats.pace.percentOfGoal.toFixed(1)}%
-                </p>
-              </div>
-              <div className="bg-muted h-3 w-full rounded-full">
-                <div
-                  className={`h-3 rounded-full transition-all ${stats.pace.onPace ? 'bg-green-500' : 'bg-yellow-500'}`}
-                  style={{
-                    width: `${Math.min(stats.pace.percentOfGoal, 100)}%`,
-                  }}
-                />
-              </div>
-            </div>
+                  {proj && (
+                    <div className="bg-muted/40 space-y-2 rounded-lg p-3 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">
+                          Banked so far this year
+                        </span>
+                        <span className="font-medium">
+                          {formatCurrency(proj.ytdActual)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">
+                          Forecast for the rest of the year
+                        </span>
+                        <span className="font-medium">
+                          {formatCurrency(proj.projectedRemainder)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">
+                          — of which already booked
+                        </span>
+                        <span className="font-medium">
+                          {formatCurrency(proj.bookedRemainder)}
+                        </span>
+                      </div>
+                      <p className="text-muted-foreground border-t pt-2 leading-relaxed">
+                        {proj.method === 'seasonal' ? (
+                          <>
+                            Based on your{' '}
+                            <strong>{proj.recentWindowLabel}</strong> pace (
+                            {formatCurrency(proj.annualizedRunRate)}/yr at
+                            current staffing), spread across the rest of the
+                            year using real seasonality from{' '}
+                            {proj.seasonalityYears.join(', ')} QuickBooks
+                            history. Historically{' '}
+                            <strong>
+                              {Math.round(proj.remainingShare * 100)}%
+                            </strong>{' '}
+                            of a year&apos;s revenue still lands after today.
+                          </>
+                        ) : (
+                          <>
+                            Based on your{' '}
+                            <strong>{proj.recentWindowLabel}</strong> pace. No
+                            prior-year history available yet, so months are
+                            weighted equally.
+                          </>
+                        )}
+                        {proj.bookedIsFloor && (
+                          <>
+                            {' '}
+                            Booked work already exceeds the forecast, so the
+                            booked total is used.
+                          </>
+                        )}
+                      </p>
+                    </div>
+                  )}
 
-            {!stats.pace.onPace && (
-              <p className="text-sm text-yellow-600 dark:text-yellow-400">
-                Need to average {formatCurrency(stats.pace.weeklyTarget)} per
-                week to reach goal
-              </p>
-            )}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <p className="text-muted-foreground">Progress to Goal</p>
+                      <p className="font-medium">
+                        {stats.pace.percentOfGoal.toFixed(1)}%
+                      </p>
+                    </div>
+                    <div className="bg-muted h-3 w-full rounded-full">
+                      <div
+                        className={`h-3 rounded-full transition-all ${stats.pace.onPace ? 'bg-green-500' : 'bg-yellow-500'}`}
+                        style={{
+                          width: `${Math.min(stats.pace.percentOfGoal, 100)}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {!stats.pace.onPace && (
+                    <p className="text-sm text-yellow-600 dark:text-yellow-400">
+                      Need to average {formatCurrency(stats.pace.weeklyTarget)}{' '}
+                      per week to reach goal
+                    </p>
+                  )}
+                </>
+              )
+            })()}
           </div>
         </Card>
       </div>

@@ -2,6 +2,11 @@ import { NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { effectiveInvoiceAmount } from '@/lib/ops/utilization-metrics'
+import {
+  loadSeasonality,
+  projectAnnualRevenue,
+  type RevenueProjection,
+} from '@/lib/ops/revenue-projection'
 
 const MONTH_NAMES = [
   'January',
@@ -37,6 +42,8 @@ export type CalendarPipelineResponse = {
   totalCompleted: number
   totalBooked: number
   months: CalendarPipelineMonth[]
+  /** null when the projection could not be computed. */
+  projection: RevenueProjection | null
 }
 
 /** Pull the effective invoice amount off an appointment's joined invoice/lines. */
@@ -191,12 +198,33 @@ export async function GET() {
     const totalCompleted = buckets.reduce((s, b) => s + b.completedRevenue, 0)
     const totalBooked = buckets.reduce((s, b) => s + b.bookedRevenue, 0)
 
+    // Year-end projection from the same deduped monthly numbers, using real
+    // seasonality from QuickBooks history and the recent (current-staffing)
+    // run rate rather than a flat year-to-date average.
+    let projection: RevenueProjection | null = null
+    try {
+      const { seasonality, years } = await loadSeasonality(supabase, {
+        currentYear: year,
+      })
+      projection = projectAnnualRevenue({
+        monthlyCompleted: buckets.map((b) => b.completedRevenue),
+        monthlyBooked: buckets.map((b) => b.bookedRevenue),
+        seasonality,
+        seasonalityYears: years,
+        today,
+      })
+    } catch (projErr) {
+      // Never let the projection break the pipeline view.
+      console.error('[calendar-pipeline] projection failed', projErr)
+    }
+
     return NextResponse.json({
       year,
       currentMonth,
       totalCompleted,
       totalBooked,
       months: buckets,
+      projection,
     } satisfies CalendarPipelineResponse)
   } catch (error) {
     console.error('[calendar-pipeline][GET] Error:', error)
