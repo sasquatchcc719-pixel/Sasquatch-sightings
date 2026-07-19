@@ -191,9 +191,12 @@ type BookingFunnel = {
     pctOfQuotes: number
     droppedFromPrevious: number
   }[]
+  visitorSessions: number
   quoteSessions: number
   bookedSessions: number
   quoteToBookRate: number
+  visitToQuoteRate: number
+  visitToBookRate: number
   abandonedQuotes: number
   abandonedQuoteValue: number
   bookedQuoteValue: number
@@ -2447,20 +2450,47 @@ export default function StatsPage() {
       )}
 
       {/* Booking Widget Funnel */}
-      {funnel && funnel.steps.some((st) => st.sessions > 0) && (
+      {funnel && (
         <div className="mb-8">
           <h2 className="text-gradient-blue mb-1 text-xl font-semibold tracking-tight">
             Booking Tool Funnel
           </h2>
           <p className="text-muted-foreground mb-4 max-w-3xl text-sm leading-relaxed">
-            Website visitors who built a price estimate in the booking widget
-            versus those who finished booking — last {funnel.windowDays ?? 90}{' '}
-            days. A &quot;quote&quot; means they picked services and saw a
-            price.
+            Three numbers, last {funnel.windowDays ?? 90} days:{' '}
+            <strong>visitors</strong> to the site, <strong>quotes built</strong>{' '}
+            (they picked services and saw a price), and{' '}
+            <strong>jobs booked</strong>. Counts are unique browser sessions,
+            not page views.
           </p>
 
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          {funnel.steps.every((st) => st.sessions === 0) && (
+            <Card className="border-border/60 bg-card/80 mb-4 p-4 backdrop-blur">
+              <p className="text-sm font-medium">
+                Waiting for the first visitors
+              </p>
+              <p className="text-muted-foreground mt-1 text-xs">
+                Tracking went live on the website today. Nothing was recorded
+                before that, so this fills in as people visit over the next few
+                days. Give it a week before the conversion rates mean much.
+              </p>
+            </Card>
+          )}
+
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
             <Card className="card-interactive animate-slide-up border-border/60 bg-card/80 p-4 backdrop-blur">
+              <div className="mb-1 flex items-center gap-2 text-blue-400/80">
+                <TrendingUp className="h-4 w-4" />
+                <p className="text-sm font-medium">Site Visitors</p>
+              </div>
+              <p className="stat-value text-2xl font-bold text-blue-300">
+                {funnel.visitorSessions}
+              </p>
+              <p className="text-muted-foreground mt-0.5 text-xs">
+                unique visits to the website
+              </p>
+            </Card>
+
+            <Card className="card-interactive animate-slide-up-delay-1 border-border/60 bg-card/80 p-4 backdrop-blur">
               <div className="mb-1 flex items-center gap-2 text-cyan-400/80">
                 <Briefcase className="h-4 w-4" />
                 <p className="text-sm font-medium">Quotes Built</p>
@@ -2469,11 +2499,11 @@ export default function StatsPage() {
                 {funnel.quoteSessions}
               </p>
               <p className="text-muted-foreground mt-0.5 text-xs">
-                visitors who saw a price
+                {funnel.visitToQuoteRate}% of visitors
               </p>
             </Card>
 
-            <Card className="card-interactive animate-slide-up-delay-1 border-border/60 bg-card/80 p-4 backdrop-blur">
+            <Card className="card-interactive animate-slide-up-delay-2 border-border/60 bg-card/80 p-4 backdrop-blur">
               <div className="mb-1 flex items-center gap-2 text-emerald-400/80">
                 <CalendarCheck className="h-4 w-4" />
                 <p className="text-sm font-medium">Booked</p>
@@ -2482,12 +2512,12 @@ export default function StatsPage() {
                 {funnel.bookedSessions}
               </p>
               <p className="text-muted-foreground mt-0.5 text-xs">
-                completed the booking
+                {funnel.visitToBookRate}% of all visitors
               </p>
             </Card>
 
             <Card
-              className={`card-interactive animate-slide-up-delay-2 p-4 ${
+              className={`card-interactive animate-slide-up-delay-3 p-4 ${
                 funnel.quoteToBookRate >= 30
                   ? 'border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950'
                   : 'border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40'
