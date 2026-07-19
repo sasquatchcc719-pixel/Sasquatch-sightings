@@ -12,6 +12,7 @@ describe.skipIf(!url || !key)('loadTechPerformance (real DB)', () => {
     console.log('tech performance:', JSON.stringify(techs, null, 1))
     expect(techs.length).toBeGreaterThan(0)
     const david = techs[0]
+    expect(david.days.length).toBeGreaterThan(0)
     expect(david.months.length).toBeGreaterThan(0)
     expect(david.totals.revenue).toBeGreaterThan(0)
     expect(david.totals.grossWages).toBeGreaterThan(0)

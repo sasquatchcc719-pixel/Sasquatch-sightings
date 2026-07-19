@@ -5,7 +5,7 @@ import { loadTechPerformance } from '@/lib/ops/tech-performance'
 
 /**
  * Per-tech profitability: completed-job revenue and hours vs timesheet paid
- * hours and gross wages, grouped by month. Owner/admin only — wage data.
+ * hours and gross wages, grouped by day and month. Owner/admin only — wage data.
  */
 export async function GET() {
   try {
