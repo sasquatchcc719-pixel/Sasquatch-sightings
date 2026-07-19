@@ -2678,14 +2678,16 @@ export default function StatsPage() {
       {funnel && (
         <div className="mb-8">
           <h2 className="text-gradient-blue mb-1 text-xl font-semibold tracking-tight">
-            Booking Tool Funnel
+            Website Booking Funnel
           </h2>
           <p className="text-muted-foreground mb-4 max-w-3xl text-sm leading-relaxed">
             Three numbers, last {funnel.windowDays ?? 90} days:{' '}
             <strong>visitors</strong> to the site, <strong>quotes built</strong>{' '}
             (they picked services and saw a price), and{' '}
             <strong>jobs booked</strong>. Counts are unique browser sessions,
-            not page views.
+            not page views. <strong>sasquatchcarpet.com only</strong> — NFC
+            cards, partner locations, door hangers, phone and admin bookings are
+            not counted here.
           </p>
 
           {funnel.steps.every((st) => st.sessions === 0) && (
