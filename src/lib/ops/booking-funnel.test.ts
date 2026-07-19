@@ -32,7 +32,7 @@ describe('summarizeFunnel', () => {
       ev('c', 'widget_viewed'),
     ])
 
-    expect(s.steps[0].sessions).toBe(3) // widget_viewed
+    expect(s.steps[1].sessions).toBe(3) // widget_viewed
     expect(s.quoteSessions).toBe(2)
     expect(s.bookedSessions).toBe(1)
     expect(s.quoteToBookRate).toBe(50)
@@ -95,11 +95,26 @@ describe('summarizeFunnel', () => {
     ).toBe(true)
   })
 
+  it('computes visitor → quote → book rates', () => {
+    const s = summarizeFunnel([
+      ...Array.from({ length: 10 }, (_, i) => ev(`v${i}`, 'site_visit')),
+      ev('v0', 'quote_started', 300),
+      ev('v1', 'quote_started', 200),
+      ev('v0', 'booked', 300),
+    ])
+    expect(s.visitorSessions).toBe(10)
+    expect(s.quoteSessions).toBe(2)
+    expect(s.bookedSessions).toBe(1)
+    expect(s.visitToQuoteRate).toBe(20)
+    expect(s.visitToBookRate).toBe(10)
+    expect(s.quoteToBookRate).toBe(50)
+  })
+
   it('handles an empty dataset', () => {
     const s = summarizeFunnel([])
     expect(s.quoteSessions).toBe(0)
     expect(s.quoteToBookRate).toBe(0)
     expect(s.biggestDropStep).toBeNull()
-    expect(s.steps).toHaveLength(6)
+    expect(s.steps).toHaveLength(7)
   })
 })

@@ -22,7 +22,7 @@ describe.skipIf(!url || !key)('loadBookingFunnel (real DB)', () => {
         referrers: f.topAbandonedReferrers,
       }),
     )
-    expect(f.steps).toHaveLength(6)
+    expect(f.steps).toHaveLength(7)
     expect(f.quoteSessions).toBeGreaterThanOrEqual(0)
   }, 30000)
 })

@@ -10,6 +10,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
  */
 
 export const FUNNEL_STEPS = [
+  'site_visit',
   'widget_viewed',
   'quote_started',
   'calendar_viewed',
@@ -21,6 +22,7 @@ export const FUNNEL_STEPS = [
 export type FunnelStep = (typeof FUNNEL_STEPS)[number]
 
 export const FUNNEL_STEP_LABELS: Record<FunnelStep, string> = {
+  site_visit: 'Visited the website',
   widget_viewed: 'Opened the booking tool',
   quote_started: 'Built a quote (estimate)',
   calendar_viewed: 'Looked at the calendar',
@@ -47,10 +49,15 @@ export type BookingFunnelSummary = {
   sinceDate: string | null
   windowDays: number | null
   steps: FunnelStepSummary[]
+  visitorSessions: number
   quoteSessions: number
   bookedSessions: number
   /** booked / quote_started, as percent 0–100 — the headline number. */
   quoteToBookRate: number
+  /** quote_started / site_visit, as percent 0–100. */
+  visitToQuoteRate: number
+  /** booked / site_visit, as percent 0–100 — overall site conversion. */
+  visitToBookRate: number
   abandonedQuotes: number
   /** Sum of the best quote value for sessions that quoted but never booked. */
   abandonedQuoteValue: number
@@ -118,6 +125,7 @@ export function summarizeFunnel(
     }
   }
 
+  const visitorSessions = counts.get('site_visit') ?? 0
   const quoteSessions = counts.get('quote_started') ?? 0
   const bookedSessions = counts.get('booked') ?? 0
 
@@ -127,9 +135,9 @@ export function summarizeFunnel(
     const sessions = counts.get(step) ?? 0
     const previous = index > 0 ? (counts.get(FUNNEL_STEPS[index - 1]) ?? 0) : 0
     const dropped = index > 0 ? Math.max(previous - sessions, 0) : 0
-    // Only measure drop-off from the quote step onward — the gap between
-    // "opened the tool" and "built a quote" is browsing, not abandonment.
-    if (index > 1 && dropped > biggestDropCount) {
+    // Only measure drop-off from the quote step onward — the gaps from
+    // visiting the site and opening the tool are browsing, not abandonment.
+    if (index > 2 && dropped > biggestDropCount) {
       biggestDropCount = dropped
       biggestDropStep = step
     }
@@ -170,10 +178,17 @@ export function summarizeFunnel(
     sinceDate: options?.sinceDate ?? null,
     windowDays: options?.windowDays ?? null,
     steps: stepSummaries,
+    visitorSessions,
     quoteSessions,
     bookedSessions,
     quoteToBookRate:
       quoteSessions > 0 ? round1((bookedSessions / quoteSessions) * 100) : 0,
+    visitToQuoteRate:
+      visitorSessions > 0 ? round1((quoteSessions / visitorSessions) * 100) : 0,
+    visitToBookRate:
+      visitorSessions > 0
+        ? round1((bookedSessions / visitorSessions) * 100)
+        : 0,
     abandonedQuotes,
     abandonedQuoteValue: round2(abandonedQuoteValue),
     bookedQuoteValue: round2(bookedQuoteValue),
