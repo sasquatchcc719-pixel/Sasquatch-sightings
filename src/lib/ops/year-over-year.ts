@@ -20,7 +20,14 @@ export type YearSummary = {
   throughToday: number
   invoices: number
   invoicesThroughToday: number
+  /**
+   * Mean invoice value. Misleading on its own: a handful of large commercial
+   * invoices (e.g. Recovery Village) dominate it, so the mean FALLS as the
+   * regular customer base grows even when typical jobs get more valuable.
+   */
   avgTicket: number
+  /** Median invoice value — what a typical job is actually worth. */
+  medianTicket: number
   /** Growth of throughToday vs the prior year's throughToday, in percent. */
   ytdGrowthPct: number | null
   isCurrentYear: boolean
@@ -43,6 +50,15 @@ export type YearOverYear = {
 }
 
 const round0 = (n: number) => Math.round(n)
+
+function median(values: number[]): number {
+  if (values.length === 0) return 0
+  const sorted = [...values].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  return sorted.length % 2 === 1
+    ? sorted[mid]
+    : (sorted[mid - 1] + sorted[mid]) / 2
+}
 const round1 = (n: number) => Math.round(n * 10) / 10
 
 /** Years below this invoice count are too sparse to chart meaningfully. */
@@ -61,6 +77,7 @@ export function summarizeYearOverYear(
     throughToday: number
     invoices: number
     invoicesThroughToday: number
+    amounts: number[]
   }
   const byYear = new Map<number, Acc>()
 
@@ -79,11 +96,13 @@ export function summarizeYearOverYear(
         throughToday: 0,
         invoices: 0,
         invoicesThroughToday: 0,
+        amounts: [],
       }
       byYear.set(year, acc)
     }
     acc.fullYear += amount
     acc.invoices++
+    acc.amounts.push(amount)
     // Same calendar point: on or before today's month/day.
     if (month < todayMonth || (month === todayMonth && day <= todayDay)) {
       acc.throughToday += amount
@@ -108,6 +127,7 @@ export function summarizeYearOverYear(
       invoices: v.invoices,
       invoicesThroughToday: v.invoicesThroughToday,
       avgTicket: v.invoices > 0 ? round0(v.fullYear / v.invoices) : 0,
+      medianTicket: round0(median(v.amounts)),
       ytdGrowthPct,
       isCurrentYear: year === currentYear,
       // Flagged when the year's data starts late (e.g. QuickBooks adopted

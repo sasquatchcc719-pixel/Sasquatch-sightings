@@ -66,6 +66,20 @@ describe('summarizeYearOverYear', () => {
     expect(s.pctOfPriorFullYear).toBeNull()
   })
 
+  it('median ignores a few huge commercial invoices that skew the mean', () => {
+    // 20 typical $300 jobs + 2 giant $6,000 commercial invoices
+    const data = [
+      ...rows(2026, '03-01', 20, 300),
+      ...rows(2026, '03-02', 2, 6000),
+    ]
+    const s = summarizeYearOverYear(data, '2026-07-19')
+    const y = s.years[0]
+    // Mean is dragged far above what a typical job is worth...
+    expect(y.avgTicket).toBeGreaterThan(800)
+    // ...but the median still reports the real typical job.
+    expect(y.medianTicket).toBe(300)
+  })
+
   it('handles an empty dataset', () => {
     const s = summarizeYearOverYear([], '2026-07-19')
     expect(s.years).toEqual([])
