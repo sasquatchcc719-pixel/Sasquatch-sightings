@@ -229,6 +229,7 @@ type YearSummary = {
   invoices: number
   invoicesThroughToday: number
   avgTicket: number
+  medianTicket: number
   ytdGrowthPct: number | null
   isCurrentYear: boolean
 }
@@ -1767,8 +1768,12 @@ export default function StatsPage() {
                       <span className="w-20 shrink-0 text-right text-sm font-semibold">
                         {y.isCurrentYear ? '—' : formatCurrency(y.fullYear)}
                       </span>
-                      <span className="text-muted-foreground w-24 shrink-0 text-right text-xs">
-                        {y.invoices} jobs · {formatCurrency(y.avgTicket)} avg
+                      <span className="text-muted-foreground w-32 shrink-0 text-right text-xs">
+                        {y.invoices} jobs ·{' '}
+                        <span className="font-medium">
+                          {formatCurrency(y.medianTicket)}
+                        </span>{' '}
+                        typical
                       </span>
                     </div>
                   )
@@ -1776,8 +1781,11 @@ export default function StatsPage() {
               })()}
             </div>
             <p className="text-muted-foreground mt-3 border-t pt-3 text-xs leading-relaxed">
-              Average ticket has been drifting down as job volume climbs — worth
-              watching alongside the growth number.
+              &quot;Typical&quot; is the <strong>median</strong> invoice, not
+              the average. A few large commercial invoices (Recovery Village and
+              similar) pull the average around as their share of the customer
+              base changes — the median shows what a normal job is actually
+              worth, and it has risen every year.
             </p>
           </Card>
         </div>
