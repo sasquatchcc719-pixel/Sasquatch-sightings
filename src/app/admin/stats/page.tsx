@@ -222,6 +222,28 @@ type BookingFunnel = {
   topAbandonedReferrers: { referrer: string; sessions: number }[]
 }
 
+type YearSummary = {
+  year: number
+  fullYear: number
+  throughToday: number
+  invoices: number
+  invoicesThroughToday: number
+  avgTicket: number
+  ytdGrowthPct: number | null
+  isCurrentYear: boolean
+}
+
+type YearOverYear = {
+  years: YearSummary[]
+  currentYear: number
+  ytd: number
+  priorYtd: number
+  ytdGrowthPct: number | null
+  priorFullYear: number
+  pctOfPriorFullYear: number | null
+  asOfLabel: string
+}
+
 type LeadSourceRevenue = {
   lead_source: string
   booking_count: number
@@ -847,6 +869,7 @@ export default function StatsPage() {
   const [health, setHealth] = useState<BusinessHealth | null>(null)
   const [sourceRevenue, setSourceRevenue] = useState<LeadSourceRevenue[]>([])
   const [funnel, setFunnel] = useState<BookingFunnel | null>(null)
+  const [history, setHistory] = useState<YearOverYear | null>(null)
 
   // Quick entry form state
   const [showQuickEntry, setShowQuickEntry] = useState(false)
@@ -1293,8 +1316,22 @@ export default function StatsPage() {
         // Non-fatal — section hides
       }
     }
+    async function fetchHistory() {
+      try {
+        const res = await fetch('/api/admin/stats/year-over-year', {
+          cache: 'no-store',
+        })
+        if (res.ok) {
+          const json = (await res.json()) as { history?: YearOverYear | null }
+          setHistory(json.history ?? null)
+        }
+      } catch {
+        // Non-fatal — section hides
+      }
+    }
     void fetchSourceRevenue()
     void fetchFunnel()
+    void fetchHistory()
   }, [])
 
   useEffect(() => {
@@ -1581,6 +1618,170 @@ export default function StatsPage() {
           </Card>
         )}
       </div>
+
+      {/* Year over Year — from imported QuickBooks history */}
+      {history && history.years.length > 1 && (
+        <div className="mb-8">
+          <h2 className="text-gradient-purple mb-1 text-xl font-semibold tracking-tight">
+            Year Over Year
+          </h2>
+          <p className="text-muted-foreground mb-4 max-w-3xl text-sm leading-relaxed">
+            Every year compared at the{' '}
+            <strong>same point on the calendar</strong> (through{' '}
+            {history.asOfLabel}), so a partial year isn&apos;t judged against
+            finished ones. From your QuickBooks invoice history.
+          </p>
+
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            <Card className="card-interactive animate-slide-up border-border/60 bg-card/80 p-4 backdrop-blur">
+              <div className="mb-1 flex items-center gap-2 text-emerald-400/80">
+                <DollarSign className="h-4 w-4" />
+                <p className="text-sm font-medium">
+                  {history.currentYear} So Far
+                </p>
+              </div>
+              <p className="stat-value text-2xl font-bold text-emerald-300">
+                {formatCurrency(history.ytd)}
+              </p>
+              <p className="text-muted-foreground mt-0.5 text-xs">
+                through {history.asOfLabel}
+              </p>
+            </Card>
+
+            <Card className="card-interactive animate-slide-up-delay-1 border-border/60 bg-card/80 p-4 backdrop-blur">
+              <div className="mb-1 flex items-center gap-2 text-slate-400/80">
+                <CalendarDays className="h-4 w-4" />
+                <p className="text-sm font-medium">
+                  {history.currentYear - 1} Same Point
+                </p>
+              </div>
+              <p className="stat-value text-2xl font-bold text-slate-300">
+                {formatCurrency(history.priorYtd)}
+              </p>
+              <p className="text-muted-foreground mt-0.5 text-xs">
+                finished the year at {formatCurrency(history.priorFullYear)}
+              </p>
+            </Card>
+
+            {history.ytdGrowthPct !== null && (
+              <Card
+                className={`card-interactive animate-slide-up-delay-2 p-4 ${
+                  history.ytdGrowthPct >= 0
+                    ? 'border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950'
+                    : 'border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/40'
+                }`}
+              >
+                <div
+                  className={`mb-1 flex items-center gap-2 ${
+                    history.ytdGrowthPct >= 0
+                      ? 'text-green-700 dark:text-green-400'
+                      : 'text-red-700 dark:text-red-400'
+                  }`}
+                >
+                  {history.ytdGrowthPct >= 0 ? (
+                    <TrendingUp className="h-4 w-4" />
+                  ) : (
+                    <TrendingDown className="h-4 w-4" />
+                  )}
+                  <p className="text-sm font-medium">Growth</p>
+                </div>
+                <p
+                  className={`stat-value text-2xl font-bold ${
+                    history.ytdGrowthPct >= 0
+                      ? 'text-green-700 dark:text-green-400'
+                      : 'text-red-700 dark:text-red-400'
+                  }`}
+                >
+                  {history.ytdGrowthPct >= 0 ? '+' : ''}
+                  {history.ytdGrowthPct}%
+                </p>
+                <p className="text-muted-foreground mt-0.5 text-xs">
+                  vs this time last year
+                </p>
+              </Card>
+            )}
+
+            {history.pctOfPriorFullYear !== null && (
+              <Card className="card-interactive animate-slide-up-delay-3 border-border/60 bg-card/80 p-4 backdrop-blur">
+                <div className="mb-1 flex items-center gap-2 text-amber-400/80">
+                  <Target className="h-4 w-4" />
+                  <p className="text-sm font-medium">
+                    vs All of {history.currentYear - 1}
+                  </p>
+                </div>
+                <p className="stat-value text-2xl font-bold text-amber-300">
+                  {history.pctOfPriorFullYear}%
+                </p>
+                <p className="text-muted-foreground mt-0.5 text-xs">
+                  of last year&apos;s entire total, already
+                </p>
+              </Card>
+            )}
+          </div>
+
+          {/* Per-year bars */}
+          <Card className="border-border/60 bg-card/80 mt-4 p-4 backdrop-blur">
+            <h4 className="mb-1 text-sm font-semibold">Revenue by Year</h4>
+            <p className="text-muted-foreground mb-4 text-xs">
+              <span className="inline-block h-2 w-3 rounded-sm bg-slate-400/60 align-middle" />{' '}
+              Full year&nbsp;&nbsp;
+              <span className="inline-block h-2 w-3 rounded-sm bg-emerald-400/80 align-middle" />{' '}
+              Through {history.asOfLabel}
+            </p>
+            <div className="space-y-3">
+              {(() => {
+                const maxVal = Math.max(
+                  ...history.years.map((y) => y.fullYear),
+                  1,
+                )
+                return history.years.map((y) => {
+                  const fullPct = Math.round((y.fullYear / maxVal) * 100)
+                  const ytdPct = Math.round((y.throughToday / maxVal) * 100)
+                  return (
+                    <div key={y.year} className="flex items-center gap-3">
+                      <span
+                        className={`w-12 shrink-0 text-right text-xs ${
+                          y.isCurrentYear
+                            ? 'font-bold text-emerald-400'
+                            : 'text-muted-foreground font-medium'
+                        }`}
+                      >
+                        {y.year}
+                      </span>
+                      <div className="relative h-5 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                        {!y.isCurrentYear && (
+                          <div
+                            className="absolute inset-y-0 left-0 rounded-full bg-slate-400/50"
+                            style={{ width: `${fullPct}%` }}
+                          />
+                        )}
+                        <div
+                          className="absolute inset-y-0 left-0 flex items-center rounded-full bg-emerald-500/70"
+                          style={{ width: `${Math.max(ytdPct, 2)}%` }}
+                        >
+                          <span className="truncate pr-1 pl-2 text-[10px] font-semibold whitespace-nowrap text-white">
+                            {formatCurrency(y.throughToday)}
+                          </span>
+                        </div>
+                      </div>
+                      <span className="w-20 shrink-0 text-right text-sm font-semibold">
+                        {y.isCurrentYear ? '—' : formatCurrency(y.fullYear)}
+                      </span>
+                      <span className="text-muted-foreground w-24 shrink-0 text-right text-xs">
+                        {y.invoices} jobs · {formatCurrency(y.avgTicket)} avg
+                      </span>
+                    </div>
+                  )
+                })
+              })()}
+            </div>
+            <p className="text-muted-foreground mt-3 border-t pt-3 text-xs leading-relaxed">
+              Average ticket has been drifting down as job volume climbs — worth
+              watching alongside the growth number.
+            </p>
+          </Card>
+        </div>
+      )}
 
       {/* ── Calendar Pipeline ─────────────────────────────────────────── */}
       <div className="mb-8">
