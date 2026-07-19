@@ -7,6 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { loadPartnerLiveStats } from '@/lib/ops/partner-stats'
 import { createAdminClient } from '@/supabase/server'
 import { getUserWithRole } from '@/lib/auth'
 
@@ -136,7 +137,24 @@ export async function GET() {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    return NextResponse.json({ partners: data })
+    // Replace the drift-prone denormalized counters with live counts from
+    // the raw tables, so the dashboard shows what actually happened. The
+    // response shape is unchanged: total_taps/total_conversions are simply
+    // real numbers now, plus live revenue/engagement extras.
+    const live = await loadPartnerLiveStats(supabase)
+    const partners = (data || []).map((partner) => {
+      const stats = live.get(String(partner.id))
+      return {
+        ...partner,
+        total_taps: stats?.taps ?? 0,
+        total_conversions: stats?.bookings ?? 0,
+        engaged_taps: stats?.engagedTaps ?? 0,
+        completed_bookings: stats?.completedBookings ?? 0,
+        attributed_revenue: Math.round((stats?.revenue ?? 0) * 100) / 100,
+      }
+    })
+
+    return NextResponse.json({ partners })
   } catch (error) {
     console.error('Error fetching location partners:', error)
     return NextResponse.json(

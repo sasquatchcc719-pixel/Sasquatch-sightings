@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { firstTouchForCustomer } from '@/lib/ops/attribution'
 import {
   applyAppointmentBuffer,
   calculateAppointmentDurationFromTotal,
@@ -465,6 +466,13 @@ export async function generateRecurringAppointments(
   const discountAmount = Math.max(0, Number(template.discount_amount || 0))
   const quotedTotal = Math.max(0, quotedSubtotal - discountAmount)
 
+  // The customer's first-touch source, stamped on every generated visit so
+  // recurring revenue stays visible in lead-source analytics (it used to be
+  // generated with all attribution columns NULL).
+  const inheritedLeadSource = template.customer_id
+    ? await firstTouchForCustomer(supabase, template.customer_id)
+    : null
+
   for (const { date, startTime } of uniqueDates) {
     const rule = dateToRule.get(date)
     if (!rule) {
@@ -513,6 +521,7 @@ export async function generateRecurringAppointments(
           recurring_template_id: templateId,
           booking_channel: template.booking_channel || 'recurring',
           source: 'recurring_generation',
+          ...(inheritedLeadSource ?? {}),
           status: 'booked',
           payment_status: 'unpaid',
           quickbooks_sync_status:

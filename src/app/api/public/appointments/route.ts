@@ -233,6 +233,7 @@ export async function POST(request: NextRequest) {
       ? String(body.promo_code).toUpperCase().trim()
       : null
     let promoCodeId: string | null = null
+    let appliedPromoCode: string | null = null
 
     if (promoCode) {
       const { data: promo } = await supabase
@@ -270,7 +271,30 @@ export async function POST(request: NextRequest) {
           Number(promo.discount_amount),
         )
         promoCodeId = promo.id
+        appliedPromoCode = String(promoCode).toUpperCase()
       }
+    }
+
+    // --- Partner attribution ---
+    // A booking belongs to a partner location when the landing page passed
+    // partner_id, or when the promo code IS a partner's coupon (MILA20 etc).
+    let partnerId: string | null = null
+    const requestedPartnerId = String(body.appointment?.partner_id || '').trim()
+    if (/^[0-9a-f-]{36}$/i.test(requestedPartnerId)) {
+      const { data: partnerRow } = await supabase
+        .from('partners')
+        .select('id')
+        .eq('id', requestedPartnerId)
+        .maybeSingle()
+      partnerId = partnerRow?.id ?? null
+    }
+    if (!partnerId && appliedPromoCode) {
+      const { data: couponPartner } = await supabase
+        .from('partners')
+        .select('id')
+        .ilike('coupon_code', appliedPromoCode)
+        .maybeSingle()
+      partnerId = couponPartner?.id ?? null
     }
 
     // --- Find or create customer ---
@@ -453,6 +477,7 @@ export async function POST(request: NextRequest) {
         ...leadSourceUpdatePayload(normalizedLeadSource.source),
         kind: 'service',
         assigned_staff_user_id: assignedStaffUserId,
+        partner_id: partnerId,
       })
       .select('id')
       .single()
@@ -477,16 +502,29 @@ export async function POST(request: NextRequest) {
           ? requestedPercentageDiscount.scope
           : null,
         percentage_discount_amount: percentageDiscountAmount,
-        discount_metadata: rugDiscountEligible
-          ? {
-              multi_rug: {
-                rug_units: rugUnitCount,
-                rug_subtotal: Number(
-                  percentageDiscountScopeSubtotal.toFixed(2),
-                ),
-              },
-            }
-          : {},
+        // Which code produced the discount is stored here so per-code ROI
+        // (which jobs, how much revenue) is queryable — use_count alone is
+        // just a global counter.
+        discount_metadata: {
+          ...(rugDiscountEligible
+            ? {
+                multi_rug: {
+                  rug_units: rugUnitCount,
+                  rug_subtotal: Number(
+                    percentageDiscountScopeSubtotal.toFixed(2),
+                  ),
+                },
+              }
+            : {}),
+          ...(appliedPromoCode
+            ? {
+                promo: {
+                  code: appliedPromoCode,
+                  amount: Number(discountAmount.toFixed(2)),
+                },
+              }
+            : {}),
+        },
         total,
         status: 'draft',
         sync_status: 'pending',

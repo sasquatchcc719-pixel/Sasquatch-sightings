@@ -19,6 +19,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { normalizeLeadSource } from '@/lib/lead-sources'
 import { applyAppointmentBuffer } from '@/lib/ops/availability'
 import { getStaffPrioritizedSlots } from '@/lib/ops/staff-availability'
 import { sendAdminSMS } from '@/lib/twilio'
@@ -260,7 +261,19 @@ export async function createAiStyleEstimate(
       payment_status: 'unpaid',
       booking_channel: bookingChannel,
       source: sourceLabel,
-      lead_source: leadSource,
+      // Normalize so estimates carry the same structured attribution as
+      // bookings — conversion then inherits the full set of columns.
+      ...(leadSource
+        ? (() => {
+            const n = normalizeLeadSource(leadSource)
+            return {
+              lead_source: n.lead_source,
+              lead_source_key: n.source_key,
+              lead_source_detail: n.lead_source_detail,
+              original_lead_source: n.original_lead_source,
+            }
+          })()
+        : { lead_source: null }),
       kind: 'estimate',
       estimate_status: 'draft',
       quickbooks_sync_status: 'held',
