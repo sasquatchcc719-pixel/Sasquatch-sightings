@@ -55,6 +55,9 @@ export interface NfcBookingWidgetProps {
   /** Where this booking came from, for stats — e.g. a partner location name.
    *  Falls back to the NFC card id, then a generic label. */
   leadSourceDetail?: string
+  /** Partner location id — stamps partner_id on the booking for per-vendor
+   *  attribution. */
+  partnerId?: string
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -688,6 +691,7 @@ function MiniCalendar({
 
 export function NfcBookingWidget({
   couponCode,
+  partnerId,
   cardId,
   onTrackClick,
   leadSourceDetail,
@@ -971,6 +975,7 @@ export function NfcBookingWidget({
         start_time: selectedSlot!.start_time,
         lead_source_key: 'nfc_partner',
         lead_source_detail: leadSourceDetail || cardId || 'NFC card',
+        partner_id: partnerId || undefined,
       },
       line_items: lineItems,
       percentage_discount:

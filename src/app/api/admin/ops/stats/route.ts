@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { effectiveInvoiceAmount } from '@/lib/ops/utilization-metrics'
+import { loadAttributionRows, resolveAttribution } from '@/lib/ops/attribution'
+import { CANONICAL_LEAD_SOURCE_OPTIONS } from '@/lib/lead-sources'
 
 function getWeekBounds(): { weekStart: string; weekEnd: string } {
   const now = new Date()
@@ -87,11 +89,31 @@ export async function GET() {
       statusCounts[s] = (statusCounts[s] ?? 0) + 1
     }
 
-    // Lead source breakdown
+    // Lead source breakdown — same attribution engine as the revenue page,
+    // so the weekly card and the YTD revenue card can never disagree on
+    // grouping. First-touch: repeat/recurring jobs count under the channel
+    // that originally won the customer.
     const leadSourceCounts: Record<string, number> = {}
-    for (const appt of rows) {
-      const src = appt.lead_source ? String(appt.lead_source) : 'Unknown'
-      leadSourceCounts[src] = (leadSourceCounts[src] ?? 0) + 1
+    try {
+      const attributionRows = await loadAttributionRows(supabase)
+      const resolved = resolveAttribution(attributionRows)
+      const weekIds = new Set(rows.map((r) => String(r.id)))
+      for (const row of attributionRows) {
+        if (!weekIds.has(row.id)) continue
+        const key = resolved.get(row.id)?.key ?? 'unattributed'
+        const label =
+          key === 'unattributed'
+            ? 'Unattributed'
+            : (CANONICAL_LEAD_SOURCE_OPTIONS.find((o) => o.source_key === key)
+                ?.customer_label ?? key)
+        leadSourceCounts[label] = (leadSourceCounts[label] ?? 0) + 1
+      }
+    } catch {
+      // Fallback: raw field, so the card still renders if attribution fails.
+      for (const appt of rows) {
+        const src = appt.lead_source ? String(appt.lead_source) : 'Unknown'
+        leadSourceCounts[src] = (leadSourceCounts[src] ?? 0) + 1
+      }
     }
 
     // Average ticket

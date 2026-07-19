@@ -465,6 +465,7 @@ END:VCARD`
               couponCode={displayCouponCode}
               cardId={null}
               onTrackClick={onTrackClick}
+              partnerId={partner?.id ?? undefined}
               leadSourceDetail={
                 partner?.location_name ?? partner?.company_name ?? undefined
               }

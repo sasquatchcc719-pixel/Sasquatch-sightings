@@ -73,6 +73,9 @@ export async function POST(
           converted_appointment_id,
           internal_notes,
           lead_source,
+          lead_source_key,
+          lead_source_detail,
+          original_lead_source,
           ops_customers!ops_appointments_customer_id_fkey (
             id,
             full_name,
@@ -183,7 +186,12 @@ export async function POST(
         quickbooks_sync_status: syncStatus,
         quoted_total: Number(total.toFixed(2)),
         internal_notes: estimate.internal_notes ?? null,
+        // Carry full attribution — converting used to keep only the raw
+        // label and drop the structured key/detail.
         lead_source: estimate.lead_source ?? null,
+        lead_source_key: estimate.lead_source_key ?? null,
+        lead_source_detail: estimate.lead_source_detail ?? null,
+        original_lead_source: estimate.original_lead_source ?? null,
       })
       .select('id')
       .single()

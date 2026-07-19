@@ -5,6 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { loadPartnerLiveStats } from '@/lib/ops/partner-stats'
 import { createAdminClient } from '@/supabase/server'
 
 export async function POST(request: NextRequest) {
@@ -39,6 +40,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid PIN' }, { status: 401 })
     }
 
+    // Live stats from raw tables (the stored counters drift — see
+    // src/lib/ops/partner-stats.ts).
+    const liveStats = (await loadPartnerLiveStats(supabase)).get(
+      String(partner.id),
+    )
+
     // Return partner stats (without PIN)
     return NextResponse.json({
       success: true,
@@ -47,8 +54,8 @@ export async function POST(request: NextRequest) {
         name: partner.location_name || partner.company_name,
         phone: partner.phone,
         creditBalance: partner.credit_balance || 0,
-        totalTaps: partner.total_taps || 0,
-        totalConversions: partner.total_conversions || 0,
+        totalTaps: liveStats?.taps ?? 0,
+        totalConversions: liveStats?.bookings ?? 0,
         // Add chart data
         tapHistory: await getTapHistory(supabase, partner.id),
       },
