@@ -134,7 +134,7 @@ export default function SmsOutboxPage() {
       {loading ? (
         <p className="text-sm text-white/40">Loading...</p>
       ) : filteredMessages.length === 0 ? (
-        <Card className="p-8 text-center text-sm text-white/40">
+        <Card className="text-muted-foreground p-8 text-center text-sm">
           No Operations SMS logged yet. If texts are sending, check Twilio logs;
           if SMS was skipped (no Twilio env), nothing is stored here.
         </Card>
@@ -160,14 +160,14 @@ export default function SmsOutboxPage() {
                     {TYPE_LABELS[row.message_type] || row.message_type}
                   </Badge>
                 </div>
-                <p className="mt-2 text-xs break-words whitespace-pre-wrap text-white/60">
+                <p className="text-muted-foreground mt-2 text-xs break-words whitespace-pre-wrap">
                   {row.message_content}
                 </p>
                 {row.status === 'failed' ? (
                   <p className="mt-1 text-xs text-red-400">Delivery failed</p>
                 ) : null}
               </div>
-              <span className="shrink-0 text-xs text-white/30">
+              <span className="text-muted-foreground shrink-0 text-xs">
                 {new Date(row.sent_at).toLocaleString('en-US', {
                   month: 'short',
                   day: 'numeric',
