@@ -103,11 +103,23 @@ export function buildReviewRequestMessage(
     ''
   ).trim()
   const greeting = first ? `Hi ${first}, it's` : "Hi, it's"
+
+  // TEMPORARY (2026-07-20): The Google Business Profile is down, so the review
+  // link below points customers at a broken page. Until it's back up we send a
+  // neutral thank-you instead — no link. The review-request wording is kept
+  // verbatim in the block below; to restore, delete this neutral return and
+  // uncomment the original review-request return. See GOOGLE_REVIEW_URL.
   return (
-    `${greeting} Charles with Sasquatch Carpet Cleaning. Thanks for having us out! ` +
-    `If you were happy with your clean, a quick Google review makes a huge difference ` +
-    `for our small local business: ${GOOGLE_REVIEW_URL}`
+    `${greeting} Charles with Sasquatch Carpet Cleaning. Thanks for choosing us! ` +
+    `We appreciate your business and look forward to serving you again.`
   )
+
+  // --- RESTORE WHEN GOOGLE BUSINESS PROFILE IS BACK UP ---
+  // return (
+  //   `${greeting} Charles with Sasquatch Carpet Cleaning. Thanks for having us out! ` +
+  //   `If you were happy with your clean, a quick Google review makes a huge difference ` +
+  //   `for our small local business: ${GOOGLE_REVIEW_URL}`
+  // )
 }
 
 /**
