@@ -79,6 +79,10 @@
     {
       "path": "/api/cron/inventory-alerts",
       "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/cron/maintenance-check",
+      "schedule": "15 14 * * *"
     }
   ],
   "redirects": []

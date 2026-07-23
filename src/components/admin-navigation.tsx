@@ -185,6 +185,13 @@ export function AdminNavigation() {
       active: pathname === '/admin/chemicals',
       description: 'Truck chemical inventory & AI assistant specs',
     },
+    {
+      name: 'Fleet',
+      href: '/admin/fleet',
+      icon: Truck,
+      active: pathname === '/admin/fleet',
+      description: 'Vehicles, meters, and maintenance intervals',
+    },
   ]
 
   // Marketing group (leads, vendors, partners, cards, contest)

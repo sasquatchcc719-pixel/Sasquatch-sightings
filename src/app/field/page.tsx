@@ -267,9 +267,15 @@ export default async function FieldPage({ searchParams }: FieldPageProps) {
           </Link>
           <Link
             href="/field/inventory"
-            className="col-span-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-3 text-center text-sm font-semibold text-amber-300"
+            className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-3 text-center text-sm font-semibold text-amber-300"
           >
             📦 Truck inventory
+          </Link>
+          <Link
+            href="/field/checkin"
+            className="rounded-xl border border-sky-500/30 bg-sky-500/10 px-3 py-3 text-center text-sm font-semibold text-sky-300"
+          >
+            🚐 Morning check-in
           </Link>
           <Link
             href="/tech"
