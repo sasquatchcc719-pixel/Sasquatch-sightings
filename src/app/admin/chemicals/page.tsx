@@ -41,6 +41,7 @@ const STATUS_META: Record<
 }
 
 type EditState = {
+  image_url: string
   ph_range: string
   dilution_hydroforce: string
   dilution_pump_sprayer: string
@@ -53,6 +54,7 @@ type EditState = {
 
 function toEditState(p: ChemicalProduct): EditState {
   return {
+    image_url: p.image_url ?? '',
     ph_range: p.ph_range ?? '',
     dilution_hydroforce: p.dilution_hydroforce ?? '',
     dilution_pump_sprayer: p.dilution_pump_sprayer ?? '',
@@ -71,6 +73,7 @@ function fromEditState(e: EditState) {
       .map((x) => x.trim())
       .filter(Boolean)
   return {
+    image_url: e.image_url.trim() || null,
     ph_range: e.ph_range.trim() || null,
     dilution_hydroforce: e.dilution_hydroforce.trim() || null,
     dilution_pump_sprayer: e.dilution_pump_sprayer.trim() || null,
@@ -282,6 +285,14 @@ export default function ChemicalsPage() {
                     className="flex min-w-0 flex-1 items-center gap-2 text-left"
                     onClick={() => toggleExpand(p)}
                   >
+                    {p.image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={p.image_url}
+                        alt=""
+                        className="h-12 w-12 shrink-0 rounded-md bg-white object-contain p-0.5"
+                      />
+                    ) : null}
                     <span className="truncate text-sm font-medium">
                       {p.name}
                       {p.brand ? (
@@ -416,6 +427,17 @@ export default function ChemicalsPage() {
                         />
                       </label>
                     </div>
+                    <label className="block text-xs">
+                      <span className="text-muted-foreground">
+                        Image URL (product photo for bottle matching)
+                      </span>
+                      <Input
+                        value={edit.image_url}
+                        onChange={(e) =>
+                          setEdit({ ...edit, image_url: e.target.value })
+                        }
+                      />
+                    </label>
                     <label className="block text-xs">
                       <span className="text-muted-foreground">
                         Notes (your own — e.g. which truck, metering tip color)

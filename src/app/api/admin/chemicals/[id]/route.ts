@@ -14,6 +14,7 @@ const EDITABLE_FIELDS = [
   'brand',
   'item_type',
   'in_stock',
+  'image_url',
   'ph_range',
   'dilution_hydroforce',
   'dilution_pump_sprayer',

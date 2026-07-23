@@ -87,10 +87,43 @@ export async function scrapeProductSpecs(
   })
 
   const parsed = parseSpecsJson(text)
-  return { ...parsed, source_urls: readable.map((p) => p.url) }
+  const image_url = await extractProductImage(readable.map((p) => p.url))
+  return { ...parsed, image_url, source_urls: readable.map((p) => p.url) }
 }
 
-function parseSpecsJson(raw: string): Omit<ScrapedSpecs, 'source_urls'> {
+/**
+ * Pull a product photo from the first supplier page that yields one, so techs
+ * can visually match the bottle. Tries og:image, then the first
+ * catalog/product image (Magento-style stores like Interlink Supply).
+ */
+async function extractProductImage(urls: string[]): Promise<string | null> {
+  for (const url of urls.slice(0, 2)) {
+    try {
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SasquatchBot)' },
+        signal: AbortSignal.timeout(15_000),
+      })
+      if (!res.ok) continue
+      const html = await res.text()
+      const og = html.match(
+        /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i,
+      )
+      const candidate =
+        og?.[1] ??
+        html.match(
+          /https?:\/\/[^"'\s]+\/(?:media\/catalog\/product|cdn\/shop)\/[^"'\s]+\.(?:png|jpe?g|webp)[^"'\s]*/i,
+        )?.[0]
+      if (candidate) return candidate.replace(/^http:\/\//, 'https://')
+    } catch {
+      // try the next source page
+    }
+  }
+  return null
+}
+
+function parseSpecsJson(
+  raw: string,
+): Omit<ScrapedSpecs, 'source_urls' | 'image_url'> {
   const cleaned = raw
     .trim()
     .replace(/^```(?:json)?/i, '')

@@ -27,6 +27,8 @@ export type ChemicalProduct = {
   /** chemicals get dilution/pH specs; supplies/equipment are gear the assistant can reference */
   item_type: 'chemical' | 'supply' | 'equipment'
   in_stock: boolean
+  /** product photo from the supplier page, for visual bottle matching */
+  image_url: string | null
   ph_range: string | null
   dilution_hydroforce: string | null
   dilution_pump_sprayer: string | null
@@ -44,6 +46,7 @@ export type ChemicalProduct = {
 
 /** What the web scraper extracts from label/SDS pages — all fields optional. */
 export type ScrapedSpecs = {
+  image_url: string | null
   ph_range: string | null
   dilution_hydroforce: string | null
   dilution_pump_sprayer: string | null
