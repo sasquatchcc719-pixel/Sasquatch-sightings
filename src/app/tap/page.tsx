@@ -228,7 +228,7 @@ export default function TapLandingPage() {
 
           {/* Leave Us a Review */}
           <a
-            href="https://search.google.com/local/writereview?placeid=ChIJw1Fmyv9_EQIRSsL80280NoQ"
+            href="https://g.page/r/CVAp5EYpgMFLEBM/review"
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => trackButtonClick('review')}

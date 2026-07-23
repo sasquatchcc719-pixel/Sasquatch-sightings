@@ -23,8 +23,7 @@ const PHONE_DISPLAY = '(719) 249-8791'
 const SMS_BODY = encodeURIComponent(
   "Hi! I found you on Google and I'm interested in carpet cleaning. Can I get a quote?",
 )
-const GOOGLE_REVIEW_URL =
-  'https://search.google.com/local/writereview?placeid=ChIJw1Fmyv9_EQIRSsL80280NoQ'
+const GOOGLE_REVIEW_URL = 'https://g.page/r/CVAp5EYpgMFLEBM/review'
 
 const STANDARD_PRICING = [
   { label: 'Small Area / Walk-in Closet (up to 100 sqft)', price: '$30' },

@@ -39,7 +39,7 @@ const REVIEW_LINKS: {
   },
   {
     name: 'Google',
-    url: 'https://search.google.com/local/writereview?placeid=ChIJw1Fmyv9_EQIRSsL80280NoQ',
+    url: 'https://g.page/r/CVAp5EYpgMFLEBM/review',
     icon: 'google',
     color: 'bg-blue-600/70 hover:bg-blue-700/80',
   },
