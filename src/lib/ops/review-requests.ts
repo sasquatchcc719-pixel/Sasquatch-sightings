@@ -18,11 +18,11 @@ import { reviewerMatchesCustomer } from '@/lib/gbp-reviews'
 /** Public page listing every platform we can be reviewed on (Google, Yelp, BBB, Nextdoor, …). */
 export const ALL_REVIEWS_PAGE_URL = 'https://www.sasquatchcarpet.com/reviews'
 
-// Sasquatch Carpet Cleaning, LLC GBP listing (Place ID verified via SerpApi
-// 2026-06-11: 740 Platte Ln, Palmer Lake — 4.9★, 69 reviews at launch).
+// Sasquatch Carpet Cleaning, LLC GBP listing — "leave a review" short link
+// from the reinstated Google Business Profile (2026-07-23). Replaces the
+// prior writereview?placeid= link, which broke when the profile went down.
 export const GOOGLE_REVIEW_URL =
-  process.env.GOOGLE_REVIEW_URL ||
-  'https://search.google.com/local/writereview?placeid=ChIJw1Fmyv9_EQIRSsL80280NoQ'
+  process.env.GOOGLE_REVIEW_URL || 'https://g.page/r/CVAp5EYpgMFLEBM/review'
 
 /** How long after completion before the ask goes out. */
 const ASK_DELAY_MINUTES = 90
@@ -103,23 +103,11 @@ export function buildReviewRequestMessage(
     ''
   ).trim()
   const greeting = first ? `Hi ${first}, it's` : "Hi, it's"
-
-  // TEMPORARY (2026-07-20): The Google Business Profile is down, so the review
-  // link below points customers at a broken page. Until it's back up we send a
-  // neutral thank-you instead — no link. The review-request wording is kept
-  // verbatim in the block below; to restore, delete this neutral return and
-  // uncomment the original review-request return. See GOOGLE_REVIEW_URL.
   return (
-    `${greeting} Charles with Sasquatch Carpet Cleaning. Thanks for choosing us! ` +
-    `We appreciate your business and look forward to serving you again.`
+    `${greeting} Charles with Sasquatch Carpet Cleaning. Thanks for having us out! ` +
+    `If you were happy with your clean, a quick Google review makes a huge difference ` +
+    `for our small local business: ${GOOGLE_REVIEW_URL}`
   )
-
-  // --- RESTORE WHEN GOOGLE BUSINESS PROFILE IS BACK UP ---
-  // return (
-  //   `${greeting} Charles with Sasquatch Carpet Cleaning. Thanks for having us out! ` +
-  //   `If you were happy with your clean, a quick Google review makes a huge difference ` +
-  //   `for our small local business: ${GOOGLE_REVIEW_URL}`
-  // )
 }
 
 /**

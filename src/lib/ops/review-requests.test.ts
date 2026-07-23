@@ -77,23 +77,20 @@ describe('isWithinSendWindow (Mountain Time)', () => {
 })
 
 describe('buildReviewRequestMessage', () => {
-  // TEMPORARY (2026-07-20): GBP is down, so the review link is suppressed and
-  // a neutral thank-you goes out instead. Restore the GOOGLE_REVIEW_URL
-  // assertions when the review-request wording is re-enabled.
-  it('greets by first name and does not send a broken review link', () => {
+  it('greets by first name and includes the verified review link', () => {
     const msg = buildReviewRequestMessage({
       first_name: 'Tiffany',
       full_name: 'Tiffany Sewell',
     })
     expect(msg).toContain('Hi Tiffany')
     expect(msg).toContain('Sasquatch Carpet Cleaning')
-    expect(msg).not.toContain(GOOGLE_REVIEW_URL)
+    expect(msg).toContain(GOOGLE_REVIEW_URL)
   })
 
   it('falls back to a generic greeting without a name', () => {
     const msg = buildReviewRequestMessage({ first_name: null, full_name: null })
     expect(msg).toContain("Hi, it's Charles")
-    expect(msg).not.toContain(GOOGLE_REVIEW_URL)
+    expect(msg).toContain(GOOGLE_REVIEW_URL)
   })
 })
 
@@ -169,8 +166,7 @@ describe('review request pipeline against the real DB', () => {
     expect(result.deferred).toBe(false)
     expect(result.sent).toBeGreaterThanOrEqual(1)
     expect(sentMessages.length).toBeGreaterThanOrEqual(1)
-    // TEMPORARY (2026-07-20): review link suppressed while GBP is down.
-    expect(sentMessages[0].message).not.toContain(GOOGLE_REVIEW_URL)
+    expect(sentMessages[0].message).toContain(GOOGLE_REVIEW_URL)
 
     const { data: after } = await supabase
       .from('review_requests')
@@ -179,8 +175,7 @@ describe('review request pipeline against the real DB', () => {
       .single()
     expect(after?.status).toBe('sent')
     expect(after?.sent_at).toBeTruthy()
-    // TEMPORARY (2026-07-20): review link suppressed while GBP is down.
-    expect(after?.message).not.toContain(GOOGLE_REVIEW_URL)
+    expect(after?.message).toContain(GOOGLE_REVIEW_URL)
   })
 
   it('builds review-reply context for phones with a recent sent request', async () => {
