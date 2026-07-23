@@ -42,6 +42,9 @@ const STATUS_META: Record<
 
 type EditState = {
   image_url: string
+  quantity_on_hand: string
+  quantity_unit: string
+  reorder_threshold: string
   ph_range: string
   dilution_hydroforce: string
   dilution_pump_sprayer: string
@@ -55,6 +58,11 @@ type EditState = {
 function toEditState(p: ChemicalProduct): EditState {
   return {
     image_url: p.image_url ?? '',
+    quantity_on_hand:
+      p.quantity_on_hand != null ? String(p.quantity_on_hand) : '',
+    quantity_unit: p.quantity_unit ?? 'jugs',
+    reorder_threshold:
+      p.reorder_threshold != null ? String(p.reorder_threshold) : '',
     ph_range: p.ph_range ?? '',
     dilution_hydroforce: p.dilution_hydroforce ?? '',
     dilution_pump_sprayer: p.dilution_pump_sprayer ?? '',
@@ -72,8 +80,15 @@ function fromEditState(e: EditState) {
       .split(',')
       .map((x) => x.trim())
       .filter(Boolean)
+  const num = (s: string) => {
+    const n = Number(s.trim())
+    return s.trim() !== '' && Number.isFinite(n) ? n : null
+  }
   return {
     image_url: e.image_url.trim() || null,
+    quantity_on_hand: num(e.quantity_on_hand),
+    quantity_unit: e.quantity_unit.trim() || 'jugs',
+    reorder_threshold: num(e.reorder_threshold),
     ph_range: e.ph_range.trim() || null,
     dilution_hydroforce: e.dilution_hydroforce.trim() || null,
     dilution_pump_sprayer: e.dilution_pump_sprayer.trim() || null,
@@ -308,6 +323,19 @@ export default function ChemicalsPage() {
                       <ChevronDown className="h-4 w-4 shrink-0" />
                     )}
                   </button>
+                  {p.quantity_on_hand != null ? (
+                    <Badge
+                      variant="outline"
+                      className={
+                        p.reorder_threshold != null &&
+                        p.quantity_on_hand <= p.reorder_threshold
+                          ? 'border-amber-500 text-amber-500'
+                          : ''
+                      }
+                    >
+                      {p.quantity_on_hand} {p.quantity_unit}
+                    </Badge>
+                  ) : null}
                   {p.item_type !== 'chemical' ? (
                     <Badge variant="outline" className="capitalize">
                       {p.item_type}
@@ -332,6 +360,49 @@ export default function ChemicalsPage() {
 
                 {expanded && edit ? (
                   <div className="mt-4 space-y-3 border-t pt-4">
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <label className="text-xs">
+                        <span className="text-muted-foreground">
+                          Qty on hand
+                        </span>
+                        <Input
+                          inputMode="decimal"
+                          value={edit.quantity_on_hand}
+                          onChange={(e) =>
+                            setEdit({
+                              ...edit,
+                              quantity_on_hand: e.target.value,
+                            })
+                          }
+                        />
+                      </label>
+                      <label className="text-xs">
+                        <span className="text-muted-foreground">
+                          Unit (jugs, boxes, each…)
+                        </span>
+                        <Input
+                          value={edit.quantity_unit}
+                          onChange={(e) =>
+                            setEdit({ ...edit, quantity_unit: e.target.value })
+                          }
+                        />
+                      </label>
+                      <label className="text-xs">
+                        <span className="text-muted-foreground">
+                          Reorder alert at
+                        </span>
+                        <Input
+                          inputMode="decimal"
+                          value={edit.reorder_threshold}
+                          onChange={(e) =>
+                            setEdit({
+                              ...edit,
+                              reorder_threshold: e.target.value,
+                            })
+                          }
+                        />
+                      </label>
+                    </div>
                     <div className="grid gap-3 sm:grid-cols-3">
                       <label className="text-xs">
                         <span className="text-muted-foreground">pH range</span>

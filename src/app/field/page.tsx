@@ -266,6 +266,12 @@ export default async function FieldPage({ searchParams }: FieldPageProps) {
             🔬 Foreman (stain help)
           </Link>
           <Link
+            href="/field/inventory"
+            className="col-span-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-3 text-center text-sm font-semibold text-amber-300"
+          >
+            📦 Truck inventory
+          </Link>
+          <Link
             href="/tech"
             className="rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-center text-sm font-medium text-slate-200"
           >

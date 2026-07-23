@@ -68,6 +68,10 @@ export function buildInventoryContext(products: ChemicalProduct[]): string {
     scenarios: p.scenarios,
     incompatible_with: p.incompatible_with,
     notes: p.notes,
+    quantity_on_hand:
+      p.quantity_on_hand != null
+        ? `${p.quantity_on_hand} ${p.quantity_unit}`
+        : null,
   }))
   return `INVENTORY (in stock, specs approved):\n${JSON.stringify(rows, null, 2)}`
 }

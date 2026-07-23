@@ -29,6 +29,10 @@ export type ChemicalProduct = {
   in_stock: boolean
   /** product photo from the supplier page, for visual bottle matching */
   image_url: string | null
+  quantity_on_hand: number | null
+  quantity_unit: string
+  reorder_threshold: number | null
+  low_stock_alerted_at: string | null
   ph_range: string | null
   dilution_hydroforce: string | null
   dilution_pump_sprayer: string | null
