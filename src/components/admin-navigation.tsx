@@ -277,6 +277,13 @@ export function AdminNavigation() {
       active: pathname === '/admin/conversations' && isAIChatsSource,
       description: 'All AI-initiated chats (vendor, card, contest)',
     },
+    {
+      name: 'Foreman Logs',
+      href: '/admin/foreman-logs',
+      icon: FlaskConical,
+      active: pathname === '/admin/foreman-logs',
+      description: 'Field AI stain/fiber diagnoses given to techs',
+    },
   ]
 
   // Comms group (Phone system + email)
