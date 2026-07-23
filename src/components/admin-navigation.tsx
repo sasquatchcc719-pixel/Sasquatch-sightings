@@ -32,6 +32,7 @@ import {
   UserRoundSearch,
   Ban,
   PhoneCall,
+  FlaskConical,
 } from 'lucide-react'
 
 interface NavTab {
@@ -176,6 +177,13 @@ export function AdminNavigation() {
       icon: Target,
       active: pathname === '/admin/radar',
       description: 'Competitor SERP rank tracking',
+    },
+    {
+      name: 'Chemicals',
+      href: '/admin/chemicals',
+      icon: FlaskConical,
+      active: pathname === '/admin/chemicals',
+      description: 'Truck chemical inventory & AI assistant specs',
     },
   ]
 
