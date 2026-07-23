@@ -1,6 +1,7 @@
 /**
  * Sasquatch Carpet Cleaning Price Book
- * Last updated: Jul 1, 2026
+ * Last updated: Jul 23, 2026 — synced against service_catalog_items (the DB
+ * is the source of truth; this file is reference data for the Analyst AI).
  * Note: These are ballpark prices - actual quotes may vary
  */
 
@@ -73,7 +74,7 @@ export const PRICE_BOOK = {
       },
       {
         name: 'Dryer Duct Cleaning',
-        price: 65,
+        price: 80,
         unit: 'flat',
         description: 'Power brush dryer vent line',
       },
@@ -136,7 +137,7 @@ export const PRICE_BOOK = {
       },
       {
         name: 'Love Seat',
-        price: 69,
+        price: 100,
         unit: 'each',
         description: 'All cloth love seat',
       },
@@ -147,10 +148,12 @@ export const PRICE_BOOK = {
         description: '3 seat sofa',
       },
       {
-        name: 'Sectional',
-        price: 12,
-        unit: 'per linear ft',
-        description: 'Price per linear foot',
+        // Catalog lists "Sectional (cloth)" at $50 — verify whether that's
+        // per seat or truly flat; the old $12/linear ft here was stale.
+        name: 'Sectional (cloth)',
+        price: 50,
+        unit: 'per seat',
+        description: 'Cloth sectional',
       },
       {
         name: 'Ottoman',
@@ -159,20 +162,14 @@ export const PRICE_BOOK = {
         description: 'Standard ottoman',
       },
       {
-        name: 'Dining Chair Seat Only',
-        price: 15,
+        name: 'Dining Chair',
+        price: 20,
         unit: 'each',
-        description: 'Just the seat',
-      },
-      {
-        name: 'Dining Chair Full',
-        price: 29,
-        unit: 'each',
-        description: 'Front and back',
+        description: 'Dining chair',
       },
       {
         name: 'Mattress Cleaning',
-        price: 49,
+        price: 50,
         unit: 'per side',
         description: 'One side of mattress',
       },
@@ -196,8 +193,8 @@ export const PRICE_BOOK = {
       },
       {
         name: 'Leather Sectional',
-        price: 25,
-        unit: 'per foot',
+        price: 75,
+        unit: 'per seat',
         description: 'Clean, moisturize, protect',
       },
     ],
@@ -214,14 +211,32 @@ export const PRICE_BOOK = {
         description: 'Wool or polyester',
       },
       {
-        name: 'Rug 5x7',
-        price: 30,
+        name: 'Rug 3x5',
+        price: 12,
+        unit: 'each',
+        description: 'Wool or polyester',
+      },
+      {
+        name: 'Rug 5x6',
+        price: 25,
+        unit: 'each',
+        description: 'Wool or polyester',
+      },
+      {
+        name: 'Rug 5x8',
+        price: 32,
         unit: 'each',
         description: 'Wool or polyester',
       },
       {
         name: 'Rug 8x11',
         price: 70,
+        unit: 'each',
+        description: 'Wool or polyester',
+      },
+      {
+        name: 'Rug 11x14',
+        price: 120,
         unit: 'each',
         description: 'Wool or polyester',
       },
