@@ -70,6 +70,12 @@ const NAV_ITEMS: NavItem[] = [
     icon: FileText,
   },
   {
+    href: '/admin/operations/queue',
+    label: 'Work Queue',
+    description: 'Approved estimates and maintenance awaiting a slot',
+    icon: Wrench,
+  },
+  {
     href: '/admin/operations/recurring',
     label: 'Recurring Jobs',
     description: 'Manage recurring templates and schedules',
