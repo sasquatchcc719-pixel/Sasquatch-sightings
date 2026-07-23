@@ -11,9 +11,11 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAnthropic } from '@ai-sdk/anthropic'
-import { generateText, type ModelMessage } from 'ai'
+import { generateText, stepCountIs, tool, type ModelMessage } from 'ai'
+import { z } from 'zod'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
+import { readWebpage, searchGoogle } from '@/lib/web-search'
 import {
   FOREMAN_SYSTEM_PROMPT,
   buildInventoryContext,
@@ -74,11 +76,50 @@ export async function POST(request: NextRequest) {
     return { role: 'user' as const, content: parts }
   })
 
+  // Real web-search grounding for obscure fabrics/care tags — the prompt's
+  // diagnostic ladder step 3 depends on these actually existing.
+  const tools = {
+    web_search: tool({
+      description:
+        'Search the web for fabric/fiber care guidance, manufacturer care instructions, or obscure care-tag codes. Use for proprietary fabrics (Crypton, Sunbrella, Revolution), imported tags, or anything you cannot identify confidently.',
+      inputSchema: z.object({
+        query: z.string().describe('The search query'),
+      }),
+      execute: async ({ query }: { query: string }) => {
+        try {
+          const results = await searchGoogle(query, 4)
+          if (results.length === 0) return 'No results found.'
+          return results
+            .map((r) => `${r.title}\n${r.url}\n${r.snippet}`)
+            .join('\n\n')
+        } catch {
+          return 'Web search is unavailable right now — fall back to the tactile tests and the safe default protocol.'
+        }
+      },
+    }),
+    read_page: tool({
+      description:
+        'Fetch a webpage from a web_search result to read its full care guidance.',
+      inputSchema: z.object({
+        url: z.string().describe('URL from a web_search result'),
+      }),
+      execute: async ({ url }: { url: string }) => {
+        try {
+          return (await readWebpage(url)).slice(0, 6000)
+        } catch {
+          return 'Could not read that page.'
+        }
+      },
+    }),
+  }
+
   try {
     const { text: reply } = await generateText({
       model: anthropic('claude-sonnet-5'),
       system,
       messages,
+      tools,
+      stopWhen: stepCountIs(5),
       maxOutputTokens: 1200,
     })
 
