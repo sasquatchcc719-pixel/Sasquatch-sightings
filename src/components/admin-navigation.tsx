@@ -190,6 +190,13 @@ export function AdminNavigation() {
   // Marketing group (leads, vendors, partners, cards, contest)
   const marketingTabs: NavTab[] = [
     {
+      name: 'Canvassing',
+      href: '/admin/canvass',
+      icon: Map,
+      active: pathname === '/admin/canvass',
+      description: 'Door-hanger walk coverage map & session audit',
+    },
+    {
       name: 'Card Analytics',
       href: '/admin/tap-analytics',
       icon: BarChart3,

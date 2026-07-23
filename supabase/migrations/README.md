@@ -4,6 +4,7 @@ Use this file to **search** for business logic that lives in SQL (humans and Cur
 
 | Migration | What it fixes |
 |-----------|----------------|
+| `20260723210000_add_canvassing.sql` | Adds `canvass_sessions` + `canvass_points` — door-hanger walk GPS tracking (deliberately separate from `gps_shifts`/timesheets so canvassing never creates payroll records). Powers `/field/canvass` Start/Stop and the shared coverage map at `/admin/canvass`. |
 | `20260723190000_add_image_url_to_chemical_products.sql` | Adds `chemical_products.image_url` — supplier product photo so techs visually match bottles on the truck. Auto-extracted by the Foreman spec scraper (og:image / catalog image). |
 | `20260723170000_add_item_type_to_chemical_products.sql` | Adds `chemical_products.item_type` (`chemical` / `supply` / `equipment`) so the truck inventory can hold bonnets/pads and other gear the Foreman assistant can reference, not just chemistry. |
 | `20260723150000_add_chemical_inventory.sql` | Adds `chemical_products` (truck chemical catalog for the Foreman field AI — scraped label/SDS specs are drafts until approved; only `in_stock` + `reviewed` rows are ever recommended) and `ai_diagnostic_logs` (audit log of field AI diagnoses). Service-role access only. |

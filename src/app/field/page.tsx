@@ -254,6 +254,12 @@ export default async function FieldPage({ searchParams }: FieldPageProps) {
 
         <div className="grid grid-cols-2 gap-2">
           <Link
+            href="/field/canvass"
+            className="col-span-2 rounded-xl border border-green-500/30 bg-green-500/10 px-3 py-3 text-center text-sm font-semibold text-green-300"
+          >
+            🚶 Canvassing (door hangers)
+          </Link>
+          <Link
             href="/tech"
             className="rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-center text-sm font-medium text-slate-200"
           >
