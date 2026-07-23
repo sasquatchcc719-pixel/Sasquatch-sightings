@@ -24,6 +24,8 @@ export type ChemicalProduct = {
   id: string
   name: string
   brand: string | null
+  /** chemicals get dilution/pH specs; supplies/equipment are gear the assistant can reference */
+  item_type: 'chemical' | 'supply' | 'equipment'
   in_stock: boolean
   ph_range: string | null
   dilution_hydroforce: string | null

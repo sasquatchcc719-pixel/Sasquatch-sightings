@@ -297,6 +297,11 @@ export default function ChemicalsPage() {
                       <ChevronDown className="h-4 w-4 shrink-0" />
                     )}
                   </button>
+                  {p.item_type !== 'chemical' ? (
+                    <Badge variant="outline" className="capitalize">
+                      {p.item_type}
+                    </Badge>
+                  ) : null}
                   <Badge className={status.className}>{status.label}</Badge>
                   <Button
                     size="sm"

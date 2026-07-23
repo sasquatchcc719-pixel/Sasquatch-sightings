@@ -59,6 +59,7 @@ export function buildInventoryContext(products: ChemicalProduct[]): string {
   const rows = usable.map((p) => ({
     name: p.name,
     brand: p.brand,
+    item_type: p.item_type,
     ph_range: p.ph_range,
     dilution_hydroforce: p.dilution_hydroforce,
     dilution_pump_sprayer: p.dilution_pump_sprayer,

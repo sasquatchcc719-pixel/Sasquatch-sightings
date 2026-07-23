@@ -12,6 +12,7 @@ import { getUserWithRole } from '@/lib/auth'
 const EDITABLE_FIELDS = [
   'name',
   'brand',
+  'item_type',
   'in_stock',
   'ph_range',
   'dilution_hydroforce',

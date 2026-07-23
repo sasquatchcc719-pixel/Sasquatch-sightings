@@ -4,6 +4,7 @@ Use this file to **search** for business logic that lives in SQL (humans and Cur
 
 | Migration | What it fixes |
 |-----------|----------------|
+| `20260723170000_add_item_type_to_chemical_products.sql` | Adds `chemical_products.item_type` (`chemical` / `supply` / `equipment`) so the truck inventory can hold bonnets/pads and other gear the Foreman assistant can reference, not just chemistry. |
 | `20260723150000_add_chemical_inventory.sql` | Adds `chemical_products` (truck chemical catalog for the Foreman field AI — scraped label/SDS specs are drafts until approved; only `in_stock` + `reviewed` rows are ever recommended) and `ai_diagnostic_logs` (audit log of field AI diagnoses). Service-role access only. |
 | `20260702000000_add_quickbooks_item_id_to_service_catalog.sql` | Adds `service_catalog_items.quickbooks_item_id`. QuickBooks invoice sync (`src/lib/quickbooks-api.ts`) now resolves QB item refs by this id first (falling back to name lookup and self-caching the result here), so renaming a catalog item's display name no longer breaks its QuickBooks item mapping. |
 | `20260701000000_raise_small_area_and_urine_prices.sql` | **Small Area / Walk-in Closet** (formerly "Hall/Bathroom/Closet") and **Urine Eliminator Treatment**: sets `service_catalog_items.base_price` to **$30** for both live booking slugs. Affects public `/api/public/services`, the website booking widget, and AI/catalog quoting. |
