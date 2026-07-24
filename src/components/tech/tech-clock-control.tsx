@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Clock, Coffee, LogIn, LogOut } from 'lucide-react'
+import { Clock, Coffee, Loader2, LogIn, LogOut } from 'lucide-react'
 
 type ClockEntry = {
   id: string
@@ -10,6 +10,13 @@ type ClockEntry = {
   breakMinutes: number
   payableMinutes: number
   clockState: 'active' | 'on_break' | 'complete'
+}
+
+type MeterAsset = {
+  id: string
+  name: string
+  meter_type: 'miles' | 'hours' | 'none'
+  current_meter: number | null
 }
 
 function formatElapsed(ms: number): string {
@@ -32,6 +39,11 @@ export function TechClockControl() {
   const [clockInBlockedUntil, setClockInBlockedUntil] = useState<number | null>(
     null,
   )
+
+  const [meterAssets, setMeterAssets] = useState<MeterAsset[] | null>(null)
+  const [meterValues, setMeterValues] = useState<Record<string, string>>({})
+  const [meterSaving, setMeterSaving] = useState(false)
+  const [meterError, setMeterError] = useState<string | null>(null)
 
   useEffect(() => {
     let alive = true
@@ -71,6 +83,53 @@ export function TechClockControl() {
     return nowMs - new Date(entry.startedAt).getTime()
   }, [entry, nowMs])
 
+  async function loadMeterAssets() {
+    try {
+      const res = await fetch('/api/field/fleet', { cache: 'no-store' })
+      const payload = await res.json().catch(() => ({}))
+      const assets = ((payload.assets ?? []) as MeterAsset[]).filter(
+        (a) => a.meter_type !== 'none',
+      )
+      if (assets.length > 0) {
+        setMeterAssets(assets)
+        setMeterValues({})
+        setMeterError(null)
+      }
+    } catch {
+      // Non-critical — the tech can still log hours later from Gears/Admin.
+    }
+  }
+
+  async function submitMeters() {
+    if (!meterAssets) return
+    setMeterSaving(true)
+    setMeterError(null)
+    try {
+      const entries = meterAssets
+        .map((a) => ({ asset: a, value: meterValues[a.id]?.trim() }))
+        .filter((e) => e.value)
+      for (const e of entries) {
+        const res = await fetch('/api/field/fleet', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            assetId: e.asset.id,
+            reading: Number(e.value),
+          }),
+        })
+        if (!res.ok) {
+          const payload = await res.json().catch(() => ({}))
+          throw new Error(payload.error || `Couldn't save ${e.asset.name}`)
+        }
+      }
+      setMeterAssets(null)
+    } catch (err) {
+      setMeterError(err instanceof Error ? err.message : 'Save failed')
+    } finally {
+      setMeterSaving(false)
+    }
+  }
+
   async function runAction(action: string) {
     setLoading(action)
     setError(null)
@@ -85,6 +144,9 @@ export function TechClockControl() {
       setEntry(payload.entry?.clockState === 'complete' ? null : payload.entry)
       if (action === 'clock_out') {
         setClockInBlockedUntil(Date.now() + 5000)
+      }
+      if (action === 'clock_in') {
+        void loadMeterAssets()
       }
       setConfirmOut(false)
     } catch (actionError) {
@@ -185,6 +247,63 @@ export function TechClockControl() {
       </div>
       {error ? (
         <p className="mx-auto mt-2 max-w-3xl text-xs text-red-300">{error}</p>
+      ) : null}
+
+      {meterAssets ? (
+        <div className="fixed inset-0 z-[230] flex items-end justify-center bg-black/70 p-4 sm:items-center">
+          <div className="w-full max-w-sm space-y-3 rounded-2xl border border-white/10 bg-slate-900 p-4">
+            <p className="text-sm font-semibold text-white">
+              Log today&apos;s machine hours
+            </p>
+            {meterAssets.map((a) => (
+              <div key={a.id} className="space-y-1">
+                <label className="text-xs text-slate-400">
+                  {a.name} —{' '}
+                  {a.meter_type === 'hours' ? 'engine hours' : 'odometer miles'}
+                </label>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  value={meterValues[a.id] ?? ''}
+                  onChange={(e) =>
+                    setMeterValues((prev) => ({
+                      ...prev,
+                      [a.id]: e.target.value,
+                    }))
+                  }
+                  placeholder={
+                    a.current_meter != null ? `> ${a.current_meter}` : '0'
+                  }
+                  className="w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-base outline-none focus:border-white/40"
+                />
+              </div>
+            ))}
+            {meterError ? (
+              <p className="text-xs text-red-400">{meterError}</p>
+            ) : null}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setMeterAssets(null)}
+                className="flex-1 rounded-lg bg-white/10 py-2.5 text-sm font-medium hover:bg-white/20"
+              >
+                Skip
+              </button>
+              <button
+                type="button"
+                onClick={() => void submitMeters()}
+                disabled={meterSaving}
+                className="flex-1 rounded-lg bg-emerald-600 py-2.5 text-sm font-semibold hover:bg-emerald-500 disabled:opacity-60"
+              >
+                {meterSaving ? (
+                  <Loader2 className="mx-auto h-4 w-4 animate-spin" />
+                ) : (
+                  'Save'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
     </div>
   )
