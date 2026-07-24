@@ -19,7 +19,7 @@ export async function GET() {
   const { data, error } = await supabase
     .from('chemical_products')
     .select(
-      'id, name, brand, image_url, item_type, in_stock, quantity_on_hand, quantity_unit, reorder_threshold',
+      'id, name, brand, image_url, item_type, in_stock, quantity_on_hand, quantity_unit, reorder_threshold, sds_url, sds_file_url',
     )
     .order('name', { ascending: true })
   if (error) {
@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
     .update(update)
     .eq('id', productId)
     .select(
-      'id, name, brand, image_url, item_type, in_stock, quantity_on_hand, quantity_unit, reorder_threshold',
+      'id, name, brand, image_url, item_type, in_stock, quantity_on_hand, quantity_unit, reorder_threshold, sds_url, sds_file_url',
     )
     .single()
   if (error) {

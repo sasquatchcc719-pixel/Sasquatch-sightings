@@ -88,7 +88,27 @@ export async function scrapeProductSpecs(
 
   const parsed = parseSpecsJson(text)
   const image_url = await extractProductImage(readable.map((p) => p.url))
-  return { ...parsed, image_url, source_urls: readable.map((p) => p.url) }
+  const sds_url = pickSdsUrl(sdsResults.map((r) => r.url).filter(Boolean))
+  return {
+    ...parsed,
+    image_url,
+    sds_url,
+    source_urls: readable.map((p) => p.url),
+  }
+}
+
+/**
+ * Pick the best link to the manufacturer's real SDS from the SDS search
+ * results — prefer a direct PDF, then a URL that looks like an SDS page.
+ * This only ever returns a LINK to the authoritative document; SDS content is
+ * never generated or paraphrased into a sheet.
+ */
+function pickSdsUrl(urls: string[]): string | null {
+  if (urls.length === 0) return null
+  const pdf = urls.find((u) => /\.pdf(\?|#|$)/i.test(u))
+  if (pdf) return pdf
+  const sdsLike = urls.find((u) => /sds|safety[-_]?data|msds/i.test(u))
+  return sdsLike ?? urls[0]
 }
 
 /**
@@ -123,7 +143,7 @@ async function extractProductImage(urls: string[]): Promise<string | null> {
 
 function parseSpecsJson(
   raw: string,
-): Omit<ScrapedSpecs, 'source_urls' | 'image_url'> {
+): Omit<ScrapedSpecs, 'source_urls' | 'image_url' | 'sds_url'> {
   const cleaned = raw
     .trim()
     .replace(/^```(?:json)?/i, '')

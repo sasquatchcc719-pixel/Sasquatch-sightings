@@ -24,6 +24,9 @@ import {
   ChevronDown,
   ChevronUp,
   ExternalLink,
+  ShieldAlert,
+  Upload,
+  X,
 } from 'lucide-react'
 import type { ChemicalProduct } from '@/lib/foreman/types'
 
@@ -50,6 +53,7 @@ type EditState = {
   dilution_pump_sprayer: string
   label_instructions: string
   sds_warnings: string
+  sds_url: string
   scenarios: string
   incompatible_with: string
   notes: string
@@ -68,6 +72,7 @@ function toEditState(p: ChemicalProduct): EditState {
     dilution_pump_sprayer: p.dilution_pump_sprayer ?? '',
     label_instructions: p.label_instructions ?? '',
     sds_warnings: p.sds_warnings ?? '',
+    sds_url: p.sds_url ?? '',
     scenarios: p.scenarios.join(', '),
     incompatible_with: p.incompatible_with.join(', '),
     notes: p.notes ?? '',
@@ -94,6 +99,7 @@ function fromEditState(e: EditState) {
     dilution_pump_sprayer: e.dilution_pump_sprayer.trim() || null,
     label_instructions: e.label_instructions.trim() || null,
     sds_warnings: e.sds_warnings.trim() || null,
+    sds_url: e.sds_url.trim() || null,
     scenarios: list(e.scenarios),
     incompatible_with: list(e.incompatible_with),
     notes: e.notes.trim() || null,
@@ -110,6 +116,7 @@ export default function ChemicalsPage() {
   const [edit, setEdit] = useState<EditState | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [sdsUploadingId, setSdsUploadingId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -194,6 +201,40 @@ export default function ChemicalsPage() {
       }
     } finally {
       setBusyId(null)
+    }
+  }
+
+  const uploadSds = async (id: string, file: File) => {
+    setSdsUploadingId(id)
+    setError(null)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await fetch(`/api/admin/chemicals/${id}/sds`, {
+        method: 'POST',
+        body: form,
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'SDS upload failed')
+      upsertLocal(data.product)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'SDS upload failed')
+    } finally {
+      setSdsUploadingId(null)
+    }
+  }
+
+  const removeSds = async (id: string) => {
+    if (!confirm('Remove the uploaded SDS PDF?')) return
+    setSdsUploadingId(id)
+    try {
+      const res = await fetch(`/api/admin/chemicals/${id}/sds`, {
+        method: 'DELETE',
+      })
+      const data = await res.json()
+      if (res.ok && data.product) upsertLocal(data.product)
+    } finally {
+      setSdsUploadingId(null)
     }
   }
 
@@ -341,6 +382,14 @@ export default function ChemicalsPage() {
                       {p.item_type}
                     </Badge>
                   ) : null}
+                  {p.sds_file_url || p.sds_url ? (
+                    <Badge
+                      variant="outline"
+                      className="border-amber-500/50 text-amber-600 dark:text-amber-400"
+                    >
+                      <ShieldAlert className="mr-0.5 h-3 w-3" /> SDS
+                    </Badge>
+                  ) : null}
                   <Badge className={status.className}>{status.label}</Badge>
                   <Button
                     size="sm"
@@ -471,6 +520,82 @@ export default function ChemicalsPage() {
                         }
                       />
                     </label>
+
+                    <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
+                      <p className="flex items-center gap-1.5 text-xs font-semibold text-amber-600 dark:text-amber-400">
+                        <ShieldAlert className="h-4 w-4" /> Safety Data Sheet
+                        (SDS)
+                      </p>
+                      <p className="text-muted-foreground mt-1 text-xs">
+                        The real manufacturer sheet techs open in the field.
+                        Link the official SDS and/or upload a PDF copy — never a
+                        generated one.
+                      </p>
+                      <label className="mt-2 block text-xs">
+                        <span className="text-muted-foreground">
+                          Manufacturer SDS link
+                        </span>
+                        <Input
+                          placeholder="https://…/sds.pdf"
+                          value={edit.sds_url}
+                          onChange={(e) =>
+                            setEdit({ ...edit, sds_url: e.target.value })
+                          }
+                        />
+                      </label>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <label className="border-input hover:bg-accent inline-flex cursor-pointer items-center gap-1 rounded-md border px-3 py-1.5 text-xs font-medium">
+                          {sdsUploadingId === p.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Upload className="h-3.5 w-3.5" />
+                          )}
+                          {p.sds_file_url ? 'Replace PDF' : 'Upload PDF'}
+                          <input
+                            type="file"
+                            accept="application/pdf"
+                            className="hidden"
+                            disabled={sdsUploadingId === p.id}
+                            onChange={(e) => {
+                              const f = e.target.files?.[0]
+                              if (f) uploadSds(p.id, f)
+                              e.target.value = ''
+                            }}
+                          />
+                        </label>
+                        {p.sds_file_url ? (
+                          <>
+                            <a
+                              href={p.sds_file_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-0.5 text-xs text-blue-500 hover:underline"
+                            >
+                              View uploaded PDF
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                            <button
+                              type="button"
+                              className="text-muted-foreground inline-flex items-center gap-0.5 text-xs hover:text-red-500"
+                              onClick={() => removeSds(p.id)}
+                            >
+                              <X className="h-3 w-3" /> Remove
+                            </button>
+                          </>
+                        ) : null}
+                        {edit.sds_url.trim() ? (
+                          <a
+                            href={edit.sds_url.trim()}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-0.5 text-xs text-blue-500 hover:underline"
+                          >
+                            Open link
+                            <ExternalLink className="h-3 w-3" />
+                          </a>
+                        ) : null}
+                      </div>
+                    </div>
                     <div className="grid gap-3 sm:grid-cols-2">
                       <label className="text-xs">
                         <span className="text-muted-foreground">

@@ -8,7 +8,15 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Loader2, Minus, Package, Plus } from 'lucide-react'
+import {
+  ArrowLeft,
+  FileText,
+  Loader2,
+  Minus,
+  Package,
+  Plus,
+  ShieldAlert,
+} from 'lucide-react'
 
 type Row = {
   id: string
@@ -20,6 +28,8 @@ type Row = {
   quantity_on_hand: number | null
   quantity_unit: string
   reorder_threshold: number | null
+  sds_url: string | null
+  sds_file_url: string | null
 }
 
 export default function FieldInventoryPage() {
@@ -105,6 +115,24 @@ export default function FieldInventoryPage() {
                     {!r.in_stock ? ' · OUT OF STOCK' : ''}
                   </p>
                 </div>
+                {r.sds_file_url || r.sds_url ? (
+                  <a
+                    href={(r.sds_file_url || r.sds_url) as string}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Open Safety Data Sheet"
+                    className="flex shrink-0 items-center gap-1 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-2 text-xs font-semibold text-amber-300 hover:bg-amber-500/20"
+                  >
+                    <ShieldAlert className="h-4 w-4" /> SDS
+                  </a>
+                ) : (
+                  <span
+                    title="No SDS on file yet"
+                    className="flex shrink-0 items-center gap-1 rounded-lg border border-white/5 px-2.5 py-2 text-xs text-slate-600"
+                  >
+                    <FileText className="h-4 w-4" /> SDS
+                  </span>
+                )}
                 <button
                   type="button"
                   disabled={busyId === r.id}
@@ -127,7 +155,9 @@ export default function FieldInventoryPage() {
         )}
         <p className="text-xs text-slate-500">
           Used a jug? Tap minus. Restocked? Tap plus. Zero flips a product to
-          out-of-stock and Brain stops recommending it.
+          out-of-stock and Brain stops recommending it. Tap{' '}
+          <span className="font-semibold text-amber-300">SDS</span> to open a
+          product&apos;s safety data sheet.
         </p>
       </div>
     </main>

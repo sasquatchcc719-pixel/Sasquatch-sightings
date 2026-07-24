@@ -23,6 +23,7 @@ const EDITABLE_FIELDS = [
   'dilution_pump_sprayer',
   'label_instructions',
   'sds_warnings',
+  'sds_url',
   'scenarios',
   'incompatible_with',
   'notes',

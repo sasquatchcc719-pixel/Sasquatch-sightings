@@ -38,6 +38,10 @@ export type ChemicalProduct = {
   dilution_pump_sprayer: string | null
   label_instructions: string | null
   sds_warnings: string | null
+  /** link to the manufacturer's official SDS (authoritative source) */
+  sds_url: string | null
+  /** public URL of an uploaded PDF copy of the SDS in storage (offline copy) */
+  sds_file_url: string | null
   scenarios: string[]
   incompatible_with: string[]
   source_urls: string[]
@@ -56,6 +60,8 @@ export type ScrapedSpecs = {
   dilution_pump_sprayer: string | null
   label_instructions: string | null
   sds_warnings: string | null
+  /** link to the manufacturer's official SDS PDF, if one was found */
+  sds_url: string | null
   scenarios: string[]
   incompatible_with: string[]
   source_urls: string[]
