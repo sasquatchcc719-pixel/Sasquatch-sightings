@@ -27,6 +27,7 @@ import {
   ShieldAlert,
   Upload,
   X,
+  Minus,
 } from 'lucide-react'
 import type { ChemicalProduct } from '@/lib/foreman/types'
 
@@ -182,6 +183,28 @@ export default function ChemicalsPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Update failed')
       return null
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  // Adjust stock from the admin screen. Goes through the same field-inventory
+  // endpoint the truck counter uses, so quantity, the in_stock flip, and the
+  // low-stock alert re-arm all behave identically no matter where you tap.
+  const adjustQty = async (p: ChemicalProduct, delta: number) => {
+    setBusyId(p.id)
+    setError(null)
+    try {
+      const res = await fetch('/api/field/inventory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productId: p.id, delta }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Update failed')
+      if (data.product) upsertLocal({ ...p, ...data.product })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Update failed')
     } finally {
       setBusyId(null)
     }
@@ -364,19 +387,36 @@ export default function ChemicalsPage() {
                       <ChevronDown className="h-4 w-4 shrink-0" />
                     )}
                   </button>
-                  {p.quantity_on_hand != null ? (
-                    <Badge
-                      variant="outline"
-                      className={
-                        p.reorder_threshold != null &&
-                        p.quantity_on_hand <= p.reorder_threshold
-                          ? 'border-amber-500 text-amber-500'
-                          : ''
-                      }
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => adjustQty(p, -1)}
+                      title="Use one"
+                      className="hover:bg-accent rounded-md border p-1 disabled:opacity-40"
                     >
-                      {p.quantity_on_hand} {p.quantity_unit}
-                    </Badge>
-                  ) : null}
+                      <Minus className="h-3.5 w-3.5" />
+                    </button>
+                    <span
+                      className={`min-w-14 text-center text-xs font-medium ${
+                        p.reorder_threshold != null &&
+                        (p.quantity_on_hand ?? 0) <= p.reorder_threshold
+                          ? 'text-amber-500'
+                          : 'text-muted-foreground'
+                      }`}
+                    >
+                      {p.quantity_on_hand ?? 0} {p.quantity_unit}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => adjustQty(p, 1)}
+                      title="Restock one"
+                      className="hover:bg-accent rounded-md border p-1 disabled:opacity-40"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                   {p.item_type !== 'chemical' ? (
                     <Badge variant="outline" className="capitalize">
                       {p.item_type}
@@ -390,7 +430,25 @@ export default function ChemicalsPage() {
                       <ShieldAlert className="mr-0.5 h-3 w-3" /> SDS
                     </Badge>
                   ) : null}
-                  <Badge className={status.className}>{status.label}</Badge>
+                  <button
+                    type="button"
+                    onClick={() => toggleExpand(p)}
+                    title={
+                      p.scrape_status === 'scraped'
+                        ? 'Tap to review the AI-researched specs'
+                        : 'Tap to open'
+                    }
+                  >
+                    <Badge
+                      className={`${status.className} ${
+                        p.scrape_status === 'scraped'
+                          ? 'ring-2 ring-amber-300/50'
+                          : ''
+                      } cursor-pointer`}
+                    >
+                      {status.label}
+                    </Badge>
+                  </button>
                   <Button
                     size="sm"
                     variant={p.in_stock ? 'default' : 'outline'}
@@ -409,6 +467,24 @@ export default function ChemicalsPage() {
 
                 {expanded && edit ? (
                   <div className="mt-4 space-y-3 border-t pt-4">
+                    {p.scrape_status === 'scraped' ? (
+                      <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs">
+                        <p className="font-semibold text-amber-600 dark:text-amber-400">
+                          Review before Brain can use this
+                        </p>
+                        <p className="text-muted-foreground mt-1">
+                          The AI researched this product&apos;s label &amp; SDS
+                          and drafted the dilutions, pH, and usage below. Check
+                          they&apos;re right — especially the Hydro-Force ratio
+                          — then hit{' '}
+                          <span className="font-medium">
+                            Save &amp; approve
+                          </span>
+                          . Until you do, the field assistant (Brain) won&apos;t
+                          recommend it to David.
+                        </p>
+                      </div>
+                    ) : null}
                     <div className="grid gap-3 sm:grid-cols-3">
                       <label className="text-xs">
                         <span className="text-muted-foreground">
