@@ -2,9 +2,15 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { AuthButton } from '@/components/auth-button'
 import { requireAnyRole } from '@/lib/auth'
+import { createAdminClient } from '@/supabase/server'
 
 export default async function FieldPage() {
   await requireAnyRole(['admin', 'owner', 'tech'])
+
+  const { count: maintenanceDueCount } = await createAdminClient()
+    .from('maintenance_tasks')
+    .select('id', { count: 'exact', head: true })
+    .in('status', ['unassigned', 'scheduled'])
 
   return (
     <main className="min-h-screen bg-slate-950 pb-8 text-slate-50">
@@ -46,9 +52,14 @@ export default async function FieldPage() {
           </Link>
           <Link
             href="/field/checkin"
-            className="rounded-xl border border-sky-500/30 bg-sky-500/10 px-3 py-3 text-center text-sm font-semibold text-sky-300"
+            className="relative rounded-xl border border-sky-500/30 bg-sky-500/10 px-3 py-3 text-center text-sm font-semibold text-sky-300"
           >
             ⚙️ Gears
+            {maintenanceDueCount ? (
+              <span className="absolute -top-1.5 -right-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-black">
+                {maintenanceDueCount}
+              </span>
+            ) : null}
           </Link>
           <Link
             href="/tech"

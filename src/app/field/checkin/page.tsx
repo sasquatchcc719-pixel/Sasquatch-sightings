@@ -7,7 +7,14 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Check, Gauge, Loader2 } from 'lucide-react'
+import {
+  ArrowLeft,
+  Check,
+  Gauge,
+  Loader2,
+  Wrench,
+  X as XIcon,
+} from 'lucide-react'
 
 type Asset = {
   id: string
@@ -16,6 +23,17 @@ type Asset = {
   meter_type: 'miles' | 'hours' | 'none'
   current_meter: number | null
   image_url: string | null
+}
+
+type MaintenanceTask = {
+  id: string
+  asset_id: string
+  title: string
+  status: string
+  meter_at_trigger: number | null
+  triggered_at: string
+  asset_name: string
+  meter_type: string
 }
 
 export default function CheckinPage() {
@@ -27,6 +45,18 @@ export default function CheckinPage() {
   const [done, setDone] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  const [tasks, setTasks] = useState<MaintenanceTask[]>([])
+  const [tasksLoading, setTasksLoading] = useState(true)
+  const [taskBusyId, setTaskBusyId] = useState<string | null>(null)
+
+  const loadTasks = () => {
+    setTasksLoading(true)
+    fetch('/api/field/maintenance', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((data) => setTasks(data.tasks ?? []))
+      .finally(() => setTasksLoading(false))
+  }
+
   useEffect(() => {
     fetch('/api/field/fleet', { cache: 'no-store' })
       .then((r) => r.json())
@@ -36,7 +66,27 @@ export default function CheckinPage() {
         ),
       )
       .finally(() => setLoading(false))
+    loadTasks()
   }, [])
+
+  const resolveTask = async (
+    taskId: string,
+    action: 'complete' | 'dismiss',
+  ) => {
+    setTaskBusyId(taskId)
+    try {
+      const res = await fetch('/api/field/maintenance', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId, action }),
+      })
+      if (res.ok) {
+        setTasks((prev) => prev.filter((t) => t.id !== taskId))
+      }
+    } finally {
+      setTaskBusyId(null)
+    }
+  }
 
   const save = async () => {
     if (!selected || !reading.trim()) return
@@ -90,6 +140,51 @@ export default function CheckinPage() {
           <p className="rounded-lg bg-red-950/60 px-3 py-2 text-sm text-red-400">
             {error}
           </p>
+        ) : null}
+
+        {!tasksLoading && tasks.length > 0 ? (
+          <div className="space-y-2 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3">
+            <p className="flex items-center gap-2 text-sm font-semibold text-amber-300">
+              <Wrench className="h-4 w-4" /> Maintenance due ({tasks.length})
+            </p>
+            <div className="space-y-2">
+              {tasks.map((t) => (
+                <div
+                  key={t.id}
+                  className="flex items-center gap-2 rounded-lg bg-black/20 p-2.5"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-slate-100">
+                      {t.title}
+                    </p>
+                    <p className="text-xs text-slate-400">{t.asset_name}</p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={taskBusyId === t.id}
+                    onClick={() => resolveTask(t.id, 'dismiss')}
+                    title="Not now"
+                    className="rounded-lg bg-white/10 p-2 hover:bg-white/20 disabled:opacity-40"
+                  >
+                    <XIcon className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={taskBusyId === t.id}
+                    onClick={() => resolveTask(t.id, 'complete')}
+                    title="Done"
+                    className="rounded-lg bg-green-600 p-2 hover:bg-green-500 disabled:opacity-40"
+                  >
+                    {taskBusyId === t.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Check className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
         ) : null}
 
         {loading ? (

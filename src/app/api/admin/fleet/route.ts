@@ -12,6 +12,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
+import { setMaintenanceTaskStatus } from '@/lib/ops/fleet-maintenance'
 
 async function guard() {
   await requireAnyRole(['admin', 'owner'])
@@ -161,35 +162,19 @@ export async function PATCH(request: NextRequest) {
     if (!['completed', 'dismissed', 'unassigned'].includes(status)) {
       return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
     }
-    const { data: task, error } = await supabase
-      .from('maintenance_tasks')
-      .update({
-        status,
-        completed_at: status === 'completed' ? new Date().toISOString() : null,
-      })
-      .eq('id', id)
-      .select('*')
-      .single()
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+    try {
+      const task = await setMaintenanceTaskStatus(
+        supabase,
+        id,
+        status as 'completed' | 'dismissed' | 'unassigned',
+      )
+      return NextResponse.json({ task })
+    } catch (err) {
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : 'Update failed' },
+        { status: 500 },
+      )
     }
-    // Completing service restarts the rule's interval clock at the asset's
-    // current meter/date.
-    if (status === 'completed' && task?.rule_id) {
-      const { data: asset } = await supabase
-        .from('fleet_assets')
-        .select('current_meter')
-        .eq('id', task.asset_id)
-        .maybeSingle()
-      await supabase
-        .from('maintenance_rules')
-        .update({
-          last_done_meter: asset?.current_meter ?? null,
-          last_done_at: new Date().toISOString(),
-        })
-        .eq('id', task.rule_id)
-    }
-    return NextResponse.json({ task })
   }
 
   return NextResponse.json({ error: 'Unknown resource' }, { status: 400 })
