@@ -4,6 +4,7 @@ Use this file to **search** for business logic that lives in SQL (humans and Cur
 
 | Migration | What it fixes |
 |-----------|----------------|
+| `20260724000000_add_fleet_asset_photo.sql` | Adds `fleet_assets.image_url` — reference photo per vehicle/equipment (e.g. "this is Blue Van") uploaded at `/admin/fleet`, shown in the `/field/checkin` asset picker so techs visually confirm they're logging hours against the right asset. Reuses the `job-images` storage bucket under a `fleet-assets/` prefix. |
 | `20260723230000_add_fleet_maintenance.sql` | Adds `fleet_assets`, `asset_meter_logs`, `maintenance_rules`, `maintenance_tasks` — asset profiles with daily meter check-ins (`/field/checkin`), interval-based service rules, and the triggered maintenance task queue (daily cron `/api/cron/maintenance-check` + Telegram alert; managed at `/admin/fleet`). |
 | `20260723220000_add_inventory_quantities.sql` | Adds `chemical_products.quantity_on_hand`, `quantity_unit`, `reorder_threshold`, `low_stock_alerted_at` — real inventory counts with a daily low-stock Telegram cron (`/api/cron/inventory-alerts`) and a tech quick-adjust counter at `/field/inventory`. Zero quantity flips `in_stock` off, which the Foreman assistant honors. |
 | `20260723210000_add_canvassing.sql` | Adds `canvass_sessions` + `canvass_points` — door-hanger walk GPS tracking (deliberately separate from `gps_shifts`/timesheets so canvassing never creates payroll records). Powers `/field/canvass` Start/Stop and the shared coverage map at `/admin/canvass`. |

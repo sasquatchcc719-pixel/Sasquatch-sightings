@@ -15,6 +15,7 @@ type Asset = {
   asset_type: string
   meter_type: 'miles' | 'hours' | 'none'
   current_meter: number | null
+  image_url: string | null
 }
 
 export default function CheckinPage() {
@@ -110,18 +111,28 @@ export default function CheckinPage() {
                   setReading('')
                   setDone(null)
                 }}
-                className={`w-full rounded-xl border p-3 text-left ${
+                className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left ${
                   selected?.id === a.id
                     ? 'border-green-500 bg-green-500/10'
                     : 'border-white/10 bg-white/5'
                 }`}
               >
-                <p className="text-sm font-medium">{a.name}</p>
-                <p className="text-xs text-slate-400">
-                  {a.current_meter != null
-                    ? `Last: ${a.current_meter} ${a.meter_type}`
-                    : `No reading yet (${a.meter_type})`}
-                </p>
+                {a.image_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={a.image_url}
+                    alt=""
+                    className="h-12 w-12 shrink-0 rounded-lg object-cover"
+                  />
+                ) : null}
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">{a.name}</p>
+                  <p className="text-xs text-slate-400">
+                    {a.current_meter != null
+                      ? `Last: ${a.current_meter} ${a.meter_type}`
+                      : `No reading yet (${a.meter_type})`}
+                  </p>
+                </div>
               </button>
             ))}
           </div>

@@ -18,7 +18,7 @@ export async function GET() {
   const supabase = createAdminClient()
   const { data, error } = await supabase
     .from('fleet_assets')
-    .select('id, name, asset_type, meter_type, current_meter')
+    .select('id, name, asset_type, meter_type, current_meter, image_url')
     .eq('active', true)
     .order('name', { ascending: true })
   if (error) {

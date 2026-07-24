@@ -7,12 +7,21 @@
  * Telegram) until completed or dismissed.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { Truck, Plus, Trash2, Check, X, Loader2, Wrench } from 'lucide-react'
+import {
+  Truck,
+  Plus,
+  Trash2,
+  Check,
+  X,
+  Loader2,
+  Wrench,
+  Camera,
+} from 'lucide-react'
 
 type Asset = {
   id: string
@@ -22,6 +31,7 @@ type Asset = {
   current_meter: number | null
   active: boolean
   notes: string | null
+  image_url: string | null
 }
 type Rule = {
   id: string
@@ -70,6 +80,8 @@ export default function FleetPage() {
       { task_name: string; interval_value: string; interval_unit: string }
     >
   >({})
+  const [uploadingId, setUploadingId] = useState<string | null>(null)
+  const fileInputs = useRef<Record<string, HTMLInputElement | null>>({})
 
   const load = useCallback(async () => {
     const res = await fetch('/api/admin/fleet', { cache: 'no-store' })
@@ -101,6 +113,29 @@ export default function FleetPage() {
   const openTasks = tasks.filter(
     (t) => t.status === 'unassigned' || t.status === 'scheduled',
   )
+
+  const uploadPhoto = async (assetId: string, file: File) => {
+    setUploadingId(assetId)
+    try {
+      const form = new FormData()
+      form.append('assetId', assetId)
+      form.append('file', file)
+      const res = await fetch('/api/admin/fleet/photo', {
+        method: 'POST',
+        body: form,
+      })
+      const data = await res.json()
+      if (res.ok && data.url) {
+        setAssets((prev) =>
+          prev.map((a) =>
+            a.id === assetId ? { ...a, image_url: data.url } : a,
+          ),
+        )
+      }
+    } finally {
+      setUploadingId(null)
+    }
+  }
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
@@ -242,6 +277,43 @@ export default function FleetPage() {
           return (
             <Card key={a.id} className="space-y-3 p-4">
               <div className="flex flex-wrap items-center gap-2">
+                <input
+                  ref={(el) => {
+                    fileInputs.current[a.id] = el
+                  }}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) void uploadPhoto(a.id, file)
+                    e.target.value = ''
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputs.current[a.id]?.click()}
+                  disabled={uploadingId === a.id}
+                  className="bg-muted relative h-10 w-10 shrink-0 overflow-hidden rounded-lg"
+                  title="Set reference photo"
+                >
+                  {a.image_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={a.image_url}
+                      alt=""
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <Camera className="text-muted-foreground m-auto h-4 w-4" />
+                  )}
+                  {uploadingId === a.id ? (
+                    <span className="absolute inset-0 flex items-center justify-center bg-black/50">
+                      <Loader2 className="h-4 w-4 animate-spin text-white" />
+                    </span>
+                  ) : null}
+                </button>
                 <span className="font-medium">{a.name}</span>
                 <Badge variant="outline" className="capitalize">
                   {a.asset_type}
