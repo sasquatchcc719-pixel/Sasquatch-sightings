@@ -10,6 +10,10 @@ const techNavItems = [
   { href: '/tech', label: 'Jobs' },
   { href: '/tech/receipts', label: 'Receipts' },
   { href: '/tech/profile', label: 'Profile' },
+  { href: '/field/canvass', label: '🚶 Canvassing' },
+  { href: '/field/foreman', label: '🔬 Foreman' },
+  { href: '/field/inventory', label: '📦 Inventory' },
+  { href: '/field/checkin', label: '🚐 Check-in' },
 ]
 
 export default async function TechLayout({
@@ -51,12 +55,12 @@ export default async function TechLayout({
             </Link>
             <AuthButton />
           </div>
-          <nav className="mt-3 flex gap-2">
+          <nav className="mt-3 flex gap-2 overflow-x-auto pb-1">
             {techNavItems.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
-                className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm font-medium text-slate-200 transition hover:border-emerald-400/40 hover:bg-emerald-400/10 hover:text-emerald-100"
+                className="shrink-0 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm font-medium whitespace-nowrap text-slate-200 transition hover:border-emerald-400/40 hover:bg-emerald-400/10 hover:text-emerald-100"
               >
                 {item.label}
               </Link>
