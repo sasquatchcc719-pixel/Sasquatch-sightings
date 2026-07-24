@@ -96,7 +96,7 @@ export default function ForemanPage() {
           <Link href="/field" className="text-slate-400 hover:text-white">
             <ArrowLeft className="h-5 w-5" />
           </Link>
-          <h1 className="text-lg font-semibold">🔬 Foreman</h1>
+          <h1 className="text-lg font-semibold">🧠 Brain</h1>
           <span className="text-xs text-slate-500">
             stain &amp; fiber assistant
           </span>
@@ -145,7 +145,7 @@ export default function ForemanPage() {
           ))}
           {busy ? (
             <div className="flex items-center gap-2 text-sm text-slate-400">
-              <Loader2 className="h-4 w-4 animate-spin" /> Foreman is looking…
+              <Loader2 className="h-4 w-4 animate-spin" /> Brain is thinking…
             </div>
           ) : null}
           {error ? (

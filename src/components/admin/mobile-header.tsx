@@ -73,10 +73,10 @@ const navSections: NavSection[] = [
         description: 'Line-item estimates',
       },
       {
-        name: 'Field Mode',
+        name: 'Toolbox',
         href: '/field',
         icon: Briefcase,
-        description: 'Fast jobs view',
+        description: 'Quick action tools',
       },
       {
         name: 'Jobs',

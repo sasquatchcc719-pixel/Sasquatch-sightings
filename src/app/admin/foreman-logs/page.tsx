@@ -33,7 +33,7 @@ export default function ForemanLogsPage() {
     <div className="mx-auto max-w-3xl space-y-4 p-4 sm:p-6">
       <div>
         <h1 className="flex items-center gap-2 text-xl font-semibold">
-          <FlaskConical className="h-5 w-5" /> Foreman Logs
+          <FlaskConical className="h-5 w-5" /> 🧠 Brain Logs
         </h1>
         <p className="text-muted-foreground mt-1 text-sm">
           Every field diagnosis the AI assistant has given. Spot bad advice here
@@ -47,7 +47,7 @@ export default function ForemanLogsPage() {
         </p>
       ) : logs.length === 0 ? (
         <Card className="text-muted-foreground p-6 text-center text-sm">
-          No diagnoses yet — logs appear as soon as someone uses Foreman in the
+          No diagnoses yet — logs appear as soon as someone uses Brain in the
           field portal.
         </Card>
       ) : (
@@ -91,7 +91,7 @@ export default function ForemanLogsPage() {
                   </div>
                   <div>
                     <p className="text-muted-foreground mb-1 text-xs font-semibold uppercase">
-                      Foreman&apos;s answer
+                      Brain&apos;s answer
                     </p>
                     <p className="whitespace-pre-wrap">
                       {log.reply ?? '(no reply recorded)'}

@@ -77,7 +77,7 @@ export default function CheckinPage() {
             <ArrowLeft className="h-5 w-5" />
           </Link>
           <h1 className="flex items-center gap-2 text-lg font-semibold">
-            <Gauge className="h-5 w-5" /> Morning Check-in
+            <Gauge className="h-5 w-5" /> ⚙️ Gears
           </h1>
         </div>
 

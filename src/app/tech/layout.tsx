@@ -11,9 +11,9 @@ const techNavItems = [
   { href: '/tech/receipts', label: 'Receipts' },
   { href: '/tech/profile', label: 'Profile' },
   { href: '/field/canvass', label: '🚶 Canvassing' },
-  { href: '/field/foreman', label: '🔬 Foreman' },
+  { href: '/field/foreman', label: '🧠 Brain' },
   { href: '/field/inventory', label: '📦 Inventory' },
-  { href: '/field/checkin', label: '🚐 Check-in' },
+  { href: '/field/checkin', label: '⚙️ Gears' },
 ]
 
 export default async function TechLayout({

@@ -127,7 +127,7 @@ export default function FieldInventoryPage() {
         )}
         <p className="text-xs text-slate-500">
           Used a jug? Tap minus. Restocked? Tap plus. Zero flips a product to
-          out-of-stock and Foreman stops recommending it.
+          out-of-stock and Brain stops recommending it.
         </p>
       </div>
     </main>

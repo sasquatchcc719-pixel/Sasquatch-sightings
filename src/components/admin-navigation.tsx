@@ -151,11 +151,11 @@ export function AdminNavigation() {
       description: 'Measure visits with line items, convert to scheduled jobs',
     },
     {
-      name: 'Field Mode',
+      name: 'Toolbox',
       href: '/field',
       icon: Briefcase,
       active: pathname.startsWith('/field') || pathname.startsWith('/tech'),
-      description: 'Fast mobile view for today’s jobs',
+      description: 'Canvassing, Brain, inventory, and Gears quick actions',
     },
     {
       name: 'Jobs',
@@ -278,7 +278,7 @@ export function AdminNavigation() {
       description: 'All AI-initiated chats (vendor, card, contest)',
     },
     {
-      name: 'Foreman Logs',
+      name: 'Brain Logs',
       href: '/admin/foreman-logs',
       icon: FlaskConical,
       active: pathname === '/admin/foreman-logs',
