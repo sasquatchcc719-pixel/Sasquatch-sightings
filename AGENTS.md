@@ -103,6 +103,8 @@ For every task:
 - After two failed corrections on the same issue, stop. Summarize what you learned and ask the user to reset the session with a sharper prompt.
 - Use subagents (Claude Code: "use subagents to investigate X") for exploration tasks that would otherwise pollute the main context with dozens of file reads.
 - When committing, write descriptive commit messages (subject under 72 chars, body explains the why). No "update file" or "fix bug" commits. No "Co-Authored-By: Claude" attribution unless the project explicitly wants it.
+- **Commit and push to `main`.** Do not create or push to a feature branch unless Charles explicitly asks for one. Vercel only deploys `main` to Production — anything on another branch builds as a throwaway Preview and silently never ships. "Commit and push" means it goes live on `main`.
+- Never reuse a stale, long-lived branch as a place to land new work. If you somehow end up on one, move the new commits onto `main` rather than stacking them on months-old unmerged history.
 
 ---
 
