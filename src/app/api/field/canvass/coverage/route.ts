@@ -10,9 +10,57 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
+import { haversineDistance } from '@/lib/gps/haversine'
 
 // Stable per-user colors: owner/admin = blue, techs = green, extras cycle.
 const USER_COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#ec4899', '#8b5cf6']
+
+/**
+ * Phones suspend GPS when the screen locks, so a walked street often arrives
+ * as a handful of points with minutes-long holes. Bridging consecutive points
+ * fills those holes back in — but only when the movement between them could
+ * plausibly have been walked. Anything faster than a brisk walk, or too far
+ * to infer a path through, is a drive between neighborhoods and gets split
+ * into a separate segment so it is never shaded as covered ground.
+ */
+const MAX_WALK_SPEED_MPS = 3.0 // ~6.7 mph
+const MAX_BRIDGE_M = 800
+/**
+ * Below this, never split. GPS jitter while standing at a door routinely
+ * throws a 10-20m hop in one second, which reads as 10+ m/s and would shred
+ * a perfectly good walk into fragments. A real drive always covers far more
+ * ground than this, so distance is the honest gate and speed only decides
+ * among genuinely long gaps.
+ */
+const MIN_SPLIT_DISTANCE_M = 150
+
+type TrackPoint = { lng: number; lat: number; t: number }
+
+function buildSegments(points: TrackPoint[]): [number, number][][] {
+  const segments: [number, number][][] = []
+  let current: [number, number][] = []
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i]
+    if (i === 0) {
+      current = [[p.lng, p.lat]]
+      continue
+    }
+    const prev = points[i - 1]
+    const meters = haversineDistance(prev.lat, prev.lng, p.lat, p.lng)
+    const seconds = Math.max((p.t - prev.t) / 1000, 1)
+    const tooFarToInfer = meters > MAX_BRIDGE_M
+    const drove =
+      meters > MIN_SPLIT_DISTANCE_M && meters / seconds > MAX_WALK_SPEED_MPS
+    if (tooFarToInfer || drove) {
+      if (current.length > 1) segments.push(current)
+      current = [[p.lng, p.lat]]
+      continue
+    }
+    current.push([p.lng, p.lat])
+  }
+  if (current.length > 1) segments.push(current)
+  return segments
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -73,17 +121,17 @@ export async function GET(request: NextRequest) {
     )
     .order('recorded_at', { ascending: true })
 
-  const pointsBySession = new Map<string, [number, number][]>()
+  const pointsBySession = new Map<string, TrackPoint[]>()
   for (const p of points ?? []) {
     const list = pointsBySession.get(p.session_id) ?? []
-    list.push([p.lng, p.lat])
+    list.push({ lng: p.lng, lat: p.lat, t: Date.parse(p.recorded_at) })
     pointsBySession.set(p.session_id, list)
   }
 
   const features = sessions
     .map((s) => {
-      const coords = pointsBySession.get(s.id) ?? []
-      if (coords.length < 2) return null
+      const segments = buildSegments(pointsBySession.get(s.id) ?? [])
+      if (segments.length === 0) return null
       const dateLabel = new Date(s.started_at).toLocaleDateString('en-US', {
         timeZone: 'America/Denver',
         month: 'short',
@@ -93,7 +141,10 @@ export async function GET(request: NextRequest) {
       const userName = nameByUser.get(s.user_id) ?? 'Unknown'
       return {
         type: 'Feature' as const,
-        geometry: { type: 'LineString' as const, coordinates: coords },
+        geometry: {
+          type: 'MultiLineString' as const,
+          coordinates: segments,
+        },
         properties: {
           sessionId: s.id,
           userName,

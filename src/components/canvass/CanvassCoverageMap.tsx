@@ -24,19 +24,28 @@ export type CanvassSessionRow = {
 
 const SOURCE_ID = 'canvass-coverage'
 
+type CoverageFeature = {
+  geometry: { coordinates: [number, number][][] }
+  properties: { sessionId: string }
+}
+
 export function CanvassCoverageMap({
   days,
   refreshKey = 0,
   onSessions,
+  focusSessionId,
   className,
 }: {
   days: number
   refreshKey?: number
   onSessions?: (sessions: CanvassSessionRow[]) => void
+  /** Zoom to and highlight one walk; tapping a row in the session list. */
+  focusSessionId?: string | null
   className?: string
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<mapboxgl.Map | null>(null)
+  const featuresRef = useRef<CoverageFeature[]>([])
   const [mapReady, setMapReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -134,11 +143,12 @@ export function CanvassCoverageMap({
         const source = map.getSource(SOURCE_ID) as mapboxgl.GeoJSONSource
         source?.setData(data.geojson)
         onSessions?.(data.sessions ?? [])
-        const coords: [number, number][] = (
-          data.geojson.features as Array<{
-            geometry: { coordinates: [number, number][] }
-          }>
-        ).flatMap((f) => f.geometry.coordinates)
+        featuresRef.current = (data.geojson.features ?? []) as CoverageFeature[]
+        // MultiLineString: coordinates are segments of points, so flatten one
+        // extra level before computing bounds.
+        const coords = featuresRef.current.flatMap((f) =>
+          f.geometry.coordinates.flat(),
+        )
         if (coords.length > 1) {
           const bounds = coords.reduce(
             (b, c) => b.extend(c),
@@ -150,6 +160,49 @@ export function CanvassCoverageMap({
       .catch(() => setError('Failed to load coverage'))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapReady, days, refreshKey])
+
+  // Tapping a row in the session list: fly to that walk and fade the rest so
+  // it's obvious which one you're looking at.
+  useEffect(() => {
+    if (!mapReady) return
+    const map = mapRef.current
+    if (!map) return
+
+    const dimmed = focusSessionId
+      ? ([
+          'case',
+          ['==', ['get', 'sessionId'], focusSessionId],
+          0.45,
+          0.06,
+        ] as unknown as mapboxgl.Expression)
+      : 0.35
+    const lineDim = focusSessionId
+      ? ([
+          'case',
+          ['==', ['get', 'sessionId'], focusSessionId],
+          1,
+          0.15,
+        ] as unknown as mapboxgl.Expression)
+      : 0.9
+    if (map.getLayer('canvass-corridor')) {
+      map.setPaintProperty('canvass-corridor', 'line-opacity', dimmed)
+    }
+    if (map.getLayer('canvass-centerline')) {
+      map.setPaintProperty('canvass-centerline', 'line-opacity', lineDim)
+    }
+
+    if (!focusSessionId) return
+    const feature = featuresRef.current.find(
+      (f) => f.properties.sessionId === focusSessionId,
+    )
+    const coords = feature?.geometry.coordinates.flat() ?? []
+    if (coords.length === 0) return
+    const bounds = coords.reduce(
+      (b, c) => b.extend(c),
+      new mapboxgl.LngLatBounds(coords[0], coords[0]),
+    )
+    map.fitBounds(bounds, { padding: 70, maxZoom: 17, duration: 800 })
+  }, [focusSessionId, mapReady, refreshKey])
 
   return (
     <div className={className ?? 'relative h-[60vh] w-full rounded-xl'}>

@@ -81,6 +81,14 @@ export function useCanvassTracker(): CanvassTrackerValue {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId: sid, points: batch }),
       })
+      // The server permanently refuses these (session not ours / long closed).
+      // Retrying forever would wedge the buffer and block every later point,
+      // so drop them and surface it rather than failing silently.
+      if (res.status === 403 || res.status === 409) {
+        setError('Tracking was interrupted — tap Stop, then Start again.')
+        saveStash(sid, bufferRef.current)
+        return
+      }
       if (!res.ok) throw new Error(`flush failed: ${res.status}`)
       saveStash(sid, bufferRef.current)
     } catch {

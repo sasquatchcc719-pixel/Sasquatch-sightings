@@ -13,6 +13,13 @@ import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { haversineDistance } from '@/lib/gps/haversine'
 
+/**
+ * An active session still receiving points within this window is treated as
+ * the same walk in progress, so a second tab resumes it rather than forking.
+ * Beyond it, the session is assumed abandoned and is closed out.
+ */
+const RESUME_WINDOW_MS = 30 * 60 * 1000
+
 export async function GET() {
   try {
     const access = await requireAnyRole(['admin', 'owner', 'tech'])
@@ -43,13 +50,40 @@ export async function POST(request: NextRequest) {
   const body = await request.json()
 
   if (body.action === 'start') {
-    // A phone that died mid-walk leaves an active session behind — close it
-    // as completed rather than blocking a new start.
-    await supabase
+    // Starting is idempotent within a walk. Two tabs (or a reopened PWA)
+    // used to each create their own session, which closed the other's — and
+    // the still-running one then had every flush rejected, silently losing
+    // whole streets. If an active session is still being fed points, hand
+    // that same session back instead of forking a new one.
+    const { data: existing } = await supabase
       .from('canvass_sessions')
-      .update({ status: 'completed', ended_at: new Date().toISOString() })
+      .select('id, started_at')
       .eq('user_id', access.id)
       .eq('status', 'active')
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (existing) {
+      const { data: lastPoint } = await supabase
+        .from('canvass_points')
+        .select('recorded_at')
+        .eq('session_id', existing.id)
+        .order('recorded_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      const lastActivity = Date.parse(
+        lastPoint?.recorded_at ?? existing.started_at,
+      )
+      if (Date.now() - lastActivity < RESUME_WINDOW_MS) {
+        return NextResponse.json({ session: existing, resumed: true })
+      }
+      // Genuinely stale (phone died mid-walk, forgotten stop) — close it out.
+      await supabase
+        .from('canvass_sessions')
+        .update({ status: 'completed', ended_at: new Date().toISOString() })
+        .eq('id', existing.id)
+    }
 
     const { data: session, error } = await supabase
       .from('canvass_sessions')
