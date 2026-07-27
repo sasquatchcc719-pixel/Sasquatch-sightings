@@ -301,6 +301,14 @@ export function DayTimePicker({
               >
                 <div className="text-sm font-semibold whitespace-nowrap">
                   {formatClock(appt.start_time)}
+                  {appt.end_time ? (
+                    <>
+                      {' '}
+                      <span className="text-muted-foreground font-normal">
+                        – {formatClock(appt.end_time)}
+                      </span>
+                    </>
+                  ) : null}
                 </div>
                 <div className="min-w-0">
                   <div className="truncate text-sm font-medium">
