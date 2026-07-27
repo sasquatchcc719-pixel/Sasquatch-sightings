@@ -211,6 +211,12 @@ const navSections: NavSection[] = [
     icon: Bot,
     items: [
       {
+        name: 'Scout Logs',
+        href: '/admin/scout/logs',
+        icon: Bot,
+        description: 'Website chat logs',
+      },
+      {
         name: 'Ranger Hiring',
         href: '/admin/ranger',
         icon: UserRoundSearch,

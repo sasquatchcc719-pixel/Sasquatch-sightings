@@ -264,6 +264,13 @@ export function AdminNavigation() {
   // AI tools (Ranger hiring + AI Chats)
   const aiTabs: NavTab[] = [
     {
+      name: 'Scout Logs',
+      href: '/admin/scout/logs',
+      icon: Bot,
+      active: pathname.startsWith('/admin/scout'),
+      description: 'Website chat transcripts, tools, and bookings',
+    },
+    {
       name: 'Ranger Hiring',
       href: '/admin/ranger',
       icon: UserRoundSearch,
