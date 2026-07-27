@@ -16,9 +16,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { createAdminClient } from '@/supabase/server'
 import { cn } from '@/utils/tailwind'
 
-export const dynamic = 'force-dynamic'
-export const revalidate = 0
-
 type PageProps = {
   searchParams: Promise<{ q?: string; session?: string }>
 }
