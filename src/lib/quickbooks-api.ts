@@ -200,6 +200,19 @@ function centsMatch(left: number | null, right: number): boolean {
   return Math.round(left * 100) === Math.round(right * 100)
 }
 
+function isSameQBInvoice(
+  existing: QBInvoiceMatch,
+  customerId: string,
+  serviceDate: string,
+  expectedTotal: number,
+): boolean {
+  return (
+    existing.customerId === customerId &&
+    existing.txnDate === serviceDate &&
+    centsMatch(existing.total, expectedTotal)
+  )
+}
+
 function sumInvoiceTotal(
   lineItems: Array<{ line_total: number }>,
   discountAmount?: number,
@@ -329,12 +342,16 @@ export async function createQBInvoice(params: {
       docNumber,
     )
     if (existing) {
-      const sameInvoice =
-        existing.customerId === params.qbCustomerId &&
-        existing.txnDate === params.serviceDate &&
-        centsMatch(existing.total, expectedTotal)
-
-      if (sameInvoice) return existing.id
+      if (
+        isSameQBInvoice(
+          existing,
+          params.qbCustomerId,
+          params.serviceDate,
+          expectedTotal,
+        )
+      ) {
+        return existing.id
+      }
 
       throw new Error(
         `QB invoice DocNumber collision: ${docNumber} already belongs to ${existing.customerName || existing.customerId || 'another customer'} (${existing.txnDate || 'unknown date'}, $${existing.total ?? 'unknown'})`,
@@ -405,6 +422,30 @@ export async function createQBInvoice(params: {
     } catch {
       bodyText = ''
     }
+
+    // Two serverless workers can both pass the lookup before either POST
+    // finishes. QBO accepts one and rejects the other as a duplicate. Resolve
+    // that race as success only when the invoice QBO kept is the exact same
+    // customer/date/total; a real DocNumber collision must still fail.
+    if (docNumber && /Duplicate Document Number/i.test(bodyText)) {
+      const existing = await findQBInvoiceByDocNumber(
+        auth.realmId,
+        auth.accessToken,
+        docNumber,
+      )
+      if (
+        existing &&
+        isSameQBInvoice(
+          existing,
+          params.qbCustomerId,
+          params.serviceDate,
+          expectedTotal,
+        )
+      ) {
+        return existing.id
+      }
+    }
+
     throw new Error(
       `QB create invoice failed: ${res.status} (tid: ${tid}) ${bodyText.slice(0, 500)}`,
     )
