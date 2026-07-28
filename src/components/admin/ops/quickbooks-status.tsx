@@ -46,7 +46,19 @@ type QBStatus = {
   stuck: number
   pending_jobs: QBPendingJob[]
   stuck_invoices: QBInvoiceDetail[]
+  failed_jobs: QBProblemJob[]
+  retrying_jobs: QBProblemJob[]
   last_synced_at: string | null
+}
+
+type QBProblemJob = {
+  id: string
+  entity_type: string
+  label: string
+  error_message: string | null
+  attempts: number
+  updated_at: string | null
+  next_retry_at: string | null
 }
 
 function formatCurrency(amount: number | null) {
@@ -504,6 +516,57 @@ export function QuickBooksStatus() {
                     />
                   )
                 })}
+              </div>
+            </div>
+          )}
+
+          {status.retrying_jobs?.length > 0 && (
+            <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.03] p-3">
+              <p className="mb-2 text-xs font-medium text-white/60">
+                Waiting to retry automatically
+              </p>
+              <div className="space-y-1.5">
+                {status.retrying_jobs.map((job) => (
+                  <div key={job.id} className="text-xs">
+                    <span className="text-white/80">{job.label}</span>
+                    <span className="text-white/40">
+                      {' '}
+                      · attempt {job.attempts}
+                      {job.next_retry_at
+                        ? ` · retries ${new Date(job.next_retry_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
+                        : ''}
+                    </span>
+                    {job.error_message && (
+                      <p className="mt-0.5 font-mono break-words text-white/40">
+                        {job.error_message}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {status.failed_jobs?.length > 0 && (
+            <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/5 p-3">
+              <p className="mb-2 text-xs font-medium text-red-400">
+                Gave up after retrying — needs a fix
+              </p>
+              <div className="space-y-2">
+                {status.failed_jobs.map((job) => (
+                  <div key={job.id} className="text-xs">
+                    <span className="text-white/90">{job.label}</span>
+                    <span className="text-white/40">
+                      {' '}
+                      · {job.attempts} attempts
+                    </span>
+                    {job.error_message && (
+                      <p className="mt-0.5 font-mono break-words text-red-300/70">
+                        {job.error_message}
+                      </p>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
           )}

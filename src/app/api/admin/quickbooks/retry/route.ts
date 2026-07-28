@@ -74,10 +74,19 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Promote failed jobs back to pending
+    // Promote failed jobs back to pending. Reset the retry ladder too —
+    // a manual retry means "try this properly again", so clear the attempt
+    // count, make it due immediately, and re-arm the alert.
     const { data: failedData, error: failedError } = await supabase
       .from('ops_quickbooks_sync_jobs')
-      .update({ status: 'pending', error_message: null, updated_at: now })
+      .update({
+        status: 'pending',
+        error_message: null,
+        sync_attempts: 0,
+        next_retry_at: null,
+        alerted_at: null,
+        updated_at: now,
+      })
       .eq('status', 'failed')
       .select('id')
 

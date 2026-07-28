@@ -104,11 +104,46 @@ export async function createQBCustomer(params: {
 
   if (!res.ok) {
     const tid = res.headers.get('intuit_tid') || 'unknown'
-    throw new Error(`QB create customer failed: ${res.status} (tid: ${tid})`)
+    // Keep QuickBooks' own explanation. Logging only the status code left
+    // every customer failure undiagnosable — the body is where QBO says
+    // things like "Duplicate Name Exists Error".
+    const detail = await readQBErrorDetail(res)
+    throw new Error(
+      `QB create customer failed: ${res.status} (tid: ${tid})${detail ? ` — ${detail}` : ''}`,
+    )
   }
 
   const data = await res.json()
   return data.Customer.Id
+}
+
+/**
+ * Pull the human-readable reason out of a QuickBooks error response.
+ * QBO nests it under Fault.Error[]; fall back to raw text when the shape is
+ * unexpected so we never swallow the reason entirely.
+ */
+async function readQBErrorDetail(res: Response): Promise<string | null> {
+  try {
+    const raw = await res.text()
+    if (!raw) return null
+    try {
+      const parsed = JSON.parse(raw) as {
+        Fault?: { Error?: Array<{ Message?: string; Detail?: string }> }
+      }
+      const errors = parsed.Fault?.Error
+      if (errors?.length) {
+        return errors
+          .map((e) => [e.Message, e.Detail].filter(Boolean).join(': '))
+          .join(' | ')
+          .slice(0, 500)
+      }
+    } catch {
+      // not JSON — fall through to the raw body
+    }
+    return raw.slice(0, 500)
+  } catch {
+    return null
+  }
 }
 
 type QBInvoiceMatch = {

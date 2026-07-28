@@ -135,6 +135,8 @@ export async function GET() {
       eligibleInvoicesResult,
       pendingInvoiceJobsResult,
       pendingJobsResult,
+      failedJobsResult,
+      retryingJobsResult,
     ] = await Promise.all([
       supabase
         .from('ops_quickbooks_sync_jobs')
@@ -179,6 +181,27 @@ export async function GET() {
         )
         .eq('status', 'pending')
         .order('created_at', { ascending: true })
+        .limit(25),
+      // Terminal failures, with QuickBooks' own words, so the cause is
+      // readable in the UI instead of needing a database dig.
+      supabase
+        .from('ops_quickbooks_sync_jobs')
+        .select(
+          'id, entity_type, entity_id, error_message, sync_attempts, updated_at',
+        )
+        .eq('status', 'failed')
+        .order('updated_at', { ascending: false })
+        .limit(25),
+      // Still in the retry ladder — shown separately so a job that is merely
+      // waiting doesn't read as broken.
+      supabase
+        .from('ops_quickbooks_sync_jobs')
+        .select(
+          'id, entity_type, entity_id, error_message, sync_attempts, next_retry_at',
+        )
+        .eq('status', 'pending')
+        .not('next_retry_at', 'is', null)
+        .order('next_retry_at', { ascending: true })
         .limit(25),
     ])
 
@@ -293,6 +316,69 @@ export async function GET() {
       }
     })
 
+    // Label each failure with its invoice number / customer name so the panel
+    // reads "Invoice #18334 — Duplicate Document Number" rather than a uuid.
+    type JobRow = {
+      id: string
+      entity_type: string
+      entity_id: string
+      error_message: string | null
+      sync_attempts: number | null
+      updated_at?: string
+      next_retry_at?: string
+    }
+    const problemJobs = [
+      ...((failedJobsResult.data as JobRow[] | null) || []),
+      ...((retryingJobsResult.data as JobRow[] | null) || []),
+    ]
+    const labelById = new Map<string, string>()
+    if (problemJobs.length > 0) {
+      const invoiceIds = problemJobs
+        .filter((j) => j.entity_type === 'invoice')
+        .map((j) => j.entity_id)
+      const customerIds = problemJobs
+        .filter((j) => j.entity_type === 'customer')
+        .map((j) => j.entity_id)
+      const [invRows, custRows] = await Promise.all([
+        invoiceIds.length
+          ? supabase
+              .from('ops_invoices')
+              .select('id, invoice_number, total')
+              .in('id', invoiceIds)
+          : Promise.resolve({ data: [] }),
+        customerIds.length
+          ? supabase
+              .from('ops_customers')
+              .select('id, full_name, business_name')
+              .in('id', customerIds)
+          : Promise.resolve({ data: [] }),
+      ])
+      for (const r of (invRows.data || []) as Array<{
+        id: string
+        invoice_number: number | null
+        total: string | number | null
+      }>) {
+        labelById.set(r.id, `Invoice #${r.invoice_number} ($${r.total})`)
+      }
+      for (const r of (custRows.data || []) as Array<{
+        id: string
+        full_name: string | null
+        business_name: string | null
+      }>) {
+        labelById.set(r.id, r.business_name || r.full_name || 'Customer')
+      }
+    }
+
+    const describeJob = (j: JobRow) => ({
+      id: j.id,
+      entity_type: j.entity_type,
+      label: labelById.get(j.entity_id) || j.entity_type,
+      error_message: j.error_message,
+      attempts: j.sync_attempts ?? 0,
+      updated_at: j.updated_at ?? null,
+      next_retry_at: j.next_retry_at ?? null,
+    })
+
     return NextResponse.json(
       {
         ...connectionStatus,
@@ -301,6 +387,12 @@ export async function GET() {
         stuck: stuckInvoiceRows.length,
         pending_jobs: pendingJobs,
         stuck_invoices: stuckInvoices,
+        failed_jobs: ((failedJobsResult.data as JobRow[] | null) || []).map(
+          describeJob,
+        ),
+        retrying_jobs: ((retryingJobsResult.data as JobRow[] | null) || []).map(
+          describeJob,
+        ),
         last_synced_at: syncedResult.data?.updated_at || null,
       },
       {

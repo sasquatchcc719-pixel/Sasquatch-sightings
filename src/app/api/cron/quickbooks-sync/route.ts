@@ -14,6 +14,13 @@ import {
   syncBatchInvoiceToQuickBooks,
 } from '@/lib/quickbooks-api'
 import { getQBConnectionStatus } from '@/lib/quickbooks-auth'
+import { sendTelegramNotification } from '@/lib/telegram'
+import {
+  formatSyncFailureAlert,
+  isPermanentFailure,
+  retryTimestamp,
+  type SyncAlertContext,
+} from '@/lib/ops/quickbooks-sync-retry'
 
 const BATCH_SIZE = 20
 
@@ -23,6 +30,82 @@ type SyncJob = {
   entity_id: string
   payload: Record<string, unknown>
   sync_attempts?: number | null
+}
+
+type ExhaustedJob = {
+  jobId: string
+  entityType: string
+  entityId: string
+  attempts: number
+  error: string
+}
+
+/**
+ * Tell Charles once, on Telegram, when a job has run out of retries — the
+ * whole point being that a stuck invoice can no longer sit unnoticed for
+ * weeks. alerted_at guards against re-sending every 15 minutes.
+ */
+async function alertOnExhaustedJobs(
+  supabase: ReturnType<typeof createAdminClient>,
+  exhausted: ExhaustedJob[],
+): Promise<void> {
+  if (exhausted.length === 0) return
+
+  const { data: unalerted } = await supabase
+    .from('ops_quickbooks_sync_jobs')
+    .select('id')
+    .in(
+      'id',
+      exhausted.map((e) => e.jobId),
+    )
+    .is('alerted_at', null)
+
+  const toAlert = new Set((unalerted ?? []).map((r) => r.id))
+  const fresh = exhausted.filter((e) => toAlert.has(e.jobId))
+  if (fresh.length === 0) return
+
+  // Resolve a human reference (invoice #, customer name) so the alert says
+  // which job is stuck rather than just a uuid.
+  const contexts: SyncAlertContext[] = []
+  for (const job of fresh) {
+    let reference: string | null = null
+    try {
+      if (job.entityType === 'invoice') {
+        const { data } = await supabase
+          .from('ops_invoices')
+          .select('invoice_number, total')
+          .eq('id', job.entityId)
+          .maybeSingle()
+        if (data) reference = `#${data.invoice_number} ($${data.total})`
+      } else if (job.entityType === 'customer') {
+        const { data } = await supabase
+          .from('ops_customers')
+          .select('full_name, business_name')
+          .eq('id', job.entityId)
+          .maybeSingle()
+        if (data) reference = data.business_name || data.full_name || null
+      }
+    } catch {
+      // A missing label must never stop the alert going out.
+    }
+    contexts.push({
+      entityType: job.entityType,
+      reference,
+      attempts: job.attempts,
+      error: job.error,
+    })
+  }
+
+  const sent = await sendTelegramNotification(formatSyncFailureAlert(contexts))
+  if (sent) {
+    await supabase
+      .from('ops_quickbooks_sync_jobs')
+      .update({ alerted_at: new Date().toISOString() })
+      .in(
+        'id',
+        fresh.map((e) => e.jobId),
+      )
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -61,12 +144,17 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    // Only pick up work that is actually due — a job waiting out its backoff
+    // carries a future next_retry_at and must be left alone until then.
+    const dueFilter = `next_retry_at.is.null,next_retry_at.lte.${new Date().toISOString()}`
+
     // Fetch customer jobs first — invoices depend on customers being synced
     const { data: customerJobs, error: customerJobsError } = await supabase
       .from('ops_quickbooks_sync_jobs')
       .select('id, entity_type, entity_id, payload, sync_attempts')
       .eq('status', 'pending')
       .eq('entity_type', 'customer')
+      .or(dueFilter)
       .order('created_at', { ascending: true })
       .limit(BATCH_SIZE)
 
@@ -77,6 +165,7 @@ export async function GET(request: NextRequest) {
       .select('id, entity_type, entity_id, payload, sync_attempts')
       .eq('status', 'pending')
       .eq('entity_type', 'invoice')
+      .or(dueFilter)
       .order('created_at', { ascending: true })
       .limit(BATCH_SIZE)
 
@@ -87,6 +176,7 @@ export async function GET(request: NextRequest) {
       .select('id, entity_type, entity_id, payload, sync_attempts')
       .eq('status', 'pending')
       .eq('entity_type', 'batch_invoice')
+      .or(dueFilter)
       .order('created_at', { ascending: true })
       .limit(BATCH_SIZE)
 
@@ -106,8 +196,10 @@ export async function GET(request: NextRequest) {
       processed: jobs.length,
       synced: 0,
       failed: 0,
+      retrying: 0,
       errors: [] as string[],
     }
+    const exhausted: ExhaustedJob[] = []
 
     for (const job of jobs as SyncJob[]) {
       const attemptCount = Number(job.sync_attempts || 0) + 1
@@ -323,16 +415,46 @@ export async function GET(request: NextRequest) {
         results.failed++
         results.errors.push(`${job.id}: ${message}`)
 
-        await supabase
-          .from('ops_quickbooks_sync_jobs')
-          .update({
-            status: 'failed',
-            error_message: message,
-            updated_at: new Date().toISOString(),
+        // A bad request will fail identically forever, so don't burn the
+        // ladder on it — go terminal now and alert. Everything else gets
+        // another go after a backoff.
+        const retryAt = isPermanentFailure(message)
+          ? null
+          : retryTimestamp(attemptCount)
+
+        if (retryAt) {
+          await supabase
+            .from('ops_quickbooks_sync_jobs')
+            .update({
+              status: 'pending',
+              error_message: message,
+              next_retry_at: retryAt,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', job.id)
+          results.retrying++
+        } else {
+          await supabase
+            .from('ops_quickbooks_sync_jobs')
+            .update({
+              status: 'failed',
+              error_message: message,
+              next_retry_at: null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', job.id)
+          exhausted.push({
+            jobId: job.id,
+            entityType: job.entity_type,
+            entityId: job.entity_id,
+            attempts: attemptCount,
+            error: message,
           })
-          .eq('id', job.id)
+        }
       }
     }
+
+    await alertOnExhaustedJobs(supabase, exhausted)
 
     // --- Payment polling: sync QB payments back to local invoices ---
     let paymentsUpdated = 0
