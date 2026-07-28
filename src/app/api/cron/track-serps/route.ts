@@ -8,6 +8,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { runRadarScan, buildRadarDigest } from '@/lib/radar-scan'
 import { syncGbpReviews } from '@/lib/gbp-reviews'
+import {
+  formatReviewCountChange,
+  recordReviewCount,
+} from '@/lib/gbp-review-count'
 import { createAdminClient } from '@/supabase/server'
 import { sendTelegramNotification } from '@/lib/telegram'
 
@@ -44,10 +48,25 @@ export async function GET(request: NextRequest) {
         await sendTelegramNotification(
           `🌟 New Google review — ${review.author || 'Anonymous'} (${stars})${quote}${
             sync.totalOnGoogle != null
-              ? `\nTotal reviews: ${sync.totalOnGoogle}`
+              ? `\nShowing on Google: ${sync.totalOnGoogle}`
               : ''
           }`,
         )
+      }
+
+      // Snapshot the public count and speak up only when it moves — during a
+      // profile reinstatement this is the number Charles is waiting on.
+      const { count: storedReviews } = await supabase
+        .from('gbp_reviews')
+        .select('id', { count: 'exact', head: true })
+      const change = await recordReviewCount(
+        supabase,
+        sync.totalOnGoogle,
+        storedReviews ?? 0,
+      )
+      if (change) {
+        const text = formatReviewCountChange(change, storedReviews ?? 0)
+        if (text) await sendTelegramNotification(text)
       }
     } catch (reviewErr) {
       // Review sync failures must not break rank tracking.
