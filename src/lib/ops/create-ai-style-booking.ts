@@ -22,6 +22,7 @@ import {
   leadSourceUpdatePayload,
   normalizeLeadSourceForWrite,
 } from '@/lib/server/lead-sources'
+import { isExcludedFromBooking } from '@/lib/ops/bookable-catalog'
 
 export type AiStyleBookingLineRequest = {
   service_id: string
@@ -309,6 +310,13 @@ export async function createAiStyleBooking(
   if (catalogError) {
     console.error('[createAiStyleBooking] catalog:', catalogError)
     return { ok: false, error: 'Could not load service catalog' }
+  }
+
+  if (catalogItems?.some((item) => isExcludedFromBooking(item))) {
+    return {
+      ok: false,
+      error: 'This service is no longer available for customer booking.',
+    }
   }
 
   if (!catalogItems || catalogItems.length === 0) {

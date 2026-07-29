@@ -4,6 +4,7 @@ import {
   calendarEventsToAppointmentWindows,
   getAvailableSlots,
 } from '@/lib/ops/availability'
+import { isExcludedFromBooking } from '@/lib/ops/bookable-catalog'
 
 const OPS_SMS_BOOKING_ENABLED = process.env.OPS_SMS_BOOKING_ENABLED === 'true'
 
@@ -51,7 +52,9 @@ export async function buildSmsSlotOffer(params: {
 
   const { data: services, error: servicesError } = await params.supabase
     .from('service_catalog_items')
-    .select('id, name, category, default_duration_minutes, buffer_minutes')
+    .select(
+      'id, name, slug, category, default_duration_minutes, buffer_minutes',
+    )
     .eq('is_active', true)
     .order('name')
 
@@ -59,10 +62,15 @@ export async function buildSmsSlotOffer(params: {
     return null
   }
 
+  const bookableServices = services.filter(
+    (service) => !isExcludedFromBooking(service),
+  )
+  if (bookableServices.length === 0) return null
+
   const selectedService =
-    services.find((service) =>
+    bookableServices.find((service) =>
       matchesService(params.serviceNeeded, service.name, service.category),
-    ) || services[0]
+    ) || bookableServices[0]
 
   if (
     !Number.isFinite(selectedService.default_duration_minutes) ||

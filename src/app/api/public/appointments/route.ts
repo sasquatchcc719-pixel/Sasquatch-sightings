@@ -30,6 +30,7 @@ import {
   normalizeLeadSourceForWrite,
 } from '@/lib/server/lead-sources'
 import { createCustomerPhotoUploadToken } from '@/lib/ops/customer-photo-upload-token'
+import { isExcludedFromBooking } from '@/lib/ops/bookable-catalog'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -184,6 +185,17 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    if (
+      lineItems.some((item) =>
+        isExcludedFromBooking({ name: item.name_snapshot }),
+      )
+    ) {
+      return NextResponse.json(
+        { error: 'This service is no longer available for online booking.' },
+        { status: 400, headers: CORS },
+      )
+    }
+
     if (serviceAreaCheck.travelCharge > 0) {
       lineItems.push({
         name_snapshot: 'Mileage/ Travel',
@@ -204,9 +216,17 @@ export async function POST(request: NextRequest) {
     if (catalogIds.length > 0) {
       const { data: catalogRows } = await supabase
         .from('service_catalog_items')
-        .select('id, pricing_unit, category')
+        .select('id, name, slug, pricing_unit, category')
         .in('id', catalogIds)
       if (catalogRows) {
+        if (catalogRows.some((item) => isExcludedFromBooking(item))) {
+          return NextResponse.json(
+            {
+              error: 'This service is no longer available for online booking.',
+            },
+            { status: 400, headers: CORS },
+          )
+        }
         const catalogMap = new Map(
           catalogRows.map((r) => [
             r.id,

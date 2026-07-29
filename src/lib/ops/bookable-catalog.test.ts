@@ -25,9 +25,18 @@ describe('isExcludedFromBooking', () => {
         name: 'Regular Size Room (100 to 200 Sqft)',
       }),
     ).toBe(false)
+  })
+
+  it('keeps dryer duct available internally but excludes it from customer booking', () => {
     expect(
       isExcludedFromBooking({ slug: null, name: 'Dryer Duct cleaning' }),
-    ).toBe(false)
+    ).toBe(true)
+    expect(
+      isExcludedFromBooking({
+        slug: 'dryer-duct-cleaning',
+        name: 'Renamed internal dryer service',
+      }),
+    ).toBe(true)
   })
 
   it('never exposes water-damage Restoration in the bookable categories', () => {

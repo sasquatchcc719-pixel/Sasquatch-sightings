@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 import { getAgentPromoSettings } from '@/lib/agent-auth'
+import { isExcludedFromBooking } from '@/lib/ops/bookable-catalog'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -38,11 +39,20 @@ export async function GET(request: NextRequest) {
     const supabase = createAdminClient()
     const { data: services, error } = await supabase
       .from('service_catalog_items')
-      .select('id, name, base_price, pricing_unit, default_duration_minutes')
+      .select(
+        'id, name, slug, base_price, pricing_unit, default_duration_minutes',
+      )
       .in('id', serviceIds)
       .eq('is_active', true)
 
     if (error) throw error
+
+    if (services?.some((service) => isExcludedFromBooking(service))) {
+      return NextResponse.json(
+        { error: 'This service is no longer available for online booking.' },
+        { status: 400, headers: CORS },
+      )
+    }
 
     const lineItems = serviceIds
       .map((id, index) => {

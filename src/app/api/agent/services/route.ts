@@ -8,6 +8,7 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 import { getAgentPromoSettings } from '@/lib/agent-auth'
 import { getServiceAreaDescription } from '@/lib/service-area'
+import { isExcludedFromBooking } from '@/lib/ops/bookable-catalog'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -47,7 +48,7 @@ export async function GET() {
     const { data, error } = await supabase
       .from('service_catalog_items')
       .select(
-        'id, name, base_price, category, description, pricing_unit, default_duration_minutes',
+        'id, name, slug, base_price, category, description, pricing_unit, default_duration_minutes',
       )
       .in('category', PUBLIC_CATEGORIES)
       .eq('is_active', true)
@@ -57,7 +58,10 @@ export async function GET() {
     if (error) throw error
 
     const services = (data || [])
-      .filter((item) => !EXCLUDED_NAMES.includes(item.name))
+      .filter(
+        (item) =>
+          !EXCLUDED_NAMES.includes(item.name) && !isExcludedFromBooking(item),
+      )
       .map((item) => ({
         id: item.id,
         name: item.name,

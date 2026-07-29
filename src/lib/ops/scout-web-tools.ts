@@ -10,6 +10,7 @@ import { createAiStyleEstimate } from '@/lib/ops/create-ai-style-estimate'
 import { getStaffPrioritizedSlots } from '@/lib/ops/staff-availability'
 import { createSlotToken, verifySlotToken } from '@/lib/ops/slot-token'
 import { checkServiceArea } from '@/lib/service-area'
+import { isExcludedFromBooking } from '@/lib/ops/bookable-catalog'
 
 /**
  * Scout Web Tools
@@ -337,14 +338,18 @@ export async function executeScoutWebTool(
 
         const { data: services, error } = await supabase
           .from('service_catalog_items')
-          .select('id, name, category, base_price, default_duration_minutes')
+          .select(
+            'id, name, slug, category, base_price, default_duration_minutes',
+          )
           .eq('is_active', true)
           .ilike('name', `%${q}%`)
           .limit(25)
 
         if (error) throw error
         const filtered = (services || []).filter(
-          (s) => !EXCLUDED_SERVICE_NAMES.includes(s.name),
+          (s) =>
+            !EXCLUDED_SERVICE_NAMES.includes(s.name) &&
+            !isExcludedFromBooking(s),
         )
         return JSON.stringify({
           services: filtered.map((s) => ({
