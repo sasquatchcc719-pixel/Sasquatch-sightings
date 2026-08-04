@@ -273,10 +273,20 @@ async function getTemplatesForEvent(
   lineItems?: Array<{ name_snapshot: string | null }> | null,
 ): Promise<OpsTemplateRow[]> {
   const keys = getOpsTemplateKeysForEvent(event, lineItems)
+
+  // The urine variant REPLACES job_finished_email in the key list, so if that
+  // template is disabled the customer would get no completion email at all.
+  // Ask for the standard one as a fallback and drop it only when the urine
+  // template actually came back enabled.
+  const usesUrineVariant = keys.includes('job_finished_email_urine')
+  const queryKeys: OpsTemplateKey[] = usesUrineVariant
+    ? [...keys, 'job_finished_email']
+    : keys
+
   const { data, error } = await supabase
     .from('ops_communication_templates')
     .select('*')
-    .in('template_key', keys)
+    .in('template_key', queryKeys)
     .eq('is_enabled', true)
 
   if (error) {
@@ -284,7 +294,49 @@ async function getTemplatesForEvent(
     return []
   }
 
-  return (data || []) as OpsTemplateRow[]
+  const rows = (data || []) as OpsTemplateRow[]
+  if (!usesUrineVariant) return rows
+
+  const urineEnabled = rows.some(
+    (row) => row.template_key === 'job_finished_email_urine',
+  )
+  return urineEnabled
+    ? rows.filter((row) => row.template_key !== 'job_finished_email')
+    : rows
+}
+
+/**
+ * Line items to test for the urine treatment. The tech usually adds it at job
+ * close, which writes to the INVOICE — the appointment's own line items still
+ * show only what was booked. Colette Garcia's 2026-08-04 job was exactly this:
+ * urine on the invoice, nothing on the appointment. Check both.
+ */
+async function loadUrineDetectionItems(
+  supabase: ReturnType<typeof createAdminClient>,
+  appointment: AppointmentWithRelations,
+): Promise<Array<{ name_snapshot: string | null }>> {
+  const appointmentItems = appointment.ops_appointment_line_items || []
+  if (hasUrineTreatmentLineItem(appointmentItems)) return appointmentItems
+
+  const { data: invoices } = await supabase
+    .from('ops_invoices')
+    .select('id')
+    .eq('appointment_id', appointment.id)
+
+  const invoiceIds = (invoices || []).map((invoice) => invoice.id)
+  if (invoiceIds.length === 0) return appointmentItems
+
+  const { data: invoiceItems } = await supabase
+    .from('ops_invoice_line_items')
+    .select('description')
+    .in('invoice_id', invoiceIds)
+
+  return [
+    ...appointmentItems,
+    ...(invoiceItems || []).map((item) => ({
+      name_snapshot: item.description as string | null,
+    })),
+  ]
 }
 
 async function resolveTechFirstName(
@@ -681,7 +733,9 @@ export async function sendOpsLifecycleCommunications(params: {
   const templates = await getTemplatesForEvent(
     supabase,
     params.event,
-    appointment.ops_appointment_line_items,
+    params.event === 'job_finished'
+      ? await loadUrineDetectionItems(supabase, appointment)
+      : appointment.ops_appointment_line_items,
   )
   if (templates.length === 0) return { sent: [] }
 
