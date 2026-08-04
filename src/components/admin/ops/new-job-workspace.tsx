@@ -261,6 +261,7 @@ export function NewJobWorkspace() {
     Array<{ start_time: string; end_time: string }>
   >([])
   const [loadingSlots, setLoadingSlots] = useState(false)
+  const [slotWarning, setSlotWarning] = useState<string | null>(null)
   const [staffMembers, setStaffMembers] = useState<
     Array<{
       id: string
@@ -983,9 +984,18 @@ export function NewJobWorkspace() {
           Array.isArray(result.slots) ? result.slots : []
         setAvailableSlots(slots)
         if (slots.length === 0) {
+          // Nothing on this day is long enough for the job as currently
+          // priced. Flipping to custom time silently used to leave the start
+          // time the admin picked when the job was smaller still selected —
+          // that's how a 4-hour job ended up on top of an 11 AM appointment.
+          // Say so out loud; the server also refuses the overlap now.
           setUseCustomTime(true)
+          setSlotWarning(
+            `No ${requiredMinutesForCurrentSelection / 60}-hour opening left on ${appointmentForm.appointment_date}. Pick another day, or set a time by hand knowing it will overlap.`,
+          )
           return
         }
+        setSlotWarning(null)
 
         const currentStart = `${appointmentForm.start_time}:00`.slice(0, 8)
         const stillValid = slots.some(
@@ -1466,6 +1476,12 @@ export function NewJobWorkspace() {
                 )}
               </select>
             </div>
+
+            {slotWarning && (
+              <p className="mt-4 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-400">
+                {slotWarning}
+              </p>
+            )}
 
             <div className="mt-4">
               <DayTimePicker

@@ -9,6 +9,7 @@ import {
   applyAppointmentBuffer,
   calculateAppointmentDurationFromTotal,
 } from '@/lib/ops/availability'
+import { findAppointmentConflict } from '@/lib/ops/availability-bundle'
 import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
 import { enrollCustomerInDrip } from '@/lib/ops/drip-campaign'
 import { cancelReactivationForCustomer } from '@/lib/ops/reactivation-campaign'
@@ -188,8 +189,35 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Admin bookings can override availability constraints.
-    // The calendar UI shows conflicts visually; trust the admin's judgment.
+    // The block this job will actually occupy is sized by the dollar subtotal
+    // above, which can grow after a time was picked (add line items to a $250
+    // 2-hour job and it becomes a $700 4-hour job). Re-check the *final* window
+    // against the assigned tech's calendar so a longer job can't be written on
+    // top of their next appointment. Admins can still override deliberately by
+    // sending allow_conflict — this only stops the silent case.
+    const assignedStaffUserId = body.appointment?.assigned_staff_user_id
+      ? String(body.appointment.assigned_staff_user_id)
+      : undefined
+    // Only guard when a tech is actually assigned — an unassigned job checked
+    // against every tech's calendar would refuse times that are genuinely open
+    // for somebody.
+    if (assignedStaffUserId && body.allow_conflict !== true) {
+      const conflict = await findAppointmentConflict(supabase, {
+        date: appointmentDate,
+        startTime: startTime,
+        endTime: addMinutesToTime(startTime, totalMinutesWithBuffer),
+        staffUserId: assignedStaffUserId,
+      })
+      if (conflict) {
+        return NextResponse.json(
+          {
+            error: `This job needs ${totalMinutesWithBuffer / 60} hours, which runs into an existing ${conflict.start_time.slice(0, 5)}–${conflict.end_time.slice(0, 5)} appointment. Pick another time, or resubmit with allow_conflict to book it anyway.`,
+            conflict,
+          },
+          { status: 409 },
+        )
+      }
+    }
 
     let customerId: string
     const bodyCustomerId = body.customer_id
