@@ -14,6 +14,7 @@ export const OPS_TEMPLATE_KEYS = [
   'day_before_recovery_village_sms',
   'job_scheduled_email',
   'job_finished_email',
+  'job_finished_email_urine',
   'satisfaction_checkin_email',
 ] as const
 
@@ -234,8 +235,19 @@ export function formatCustomerServiceSummary(
   return lines.join('\n') || 'Service appointment'
 }
 
+const URINE_TREATMENT_LINE_ITEM = 'Urine Eliminator Treatment'
+
+export function hasUrineTreatmentLineItem(
+  lineItems: Array<{ name_snapshot: string | null }> | null | undefined,
+): boolean {
+  return (lineItems || []).some(
+    (item) => item.name_snapshot?.trim() === URINE_TREATMENT_LINE_ITEM,
+  )
+}
+
 export function getOpsTemplateKeysForEvent(
   event: OpsLifecycleEvent,
+  lineItems?: Array<{ name_snapshot: string | null }> | null,
 ): OpsTemplateKey[] {
   if (event === 'job_scheduled') {
     return ['job_scheduled_sms', 'job_scheduled_email']
@@ -248,7 +260,9 @@ export function getOpsTemplateKeysForEvent(
   }
   return [
     'job_finished_sms',
-    'job_finished_email',
+    hasUrineTreatmentLineItem(lineItems)
+      ? 'job_finished_email_urine'
+      : 'job_finished_email',
     'satisfaction_checkin_email',
   ]
 }
@@ -256,8 +270,9 @@ export function getOpsTemplateKeysForEvent(
 async function getTemplatesForEvent(
   supabase: ReturnType<typeof createAdminClient>,
   event: OpsLifecycleEvent,
+  lineItems?: Array<{ name_snapshot: string | null }> | null,
 ): Promise<OpsTemplateRow[]> {
-  const keys = getOpsTemplateKeysForEvent(event)
+  const keys = getOpsTemplateKeysForEvent(event, lineItems)
   const { data, error } = await supabase
     .from('ops_communication_templates')
     .select('*')
@@ -663,7 +678,11 @@ export async function sendOpsLifecycleCommunications(params: {
     return { sent: [] }
   }
 
-  const templates = await getTemplatesForEvent(supabase, params.event)
+  const templates = await getTemplatesForEvent(
+    supabase,
+    params.event,
+    appointment.ops_appointment_line_items,
+  )
   if (templates.length === 0) return { sent: [] }
 
   const customer = unwrapRelation(appointment.ops_customers)
