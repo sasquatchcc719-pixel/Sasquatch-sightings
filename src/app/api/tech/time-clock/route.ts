@@ -131,6 +131,21 @@ async function getHourlyRate(
   supabase: ReturnType<typeof createAdminClient>,
   staffUserId: string,
 ) {
+  // The staff record is the single place a raise gets entered. Prefer it over
+  // anything historical — copying the previous entry's rate forward is what made
+  // raises invisible, since a new entry would inherit the pre-raise rate forever.
+  const { data: staff, error: staffError } = await supabase
+    .from('staff_users')
+    .select('hourly_rate')
+    .eq('id', staffUserId)
+    .maybeSingle()
+
+  if (staffError) throw staffError
+  const staffRate = Number(staff?.hourly_rate || 0)
+  if (staffRate > 0) return staffRate
+
+  // No rate on the staff record yet — fall back to their last paid entry so
+  // existing techs keep being paid correctly until a rate is set for them.
   const { data: latestEntry, error: latestError } = await supabase
     .from('ops_timesheet_entries')
     .select('hourly_rate')

@@ -15,6 +15,7 @@ type StaffRow = {
   user_id: string | null
   display_name: string
   role: string
+  hourly_rate?: number | string | null
 }
 
 type TimesheetEntry = {
@@ -160,6 +161,106 @@ async function fetchPremiums(
   )
   if (!res.ok) throw new Error('Failed to load after-hours premiums')
   return res.json()
+}
+
+/**
+ * Current pay rate per person. This is the one place a raise gets entered — the
+ * time clock reads it when creating a new entry. Editing a rate never rewrites
+ * past entries; each timesheet row keeps the rate it was recorded at, so history
+ * stays accurate across raises.
+ */
+function StaffRatesCard({
+  staff,
+  onSaved,
+}: {
+  staff: StaffRow[]
+  onSaved: () => void
+}) {
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [savingId, setSavingId] = useState<string | null>(null)
+  const [note, setNote] = useState<string | null>(null)
+
+  const rateOf = (row: StaffRow) =>
+    row.hourly_rate === null || row.hourly_rate === undefined
+      ? ''
+      : String(row.hourly_rate)
+
+  async function save(row: StaffRow) {
+    const next = drafts[row.id] ?? rateOf(row)
+    setSavingId(row.id)
+    setNote(null)
+    try {
+      const res = await fetch('/api/admin/ops/staff', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ staffId: row.id, hourlyRate: next }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Failed to save rate')
+      setNote(
+        next === ''
+          ? `${row.display_name} is now marked unpaid.`
+          : `${row.display_name} is now $${Number(next).toFixed(2)}/hr on new entries.`,
+      )
+      setDrafts((d) => {
+        const copy = { ...d }
+        delete copy[row.id]
+        return copy
+      })
+      onSaved()
+    } catch (error) {
+      setNote(error instanceof Error ? error.message : 'Failed to save rate')
+    } finally {
+      setSavingId(null)
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-slate-900/50 px-4 py-3">
+      <div className="mb-2 flex items-baseline justify-between gap-3">
+        <h3 className="text-sm font-semibold text-white">Pay rates</h3>
+        <p className="text-xs text-slate-400">
+          Applies to new entries only. Past entries keep their original rate.
+        </p>
+      </div>
+      <div className="space-y-2">
+        {staff.map((row) => {
+          const draft = drafts[row.id] ?? rateOf(row)
+          const dirty = draft !== rateOf(row)
+          return (
+            <div key={row.id} className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate text-sm text-slate-200">
+                {row.display_name}
+                <span className="ml-2 text-xs text-slate-500">{row.role}</span>
+              </span>
+              <span className="text-sm text-slate-500">$</span>
+              <input
+                type="number"
+                step="0.25"
+                min="0"
+                value={draft}
+                placeholder="unpaid"
+                onChange={(e) =>
+                  setDrafts((d) => ({ ...d, [row.id]: e.target.value }))
+                }
+                className="w-24 rounded-lg border border-white/10 bg-slate-800/60 px-2 py-1 text-sm text-white"
+              />
+              <span className="text-xs text-slate-500">/hr</span>
+              <button
+                type="button"
+                disabled={!dirty || savingId === row.id}
+                onClick={() => save(row)}
+                className="rounded-md bg-emerald-700 px-3 py-1 text-sm text-white disabled:opacity-40"
+              >
+                {savingId === row.id ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          )
+        })}
+      </div>
+      {note ? <p className="mt-2 text-xs text-emerald-300">{note}</p> : null}
+    </div>
+  )
 }
 
 export function PayrollTimesheetsView() {
@@ -558,6 +659,8 @@ export function PayrollTimesheetsView() {
         time. Clock In/Out creates a draft entry here; GPS location details
         remain separate dispatch history.
       </div>
+
+      <StaffRatesCard staff={staff} onSaved={() => staffQuery.refetch()} />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">

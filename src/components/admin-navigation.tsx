@@ -197,6 +197,20 @@ export function AdminNavigation() {
   // Marketing group (leads, vendors, partners, cards, contest)
   const marketingTabs: NavTab[] = [
     {
+      name: 'Google LSA',
+      href: '/admin/marketing/lsa',
+      icon: BarChart3,
+      active: pathname === '/admin/marketing/lsa',
+      description: 'LSA charges, conversations, and what they booked',
+    },
+    {
+      name: 'Ad Performance',
+      href: '/admin/marketing',
+      icon: BarChart3,
+      active: pathname === '/admin/marketing',
+      description: 'What each lead source earns after ad spend and labor',
+    },
+    {
       name: 'Canvassing',
       href: '/admin/canvass',
       icon: Map,
