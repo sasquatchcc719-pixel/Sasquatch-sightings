@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
-import { computePromoDiscountAmount } from '@/lib/promo-discount'
+import {
+  computePromoDiscountAmount,
+  computeTieredDiscountAmount,
+} from '@/lib/promo-discount'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -83,11 +86,26 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const discount_amount = computePromoDiscountAmount(
-      subtotal,
-      String(promo.discount_type),
-      Number(promo.discount_amount),
-    )
+    let discount_amount: number
+    if (promo.discount_type === 'tiered') {
+      const { data: tiers } = await supabase
+        .from('promo_code_tiers')
+        .select('min_spend, discount_amount')
+        .eq('promo_code_id', promo.id)
+      discount_amount = computeTieredDiscountAmount(
+        subtotal,
+        (tiers || []).map((t) => ({
+          min_spend: Number(t.min_spend),
+          discount_amount: Number(t.discount_amount),
+        })),
+      )
+    } else {
+      discount_amount = computePromoDiscountAmount(
+        subtotal,
+        String(promo.discount_type),
+        Number(promo.discount_amount),
+      )
+    }
     const total = Math.max(0, subtotal - discount_amount)
 
     return NextResponse.json(
