@@ -22,7 +22,7 @@ import {
 interface PromoCode {
   id: string
   code: string
-  discount_type: 'flat' | 'percent'
+  discount_type: 'flat' | 'percent' | 'tiered'
   discount_amount: number
   description: string | null
   active: boolean
@@ -40,7 +40,8 @@ interface EditState {
   max_uses: string
 }
 
-function formatDiscount(type: 'flat' | 'percent', amount: number) {
+function formatDiscount(type: 'flat' | 'percent' | 'tiered', amount: number) {
+  if (type === 'tiered') return 'Tiered — see description'
   return type === 'flat' ? `$${amount.toFixed(2)} off` : `${amount}% off`
 }
 
@@ -163,7 +164,10 @@ export default function PromoCodesPage() {
   }
 
   // ── Start editing ────────────────────────────────────────────────────────────
+  // Tiered codes have no editor here (amount lives in promo_code_tiers) —
+  // callers must not invoke this for them; guarded again below for safety.
   function startEdit(c: PromoCode) {
+    if (c.discount_type === 'tiered') return
     setEditingId(c.id)
     setEditError(null)
     setEditState({
@@ -695,11 +699,21 @@ export default function PromoCodesPage() {
                       {/* Edit + Delete */}
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          {/* Edit */}
+                          {/* Edit (tiered codes have no editor UI yet — the
+                              amount lives in promo_code_tiers, not this
+                              form; editing would silently overwrite
+                              discount_type and break the tier lookup) */}
                           <button
-                            onClick={() => startEdit(c)}
-                            className="text-muted-foreground hover:text-foreground transition-colors"
-                            title="Edit code"
+                            onClick={() =>
+                              c.discount_type !== 'tiered' && startEdit(c)
+                            }
+                            disabled={c.discount_type === 'tiered'}
+                            className="text-muted-foreground hover:text-foreground transition-colors disabled:cursor-not-allowed disabled:opacity-30"
+                            title={
+                              c.discount_type === 'tiered'
+                                ? 'Tiered codes are edited via database migration'
+                                : 'Edit code'
+                            }
                           >
                             <Pencil className="h-4 w-4" />
                           </button>

@@ -22,7 +22,10 @@ import {
 } from '@/lib/quickbooks'
 import { checkServiceArea } from '@/lib/service-area'
 import { resolveServiceAddress } from '@/lib/ops/addresses'
-import { computePromoDiscountAmount } from '@/lib/promo-discount'
+import {
+  computePromoDiscountAmount,
+  computeTieredDiscountAmount,
+} from '@/lib/promo-discount'
 import { resolveOpsCustomer } from '@/lib/ops/customers'
 import { cancelReactivationForCustomer } from '@/lib/ops/reactivation-campaign'
 import {
@@ -285,11 +288,25 @@ export async function POST(request: NextRequest) {
           (sum, item) => sum + item.unit_price * item.quantity,
           0,
         )
-        discountAmount = computePromoDiscountAmount(
-          subtotal,
-          promo.discount_type,
-          Number(promo.discount_amount),
-        )
+        if (promo.discount_type === 'tiered') {
+          const { data: tiers } = await supabase
+            .from('promo_code_tiers')
+            .select('min_spend, discount_amount')
+            .eq('promo_code_id', promo.id)
+          discountAmount = computeTieredDiscountAmount(
+            subtotal,
+            (tiers || []).map((t) => ({
+              min_spend: Number(t.min_spend),
+              discount_amount: Number(t.discount_amount),
+            })),
+          )
+        } else {
+          discountAmount = computePromoDiscountAmount(
+            subtotal,
+            promo.discount_type,
+            Number(promo.discount_amount),
+          )
+        }
         promoCodeId = promo.id
         appliedPromoCode = String(promoCode).toUpperCase()
       }

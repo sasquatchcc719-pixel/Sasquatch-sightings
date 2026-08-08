@@ -596,7 +596,9 @@ export async function POST(request: NextRequest) {
             const amount =
               p.discount_type === 'flat'
                 ? `$${Number(p.discount_amount).toFixed(2)} off`
-                : `${p.discount_amount}% off`
+                : p.discount_type === 'tiered'
+                  ? 'Tiered discount (see description for exact amounts)'
+                  : `${p.discount_amount}% off`
             const expiry = p.expires_at
               ? ` [expires ${new Date(p.expires_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}]`
               : ''
