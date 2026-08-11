@@ -37,7 +37,18 @@ type ScheduleConfig = {
   lng?: number
   place_id?: string
   platform?: string
+  ai_analysis?: boolean
 }
+
+const LF_PLATFORMS = [
+  'google',
+  'apple',
+  'chatgpt',
+  'gemini',
+  'grok',
+  'gaio',
+  'aimode',
+] as const
 
 type Schedule = {
   id: string
@@ -293,6 +304,61 @@ export function ScanScheduleCard() {
                         className="h-8 w-20"
                       />
                     </label>
+                    <label className="flex flex-col gap-1 text-[10px] uppercase tracking-wider text-white/40">
+                      Platform
+                      <select
+                        value={draft.platform ?? 'google'}
+                        disabled={savingId === s.id}
+                        onChange={(e) =>
+                          setDraft(s.id, { platform: e.target.value })
+                        }
+                        className="rounded-md border border-white/15 bg-slate-950 px-2 py-1.5 text-xs normal-case tracking-normal text-white"
+                      >
+                        {LF_PLATFORMS.map((p) => (
+                          <option key={p} value={p}>
+                            {p}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="flex w-[6.5rem] flex-col gap-1 text-[10px] uppercase tracking-wider text-white/40">
+                      Center lat
+                      <Input
+                        type="number"
+                        step={0.0001}
+                        value={draft.lat ?? ''}
+                        disabled={savingId === s.id}
+                        onChange={(e) =>
+                          setDraft(s.id, { lat: Number(e.target.value) })
+                        }
+                        className="h-8 font-mono"
+                      />
+                    </label>
+                    <label className="flex w-[6.5rem] flex-col gap-1 text-[10px] uppercase tracking-wider text-white/40">
+                      Center lng
+                      <Input
+                        type="number"
+                        step={0.0001}
+                        value={draft.lng ?? ''}
+                        disabled={savingId === s.id}
+                        onChange={(e) =>
+                          setDraft(s.id, { lng: Number(e.target.value) })
+                        }
+                        className="h-8 font-mono"
+                      />
+                    </label>
+                    <label className="flex items-center gap-2 pb-1 text-xs text-white/70">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(draft.ai_analysis ?? true)}
+                        disabled={savingId === s.id}
+                        onChange={(e) =>
+                          setDraft(s.id, { ai_analysis: e.target.checked })
+                        }
+                        className="accent-sky-500"
+                      />
+                      AI analysis
+                    </label>
                   </>
                 )}
 
@@ -314,6 +380,15 @@ export function ScanScheduleCard() {
                       config.grid_size = gridSize
                       config.radius = radius
                       config.measurement = draft.measurement === 'km' ? 'km' : 'mi'
+                      config.platform = draft.platform ?? 'google'
+                      config.ai_analysis = Boolean(draft.ai_analysis ?? true)
+                      if (draft.place_id) config.place_id = draft.place_id
+                      if (draft.lat != null && Number.isFinite(draft.lat)) {
+                        config.lat = draft.lat
+                      }
+                      if (draft.lng != null && Number.isFinite(draft.lng)) {
+                        config.lng = draft.lng
+                      }
                     }
                     void save(s.id, { config })
                   }}
@@ -337,7 +412,8 @@ export function ScanScheduleCard() {
                   <>
                     next run ≈ {gridSize}×{gridSize} ({lfCredits(gridSize)} credits) ·{' '}
                     {radius}
-                    {draft.measurement === 'km' ? 'km' : 'mi'} · &quot;
+                    {draft.measurement === 'km' ? 'km' : 'mi'} ·{' '}
+                    {draft.platform || 'google'} · &quot;
                     {draft.keyword || '—'}&quot;
                   </>
                 )}

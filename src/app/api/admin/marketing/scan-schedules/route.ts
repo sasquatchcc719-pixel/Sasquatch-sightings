@@ -122,6 +122,52 @@ export async function PUT(request: NextRequest) {
       if (typeof body.config.measurement === 'string') {
         next.measurement = body.config.measurement === 'km' ? 'km' : 'mi'
       }
+      if (typeof body.config.platform === 'string') {
+        const p = body.config.platform.trim().toLowerCase()
+        const allowed = [
+          'google',
+          'apple',
+          'chatgpt',
+          'gemini',
+          'grok',
+          'gaio',
+          'aimode',
+        ]
+        if (!allowed.includes(p)) {
+          return NextResponse.json(
+            { error: `platform must be one of ${allowed.join(', ')}` },
+            { status: 400 },
+          )
+        }
+        next.platform = p
+      }
+      if (body.config.ai_analysis !== undefined) {
+        next.ai_analysis = Boolean(body.config.ai_analysis)
+      }
+      if (typeof body.config.place_id === 'string') {
+        const pid = body.config.place_id.trim()
+        if (pid) next.place_id = pid
+      }
+      if (body.config.lat !== undefined) {
+        const lat = Number(body.config.lat)
+        if (!Number.isFinite(lat) || lat < 37 || lat > 41) {
+          return NextResponse.json(
+            { error: 'lat must be a finite Colorado-ish latitude' },
+            { status: 400 },
+          )
+        }
+        next.lat = lat
+      }
+      if (body.config.lng !== undefined) {
+        const lng = Number(body.config.lng)
+        if (!Number.isFinite(lng) || lng < -106 || lng > -103) {
+          return NextResponse.json(
+            { error: 'lng must be a finite Colorado-ish longitude' },
+            { status: 400 },
+          )
+        }
+        next.lng = lng
+      }
 
       updates.config = next
     }

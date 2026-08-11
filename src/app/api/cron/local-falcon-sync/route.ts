@@ -1,17 +1,13 @@
 /**
- * Mirror new Local Falcon scans into our tables.
- *
- * Reading reports costs no Local Falcon credits — only running a scan does —
- * so this can run often and cheaply. It does NOT trigger scans; those are
- * scheduled inside Local Falcon itself, which keeps credit spend in one place
- * rather than split across two systems that could each think they're in charge.
+ * Mirror Local Falcon products into our tables (scans, trends, competitors,
+ * campaigns, Guard, reviews, account). Reading is free — only run-scan spends.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
-import { syncLocalFalconScans } from '@/lib/ops/local-falcon-sync'
+import { syncAllLocalFalcon } from '@/lib/ops/local-falcon-sync'
 
-export const maxDuration = 120
+export const maxDuration = 300
 
 export async function GET(request: NextRequest) {
   const secret = process.env.CRON_SECRET
@@ -21,14 +17,27 @@ export async function GET(request: NextRequest) {
   }
 
   if (!process.env.LOCAL_FALCON_API_KEY) {
-    // Not an error — the integration simply isn't configured yet.
     return NextResponse.json({ ok: true, skipped: 'no LOCAL_FALCON_API_KEY' })
   }
 
   try {
-    const result = await syncLocalFalconScans(createAdminClient(), { limit: 50 })
-    if (result.errors.length) {
-      console.error('[cron/local-falcon-sync] partial failures', result.errors)
+    const result = await syncAllLocalFalcon(createAdminClient(), {
+      limit: 50,
+      upgradeExisting: true,
+    })
+    const errors = [
+      ...result.scans.errors,
+      ...result.competitors.errors,
+      ...result.trends.errors,
+      ...result.locations.errors,
+      ...result.keywords.errors,
+      ...result.campaigns.errors,
+      ...result.guard.errors,
+      ...result.reviews.errors,
+      ...(result.account.error ? [result.account.error] : []),
+    ]
+    if (errors.length) {
+      console.error('[cron/local-falcon-sync] partial failures', errors)
     }
     return NextResponse.json({ ok: true, ...result })
   } catch (error) {

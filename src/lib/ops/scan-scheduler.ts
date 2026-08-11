@@ -91,15 +91,18 @@ export async function runDueScans(supabase: SupabaseClient): Promise<SchedulerRe
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
           throw new Error('config.lat / config.lng are required for local_falcon')
         }
+        const measurement =
+          s.config.measurement === 'km' ? ('km' as const) : ('mi' as const)
         const scan = await runScan({
           place_id: String(s.config.place_id ?? ''),
           keyword: String(s.config.keyword ?? 'carpet cleaning'),
           grid_size: gridSize,
-          radius: Number(s.config.radius ?? 14),
-          measurement: String(s.config.measurement ?? 'mi'),
+          radius: Number(s.config.radius ?? 8),
+          measurement,
           platform: String(s.config.platform ?? 'google'),
           lat,
           lng,
+          ai_analysis: Boolean(s.config.ai_analysis ?? true),
         })
         // Their API returns a report key on success; the sync cron will pull
         // the full point data within 6 hours.
