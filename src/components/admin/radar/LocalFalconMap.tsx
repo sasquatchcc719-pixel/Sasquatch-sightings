@@ -353,9 +353,10 @@ export function LocalFalconMap() {
     }
   }
 
-  // Map
+  // Keep the map mounted for the life of this card. Unmounting Mapbox on tab
+  // change orphans its canvas and can sit on top of the tab bar (clicks die).
   useEffect(() => {
-    if (!container.current || mapRef.current || tab !== 'scan') return
+    if (!container.current || mapRef.current) return
     const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN
     if (!token) {
       setError('NEXT_PUBLIC_MAPBOX_TOKEN is not set')
@@ -380,11 +381,13 @@ export function LocalFalconMap() {
       mapRef.current = null
       setMapReady(false)
     }
-  }, [tab])
+  }, [])
 
   useEffect(() => {
     const map = mapRef.current
     if (!map || !mapReady || tab !== 'scan') return
+    // Hidden → visible needs a resize or the canvas stays blank / mis-hit-tested.
+    map.resize()
     const onClick = (e: mapboxgl.MapMouseEvent) => {
       if (!placeCenter) return
       setCenterLat(Math.round(e.lngLat.lat * 10000) / 10000)
@@ -401,7 +404,7 @@ export function LocalFalconMap() {
 
   useEffect(() => {
     const map = mapRef.current
-    if (!map || !mapReady || tab !== 'scan') return
+    if (!map || !mapReady) return
     if (!centerMarkerRef.current) {
       const el = document.createElement('div')
       el.title = 'Scan center — drag to move'
@@ -419,11 +422,11 @@ export function LocalFalconMap() {
     } else {
       centerMarkerRef.current.setLngLat([centerLng, centerLat])
     }
-  }, [centerLat, centerLng, mapReady, tab])
+  }, [centerLat, centerLng, mapReady])
 
   useEffect(() => {
     const map = mapRef.current
-    if (!map || !mapReady || tab !== 'scan') return
+    if (!map || !mapReady) return
     markersRef.current.forEach((m) => m.remove())
     markersRef.current = []
     if (!points.length) return
@@ -456,7 +459,7 @@ export function LocalFalconMap() {
       bounds.extend([p.lng, p.lat])
     }
     if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 48, duration: 400 })
-  }, [points, mapReady, tab])
+  }, [points, mapReady])
 
   const coverage =
     scan?.found_in != null && scan?.points_total
@@ -465,18 +468,40 @@ export function LocalFalconMap() {
 
   const trendChart = useMemo(() => {
     const t = trends[0]
-    if (!t) return []
-    const series = Array.isArray(t.series) ? t.series : []
-    return series.map((row) => {
-      const r = row as Record<string, unknown>
-      return {
-        date: String(r.date ?? r.looker_date ?? ''),
-        arp: Number(r.arp) || null,
-        atrp: Number(r.atrp) || null,
-        solv: Number(r.solv ?? r.saiv) || null,
+    if (t) {
+      const series = Array.isArray(t.series) ? t.series : []
+      if (series.length) {
+        return series.map((row) => {
+          const r = row as Record<string, unknown>
+          return {
+            date: String(r.date ?? r.looker_date ?? ''),
+            arp: Number(r.arp) || null,
+            atrp: Number(r.atrp) || null,
+            solv: Number(r.solv ?? r.saiv) || null,
+          }
+        })
       }
-    })
-  }, [trends])
+    }
+    // Falcon only emits official trend reports after repeat identical runs.
+    // Until then, chart our own mirrored scan history for the active keyword.
+    const key = (scan?.keyword || keyword).toLowerCase()
+    const plat = scan?.platform || platform
+    return scans
+      .filter(
+        (s) =>
+          s.keyword.toLowerCase() === key &&
+          (!plat || s.platform === plat) &&
+          s.arp != null,
+      )
+      .slice()
+      .reverse()
+      .map((s) => ({
+        date: new Date(s.scanned_at).toLocaleDateString(),
+        arp: s.arp,
+        atrp: s.atrp,
+        solv: s.solv ?? s.saiv,
+      }))
+  }, [trends, scans, scan, keyword, platform])
 
   const aiSummary =
     scan?.ai_analysis && typeof scan.ai_analysis.summary === 'string'
@@ -502,13 +527,14 @@ export function LocalFalconMap() {
         </div>
       </div>
 
-      <div className="mb-3 flex flex-wrap gap-1 border-b border-white/10 pb-2">
+      <div className="relative z-20 mb-3 flex flex-wrap gap-1 border-b border-white/10 pb-2">
         {TABS.map((t) => (
           <button
             key={t.id}
             type="button"
             onClick={() => setTab(t.id)}
-            className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
+            aria-pressed={tab === t.id}
+            className={`relative z-20 rounded-md px-2.5 py-1 text-xs font-medium transition ${
               tab === t.id
                 ? 'bg-sky-500/25 text-sky-100'
                 : 'bg-white/5 text-white/60 hover:bg-white/10'
@@ -520,14 +546,14 @@ export function LocalFalconMap() {
       </div>
 
       {error && (
-        <div className="mb-3 flex items-start gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+        <div className="relative z-20 mb-3 flex items-start gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>{error}</span>
         </div>
       )}
 
-      {tab === 'scan' && (
-        <>
+      {/* Scan stays mounted (CSS-hidden) so Mapbox never orphans a canvas over the tabs. */}
+      <div className={tab === 'scan' ? 'relative z-0 block' : 'hidden'}>
           <div className="mb-3 flex flex-wrap items-end gap-2 rounded-lg border border-white/10 bg-slate-900/50 px-3 py-3">
             <label className="flex min-w-[10rem] flex-1 flex-col gap-1 text-[10px] uppercase tracking-wider text-white/40">
               Location
@@ -763,88 +789,89 @@ export function LocalFalconMap() {
               </ol>
             </div>
           )}
-        </>
-      )}
+      </div>
 
       {tab === 'trends' && (
-        <div className="space-y-3">
+        <div className="relative z-10 space-y-3">
           <p className="text-xs text-white/50">
-            Falcon auto-builds trend reports after 2+ identical non-campaign
-            scans. ARP / ATRP / SoLV·SAIV over time.
+            ARP / ATRP over time for the keyword on the Scan tab. Falcon official
+            trend reports appear after repeat identical non-campaign scans; until
+            then we chart your mirrored history.
           </p>
-          {!trends.length && (
+          {!trendChart.length && (
             <p className="text-sm text-white/50">
-              No trend reports yet — Sync all, or keep weekly scans consistent.
+              Need at least two scans of the same keyword + platform. Run more,
+              or Sync all.
             </p>
           )}
-          {trends[0] && (
+          {trendChart.length > 0 && (
             <>
               <p className="font-mono text-[11px] text-white/40">
-                {(trends[0].keyword as string) || '—'} ·{' '}
-                {(trends[0].platform as string) || '—'} ·{' '}
-                {String(trends[0].report_key)}
+                {(scan?.keyword || keyword)} · {(scan?.platform || platform)} ·{' '}
+                {trendChart.length} points
+                {trends[0] ? ` · Falcon ${String(trends[0].report_key)}` : ''}
               </p>
-              {trendChart.length > 0 && (
-                <div className="h-[280px] w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={trendChart}>
-                      <CartesianGrid
-                        strokeDasharray="3 3"
-                        stroke="rgba(255,255,255,0.1)"
-                      />
-                      <XAxis dataKey="date" stroke="#94a3b8" fontSize={10} />
-                      <YAxis
-                        stroke="#94a3b8"
-                        fontSize={10}
-                        reversed
-                        domain={[1, 'auto']}
-                      />
-                      <Tooltip
-                        contentStyle={{
-                          background: '#0f172a',
-                          border: '1px solid #334155',
-                        }}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="arp"
-                        stroke="#38bdf8"
-                        dot={false}
-                        name="ARP"
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="atrp"
-                        stroke="#fbbf24"
-                        dot={false}
-                        name="ATRP"
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-              <ul className="space-y-1 text-xs text-white/60">
-                {trends.map((t) => (
-                  <li key={String(t.report_key)}>
-                    {String(t.keyword)} · {String(t.platform)} ·{' '}
-                    {String(t.report_key)}
-                  </li>
-                ))}
-              </ul>
+              <div className="h-[280px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={trendChart}>
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="rgba(255,255,255,0.1)"
+                    />
+                    <XAxis dataKey="date" stroke="#94a3b8" fontSize={10} />
+                    <YAxis
+                      stroke="#94a3b8"
+                      fontSize={10}
+                      reversed
+                      domain={[1, 'auto']}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        background: '#0f172a',
+                        border: '1px solid #334155',
+                      }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="arp"
+                      stroke="#38bdf8"
+                      dot={false}
+                      name="ARP"
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="atrp"
+                      stroke="#fbbf24"
+                      dot={false}
+                      name="ATRP"
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
             </>
+          )}
+          {trends.length > 0 && (
+            <ul className="space-y-1 text-xs text-white/60">
+              {trends.map((t) => (
+                <li key={String(t.report_key)}>
+                  Falcon trend · {String(t.keyword)} · {String(t.platform)} ·{' '}
+                  {String(t.report_key)}
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       )}
 
       {tab === 'competitors' && (
-        <div className="space-y-2">
+        <div className="relative z-10 space-y-2">
           <p className="text-xs text-white/50">
             Competitor reports Falcon generates with every scan — leaderboard
             payloads cached locally.
           </p>
           {!competitors.length && (
             <p className="text-sm text-white/50">
-              None cached yet. Sync all after a scan.
+              None cached yet. Hit Sync all after a scan.
             </p>
           )}
           {competitors.map((c) => (
@@ -867,46 +894,55 @@ export function LocalFalconMap() {
       )}
 
       {tab === 'campaigns' && (
-        <CampaignsPanel
-          campaigns={campaigns}
-          locations={locations}
-          onAction={async (payload) => {
-            setError(null)
-            try {
-              await postAction(payload)
-              await loadView('campaigns')
-            } catch (e) {
-              setError(e instanceof Error ? e.message : 'Campaign action failed')
-            }
-          }}
-        />
+        <div className="relative z-10">
+          <CampaignsPanel
+            campaigns={campaigns}
+            locations={locations}
+            onAction={async (payload) => {
+              setError(null)
+              try {
+                await postAction(payload)
+                await loadView('campaigns')
+              } catch (e) {
+                setError(
+                  e instanceof Error ? e.message : 'Campaign action failed',
+                )
+              }
+            }}
+          />
+        </div>
       )}
 
       {tab === 'guard' && (
-        <GuardPanel
-          locations={guardLocations}
-          reports={guardReports}
-          savedLocations={locations}
-          onAction={async (payload) => {
-            setError(null)
-            try {
-              await postAction(payload)
-              await loadView('guard')
-            } catch (e) {
-              setError(e instanceof Error ? e.message : 'Guard action failed')
-            }
-          }}
-        />
+        <div className="relative z-10">
+          <GuardPanel
+            locations={guardLocations}
+            reports={guardReports}
+            savedLocations={locations}
+            onAction={async (payload) => {
+              setError(null)
+              try {
+                await postAction(payload)
+                await loadView('guard')
+              } catch (e) {
+                setError(e instanceof Error ? e.message : 'Guard action failed')
+              }
+            }}
+          />
+        </div>
       )}
 
       {tab === 'reviews' && (
-        <div className="space-y-2">
+        <div className="relative z-10 space-y-2">
           <p className="text-xs text-white/50">
             Reviews Analysis is a Falcon premium ($19/location). We surface every
             report the account already has.
           </p>
           {!reviews.length && (
-            <p className="text-sm text-white/50">No reviews reports in account.</p>
+            <p className="text-sm text-white/50">
+              No reviews reports in this Falcon account yet. Buy/configure on
+              localfalcon.com, then Sync all.
+            </p>
           )}
           {reviews.map((r) => (
             <div
@@ -925,13 +961,11 @@ export function LocalFalconMap() {
       )}
 
       {tab === 'account' && (
-        <div className="space-y-2 text-sm text-white/70">
+        <div className="relative z-10 space-y-2 text-sm text-white/70">
           <p>
             Email:{' '}
             <span className="text-white">
-              {String(
-                accountFull?.email ?? accountLite?.email ?? '—',
-              )}
+              {String(accountFull?.email ?? accountLite?.email ?? '—')}
             </span>
           </p>
           <p>
