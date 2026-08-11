@@ -34,7 +34,7 @@ import {
 export const maxDuration = 300
 
 const SCAN_SELECT =
-  'id, report_key, keyword, platform, scanned_at, grid_size, radius, measurement, center_lat, center_lng, arp, atrp, solv, saiv, osolv, found_in, points_total, unique_competitors, public_url, insights, location, ai_analysis, rankings, heatmap_url, image_url, campaign_key'
+  'id, report_key, place_id, keyword, platform, scanned_at, grid_size, radius, measurement, center_lat, center_lng, arp, atrp, solv, saiv, osolv, found_in, points_total, unique_competitors, public_url, insights, location, ai_analysis, rankings, places, heatmap_url, image_url, campaign_key'
 
 export async function GET(request: NextRequest) {
   try {

@@ -68,6 +68,7 @@ type Point = {
 type Scan = {
   id: string
   report_key: string
+  place_id: string | null
   keyword: string
   platform: string
   scanned_at: string
@@ -88,8 +89,81 @@ type Scan = {
   insights: Record<string, unknown> | null
   location: Record<string, unknown> | null
   ai_analysis: Record<string, unknown> | null
+  rankings: {
+    by_arp?: Record<string, string | number>
+    by_atrp?: Record<string, string | number>
+    by_saiv?: Record<string, string | number>
+    by_solv?: Record<string, string | number>
+  } | null
+  places: Record<string, Record<string, unknown>> | null
   heatmap_url: string | null
   image_url: string | null
+}
+
+type LeaderboardRow = {
+  id: string
+  name: string
+  arp: number | null
+  atrp: number | null
+  share: number | null
+  foundIn: number | null
+  foundPct: number | null
+  isYou: boolean
+}
+
+type LeaderSort = 'arp' | 'atrp' | 'share'
+
+function buildLeaderboard(scan: Scan | null): LeaderboardRow[] {
+  if (!scan?.places || typeof scan.places !== 'object') return []
+  const yourName = String(scan.location?.name || 'Sasquatch Carpet Cleaning')
+    .trim()
+    .toLowerCase()
+  const yourPlaceId = scan.place_id || null
+  const byArp = scan.rankings?.by_arp ?? {}
+  const byAtrp = scan.rankings?.by_atrp ?? {}
+  const byShare = scan.rankings?.by_saiv ?? scan.rankings?.by_solv ?? {}
+
+  return Object.entries(scan.places).map(([id, raw]) => {
+    const p = raw ?? {}
+    const name = String(p.name || id)
+    const placeId =
+      typeof p.place_id === 'string' && p.place_id ? p.place_id : null
+    const aiId =
+      typeof p.ai_place_id === 'string' && p.ai_place_id ? p.ai_place_id : id
+    return {
+      id,
+      name,
+      arp: numOrNull(p.arp ?? byArp[id] ?? byArp[aiId]),
+      atrp: numOrNull(p.atrp ?? byAtrp[id] ?? byAtrp[aiId]),
+      share: numOrNull(
+        p.saiv ?? p.solv ?? byShare[id] ?? byShare[aiId],
+      ),
+      foundIn: numOrNull(p.found_in),
+      foundPct: numOrNull(p.found_in_pct),
+      isYou:
+        name.trim().toLowerCase() === yourName ||
+        (!!yourPlaceId && placeId === yourPlaceId),
+    }
+  })
+}
+
+function numOrNull(v: unknown): number | null {
+  if (v == null || v === false || v === '') return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
+
+function sortLeaderboard(rows: LeaderboardRow[], sort: LeaderSort) {
+  const key = sort === 'share' ? 'share' : sort
+  return [...rows].sort((a, b) => {
+    const av = a[key]
+    const bv = b[key]
+    if (av == null && bv == null) return a.name.localeCompare(b.name)
+    if (av == null) return 1
+    if (bv == null) return -1
+    // Lower ARP/ATRP wins; higher SAIV/SoLV wins.
+    return sort === 'share' ? bv - av : av - bv
+  })
 }
 
 type LFLocation = {
@@ -163,6 +237,7 @@ export function LocalFalconMap() {
   const [error, setError] = useState<string | null>(null)
   const [mapReady, setMapReady] = useState(false)
   const [placeCenter, setPlaceCenter] = useState(false)
+  const [leaderSort, setLeaderSort] = useState<LeaderSort>('arp')
 
   const [keyword, setKeyword] = useState('carpet cleaning')
   const [gridSize, setGridSize] = useState(9)
@@ -508,6 +583,12 @@ export function LocalFalconMap() {
       ? String(scan.ai_analysis.summary).replace(/<[^>]+>/g, ' ')
       : null
 
+  const leaderboard = useMemo(
+    () => sortLeaderboard(buildLeaderboard(scan), leaderSort),
+    [scan, leaderSort],
+  )
+  const shareLabel = scan?.platform === 'google' ? 'SoLV' : 'SAIV'
+
   return (
     <Card className="border-white/10 bg-white/5 p-4">
       <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -789,6 +870,18 @@ export function LocalFalconMap() {
               </ol>
             </div>
           )}
+
+          {scan && (
+            <CompetitorLeaderboard
+              rows={leaderboard}
+              sort={leaderSort}
+              onSort={setLeaderSort}
+              shareLabel={shareLabel}
+              keyword={scan.keyword}
+              platform={scan.platform}
+              className="mt-4"
+            />
+          )}
       </div>
 
       {tab === 'trends' && (
@@ -864,32 +957,46 @@ export function LocalFalconMap() {
       )}
 
       {tab === 'competitors' && (
-        <div className="relative z-10 space-y-2">
+        <div className="relative z-10 space-y-3">
           <p className="text-xs text-white/50">
-            Competitor reports Falcon generates with every scan — leaderboard
-            payloads cached locally.
+            Same leaderboard Falcon shows under the map — ARP / ATRP /{' '}
+            {shareLabel} for every business that appeared in this grid.
           </p>
-          {!competitors.length && (
+          {scans.length > 0 && (
+            <select
+              value={scan?.id ?? ''}
+              onChange={(e) => loadScans(e.target.value)}
+              className="rounded-md border border-white/15 bg-slate-900 px-2 py-1.5 text-xs text-white"
+            >
+              {scans.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {new Date(s.scanned_at).toLocaleDateString()} · {s.keyword} ·{' '}
+                  {s.platform} · {s.grid_size}×{s.grid_size}
+                </option>
+              ))}
+            </select>
+          )}
+          {!scan && (
             <p className="text-sm text-white/50">
-              None cached yet. Hit Sync all after a scan.
+              No scan selected — open Scan history or Sync all first.
             </p>
           )}
-          {competitors.map((c) => (
-            <div
-              key={String(c.id || c.report_key)}
-              className="rounded-lg border border-white/10 bg-slate-900/40 px-3 py-2 text-xs text-white/70"
-            >
-              <div className="font-medium text-white">
-                {String(c.keyword || '—')} · {String(c.platform || '—')}
-              </div>
-              <div className="font-mono text-[10px] text-white/40">
-                {String(c.report_key)} ·{' '}
-                {c.scanned_at
-                  ? new Date(String(c.scanned_at)).toLocaleString()
-                  : '—'}
-              </div>
-            </div>
-          ))}
+          {scan && !leaderboard.length && (
+            <p className="text-sm text-white/50">
+              This scan has no competitor places payload yet. Re-sync it from
+              Sync all, or open a newer Gemini/Google run.
+            </p>
+          )}
+          {scan && leaderboard.length > 0 && (
+            <CompetitorLeaderboard
+              rows={leaderboard}
+              sort={leaderSort}
+              onSort={setLeaderSort}
+              shareLabel={shareLabel}
+              keyword={scan.keyword}
+              platform={scan.platform}
+            />
+          )}
         </div>
       )}
 
@@ -1256,6 +1363,110 @@ function GuardPanel({
           )}
         </pre>
       )}
+    </div>
+  )
+}
+
+function CompetitorLeaderboard({
+  rows,
+  sort,
+  onSort,
+  shareLabel,
+  keyword,
+  platform,
+  className = '',
+}: {
+  rows: LeaderboardRow[]
+  sort: LeaderSort
+  onSort: (s: LeaderSort) => void
+  shareLabel: string
+  keyword: string
+  platform: string
+  className?: string
+}) {
+  if (!rows.length) return null
+  const sorts: { id: LeaderSort; label: string }[] = [
+    { id: 'arp', label: 'ARP' },
+    { id: 'atrp', label: 'ATRP' },
+    { id: 'share', label: shareLabel },
+  ]
+  return (
+    <div
+      className={`rounded-lg border border-white/10 bg-slate-900/40 ${className}`}
+    >
+      <div className="flex flex-wrap items-center gap-2 border-b border-white/10 px-3 py-2">
+        <div className="text-xs font-medium text-white">Competitor rankings</div>
+        <div className="font-mono text-[10px] text-white/40">
+          &ldquo;{keyword}&rdquo; · {platform} · {rows.length} businesses
+        </div>
+        <div className="ml-auto flex gap-1">
+          {sorts.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => onSort(s.id)}
+              className={`rounded px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ${
+                sort === s.id
+                  ? 'bg-sky-500/30 text-sky-100'
+                  : 'bg-white/5 text-white/50 hover:bg-white/10'
+              }`}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="max-h-[420px] overflow-y-auto">
+        <table className="w-full text-left text-xs">
+          <thead className="sticky top-0 bg-slate-950/95 text-[10px] uppercase tracking-wider text-white/40">
+            <tr>
+              <th className="px-3 py-2 font-medium">#</th>
+              <th className="px-3 py-2 font-medium">Business</th>
+              <th className="px-3 py-2 font-medium tabular-nums">ARP</th>
+              <th className="px-3 py-2 font-medium tabular-nums">ATRP</th>
+              <th className="px-3 py-2 font-medium tabular-nums">{shareLabel}</th>
+              <th className="px-3 py-2 font-medium tabular-nums">Found</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, i) => (
+              <tr
+                key={row.id}
+                className={
+                  row.isYou
+                    ? 'bg-sky-500/15 text-sky-50'
+                    : 'text-white/70 odd:bg-white/[0.02]'
+                }
+              >
+                <td className="px-3 py-1.5 font-mono text-white/40">{i + 1}</td>
+                <td className="px-3 py-1.5">
+                  <span className={row.isYou ? 'font-semibold text-white' : ''}>
+                    {row.name}
+                  </span>
+                  {row.isYou && (
+                    <span className="ml-2 text-[10px] uppercase tracking-wider text-sky-300/80">
+                      you
+                    </span>
+                  )}
+                </td>
+                <td className="px-3 py-1.5 font-mono tabular-nums">
+                  {n(row.arp)}
+                </td>
+                <td className="px-3 py-1.5 font-mono tabular-nums">
+                  {n(row.atrp)}
+                </td>
+                <td className="px-3 py-1.5 font-mono tabular-nums">
+                  {row.share == null ? '—' : `${n(row.share)}%`}
+                </td>
+                <td className="px-3 py-1.5 font-mono tabular-nums text-white/40">
+                  {row.foundIn ?? '—'}
+                  {row.foundPct != null ? ` (${n(row.foundPct, 0)}%)` : ''}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }
