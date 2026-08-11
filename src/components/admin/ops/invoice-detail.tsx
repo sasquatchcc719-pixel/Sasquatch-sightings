@@ -2111,11 +2111,6 @@ export function InvoiceDetail({
         </div>
       </Card>
 
-      {/* ── Next cleaning reminder ──────────────────────────── */}
-      {appointment?.id ? (
-        <CleaningReminderButtons appointmentId={appointment.id} />
-      ) : null}
-
       {/* ── Street View panel ───────────────────────────────── */}
       {address && !streetViewFailed ? (
         <Card className="border-border/60 overflow-hidden shadow-sm">
@@ -2802,75 +2797,14 @@ export function InvoiceDetail({
           <strong>QuickBooks</strong> when connected. You do not need a social
           post—use the section below only if you want a before/after post.
         </p>
-        <div className="border-border/60 mt-4 rounded-xl border bg-white/60 p-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-medium">Job-site GPS</p>
-              <p className="text-muted-foreground mt-1 text-xs">
-                Same backup as the old jobs tab. Tap this on-site before
-                publishing the map post.
-              </p>
-            </div>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="gap-2"
-              disabled={gpsCapturing}
-              onClick={() => void handleCaptureGps()}
-            >
-              {gpsCapturing ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <MapPin className="h-4 w-4" />
-              )}
-              {gpsCapturing ? 'Getting…' : 'Use Current Location'}
-            </Button>
+        {/* Reminder lives here, not up top: setting it is part of closing out
+            the job, and it replaces the duplicate Job-site GPS panel that used
+            to sit here (the identical controls remain in the map-post section). */}
+        {appointment?.id ? (
+          <div className="mt-4">
+            <CleaningReminderButtons appointmentId={appointment.id} />
           </div>
-
-          {/* Manual GPS input */}
-          <div className="mt-3 space-y-2">
-            <p className="text-muted-foreground text-xs">
-              Or paste coordinates manually (for when you don&apos;t have
-              service):
-            </p>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                placeholder="39.2703, -104.99486"
-                value={manualGpsInput}
-                onChange={(e) => setManualGpsInput(e.target.value)}
-                className="border-border/60 bg-background/70 flex-1 rounded-lg border px-3 py-2 text-sm"
-              />
-              <Button
-                type="button"
-                size="sm"
-                variant="default"
-                disabled={manualGpsSaving || !manualGpsInput.trim()}
-                onClick={() => void handleSaveManualGps()}
-              >
-                {manualGpsSaving ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  'Save'
-                )}
-              </Button>
-            </div>
-          </div>
-
-          {gpsFeedback ? (
-            <p
-              className={`mt-2 text-sm ${gpsFeedback.ok ? 'text-green-600' : 'text-red-500'}`}
-            >
-              {gpsFeedback.message}
-            </p>
-          ) : gpsCoords ? (
-            <p className="text-muted-foreground mt-2 flex items-center gap-1.5 text-xs">
-              <MapPin className="h-3.5 w-3.5" />
-              GPS: {gpsCoords.lat.toFixed(6)}, {gpsCoords.lng.toFixed(6)}
-            </p>
-          ) : null}
-        </div>
+        ) : null}
         <div className="mt-4 grid gap-2 sm:grid-cols-2">
           <Button
             type="button"

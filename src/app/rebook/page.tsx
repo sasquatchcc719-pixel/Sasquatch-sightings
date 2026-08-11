@@ -23,7 +23,7 @@ function RebookContent() {
     <div className="mx-auto w-full max-w-2xl px-4 py-8">
       <div className="mb-6 text-center">
         <Image
-          src="/sasquatch-mascot.png"
+          src="/sasquatch-logo.svg"
           alt="Sasquatch Carpet Cleaning"
           width={96}
           height={96}
