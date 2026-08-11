@@ -54,8 +54,17 @@ const RANGES = [
   { weeks: 5, label: 'Last 4 weeks' },
   { weeks: 13, label: 'Last 12 weeks' },
   { weeks: 27, label: '6 months' },
-  { weeks: 52, label: '1 year' },
+  { weeks: 53, label: '1 year' },
 ]
+
+type TrendPoint = {
+  week: string
+  spend: number
+  spendLineCount: number
+  spendBreakdown: Record<string, number>
+  revenue: number
+  jobs: number
+}
 
 function money(value: number): string {
   return value.toLocaleString('en-US', {
@@ -74,6 +83,10 @@ function shortDate(value: string): string {
 
 function weekLabel(start: string, end: string): string {
   return `${shortDate(start)}–${shortDate(end)}`
+}
+
+function sortedBreakdown(breakdown: Record<string, number>) {
+  return Object.entries(breakdown).sort((a, b) => b[1] - a[1])
 }
 
 function mountainToday(): string {
@@ -144,6 +157,17 @@ export function WeeklyRollupView() {
     () => (previousRows.length ? summarizeRollup(previousRows) : null),
     [previousRows],
   )
+  const latestBusinessSummary = useMemo(
+    () => summarizeRollup(scopedWeekRows(rows, latestStart, 'all')),
+    [rows, latestStart],
+  )
+  const previousBusinessSummary = useMemo(
+    () =>
+      previousStart
+        ? summarizeRollup(scopedWeekRows(rows, previousStart, 'all'))
+        : null,
+    [rows, previousStart],
+  )
   const serviceRows = useMemo(
     () =>
       rows.filter(
@@ -155,31 +179,80 @@ export function WeeklyRollupView() {
     [rows, latestStart, town],
   )
   const mapRows = useMemo(() => latestMapWeekRows(rows, town), [rows, town])
-  const insights = useMemo(
-    () =>
-      buildBusinessInsights({
-        current: latestSummary,
-        previous: previousSummary,
-        serviceRows,
-        mapRows,
-        allServiceAreas: town === 'all',
-      }),
-    [latestSummary, previousSummary, serviceRows, mapRows, town],
-  )
+  const insights = useMemo(() => {
+    const current =
+      town === 'all'
+        ? latestSummary
+        : {
+            ...latestSummary,
+            spend: latestBusinessSummary.spend,
+            spendBreakdown: latestBusinessSummary.spendBreakdown,
+            spendLineCount: latestBusinessSummary.spendLineCount,
+          }
+    const previous =
+      town === 'all' || !previousSummary || !previousBusinessSummary
+        ? previousSummary
+        : {
+            ...previousSummary,
+            spend: previousBusinessSummary.spend,
+            spendBreakdown: previousBusinessSummary.spendBreakdown,
+            spendLineCount: previousBusinessSummary.spendLineCount,
+          }
+    return buildBusinessInsights({
+      current,
+      previous,
+      serviceRows,
+      mapRows,
+      allServiceAreas: town === 'all',
+    })
+  }, [
+    latestSummary,
+    latestBusinessSummary,
+    previousSummary,
+    previousBusinessSummary,
+    serviceRows,
+    mapRows,
+    town,
+  ])
 
   const trendData = useMemo(
     () =>
       completedStarts
         .map((weekStart) => {
-          const summary = summarizeRollup(scopedWeekRows(rows, weekStart, town))
+          const workSummary = summarizeRollup(
+            scopedWeekRows(rows, weekStart, town),
+          )
+          const spendSummary = summarizeRollup(
+            scopedWeekRows(rows, weekStart, 'all'),
+          )
           return {
             week: shortDate(weekStart),
-            revenue: Math.round(summary.residentialRevenue),
-            jobs: summary.residentialJobs,
+            spend: Math.round(spendSummary.spend),
+            spendLineCount: spendSummary.spendLineCount,
+            spendBreakdown: spendSummary.spendBreakdown,
+            revenue: Math.round(workSummary.residentialRevenue),
+            jobs: workSummary.residentialJobs,
           }
         })
         .reverse(),
     [completedStarts, rows, town],
+  )
+
+  const periodSpendSummary = useMemo(
+    () =>
+      summarizeRollup(
+        completedStarts.flatMap((weekStart) =>
+          scopedWeekRows(rows, weekStart, 'all'),
+        ),
+      ),
+    [completedStarts, rows],
+  )
+  const periodSpendCategories = useMemo(
+    () => sortedBreakdown(periodSpendSummary.spendBreakdown),
+    [periodSpendSummary.spendBreakdown],
+  )
+  const latestSpendCategories = sortedBreakdown(
+    latestBusinessSummary.spendBreakdown,
   )
 
   const rawRows = useMemo(
@@ -360,6 +433,17 @@ export function WeeklyRollupView() {
                 —that means a quote was started, not necessarily finished or
                 booked.
               </p>
+              <p>
+                QuickBooks recorded{' '}
+                <strong className="text-white">
+                  {money(latestBusinessSummary.spend)} in marketing expense
+                </strong>
+                {latestBusinessSummary.spendLineCount
+                  ? ` across ${latestBusinessSummary.spendLineCount} expense ${latestBusinessSummary.spendLineCount === 1 ? 'line' : 'lines'}`
+                  : ''}
+                . These costs are business-wide and are not assigned to one
+                town.
+              </p>
               {latestSummary.reviewDelta !== null ? (
                 <p>
                   The Google review count changed by{' '}
@@ -380,8 +464,8 @@ export function WeeklyRollupView() {
                 </p>
                 <p className="mt-1 text-sm leading-6 text-amber-100/70">
                   These things happened in the same week. Completed jobs may
-                  have been booked earlier, and the tracked cost does not yet
-                  include every marketing expense. The report provides clues; it
+                  have been booked earlier, while QuickBooks expenses land when
+                  a card charge or bill posts. The report provides clues; it
                   does not manufacture attribution.
                 </p>
               </div>
@@ -432,10 +516,14 @@ export function WeeklyRollupView() {
                 color="text-violet-300"
               />
               <MetricCard
-                label="Tracked campaign costs"
-                value={money(latestSummary.spend)}
-                detail="Only expenses already linked to a campaign"
-                explanation="This is not total marketing spend. Missing or unlinked Google, LSA, print, and vendor costs make any ROI calculation premature."
+                label="QuickBooks marketing spend"
+                value={money(latestBusinessSummary.spend)}
+                detail={
+                  latestSpendCategories[0]
+                    ? `${latestBusinessSummary.spendLineCount} QuickBooks expense ${latestBusinessSummary.spendLineCount === 1 ? 'line' : 'lines'} · largest: ${latestSpendCategories[0][0]}`
+                    : 'No marketing expense posted during this week'
+                }
+                explanation="Pulled read-only from QuickBooks marketing accounts, plus recognized marketing vendors found under other accounts. Duplicate campaign links are removed. This is real cash-out timing, not attributed return."
                 icon={DollarSign}
                 color="text-amber-300"
               />
@@ -536,15 +624,19 @@ export function WeeklyRollupView() {
           <section className="rounded-xl border border-white/10 bg-slate-950/55 p-4">
             <div className="mb-3">
               <h2 className="font-semibold text-white">
-                Completed residential work over time
+                QuickBooks marketing spend vs completed residential revenue
               </h2>
               <p className="text-xs leading-5 text-slate-500">
-                Green line = completed residential revenue. Blue bars = number
-                of completed residential jobs. This is a workload trend, not
-                attributed marketing return.
+                Amber bars = business-wide marketing expenses pulled from
+                QuickBooks. Green line = completed residential revenue{' '}
+                {town === 'all'
+                  ? 'across active service areas'
+                  : `in ${townLabel(town)}`}
+                . The timing comparison can reveal patterns, but it is not ROAS:
+                jobs often close weeks after the marketing that produced them.
               </p>
             </div>
-            <div className="h-64">
+            <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={trendData}>
                   <CartesianGrid
@@ -562,30 +654,13 @@ export function WeeklyRollupView() {
                       `$${Math.round(Number(value) / 1000)}k`
                     }
                   />
-                  <YAxis
-                    yAxisId="jobs"
-                    orientation="right"
-                    allowDecimals={false}
-                    tick={{ fill: '#64748b', fontSize: 11 }}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      background: '#020617',
-                      border: '1px solid rgba(255,255,255,.12)',
-                      borderRadius: 10,
-                    }}
-                    formatter={(value, name) =>
-                      name === 'Completed residential revenue'
-                        ? money(Number(value))
-                        : `${Number(value)} jobs`
-                    }
-                  />
+                  <Tooltip content={<SpendRevenueTooltip />} />
                   <Bar
-                    yAxisId="jobs"
-                    dataKey="jobs"
-                    name="Completed residential jobs"
-                    fill="#38bdf8"
-                    fillOpacity={0.35}
+                    yAxisId="money"
+                    dataKey="spend"
+                    name="QuickBooks marketing spend"
+                    fill="#f59e0b"
+                    fillOpacity={0.72}
                     radius={[4, 4, 0, 0]}
                   />
                   <Line
@@ -598,6 +673,60 @@ export function WeeklyRollupView() {
                   />
                 </ComposedChart>
               </ResponsiveContainer>
+            </div>
+            <div className="mt-4 border-t border-white/10 pt-4">
+              <div className="flex flex-wrap items-end justify-between gap-2">
+                <div>
+                  <h3 className="font-medium text-white">
+                    Where the marketing money went in this selected period
+                  </h3>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    {money(periodSpendSummary.spend)} across{' '}
+                    {periodSpendSummary.spendLineCount} QuickBooks expense
+                    lines. “Other marketing” means QuickBooks put it in a
+                    marketing account but the merchant did not match a named
+                    category.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                {periodSpendCategories.map(([channel, amount]) => {
+                  const percent = periodSpendSummary.spend
+                    ? (amount / periodSpendSummary.spend) * 100
+                    : 0
+                  return (
+                    <div
+                      key={channel}
+                      className="rounded-lg border border-white/8 bg-white/[0.025] p-3"
+                    >
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="text-sm text-slate-300">
+                          {channel}
+                        </span>
+                        <span className="font-medium text-amber-300">
+                          {money(amount)}
+                        </span>
+                      </div>
+                      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/5">
+                        <div
+                          className="h-full rounded-full bg-amber-400/70"
+                          style={{
+                            width: `${Math.min(100, Math.max(2, percent))}%`,
+                          }}
+                        />
+                      </div>
+                      <p className="mt-1 text-[11px] text-slate-600">
+                        {percent.toFixed(0)}% of selected-period marketing spend
+                      </p>
+                    </div>
+                  )
+                })}
+                {!periodSpendCategories.length ? (
+                  <p className="text-sm text-slate-500">
+                    No QuickBooks marketing expense landed in this period.
+                  </p>
+                ) : null}
+              </div>
             </div>
           </section>
 
@@ -631,8 +760,8 @@ export function WeeklyRollupView() {
                 definition="A sample search from a specific map location. Found means Sasquatch appeared in the first 20 results. It is not geographic service coverage."
               />
               <Definition
-                term="Tracked campaign cost"
-                definition="An expense already linked to a marketing campaign. Until every channel is connected, it is not total spend and cannot support a true ROI calculation."
+                term="QuickBooks marketing spend"
+                definition="Expense lines in QuickBooks marketing or printing accounts, plus recognized marketing vendors found under other accounts. Duplicate links are counted once. The transaction date is cash-out timing, not the date a customer was acquired."
               />
               <Definition
                 term="Completed revenue"
@@ -658,7 +787,7 @@ export function WeeklyRollupView() {
                       Week and area
                     </th>
                     <th className="px-3 py-3 text-left font-medium">
-                      Tracked campaign cost
+                      QuickBooks marketing spend
                     </th>
                     <th className="px-3 py-3 text-left font-medium">
                       Google Maps visibility check
@@ -700,7 +829,20 @@ export function WeeklyRollupView() {
                           </p>
                         </td>
                         <td className="px-3 py-3 text-sm text-amber-300">
-                          {row.spend ? money(row.spend) : 'None linked'}
+                          {row.spend ? (
+                            <>
+                              <span className="block text-white">
+                                {money(row.spend)}
+                              </span>
+                              <span className="text-xs text-slate-500">
+                                {row.spend_line_count
+                                  ? `${row.spend_line_count} QuickBooks ${row.spend_line_count === 1 ? 'line' : 'lines'}`
+                                  : 'Non-QuickBooks campaign cost'}
+                              </span>
+                            </>
+                          ) : (
+                            'No expense posted'
+                          )}
                         </td>
                         <td className="px-3 py-3 text-sm text-slate-300">
                           {visibility ? (
@@ -784,6 +926,56 @@ export function WeeklyRollupView() {
           </details>
         </>
       )}
+    </div>
+  )
+}
+
+function SpendRevenueTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean
+  payload?: Array<{ payload?: TrendPoint }>
+}) {
+  const point = payload?.[0]?.payload
+  if (!active || !point) return null
+  const categories = sortedBreakdown(point.spendBreakdown).slice(0, 4)
+
+  return (
+    <div className="min-w-64 rounded-xl border border-white/15 bg-slate-950 p-3 shadow-2xl">
+      <p className="text-xs font-semibold tracking-wide text-slate-400 uppercase">
+        Week of {point.week}
+      </p>
+      <div className="mt-2 space-y-1 text-sm">
+        <p className="flex justify-between gap-6 text-amber-300">
+          <span>QuickBooks marketing spend</span>
+          <strong>{money(point.spend)}</strong>
+        </p>
+        <p className="flex justify-between gap-6 text-emerald-300">
+          <span>Completed residential revenue</span>
+          <strong>{money(point.revenue)}</strong>
+        </p>
+        <p className="flex justify-between gap-6 text-slate-400">
+          <span>Completed residential jobs</span>
+          <strong>{point.jobs}</strong>
+        </p>
+      </div>
+      {categories.length ? (
+        <div className="mt-3 border-t border-white/10 pt-2">
+          <p className="mb-1 text-[10px] font-semibold tracking-wide text-slate-500 uppercase">
+            Spend details · {point.spendLineCount} QuickBooks lines
+          </p>
+          {categories.map(([channel, amount]) => (
+            <p
+              key={channel}
+              className="flex justify-between gap-6 text-xs leading-5 text-slate-400"
+            >
+              <span>{channel}</span>
+              <span>{money(amount)}</span>
+            </p>
+          ))}
+        </div>
+      ) : null}
     </div>
   )
 }

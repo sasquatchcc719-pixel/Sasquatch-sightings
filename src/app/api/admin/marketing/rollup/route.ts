@@ -12,7 +12,7 @@ export const maxDuration = 300
 function requestedWeeks(request: NextRequest): number {
   return Math.min(
     Math.max(Number(request.nextUrl.searchParams.get('weeks') || 12), 1),
-    52,
+    53,
   )
 }
 
