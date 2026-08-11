@@ -62,6 +62,7 @@ describe('buildWeeklyRollup', () => {
         amount: 101,
         occurred_on: '2026-08-04',
         town_slugs: [],
+        channel: 'Google ads',
       },
       // Same QB line linked to a duplicate campaign: count it once.
       {
@@ -71,6 +72,7 @@ describe('buildWeeklyRollup', () => {
         amount: 101,
         occurred_on: '2026-08-04',
         town_slugs: [],
+        channel: 'Google ads',
       },
       {
         id: 'targeted',
@@ -257,7 +259,14 @@ describe('buildWeeklyRollup', () => {
 
   it('deduplicates business-wide spend and penny-splits targeted spend', () => {
     expect(byTown.get(BUSINESS_WIDE)?.spend).toBe(101)
+    expect(byTown.get(BUSINESS_WIDE)?.spend_breakdown).toEqual({
+      'Google ads': 101,
+    })
+    expect(byTown.get(BUSINESS_WIDE)?.spend_line_count).toBe(1)
     expect(byTown.get('monument')?.spend).toBe(5.01)
+    expect(byTown.get('monument')?.spend_breakdown).toEqual({
+      'Campaign labor & manual costs': 5.01,
+    })
     expect(byTown.get('palmer-lake')?.spend).toBe(5)
     expect(rows.reduce((sum, row) => sum + row.spend, 0)).toBe(111.01)
   })
@@ -319,6 +328,9 @@ describe('buildWeeklyRollup', () => {
     expect(digest).toContain('2026-08-03 to 2026-08-09')
     expect(digest).toContain('data through 2026-08-07')
     expect(digest).toContain('Completed commercial work')
+    expect(digest).toContain(
+      'QuickBooks marketing spend: $111 across 1 expense lines',
+    )
     expect(digest).toContain('does not mean every quote was finished or booked')
     expect(digest).not.toContain('impr /')
     expect(digest.length).toBeLessThanOrEqual(4096)

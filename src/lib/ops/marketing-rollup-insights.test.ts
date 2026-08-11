@@ -18,6 +18,8 @@ function row(
     week_end: '2026-08-09',
     town_slug: 'business-wide',
     spend: 0,
+    spend_breakdown: {},
+    spend_line_count: 0,
     rank_best: null,
     rank_median: null,
     rank_points: 0,
@@ -41,6 +43,8 @@ describe('marketing rollup business interpretation', () => {
   const rows = [
     row({
       spend: 20.26,
+      spend_breakdown: { 'Facebook / Meta': 20.26 },
+      spend_line_count: 2,
       gsc_impressions: 220,
       gsc_clicks: 4,
       quote_sessions: 8,
@@ -99,6 +103,8 @@ describe('marketing rollup business interpretation', () => {
     const summary = summarizeRollup(scopedWeekRows(rows, '2026-08-03', 'all'))
     expect(summary).toMatchObject({
       spend: 20.26,
+      spendBreakdown: { 'Facebook / Meta': 20.26 },
+      spendLineCount: 2,
       residentialJobs: 13,
       residentialRevenue: 5265,
       commercialJobs: 2,
@@ -143,7 +149,7 @@ describe('marketing rollup business interpretation', () => {
     expect(mapRows.map((item) => item.town_slug)).toEqual(['monument'])
   })
 
-  it('turns weak search engagement and incomplete costs into explicit actions', () => {
+  it('turns weak search engagement and real QuickBooks spend into explicit actions', () => {
     const current = summarizeRollup(scopedWeekRows(rows, '2026-08-03', 'all'))
     const insights = buildBusinessInsights({
       current,
@@ -157,7 +163,7 @@ describe('marketing rollup business interpretation', () => {
     expect(insights.map((item) => item.title)).toEqual(
       expect.arrayContaining([
         'Google visibility is not turning into many website visits',
-        'The spending record is too incomplete for an ROI decision',
+        'Facebook / Meta was the largest marketing cost this week',
         'Monument produced the most completed residential revenue',
       ]),
     )

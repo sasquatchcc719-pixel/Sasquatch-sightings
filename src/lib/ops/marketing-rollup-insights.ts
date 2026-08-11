@@ -14,6 +14,8 @@ const ACTIVE_SERVICE_TOWN_SET = new Set<string>(
 
 export type RollupSummary = {
   spend: number
+  spendBreakdown: Record<string, number>
+  spendLineCount: number
   residentialJobs: number
   residentialRevenue: number
   commercialJobs: number
@@ -70,6 +72,8 @@ export function summarizeRollup(
   let gscDataThrough: string | null = null
   const summary: RollupSummary = {
     spend: 0,
+    spendBreakdown: {},
+    spendLineCount: 0,
     residentialJobs: 0,
     residentialRevenue: 0,
     commercialJobs: 0,
@@ -83,6 +87,11 @@ export function summarizeRollup(
 
   for (const row of rows) {
     summary.spend += row.spend
+    summary.spendLineCount += row.spend_line_count
+    for (const [channel, amount] of Object.entries(row.spend_breakdown)) {
+      summary.spendBreakdown[channel] =
+        (summary.spendBreakdown[channel] || 0) + amount
+    }
     summary.residentialJobs += row.residential_jobs
     summary.residentialRevenue += row.residential_revenue
     summary.commercialJobs += row.commercial_jobs
@@ -193,15 +202,31 @@ export function buildBusinessInsights(input: {
     }
   }
 
-  if (current.spend < 50) {
+  const topSpendCategory = Object.entries(current.spendBreakdown).sort(
+    (a, b) => b[1] - a[1],
+  )[0]
+  if (current.spend > 0) {
     insights.push({
       tone: 'context',
-      title: 'The spending record is too incomplete for an ROI decision',
-      evidence: `Only ${money(current.spend)} of campaign-linked cost is recorded for the week.`,
+      title: topSpendCategory
+        ? `${topSpendCategory[0]} was the largest marketing cost this week`
+        : 'Marketing spending was recorded this week',
+      evidence: `${money(current.spend)} was recorded${current.spendLineCount ? ` across ${current.spendLineCount} QuickBooks expense ${current.spendLineCount === 1 ? 'line' : 'lines'}` : ''}${topSpendCategory ? `; ${money(topSpendCategory[1])} was ${topSpendCategory[0].toLowerCase()}` : ''}.`,
       meaning:
-        'This is not total marketing spend. It only includes costs that were linked to campaigns in the system, so dividing all revenue by this number would be misleading.',
+        'This is when money left the business, not proof that the same week’s completed jobs came from that spending. One-time items such as wraps or printing should not be judged like recurring ads.',
       nextStep:
-        'Finish linking Google Ads, Local Services Ads, print, vendor, and other campaign costs before using this report to increase or cut a budget.',
+        'Review the category breakdown below. Separate one-time assets from recurring media, then compare each paid channel with lead-source jobs over several weeks before changing its budget.',
+    })
+  } else {
+    insights.push({
+      tone: 'context',
+      title: 'No marketing expense landed in QuickBooks this week',
+      evidence:
+        'The reconciled QuickBooks marketing total for this week is $0.',
+      meaning:
+        'That can be a real quiet week because subscriptions, print orders, and ad charges land on specific transaction dates. It does not mean marketing activity stopped.',
+      nextStep:
+        'Look at the multi-week graph and category totals instead of treating one zero-spend week as a decision signal.',
     })
   }
 

@@ -13,6 +13,10 @@ import {
   TOWNS,
   type TownSlug,
 } from '@/lib/geo/towns'
+import {
+  listExpenseLines,
+  marketingExpenseLines,
+} from '@/lib/quickbooks-expenses'
 
 export const BUSINESS_WIDE = 'business-wide' as const
 export const UNKNOWN_TOWN = 'unknown' as const
@@ -40,6 +44,8 @@ export type MarketingWeeklyRollupRow = {
   week_end: string
   town_slug: RollupTownSlug
   spend: number
+  spend_breakdown: Record<string, number>
+  spend_line_count: number
   rank_best: number | null
   rank_median: number | null
   rank_points: number
@@ -61,9 +67,22 @@ export function coerceMarketingWeeklyRollupRow(
   row: Record<string, unknown>,
 ): MarketingWeeklyRollupRow {
   return {
-    ...(row as Omit<MarketingWeeklyRollupRow, 'spend'>),
+    ...(row as Omit<
+      MarketingWeeklyRollupRow,
+      'spend' | 'spend_breakdown' | 'spend_line_count'
+    >),
     town_slug: String(row.town_slug) as RollupTownSlug,
     spend: Number(row.spend || 0),
+    spend_breakdown:
+      row.spend_breakdown && typeof row.spend_breakdown === 'object'
+        ? Object.fromEntries(
+            Object.entries(row.spend_breakdown).map(([channel, amount]) => [
+              channel,
+              Number(amount || 0),
+            ]),
+          )
+        : {},
+    spend_line_count: Number(row.spend_line_count || 0),
     rank_best: row.rank_best === null ? null : Number(row.rank_best),
     rank_median: row.rank_median === null ? null : Number(row.rank_median),
     rank_points: Number(row.rank_points || 0),
@@ -87,6 +106,7 @@ export type CampaignCostInput = {
   amount: number
   occurred_on: string | null
   town_slugs: string[]
+  channel?: string
 }
 
 export type RankPointInput = {
@@ -263,6 +283,8 @@ function emptyRow(
     week_end: window.end,
     town_slug: townSlug,
     spend: 0,
+    spend_breakdown: {},
+    spend_line_count: 0,
     rank_best: null,
     rank_median: null,
     rank_points: 0,
@@ -359,12 +381,17 @@ export function buildWeeklyRollup(input: {
     const towns = cost.businessWide
       ? [BUSINESS_WIDE]
       : [...cost.scopedTowns].sort()
-    for (const allocation of allocateCents(
-      Math.round(cost.amount * 100),
-      towns,
-    )) {
+    const allocations = allocateCents(Math.round(cost.amount * 100), towns)
+    for (const [index, allocation] of allocations.entries()) {
       const row = rowFor(allocation.town_slug)
       row.spend = round2(row.spend + allocation.amount)
+      const channel = cost.channel || 'Campaign labor & manual costs'
+      row.spend_breakdown[channel] = round2(
+        (row.spend_breakdown[channel] || 0) + allocation.amount,
+      )
+      if (cost.source_type === 'quickbooks' && index === 0) {
+        row.spend_line_count++
+      }
     }
   }
 
@@ -539,6 +566,7 @@ export async function refreshMarketingWeeklyRollup(
     jobs,
     reviews,
     events,
+    quickBooksExpenseLines,
   ] = await Promise.all([
     loadPages<Record<string, unknown>>(async (from, to) => {
       const result = await supabase
@@ -617,6 +645,7 @@ export async function refreshMarketingWeeklyRollup(
         .range(from, to)
       return result as PageResult<Record<string, unknown>>
     }),
+    listExpenseLines({ since: start }),
   ])
 
   const campaignTowns = new Map(
@@ -625,14 +654,50 @@ export async function refreshMarketingWeeklyRollup(
       (campaign.town_slugs as string[] | null) ?? [],
     ]),
   )
-  const campaignCosts: CampaignCostInput[] = rawCosts.map((cost) => ({
-    id: String(cost.id),
-    source_type: String(cost.source_type),
-    source_id: cost.source_id ? String(cost.source_id) : null,
-    amount: Number(cost.amount || 0),
-    occurred_on: cost.occurred_on ? String(cost.occurred_on) : null,
-    town_slugs: campaignTowns.get(String(cost.campaign_id)) ?? [],
-  }))
+  const quickBooksMarketingLines = marketingExpenseLines(quickBooksExpenseLines)
+  const quickBooksByKey = new Map(
+    quickBooksMarketingLines.map((line) => [line.key, line]),
+  )
+  const campaignCosts: CampaignCostInput[] = rawCosts.map((cost) => {
+    const sourceType = String(cost.source_type)
+    const sourceId = cost.source_id ? String(cost.source_id) : null
+    const liveQuickBooksLine =
+      sourceType === 'quickbooks' && sourceId
+        ? quickBooksByKey.get(sourceId)
+        : null
+    return {
+      id: String(cost.id),
+      source_type: sourceType,
+      source_id: sourceId,
+      amount: liveQuickBooksLine?.amount ?? Number(cost.amount || 0),
+      occurred_on:
+        liveQuickBooksLine?.date ??
+        (cost.occurred_on ? String(cost.occurred_on) : null),
+      town_slugs: campaignTowns.get(String(cost.campaign_id)) ?? [],
+      channel:
+        liveQuickBooksLine?.channel ??
+        (sourceType === 'quickbooks'
+          ? 'Other marketing'
+          : 'Campaign labor & manual costs'),
+    }
+  })
+  const linkedQuickBooksKeys = new Set(
+    campaignCosts
+      .filter((cost) => cost.source_type === 'quickbooks' && cost.source_id)
+      .map((cost) => cost.source_id!),
+  )
+  for (const line of quickBooksMarketingLines) {
+    if (linkedQuickBooksKeys.has(line.key)) continue
+    campaignCosts.push({
+      id: `quickbooks:${line.key}`,
+      source_type: 'quickbooks',
+      source_id: line.key,
+      amount: line.amount,
+      occurred_on: line.date,
+      town_slugs: [],
+      channel: line.channel,
+    })
+  }
 
   const radarIds = radarScans.map((scan) => String(scan.id))
   const falconIds = falconScans.map((scan) => String(scan.id))
@@ -877,6 +942,7 @@ export function buildMarketingRollupDigest(
   const total = rows.reduce(
     (sum, row) => ({
       spend: sum.spend + row.spend,
+      spendLines: sum.spendLines + row.spend_line_count,
       residentialJobs: sum.residentialJobs + row.residential_jobs,
       residentialRevenue: sum.residentialRevenue + row.residential_revenue,
       commercialJobs: sum.commercialJobs + row.commercial_jobs,
@@ -887,6 +953,7 @@ export function buildMarketingRollupDigest(
     }),
     {
       spend: 0,
+      spendLines: 0,
       residentialJobs: 0,
       residentialRevenue: 0,
       commercialJobs: 0,
@@ -911,7 +978,7 @@ export function buildMarketingRollupDigest(
   lines.push(
     `Google Search: Sasquatch appeared ${total.impressions.toLocaleString()} times and ${total.clicks} people visited the website${gscThrough ? `; data through ${gscThrough}` : ''}.`,
     `Online quote activity: ${total.quotes} website sessions reached the quote step; this does not mean every quote was finished or booked.`,
-    `Tracked campaign costs: ${money(total.spend)}. This is only linked cost, not necessarily total marketing spend.`,
+    `QuickBooks marketing spend: ${money(total.spend)} across ${total.spendLines} expense lines. This includes QuickBooks marketing accounts plus recognized marketing vendors filed under other accounts.`,
   )
   if (wide?.review_delta !== null && wide?.review_delta !== undefined) {
     const sign = wide.review_delta > 0 ? '+' : ''
