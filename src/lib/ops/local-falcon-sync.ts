@@ -112,6 +112,56 @@ function extractOsolv(insights: unknown): number | null {
   return lfNum(osolv.yours ?? i.osolv)
 }
 
+/**
+ * Google Maps scans set found/rank on each point. AI platforms (gemini/grok/
+ * chatgpt) leave both false and put the business in results[] under ai_place_id.
+ */
+export function resolvePointPresence(
+  p: RawPoint,
+  targetPlaceIds: Set<string>,
+  targetName?: string | null,
+): { found: boolean; rank: number | null } {
+  if (p.found === true) {
+    return { found: true, rank: lfInt(p.rank) }
+  }
+  const results = Array.isArray(p.results) ? p.results : []
+  const nameNeedle = targetName?.trim().toLowerCase() || ''
+  for (const row of results) {
+    const pid = String(row.place_id ?? '')
+    if (pid && targetPlaceIds.has(pid)) {
+      return { found: true, rank: lfInt(row.rank) }
+    }
+    if (
+      nameNeedle &&
+      typeof row.name === 'string' &&
+      row.name.trim().toLowerCase() === nameNeedle
+    ) {
+      return { found: true, rank: lfInt(row.rank) }
+    }
+  }
+  return { found: false, rank: null }
+}
+
+function targetIdsFromReport(r: Record<string, unknown>): {
+  ids: Set<string>
+  name: string | null
+} {
+  const ids = new Set<string>()
+  for (const key of ['place_id', 'ai_place_id'] as const) {
+    const v = r[key]
+    if (typeof v === 'string' && v.trim()) ids.add(v.trim())
+  }
+  const location = asRecord(r.location)
+  if (typeof location.place_id === 'string' && location.place_id.trim()) {
+    ids.add(location.place_id.trim())
+  }
+  const name =
+    typeof location.name === 'string' && location.name.trim()
+      ? location.name.trim()
+      : null
+  return { ids, name }
+}
+
 async function upsertScanFromReport(
   supabase: SupabaseClient,
   reportKey: string,
@@ -190,15 +240,19 @@ async function upsertScanFromReport(
 
   const points = (r.data_points ?? []) as RawPoint[]
   if (points.length) {
-    const rows = points.map((p, idx) => ({
-      scan_id: scanId,
-      idx,
-      lat: lfNum(p.lat) ?? 0,
-      lng: lfNum(p.lng) ?? 0,
-      found: Boolean(p.found),
-      rank: p.found ? lfInt(p.rank) : null,
-      competitors: normalizeCompetitors(p.results),
-    }))
+    const { ids: targetIds, name: targetName } = targetIdsFromReport(r)
+    const rows = points.map((p, idx) => {
+      const presence = resolvePointPresence(p, targetIds, targetName)
+      return {
+        scan_id: scanId,
+        idx,
+        lat: lfNum(p.lat) ?? 0,
+        lng: lfNum(p.lng) ?? 0,
+        found: presence.found,
+        rank: presence.rank,
+        competitors: normalizeCompetitors(p.results),
+      }
+    })
     const { error: pointError } = await supabase
       .from('local_falcon_points')
       .insert(rows)
@@ -271,13 +325,37 @@ export async function syncLocalFalconScans(
   const keys = reports.map((r) => String(r.report_key ?? '')).filter(Boolean)
   const { data: existing } = await supabase
     .from('local_falcon_scans')
-    .select('report_key, ai_analysis, raw')
+    .select('id, report_key, platform, found_in, ai_analysis, raw')
     .in('report_key', keys)
   const have = new Map(
     (existing ?? []).map((r) => [r.report_key as string, r] as const),
   )
 
+  // AI platforms historically stored every point as a miss because Falcon
+  // leaves found/rank false and only puts the business in results[].
+  const brokenKeys = new Set<string>()
+  const existingIds = (existing ?? []).map((r) => r.id as string).filter(Boolean)
+  if (existingIds.length) {
+    const { data: pointStats } = await supabase
+      .from('local_falcon_points')
+      .select('scan_id, found')
+      .in('scan_id', existingIds)
+    const foundByScan = new Map<string, number>()
+    for (const p of pointStats ?? []) {
+      const sid = String(p.scan_id)
+      if (p.found) foundByScan.set(sid, (foundByScan.get(sid) ?? 0) + 1)
+    }
+    for (const row of existing ?? []) {
+      const foundIn = lfInt(row.found_in) ?? 0
+      const foundPts = foundByScan.get(String(row.id)) ?? 0
+      if (foundIn > 0 && foundPts === 0) {
+        brokenKeys.add(String(row.report_key))
+      }
+    }
+  }
+
   const newKeys: string[] = []
+  const repairKeys: string[] = []
   const upgradeKeys: string[] = []
   for (const summary of reports) {
     const reportKey = String(summary.report_key || '')
@@ -287,14 +365,22 @@ export async function syncLocalFalconScans(
       newKeys.push(reportKey)
       continue
     }
+    if (brokenKeys.has(reportKey)) {
+      repairKeys.push(reportKey)
+      continue
+    }
     const incomplete = prior.raw == null
     if (incomplete || options?.upgradeExisting) upgradeKeys.push(reportKey)
   }
 
   const maxUpgrade = options?.maxUpgrade ?? (options?.upgradeExisting ? 3 : 5)
+  // Prefer new inserts + point repairs before optional upgrades.
   const toFetch = [
     ...newKeys,
-    ...upgradeKeys.filter((k) => !newKeys.includes(k)).slice(0, maxUpgrade),
+    ...repairKeys,
+    ...upgradeKeys
+      .filter((k) => !newKeys.includes(k) && !repairKeys.includes(k))
+      .slice(0, maxUpgrade),
   ]
 
   for (const reportKey of toFetch) {
