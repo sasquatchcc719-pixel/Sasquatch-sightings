@@ -32,11 +32,14 @@ export async function PUT(request: NextRequest) {
       id?: string
       enabled?: boolean
       frequency_days?: number
+      /** Shallow-merged into scan_schedules.config (keyword, spacing, grid_size…). */
+      config?: Record<string, unknown>
     }
     if (!body.id) {
       return NextResponse.json({ error: 'id is required' }, { status: 400 })
     }
 
+    const supabase = createAdminClient()
     const updates: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
     }
@@ -54,7 +57,66 @@ export async function PUT(request: NextRequest) {
       updates.frequency_days = days
     }
 
-    const { error } = await createAdminClient()
+    if (body.config && typeof body.config === 'object' && !Array.isArray(body.config)) {
+      const { data: existing, error: readError } = await supabase
+        .from('scan_schedules')
+        .select('config')
+        .eq('id', body.id)
+        .single()
+      if (readError) throw readError
+      const prev =
+        existing?.config && typeof existing.config === 'object' && !Array.isArray(existing.config)
+          ? (existing.config as Record<string, unknown>)
+          : {}
+      const next: Record<string, unknown> = { ...prev }
+
+      if (typeof body.config.keyword === 'string') {
+        const kw = body.config.keyword.trim().slice(0, 120)
+        if (kw) next.keyword = kw
+      }
+      if (body.config.spacing_miles !== undefined) {
+        const mi = Number(body.config.spacing_miles)
+        if (!Number.isFinite(mi) || mi < 1 || mi > 10) {
+          return NextResponse.json(
+            { error: 'spacing_miles must be between 1 and 10' },
+            { status: 400 },
+          )
+        }
+        next.spacing_miles = mi
+      }
+      if (typeof body.config.preset === 'string') {
+        next.preset =
+          body.config.preset === 'tri-lakes' ? 'tri-lakes' : 'service-area'
+      }
+      if (body.config.grid_size !== undefined) {
+        const size = Math.floor(Number(body.config.grid_size))
+        const allowed = [3, 5, 7, 9, 11, 13, 15, 17, 19, 21]
+        if (!allowed.includes(size)) {
+          return NextResponse.json(
+            { error: `grid_size must be one of ${allowed.join(', ')}` },
+            { status: 400 },
+          )
+        }
+        next.grid_size = size
+      }
+      if (body.config.radius !== undefined) {
+        const radius = Number(body.config.radius)
+        if (!Number.isFinite(radius) || radius < 0.5 || radius > 50) {
+          return NextResponse.json(
+            { error: 'radius must be between 0.5 and 50' },
+            { status: 400 },
+          )
+        }
+        next.radius = radius
+      }
+      if (typeof body.config.measurement === 'string') {
+        next.measurement = body.config.measurement === 'km' ? 'km' : 'mi'
+      }
+
+      updates.config = next
+    }
+
+    const { error } = await supabase
       .from('scan_schedules')
       .update(updates)
       .eq('id', body.id)

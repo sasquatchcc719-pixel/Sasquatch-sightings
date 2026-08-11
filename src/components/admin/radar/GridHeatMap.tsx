@@ -26,6 +26,7 @@ import {
   estimateGridCost,
   rankColor,
   rankTextColor,
+  GRID_KEYWORD_PRESETS,
   SERVICE_AREA_DEFAULT_SPACING_MILES,
   SERVICE_AREA_SPACING_OPTIONS_MILES,
 } from '@/lib/radar-grid-geo'
@@ -83,10 +84,16 @@ export function GridHeatMap() {
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [areaSpacing, setAreaSpacing] = useState(SERVICE_AREA_DEFAULT_SPACING_MILES)
+  const [keyword, setKeyword] = useState<string>(GRID_KEYWORD_PRESETS[0])
 
   const areaCost = estimateGridCost('service-area', areaSpacing)
   const areaDollars = (areaCost * COST_PER_POINT).toFixed(2)
   const triLakesCost = estimateGridCost('tri-lakes', areaSpacing)
+  const keywordOptions = GRID_KEYWORD_PRESETS.includes(
+    keyword as (typeof GRID_KEYWORD_PRESETS)[number],
+  )
+    ? GRID_KEYWORD_PRESETS
+    : ([keyword, ...GRID_KEYWORD_PRESETS] as string[])
 
   const load = useCallback(async (scanId?: string) => {
     setLoading(true)
@@ -103,9 +110,10 @@ export function GridHeatMap() {
       setScan(nextScan)
       setPoints(json.points ?? [])
       setSelected(null)
-      // Keep the spacing control honest with whatever scan you're looking at,
-      // so "Run" doesn't silently jump from a dense view to a coarse next run.
+      // Keep controls honest with whatever scan you're looking at, so "Run"
+      // doesn't silently jump keyword or density away from the map you're on.
       if (nextScan?.spacing_miles) setAreaSpacing(nextScan.spacing_miles)
+      if (nextScan?.keyword) setKeyword(nextScan.keyword)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load grid')
     } finally {
@@ -125,7 +133,11 @@ export function GridHeatMap() {
         const res = await fetch('/api/admin/radar/grid', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ preset, spacingMiles }),
+          body: JSON.stringify({
+            preset,
+            spacingMiles,
+            keyword: keyword.trim() || undefined,
+          }),
         })
         const json = await res.json()
         if (!res.ok) throw new Error(json.error || 'Scan failed')
@@ -136,7 +148,7 @@ export function GridHeatMap() {
         setRunning(false)
       }
     },
-    [load],
+    [load, keyword],
   )
 
   // Create the map once.
@@ -245,14 +257,30 @@ export function GridHeatMap() {
       </div>
 
       <p className="mb-3 max-w-3xl text-xs leading-relaxed text-white/55">
-        Our own lattice via DataForSEO Maps SERP (replaced SerpApi). We pick every
-        lat/lng and scrape the local pack there — same keyword as Local Falcon,
-        different pipeline (scraped Maps results vs Places API). Spacing below
-        sets density; each point is ~${COST_PER_POINT.toFixed(3)}. Tighter spacing
-        = more points = clearer coverage, higher cost.
+        Our own lattice via DataForSEO Maps SERP (replaced SerpApi). Pick the
+        keyword and spacing below, then run. Different pipeline than Local Falcon
+        (scraped Maps vs Places API) — for a fair A/B, use the same keyword on both.
+        Each point is ~${COST_PER_POINT.toFixed(3)}.
       </p>
 
       <div className="mb-4 flex flex-wrap items-end gap-3 rounded-lg border border-white/10 bg-slate-900/50 px-3 py-3">
+        <label className="flex min-w-[12rem] flex-1 flex-col gap-1 text-[10px] uppercase tracking-wider text-white/40">
+          Keyword
+          <input
+            list="dataforseo-grid-keywords"
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+            className="rounded-md border border-white/15 bg-slate-950 px-2 py-1.5 text-xs normal-case tracking-normal text-white"
+            title="Google Maps search term for every grid point"
+            placeholder="carpet cleaning"
+          />
+          <datalist id="dataforseo-grid-keywords">
+            {keywordOptions.map((kw) => (
+              <option key={kw} value={kw} />
+            ))}
+          </datalist>
+        </label>
+
         <label className="flex flex-col gap-1 text-[10px] uppercase tracking-wider text-white/40">
           Spacing
           <select
@@ -282,8 +310,8 @@ export function GridHeatMap() {
             size="sm"
             variant="outline"
             onClick={() => runScan('tri-lakes', areaSpacing)}
-            disabled={running}
-            title={`5×5 around Monument at ${areaSpacing} mi — ${triLakesCost} searches`}
+            disabled={running || !keyword.trim()}
+            title={`5×5 around Monument · "${keyword}" @ ${areaSpacing} mi — ${triLakesCost} searches`}
           >
             {running ? (
               <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
@@ -296,8 +324,8 @@ export function GridHeatMap() {
           <Button
             size="sm"
             onClick={() => runScan('service-area', areaSpacing)}
-            disabled={running}
-            title={`Full service area at ${areaSpacing} mi · ~$${areaDollars}`}
+            disabled={running || !keyword.trim()}
+            title={`Full service area · "${keyword}" @ ${areaSpacing} mi · ~$${areaDollars}`}
           >
             {running ? (
               <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
@@ -314,7 +342,8 @@ export function GridHeatMap() {
         <p className="w-full text-[11px] text-white/40">
           Tri-Lakes is always a 5×5 (25 pts) centered on Monument; spacing only
           stretches or tightens that square. Service area fills the Castle Rock →
-          Colorado Springs polygon at the spacing above.
+          Colorado Springs polygon. Scheduled weekly runs use the keyword on the
+          Scan schedule card above — keep them in sync for A/B.
         </p>
       </div>
 

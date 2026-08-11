@@ -59,6 +59,7 @@ export async function POST(request: NextRequest) {
     const body = (await request.json().catch(() => ({}))) as {
       preset?: string
       spacingMiles?: number
+      keyword?: string
     }
     const preset: GridPreset =
       body.preset === 'service-area' ? 'service-area' : 'tri-lakes'
@@ -66,9 +67,13 @@ export async function POST(request: NextRequest) {
       typeof body.spacingMiles === 'number' && body.spacingMiles > 0
         ? Math.min(Math.max(body.spacingMiles, 1), 10)
         : undefined
+    const keyword =
+      typeof body.keyword === 'string' && body.keyword.trim().length > 0
+        ? body.keyword.trim().slice(0, 120)
+        : undefined
 
     const supabase = createAdminClient()
-    const result = await runGridScan(supabase, { preset, spacingMiles })
+    const result = await runGridScan(supabase, { preset, spacingMiles, keyword })
     return NextResponse.json({ ok: true, ...result, preset, config: DEFAULT_GRID })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Grid scan failed'

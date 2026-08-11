@@ -68,6 +68,21 @@ export const SERVICE_AREA_DEFAULT_SPACING_MILES = 2
 /** Spacing choices shown in the admin UI (miles between lattice points). */
 export const SERVICE_AREA_SPACING_OPTIONS_MILES = [1, 1.5, 2, 2.5, 3, 3.5, 4, 5] as const
 
+/**
+ * Search terms for ad-hoc + scheduled grid runs. Keep the list short — each
+ * keyword is a separate experiment; mixing them in one chart lies.
+ */
+export const GRID_KEYWORD_PRESETS = [
+  'carpet cleaning',
+  'carpet cleaner',
+  'carpet cleaning near me',
+  'pet stain carpet cleaning',
+  'upholstery cleaning',
+] as const
+
+/** Local Falcon odd sizes only — cost is grid_size² credits. */
+export const LOCAL_FALCON_GRID_SIZES = [3, 5, 7, 9, 11, 13, 15, 17, 19, 21] as const
+
 export const MILES_PER_DEG_LAT = 69.0
 
 export type GridPoint = { row: number; col: number; lat: number; lng: number }

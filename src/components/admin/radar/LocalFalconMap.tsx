@@ -201,12 +201,12 @@ export function LocalFalconMap() {
       </div>
 
       <p className="mb-3 max-w-3xl text-xs leading-relaxed text-white/55">
-        Third-party grid through Local Falcon — they hit Google&apos;s Places API
-        and build a square lattice (grid size × radius) on their side. Credits
-        live in their app, so scans are triggered there (or by the schedule
-        card); this view only mirrors results in. Usually denser than our
-        DataForSEO polygon lattice — use it as a second opinion, not a
-        replacement.
+        Third-party grid through Local Falcon — Places API, square lattice on
+        their side. Keyword, grid size, and radius are set on the{' '}
+        <span className="text-white/70">Scan schedule</span> card above (scheduled
+        runs) or inside Local Falcon&apos;s app. This view only pulls results in.
+        Match DataForSEO&apos;s keyword for a fair A/B — they were drifting
+        (&quot;carpet cleaner&quot; vs &quot;carpet cleaning&quot;).
       </p>
 
       {error && (
