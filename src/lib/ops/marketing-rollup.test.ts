@@ -317,8 +317,10 @@ describe('buildWeeklyRollup', () => {
   it('builds a compact digest from the same rows', () => {
     const digest = buildMarketingRollupDigest(rows)
     expect(digest).toContain('2026-08-03 to 2026-08-09')
-    expect(digest).toContain('GSC through 2026-08-07')
-    expect(digest).toContain('Commercial (separate)')
+    expect(digest).toContain('data through 2026-08-07')
+    expect(digest).toContain('Completed commercial work')
+    expect(digest).toContain('does not mean every quote was finished or booked')
+    expect(digest).not.toContain('impr /')
     expect(digest.length).toBeLessThanOrEqual(4096)
   })
 })
