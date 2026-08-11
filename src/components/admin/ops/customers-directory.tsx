@@ -23,6 +23,8 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import { CityQuickPick } from './city-quick-pick'
+import { nextZipForCityPick } from '@/lib/ops/service-cities'
 
 type CustomerAddress = {
   id: string
@@ -327,6 +329,19 @@ export function CustomersDirectory() {
     })
   }
 
+  /** Set several address fields at once (used by the city quick-pick). */
+  const updateAddrFields = (
+    addrIndex: number,
+    patch: Record<string, string>,
+  ) => {
+    setEditForm((prev) => {
+      if (!prev) return prev
+      const addresses = [...prev.addresses]
+      addresses[addrIndex] = { ...addresses[addrIndex], ...patch }
+      return { ...prev, addresses }
+    })
+  }
+
   if (loading) {
     return (
       <div className="text-muted-foreground flex items-center gap-2">
@@ -564,6 +579,19 @@ export function CustomersDirectory() {
                             placeholder="Apt, Suite, etc."
                           />
                         </div>
+                        <CityQuickPick
+                          value={addr.city}
+                          onPick={(picked) =>
+                            updateAddrFields(addrIdx, {
+                              city: picked.city,
+                              state: picked.state,
+                              zip_code: nextZipForCityPick(
+                                addr.zip_code,
+                                picked,
+                              ),
+                            })
+                          }
+                        />
                         <div className="grid grid-cols-3 gap-2">
                           <div>
                             <Label className="text-xs">City</Label>
@@ -573,6 +601,7 @@ export function CustomersDirectory() {
                                 updateAddrField(addrIdx, 'city', e.target.value)
                               }
                               className="h-9"
+                              placeholder="Or type another"
                             />
                           </div>
                           <div>

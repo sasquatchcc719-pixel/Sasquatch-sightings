@@ -38,6 +38,8 @@ import {
   normalizeLeadSource,
 } from '@/lib/lead-sources'
 import { SignatureModal } from './signature-modal'
+import { CityQuickPick } from './city-quick-pick'
+import { nextZipForCityPick } from '@/lib/ops/service-cities'
 
 /** A ring-within-a-ring progress node for the Sightings Map Post stepper. */
 function PublishStepNode({
@@ -1672,6 +1674,18 @@ export function InvoiceDetail({
                   placeholder="Apt, Suite, etc."
                 />
               </div>
+              <CityQuickPick
+                className="mt-2"
+                value={addressForm.city}
+                onPick={(picked) =>
+                  setAddressForm((f) => ({
+                    ...f,
+                    city: picked.city,
+                    state: picked.state,
+                    zip_code: nextZipForCityPick(f.zip_code, picked),
+                  }))
+                }
+              />
               <div className="mt-2 grid grid-cols-3 gap-2">
                 <div>
                   <Label htmlFor="edit-city" className="text-xs">

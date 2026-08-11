@@ -20,6 +20,8 @@ import {
   getPublicLeadSourceOptions,
 } from '@/lib/lead-sources'
 import { DayTimePicker } from './day-time-picker'
+import { CityQuickPick } from './city-quick-pick'
+import { nextZipForCityPick } from '@/lib/ops/service-cities'
 
 type ServiceItem = {
   id: string
@@ -1882,9 +1884,25 @@ export function NewJobWorkspace() {
                     </div>
                     <div>
                       <Label htmlFor="city">City *</Label>
+                      <CityQuickPick
+                        className="mt-1.5 mb-2"
+                        value={addressForm.city}
+                        onPick={(picked) =>
+                          setAddressForm((current) => ({
+                            ...current,
+                            city: picked.city,
+                            state: picked.state,
+                            zip_code: nextZipForCityPick(
+                              current.zip_code,
+                              picked,
+                            ),
+                          }))
+                        }
+                      />
                       <Input
                         id="city"
                         value={addressForm.city}
+                        placeholder="Or type another city"
                         onChange={(event) =>
                           setAddressForm((current) => ({
                             ...current,
