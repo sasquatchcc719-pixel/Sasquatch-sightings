@@ -10,7 +10,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
-import { syncAllLocalFalcon } from '@/lib/ops/local-falcon-sync'
+import {
+  syncAllLocalFalcon,
+  syncLocalFalconScans,
+} from '@/lib/ops/local-falcon-sync'
 import {
   addGuardLocations,
   createCampaign,
@@ -206,6 +209,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, ...result })
     }
 
+    // Lightweight: only scan history. Used on tab open so Falcon-website runs
+    // (email arrives, Sightings was empty) show up without waiting on Sync all.
+    if (action === 'sync-scans') {
+      const scans = await syncLocalFalconScans(supabase, {
+        limit: Number(body.limit) || 50,
+        upgradeExisting: false,
+        maxUpgrade: Number(body.maxUpgrade) || 3,
+      })
+      return NextResponse.json({ ok: true, scans })
+    }
+
     if (action === 'run-scan') {
       const place_id = String(body.place_id || '').trim()
       const keyword = String(body.keyword || '').trim()
@@ -261,8 +275,12 @@ export async function POST(request: NextRequest) {
         ai_analysis,
         eager: true,
       })
-      // Pull fresh data so the new report shows up quickly.
-      await syncAllLocalFalcon(supabase, { limit: 10, upgradeExisting: false })
+      // Only scan history — full Sync all was too slow and left new runs missing.
+      await syncLocalFalconScans(supabase, {
+        limit: 25,
+        upgradeExisting: false,
+        maxUpgrade: 2,
+      })
       return NextResponse.json({
         ok: true,
         credits: scanCost(grid_size),

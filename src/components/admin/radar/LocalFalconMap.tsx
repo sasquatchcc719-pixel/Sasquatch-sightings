@@ -175,16 +175,13 @@ export function LocalFalconMap() {
 
   const credits = gridSize * gridSize
 
-  const loadScans = useCallback(async (scanId?: string) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const url = scanId
-        ? `/api/admin/marketing/local-falcon?scanId=${scanId}`
-        : '/api/admin/marketing/local-falcon'
-      const res = await fetch(url)
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'Failed to load')
+  const applyScansPayload = useCallback(
+    (json: {
+      scans?: Scan[]
+      scan?: Scan | null
+      points?: Point[]
+      account?: { credits?: unknown; email?: string; synced_at?: string } | null
+    }) => {
       setScans(json.scans ?? [])
       setScan(json.scan ?? null)
       setPoints(json.points ?? [])
@@ -196,12 +193,50 @@ export function LocalFalconMap() {
       if (json.scan?.platform) setPlatform(json.scan.platform)
       if (json.scan?.center_lat != null) setCenterLat(json.scan.center_lat)
       if (json.scan?.center_lng != null) setCenterLng(json.scan.center_lng)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load')
-    } finally {
-      setLoading(false)
+    },
+    [],
+  )
+
+  const loadScans = useCallback(
+    async (scanId?: string) => {
+      setLoading(true)
+      setError(null)
+      try {
+        const url = scanId
+          ? `/api/admin/marketing/local-falcon?scanId=${scanId}`
+          : '/api/admin/marketing/local-falcon'
+        const res = await fetch(url)
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Failed to load')
+        applyScansPayload(json)
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Failed to load')
+      } finally {
+        setLoading(false)
+      }
+    },
+    [applyScansPayload],
+  )
+
+  /** Pull brand-new Falcon report_keys into history (email/runs on their site). */
+  const pullNewScans = useCallback(async () => {
+    try {
+      const res = await fetch('/api/admin/marketing/local-falcon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'sync-scans' }),
+      })
+      const json = await res.json()
+      if (!res.ok) return
+      const inserted = Number(json.scans?.inserted ?? 0)
+      const updated = Number(json.scans?.updated ?? 0)
+      if (inserted > 0 || updated > 0) {
+        await loadScans()
+      }
+    } catch {
+      /* non-blocking — history still shows whatever we already mirrored */
     }
-  }, [])
+  }, [loadScans])
 
   const loadView = useCallback(async (view: Tab) => {
     if (view === 'scan') return
@@ -246,9 +281,9 @@ export function LocalFalconMap() {
   }, [placeId])
 
   useEffect(() => {
-    void loadScans()
+    void loadScans().then(() => pullNewScans())
     void loadLocations()
-  }, [loadScans, loadLocations])
+  }, [loadScans, loadLocations, pullNewScans])
 
   useEffect(() => {
     void loadView(tab)
