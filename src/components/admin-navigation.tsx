@@ -172,13 +172,6 @@ export function AdminNavigation() {
       description: 'Revenue & utilization tracking',
     },
     {
-      name: 'Radar',
-      href: '/admin/radar',
-      icon: Target,
-      active: pathname === '/admin/radar',
-      description: 'Competitor SERP rank tracking',
-    },
-    {
       name: 'Chemicals',
       href: '/admin/chemicals',
       icon: FlaskConical,
@@ -197,8 +190,14 @@ export function AdminNavigation() {
   // Marketing group (leads, vendors, partners, cards, contest)
   const marketingTabs: NavTab[] = [
     {
-      name: 'Weekly Rollup',
-      href: '/admin/marketing/rollup',
+      name: 'Radar',
+      href: '/admin/marketing/radar',
+      icon: Target,
+      active: pathname === '/admin/marketing/radar',
+      description: 'Local rank tracking & competitor SERPs',
+    },
+    {
+      name: 'Weekly Rollup',      href: '/admin/marketing/rollup',
       icon: BarChart3,
       active: pathname === '/admin/marketing/rollup',
       description: 'Spend, rank, demand, jobs, and revenue by town',

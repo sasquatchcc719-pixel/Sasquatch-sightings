@@ -87,6 +87,14 @@
     {
       "path": "/api/cron/maintenance-check",
       "schedule": "15 14 * * *"
+    },
+    {
+      "path": "/api/cron/local-falcon-sync",
+      "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/cron/scan-scheduler",
+      "schedule": "0 13 * * *"
     }
   ],
   "redirects": []

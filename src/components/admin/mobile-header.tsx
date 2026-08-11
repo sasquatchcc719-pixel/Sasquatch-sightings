@@ -90,18 +90,18 @@ const navSections: NavSection[] = [
         icon: BarChart3,
         description: 'Revenue & utilization',
       },
-      {
-        name: 'Radar',
-        href: '/admin/radar',
-        icon: Target,
-        description: 'Competitor SERP ranks',
-      },
     ],
   },
   {
     label: 'Marketing',
     icon: Megaphone,
     items: [
+      {
+        name: 'Radar',
+        href: '/admin/marketing/radar',
+        icon: Target,
+        description: 'Local rank tracking',
+      },
       {
         name: 'Weekly Rollup',
         href: '/admin/marketing/rollup',

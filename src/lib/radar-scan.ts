@@ -1,14 +1,21 @@
 /**
  * Shared logic for running a Radar SERP scan (used by cron and manual refresh).
- * Fetches rankings for all active keywords via SerpApi and inserts into radar_rankings.
+ * Fetches rankings for all active keywords and inserts into radar_rankings.
+ * Organic rank via SerpApi (free tier); Maps local finder via DataForSEO.
  */
 
 import { createAdminClient } from '@/supabase/server'
-import { fetchSerpRanks, fetchMapsLocalFinder } from '@/lib/serpApi'
+import { fetchSerpRanks, NOT_FOUND_RANK } from '@/lib/serpApi'
+// Maps runs on DataForSEO now, not SerpApi — organic rank (fetchSerpRanks,
+// above) is the only thing left on SerpApi's free tier for this scan. Moving
+// Maps off halves the SerpApi credits this cron burns per keyword, which
+// matters: at the old 2-calls/keyword rate, 5 keywords/day exceeded the
+// 250/month free quota on its own.
+import { fetchMapsLocalFinder } from '@/lib/dataforseo'
 import { SerpApiQuotaError } from '@/lib/serpapi-budget'
 
 const DELAY_MS = 2000
-const SERPAPI_CREDITS_PER_KEYWORD = 2
+const SERPAPI_CREDITS_PER_KEYWORD = 1
 const DEFAULT_RADAR_SERPAPI_DAILY_CREDIT_BUDGET = 6
 
 function sleep(ms: number): Promise<void> {
@@ -184,13 +191,24 @@ export async function runRadarScan(
         domains,
       )
 
-      const rows = ranks.map((r) => ({
-        keyword_id: kw.id,
-        domain_id: r.domain_id,
-        rank_position: r.rank_position,
-        // Deep local-finder position (1–20), null when not in the top 20.
-        map_rank: ranksByDomainId.get(r.domain_id) ?? null,
-      }))
+      const rows = ranks.map((r) => {
+        const finderRank = ranksByDomainId.get(r.domain_id) ?? null
+        return {
+          keyword_id: kw.id,
+          domain_id: r.domain_id,
+          rank_position: r.rank_position,
+          // Two DIFFERENT Google surfaces — never compare or merge them.
+          // pack_rank: the web local 3-pack (1–3), from fetchSerpRanks.
+          // finder_rank: the Maps local finder (1–20), from fetchMapsLocalFinder.
+          // Storing both was the fix for the c6a971e discontinuity, where the
+          // source changed underneath a single column and every rank silently
+          // changed meaning on 2026-06-30.
+          pack_rank: r.map_rank,
+          finder_rank: finderRank,
+          // Deprecated, kept equal to finder_rank so existing readers behave.
+          map_rank: finderRank,
+        }
+      })
       const { error: insertError } = await supabase
         .from('radar_rankings')
         .insert(rows)
@@ -316,7 +334,7 @@ export async function buildRadarDigest(): Promise<string | null> {
   const since = new Date(Date.now() - 5 * 86_400_000).toISOString()
   const { data: ranks } = await supabase
     .from('radar_rankings')
-    .select('keyword_id, map_rank, created_at')
+    .select('keyword_id, map_rank, rank_position, created_at')
     .in(
       'keyword_id',
       keywords.map((k) => k.id),
@@ -326,55 +344,95 @@ export async function buildRadarDigest(): Promise<string | null> {
     .order('created_at', { ascending: false })
   if (!ranks?.length) return null
 
-  const fmt = (p: number | null) =>
+  const fmtMap = (p: number | null) =>
     p == null ? `not in top ${MAPS_DEPTH}` : `#${p}`
+  const fmtOrganic = (p: number | null) => (p == null ? 'not in top 50' : `#${p}`)
 
-  // Best (lowest) map_rank across my domains for a given scan timestamp.
-  const rankAt = (rows: { map_rank: number | null }[]): number | null => {
+  type RankRow = { map_rank: number | null; rank_position: number | null }
+  // Best (lowest) placement across my domains for a given scan timestamp.
+  // null = didn't place at all. rank_position >= NOT_FOUND_RANK is the
+  // scanner's "not in the top 50" sentinel, not a real rank.
+  const bestAt = (rows: RankRow[], metric: 'map' | 'organic'): number | null => {
     const positions = rows
-      .map((r) => r.map_rank)
+      .map((r) =>
+        metric === 'map'
+          ? r.map_rank
+          : r.rank_position != null && r.rank_position < NOT_FOUND_RANK
+            ? r.rank_position
+            : null,
+      )
       .filter((p): p is number => p != null)
     return positions.length ? Math.min(...positions) : null
   }
 
   // Group output by keyword text (e.g. "carpet cleaning"), one line per town.
-  const groups = new Map<string, string[]>()
+  // Two sections per keyword: the map pack (what drives calls) and organic
+  // (the only live signal whenever the GBP is down — never omit it, or a #4 in
+  // Colorado Springs goes unnoticed for a week).
+  const mapGroups = new Map<string, string[]>()
+  const organicGroups = new Map<string, string[]>()
   for (const kw of keywords) {
     const rows = ranks.filter((s) => s.keyword_id === kw.id)
     if (!rows.length) continue
     const scans = [...new Set(rows.map((r) => r.created_at))] // newest first
-    const cur = rankAt(rows.filter((r) => r.created_at === scans[0]))
-    const prev = scans[1]
-      ? rankAt(rows.filter((r) => r.created_at === scans[1]))
-      : null
-    let arrow = ''
-    if (scans[1]) {
-      const c = cur ?? 99
-      const p = prev ?? 99
-      if (c < p) arrow = ' ↑'
-      else if (c > p) arrow = ' ↓'
-    }
-    const changed = scans[1] && (cur ?? 99) !== (prev ?? 99)
-    const icon = cur === 1 ? '🥇' : cur == null ? '⚠️' : cur <= 3 ? '🟢' : '•'
     const town = kw.location.split(',')[0].trim()
-    const line = `${icon} ${town}: ${fmt(cur)}${arrow}${
-      changed ? ` (was ${fmt(prev)})` : ''
-    }`
-    const list = groups.get(kw.keyword) ?? []
-    list.push(line)
-    groups.set(kw.keyword, list)
+
+    for (const metric of ['map', 'organic'] as const) {
+      const cur = bestAt(
+        rows.filter((r) => r.created_at === scans[0]),
+        metric,
+      )
+      const prev = scans[1]
+        ? bestAt(
+            rows.filter((r) => r.created_at === scans[1]),
+            metric,
+          )
+        : null
+      // Organic sits at "unranked" for most head terms in most towns; listing
+      // every miss would bury the towns we actually place in.
+      if (metric === 'organic' && cur == null && prev == null) continue
+
+      let arrow = ''
+      if (scans[1]) {
+        const c = cur ?? 99
+        const p = prev ?? 99
+        if (c < p) arrow = ' ↑'
+        else if (c > p) arrow = ' ↓'
+      }
+      const changed = scans[1] && (cur ?? 99) !== (prev ?? 99)
+      const fmt = metric === 'map' ? fmtMap : fmtOrganic
+      const icon =
+        cur === 1 ? '🥇' : cur == null ? '⚠️' : cur <= 3 ? '🟢' : '•'
+      const line = `${icon} ${town}: ${fmt(cur)}${arrow}${
+        changed ? ` (was ${fmt(prev)})` : ''
+      }`
+      const groups = metric === 'map' ? mapGroups : organicGroups
+      const list = groups.get(kw.keyword) ?? []
+      list.push(line)
+      groups.set(kw.keyword, list)
+    }
   }
-  if (groups.size === 0) return null
+  if (mapGroups.size === 0 && organicGroups.size === 0) return null
 
   const date = new Date().toLocaleDateString('en-US', {
     timeZone: 'America/Denver',
     month: 'short',
     day: 'numeric',
   })
-  const sections = [...groups.entries()].map(
-    ([keyword, lines]) => `📍 ${keyword}\n${lines.join('\n')}`,
-  )
-  return `🗺️ Radar Daily — Maps rank (top ${MAPS_DEPTH}) · ${date}\n\n${sections.join(
-    '\n\n',
-  )}\n\n🥇 #1 · 🟢 in the 3-pack · ⚠️ not in top ${MAPS_DEPTH}`
+  const block = (groups: Map<string, string[]>) =>
+    [...groups.entries()]
+      .map(([keyword, lines]) => `📍 ${keyword}\n${lines.join('\n')}`)
+      .join('\n\n')
+
+  const parts = [`🗺️ Radar Daily · ${date}`]
+  if (mapGroups.size > 0) {
+    parts.push(`— Maps rank (top ${MAPS_DEPTH}) —\n${block(mapGroups)}`)
+  }
+  if (organicGroups.size > 0) {
+    parts.push(`— Organic rank (top 50) —\n${block(organicGroups)}`)
+  } else {
+    parts.push('— Organic rank (top 50) —\nNothing in the top 50 today.')
+  }
+  parts.push(`🥇 #1 · 🟢 top 3 · ⚠️ unranked`)
+  return parts.join('\n\n')
 }

@@ -30,7 +30,7 @@ export type RadarDomain = {
 /**
  * Normalize a URL to a comparable domain (lowercase, no www).
  */
-function normalizeDomain(url: string): string | null {
+export function normalizeDomain(url: string): string | null {
   try {
     const u = new URL(url.startsWith('http') ? url : `https://${url}`)
     const host = u.hostname.toLowerCase()
@@ -76,7 +76,11 @@ function matchPlaceToDomainId(
 }
 
 const SERP_NUM_RESULTS = 50
-const NOT_FOUND_RANK = SERP_NUM_RESULTS
+// Sentinel written to radar_rankings.rank_position when a domain isn't found in
+// the organic results at all. It is NOT a real rank — anything reading that
+// column must treat >= this value as "unranked", so it's exported rather than
+// re-hardcoded at each call site.
+export const NOT_FOUND_RANK = SERP_NUM_RESULTS
 
 export type SerpMapPackPlace = {
   position: number
@@ -85,6 +89,50 @@ export type SerpMapPackPlace = {
   rating: number | null
   reviews: number | null
   address: string | null
+  /** Google's permanent ID for the place — survives renames and missing websites. */
+  place_id: string | null
+  lat: number | null
+  lng: number | null
+}
+
+/**
+ * Fixed centroids for the towns Radar tracks.
+ *
+ * Why hardcoded: `engine=google_maps` needs an explicit `ll` origin, otherwise
+ * Google infers a location from the query text and the origin silently drifts
+ * between calls — which makes "distance from town" undefined and ranks jumpy.
+ * These are stable public coordinates (same set the marketing site's service-area
+ * map uses), so no geocoding service is involved. Keys are normalized town names.
+ */
+export const TOWN_CENTROIDS: Record<string, { lat: number; lng: number }> = {
+  'palmer lake': { lat: 39.1152, lng: -104.9178 },
+  monument: { lat: 39.0908, lng: -104.8698 },
+  woodmoor: { lat: 39.0502, lng: -104.8606 },
+  gleneagle: { lat: 39.0169, lng: -104.8473 },
+  larkspur: { lat: 39.2356, lng: -104.8939 },
+  'castle pines': { lat: 39.28, lng: -104.87 },
+  'castle rock': { lat: 39.3722, lng: -104.8561 },
+  'black forest': { lat: 38.9786, lng: -104.685 },
+  'flying horse': { lat: 38.9603, lng: -104.8012 },
+  falcon: { lat: 38.9378, lng: -104.6214 },
+  'colorado springs': { lat: 38.8339, lng: -104.8214 },
+}
+
+/** Default Maps zoom for local-intent searches. */
+export const MAPS_ZOOM = 14
+
+/** "monument, Colorado, United States" → "monument" */
+export function townKeyFromLocation(location: string): string {
+  return location
+    .split(',')[0]
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+}
+
+/** SerpApi wants `@lat,lng,zoomz`. */
+export function formatLl(lat: number, lng: number, zoom = MAPS_ZOOM): string {
+  return `@${lat},${lng},${zoom}z`
 }
 
 export type SerpRanksWithSnapshot = {
@@ -158,6 +206,10 @@ export async function fetchSerpRanks(
       rating: place.rating ?? null,
       reviews: place.reviews ?? null,
       address: (place.address ?? '').trim() || null,
+      // The web 3-pack payload carries neither of these; only the Maps engine does.
+      place_id: null,
+      lat: null,
+      lng: null,
     })
     if (website && place.rating != null) {
       const hostNorm = placeDomain
@@ -263,6 +315,12 @@ export async function fetchMapsLocalFinder(
     hl: 'en',
   })
 
+  // Pin the search origin. Without `ll` Google infers a location from the query
+  // text, so the origin drifts between calls and distances have no fixed
+  // reference. Falls back to text-only inference for any town we lack a centroid for.
+  const centroid = TOWN_CENTROIDS[townKeyFromLocation(location)]
+  if (centroid) params.set('ll', formatLl(centroid.lat, centroid.lng))
+
   const data = await fetchSerpApiJson<{
     local_results?: Array<{
       position?: number
@@ -271,6 +329,8 @@ export async function fetchMapsLocalFinder(
       reviews?: number
       address?: string
       website?: string
+      place_id?: string
+      gps_coordinates?: { latitude?: number; longitude?: number }
       links?: { website?: string }
     }>
     error?: string
@@ -304,6 +364,9 @@ export async function fetchMapsLocalFinder(
       rating: place.rating ?? null,
       reviews: place.reviews ?? null,
       address: (place.address ?? '').trim() || null,
+      place_id: place.place_id ?? null,
+      lat: place.gps_coordinates?.latitude ?? null,
+      lng: place.gps_coordinates?.longitude ?? null,
     })
     // Match by website or business name (Maps often omits the website URL, so
     // name matching against display_name carries the load here).
@@ -317,6 +380,74 @@ export async function fetchMapsLocalFinder(
   }
 
   return { mapPack, ranksByDomainId }
+}
+
+/**
+ * Fetch the Maps local finder from ONE geographic point.
+ *
+ * This is the primitive behind the geo-grid ("Local Falcon style") scan: the
+ * same keyword is asked from many coordinates, and the rank of our business is
+ * recorded at each one. Unlike `fetchMapsLocalFinder` the town name is NOT put
+ * in the query — the coordinate alone defines where the searcher is standing,
+ * which is the whole point.
+ */
+export async function fetchMapsAtPoint(
+  keyword: string,
+  lat: number,
+  lng: number,
+  zoom = MAPS_ZOOM,
+): Promise<SerpMapPackPlace[]> {
+  const params = new URLSearchParams({
+    engine: 'google_maps',
+    type: 'search',
+    q: keyword.trim(),
+    ll: formatLl(lat, lng, zoom),
+    gl: 'us',
+    hl: 'en',
+  })
+
+  const data = await fetchSerpApiJson<{
+    local_results?: Array<{
+      position?: number
+      title?: string
+      rating?: number
+      reviews?: number
+      address?: string
+      website?: string
+      place_id?: string
+      gps_coordinates?: { latitude?: number; longitude?: number }
+      links?: { website?: string }
+    }>
+    error?: string
+  }>({
+    source: 'radar-grid-point',
+    query: `${keyword} | ${lat.toFixed(4)},${lng.toFixed(4)}`,
+    params,
+  })
+
+  if (data.error) {
+    if (/didn'?t return|hasn'?t returned|no results/i.test(data.error)) return []
+    throw new Error(`SerpApi maps error: ${data.error}`)
+  }
+
+  const out: SerpMapPackPlace[] = []
+  for (const place of data.local_results ?? []) {
+    const pos = place.position ?? 0
+    if (!pos || pos > MAPS_NUM_RESULTS) continue
+    const website = place.website ?? place.links?.website
+    out.push({
+      position: pos,
+      title: (place.title ?? '').trim() || null,
+      domain: website ? normalizeDomain(website) : null,
+      rating: place.rating ?? null,
+      reviews: place.reviews ?? null,
+      address: (place.address ?? '').trim() || null,
+      place_id: place.place_id ?? null,
+      lat: place.gps_coordinates?.latitude ?? null,
+      lng: place.gps_coordinates?.longitude ?? null,
+    })
+  }
+  return out
 }
 
 export type SerpDomainWithPosition = {
