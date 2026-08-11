@@ -211,7 +211,7 @@ export function buildBusinessInsights(input: {
       title: topSpendCategory
         ? `${topSpendCategory[0]} was the largest marketing cost this week`
         : 'Marketing spending was recorded this week',
-      evidence: `${money(current.spend)} was recorded${current.spendLineCount ? ` across ${current.spendLineCount} QuickBooks expense ${current.spendLineCount === 1 ? 'line' : 'lines'}` : ''}${topSpendCategory ? `; ${money(topSpendCategory[1])} was ${topSpendCategory[0].toLowerCase()}` : ''}.`,
+      evidence: `${money(current.spend)} was reconciled${current.spendLineCount ? ` from ${current.spendLineCount} QuickBooks expense ${current.spendLineCount === 1 ? 'line' : 'lines'} plus separately recorded campaign costs` : ' from separately recorded campaign costs'}${topSpendCategory ? `; ${money(topSpendCategory[1])} was ${topSpendCategory[0].toLowerCase()}` : ''}.`,
       meaning:
         'This is when money left the business, not proof that the same week’s completed jobs came from that spending. One-time items such as wraps or printing should not be judged like recurring ads.',
       nextStep:
@@ -220,9 +220,8 @@ export function buildBusinessInsights(input: {
   } else {
     insights.push({
       tone: 'context',
-      title: 'No marketing expense landed in QuickBooks this week',
-      evidence:
-        'The reconciled QuickBooks marketing total for this week is $0.',
+      title: 'No reconciled marketing expense landed this week',
+      evidence: 'The reconciled marketing total for this week is $0.',
       meaning:
         'That can be a real quiet week because subscriptions, print orders, and ad charges land on specific transaction dates. It does not mean marketing activity stopped.',
       nextStep:

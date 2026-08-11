@@ -329,7 +329,7 @@ describe('buildWeeklyRollup', () => {
     expect(digest).toContain('data through 2026-08-07')
     expect(digest).toContain('Completed commercial work')
     expect(digest).toContain(
-      'QuickBooks marketing spend: $111 across 1 expense lines',
+      'Reconciled marketing spend: $111, anchored by 1 QuickBooks expense lines plus separately recorded campaign costs',
     )
     expect(digest).toContain('does not mean every quote was finished or booked')
     expect(digest).not.toContain('impr /')

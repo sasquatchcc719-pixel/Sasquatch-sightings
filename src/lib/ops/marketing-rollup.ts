@@ -978,7 +978,7 @@ export function buildMarketingRollupDigest(
   lines.push(
     `Google Search: Sasquatch appeared ${total.impressions.toLocaleString()} times and ${total.clicks} people visited the website${gscThrough ? `; data through ${gscThrough}` : ''}.`,
     `Online quote activity: ${total.quotes} website sessions reached the quote step; this does not mean every quote was finished or booked.`,
-    `QuickBooks marketing spend: ${money(total.spend)} across ${total.spendLines} expense lines. This includes QuickBooks marketing accounts plus recognized marketing vendors filed under other accounts.`,
+    `Reconciled marketing spend: ${money(total.spend)}, anchored by ${total.spendLines} QuickBooks expense lines plus separately recorded campaign costs. QuickBooks coverage includes marketing accounts and recognized marketing vendors filed under other accounts.`,
   )
   if (wide?.review_delta !== null && wide?.review_delta !== undefined) {
     const sign = wide.review_delta > 0 ? '+' : ''
