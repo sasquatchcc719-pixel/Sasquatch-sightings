@@ -139,7 +139,7 @@ export async function GET(request: NextRequest) {
       .from('local_falcon_scans')
       .select(SCAN_SELECT)
       .order('scanned_at', { ascending: false })
-      .limit(50)
+      .limit(100)
     if (error) throw error
 
     const requested = request.nextUrl.searchParams.get('scanId')
@@ -199,7 +199,9 @@ export async function POST(request: NextRequest) {
     if (action === 'sync') {
       const result = await syncAllLocalFalcon(supabase, {
         limit: 50,
-        upgradeExisting: Boolean(body.upgradeExisting ?? true),
+        // Default false: pull new Grok/ChatGPT/Gemini runs first. Full rehydrate
+        // of every old google grid was starving history of brand-new platforms.
+        upgradeExisting: Boolean(body.upgradeExisting ?? false),
       })
       return NextResponse.json({ ok: true, ...result })
     }

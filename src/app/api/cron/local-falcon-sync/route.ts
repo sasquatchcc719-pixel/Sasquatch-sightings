@@ -23,7 +23,8 @@ export async function GET(request: NextRequest) {
   try {
     const result = await syncAllLocalFalcon(createAdminClient(), {
       limit: 50,
-      upgradeExisting: true,
+      // Prefer new inserts (Grok/ChatGPT/etc.) over re-upgrading old google grids.
+      upgradeExisting: false,
     })
     const errors = [
       ...result.scans.errors,

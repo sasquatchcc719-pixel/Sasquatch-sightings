@@ -271,7 +271,7 @@ export function LocalFalconMap() {
     setSyncing(true)
     setError(null)
     try {
-      await postAction({ action: 'sync', upgradeExisting: true })
+      await postAction({ action: 'sync', upgradeExisting: false })
       await loadScans(scan?.id)
       await loadView(tab)
       await loadLocations()

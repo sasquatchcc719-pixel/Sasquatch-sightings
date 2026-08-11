@@ -193,7 +193,9 @@ async function upsertScanFromReport(
       lat: lfNum(p.lat) ?? 0,
       lng: lfNum(p.lng) ?? 0,
       found: Boolean(p.found),
-      rank: p.found ? lfInt(p.rank) : null,
+      // Falcon AI platforms often send `rank: false` (boolean) on misses —
+      // never coerce that to 0 ("first place").
+      rank: p.found && p.rank !== false ? lfInt(p.rank) : null,
       competitors: normalizeCompetitors(p.results),
     }))
     const { error: pointError } = await supabase
@@ -205,22 +207,67 @@ async function upsertScanFromReport(
 }
 
 /**
- * Mirror scan reports. New keys insert; `upgradeExisting` re-pulls known keys
- * to fill enriched columns / full competitor lists.
+ * List scan reports across pages. Falcon's default page is tiny; without
+ * pagination, brand-new platforms (e.g. grok) can sit at the top of Falcon's
+ * inbox while Sightings only ever re-hydrates an older page of google scans.
+ */
+async function listAllScanReports(options?: {
+  limit?: number
+  maxPages?: number
+  platform?: string
+}): Promise<Record<string, unknown>[]> {
+  const pageSize = Math.min(Math.max(options?.limit ?? 50, 1), 100)
+  const maxPages = options?.maxPages ?? 5
+  const out: Record<string, unknown>[] = []
+  let nextToken: string | undefined
+  for (let page = 0; page < maxPages; page++) {
+    const listed = await listReports({
+      limit: pageSize,
+      platform: options?.platform,
+      next_token: nextToken,
+    })
+    const data = asRecord(listed)
+    const reports = lfCollection(listed, 'reports')
+    out.push(...reports)
+    const token = data.next_token
+    if (typeof token !== 'string' || !token || reports.length === 0) break
+    nextToken = token
+  }
+  return out
+}
+
+/**
+ * Mirror scan reports.
+ *
+ * Priority: insert brand-new report_keys first (so Grok/ChatGPT runs that just
+ * emailed you show up immediately). Only then backfill a few incomplete rows.
+ * Never re-download every known scan on "Sync all" — that used to burn the
+ * whole serverless budget upgrading old google grids and skip the new ones.
  */
 export async function syncLocalFalconScans(
   supabase: SupabaseClient,
-  options?: { limit?: number; upgradeExisting?: boolean },
+  options?: { limit?: number; upgradeExisting?: boolean; maxUpgrade?: number },
 ): Promise<SyncBucket> {
   const out = emptyBucket()
-  const listed = await listReports({ limit: options?.limit ?? 50 })
-  const reports = lfCollection(listed, 'reports')
+
+  // Pull all platforms explicitly too — Falcon's unfiltered list has been
+  // observed to bury AI-platform runs, and platform=grok is cheap/read-only.
+  const [mixed, grokOnly, chatgptOnly, geminiOnly] = await Promise.all([
+    listAllScanReports({ limit: options?.limit ?? 50 }),
+    listAllScanReports({ limit: 25, platform: 'grok', maxPages: 2 }),
+    listAllScanReports({ limit: 25, platform: 'chatgpt', maxPages: 2 }),
+    listAllScanReports({ limit: 25, platform: 'gemini', maxPages: 2 }),
+  ])
+  const byKey = new Map<string, Record<string, unknown>>()
+  for (const r of [...mixed, ...grokOnly, ...chatgptOnly, ...geminiOnly]) {
+    const key = String(r.report_key || '')
+    if (key) byKey.set(key, r)
+  }
+  const reports = [...byKey.values()]
   out.checked = reports.length
   if (!reports.length) return out
 
-  const keys = reports
-    .map((r) => String(r.report_key ?? ''))
-    .filter(Boolean)
+  const keys = reports.map((r) => String(r.report_key ?? '')).filter(Boolean)
   const { data: existing } = await supabase
     .from('local_falcon_scans')
     .select('report_key, ai_analysis, raw')
@@ -229,21 +276,28 @@ export async function syncLocalFalconScans(
     (existing ?? []).map((r) => [r.report_key as string, r] as const),
   )
 
+  const newKeys: string[] = []
+  const upgradeKeys: string[] = []
   for (const summary of reports) {
     const reportKey = String(summary.report_key || '')
-    if (!reportKey) {
-      out.skipped++
-      continue
-    }
+    if (!reportKey) continue
     const prior = have.get(reportKey)
-    const needsUpgrade =
-      options?.upgradeExisting ||
-      (prior && (prior.raw == null || prior.ai_analysis === undefined))
-    if (prior && !needsUpgrade) {
-      out.skipped++
+    if (!prior) {
+      newKeys.push(reportKey)
       continue
     }
+    const incomplete = prior.raw == null
+    if (incomplete || options?.upgradeExisting) upgradeKeys.push(reportKey)
+  }
 
+  const maxUpgrade = options?.maxUpgrade ?? (options?.upgradeExisting ? 3 : 5)
+  const toFetch = [
+    ...newKeys,
+    ...upgradeKeys.filter((k) => !newKeys.includes(k)).slice(0, maxUpgrade),
+  ]
+
+  for (const reportKey of toFetch) {
+    const prior = have.get(reportKey)
     try {
       const raw = (await getReport(reportKey)) as Record<string, unknown>
       const r = asRecord(raw.report ?? raw)
@@ -259,6 +313,7 @@ export async function syncLocalFalconScans(
     }
   }
 
+  out.skipped = Math.max(0, reports.length - toFetch.length)
   return out
 }
 
