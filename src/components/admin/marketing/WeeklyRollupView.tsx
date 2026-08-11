@@ -434,15 +434,15 @@ export function WeeklyRollupView() {
                 booked.
               </p>
               <p>
-                QuickBooks recorded{' '}
+                The reconciled marketing ledger shows{' '}
                 <strong className="text-white">
-                  {money(latestBusinessSummary.spend)} in marketing expense
+                  {money(latestBusinessSummary.spend)} in spending
                 </strong>
                 {latestBusinessSummary.spendLineCount
-                  ? ` across ${latestBusinessSummary.spendLineCount} expense ${latestBusinessSummary.spendLineCount === 1 ? 'line' : 'lines'}`
+                  ? `, anchored by ${latestBusinessSummary.spendLineCount} QuickBooks expense ${latestBusinessSummary.spendLineCount === 1 ? 'line' : 'lines'}`
                   : ''}
-                . These costs are business-wide and are not assigned to one
-                town.
+                , plus any separately recorded campaign costs. These costs are
+                business-wide and are not assigned to one town.
               </p>
               {latestSummary.reviewDelta !== null ? (
                 <p>
@@ -516,14 +516,14 @@ export function WeeklyRollupView() {
                 color="text-violet-300"
               />
               <MetricCard
-                label="QuickBooks marketing spend"
+                label="Reconciled marketing spend"
                 value={money(latestBusinessSummary.spend)}
                 detail={
                   latestSpendCategories[0]
-                    ? `${latestBusinessSummary.spendLineCount} QuickBooks expense ${latestBusinessSummary.spendLineCount === 1 ? 'line' : 'lines'} · largest: ${latestSpendCategories[0][0]}`
+                    ? `${latestBusinessSummary.spendLineCount} QuickBooks expense ${latestBusinessSummary.spendLineCount === 1 ? 'line' : 'lines'} + linked campaign costs · largest: ${latestSpendCategories[0][0]}`
                     : 'No marketing expense posted during this week'
                 }
-                explanation="Pulled read-only from QuickBooks marketing accounts, plus recognized marketing vendors found under other accounts. Duplicate campaign links are removed. This is real cash-out timing, not attributed return."
+                explanation="Reconciled from read-only QuickBooks marketing expenses and separately recorded campaign costs. Duplicate links are removed. This is expense timing, not attributed return."
                 icon={DollarSign}
                 color="text-amber-300"
               />
@@ -624,11 +624,12 @@ export function WeeklyRollupView() {
           <section className="rounded-xl border border-white/10 bg-slate-950/55 p-4">
             <div className="mb-3">
               <h2 className="font-semibold text-white">
-                QuickBooks marketing spend vs completed residential revenue
+                Reconciled marketing spend vs completed residential revenue
               </h2>
               <p className="text-xs leading-5 text-slate-500">
-                Amber bars = business-wide marketing expenses pulled from
-                QuickBooks. Green line = completed residential revenue{' '}
+                Amber bars = business-wide marketing expenses reconciled from
+                QuickBooks and separately recorded campaign costs. Green line =
+                completed residential revenue{' '}
                 {town === 'all'
                   ? 'across active service areas'
                   : `in ${townLabel(town)}`}
@@ -658,7 +659,7 @@ export function WeeklyRollupView() {
                   <Bar
                     yAxisId="money"
                     dataKey="spend"
-                    name="QuickBooks marketing spend"
+                    name="Reconciled marketing spend"
                     fill="#f59e0b"
                     fillOpacity={0.72}
                     radius={[4, 4, 0, 0]}
@@ -681,11 +682,11 @@ export function WeeklyRollupView() {
                     Where the marketing money went in this selected period
                   </h3>
                   <p className="mt-1 text-xs leading-5 text-slate-500">
-                    {money(periodSpendSummary.spend)} across{' '}
-                    {periodSpendSummary.spendLineCount} QuickBooks expense
-                    lines. “Other marketing” means QuickBooks put it in a
-                    marketing account but the merchant did not match a named
-                    category.
+                    {money(periodSpendSummary.spend)} total, anchored by{' '}
+                    {periodSpendSummary.spendLineCount} QuickBooks expense lines
+                    plus separately recorded campaign costs. “Other marketing”
+                    means the source was recognized as marketing but did not
+                    match a named category.
                   </p>
                 </div>
               </div>
@@ -723,7 +724,7 @@ export function WeeklyRollupView() {
                 })}
                 {!periodSpendCategories.length ? (
                   <p className="text-sm text-slate-500">
-                    No QuickBooks marketing expense landed in this period.
+                    No reconciled marketing expense landed in this period.
                   </p>
                 ) : null}
               </div>
@@ -760,8 +761,8 @@ export function WeeklyRollupView() {
                 definition="A sample search from a specific map location. Found means Sasquatch appeared in the first 20 results. It is not geographic service coverage."
               />
               <Definition
-                term="QuickBooks marketing spend"
-                definition="Expense lines in QuickBooks marketing or printing accounts, plus recognized marketing vendors found under other accounts. Duplicate links are counted once. The transaction date is cash-out timing, not the date a customer was acquired."
+                term="Reconciled marketing spend"
+                definition="Expense lines in QuickBooks marketing or printing accounts, recognized marketing vendors found under other accounts, and separately recorded campaign costs. Duplicate links are counted once. The transaction date is expense timing, not the date a customer was acquired."
               />
               <Definition
                 term="Completed revenue"
@@ -787,7 +788,7 @@ export function WeeklyRollupView() {
                       Week and area
                     </th>
                     <th className="px-3 py-3 text-left font-medium">
-                      QuickBooks marketing spend
+                      Reconciled marketing spend
                     </th>
                     <th className="px-3 py-3 text-left font-medium">
                       Google Maps visibility check
@@ -836,7 +837,7 @@ export function WeeklyRollupView() {
                               </span>
                               <span className="text-xs text-slate-500">
                                 {row.spend_line_count
-                                  ? `${row.spend_line_count} QuickBooks ${row.spend_line_count === 1 ? 'line' : 'lines'}`
+                                  ? `${row.spend_line_count} QuickBooks ${row.spend_line_count === 1 ? 'line' : 'lines'} + any linked campaign costs`
                                   : 'Non-QuickBooks campaign cost'}
                               </span>
                             </>
@@ -948,7 +949,7 @@ function SpendRevenueTooltip({
       </p>
       <div className="mt-2 space-y-1 text-sm">
         <p className="flex justify-between gap-6 text-amber-300">
-          <span>QuickBooks marketing spend</span>
+          <span>Reconciled marketing spend</span>
           <strong>{money(point.spend)}</strong>
         </p>
         <p className="flex justify-between gap-6 text-emerald-300">
@@ -963,7 +964,8 @@ function SpendRevenueTooltip({
       {categories.length ? (
         <div className="mt-3 border-t border-white/10 pt-2">
           <p className="mb-1 text-[10px] font-semibold tracking-wide text-slate-500 uppercase">
-            Spend details · {point.spendLineCount} QuickBooks lines
+            Spend details · {point.spendLineCount} QuickBooks lines + linked
+            campaign costs
           </p>
           {categories.map(([channel, amount]) => (
             <p
