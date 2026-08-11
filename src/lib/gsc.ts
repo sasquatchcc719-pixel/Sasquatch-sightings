@@ -116,6 +116,39 @@ export type GscKeywordRow = {
   position: number
 }
 
+export type GscPageRow = {
+  page: string
+  clicks: number
+  impressions: number
+  ctr: number
+  position: number
+}
+
+/** Exact inclusive date window, grouped by landing page for town attribution. */
+export async function queryPageRows(
+  sc: searchconsole_v1.Searchconsole,
+  property: string,
+  startDate: string,
+  endDate: string,
+): Promise<GscPageRow[]> {
+  const { data } = await sc.searchanalytics.query({
+    siteUrl: property,
+    requestBody: {
+      startDate,
+      endDate,
+      dimensions: ['page'],
+      rowLimit: 25_000,
+    },
+  })
+  return (data.rows || []).map((r) => ({
+    page: r.keys?.[0] ?? '',
+    clicks: Number(r.clicks || 0),
+    impressions: Number(r.impressions || 0),
+    ctr: Number(r.ctr || 0),
+    position: Number(r.position || 0),
+  }))
+}
+
 /**
  * Per-keyword, per-page search analytics (the data the page-2 opportunity
  * report runs on). Returns every query+page pair with its average position,
