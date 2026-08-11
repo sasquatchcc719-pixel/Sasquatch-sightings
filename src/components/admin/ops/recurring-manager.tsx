@@ -85,6 +85,8 @@ type Template = {
   discount_amount: number
   internal_notes: string | null
   service_address_id: string | null
+  is_subcontracted?: boolean | null
+  subcontractor_name?: string | null
   line_items: Array<{
     name_snapshot: string
     quantity: number
@@ -1370,6 +1372,12 @@ function CreateTemplateForm({
   const [invoiceMode, setInvoiceMode] = useState<'per_visit' | 'batch_monthly'>(
     (initialData?.invoice_mode as 'per_visit' | 'batch_monthly') ?? 'per_visit',
   )
+  const [isSubcontracted, setIsSubcontracted] = useState(
+    initialData?.is_subcontracted === true,
+  )
+  const [subcontractorName, setSubcontractorName] = useState(
+    initialData?.subcontractor_name ?? '',
+  )
 
   const [lineItems, setLineItems] = useState<LineItemForm[]>(
     initialData?.line_items?.length
@@ -1585,6 +1593,10 @@ function CreateTemplateForm({
       discount_amount: Number(discountAmount) || 0,
       internal_notes: internalNotes || null,
       invoice_mode: invoiceMode,
+      is_subcontracted: isSubcontracted,
+      subcontractor_name: isSubcontracted
+        ? subcontractorName.trim() || null
+        : null,
     }
 
     const rulesPayload = rules.map((r) => ({
@@ -1799,6 +1811,36 @@ function CreateTemplateForm({
                 Batch Monthly (one consolidated invoice)
               </option>
             </select>
+          </div>
+          <div className="border-border/60 bg-muted/30 rounded-lg border p-3">
+            <label className="flex cursor-pointer items-start gap-2">
+              <input
+                type="checkbox"
+                checked={isSubcontracted}
+                onChange={(e) => setIsSubcontracted(e.target.checked)}
+                className="mt-0.5 h-4 w-4"
+              />
+              <span className="text-sm">
+                <span className="font-medium">Subcontracted work</span>
+                <span className="text-muted-foreground block text-xs">
+                  An outside crew does this job. It stays off the schedule
+                  lanes and never blocks your or David&apos;s availability, but
+                  it still invoices the customer normally. Weekend dates move to
+                  the next Monday.
+                </span>
+              </span>
+            </label>
+            {isSubcontracted && (
+              <div className="mt-3">
+                <Label>Subcontractor Name</Label>
+                <Input
+                  placeholder="e.g., Levis Custom Clean"
+                  value={subcontractorName}
+                  onChange={(e) => setSubcontractorName(e.target.value)}
+                  className="mt-1"
+                />
+              </div>
+            )}
           </div>
           <div>
             <Label>Default Start Time</Label>
@@ -3065,6 +3107,14 @@ function TemplateDetailView({
             </Badge>
             {template.invoice_mode === 'batch_monthly' && (
               <Badge variant="outline">Batch Monthly</Badge>
+            )}
+            {template.is_subcontracted && (
+              <Badge
+                variant="outline"
+                className="border-amber-300 bg-amber-50 text-amber-900"
+              >
+                {template.subcontractor_name || 'Subcontracted'}
+              </Badge>
             )}
           </div>
         </div>

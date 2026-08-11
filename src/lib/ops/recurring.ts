@@ -37,6 +37,8 @@ export type RecurringTemplate = {
   invoice_mode: 'per_visit' | 'batch_monthly'
   booking_channel: string
   is_active: boolean
+  is_subcontracted: boolean
+  subcontractor_name: string | null
 }
 
 export type RecurrenceRule = {
@@ -159,6 +161,21 @@ function getNthWeekdayOfMonth(
 
 function formatDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/**
+ * Push a Saturday or Sunday date to the following Monday.
+ * A fixed interval (e.g. every 90 days) drifts across the week and eventually
+ * lands on a weekend; subcontracted work gets nudged to the next business day
+ * so nobody has to fix it by hand each cycle. The nominal rule date is still
+ * stored as original_recurring_date, so regeneration stays idempotent.
+ */
+function nudgeOffWeekend(ymd: string): string {
+  const d = new Date(ymd + 'T12:00:00')
+  const dow = d.getDay()
+  if (dow !== 0 && dow !== 6) return ymd
+  d.setDate(d.getDate() + (dow === 6 ? 2 : 1))
+  return formatDate(d)
 }
 
 function monthKeyFromYmd(ymd: string): string {
@@ -499,18 +516,28 @@ export async function generateRecurringAppointments(
       const normalizedStart = `${startTime}:00`.slice(0, 8)
       const endTime = addMinutesToTime(startTime, bufferedMinutes)
 
+      // Subcontracted work is done by an outside crew, so a fixed interval
+      // landing on a weekend is only a paperwork problem — move it to Monday.
+      const scheduledDate = template.is_subcontracted
+        ? nudgeOffWeekend(date)
+        : date
+
       // Recurring generation used to write straight onto the calendar with
       // no conflict check, which is how overlapping evening jobs got booked.
-      const conflict = await findAppointmentConflict(supabase, {
-        date,
-        startTime: normalizedStart,
-        endTime,
-      })
-      if (conflict) {
-        result.errors.push(
-          `${date}: skipped — would overlap an existing appointment (${String(conflict.start_time).slice(0, 5)}–${String(conflict.end_time).slice(0, 5)}). Resolve the conflict and regenerate.`,
-        )
-        continue
+      // Subcontracted visits occupy no truck, so they neither take nor yield
+      // a slot — checking them would block our own crew for someone else's job.
+      if (!template.is_subcontracted) {
+        const conflict = await findAppointmentConflict(supabase, {
+          date: scheduledDate,
+          startTime: normalizedStart,
+          endTime,
+        })
+        if (conflict) {
+          result.errors.push(
+            `${date}: skipped — would overlap an existing appointment (${String(conflict.start_time).slice(0, 5)}–${String(conflict.end_time).slice(0, 5)}). Resolve the conflict and regenerate.`,
+          )
+          continue
+        }
       }
 
       const { data: appointment, error: apptErr } = await supabase
@@ -526,12 +553,16 @@ export async function generateRecurringAppointments(
           payment_status: 'unpaid',
           quickbooks_sync_status:
             template.invoice_mode === 'batch_monthly' ? 'held' : syncStatus,
-          appointment_date: date,
+          appointment_date: scheduledDate,
           original_recurring_date: date,
           start_time: normalizedStart,
           end_time: endTime,
           quoted_total: Number(quotedTotal.toFixed(2)),
           internal_notes: template.internal_notes,
+          is_subcontracted: template.is_subcontracted === true,
+          subcontractor_name: template.is_subcontracted
+            ? template.subcontractor_name || null
+            : null,
         })
         .select('id')
         .single()
@@ -625,17 +656,22 @@ export async function generateRecurringAppointments(
           changed_by: null,
           notes: `Auto-generated from recurring template: ${template.label}`,
         }),
-        scheduleJobReminder({
-          appointmentId: appointment.id,
-          appointmentDate: date,
-          startTime: normalizedStart,
-          customerName: customer.full_name,
-          address: `${address.street_1}, ${address.city}`,
-        }),
+        // No tech is dispatched to a subcontracted visit, so there is nobody
+        // to remind — the week-header chip is the prompt to close it out.
+        template.is_subcontracted
+          ? Promise.resolve()
+          : scheduleJobReminder({
+              appointmentId: appointment.id,
+              appointmentDate: scheduledDate,
+              startTime: normalizedStart,
+              customerName: customer.full_name,
+              address: `${address.street_1}, ${address.city}`,
+            }),
       ])
 
       result.created++
       templateDateSet.add(date)
+      templateDateSet.add(scheduledDate)
       originalRecurringDateSet.add(date)
     } catch (err) {
       result.errors.push(

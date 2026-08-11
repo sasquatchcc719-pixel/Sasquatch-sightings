@@ -76,12 +76,15 @@ export async function loadAvailabilityBundle(
     .select('*')
     .eq('override_date', date)
 
+  // Subcontracted visits are performed by an outside crew and occupy no truck,
+  // so they must never consume our own bookable time.
   let appointmentsQuery = supabase
     .from('ops_appointments')
     .select(
       'id, appointment_date, start_time, end_time, status, assigned_staff_user_id',
     )
     .eq('appointment_date', date)
+    .eq('is_subcontracted', false)
 
   let eventsQuery = supabase
     .from('ops_calendar_events')

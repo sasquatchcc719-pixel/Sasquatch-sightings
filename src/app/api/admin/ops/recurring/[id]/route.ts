@@ -95,6 +95,8 @@ export async function PATCH(request: NextRequest, { params }: Params) {
         'invoice_mode',
         'booking_channel',
         'is_active',
+        'is_subcontracted',
+        'subcontractor_name',
       ] as const
 
       for (const key of allowed) {
@@ -109,6 +111,26 @@ export async function PATCH(request: NextRequest, { params }: Params) {
         .eq('id', id)
 
       if (error) throw error
+
+      // Flipping the subcontracted flag has to reach the visits already on the
+      // books, or the toggle appears to do nothing until the next regeneration.
+      // Completed visits are left alone — their history stays as it happened.
+      if (body.template.is_subcontracted !== undefined) {
+        const isSub = body.template.is_subcontracted === true
+        const { error: propagateError } = await supabase
+          .from('ops_appointments')
+          .update({
+            is_subcontracted: isSub,
+            subcontractor_name: isSub
+              ? body.template.subcontractor_name || null
+              : null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('recurring_template_id', id)
+          .not('status', 'in', '("completed","cancelled")')
+
+        if (propagateError) throw propagateError
+      }
     }
 
     if (Array.isArray(body.rules)) {

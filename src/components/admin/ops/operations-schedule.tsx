@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import {
   CalendarDays,
   CalendarRange,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   GripVertical,
@@ -16,6 +17,7 @@ import {
   Repeat,
   Ruler,
   ShieldBan,
+  Truck,
   UserRoundCog,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -86,6 +88,8 @@ type Appointment = {
   recurring_template_id?: string | null
   kind?: 'service' | 'estimate' | null
   estimate_status?: string | null
+  is_subcontracted?: boolean | null
+  subcontractor_name?: string | null
   ops_appointment_line_items: Array<{
     id: string
     name_snapshot: string
@@ -131,6 +135,8 @@ type RecurringFrequencyInfo = {
 
 type ScheduleResponse = {
   appointments: Appointment[]
+  /** Open subcontracted visits dated before today, from outside the loaded range. */
+  overdueSubcontracted?: Appointment[]
   events: CalendarEvent[]
   recurringFrequencyMap?: Record<string, RecurringFrequencyInfo>
   staff?: StaffMember[]
@@ -1039,6 +1045,66 @@ export function OperationsSchedule() {
     return grouped
   }, [data.appointments])
 
+  /**
+   * What actually draws on the calendar grid. Subcontracted visits are billed
+   * revenue but no truck of ours goes out, so they stay out of the lanes (and
+   * surface as the week-header chip instead) while still counting in totals.
+   */
+  const gridAppointmentsByDate = useMemo(() => {
+    const grouped = new Map<string, Appointment[]>()
+    for (const [dateKey, appts] of appointmentsByDate) {
+      grouped.set(
+        dateKey,
+        appts.filter((appointment) => !appointment.is_subcontracted),
+      )
+    }
+    return grouped
+  }, [appointmentsByDate])
+
+  /**
+   * Subcontracted visits worth surfacing above the grid: the ones inside the
+   * range being viewed, plus any that are past-due and still open.
+   *
+   * The overdue carve-out matters because these run a few times a year. Without
+   * it a missed week means the visit is never closed out, never reaches
+   * Month-End Billing, and nothing anywhere surfaces it — batch billing only
+   * gathers *completed* visits. Overdue ones follow you to whatever week you
+   * are looking at so they cannot scroll out of sight.
+   */
+  const subcontractedInView = useMemo(() => {
+    const todayKeyLocal = formatDateKey(new Date())
+    const inRange =
+      view === 'month'
+        ? data.appointments.filter((a) => a.is_subcontracted)
+        : displayedDays.flatMap((day) =>
+            (appointmentsByDate.get(formatDateKey(day)) || []).filter(
+              (a) => a.is_subcontracted,
+            ),
+          )
+
+    const overdue = [
+      ...(data.overdueSubcontracted || []),
+      ...data.appointments.filter(
+        (a) =>
+          a.is_subcontracted &&
+          a.appointment_date < todayKeyLocal &&
+          a.status !== 'completed' &&
+          a.status !== 'cancelled',
+      ),
+    ]
+
+    const seen = new Set<string>()
+    return [...overdue, ...inRange]
+      .filter((a) => (seen.has(a.id) ? false : (seen.add(a.id), true)))
+      .sort((a, b) => a.appointment_date.localeCompare(b.appointment_date))
+  }, [
+    view,
+    data.appointments,
+    data.overdueSubcontracted,
+    displayedDays,
+    appointmentsByDate,
+  ])
+
   const monthGrid = useMemo(() => buildMonthGrid(anchorDate), [anchorDate])
   const viewLabel = getViewLabel(view, anchorDate)
   const businessDayRanges = useMemo(
@@ -1055,7 +1121,8 @@ export function OperationsSchedule() {
   )
 
   const selectedDateKey = formatDateKey(anchorDate)
-  const selectedDayAppointments = appointmentsByDate.get(selectedDateKey) || []
+  const selectedDayAppointments =
+    gridAppointmentsByDate.get(selectedDateKey) || []
   const teamDayTotal = selectedDayAppointments.reduce(
     (sum, appointment) => sum + appointmentDisplayRevenue(appointment),
     0,
@@ -1078,20 +1145,21 @@ export function OperationsSchedule() {
     if (view === 'month') return 0
     const weekAppointments = buildWeekDays(anchorDate).flatMap((day) => {
       const dateKey = formatDateKey(day)
-      return appointmentsByDate.get(dateKey) || []
+      return gridAppointmentsByDate.get(dateKey) || []
     })
     return weekAppointments.reduce(
       (sum, appt) => sum + appointmentDisplayRevenue(appt),
       0,
     )
-  }, [anchorDate, view, appointmentsByDate])
+  }, [anchorDate, view, gridAppointmentsByDate])
 
   const visibleAppointmentCount =
     view === 'month'
-      ? data.appointments.length
+      ? data.appointments.filter((a) => !a.is_subcontracted).length
       : displayedDays.reduce(
           (count, day) =>
-            count + (appointmentsByDate.get(formatDateKey(day)) || []).length,
+            count +
+            (gridAppointmentsByDate.get(formatDateKey(day)) || []).length,
           0,
         )
   const visibleEventCount =
@@ -3254,6 +3322,69 @@ export function OperationsSchedule() {
         </div>
       ) : null}
 
+      {subcontractedInView.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium text-slate-500">
+            Subcontracted:
+          </span>
+          {subcontractedInView.map((appointment) => {
+            const customer = unwrapRelation(appointment.ops_customers)
+            const isOverdue =
+              appointment.appointment_date < formatDateKey(new Date()) &&
+              appointment.status !== 'completed' &&
+              appointment.status !== 'cancelled'
+            const isClosed = appointment.status === 'completed'
+            const href = appointment.recurring_template_id
+              ? `/admin/operations/recurring/visit/${appointment.id}`
+              : `/admin/operations/appointments/${appointment.id}`
+            const dateLabel = new Date(
+              appointment.appointment_date + 'T12:00:00',
+            ).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+
+            return (
+              <Link
+                key={appointment.id}
+                href={href}
+                title={
+                  isOverdue
+                    ? 'Past due — close this out so it reaches Month-End Billing'
+                    : 'Open this visit to close it out'
+                }
+                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                  isOverdue
+                    ? 'border-red-300 bg-red-50 text-red-800 hover:bg-red-100'
+                    : isClosed
+                      ? 'border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100'
+                      : 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100'
+                }`}
+              >
+                {isClosed ? (
+                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                ) : (
+                  <Truck className="h-3.5 w-3.5 shrink-0" />
+                )}
+                <span>
+                  {dateLabel} · {appointment.subcontractor_name || 'Subcontractor'}
+                  {customer?.business_name || customer?.full_name
+                    ? ` · ${customer.business_name || customer.full_name}`
+                    : ''}
+                </span>
+                <span className="font-semibold">
+                  {formatScheduleAmount(appointmentDisplayRevenue(appointment))}
+                </span>
+                {isOverdue ? (
+                  <span className="rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                    CLOSE OUT
+                  </span>
+                ) : isClosed ? null : (
+                  <span className="text-[10px] opacity-70">not closed</span>
+                )}
+              </Link>
+            )
+          })}
+        </div>
+      ) : null}
+
       {view === 'week' && weeklyTotal > 0 ? (
         <div className="flex items-center justify-between gap-3 rounded-xl border border-green-600/20 bg-green-50 px-4 py-3">
           <span className="text-sm font-medium text-green-900">Week Total</span>
@@ -3273,7 +3404,7 @@ export function OperationsSchedule() {
           <div className="mt-3 grid grid-cols-7 gap-2">
             {monthGrid.map((date) => {
               const dateKey = formatDateKey(date)
-              const dayAppointments = appointmentsByDate.get(dateKey) || []
+              const dayAppointments = gridAppointmentsByDate.get(dateKey) || []
               const dayEvents = data.events.filter((event) =>
                 intersectsDay(event, dateKey),
               )
@@ -3449,7 +3580,7 @@ export function OperationsSchedule() {
                           const dateKey = formatDateKey(anchorDate)
                           const isOpen = isStaffOpenForDate(staff.id, dateKey)
                           const laneTotal = (
-                            appointmentsByDate.get(dateKey) || []
+                            gridAppointmentsByDate.get(dateKey) || []
                           )
                             .filter(
                               (a) =>
@@ -3527,7 +3658,7 @@ export function OperationsSchedule() {
                           const dk = formatDateKey(date)
                           const isSunday = date.getDay() === 0
                           const dayTotal = (
-                            appointmentsByDate.get(dk) || []
+                            gridAppointmentsByDate.get(dk) || []
                           ).reduce(
                             (sum, appt) =>
                               sum + appointmentDisplayRevenue(appt),
@@ -3622,7 +3753,7 @@ export function OperationsSchedule() {
                       ? dayLanes.map((staff) => {
                           const dateKey = formatDateKey(anchorDate)
                           const allDayAppointments =
-                            appointmentsByDate.get(dateKey) || []
+                            gridAppointmentsByDate.get(dateKey) || []
                           const dayAppointments = allDayAppointments.filter(
                             (a) =>
                               a.assigned_staff_user_id === staff.id ||
@@ -3836,7 +3967,7 @@ export function OperationsSchedule() {
                               )
                             }
                             const allDayAppointments =
-                              appointmentsByDate.get(dateKey) || []
+                              gridAppointmentsByDate.get(dateKey) || []
                             const dayEvents = data.events.filter((event) =>
                               intersectsDay(event, dateKey),
                             )

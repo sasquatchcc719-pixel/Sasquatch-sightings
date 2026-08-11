@@ -29,6 +29,8 @@ export async function GET(_request: NextRequest, { params }: Params) {
         completed_at,
         internal_notes,
         recurring_template_id,
+        is_subcontracted,
+        subcontractor_name,
         ops_customers!ops_appointments_customer_id_fkey (
           id,
           full_name,

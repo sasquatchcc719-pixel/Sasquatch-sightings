@@ -59,6 +59,8 @@ type VisitData = {
     completed_at?: string | null
     internal_notes?: string | null
     recurring_template_id: string
+    is_subcontracted?: boolean | null
+    subcontractor_name?: string | null
     ops_customers:
       | {
           id: string
@@ -476,6 +478,7 @@ export default function RecurringVisitDetail({
   const customer = unwrapOne(appointment.ops_customers)
   const address = unwrapOne(appointment.ops_service_addresses)
   const isBatch = template.invoice_mode === 'batch_monthly'
+  const isSubcontracted = appointment.is_subcontracted === true
 
   const dateStr = new Date(
     appointment.appointment_date + 'T12:00:00',
@@ -738,7 +741,9 @@ export default function RecurringVisitDetail({
       )}
 
       {/* ── On My Way ─────────────────────────────────────── */}
-      {status !== 'completed' && (
+      {/* Nobody from our crew drives to a subcontracted visit, so the
+          drive-timer flow would only record a meaningless duration. */}
+      {status !== 'completed' && !isSubcontracted && (
         <div className="border-border/60 bg-muted/30 rounded-xl border p-4">
           <Button
             variant="outline"
@@ -803,12 +808,21 @@ export default function RecurringVisitDetail({
           </div>
         ) : (
           <>
-            {isBatch && (
+            {isSubcontracted ? (
+              <p className="text-muted-foreground mt-2 text-sm">
+                Confirm{' '}
+                {appointment.subcontractor_name || 'the subcontractor'} finished
+                this visit.
+                {isBatch
+                  ? ' It then joins the monthly batch invoice.'
+                  : ' The invoice is then ready to send.'}
+              </p>
+            ) : isBatch ? (
               <p className="text-muted-foreground mt-2 text-sm">
                 Marks this visit complete and logs it for the monthly batch
                 invoice.
               </p>
-            )}
+            ) : null}
             <div
               className={`mt-4 grid gap-2 ${isBatch ? '' : 'sm:grid-cols-2'}`}
             >

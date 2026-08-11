@@ -147,12 +147,31 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Subcontracted visits never draw on the grid, so an unclosed one has no
+    // way to catch the eye once its week scrolls past — and until it is closed
+    // out it never reaches Month-End Billing. Return open past-due ones outside
+    // the requested range so the schedule can pin them to whatever week is open.
+    const todayKey = new Date().toLocaleDateString('en-CA', {
+      timeZone: 'America/Denver',
+    })
+    const { data: overdueSubcontracted, error: overdueError } = await supabase
+      .from('ops_appointments')
+      .select(APPOINTMENT_SELECT)
+      .eq('is_subcontracted', true)
+      .lt('appointment_date', todayKey)
+      .not('status', 'in', '("completed","cancelled")')
+      .order('appointment_date')
+      .limit(25)
+
+    if (overdueError) throw overdueError
+
     return NextResponse.json({
       appointments: appointments.map((appointment) => ({
         ...appointment,
         is_repeat_customer:
           (appointmentCountByCustomer[appointment.customer_id] || 0) > 1,
       })),
+      overdueSubcontracted: overdueSubcontracted || [],
       events: eventsResult.data || [],
       recurringFrequencyMap,
       staff: staffResult.data || [],

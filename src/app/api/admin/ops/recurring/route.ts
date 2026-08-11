@@ -124,6 +124,11 @@ export async function POST(request: NextRequest) {
         invoice_mode: tpl.invoice_mode || 'per_visit',
         booking_channel: tpl.booking_channel || 'recurring',
         is_active: tpl.is_active !== false,
+        is_subcontracted: tpl.is_subcontracted === true,
+        subcontractor_name:
+          tpl.is_subcontracted === true
+            ? String(tpl.subcontractor_name || '').trim() || null
+            : null,
       })
       .select()
       .single()
