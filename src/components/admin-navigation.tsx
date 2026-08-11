@@ -197,6 +197,13 @@ export function AdminNavigation() {
   // Marketing group (leads, vendors, partners, cards, contest)
   const marketingTabs: NavTab[] = [
     {
+      name: 'Weekly Rollup',
+      href: '/admin/marketing/rollup',
+      icon: BarChart3,
+      active: pathname === '/admin/marketing/rollup',
+      description: 'Spend, rank, demand, jobs, and revenue by town',
+    },
+    {
       name: 'Google LSA',
       href: '/admin/marketing/lsa',
       icon: BarChart3,

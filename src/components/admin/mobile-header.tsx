@@ -103,6 +103,12 @@ const navSections: NavSection[] = [
     icon: Megaphone,
     items: [
       {
+        name: 'Weekly Rollup',
+        href: '/admin/marketing/rollup',
+        icon: BarChart3,
+        description: 'Cost and return by town',
+      },
+      {
         name: 'Card Analytics',
         href: '/admin/tap-analytics',
         icon: BarChart3,
