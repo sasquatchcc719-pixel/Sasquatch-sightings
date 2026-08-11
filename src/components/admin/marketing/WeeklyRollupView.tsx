@@ -81,6 +81,14 @@ function shortDate(value: string): string {
   })
 }
 
+function fullDate(value: string): string {
+  return new Date(`${value}T12:00:00`).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
 function weekLabel(start: string, end: string): string {
   return `${shortDate(start)}–${shortDate(end)}`
 }
@@ -127,7 +135,7 @@ async function fetchRollup(weeks: number): Promise<Response> {
 }
 
 export function WeeklyRollupView() {
-  const [weeks, setWeeks] = useState(5)
+  const [weeks, setWeeks] = useState(53)
   const [town, setTown] = useState('all')
   const [refreshing, setRefreshing] = useState(false)
   const [refreshError, setRefreshError] = useState<string | null>(null)
@@ -269,6 +277,7 @@ export function WeeklyRollupView() {
   )
 
   const latestWeekEnd = latestRows[0]?.week_end
+  const periodStart = completedStarts.at(-1)
   const latestMapStart = mapRows[0]?.week_start
   const latestMapEnd = mapRows[0]?.week_end
   const clickRate = latestSummary.searchAppearances
@@ -280,7 +289,7 @@ export function WeeklyRollupView() {
     setRefreshError(null)
     try {
       const response = await fetch(
-        `/api/admin/marketing/rollup?weeks=${Math.min(weeks, 16)}`,
+        `/api/admin/marketing/rollup?weeks=${weeks}`,
         { method: 'POST' },
       )
       if (!response.ok) {
@@ -387,7 +396,7 @@ export function WeeklyRollupView() {
           There is not yet a completed week to explain.
         </p>
       ) : (
-        <>
+        <div className="flex flex-col gap-5">
           <section className="rounded-2xl border border-cyan-400/20 bg-gradient-to-br from-cyan-500/[0.08] via-slate-950/80 to-emerald-500/[0.06] p-5 sm:p-6">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
               <div>
@@ -621,11 +630,23 @@ export function WeeklyRollupView() {
             </section>
           ) : null}
 
-          <section className="rounded-xl border border-white/10 bg-slate-950/55 p-4">
+          <section className="order-first rounded-xl border border-white/10 bg-slate-950/55 p-4">
+            <div className="mb-3 flex flex-col justify-between gap-2 sm:flex-row sm:items-start">
+              <div>
+                <h2 className="font-semibold text-white">
+                  Reconciled marketing spend vs completed residential revenue
+                </h2>
+                <p className="mt-1 text-xs font-medium text-amber-300">
+                  {periodStart
+                    ? `${fullDate(periodStart)}–${fullDate(latestWeekEnd)} · ${completedStarts.length} completed weeks`
+                    : 'Selected completed weeks'}
+                </p>
+              </div>
+              <span className="w-fit rounded-full border border-amber-400/20 bg-amber-400/10 px-2.5 py-1 text-[11px] font-medium text-amber-200">
+                Changing the range changes every total below
+              </span>
+            </div>
             <div className="mb-3">
-              <h2 className="font-semibold text-white">
-                Reconciled marketing spend vs completed residential revenue
-              </h2>
               <p className="text-xs leading-5 text-slate-500">
                 Amber bars = business-wide marketing expenses reconciled from
                 QuickBooks and separately recorded campaign costs. Green line =
@@ -636,6 +657,13 @@ export function WeeklyRollupView() {
                 . The timing comparison can reveal patterns, but it is not ROAS:
                 jobs often close weeks after the marketing that produced them.
               </p>
+              {weeks === 27 && periodStart && periodStart > '2026-01-20' ? (
+                <p className="mt-2 rounded-lg border border-cyan-400/20 bg-cyan-400/[0.07] px-3 py-2 text-xs leading-5 text-cyan-100/80">
+                  Vehicle-wrap note: this six-month window starts after the
+                  January 20 deposit, so it shows three payments. Choose “1
+                  year” to include all four 2026 wrap payments totaling $6,381.
+                </p>
+              ) : null}
             </div>
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
@@ -925,7 +953,7 @@ export function WeeklyRollupView() {
               </table>
             </div>
           </details>
-        </>
+        </div>
       )}
     </div>
   )

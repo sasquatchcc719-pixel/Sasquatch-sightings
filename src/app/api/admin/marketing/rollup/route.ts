@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     await requireAnyRole(['admin', 'owner'])
-    const weeks = Math.min(requestedWeeks(request), 16)
+    const weeks = requestedWeeks(request)
     const result = await refreshMarketingWeeklyRollup(createAdminClient(), {
       windows: weeksThroughCurrent(weeks),
     })
