@@ -15,6 +15,7 @@ import { enrollCustomerInDrip } from '@/lib/ops/drip-campaign'
 import { cancelReactivationForCustomer } from '@/lib/ops/reactivation-campaign'
 import { suppressPostJobReviewRequest } from '@/lib/ops/review-requests'
 import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
+import { ensureCustomerQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
 import { scheduleJobReminder } from '@/lib/onesignal'
 import { normalizeOpsPhone, opsPhoneLookupVariants } from '@/lib/ops/phone'
 import { resolveServiceAddress } from '@/lib/ops/addresses'
@@ -464,11 +465,10 @@ export async function POST(request: NextRequest) {
           changed_by: access.id,
           notes: 'Invoice draft created at booking time',
         }),
-        supabase.from('ops_quickbooks_sync_jobs').insert({
-          entity_type: 'customer',
-          entity_id: customerId,
-          status: syncStatus,
-          payload: buildQuickBooksCustomerPayload({
+        ensureCustomerQuickBooksSyncJob(
+          supabase,
+          customerId,
+          buildQuickBooksCustomerPayload({
             customerId,
             fullName,
             businessName: businessName || null,
@@ -482,7 +482,7 @@ export async function POST(request: NextRequest) {
               zip_code: address.zip_code,
             },
           }),
-        }),
+        ),
       ])
 
       const [commsResult, qbResult] = await Promise.allSettled([

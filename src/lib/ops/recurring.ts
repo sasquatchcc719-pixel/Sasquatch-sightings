@@ -10,6 +10,7 @@ import {
   getQuickBooksSyncStatus,
 } from '@/lib/quickbooks'
 import { syncBatchInvoiceToQuickBooks } from '@/lib/quickbooks-api'
+import { ensureCustomerQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
 import { scheduleJobReminder } from '@/lib/onesignal'
 
 // ─── Types ──────────────────────────────────────────────────────────────
@@ -627,11 +628,10 @@ export async function generateRecurringAppointments(
           // Only queue the customer for QB. The invoice stays local until the
           // job is actually completed — same deferred-sync rule used by every
           // other booking path; prevents QB from holding stale quote amounts.
-          await supabase.from('ops_quickbooks_sync_jobs').insert({
-            entity_type: 'customer',
-            entity_id: template.customer_id,
-            status: syncStatus,
-            payload: buildQuickBooksCustomerPayload({
+          await ensureCustomerQuickBooksSyncJob(
+            supabase,
+            template.customer_id,
+            buildQuickBooksCustomerPayload({
               customerId: template.customer_id,
               fullName: customer.full_name,
               businessName: customer.business_name,
@@ -644,7 +644,7 @@ export async function generateRecurringAppointments(
                 zip_code: address.zip_code,
               },
             }),
-          })
+          )
         }
       }
 

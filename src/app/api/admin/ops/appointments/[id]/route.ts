@@ -969,6 +969,12 @@ export async function DELETE(
 
     if (appointmentError) throw appointmentError
 
+    const { data: appointmentOwner } = await supabase
+      .from('ops_appointments')
+      .select('customer_id')
+      .eq('id', id)
+      .maybeSingle()
+
     // Send cancellation notifications before deleting
     const customer = Array.isArray(appointment.ops_customers)
       ? appointment.ops_customers[0]
@@ -1056,6 +1062,26 @@ export async function DELETE(
       .eq('id', id)
 
     if (deleteError) throw deleteError
+
+    // Drop the customer's queued QuickBooks push if this was their last
+    // appointment. Deleting a test booking used to leave the customer row
+    // queued forever with nothing behind it.
+    if (appointmentOwner?.customer_id) {
+      const { count: remainingAppointments } = await supabase
+        .from('ops_appointments')
+        .select('id', { count: 'exact', head: true })
+        .eq('customer_id', appointmentOwner.customer_id)
+
+      if (!remainingAppointments) {
+        const { error: customerCleanupError } = await supabase
+          .from('ops_quickbooks_sync_jobs')
+          .delete()
+          .eq('entity_type', 'customer')
+          .eq('entity_id', appointmentOwner.customer_id)
+          .in('status', ['pending', 'held', 'failed'])
+        if (customerCleanupError) throw customerCleanupError
+      }
+    }
 
     return NextResponse.json({
       success: true,

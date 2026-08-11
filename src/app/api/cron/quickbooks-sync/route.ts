@@ -228,6 +228,30 @@ export async function GET(request: NextRequest) {
             }
           }
 
+          // Already linked to QuickBooks — don't attempt a create that QBO will
+          // reject as a duplicate name. Settle the row instead of burning the
+          // retry ladder on a job that can never succeed.
+          const { data: existingCustomer } = await supabase
+            .from('ops_customers')
+            .select('quickbooks_customer_id')
+            .eq('id', payload.customer_id)
+            .maybeSingle()
+
+          if (existingCustomer?.quickbooks_customer_id) {
+            await supabase
+              .from('ops_quickbooks_sync_jobs')
+              .update({
+                status: 'synced',
+                error_message: null,
+                alerted_at: null,
+                next_retry_at: null,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', job.id)
+            results.synced++
+            continue
+          }
+
           const qbCustomerId = await createQBCustomer({
             customerId: payload.customer_id,
             displayName: payload.display_name,

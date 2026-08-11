@@ -7,6 +7,7 @@ import { getAllStaffSlots, getUnionedSlots } from '@/lib/ops/staff-availability'
 import { getAgentPromoSettings } from '@/lib/agent-auth'
 import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
 import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
+import { ensureCustomerQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
 import { sendAdminSMS } from '@/lib/twilio'
 import { sendOneSignalNotification } from '@/lib/onesignal'
 import { sendBookingNotification, scheduleJobReminder } from '@/lib/telegram'
@@ -580,7 +581,6 @@ export async function createAiStyleBooking(
 
   await supabase.from('ops_appointment_line_items').insert(appointmentLines)
 
-  const syncStatus = getQuickBooksSyncStatus()
   await Promise.all([
     supabase.from('ops_appointment_status_events').insert({
       appointment_id: appointment.id,
@@ -594,11 +594,10 @@ export async function createAiStyleBooking(
       to_status: 'draft',
       notes: `Invoice created via ${actorLabel}`,
     }),
-    supabase.from('ops_quickbooks_sync_jobs').insert({
-      entity_type: 'customer',
-      entity_id: customerId,
-      status: syncStatus,
-      payload: buildQuickBooksCustomerPayload({
+    ensureCustomerQuickBooksSyncJob(
+      supabase,
+      customerId,
+      buildQuickBooksCustomerPayload({
         customerId,
         fullName,
         email,
@@ -611,7 +610,7 @@ export async function createAiStyleBooking(
           zip_code: zipCode,
         },
       }),
-    }),
+    ),
   ])
 
   if (appointmentStatus === 'booked') {

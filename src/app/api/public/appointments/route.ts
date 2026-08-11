@@ -14,12 +14,10 @@ import {
 import { getStaffPrioritizedSlots } from '@/lib/ops/staff-availability'
 import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
 import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
+import { ensureCustomerQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
 import { sendAdminSMS } from '@/lib/twilio'
 import { sendOneSignalNotification } from '@/lib/onesignal'
-import {
-  buildQuickBooksCustomerPayload,
-  getQuickBooksSyncStatus,
-} from '@/lib/quickbooks'
+import { buildQuickBooksCustomerPayload } from '@/lib/quickbooks'
 import { checkServiceArea } from '@/lib/service-area'
 import { resolveServiceAddress } from '@/lib/ops/addresses'
 import {
@@ -596,7 +594,6 @@ export async function POST(request: NextRequest) {
     await supabase.from('ops_appointment_line_items').insert(appointmentLines)
 
     // --- Status events ---
-    const syncStatus = getQuickBooksSyncStatus()
     const statusNotes = serviceAreaCheck.requiresApproval
       ? 'Appointment created via sasquatch.com booking widget (pending approval for extended service area)'
       : serviceAreaCheck.travelCharge > 0
@@ -616,18 +613,17 @@ export async function POST(request: NextRequest) {
         to_status: 'draft',
         notes: 'Invoice created via website booking',
       }),
-      supabase.from('ops_quickbooks_sync_jobs').insert({
-        entity_type: 'customer',
-        entity_id: customerId,
-        status: syncStatus,
-        payload: buildQuickBooksCustomerPayload({
+      ensureCustomerQuickBooksSyncJob(
+        supabase,
+        customerId,
+        buildQuickBooksCustomerPayload({
           customerId,
           fullName,
           email,
           phone,
           address: { street_1: street1, city, state, zip_code: zipCode },
         }),
-      }),
+      ),
     ])
 
     // --- Fire comms + QB sync (non-blocking) ---

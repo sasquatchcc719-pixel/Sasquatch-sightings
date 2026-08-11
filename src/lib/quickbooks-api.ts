@@ -39,9 +39,19 @@ export async function findQBCustomerByDisplayName(
   realmId: string,
   accessToken: string,
   displayName: string,
+  { includeInactive = false }: { includeInactive?: boolean } = {},
 ): Promise<string | null> {
+  // QuickBooks trims trailing whitespace when it stores a DisplayName but
+  // matches the raw string on query, so an untrimmed name misses the record
+  // it is about to collide with.
+  const name = displayName.trim().replace(/'/g, "\\'")
+
+  // Inactive (deleted) customers still reserve their name, so a create can be
+  // rejected as a duplicate even when the default active-only query is empty.
   const query = encodeURIComponent(
-    `SELECT * FROM Customer WHERE DisplayName = '${displayName.replace(/'/g, "\\'")}'`,
+    includeInactive
+      ? `SELECT * FROM Customer WHERE DisplayName = '${name}' AND Active IN (true, false)`
+      : `SELECT * FROM Customer WHERE DisplayName = '${name}'`,
   )
   const res = await qbFetch(
     realmId,
@@ -70,16 +80,18 @@ export async function createQBCustomer(params: {
   const auth = await getValidQBAccessToken()
   if (!auth) throw new Error('QuickBooks not connected')
 
+  const displayName = params.displayName.trim()
+
   // Check if customer already exists
   const existingId = await findQBCustomerByDisplayName(
     auth.realmId,
     auth.accessToken,
-    params.displayName,
+    displayName,
   )
   if (existingId) return existingId
 
   const body: Record<string, unknown> = {
-    DisplayName: params.displayName,
+    DisplayName: displayName,
     BillAddr: {
       Line1: params.address.street_1,
       Line2: params.address.street_2 || undefined,
@@ -108,6 +120,21 @@ export async function createQBCustomer(params: {
     // every customer failure undiagnosable — the body is where QBO says
     // things like "Duplicate Name Exists Error".
     const detail = await readQBErrorDetail(res)
+
+    // "Duplicate Name Exists" means this customer is already in QuickBooks
+    // under this name — the outcome we wanted, not a failure. The lookup above
+    // misses when the existing record is inactive, so re-query including those
+    // and adopt the id rather than retrying a create that can never succeed.
+    if (/Duplicate Name Exists/i.test(detail || '')) {
+      const duplicateId = await findQBCustomerByDisplayName(
+        auth.realmId,
+        auth.accessToken,
+        displayName,
+        { includeInactive: true },
+      )
+      if (duplicateId) return duplicateId
+    }
+
     throw new Error(
       `QB create customer failed: ${res.status} (tid: ${tid})${detail ? ` — ${detail}` : ''}`,
     )

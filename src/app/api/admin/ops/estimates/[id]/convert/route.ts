@@ -10,6 +10,7 @@ import {
   getQuickBooksSyncStatus,
 } from '@/lib/quickbooks'
 import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
+import { ensureCustomerQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
 import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
 import { scheduleJobReminder } from '@/lib/onesignal'
 
@@ -272,11 +273,10 @@ export async function POST(
         changed_by: access.id,
         notes: 'Invoice created from converted estimate',
       }),
-      supabase.from('ops_quickbooks_sync_jobs').insert({
-        entity_type: 'customer',
-        entity_id: estimate.customer_id,
-        status: syncStatus,
-        payload: buildQuickBooksCustomerPayload({
+      ensureCustomerQuickBooksSyncJob(
+        supabase,
+        estimate.customer_id,
+        buildQuickBooksCustomerPayload({
           customerId: estimate.customer_id,
           fullName: customer.full_name || 'Customer',
           businessName: customer.business_name || null,
@@ -290,7 +290,7 @@ export async function POST(
             zip_code: address.zip_code,
           },
         }),
-      }),
+      ),
     ])
 
     // --- Mark the estimate as converted ---
