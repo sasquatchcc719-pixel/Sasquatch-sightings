@@ -31,8 +31,10 @@ import {
 /** '' | 'null' | undefined -> null. Everything else -> Number, or null if NaN. */
 export function lfNum(value: unknown): number | null {
   if (value === null || value === undefined) return null
+  // Falcon AI platforms send `rank: false` on misses. Never treat that as 0.
+  if (typeof value === 'boolean') return null
   const s = String(value).trim()
-  if (!s || s.toLowerCase() === 'null') return null
+  if (!s || s.toLowerCase() === 'null' || s.toLowerCase() === 'false') return null
   const n = Number(s)
   return Number.isFinite(n) ? n : null
 }
@@ -70,7 +72,8 @@ type RawPoint = {
   lat?: string | number
   lng?: string | number
   found?: boolean
-  rank?: number | string | null
+  /** Falcon sometimes sends boolean `false` (not null) on AI-platform misses. */
+  rank?: number | string | boolean | null
   results?: Array<Record<string, unknown>>
 }
 
@@ -193,9 +196,7 @@ async function upsertScanFromReport(
       lat: lfNum(p.lat) ?? 0,
       lng: lfNum(p.lng) ?? 0,
       found: Boolean(p.found),
-      // Falcon AI platforms often send `rank: false` (boolean) on misses —
-      // never coerce that to 0 ("first place").
-      rank: p.found && p.rank !== false ? lfInt(p.rank) : null,
+      rank: p.found ? lfInt(p.rank) : null,
       competitors: normalizeCompetitors(p.results),
     }))
     const { error: pointError } = await supabase
