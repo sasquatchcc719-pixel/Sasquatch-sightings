@@ -141,6 +141,19 @@ export const TOWNS: Town[] = [
   },
 ]
 
+/**
+ * Markets Sasquatch actively serves and wants in business-facing reports.
+ * The scanner measures a wider geography for competitive context, but those
+ * benchmark locations must not be presented as operating markets.
+ */
+export const ACTIVE_SERVICE_TOWN_SLUGS: readonly TownSlug[] = [
+  'monument',
+  'palmer-lake',
+  'colorado-springs',
+  'larkspur',
+  'castle-rock',
+]
+
 /** lowercase, strip punctuation, collapse whitespace. */
 function canon(value: string): string {
   return value

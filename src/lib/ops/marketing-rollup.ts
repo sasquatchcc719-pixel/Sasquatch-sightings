@@ -6,7 +6,13 @@ import {
   queryPageRows,
   type GscPageRow,
 } from '@/lib/gsc'
-import { normalizeTown, townLabel, TOWNS, type TownSlug } from '@/lib/geo/towns'
+import {
+  ACTIVE_SERVICE_TOWN_SLUGS,
+  normalizeTown,
+  townLabel,
+  TOWNS,
+  type TownSlug,
+} from '@/lib/geo/towns'
 
 export const BUSINESS_WIDE = 'business-wide' as const
 export const UNKNOWN_TOWN = 'unknown' as const
@@ -893,32 +899,33 @@ export function buildMarketingRollupDigest(
   const wide = rows.find((row) => row.town_slug === BUSINESS_WIDE)
   const gscThrough = rows.find((row) => row.gsc_data_through)?.gsc_data_through
   const lines = [
-    `Weekly Marketing Rollup · ${weekStart} to ${weekEnd}`,
+    `Weekly business briefing · ${weekStart} to ${weekEnd}`,
     '',
-    `Spend ${money(total.spend)} · Residential ${total.residentialJobs} jobs / ${money(total.residentialRevenue)}`,
-    `Demand ${total.impressions.toLocaleString()} impressions / ${total.clicks} clicks / ${total.quotes} quotes${gscThrough ? ` · GSC through ${gscThrough}` : ''}`,
+    `Completed residential work: ${total.residentialJobs} jobs worth ${money(total.residentialRevenue)}.`,
   ]
-  if (total.spend > 0) {
-    lines.push(
-      `Revenue / tracked spend ${round2(total.residentialRevenue / total.spend).toFixed(2)}x · ${money(total.spend / Math.max(total.residentialJobs, 1))}/residential job (directional, not attributed ROAS)`,
-    )
-  }
   if (total.commercialJobs > 0) {
     lines.push(
-      `Commercial (separate) ${total.commercialJobs} jobs / ${money(total.commercialRevenue)}`,
+      `Completed commercial work: ${total.commercialJobs} jobs worth ${money(total.commercialRevenue)} (kept separate).`,
     )
   }
+  lines.push(
+    `Google Search: Sasquatch appeared ${total.impressions.toLocaleString()} times and ${total.clicks} people visited the website${gscThrough ? `; data through ${gscThrough}` : ''}.`,
+    `Online quote activity: ${total.quotes} website sessions reached the quote step; this does not mean every quote was finished or booked.`,
+    `Tracked campaign costs: ${money(total.spend)}. This is only linked cost, not necessarily total marketing spend.`,
+  )
   if (wide?.review_delta !== null && wide?.review_delta !== undefined) {
     const sign = wide.review_delta > 0 ? '+' : ''
-    lines.push(`Google reviews ${sign}${wide.review_delta}`)
+    lines.push(`Google review-count change: ${sign}${wide.review_delta}.`)
   }
+  lines.push(
+    '',
+    'Important: these signals happened in the same week. They do not prove that the tracked marketing caused the completed revenue.',
+  )
 
   const townRows = rows
     .filter(
       (row) =>
-        ![BUSINESS_WIDE, UNKNOWN_TOWN].includes(
-          row.town_slug as typeof BUSINESS_WIDE,
-        ) &&
+        ACTIVE_SERVICE_TOWN_SLUGS.includes(row.town_slug as TownSlug) &&
         (row.residential_jobs > 0 ||
           row.commercial_jobs > 0 ||
           row.rank_points > 0 ||
@@ -927,17 +934,17 @@ export function buildMarketingRollupDigest(
           row.spend > 0),
     )
     .sort((a, b) => b.residential_revenue - a.residential_revenue)
-  if (townRows.length) lines.push('', 'By town:')
+  if (townRows.length) lines.push('', 'Active service areas:')
   for (const row of townRows) {
     const rank = row.rank_points
-      ? ` · Maps best ${row.rank_best ?? 'out'}, med ${row.rank_median === 21 ? 'out' : row.rank_median}, ${row.rank_found}/${row.rank_points} found`
+      ? ` Maps check: found in the first 20 results at ${row.rank_found} of ${row.rank_points} sampled locations; best position ${row.rank_best ?? 'not found'}, typical ${row.rank_median === 21 ? 'outside the first 20' : row.rank_median}.`
       : ''
     const demand =
       row.gsc_impressions || row.gsc_clicks || row.quote_sessions
-        ? ` · Demand ${row.gsc_impressions} impr / ${row.gsc_clicks} clicks / ${row.quote_sessions} quotes`
+        ? ` Google Search: ${row.gsc_impressions} appearances, ${row.gsc_clicks} website visits. ${row.quote_sessions} sessions reached the quote step.`
         : ''
     lines.push(
-      `${townLabel(row.town_slug)}: ${row.residential_jobs} resi / ${money(row.residential_revenue)}${row.commercial_jobs ? ` · ${row.commercial_jobs} comm / ${money(row.commercial_revenue)}` : ''}${demand}${rank}`,
+      `${townLabel(row.town_slug)}: ${row.residential_jobs} completed residential jobs worth ${money(row.residential_revenue)}.${row.commercial_jobs ? ` ${row.commercial_jobs} commercial jobs worth ${money(row.commercial_revenue)}.` : ''}${demand}${rank}`,
     )
   }
 

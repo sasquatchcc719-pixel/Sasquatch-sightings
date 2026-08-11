@@ -13,16 +13,33 @@ import {
 } from 'recharts'
 import {
   BarChart3,
-  Building2,
+  BriefcaseBusiness,
+  CircleAlert,
+  CircleCheck,
   DollarSign,
+  Eye,
+  HelpCircle,
   MapPin,
   MousePointerClick,
   RefreshCw,
   Search,
+  Sparkles,
+  TrendingUp,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { TOWNS, townLabel } from '@/lib/geo/towns'
+import { townLabel } from '@/lib/geo/towns'
 import type { MarketingWeeklyRollupRow } from '@/lib/ops/marketing-rollup'
+import {
+  ACTIVE_SERVICE_TOWNS,
+  buildBusinessInsights,
+  completedWeekStarts,
+  isActiveServiceTown,
+  latestMapWeekRows,
+  mapVisibility,
+  scopedWeekRows,
+  summarizeRollup,
+  type BusinessInsight,
+} from '@/lib/ops/marketing-rollup-insights'
 
 type Response = {
   ok: true
@@ -32,12 +49,11 @@ type Response = {
 }
 
 const BUSINESS_WIDE = 'business-wide'
-const UNKNOWN_TOWN = 'unknown'
 const EMPTY_ROWS: MarketingWeeklyRollupRow[] = []
 const RANGES = [
-  { weeks: 4, label: '4 weeks' },
-  { weeks: 12, label: '12 weeks' },
-  { weeks: 26, label: '6 months' },
+  { weeks: 5, label: 'Last 4 weeks' },
+  { weeks: 13, label: 'Last 12 weeks' },
+  { weeks: 27, label: '6 months' },
   { weeks: 52, label: '1 year' },
 ]
 
@@ -49,16 +65,31 @@ function money(value: number): string {
   })
 }
 
-function shortWeek(value: string): string {
+function shortDate(value: string): string {
   return new Date(`${value}T12:00:00`).toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
   })
 }
 
+function weekLabel(start: string, end: string): string {
+  return `${shortDate(start)}–${shortDate(end)}`
+}
+
+function mountainToday(): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Denver',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date())
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? ''
+  return `${get('year')}-${get('month')}-${get('day')}`
+}
+
 function scopeLabel(slug: string): string {
-  if (slug === BUSINESS_WIDE) return 'Business-wide'
-  if (slug === UNKNOWN_TOWN) return 'Unknown town'
+  if (slug === BUSINESS_WIDE) return 'Business-wide (not tied to one town)'
   return townLabel(slug)
 }
 
@@ -76,85 +107,100 @@ function hasSignal(row: MarketingWeeklyRollupRow): boolean {
   )
 }
 
-async function fetchRollup(weeks: number, town: string): Promise<Response> {
-  const params = new URLSearchParams({ weeks: String(weeks) })
-  if (town !== 'all') params.set('town', town)
-  const response = await fetch(`/api/admin/marketing/rollup?${params}`)
+async function fetchRollup(weeks: number): Promise<Response> {
+  const response = await fetch(`/api/admin/marketing/rollup?weeks=${weeks}`)
   if (!response.ok) throw new Error('Failed to load weekly rollup')
   return response.json()
 }
 
 export function WeeklyRollupView() {
-  const [weeks, setWeeks] = useState(12)
+  const [weeks, setWeeks] = useState(5)
   const [town, setTown] = useState('all')
   const [refreshing, setRefreshing] = useState(false)
   const [refreshError, setRefreshError] = useState<string | null>(null)
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['marketing-weekly-rollup', weeks, town],
-    queryFn: () => fetchRollup(weeks, town),
+    queryKey: ['marketing-weekly-rollup', weeks],
+    queryFn: () => fetchRollup(weeks),
   })
   const rows = data?.rows ?? EMPTY_ROWS
+  const today = mountainToday()
 
-  const totals = useMemo(
+  const completedStarts = useMemo(
+    () => completedWeekStarts(rows, today),
+    [rows, today],
+  )
+  const latestStart = completedStarts[0]
+  const previousStart = completedStarts[1]
+  const latestRows = useMemo(
+    () => scopedWeekRows(rows, latestStart, town),
+    [rows, latestStart, town],
+  )
+  const previousRows = useMemo(
+    () => scopedWeekRows(rows, previousStart, town),
+    [rows, previousStart, town],
+  )
+  const latestSummary = useMemo(() => summarizeRollup(latestRows), [latestRows])
+  const previousSummary = useMemo(
+    () => (previousRows.length ? summarizeRollup(previousRows) : null),
+    [previousRows],
+  )
+  const serviceRows = useMemo(
     () =>
-      rows.reduce(
-        (sum, row) => ({
-          spend: sum.spend + row.spend,
-          residentialJobs: sum.residentialJobs + row.residential_jobs,
-          residentialRevenue: sum.residentialRevenue + row.residential_revenue,
-          commercialJobs: sum.commercialJobs + row.commercial_jobs,
-          commercialRevenue: sum.commercialRevenue + row.commercial_revenue,
-          impressions: sum.impressions + row.gsc_impressions,
-          clicks: sum.clicks + row.gsc_clicks,
-          quotes: sum.quotes + row.quote_sessions,
-          rankPoints: sum.rankPoints + row.rank_points,
-          rankFound: sum.rankFound + row.rank_found,
-        }),
-        {
-          spend: 0,
-          residentialJobs: 0,
-          residentialRevenue: 0,
-          commercialJobs: 0,
-          commercialRevenue: 0,
-          impressions: 0,
-          clicks: 0,
-          quotes: 0,
-          rankPoints: 0,
-          rankFound: 0,
-        },
+      rows.filter(
+        (row) =>
+          row.week_start === latestStart &&
+          isActiveServiceTown(row.town_slug) &&
+          (town === 'all' || row.town_slug === town),
       ),
-    [rows],
+    [rows, latestStart, town],
+  )
+  const mapRows = useMemo(() => latestMapWeekRows(rows, town), [rows, town])
+  const insights = useMemo(
+    () =>
+      buildBusinessInsights({
+        current: latestSummary,
+        previous: previousSummary,
+        serviceRows,
+        mapRows,
+        allServiceAreas: town === 'all',
+      }),
+    [latestSummary, previousSummary, serviceRows, mapRows, town],
   )
 
-  const chartData = useMemo(() => {
-    const weeksByStart = new Map<
-      string,
-      { week: string; spend: number; revenue: number }
-    >()
-    for (const row of rows) {
-      const item = weeksByStart.get(row.week_start) ?? {
-        week: shortWeek(row.week_start),
-        spend: 0,
-        revenue: 0,
-      }
-      item.spend += row.spend
-      item.revenue += row.residential_revenue
-      weeksByStart.set(row.week_start, item)
-    }
-    return [...weeksByStart.entries()]
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([, item]) => ({
-        ...item,
-        spend: Math.round(item.spend),
-        revenue: Math.round(item.revenue),
-      }))
-  }, [rows])
+  const trendData = useMemo(
+    () =>
+      completedStarts
+        .map((weekStart) => {
+          const summary = summarizeRollup(scopedWeekRows(rows, weekStart, town))
+          return {
+            week: shortDate(weekStart),
+            revenue: Math.round(summary.residentialRevenue),
+            jobs: summary.residentialJobs,
+          }
+        })
+        .reverse(),
+    [completedStarts, rows, town],
+  )
 
-  const visibleRows = rows.filter((row) => town !== 'all' || hasSignal(row))
-  const returnOnSpend =
-    totals.spend > 0 ? totals.residentialRevenue / totals.spend : null
-  const coverage =
-    totals.rankPoints > 0 ? (totals.rankFound / totals.rankPoints) * 100 : null
+  const rawRows = useMemo(
+    () =>
+      rows.filter(
+        (row) =>
+          hasSignal(row) &&
+          (town === 'all'
+            ? row.town_slug === BUSINESS_WIDE ||
+              isActiveServiceTown(row.town_slug)
+            : row.town_slug === town),
+      ),
+    [rows, town],
+  )
+
+  const latestWeekEnd = latestRows[0]?.week_end
+  const latestMapStart = mapRows[0]?.week_start
+  const latestMapEnd = mapRows[0]?.week_end
+  const clickRate = latestSummary.searchAppearances
+    ? (latestSummary.googleVisits / latestSummary.searchAppearances) * 100
+    : null
 
   async function refresh() {
     setRefreshing(true)
@@ -184,15 +230,16 @@ export function WeeklyRollupView() {
         <div className="relative flex flex-col justify-between gap-4 md:flex-row md:items-end">
           <div>
             <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1 text-[11px] font-semibold tracking-[0.18em] text-emerald-300 uppercase">
-              <BarChart3 className="h-3.5 w-3.5" />
-              Marketing intelligence
+              <Sparkles className="h-3.5 w-3.5" />
+              Weekly business briefing
             </div>
             <h1 className="text-3xl font-bold tracking-tight text-white">
-              Weekly town rollup
+              What happened, what it means, and what to do next
             </h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
-              What marketing cost, what it returned, and where demand is moving
-              — reconciled by Monday–Sunday week and town.
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">
+              A plain-English view of the last completed week. It connects
+              search visibility, website activity, completed work, and known
+              costs without pretending that one automatically caused another.
             </p>
           </div>
           <div className="flex flex-col items-start gap-2 md:items-end">
@@ -205,11 +252,11 @@ export function WeeklyRollupView() {
               <RefreshCw
                 className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`}
               />
-              {refreshing ? 'Reconciling…' : 'Refresh recent weeks'}
+              {refreshing ? 'Updating the numbers…' : 'Update this report'}
             </button>
             {data?.builtAt ? (
               <span className="text-xs text-slate-500">
-                Built {new Date(data.builtAt).toLocaleString()}
+                Data assembled {new Date(data.builtAt).toLocaleString()}
               </span>
             ) : null}
           </div>
@@ -235,19 +282,18 @@ export function WeeklyRollupView() {
         </div>
         <label className="flex items-center gap-2 text-sm text-slate-400">
           <MapPin className="h-4 w-4 text-cyan-400" />
+          <span>Show:</span>
           <select
             value={town}
             onChange={(event) => setTown(event.target.value)}
             className="rounded-lg border border-white/10 bg-slate-900 px-3 py-1.5 text-sm text-white outline-none focus:border-emerald-500/50"
           >
-            <option value="all">All towns + business-wide</option>
-            <option value={BUSINESS_WIDE}>Business-wide only</option>
-            {TOWNS.map((item) => (
+            <option value="all">All active service areas</option>
+            {ACTIVE_SERVICE_TOWNS.map((item) => (
               <option key={item.slug} value={item.slug}>
                 {item.name}
               </option>
             ))}
-            <option value={UNKNOWN_TOWN}>Unknown town</option>
           </select>
         </label>
       </div>
@@ -258,77 +304,249 @@ export function WeeklyRollupView() {
         </p>
       ) : null}
       {isLoading ? (
-        <p className="text-sm text-slate-400">Loading the rollup…</p>
+        <p className="text-sm text-slate-400">
+          Building the plain-English briefing…
+        </p>
       ) : error ? (
-        <p className="text-sm text-red-300">Could not load the rollup.</p>
+        <p className="text-sm text-red-300">Could not load the briefing.</p>
+      ) : !latestStart || !latestWeekEnd ? (
+        <p className="text-sm text-slate-400">
+          There is not yet a completed week to explain.
+        </p>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-6">
-            <StatCard
-              label="Tracked spend"
-              value={money(totals.spend)}
-              icon={DollarSign}
-              color="text-amber-300"
-            />
-            <StatCard
-              label="Residential return"
-              value={money(totals.residentialRevenue)}
-              detail={`${totals.residentialJobs} completed jobs`}
-              icon={Building2}
-              color="text-emerald-300"
-            />
-            <StatCard
-              label="Revenue ÷ tracked spend"
-              value={
-                returnOnSpend === null ? '—' : `${returnOnSpend.toFixed(2)}×`
-              }
-              detail={
-                totals.spend > 0 && totals.residentialJobs > 0
-                  ? `${money(totals.spend / totals.residentialJobs)} per completed job · not attributed ROAS`
-                  : 'No tracked spend in view'
-              }
-              icon={BarChart3}
-              color="text-cyan-300"
-            />
-            <StatCard
-              label="Search demand"
-              value={totals.impressions.toLocaleString()}
-              detail={`${totals.clicks} clicks`}
-              icon={Search}
-              color="text-sky-300"
-            />
-            <StatCard
-              label="Quotes built"
-              value={totals.quotes.toLocaleString()}
-              detail="Internal tests excluded"
-              icon={MousePointerClick}
-              color="text-violet-300"
-            />
-            <StatCard
-              label="Maps coverage"
-              value={coverage === null ? '—' : `${coverage.toFixed(0)}%`}
-              detail={
-                coverage === null
-                  ? 'No grid points in view'
-                  : `${totals.rankFound}/${totals.rankPoints} points found`
-              }
-              icon={MapPin}
-              color="text-rose-300"
-            />
-          </div>
+          <section className="rounded-2xl border border-cyan-400/20 bg-gradient-to-br from-cyan-500/[0.08] via-slate-950/80 to-emerald-500/[0.06] p-5 sm:p-6">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-semibold tracking-[0.16em] text-cyan-300 uppercase">
+                  Last completed week
+                </p>
+                <h2 className="mt-1 text-2xl font-semibold text-white">
+                  {weekLabel(latestStart, latestWeekEnd)}
+                </h2>
+              </div>
+              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">
+                {town === 'all' ? 'All active service areas' : townLabel(town)}
+              </span>
+            </div>
+
+            <div className="space-y-3 text-base leading-7 text-slate-200">
+              <p>
+                Sasquatch completed{' '}
+                <strong className="text-white">
+                  {latestSummary.residentialJobs} residential jobs worth{' '}
+                  {money(latestSummary.residentialRevenue)}
+                </strong>
+                {latestSummary.commercialJobs
+                  ? `, plus ${latestSummary.commercialJobs} commercial jobs worth ${money(latestSummary.commercialRevenue)}`
+                  : ''}
+                .
+              </p>
+              <p>
+                Google showed Sasquatch pages in search results{' '}
+                <strong className="text-white">
+                  {latestSummary.searchAppearances.toLocaleString()} times
+                </strong>
+                , and{' '}
+                <strong className="text-white">
+                  {latestSummary.googleVisits} people clicked through to the
+                  website
+                </strong>
+                .{' '}
+                <strong className="text-white">
+                  {latestSummary.quoteSessions} website sessions reached the
+                  online quote step
+                </strong>
+                —that means a quote was started, not necessarily finished or
+                booked.
+              </p>
+              {latestSummary.reviewDelta !== null ? (
+                <p>
+                  The Google review count changed by{' '}
+                  <strong className="text-white">
+                    {latestSummary.reviewDelta > 0 ? '+' : ''}
+                    {latestSummary.reviewDelta}
+                  </strong>{' '}
+                  during the week.
+                </p>
+              ) : null}
+            </div>
+
+            <div className="mt-5 flex gap-3 rounded-xl border border-amber-400/20 bg-amber-400/[0.07] p-4">
+              <CircleAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" />
+              <div>
+                <p className="font-medium text-amber-100">
+                  Do not read this as “marketing caused all of that revenue.”
+                </p>
+                <p className="mt-1 text-sm leading-6 text-amber-100/70">
+                  These things happened in the same week. Completed jobs may
+                  have been booked earlier, and the tracked cost does not yet
+                  include every marketing expense. The report provides clues; it
+                  does not manufacture attribution.
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section>
+            <div className="mb-3">
+              <h2 className="text-xl font-semibold text-white">
+                The important numbers, explained
+              </h2>
+              <p className="mt-1 text-sm text-slate-400">
+                Each number says exactly what was counted and what it cannot
+                prove.
+              </p>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <MetricCard
+                label="Completed residential work"
+                value={`${latestSummary.residentialJobs} jobs`}
+                detail={`${money(latestSummary.residentialRevenue)} in completed residential revenue`}
+                explanation="Jobs whose service date fell inside this week and were marked completed. This is operational output, not attributed marketing revenue."
+                icon={BriefcaseBusiness}
+                color="text-emerald-300"
+              />
+              <MetricCard
+                label="Completed commercial work"
+                value={`${latestSummary.commercialJobs} jobs`}
+                detail={`${money(latestSummary.commercialRevenue)} kept separate from residential`}
+                explanation="Commercial accounts can have very different job sizes and buying cycles, so they are not mixed into residential performance."
+                icon={BarChart3}
+                color="text-cyan-300"
+              />
+              <MetricCard
+                label="Google search appearances"
+                value={`${latestSummary.searchAppearances.toLocaleString()} times`}
+                detail={`${latestSummary.googleVisits} website visits${clickRate === null ? '' : ` · ${clickRate.toFixed(1)}% chose to click`}`}
+                explanation={`An appearance means a Sasquatch page was shown in a Google result. It does not mean the person noticed it. Google data is delayed${latestSummary.gscDataThrough ? ` and currently runs through ${shortDate(latestSummary.gscDataThrough)}` : ''}.`}
+                icon={Search}
+                color="text-sky-300"
+              />
+              <MetricCard
+                label="Website sessions reaching the quote step"
+                value={`${latestSummary.quoteSessions} sessions`}
+                detail="A quote was started—not necessarily submitted or booked"
+                explanation="Internal testing is removed. One person can return in another session, and this event alone is not a qualified lead."
+                icon={MousePointerClick}
+                color="text-violet-300"
+              />
+              <MetricCard
+                label="Tracked campaign costs"
+                value={money(latestSummary.spend)}
+                detail="Only expenses already linked to a campaign"
+                explanation="This is not total marketing spend. Missing or unlinked Google, LSA, print, and vendor costs make any ROI calculation premature."
+                icon={DollarSign}
+                color="text-amber-300"
+              />
+              <MetricCard
+                label="Change in Google review count"
+                value={
+                  latestSummary.reviewDelta === null
+                    ? 'Not available'
+                    : `${latestSummary.reviewDelta > 0 ? '+' : ''}${latestSummary.reviewDelta}`
+                }
+                detail="Net change during the completed week"
+                explanation="This compares recorded Google review-count snapshots. It measures count, not sentiment or which jobs produced the reviews."
+                icon={CircleCheck}
+                color="text-rose-300"
+              />
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-white/10 bg-slate-950/55 p-4 sm:p-5">
+            <div className="mb-4 flex items-start gap-3">
+              <TrendingUp className="mt-0.5 h-5 w-5 text-emerald-300" />
+              <div>
+                <h2 className="text-xl font-semibold text-white">
+                  What deserves attention
+                </h2>
+                <p className="mt-1 text-sm leading-6 text-slate-400">
+                  These are evidence-based clues and next checks—not automated
+                  orders to change the business.
+                </p>
+              </div>
+            </div>
+            <div className="grid gap-3 xl:grid-cols-2">
+              {insights.map((insight) => (
+                <InsightCard key={insight.title} insight={insight} />
+              ))}
+            </div>
+          </section>
+
+          {mapRows.length && latestMapStart && latestMapEnd ? (
+            <section className="rounded-2xl border border-white/10 bg-slate-950/55 p-4 sm:p-5">
+              <div className="mb-4">
+                <p className="text-xs font-semibold tracking-[0.14em] text-rose-300 uppercase">
+                  Latest Google Maps visibility check ·{' '}
+                  {weekLabel(latestMapStart, latestMapEnd)}
+                  {latestMapEnd >= today ? ' (week still in progress)' : ''}
+                </p>
+                <h2 className="mt-1 text-xl font-semibold text-white">
+                  Could a nearby customer find Sasquatch in Google Maps?
+                </h2>
+                <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-400">
+                  The scanner searched “carpet cleaning” from many sample map
+                  locations. “Found at 64 of 87” means Sasquatch appeared in the
+                  first 20 Maps results at 64 locations. It is not service
+                  coverage, customer share, or population coverage. Castle
+                  Pines, Manitou Springs, and other scanner-only benchmark areas
+                  are intentionally hidden from this business view.
+                </p>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {mapRows.map((row) => {
+                  const visibility = mapVisibility(row)
+                  const tone =
+                    visibility.status === 'Strong'
+                      ? 'border-emerald-400/20 bg-emerald-400/[0.06] text-emerald-300'
+                      : visibility.status === 'Mixed'
+                        ? 'border-amber-400/20 bg-amber-400/[0.06] text-amber-300'
+                        : 'border-rose-400/20 bg-rose-400/[0.06] text-rose-300'
+                  return (
+                    <article
+                      key={row.town_slug}
+                      className={`rounded-xl border p-4 ${tone}`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <h3 className="font-semibold text-white">
+                          {townLabel(row.town_slug)} area
+                        </h3>
+                        <span className="rounded-full border border-current/25 px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase">
+                          {visibility.status}
+                        </span>
+                      </div>
+                      <p className="mt-3 text-2xl font-semibold text-white">
+                        Found at {row.rank_found} of {row.rank_points}
+                      </p>
+                      <p className="mt-1 text-sm leading-6 text-slate-300">
+                        {visibility.percent.toFixed(0)}% of sampled search
+                        locations; {visibility.typical}.
+                        {row.rank_best
+                          ? ` Best observed position: ${row.rank_best}.`
+                          : ' No first-20 position was observed.'}
+                      </p>
+                    </article>
+                  )
+                })}
+              </div>
+            </section>
+          ) : null}
 
           <section className="rounded-xl border border-white/10 bg-slate-950/55 p-4">
             <div className="mb-3">
               <h2 className="font-semibold text-white">
-                Spend vs residential revenue
+                Completed residential work over time
               </h2>
-              <p className="text-xs text-slate-500">
-                Commercial revenue stays out of this comparison.
+              <p className="text-xs leading-5 text-slate-500">
+                Green line = completed residential revenue. Blue bars = number
+                of completed residential jobs. This is a workload trend, not
+                attributed marketing return.
               </p>
             </div>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={chartData}>
+                <ComposedChart data={trendData}>
                   <CartesianGrid
                     stroke="rgba(148,163,184,0.12)"
                     vertical={false}
@@ -338,10 +556,17 @@ export function WeeklyRollupView() {
                     tick={{ fill: '#94a3b8', fontSize: 11 }}
                   />
                   <YAxis
+                    yAxisId="money"
                     tick={{ fill: '#94a3b8', fontSize: 11 }}
                     tickFormatter={(value) =>
                       `$${Math.round(Number(value) / 1000)}k`
                     }
+                  />
+                  <YAxis
+                    yAxisId="jobs"
+                    orientation="right"
+                    allowDecimals={false}
+                    tick={{ fill: '#64748b', fontSize: 11 }}
                   />
                   <Tooltip
                     contentStyle={{
@@ -349,18 +574,24 @@ export function WeeklyRollupView() {
                       border: '1px solid rgba(255,255,255,.12)',
                       borderRadius: 10,
                     }}
-                    formatter={(value) => money(Number(value))}
+                    formatter={(value, name) =>
+                      name === 'Completed residential revenue'
+                        ? money(Number(value))
+                        : `${Number(value)} jobs`
+                    }
                   />
                   <Bar
-                    dataKey="spend"
-                    name="Spend"
-                    fill="#f59e0b"
-                    fillOpacity={0.55}
+                    yAxisId="jobs"
+                    dataKey="jobs"
+                    name="Completed residential jobs"
+                    fill="#38bdf8"
+                    fillOpacity={0.35}
                     radius={[4, 4, 0, 0]}
                   />
                   <Line
+                    yAxisId="money"
                     dataKey="revenue"
-                    name="Residential revenue"
+                    name="Completed residential revenue"
                     stroke="#34d399"
                     strokeWidth={2.5}
                     dot={{ fill: '#34d399', r: 3 }}
@@ -370,41 +601,90 @@ export function WeeklyRollupView() {
             </div>
           </section>
 
-          <section className="overflow-hidden rounded-xl border border-white/10 bg-slate-950/55">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1180px] border-collapse">
+          <section className="rounded-2xl border border-white/10 bg-slate-950/55 p-4 sm:p-5">
+            <div className="mb-4 flex items-start gap-3">
+              <HelpCircle className="mt-0.5 h-5 w-5 text-cyan-300" />
+              <div>
+                <h2 className="text-xl font-semibold text-white">
+                  How to read this report
+                </h2>
+                <p className="mt-1 text-sm text-slate-400">
+                  The definitions that matter before making a business change.
+                </p>
+              </div>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <Definition
+                term="Google search appearance"
+                definition="A Sasquatch page appeared somewhere in a person’s Google results. The technical system calls this an impression. It is not a visit."
+              />
+              <Definition
+                term="Website visit from Google"
+                definition="A person clicked a Sasquatch result and opened the website. The technical system calls this a click."
+              />
+              <Definition
+                term="Online quote session"
+                definition="A website session reached the quote-building step. It is not necessarily a submitted quote, unique person, phone lead, or booked job."
+              />
+              <Definition
+                term="Google Maps visibility check"
+                definition="A sample search from a specific map location. Found means Sasquatch appeared in the first 20 results. It is not geographic service coverage."
+              />
+              <Definition
+                term="Tracked campaign cost"
+                definition="An expense already linked to a marketing campaign. Until every channel is connected, it is not total spend and cannot support a true ROI calculation."
+              />
+              <Definition
+                term="Completed revenue"
+                definition="The quoted value of service appointments completed during the week. It can come from customers acquired days, months, or years earlier."
+              />
+            </div>
+          </section>
+
+          <details className="overflow-hidden rounded-xl border border-white/10 bg-slate-950/55">
+            <summary className="cursor-pointer px-4 py-4 text-sm font-medium text-slate-200 hover:bg-white/[0.03]">
+              Open the underlying weekly numbers for auditing
+            </summary>
+            <div className="border-t border-white/10 px-4 py-3 text-sm leading-6 text-slate-400">
+              This is supporting evidence, not the main decision screen. Only
+              active service areas are shown. Scanner-only benchmark towns stay
+              out of the business report.
+            </div>
+            <div className="overflow-x-auto border-t border-white/10">
+              <table className="w-full min-w-[1280px] border-collapse">
                 <thead>
                   <tr className="border-b border-white/10 bg-slate-900/70 text-[11px] tracking-wide text-slate-400 uppercase">
                     <th className="px-3 py-3 text-left font-medium">
-                      Week / town
+                      Week and area
                     </th>
-                    <th className="px-2 py-3 text-right font-medium">Spend</th>
-                    <th className="px-2 py-3 text-right font-medium">
-                      Maps best / median
+                    <th className="px-3 py-3 text-left font-medium">
+                      Tracked campaign cost
                     </th>
-                    <th className="px-2 py-3 text-right font-medium">
-                      Coverage
+                    <th className="px-3 py-3 text-left font-medium">
+                      Google Maps visibility check
                     </th>
-                    <th className="px-2 py-3 text-right font-medium">
-                      GSC impr / clicks
+                    <th className="px-3 py-3 text-left font-medium">
+                      Google search → website
                     </th>
-                    <th className="px-2 py-3 text-right font-medium">Quotes</th>
-                    <th className="px-2 py-3 text-right font-medium">
-                      Residential
+                    <th className="px-3 py-3 text-left font-medium">
+                      Online quote step
                     </th>
-                    <th className="px-2 py-3 text-right font-medium">
-                      Commercial
+                    <th className="px-3 py-3 text-left font-medium">
+                      Completed residential work
                     </th>
-                    <th className="px-2 py-3 text-right font-medium">
-                      Reviews
+                    <th className="px-3 py-3 text-left font-medium">
+                      Completed commercial work
                     </th>
-                    <th className="px-3 py-3 text-left font-medium">Events</th>
+                    <th className="px-3 py-3 text-left font-medium">
+                      Review count change
+                    </th>
+                    <th className="px-3 py-3 text-left font-medium">Notes</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {visibleRows.map((row) => {
-                    const coveragePct = row.rank_points
-                      ? (row.rank_found / row.rank_points) * 100
+                  {rawRows.map((row) => {
+                    const visibility = row.rank_points
+                      ? mapVisibility(row)
                       : null
                     return (
                       <tr
@@ -416,88 +696,82 @@ export function WeeklyRollupView() {
                             {scopeLabel(row.town_slug)}
                           </p>
                           <p className="text-xs text-slate-500">
-                            {shortWeek(row.week_start)}–
-                            {shortWeek(row.week_end)}
+                            {weekLabel(row.week_start, row.week_end)}
                           </p>
                         </td>
-                        <td className="px-2 py-3 text-right text-sm text-amber-300">
-                          {row.spend ? money(row.spend) : '—'}
+                        <td className="px-3 py-3 text-sm text-amber-300">
+                          {row.spend ? money(row.spend) : 'None linked'}
                         </td>
-                        <td className="px-2 py-3 text-right text-sm text-white">
-                          {row.rank_points ? (
+                        <td className="px-3 py-3 text-sm text-slate-300">
+                          {visibility ? (
                             <>
-                              {row.rank_best ?? 'Out'} /{' '}
-                              {row.rank_median === 21 ? 'Out' : row.rank_median}
+                              <span className="block text-white">
+                                Found at {row.rank_found} of {row.rank_points}
+                              </span>
+                              <span className="text-xs text-slate-500">
+                                {visibility.typical}
+                                {row.rank_best
+                                  ? `; best position ${row.rank_best}`
+                                  : ''}
+                              </span>
                             </>
                           ) : (
-                            <span className="text-slate-600">—</span>
+                            'No scan assigned'
                           )}
                         </td>
-                        <td className="px-2 py-3 text-right text-sm text-slate-300">
-                          {coveragePct === null
-                            ? '—'
-                            : `${coveragePct.toFixed(0)}% (${row.rank_found}/${row.rank_points})`}
-                        </td>
-                        <td className="px-2 py-3 text-right text-sm text-slate-300">
+                        <td className="px-3 py-3 text-sm text-slate-300">
                           {row.gsc_impressions || row.gsc_clicks ? (
                             <>
-                              {row.gsc_impressions.toLocaleString()} /{' '}
-                              {row.gsc_clicks}
-                              {row.gsc_data_through ? (
-                                <span className="block text-[10px] text-slate-600">
-                                  through {shortWeek(row.gsc_data_through)}
-                                </span>
-                              ) : null}
+                              <span className="block text-white">
+                                {row.gsc_impressions.toLocaleString()}{' '}
+                                appearances
+                              </span>
+                              <span className="text-xs text-slate-500">
+                                {row.gsc_clicks} website visits
+                                {row.gsc_data_through
+                                  ? ` · data through ${shortDate(row.gsc_data_through)}`
+                                  : ''}
+                              </span>
                             </>
                           ) : (
-                            '—'
+                            'No recorded activity'
                           )}
                         </td>
-                        <td className="px-2 py-3 text-right text-sm text-violet-300">
-                          {row.quote_sessions || '—'}
+                        <td className="px-3 py-3 text-sm text-violet-300">
+                          {row.quote_sessions
+                            ? `${row.quote_sessions} sessions reached the step`
+                            : 'None recorded'}
                         </td>
-                        <td className="px-2 py-3 text-right text-sm text-emerald-300">
-                          {row.residential_jobs ? (
-                            <>
-                              {row.residential_jobs} /{' '}
-                              {money(row.residential_revenue)}
-                            </>
-                          ) : (
-                            '—'
-                          )}
+                        <td className="px-3 py-3 text-sm text-emerald-300">
+                          {row.residential_jobs
+                            ? `${row.residential_jobs} jobs · ${money(row.residential_revenue)}`
+                            : 'No completed jobs'}
                         </td>
-                        <td className="px-2 py-3 text-right text-sm text-cyan-300">
-                          {row.commercial_jobs ? (
-                            <>
-                              {row.commercial_jobs} /{' '}
-                              {money(row.commercial_revenue)}
-                            </>
-                          ) : (
-                            '—'
-                          )}
+                        <td className="px-3 py-3 text-sm text-cyan-300">
+                          {row.commercial_jobs
+                            ? `${row.commercial_jobs} jobs · ${money(row.commercial_revenue)}`
+                            : 'No completed jobs'}
                         </td>
-                        <td className="px-2 py-3 text-right text-sm text-slate-300">
+                        <td className="px-3 py-3 text-sm text-slate-300">
                           {row.review_delta === null
-                            ? '—'
+                            ? 'Not assigned'
                             : `${row.review_delta > 0 ? '+' : ''}${row.review_delta}`}
                         </td>
-                        <td className="max-w-[250px] px-3 py-3">
-                          <div className="flex flex-wrap gap-1">
+                        <td className="max-w-[280px] px-3 py-3">
+                          <div className="space-y-1">
                             {row.events.slice(0, 3).map((event) => (
-                              <span
+                              <p
                                 key={event.id}
                                 title={event.detail ?? event.title}
-                                className={`rounded-full border px-2 py-0.5 text-[10px] ${
-                                  event.category === 'instrument'
-                                    ? 'border-violet-400/30 bg-violet-400/10 text-violet-300'
-                                    : 'border-cyan-400/25 bg-cyan-400/10 text-cyan-300'
-                                }`}
+                                className="text-xs leading-5 text-slate-300"
                               >
                                 {event.title}
-                              </span>
+                              </p>
                             ))}
                             {!row.events.length ? (
-                              <span className="text-sm text-slate-600">—</span>
+                              <span className="text-sm text-slate-600">
+                                No recorded business change
+                              </span>
                             ) : null}
                           </div>
                         </td>
@@ -507,55 +781,108 @@ export function WeeklyRollupView() {
                 </tbody>
               </table>
             </div>
-          </section>
-
-          <div className="space-y-1 text-xs leading-5 text-slate-500">
-            <p>
-              Business-wide metrics are stored once, not repeated across towns.
-              Multi-town campaign costs are split once so the spend column still
-              reconciles to QuickBooks.
-            </p>
-            <p>
-              Revenue ÷ tracked spend is a directional operating ratio. It does
-              not claim every job was caused by that week&apos;s campaigns.
-            </p>
-            <p>
-              Jobs are completed service appointments over $1. Commercial
-              accounts are separated from residential. Maps median counts a miss
-              as rank 21; coverage shows how often Sasquatch was actually found.
-            </p>
-          </div>
+          </details>
         </>
       )}
     </div>
   )
 }
 
-function StatCard({
+function MetricCard({
   label,
   value,
   detail,
+  explanation,
   icon: Icon,
   color,
 }: {
   label: string
   value: string
-  detail?: string
+  detail: string
+  explanation: string
   icon: React.ComponentType<{ className?: string }>
   color: string
 }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-slate-950/55 p-4">
+    <article className="rounded-xl border border-white/10 bg-slate-950/55 p-4">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <p className="text-[10px] font-semibold tracking-[0.14em] text-slate-500 uppercase">
-          {label}
-        </p>
+        <p className="text-xs font-semibold text-slate-300">{label}</p>
         <Icon className={`h-4 w-4 ${color}`} />
       </div>
       <p className="text-2xl font-semibold tracking-tight text-white">
         {value}
       </p>
-      {detail ? <p className="mt-1 text-xs text-slate-500">{detail}</p> : null}
-    </div>
+      <p className="mt-1 text-sm text-slate-400">{detail}</p>
+      <p className="mt-3 border-t border-white/5 pt-3 text-xs leading-5 text-slate-500">
+        {explanation}
+      </p>
+    </article>
+  )
+}
+
+function InsightCard({ insight }: { insight: BusinessInsight }) {
+  const styles = {
+    positive: {
+      shell: 'border-emerald-400/20 bg-emerald-400/[0.05]',
+      badge: 'text-emerald-300',
+      icon: CircleCheck,
+      badgeText: 'Positive signal',
+    },
+    attention: {
+      shell: 'border-amber-400/20 bg-amber-400/[0.05]',
+      badge: 'text-amber-300',
+      icon: CircleAlert,
+      badgeText: 'Worth investigating',
+    },
+    context: {
+      shell: 'border-cyan-400/20 bg-cyan-400/[0.05]',
+      badge: 'text-cyan-300',
+      icon: Eye,
+      badgeText: 'Important context',
+    },
+  }[insight.tone]
+  const Icon = styles.icon
+
+  return (
+    <article className={`rounded-xl border p-4 ${styles.shell}`}>
+      <div className={`flex items-center gap-2 text-xs ${styles.badge}`}>
+        <Icon className="h-4 w-4" />
+        <span className="font-semibold tracking-wide uppercase">
+          {styles.badgeText}
+        </span>
+      </div>
+      <h3 className="mt-2 text-base font-semibold text-white">
+        {insight.title}
+      </h3>
+      <div className="mt-3 space-y-3 text-sm leading-6">
+        <p className="text-slate-300">
+          <strong className="text-slate-100">Evidence:</strong>{' '}
+          {insight.evidence}
+        </p>
+        <p className="text-slate-400">
+          <strong className="text-slate-200">What it may mean:</strong>{' '}
+          {insight.meaning}
+        </p>
+        <p className="rounded-lg border border-white/10 bg-black/15 p-3 text-slate-300">
+          <strong className="text-white">Useful next check:</strong>{' '}
+          {insight.nextStep}
+        </p>
+      </div>
+    </article>
+  )
+}
+
+function Definition({
+  term,
+  definition,
+}: {
+  term: string
+  definition: string
+}) {
+  return (
+    <article className="rounded-xl border border-white/8 bg-white/[0.025] p-4">
+      <h3 className="font-medium text-white">{term}</h3>
+      <p className="mt-2 text-sm leading-6 text-slate-400">{definition}</p>
+    </article>
   )
 }
