@@ -8,7 +8,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
-import { runGridScan, DEFAULT_GRID, type GridPreset } from '@/lib/radar-grid'
+import {
+  runGridScan,
+  DEFAULT_GRID,
+  estimateGridCost,
+  MAX_SERVICE_AREA_POINTS,
+  type GridPreset,
+} from '@/lib/radar-grid'
 
 export const maxDuration = 300
 
@@ -38,10 +44,21 @@ export async function GET(request: NextRequest) {
       .order('col_idx')
     if (pointsError) throw pointsError
 
+    let scan = (scans ?? []).find((s) => s.id === targetId) ?? null
+    // Mid-run rows used to sit at 0/0 until the end — prefer live point counts.
+    if (scan && (scan.status === 'running' || scan.points_scanned === 0) && points?.length) {
+      const ranked = points.filter((p) => p.my_rank != null).length
+      scan = {
+        ...scan,
+        points_scanned: Math.max(scan.points_scanned ?? 0, points.length),
+        points_ranked: Math.max(scan.points_ranked ?? 0, ranked),
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       scans: scans ?? [],
-      scan: (scans ?? []).find((s) => s.id === targetId) ?? null,
+      scan,
       points: points ?? [],
     })
   } catch (err) {
@@ -92,6 +109,22 @@ export async function POST(request: NextRequest) {
         ? Math.min(Math.max(Math.round(body.gridSize), 3), 21)
         : undefined
 
+    if (preset === 'service-area') {
+      const estimate = estimateGridCost('service-area', spacingMiles, {
+        bufferMiles: bufferMiles ?? 0,
+      })
+      if (estimate > MAX_SERVICE_AREA_POINTS) {
+        return NextResponse.json(
+          {
+            error: `That service-area run is ${estimate} points (max ${MAX_SERVICE_AREA_POINTS}). Bump spacing to 2 mi+ or lower the edge buffer — 1 mi grids time out and leave a broken half-map.`,
+            points: estimate,
+            max: MAX_SERVICE_AREA_POINTS,
+          },
+          { status: 400 },
+        )
+      }
+    }
+
     const supabase = createAdminClient()
     const result = await runGridScan(supabase, {
       preset,
@@ -102,6 +135,9 @@ export async function POST(request: NextRequest) {
       centerLng,
       gridSize,
     })
+    if (result.error && !result.scanId) {
+      return NextResponse.json({ error: result.error, ...result }, { status: 400 })
+    }
     return NextResponse.json({ ok: true, ...result, preset, config: DEFAULT_GRID })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Grid scan failed'

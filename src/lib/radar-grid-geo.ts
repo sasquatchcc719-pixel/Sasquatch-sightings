@@ -65,6 +65,13 @@ export type GridPreset = 'tri-lakes' | 'service-area'
  */
 export const SERVICE_AREA_DEFAULT_SPACING_MILES = 2
 
+/**
+ * Hard ceiling for an ad-hoc / cron service-area scan. At DataForSEO ~14s/point
+ * with 8 workers, ~220 points ≈ 6–7 minutes — past that Vercel kills the run
+ * mid-scan and you get a glitchy half-map (see 801-pt @ 1mi incident).
+ */
+export const MAX_SERVICE_AREA_POINTS = 220
+
 /** Spacing choices shown in the admin UI (miles between lattice points). */
 export const SERVICE_AREA_SPACING_OPTIONS_MILES = [1, 1.5, 2, 2.5, 3, 3.5, 4, 5] as const
 

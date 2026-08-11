@@ -28,6 +28,7 @@ import {
   rankTextColor,
   DEFAULT_GRID,
   GRID_KEYWORD_PRESETS,
+  MAX_SERVICE_AREA_POINTS,
   SERVICE_AREA_BUFFER_OPTIONS_MILES,
   SERVICE_AREA_DEFAULT_SPACING_MILES,
   SERVICE_AREA_SPACING_OPTIONS_MILES,
@@ -146,6 +147,22 @@ export function GridHeatMap() {
 
   const runScan = useCallback(
     async (preset: 'tri-lakes' | 'service-area') => {
+      if (preset === 'service-area') {
+        if (areaCost > MAX_SERVICE_AREA_POINTS) {
+          setError(
+            `Service area would be ${areaCost} points (max ${MAX_SERVICE_AREA_POINTS}). Use 2 mi+ spacing or lower the edge buffer — the blue pin does not move this scan.`,
+          )
+          return
+        }
+        const ok = window.confirm(
+          `Run SERVICE AREA (not the blue pin): ${areaCost} points @ ${areaSpacing} mi` +
+            (bufferMiles ? ` + ${bufferMiles} mi edge` : '') +
+            ` (~$${areaDollars}).\n\n` +
+            `For a pin drop, cancel and hit Run square.`,
+        )
+        if (!ok) return
+      }
+
       setRunning(true)
       setError(null)
       setPlaceCenter(false)
@@ -172,7 +189,17 @@ export function GridHeatMap() {
         setRunning(false)
       }
     },
-    [load, keyword, areaSpacing, bufferMiles, centerLat, centerLng, gridSize],
+    [
+      load,
+      keyword,
+      areaSpacing,
+      bufferMiles,
+      centerLat,
+      centerLng,
+      gridSize,
+      areaCost,
+      areaDollars,
+    ],
   )
 
   // Create the map once the container mounts — don't wait for a prior scan so
@@ -467,41 +494,54 @@ export function GridHeatMap() {
         <div className="flex flex-wrap items-center gap-2">
           <Button
             size="sm"
-            variant="outline"
             onClick={() => runScan('tri-lakes')}
             disabled={running || !keyword.trim()}
-            title={`${gridSize}×${gridSize} @ ${centerLat.toFixed(4)}, ${centerLng.toFixed(4)} · "${keyword}" @ ${areaSpacing} mi`}
+            title={`Uses the blue pin · ${gridSize}×${gridSize} @ ${centerLat.toFixed(4)}, ${centerLng.toFixed(4)} · "${keyword}" @ ${areaSpacing} mi`}
           >
             {running ? (
               <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
             ) : (
               <Search className="mr-1.5 h-3.5 w-3.5" />
             )}
-            Run square
+            Run square (uses pin)
             <span className="ml-1.5 text-white/40">{triLakesCost}</span>
           </Button>
           <Button
             size="sm"
+            variant="outline"
             onClick={() => runScan('service-area')}
-            disabled={running || !keyword.trim()}
-            title={`Service area${bufferMiles ? ` + ${bufferMiles} mi edge` : ''} · "${keyword}" @ ${areaSpacing} mi · ~$${areaDollars}`}
+            disabled={
+              running || !keyword.trim() || areaCost > MAX_SERVICE_AREA_POINTS
+            }
+            title={
+              areaCost > MAX_SERVICE_AREA_POINTS
+                ? `Blocked: ${areaCost} pts exceeds max ${MAX_SERVICE_AREA_POINTS}`
+                : `Ignores blue pin · full polygon${bufferMiles ? ` + ${bufferMiles} mi edge` : ''} · ~$${areaDollars}`
+            }
           >
             {running ? (
               <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
             ) : (
               <Search className="mr-1.5 h-3.5 w-3.5" />
             )}
-            Run service area
+            Run service area (ignores pin)
             <span className="ml-1.5 opacity-70">
               {areaCost} · ~${areaDollars}
             </span>
           </Button>
         </div>
 
+        {areaCost > MAX_SERVICE_AREA_POINTS && (
+          <p className="w-full text-[11px] text-amber-300/90">
+            Service area is {areaCost} points — blocked (max {MAX_SERVICE_AREA_POINTS}).
+            Set spacing to 2 mi+ or drop the edge buffer. Pin drops use Run square.
+          </p>
+        )}
+
         <p className="w-full text-[11px] text-white/40">
-          Square uses the blue pin + size/spacing. Service area fills the Castle
-          Rock → Springs polygon; edge buffer adds a ring outside so you can find
-          where green turns grey. Scheduled runs: Scan schedule card above.
+          Blue pin = Run square only. Service area always covers Castle Rock →
+          Springs (optional edge ring). Max {MAX_SERVICE_AREA_POINTS} points so
+          runs finish instead of dying mid-map.
         </p>
       </div>
 

@@ -24,6 +24,7 @@ import {
   DEFAULT_GRID,
   SERVICE_AREA_POLYGON,
   SERVICE_AREA_DEFAULT_SPACING_MILES,
+  MAX_SERVICE_AREA_POINTS,
   type GridPreset,
 } from '@/lib/radar-grid-geo'
 
@@ -78,6 +79,17 @@ export async function runGridScan(
     ? buildAreaGrid(SERVICE_AREA_POLYGON, spacingMiles, bufferMiles)
     : buildGrid(squareCenterLat, squareCenterLng, size, spacingMiles)
 
+  if (isArea && points.length > MAX_SERVICE_AREA_POINTS) {
+    return {
+      scanId: null,
+      pointsScanned: 0,
+      pointsRanked: 0,
+      avgRank: null,
+      visibilityPct: 0,
+      error: `Service-area scan is ${points.length} points (max ${MAX_SERVICE_AREA_POINTS}). Increase spacing or lower the edge buffer — 1 mi + buffer will time out mid-run.`,
+    }
+  }
+
   const bb = isArea ? polygonBbox(SERVICE_AREA_POLYGON) : null
   const centerLat = isArea
     ? bb
@@ -113,6 +125,9 @@ export async function runGridScan(
       bbox: bb,
       spacing_miles: spacingMiles,
       points_total: points.length,
+      points_scanned: 0,
+      points_ranked: 0,
+      status: 'running',
     })
     .select('id')
     .single()
@@ -135,6 +150,8 @@ export async function runGridScan(
   const ranks: (number | null)[] = []
   let firstError: string | undefined
   let scanned = 0
+  let ranked = 0
+  let lastProgressWrite = 0
 
   // Concurrency pool instead of the old sequential loop. The sequential form
   // (with a 2s politeness sleep) was a SerpApi relic; at DataForSEO's ~14s
@@ -146,6 +163,19 @@ export async function runGridScan(
   const CONCURRENCY = 8
   let cursor = 0
 
+  async function flushProgress(force = false): Promise<void> {
+    if (!force && scanned - lastProgressWrite < 8) return
+    lastProgressWrite = scanned
+    await supabase
+      .from('radar_grid_scans')
+      .update({
+        points_scanned: scanned,
+        points_ranked: ranked,
+        status: 'running',
+      })
+      .eq('id', scanId)
+  }
+
   async function worker(): Promise<void> {
     while (cursor < points.length) {
       const pt = points[cursor++]
@@ -154,6 +184,7 @@ export async function runGridScan(
         const myRank = findMyRank(places)
         ranks.push(myRank)
         scanned++
+        if (myRank != null) ranked++
 
         await supabase.from('radar_grid_points').insert({
           scan_id: scanId,
@@ -169,6 +200,7 @@ export async function runGridScan(
             place_id: p.place_id,
           })),
         })
+        await flushProgress()
       } catch (err) {
         // DataForSEO is pay-as-you-go, not monthly-capped like SerpApi was,
         // so there is no quota-exhausted case to special-case — any failure
