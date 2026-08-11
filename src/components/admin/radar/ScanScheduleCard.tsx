@@ -18,6 +18,7 @@ import {
   estimateGridCost,
   GRID_KEYWORD_PRESETS,
   LOCAL_FALCON_GRID_SIZES,
+  SERVICE_AREA_BUFFER_OPTIONS_MILES,
   SERVICE_AREA_SPACING_OPTIONS_MILES,
 } from '@/lib/radar-grid-geo'
 
@@ -27,6 +28,7 @@ const lfCredits = (gridSize: number) => gridSize * gridSize
 type ScheduleConfig = {
   keyword?: string
   spacing_miles?: number
+  buffer_miles?: number
   preset?: string
   grid_size?: number
   radius?: number
@@ -141,9 +143,12 @@ export function ScanScheduleCard() {
           const isDfs = s.tool === 'dataforseo_grid'
           const isLf = s.tool === 'local_falcon'
           const spacing = Number(draft.spacing_miles ?? 2)
+          const bufferMiles = Number(draft.buffer_miles ?? 0)
           const gridSize = Number(draft.grid_size ?? 13)
           const radius = Number(draft.radius ?? 14)
-          const dfsPts = estimateGridCost('service-area', spacing)
+          const dfsPts = estimateGridCost('service-area', spacing, {
+            bufferMiles,
+          })
           const keywordListId = `schedule-kw-${s.id}`
 
           return (
@@ -204,23 +209,54 @@ export function ScanScheduleCard() {
                 </label>
 
                 {isDfs && (
-                  <label className="flex flex-col gap-1 text-[10px] uppercase tracking-wider text-white/40">
-                    Spacing
-                    <select
-                      value={spacing}
-                      disabled={savingId === s.id}
-                      onChange={(e) =>
-                        setDraft(s.id, { spacing_miles: Number(e.target.value) })
-                      }
-                      className="rounded-md border border-white/15 bg-slate-950 px-2 py-1.5 text-xs normal-case tracking-normal text-white"
-                    >
-                      {SERVICE_AREA_SPACING_OPTIONS_MILES.map((mi) => (
-                        <option key={mi} value={mi}>
-                          {mi} mi · {estimateGridCost('service-area', mi)} pts
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <>
+                    <label className="flex flex-col gap-1 text-[10px] uppercase tracking-wider text-white/40">
+                      Spacing
+                      <select
+                        value={spacing}
+                        disabled={savingId === s.id}
+                        onChange={(e) =>
+                          setDraft(s.id, {
+                            spacing_miles: Number(e.target.value),
+                          })
+                        }
+                        className="rounded-md border border-white/15 bg-slate-950 px-2 py-1.5 text-xs normal-case tracking-normal text-white"
+                      >
+                        {SERVICE_AREA_SPACING_OPTIONS_MILES.map((mi) => (
+                          <option key={mi} value={mi}>
+                            {mi} mi ·{' '}
+                            {estimateGridCost('service-area', mi, {
+                              bufferMiles,
+                            })}{' '}
+                            pts
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="flex flex-col gap-1 text-[10px] uppercase tracking-wider text-white/40">
+                      Edge buffer
+                      <select
+                        value={bufferMiles}
+                        disabled={savingId === s.id}
+                        onChange={(e) =>
+                          setDraft(s.id, {
+                            buffer_miles: Number(e.target.value),
+                          })
+                        }
+                        className="rounded-md border border-white/15 bg-slate-950 px-2 py-1.5 text-xs normal-case tracking-normal text-white"
+                      >
+                        {SERVICE_AREA_BUFFER_OPTIONS_MILES.map((mi) => (
+                          <option key={mi} value={mi}>
+                            {mi === 0 ? '0 mi · clip tight' : `${mi} mi outside`} ·{' '}
+                            {estimateGridCost('service-area', spacing, {
+                              bufferMiles: mi,
+                            })}{' '}
+                            pts
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </>
                 )}
 
                 {isLf && (
@@ -270,7 +306,9 @@ export function ScanScheduleCard() {
                     }
                     if (isDfs) {
                       config.spacing_miles = spacing
-                      config.preset = draft.preset === 'tri-lakes' ? 'tri-lakes' : 'service-area'
+                      config.buffer_miles = bufferMiles
+                      config.preset =
+                        draft.preset === 'tri-lakes' ? 'tri-lakes' : 'service-area'
                     }
                     if (isLf) {
                       config.grid_size = gridSize
@@ -290,7 +328,8 @@ export function ScanScheduleCard() {
               <p className="font-mono text-[10px] text-white/35">
                 {isDfs && (
                   <>
-                    next run ≈ {dfsPts} pts @ {spacing} mi · &quot;
+                    next run ≈ {dfsPts} pts @ {spacing} mi
+                    {bufferMiles > 0 ? ` + ${bufferMiles} mi edge` : ''} · &quot;
                     {draft.keyword || '—'}&quot;
                   </>
                 )}

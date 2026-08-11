@@ -65,10 +65,20 @@ export async function runDueScans(supabase: SupabaseClient): Promise<SchedulerRe
           | 'service-area'
           | 'tri-lakes'
         const spacing = Number(s.config.spacing_miles ?? 2)
+        const buffer = Number(s.config.buffer_miles ?? 0)
+        const centerLat = Number(s.config.lat)
+        const centerLng = Number(s.config.lng)
+        const gridSize = Number(s.config.grid_size)
         const scan = await runGridScan(supabase, {
           preset,
           spacingMiles: spacing,
           keyword: String(s.config.keyword ?? 'carpet cleaning'),
+          bufferMiles: Number.isFinite(buffer) ? buffer : 0,
+          ...(Number.isFinite(centerLat) ? { centerLat } : {}),
+          ...(Number.isFinite(centerLng) ? { centerLng } : {}),
+          ...(Number.isFinite(gridSize) && gridSize >= 3
+            ? { gridSize }
+            : {}),
         })
         result = `scan ${scan.scanId ?? '?'}: ${scan.pointsScanned ?? '?'} points`
       } else if (s.tool === 'local_falcon') {

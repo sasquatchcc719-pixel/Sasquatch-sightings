@@ -44,6 +44,13 @@ export type GridScanOptions = {
   keyword?: string
   /** Overrides the preset default. Cost is one DataForSEO Maps call per point (~$0.002). */
   spacingMiles?: number
+  /** Miles outside the service-area polygon (service-area preset only). */
+  bufferMiles?: number
+  /** Square-grid center (tri-lakes / custom). Defaults to Monument. */
+  centerLat?: number
+  centerLng?: number
+  /** Odd N for N×N square grids. Defaults to 5. */
+  gridSize?: number
 }
 
 export async function runGridScan(
@@ -57,32 +64,52 @@ export async function runGridScan(
   const spacingMiles =
     options?.spacingMiles ??
     (isArea ? SERVICE_AREA_DEFAULT_SPACING_MILES : DEFAULT_GRID.spacingMiles)
+  const bufferMiles = Math.max(0, options?.bufferMiles ?? 0)
+  const gridSize = Math.min(
+    21,
+    Math.max(3, Math.round(options?.gridSize ?? DEFAULT_GRID.size) || DEFAULT_GRID.size),
+  )
+  // Force odd size so the center pin sits on a lattice point.
+  const size = gridSize % 2 === 0 ? gridSize + 1 : gridSize
+  const squareCenterLat = options?.centerLat ?? DEFAULT_GRID.centerLat
+  const squareCenterLng = options?.centerLng ?? DEFAULT_GRID.centerLng
 
   const points = isArea
-    ? buildAreaGrid(SERVICE_AREA_POLYGON, spacingMiles)
-    : buildGrid(
-        DEFAULT_GRID.centerLat,
-        DEFAULT_GRID.centerLng,
-        DEFAULT_GRID.size,
-        spacingMiles,
-      )
+    ? buildAreaGrid(SERVICE_AREA_POLYGON, spacingMiles, bufferMiles)
+    : buildGrid(squareCenterLat, squareCenterLng, size, spacingMiles)
 
   const bb = isArea ? polygonBbox(SERVICE_AREA_POLYGON) : null
-  const centerLat = bb ? (bb.minLat + bb.maxLat) / 2 : DEFAULT_GRID.centerLat
-  const centerLng = bb ? (bb.minLng + bb.maxLng) / 2 : DEFAULT_GRID.centerLng
+  const centerLat = isArea
+    ? bb
+      ? (bb.minLat + bb.maxLat) / 2
+      : DEFAULT_GRID.centerLat
+    : squareCenterLat
+  const centerLng = isArea
+    ? bb
+      ? (bb.minLng + bb.maxLng) / 2
+      : DEFAULT_GRID.centerLng
+    : squareCenterLng
+
+  const areaLabel =
+    bufferMiles > 0
+      ? `Service area + ${bufferMiles} mi edge — Castle Rock to Colorado Springs`
+      : 'Service area — Castle Rock to Colorado Springs'
+  const squareLabel =
+    Math.abs(squareCenterLat - DEFAULT_GRID.centerLat) < 0.0001 &&
+    Math.abs(squareCenterLng - DEFAULT_GRID.centerLng) < 0.0001
+      ? DEFAULT_GRID.label
+      : `Custom ${size}×${size} @ ${squareCenterLat.toFixed(3)}, ${squareCenterLng.toFixed(3)}`
 
   const { data: scan, error: scanError } = await supabase
     .from('radar_grid_scans')
     .insert({
       keyword,
-      label: isArea
-        ? 'Service area — Castle Rock to Colorado Springs'
-        : DEFAULT_GRID.label,
+      label: isArea ? areaLabel : squareLabel,
       preset,
       center_lat: centerLat,
       center_lng: centerLng,
       // Square grids have an edge length; polygon-clipped ones don't.
-      grid_size: isArea ? null : DEFAULT_GRID.size,
+      grid_size: isArea ? null : size,
       bbox: bb,
       spacing_miles: spacingMiles,
       points_total: points.length,

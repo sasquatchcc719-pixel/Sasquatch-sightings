@@ -3,6 +3,7 @@ import {
   buildGrid,
   buildAreaGrid,
   computeStats,
+  distanceToPolygonMiles,
   estimateGridCost,
   findMyRank,
   pointInPolygon,
@@ -203,6 +204,21 @@ describe('buildAreaGrid', () => {
     const lats = pts.map((p) => p.lat)
     expect(Math.max(...lats)).toBeGreaterThan(39.3) // Castle Rock latitude
     expect(Math.min(...lats)).toBeLessThan(38.9) // into Colorado Springs
+  })
+
+  it('edge buffer keeps outside points within the ring', () => {
+    const tight = buildAreaGrid(SERVICE_AREA_POLYGON, 3, 0)
+    const buffered = buildAreaGrid(SERVICE_AREA_POLYGON, 3, 3)
+    expect(buffered.length).toBeGreaterThan(tight.length)
+    const outside = buffered.filter(
+      (p) => !pointInPolygon(p.lat, p.lng, SERVICE_AREA_POLYGON),
+    )
+    expect(outside.length).toBeGreaterThan(0)
+    for (const p of outside) {
+      expect(distanceToPolygonMiles(p.lat, p.lng, SERVICE_AREA_POLYGON)).toBeLessThanOrEqual(
+        3.01,
+      )
+    }
   })
 })
 

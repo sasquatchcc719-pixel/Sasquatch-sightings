@@ -84,6 +84,16 @@ export async function PUT(request: NextRequest) {
         }
         next.spacing_miles = mi
       }
+      if (body.config.buffer_miles !== undefined) {
+        const buf = Number(body.config.buffer_miles)
+        if (!Number.isFinite(buf) || buf < 0 || buf > 15) {
+          return NextResponse.json(
+            { error: 'buffer_miles must be between 0 and 15' },
+            { status: 400 },
+          )
+        }
+        next.buffer_miles = buf
+      }
       if (typeof body.config.preset === 'string') {
         next.preset =
           body.config.preset === 'tri-lakes' ? 'tri-lakes' : 'service-area'

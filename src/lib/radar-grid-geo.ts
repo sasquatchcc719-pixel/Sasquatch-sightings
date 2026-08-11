@@ -83,7 +83,70 @@ export const GRID_KEYWORD_PRESETS = [
 /** Local Falcon odd sizes only — cost is grid_size² credits. */
 export const LOCAL_FALCON_GRID_SIZES = [3, 5, 7, 9, 11, 13, 15, 17, 19, 21] as const
 
+/**
+ * Extra miles outside the service-area polygon. 0 = clip tight (cheap).
+ * 2–5 mi rings let you see where rank dies past the towns you serve.
+ */
+export const SERVICE_AREA_BUFFER_OPTIONS_MILES = [0, 2, 3, 5] as const
+
+/** Square-grid sizes for movable-center Tri-Lakes / custom runs. */
+export const SQUARE_GRID_SIZES = [3, 5, 7, 9] as const
+
 export const MILES_PER_DEG_LAT = 69.0
+
+/** Rough ground distance — fine at Colorado service-area scale. */
+export function haversineMiles(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number,
+): number {
+  const toRad = (d: number) => (d * Math.PI) / 180
+  const r = 3958.8
+  const dLat = toRad(lat2 - lat1)
+  const dLng = toRad(lng2 - lng1)
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2
+  return 2 * r * Math.asin(Math.min(1, Math.sqrt(a)))
+}
+
+/**
+ * Shortest distance from a point to any edge of the polygon (miles).
+ * Inside points return 0.
+ */
+export function distanceToPolygonMiles(
+  lat: number,
+  lng: number,
+  polygon: Array<[number, number]>,
+): number {
+  if (pointInPolygon(lat, lng, polygon)) return 0
+  let best = Infinity
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const [lat1, lng1] = polygon[j]
+    const [lat2, lng2] = polygon[i]
+    // Project onto the segment in local miles space around mid-lat.
+    const midLat = (lat1 + lat2) / 2
+    const milesPerDegLng = MILES_PER_DEG_LAT * Math.cos((midLat * Math.PI) / 180)
+    const ax = lng1 * milesPerDegLng
+    const ay = lat1 * MILES_PER_DEG_LAT
+    const bx = lng2 * milesPerDegLng
+    const by = lat2 * MILES_PER_DEG_LAT
+    const px = lng * milesPerDegLng
+    const py = lat * MILES_PER_DEG_LAT
+    const abx = bx - ax
+    const aby = by - ay
+    const apx = px - ax
+    const apy = py - ay
+    const ab2 = abx * abx + aby * aby
+    const t = ab2 === 0 ? 0 : Math.max(0, Math.min(1, (apx * abx + apy * aby) / ab2))
+    const cx = ax + t * abx
+    const cy = ay + t * aby
+    const d = Math.hypot(px - cx, py - cy)
+    if (d < best) best = d
+  }
+  return best
+}
 
 export type GridPoint = { row: number; col: number; lat: number; lng: number }
 
@@ -165,15 +228,30 @@ export function polygonBbox(polygon: Array<[number, number]>): Bbox {
 }
 
 /**
- * Lay a lattice over a polygon's bounding box and keep only points inside it.
+ * Lay a lattice over a polygon's bounding box (optionally padded) and keep
+ * points inside the polygon, or within `bufferMiles` of its edge.
+ *
+ * Buffer > 0 is how you find the ranking cliff past the towns you serve —
+ * without it every miss is still "inside" the service area and the edge is invisible.
  * Rows run north to south so row 0 is the top of the map.
  */
 export function buildAreaGrid(
   polygon: Array<[number, number]>,
   spacingMiles: number,
+  bufferMiles = 0,
 ): GridPoint[] {
-  const bb = polygonBbox(polygon)
-  const midLat = (bb.minLat + bb.maxLat) / 2
+  const core = polygonBbox(polygon)
+  const midLat = (core.minLat + core.maxLat) / 2
+  const padLat = Math.max(0, bufferMiles) / MILES_PER_DEG_LAT
+  const padLng =
+    Math.max(0, bufferMiles) /
+    (MILES_PER_DEG_LAT * Math.cos((midLat * Math.PI) / 180))
+  const bb: Bbox = {
+    minLat: core.minLat - padLat,
+    maxLat: core.maxLat + padLat,
+    minLng: core.minLng - padLng,
+    maxLng: core.maxLng + padLng,
+  }
   const dLat = spacingMiles / MILES_PER_DEG_LAT
   const dLng =
     spacingMiles / (MILES_PER_DEG_LAT * Math.cos((midLat * Math.PI) / 180))
@@ -186,24 +264,40 @@ export function buildAreaGrid(
     const lat = bb.maxLat - row * dLat // north first
     for (let col = 0; col < cols; col++) {
       const lng = bb.minLng + col * dLng
-      if (pointInPolygon(lat, lng, polygon)) points.push({ row, col, lat, lng })
+      const inside = pointInPolygon(lat, lng, polygon)
+      if (
+        inside ||
+        (bufferMiles > 0 && distanceToPolygonMiles(lat, lng, polygon) <= bufferMiles)
+      ) {
+        points.push({ row, col, lat, lng })
+      }
     }
   }
   return points
+}
+
+export type EstimateGridCostOptions = {
+  bufferMiles?: number
+  centerLat?: number
+  centerLng?: number
+  size?: number
 }
 
 /** How many searches a scan will cost, without spending any. */
 export function estimateGridCost(
   preset: GridPreset,
   spacingMiles?: number,
+  options?: EstimateGridCostOptions,
 ): number {
   if (preset === 'service-area') {
     return buildAreaGrid(
       SERVICE_AREA_POLYGON,
       spacingMiles ?? SERVICE_AREA_DEFAULT_SPACING_MILES,
+      options?.bufferMiles ?? 0,
     ).length
   }
-  return DEFAULT_GRID.size ** 2
+  const size = options?.size ?? DEFAULT_GRID.size
+  return size ** 2
 }
 
 /** Find our listing among a point's results. Name match first, domain as backup. */
