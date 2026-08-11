@@ -18,6 +18,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import type { TechAppointment } from '@/lib/tech/appointments'
 import { SignatureModal } from '@/components/admin/ops/signature-modal'
+import { CleaningReminderButtons } from '@/components/ops/cleaning-reminder-buttons'
 import { formatSquareAmount } from '@/lib/payments/square'
 import { FLOOR_PLAN_MAPS } from '@/lib/ops/floor-plan-maps'
 
@@ -793,6 +794,8 @@ export function TechJobDetail({
           </div>
         )}
       </section>
+
+      <CleaningReminderButtons appointmentId={appointment.id} tone="tech" />
 
       <section className="rounded-2xl border border-white/10 bg-white/[0.06] p-4">
         <h2 className="mb-3 font-semibold">Internal Notes</h2>
