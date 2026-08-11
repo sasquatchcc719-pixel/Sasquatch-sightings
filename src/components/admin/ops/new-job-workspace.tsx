@@ -1898,6 +1898,13 @@ export function NewJobWorkspace() {
                             ),
                           }))
                         }
+                        zipValue={addressForm.zip_code}
+                        onPickZip={(zip) =>
+                          setAddressForm((current) => ({
+                            ...current,
+                            zip_code: zip,
+                          }))
+                        }
                       />
                       <Input
                         id="city"

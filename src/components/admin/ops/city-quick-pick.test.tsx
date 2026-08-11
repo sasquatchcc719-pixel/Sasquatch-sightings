@@ -60,9 +60,67 @@ describe('CityQuickPick', () => {
     expect(onPick).toHaveBeenLastCalledWith({
       city: 'Colorado Springs',
       state: 'CO',
+      zips: expect.arrayContaining(['80921', '80908']),
     })
 
     await userEvent.click(screen.getByRole('button', { name: 'Castle Rock' }))
-    expect(onPick).toHaveBeenLastCalledWith({ city: 'Castle Rock', state: 'CO' })
+    expect(onPick).toHaveBeenLastCalledWith({
+      city: 'Castle Rock',
+      state: 'CO',
+      zips: expect.arrayContaining(['80104', '80109', '80108']),
+    })
+  })
+
+  it('offers zip buttons once a multi-zip town is picked', async () => {
+    const onPickZip = vi.fn()
+    render(
+      <CityQuickPick
+        value="Colorado Springs"
+        onPick={() => {}}
+        zipValue=""
+        onPickZip={onPickZip}
+      />,
+    )
+
+    // Most-worked zip first, so the common job is the first button.
+    expect(screen.getByRole('button', { name: '80921' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '80908' })).toBeTruthy()
+
+    await userEvent.click(screen.getByRole('button', { name: '80908' }))
+    expect(onPickZip).toHaveBeenCalledWith('80908')
+  })
+
+  it('shows no zip buttons for single-zip towns — the zip is already filled', () => {
+    render(
+      <CityQuickPick
+        value="Monument"
+        onPick={() => {}}
+        zipValue="80132"
+        onPickZip={() => {}}
+      />,
+    )
+    expect(screen.queryByRole('button', { name: '80132' })).toBeNull()
+  })
+
+  it('marks the zip already on the job as pressed', () => {
+    render(
+      <CityQuickPick
+        value="Castle Rock"
+        onPick={() => {}}
+        zipValue="80109"
+        onPickZip={() => {}}
+      />,
+    )
+    expect(
+      screen.getByRole('button', { name: '80109' }).getAttribute('aria-pressed'),
+    ).toBe('true')
+    expect(
+      screen.getByRole('button', { name: '80104' }).getAttribute('aria-pressed'),
+    ).toBe('false')
+  })
+
+  it('hides the zip row entirely when the caller does not manage a zip field', () => {
+    render(<CityQuickPick value="Colorado Springs" onPick={() => {}} />)
+    expect(screen.queryByRole('button', { name: '80921' })).toBeNull()
   })
 })

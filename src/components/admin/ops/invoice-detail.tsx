@@ -1685,6 +1685,10 @@ export function InvoiceDetail({
                     zip_code: nextZipForCityPick(f.zip_code, picked),
                   }))
                 }
+                zipValue={addressForm.zip_code}
+                onPickZip={(zip) =>
+                  setAddressForm((f) => ({ ...f, zip_code: zip }))
+                }
               />
               <div className="mt-2 grid grid-cols-3 gap-2">
                 <div>
