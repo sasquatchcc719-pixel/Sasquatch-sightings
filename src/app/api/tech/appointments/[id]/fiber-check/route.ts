@@ -11,11 +11,16 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
-import { getAssignedTechAppointment } from '@/lib/tech/appointments'
+import { getTechAppointmentForAccess } from '@/lib/tech/appointments'
 import { createAdminClient } from '@/supabase/server'
 import { analyzeFiber } from '@/lib/fiber/analyze'
 import type { BurnBucket } from '@/lib/fiber/stop-list'
 import { fiberItemKind } from '@/lib/fiber/requires-check'
+import {
+  blockedSummary,
+  signatureAllowed,
+  unitsForLine,
+} from '@/lib/fiber/gate'
 
 export const maxDuration = 60
 
@@ -25,6 +30,52 @@ const BURN_BUCKETS: BurnBucket[] = [
   'burning_hair',
   'burns_like_paper',
 ]
+
+/** Gate state for a job — used by the admin invoice screen, which keeps its
+ * own line-item state and has no fiber data of its own. */
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  let access
+  try {
+    access = await requireAnyRole(['admin', 'owner', 'tech'])
+  } catch {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const supabase = createAdminClient()
+  const { id: appointmentId } = await params
+  const appointment = await getTechAppointmentForAccess(supabase, {
+    role: access.role,
+    staffId: access.staff?.id ?? null,
+    appointmentId,
+  })
+  if (!appointment) {
+    return NextResponse.json({ error: 'Job not found' }, { status: 404 })
+  }
+
+  const gateLines = appointment.lineItems.map((line) => ({
+    id: line.id,
+    name: line.name,
+    quantity: line.quantity,
+    catalogCategory: line.catalogCategory,
+    catalogPricingUnit: line.catalogPricingUnit,
+    excludedAt: line.excludedAt,
+  }))
+  const gateChecks = appointment.fiberChecks.map((check) => ({
+    appointmentLineItemId: check.appointmentLineItemId,
+    unitIndex: check.unitIndex ?? 1,
+    verdict: check.verdict,
+  }))
+
+  return NextResponse.json({
+    lines: appointment.lineItems,
+    checks: appointment.fiberChecks,
+    allowed: signatureAllowed(gateLines, gateChecks),
+    blocked: blockedSummary(gateLines, gateChecks),
+  })
+}
 
 export async function POST(
   request: NextRequest,
@@ -40,12 +91,11 @@ export async function POST(
   try {
     const supabase = createAdminClient()
     const { id: appointmentId } = await params
-    const staffUserId = access.staff?.id ?? access.id
-    const appointment = await getAssignedTechAppointment(
-      supabase,
-      staffUserId,
+    const appointment = await getTechAppointmentForAccess(supabase, {
+      role: access.role,
+      staffId: access.staff?.id ?? null,
       appointmentId,
-    )
+    })
     if (!appointment) {
       return NextResponse.json({ error: 'Job not found' }, { status: 404 })
     }
@@ -75,6 +125,14 @@ export async function POST(
     const line = lineItemId
       ? appointment.lineItems.find((l) => l.id === lineItemId)
       : null
+
+    // A line can cover several physical pieces ("Area Rug 8x11" x3) and they
+    // are often different fibers, so each piece is checked separately.
+    const unitsRequired = line ? unitsForLine(line) : 1
+    const unitIndex = Math.min(
+      unitsRequired,
+      Math.max(1, Math.floor(Number(body.unitIndex) || 1)),
+    )
 
     // Upload first so the evidence survives even if the analysis call fails.
     const photoUrls: string[] = []
@@ -109,11 +167,23 @@ export async function POST(
       hasTag,
     })
 
+    // Re-checking a piece replaces its verdict rather than stacking a second
+    // row, which would otherwise let three checks on one rug satisfy a line
+    // covering three rugs.
+    if (lineItemId) {
+      await supabase
+        .from('fiber_checks')
+        .delete()
+        .eq('appointment_line_item_id', lineItemId)
+        .eq('unit_index', unitIndex)
+    }
+
     const { data: inserted, error: insertError } = await supabase
       .from('fiber_checks')
       .insert({
         appointment_id: appointmentId,
         appointment_line_item_id: lineItemId,
+        unit_index: unitIndex,
         item_label: line?.name ?? itemLabel,
         checked_by: access.id,
         checked_by_label: access.staff?.display_name ?? access.email,
@@ -136,17 +206,18 @@ export async function POST(
 
     // Return the refreshed appointment so the signature gate clears without a
     // page reload.
-    const updatedAppointment = await getAssignedTechAppointment(
-      supabase,
-      staffUserId,
+    const updatedAppointment = await getTechAppointmentForAccess(supabase, {
+      role: access.role,
+      staffId: access.staff?.id ?? null,
       appointmentId,
-    )
+    })
 
     return NextResponse.json({
       appointment: updatedAppointment,
       check: {
         id: inserted.id,
         appointmentLineItemId: inserted.appointment_line_item_id,
+        unitIndex: inserted.unit_index,
         itemLabel: inserted.item_label,
         verdict: analysis.verdict,
         determinedBy: analysis.determinedBy,

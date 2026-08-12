@@ -87,6 +87,7 @@ export function FiberCheckModal({
   onClose,
   appointmentId,
   lineItemId,
+  unitIndex = 1,
   lineItemName,
   existingCheck,
   onAppointmentUpdate,
@@ -95,6 +96,8 @@ export function FiberCheckModal({
   onClose: () => void
   appointmentId: string
   lineItemId: string
+  /** Which physical piece on this line is being checked (1-based). */
+  unitIndex?: number
   lineItemName: string
   existingCheck: TechFiberCheck | null
   onAppointmentUpdate: (appointment: TechAppointment) => void
@@ -136,6 +139,7 @@ export function FiberCheckModal({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             lineItemId,
+            unitIndex,
             itemLabel: lineItemName,
             hasTag: hasTag === true,
             images,
@@ -166,6 +170,7 @@ export function FiberCheckModal({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             lineItemId,
+            unitIndex,
             reason: `${result?.fiber ?? 'Fiber'} — cannot be safely wet cleaned`,
           }),
         },

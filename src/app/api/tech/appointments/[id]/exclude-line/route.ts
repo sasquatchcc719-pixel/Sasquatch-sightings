@@ -12,9 +12,10 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
-import { getAssignedTechAppointment } from '@/lib/tech/appointments'
+import { getTechAppointmentForAccess } from '@/lib/tech/appointments'
 import { createAdminClient } from '@/supabase/server'
 import { sendTelegramNotification } from '@/lib/telegram'
+import { unitsForLine } from '@/lib/fiber/gate'
 
 export async function POST(
   request: NextRequest,
@@ -30,12 +31,11 @@ export async function POST(
   try {
     const supabase = createAdminClient()
     const { id: appointmentId } = await params
-    const staffUserId = access.staff?.id ?? access.id
-    const appointment = await getAssignedTechAppointment(
-      supabase,
-      staffUserId,
+    const appointment = await getTechAppointmentForAccess(supabase, {
+      role: access.role,
+      staffId: access.staff?.id ?? null,
       appointmentId,
-    )
+    })
     if (!appointment) {
       return NextResponse.json({ error: 'Job not found' }, { status: 404 })
     }
@@ -75,8 +75,11 @@ export async function POST(
       // A rug or upholstery line can only be excluded once it has been
       // identified — that is what makes the record evidence rather than a
       // silent write-off.
+      const targetUnit = Math.max(1, Math.floor(Number(body.unitIndex) || 1))
       const check = appointment.fiberChecks.find(
-        (c) => c.appointmentLineItemId === lineItemId,
+        (c) =>
+          c.appointmentLineItemId === lineItemId &&
+          (c.unitIndex ?? 1) === targetUnit,
       )
       if (line.requiresFiberCheck && !check) {
         return NextResponse.json(
@@ -88,21 +91,83 @@ export async function POST(
         )
       }
 
-      const originalTotal = line.lineTotal ?? 0
-      const { error: updateError } = await supabase
-        .from('ops_appointment_line_items')
-        .update({
-          excluded_at: new Date().toISOString(),
-          excluded_by: access.id,
-          excluded_reason: reason,
-          excluded_original_total: originalTotal,
-          fiber_check_id: check?.id ?? null,
-          line_total: 0,
-          unit_price: 0,
-        })
-        .eq('id', lineItemId)
+      const units = unitsForLine(line)
+      const unitPrice = line.unitPrice ?? 0
+      const nowIso = new Date().toISOString()
+      let originalTotal: number
 
-      if (updateError) throw updateError
+      if (units > 1) {
+        // Only one piece on this line is the problem. Split it: the line keeps
+        // the pieces we can clean, and the excluded piece becomes its own row
+        // so it carries its own reason and evidence. Excluding all three rugs
+        // because one is viscose would be wrong.
+        originalTotal = unitPrice
+        const { data: newLine, error: splitError } = await supabase
+          .from('ops_appointment_line_items')
+          .insert({
+            appointment_id: appointmentId,
+            name_snapshot: line.name,
+            quantity: 1,
+            unit_price: 0,
+            line_total: 0,
+            duration_minutes: 0,
+            buffer_minutes: 0,
+            excluded_at: nowIso,
+            excluded_by: access.id,
+            excluded_reason: reason,
+            excluded_original_total: unitPrice,
+            fiber_check_id: check?.id ?? null,
+          })
+          .select('id')
+          .single()
+        if (splitError) throw splitError
+
+        const remaining = units - 1
+        await supabase
+          .from('ops_appointment_line_items')
+          .update({
+            quantity: remaining,
+            line_total: Number((remaining * unitPrice).toFixed(2)),
+          })
+          .eq('id', lineItemId)
+
+        // Move the excluded piece's check onto the new row, then close the gap
+        // in the remaining unit numbers so the gate can still be satisfied.
+        const unitIndex = Math.max(1, Math.floor(Number(body.unitIndex) || 1))
+        if (check) {
+          await supabase
+            .from('fiber_checks')
+            .update({ appointment_line_item_id: newLine.id, unit_index: 1 })
+            .eq('id', check.id)
+        }
+        const shifted = appointment.fiberChecks.filter(
+          (c) =>
+            c.appointmentLineItemId === lineItemId &&
+            (c.unitIndex ?? 1) > unitIndex,
+        )
+        for (const moving of shifted) {
+          await supabase
+            .from('fiber_checks')
+            .update({ unit_index: (moving.unitIndex ?? 1) - 1 })
+            .eq('id', moving.id)
+        }
+      } else {
+        originalTotal = line.lineTotal ?? 0
+        const { error: updateError } = await supabase
+          .from('ops_appointment_line_items')
+          .update({
+            excluded_at: nowIso,
+            excluded_by: access.id,
+            excluded_reason: reason,
+            excluded_original_total: originalTotal,
+            fiber_check_id: check?.id ?? null,
+            line_total: 0,
+            unit_price: 0,
+          })
+          .eq('id', lineItemId)
+
+        if (updateError) throw updateError
+      }
 
       const who = access.staff?.display_name ?? access.email
       const amount = originalTotal.toFixed(2)
@@ -121,11 +186,11 @@ export async function POST(
 
     await recalculateInvoice(supabase, appointmentId)
 
-    const updated = await getAssignedTechAppointment(
-      supabase,
-      staffUserId,
+    const updated = await getTechAppointmentForAccess(supabase, {
+      role: access.role,
+      staffId: access.staff?.id ?? null,
       appointmentId,
-    )
+    })
     return NextResponse.json({ appointment: updated })
   } catch (error) {
     console.error('[tech/appointments/:id/exclude-line][POST]', error)
@@ -169,18 +234,41 @@ async function recalculateInvoice(
   if (!invoice) return
 
   // Mirror exclusion state onto the invoice lines so the customer-facing and
-  // QuickBooks paths can filter them out.
+  // QuickBooks paths can filter them out. Splitting a multi-unit line creates
+  // an appointment line with no invoice line yet, so insert those.
+  const { data: existingInvoiceLines } = await supabase
+    .from('ops_invoice_line_items')
+    .select('appointment_line_item_id')
+    .eq('invoice_id', invoice.id)
+  const mirrored = new Set(
+    (existingInvoiceLines ?? [])
+      .map((row) => row.appointment_line_item_id)
+      .filter(Boolean)
+      .map(String),
+  )
+
   for (const line of lines ?? []) {
-    await supabase
-      .from('ops_invoice_line_items')
-      .update({
-        unit_price: Number(line.unit_price || 0),
-        line_total: Number(line.line_total || 0),
-        excluded_at: line.excluded_at ?? null,
-        excluded_reason: line.excluded_reason ?? null,
-        excluded_original_total: line.excluded_original_total ?? null,
+    const payload = {
+      quantity: Number(line.quantity || 1),
+      unit_price: Number(line.unit_price || 0),
+      line_total: Number(line.line_total || 0),
+      excluded_at: line.excluded_at ?? null,
+      excluded_reason: line.excluded_reason ?? null,
+      excluded_original_total: line.excluded_original_total ?? null,
+    }
+    if (mirrored.has(String(line.id))) {
+      await supabase
+        .from('ops_invoice_line_items')
+        .update(payload)
+        .eq('appointment_line_item_id', line.id)
+    } else {
+      await supabase.from('ops_invoice_line_items').insert({
+        invoice_id: invoice.id,
+        appointment_line_item_id: line.id,
+        description: line.name_snapshot,
+        ...payload,
       })
-      .eq('appointment_line_item_id', line.id)
+    }
   }
 
   const total = Number(

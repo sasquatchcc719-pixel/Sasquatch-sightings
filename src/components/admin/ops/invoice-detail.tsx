@@ -23,6 +23,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { CleaningReminderButtons } from '@/components/ops/cleaning-reminder-buttons'
+import { FiberCheckPanel } from '@/components/ops/fiber-check-panel'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -376,6 +377,8 @@ export function InvoiceDetail({
   )
   const [driveStartedAtMs, setDriveStartedAtMs] = useState<number | null>(null)
   const [showSignatureModal, setShowSignatureModal] = useState(false)
+  // Rugs and upholstery must be identified before a signature is captured.
+  const [fiberGateAllowed, setFiberGateAllowed] = useState(true)
   const [driveElapsedMs, setDriveElapsedMs] = useState(0)
 
   const [editingCustomer, setEditingCustomer] = useState(false)
@@ -1702,6 +1705,7 @@ export function InvoiceDetail({
                       setAddressForm((f) => ({ ...f, city: e.target.value }))
                     }
                     className="h-9"
+                    placeholder="Or type another"
                   />
                 </div>
                 <div>
@@ -2629,19 +2633,29 @@ export function InvoiceDetail({
             </div>
           </div>
 
+          {appointment?.id ? (
+            <FiberCheckPanel
+              appointmentId={appointment.id}
+              onGateChange={setFiberGateAllowed}
+            />
+          ) : null}
+
           {/* Get Signature Button */}
           {!invoice?.signature_url && billableTotal > 0 && (
             <div className="border-border/60 mt-4 border-t pt-4">
               <Button
                 onClick={() => setShowSignatureModal(true)}
+                disabled={!fiberGateAllowed}
                 variant="outline"
-                className="w-full gap-2 border-green-500/40 text-green-400 hover:border-green-400 hover:bg-green-500/10"
+                className="w-full gap-2 border-green-500/40 text-green-400 hover:border-green-400 hover:bg-green-500/10 disabled:opacity-40"
               >
                 <PenTool className="h-4 w-4" />
                 Get Customer Signature
               </Button>
               <p className="text-muted-foreground mt-2 text-center text-xs">
-                Capture signature to confirm price agreement
+                {fiberGateAllowed
+                  ? 'Capture signature to confirm price agreement'
+                  : 'Identify every rug and upholstery piece above before the customer signs'}
               </p>
             </div>
           )}

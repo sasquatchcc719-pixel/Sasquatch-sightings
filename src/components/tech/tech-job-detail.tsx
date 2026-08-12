@@ -21,6 +21,12 @@ import { Textarea } from '@/components/ui/textarea'
 import type { TechAppointment, TechFiberCheck } from '@/lib/tech/appointments'
 import { SignatureModal } from '@/components/admin/ops/signature-modal'
 import { FiberCheckModal } from '@/components/tech/fiber-check-modal'
+import {
+  blockedSummary,
+  signatureAllowed,
+  unitLabel,
+  unitsForLine,
+} from '@/lib/fiber/gate'
 import { CleaningReminderButtons } from '@/components/ops/cleaning-reminder-buttons'
 import { formatSquareAmount } from '@/lib/payments/square'
 import { FLOOR_PLAN_MAPS } from '@/lib/ops/floor-plan-maps'
@@ -56,20 +62,24 @@ function addressLine(appointment: TechAppointment): string {
  */
 function FiberCheckRow({
   check,
+  label,
+  showLabel,
   onOpen,
 }: {
   check: TechFiberCheck | null
+  label: string
+  showLabel: boolean
   onOpen: () => void
 }) {
   if (!check) {
     return (
       <button
         onClick={onOpen}
-        className="mt-2 flex w-full items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-950/30 p-2 text-left"
+        className="flex w-full items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-950/30 p-2 text-left"
       >
         <ShieldQuestion className="h-4 w-4 shrink-0 text-amber-400" />
         <span className="text-sm font-medium text-amber-200">
-          Fiber check required — tap to identify
+          {showLabel ? `${label} — tap to identify` : 'Fiber check required — tap to identify'}
         </span>
       </button>
     )
@@ -81,7 +91,7 @@ function FiberCheckRow({
       : check.verdict === 'low_moisture'
         ? 'border-amber-500/50 bg-amber-950/40 text-amber-200'
         : 'border-emerald-500/40 bg-emerald-950/30 text-emerald-200'
-  const label =
+  const verdictText =
     check.verdict === 'do_not_wet_clean'
       ? 'DO NOT WET CLEAN'
       : check.verdict === 'low_moisture'
@@ -91,15 +101,18 @@ function FiberCheckRow({
   return (
     <button
       onClick={onOpen}
-      className={`mt-2 w-full rounded-lg border p-2 text-left ${styles}`}
+      className={`w-full rounded-lg border p-2 text-left ${styles}`}
     >
+      {showLabel ? (
+        <p className="mb-0.5 text-xs opacity-75">{label}</p>
+      ) : null}
       <div className="flex items-center gap-2">
         {check.verdict === 'go' ? (
           <CheckCircle2 className="h-4 w-4 shrink-0" />
         ) : (
           <ShieldAlert className="h-4 w-4 shrink-0" />
         )}
-        <span className="text-sm font-bold">{label}</span>
+        <span className="text-sm font-bold">{verdictText}</span>
       </div>
       {check.fiber ? (
         <p className="mt-0.5 text-xs opacity-90">{check.fiber}</p>
@@ -140,22 +153,38 @@ export function TechJobDetail({
   )
   const [streetViewFailed, setStreetViewFailed] = useState(false)
   const [showSignatureModal, setShowSignatureModal] = useState(false)
-  const [fiberCheckLineId, setFiberCheckLineId] = useState<string | null>(null)
+  const [fiberCheckTarget, setFiberCheckTarget] = useState<{
+    lineId: string
+    unitIndex: number
+  } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
 
-  const fiberCheckFor = (lineId: string) =>
-    appointment.fiberChecks.find((c) => c.appointmentLineItemId === lineId) ??
-    null
+  const fiberCheckFor = (lineId: string, unitIndex: number) =>
+    appointment.fiberChecks.find(
+      (c) =>
+        c.appointmentLineItemId === lineId && (c.unitIndex ?? 1) === unitIndex,
+    ) ?? null
 
   // Rug and upholstery items must be identified before the customer signs.
   // The signature is the pre-work price approval, so this is the last moment
-  // before the wand touches anything.
-  const uncheckedItems = appointment.lineItems.filter(
-    (line) =>
-      line.requiresFiberCheck && !line.excludedAt && !fiberCheckFor(line.id),
-  )
-  const signatureBlocked = uncheckedItems.length > 0
+  // before the wand touches anything. A line covering three rugs needs three
+  // checks — they are frequently three different fibers.
+  const gateLines = appointment.lineItems.map((line) => ({
+    id: line.id,
+    name: line.name,
+    quantity: line.quantity,
+    catalogCategory: line.catalogCategory,
+    catalogPricingUnit: line.catalogPricingUnit,
+    excludedAt: line.excludedAt,
+  }))
+  const gateChecks = appointment.fiberChecks.map((check) => ({
+    appointmentLineItemId: check.appointmentLineItemId,
+    unitIndex: check.unitIndex ?? 1,
+    verdict: check.verdict,
+  }))
+  const signatureBlocked = !signatureAllowed(gateLines, gateChecks)
+  const blockedItems = blockedSummary(gateLines, gateChecks)
   const fullAddress = addressLine(appointment)
   const mapsHref = fullAddress
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress)}`
@@ -715,10 +744,22 @@ export function TechJobDetail({
                   ) : null}
                 </div>
               ) : line.requiresFiberCheck ? (
-                <FiberCheckRow
-                  check={fiberCheckFor(line.id)}
-                  onOpen={() => setFiberCheckLineId(line.id)}
-                />
+                <div className="mt-2 space-y-1.5">
+                  {Array.from(
+                    { length: unitsForLine(line) },
+                    (_, i) => i + 1,
+                  ).map((unit) => (
+                    <FiberCheckRow
+                      key={unit}
+                      label={unitLabel(line.name, unit, unitsForLine(line))}
+                      showLabel={unitsForLine(line) > 1}
+                      check={fiberCheckFor(line.id, unit)}
+                      onOpen={() =>
+                        setFiberCheckTarget({ lineId: line.id, unitIndex: unit })
+                      }
+                    />
+                  ))}
+                </div>
               ) : null}
             </div>
           ))}
@@ -824,9 +865,8 @@ export function TechJobDetail({
                 </Button>
                 {signatureBlocked ? (
                   <p className="text-center text-xs text-amber-300">
-                    Fiber check required on{' '}
-                    {uncheckedItems.map((l) => l.name).join(', ')} before the
-                    customer signs.
+                    Fiber check required on {blockedItems.join(', ')} before
+                    the customer signs.
                   </p>
                 ) : null}
               </>
@@ -923,17 +963,28 @@ export function TechJobDetail({
       </section>
 
       {/* Fiber checks apply to every job, including ones with pricing hidden. */}
-      {fiberCheckLineId ? (
+      {fiberCheckTarget ? (
         <FiberCheckModal
           isOpen
-          onClose={() => setFiberCheckLineId(null)}
+          onClose={() => setFiberCheckTarget(null)}
           appointmentId={appointment.id}
-          lineItemId={fiberCheckLineId}
-          lineItemName={
-            appointment.lineItems.find((l) => l.id === fiberCheckLineId)
-              ?.name ?? 'Item'
-          }
-          existingCheck={fiberCheckFor(fiberCheckLineId)}
+          lineItemId={fiberCheckTarget.lineId}
+          unitIndex={fiberCheckTarget.unitIndex}
+          lineItemName={(() => {
+            const line = appointment.lineItems.find(
+              (l) => l.id === fiberCheckTarget.lineId,
+            )
+            if (!line) return 'Item'
+            return unitLabel(
+              line.name,
+              fiberCheckTarget.unitIndex,
+              unitsForLine(line),
+            )
+          })()}
+          existingCheck={fiberCheckFor(
+            fiberCheckTarget.lineId,
+            fiberCheckTarget.unitIndex,
+          )}
           onAppointmentUpdate={setAppointment}
         />
       ) : null}

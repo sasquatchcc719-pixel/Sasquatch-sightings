@@ -14,6 +14,8 @@ export type TechLineItem = {
   notes: string | null
   /** Catalog category, used to decide whether a fiber check is required. */
   catalogCategory: string | null
+  /** Catalog pricing unit — decides whether quantity counts physical pieces. */
+  catalogPricingUnit: string | null
   /** True for rug and upholstery items — these gate the customer signature. */
   requiresFiberCheck: boolean
   excludedAt: string | null
@@ -77,6 +79,7 @@ export type TechAppointment = {
 export type TechFiberCheck = {
   id: string
   appointmentLineItemId: string | null
+  unitIndex: number
   itemLabel: string
   verdict: FiberVerdict
   determinedBy: string
@@ -135,12 +138,14 @@ const TECH_APPOINTMENT_SELECT = `
     excluded_original_total,
     fiber_check_id,
     service_catalog_items (
-      category
+      category,
+      pricing_unit
     )
   ),
   fiber_checks (
     id,
     appointment_line_item_id,
+    unit_index,
     item_label,
     verdict,
     determined_by,
@@ -423,13 +428,14 @@ export function mapTechAppointment(
       : null,
     lineItems: lineItems.map((line) => {
       const name = line.name_snapshot || 'Service'
-      const catalogCategory =
-        unwrapRelation(
-          (line as { service_catalog_items?: unknown }).service_catalog_items as
-            | { category?: string | null }
-            | Array<{ category?: string | null }>
-            | null,
-        )?.category ?? null
+      const catalog = unwrapRelation(
+        (line as { service_catalog_items?: unknown }).service_catalog_items as
+          | { category?: string | null; pricing_unit?: string | null }
+          | Array<{ category?: string | null; pricing_unit?: string | null }>
+          | null,
+      )
+      const catalogCategory = catalog?.category ?? null
+      const catalogPricingUnit = catalog?.pricing_unit ?? null
       return {
         id: line.id,
         invoiceLineId:
@@ -442,6 +448,7 @@ export function mapTechAppointment(
         lineTotal: hidePricing ? null : Number(line.line_total || 0),
         notes: line.notes ?? null,
         catalogCategory,
+        catalogPricingUnit,
         requiresFiberCheck: requiresFiberCheck({ name, catalogCategory }),
         excludedAt: line.excluded_at ?? null,
         excludedReason: line.excluded_reason ?? null,
@@ -456,6 +463,7 @@ export function mapTechAppointment(
       appointmentLineItemId: check.appointment_line_item_id
         ? String(check.appointment_line_item_id)
         : null,
+      unitIndex: Number(check.unit_index ?? 1),
       itemLabel: String(check.item_label ?? 'Item'),
       verdict: String(check.verdict) as FiberVerdict,
       determinedBy: String(check.determined_by ?? ''),
