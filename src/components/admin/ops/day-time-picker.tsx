@@ -39,6 +39,12 @@ function toMinutes(time: string): number {
   return (h || 0) * 60 + (m || 0)
 }
 
+function minutesToClock(total: number): string {
+  const h = Math.floor(total / 60)
+  const m = total % 60
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+}
+
 function formatClock(time: string): string {
   const total = toMinutes(time)
   const h24 = Math.floor(total / 60)
@@ -53,6 +59,97 @@ function formatDateKey(date: Date): string {
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
+}
+
+
+export type DayTimelineItem =
+  | {
+      kind: 'booked'
+      key: string
+      start: number
+      end: number
+      label: string
+      detail?: string | null
+    }
+  | {
+      kind: 'gap'
+      key: string
+      start: number
+      end: number
+      /** Slot start to book, when an open window falls inside this gap. */
+      bookableAt: string | null
+    }
+
+/**
+ * The day as one chronological list: what is booked, and the gaps between.
+ * The gaps are the point — you are looking for where this job fits, so a gap
+ * big enough to take is a button. Gaps too short to hold the job are still
+ * returned, so the day reads honestly instead of looking emptier than it is.
+ *
+ * Appointments must already be sorted by start time.
+ */
+export function buildDayTimeline(
+  appointments: DayPickerAppointment[],
+  availableSlots: DayPickerSlot[],
+): DayTimelineItem[] {
+  const busy = appointments
+    .map((appt) => ({
+      start: toMinutes(appt.start_time),
+      end: appt.end_time
+        ? toMinutes(appt.end_time)
+        : toMinutes(appt.start_time) + 120,
+      appt,
+    }))
+    .filter((b) => b.end > b.start)
+
+  // The window the day is drawn across: standard hours, stretched to cover
+  // anything booked outside them (after-hours commercial work).
+  const DAY_OPEN = 540 // 9:00 AM
+  const DAY_CLOSE = 1020 // 5:00 PM
+  const dayStart = Math.min(
+    DAY_OPEN,
+    ...busy.map((b) => b.start),
+    ...availableSlots.map((s) => toMinutes(s.start_time)),
+  )
+  const dayEnd = Math.max(
+    DAY_CLOSE,
+    ...busy.map((b) => b.end),
+    ...availableSlots.map((s) => toMinutes(s.end_time)),
+  )
+
+  const items: DayTimelineItem[] = []
+  let cursor = dayStart
+
+  const pushGap = (start: number, end: number) => {
+    if (end - start <= 0) return
+    const slot = availableSlots.find((s) => {
+      const slotStart = toMinutes(s.start_time)
+      return slotStart >= start && toMinutes(s.end_time) <= end
+    })
+    items.push({
+      kind: 'gap',
+      key: `gap-${start}`,
+      start,
+      end,
+      bookableAt: slot ? slot.start_time.slice(0, 5) : null,
+    })
+  }
+
+  for (const block of busy) {
+    if (block.start > cursor) pushGap(cursor, block.start)
+    items.push({
+      kind: 'booked',
+      key: block.appt.id,
+      start: block.start,
+      end: block.end,
+      label: block.appt.label,
+      detail: block.appt.detail,
+    })
+    cursor = Math.max(cursor, block.end)
+  }
+  if (cursor < dayEnd) pushGap(cursor, dayEnd)
+
+  return items
 }
 
 // ─── Month calendar with green (open) / red (full) day coding ──────────────────
@@ -265,6 +362,21 @@ export function DayTimePicker({
     { weekday: 'long', month: 'long', day: 'numeric' },
   )
 
+  /**
+   * The day as one chronological list: what is booked, and the gaps between.
+   * The gaps are the point — you are looking for where this job fits, so a gap
+   * big enough to take is a button. Gaps too short to hold the job are still
+   * shown, greyed, so the day reads honestly instead of looking emptier than
+   * it is.
+   */
+  const dayTimeline = useMemo(
+    () => buildDayTimeline(sortedAppointments, availableSlots),
+    [sortedAppointments, availableSlots],
+  )
+
+  const minutesLabel = (mins: number) =>
+    mins % 60 === 0 ? `${mins / 60} hr` : `${(mins / 60).toFixed(1)} hr`
+
   return (
     <div className="space-y-5">
       {/* Month calendar */}
@@ -288,42 +400,77 @@ export function DayTimePicker({
             a custom time.
           </div>
         ) : null}
-        {sortedAppointments.length === 0 ? (
-          <p className="text-muted-foreground py-2 text-sm">
-            Nothing booked yet — wide open.
-          </p>
-        ) : (
-          <div className="space-y-2">
-            {sortedAppointments.map((appt) => (
-              <div
-                key={appt.id}
-                className="border-border/60 bg-card flex items-start gap-3 rounded-xl border px-3 py-2"
-              >
-                <div className="text-sm font-semibold whitespace-nowrap">
-                  {formatClock(appt.start_time)}
-                  {appt.end_time ? (
-                    <>
-                      {' '}
-                      <span className="text-muted-foreground font-normal">
-                        – {formatClock(appt.end_time)}
-                      </span>
-                    </>
-                  ) : null}
-                </div>
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-medium">
-                    {appt.label}
+        <div className="space-y-2">
+          {dayTimeline.map((item) => {
+            if (item.kind === 'booked') {
+              return (
+                <div
+                  key={item.key}
+                  className="border-border/60 bg-card flex items-start gap-3 rounded-xl border px-3 py-2"
+                >
+                  <div className="text-sm font-semibold whitespace-nowrap">
+                    {formatClock(minutesToClock(item.start))}{' '}
+                    <span className="text-muted-foreground font-normal">
+                      – {formatClock(minutesToClock(item.end))}
+                    </span>
                   </div>
-                  {appt.detail ? (
-                    <div className="text-muted-foreground truncate text-xs">
-                      {appt.detail}
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium">
+                      {item.label}
                     </div>
-                  ) : null}
+                    {item.detail ? (
+                      <div className="text-muted-foreground truncate text-xs">
+                        {item.detail}
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
+              )
+            }
+
+            const length = item.end - item.start
+            const range = `${formatClock(minutesToClock(item.start))} – ${formatClock(minutesToClock(item.end))}`
+
+            // Openings big enough for this job are the whole point: tap to book.
+            if (item.bookableAt) {
+              const active = item.bookableAt === selectedTime
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => onSelectTime(item.bookableAt as string)}
+                  className={`flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-3 text-left transition-all ${
+                    active
+                      ? 'border-emerald-500 bg-emerald-600 text-white shadow-sm'
+                      : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300'
+                  }`}
+                >
+                  <span className="text-sm font-semibold whitespace-nowrap">
+                    {range}
+                  </span>
+                  <span className="text-xs font-semibold">
+                    {active
+                      ? `Starting ${formatClock(item.bookableAt)}`
+                      : `Open ${minutesLabel(length)} · tap to book ${formatClock(item.bookableAt)}`}
+                  </span>
+                </button>
+              )
+            }
+
+            // Too short for this job — still shown, so the day reads honestly.
+            return (
+              <div
+                key={item.key}
+                className="border-border/40 text-muted-foreground flex items-center justify-between gap-3 rounded-xl border border-dashed px-3 py-2"
+              >
+                <span className="text-sm whitespace-nowrap">{range}</span>
+                <span className="text-xs">
+                  {minutesLabel(length)} open — too short for this job
+                </span>
               </div>
-            ))}
-          </div>
-        )}
+            )
+          })}
+        </div>
       </div>
 
       {/* Open time windows */}
@@ -343,8 +490,8 @@ export function DayTimePicker({
 
         {requiredMinutes <= 0 ? (
           <p className="text-muted-foreground py-2 text-sm">
-            Add services above first — we&apos;ll show the windows that fit this
-            job.
+            Add services above first — we&apos;ll show the openings that fit
+            this job.
           </p>
         ) : useCustomTime ? (
           <div>
@@ -355,41 +502,27 @@ export function DayTimePicker({
               onChange={(event) => onSelectTime(event.target.value)}
             />
             <p className="text-muted-foreground mt-2 text-xs">
-              Admin override — any time accepted, no conflict check.
+              Admin override — any time accepted, no conflict check. Use this
+              for after-hours and weekend work, or to stack a job on a full day.
             </p>
           </div>
         ) : loadingSlots ? (
-          <div className="grid grid-cols-2 gap-2">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="bg-muted h-12 animate-pulse rounded-lg" />
-            ))}
-          </div>
+          <div className="bg-muted h-12 animate-pulse rounded-lg" />
         ) : availableSlots.length === 0 ? (
           <p className="text-muted-foreground py-2 text-sm">
-            No open windows this day. Tap “Custom time” to stack a job anyway,
-            or pick another day.
+            No opening long enough on this day — the gaps above are too short.
+            Tap “Custom time” to book after hours or stack it, or pick another
+            day.
           </p>
         ) : (
-          <div className="grid grid-cols-2 gap-2">
-            {availableSlots.map((slot) => {
-              const start = slot.start_time.slice(0, 5)
-              const active = start === selectedTime
-              return (
-                <button
-                  key={slot.start_time}
-                  type="button"
-                  onClick={() => onSelectTime(start)}
-                  className={`rounded-xl border py-3 text-sm font-semibold transition-all ${
-                    active
-                      ? 'border-emerald-500 bg-emerald-600 text-white shadow-sm'
-                      : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300'
-                  }`}
-                >
-                  {formatClock(slot.start_time)}
-                </button>
-              )
-            })}
-          </div>
+          <p className="text-muted-foreground py-1 text-sm">
+            Tap a green opening in the day above.{' '}
+            {selectedTime ? (
+              <span className="text-foreground font-medium">
+                Starting {formatClock(selectedTime)}.
+              </span>
+            ) : null}
+          </p>
         )}
 
         {requiredMinutes > 0 ? (
