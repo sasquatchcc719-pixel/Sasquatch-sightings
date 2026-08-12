@@ -87,6 +87,26 @@ describe('buildReviewRequestMessage', () => {
     expect(msg).toContain(GOOGLE_REVIEW_URL)
   })
 
+  it('asks for detail, not just a rating', () => {
+    const msg = buildReviewRequestMessage({
+      first_name: 'Tiffany',
+      full_name: 'Tiffany Sewell',
+    })
+    // Review TEXT is what AI matches against; a wordless 5-star is near-useless.
+    expect(msg).toMatch(/what we cleaned/i)
+    expect(msg).toMatch(/how it turned out/i)
+  })
+
+  it('never gates on a positive experience or offers an incentive', () => {
+    const msg = buildReviewRequestMessage({
+      first_name: 'Tiffany',
+      full_name: 'Tiffany Sewell',
+    })
+    // Both would violate Google's review policies on an already-fragile profile.
+    expect(msg).not.toMatch(/if you were happy|if you liked|5[- ]star|five[- ]star/i)
+    expect(msg).not.toMatch(/discount|off your next|free|gift card|reward/i)
+  })
+
   it('falls back to a generic greeting without a name', () => {
     const msg = buildReviewRequestMessage({ first_name: null, full_name: null })
     expect(msg).toContain("Hi, it's Charles")

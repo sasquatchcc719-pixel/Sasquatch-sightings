@@ -94,6 +94,19 @@ export function isWithinSendWindow(now: Date = new Date()): boolean {
   return hour >= WINDOW_START_HOUR && hour < WINDOW_END_HOUR
 }
 
+/**
+ * The ask deliberately requests DETAIL, not just a rating.
+ *
+ * Review text is what AI assistants match against when someone describes a
+ * situation ("dog urine in a Berber runner") rather than typing a keyword. A
+ * five-star review with no words is worth almost nothing on that surface, and
+ * 8 of our 81 reviews currently have no text at all.
+ *
+ * Deliberately NOT scripted: we ask them to mention what was cleaned and how it
+ * went, in their own words. We never tell a customer what to say, never gate on
+ * a positive experience, and never offer anything in exchange -- all three would
+ * break Google's review policies and risk the profile, which is already fragile.
+ */
 export function buildReviewRequestMessage(
   customer: Pick<ReviewCustomer, 'first_name' | 'full_name'>,
 ): string {
@@ -105,8 +118,9 @@ export function buildReviewRequestMessage(
   const greeting = first ? `Hi ${first}, it's` : "Hi, it's"
   return (
     `${greeting} Charles with Sasquatch Carpet Cleaning. Thanks for having us out! ` +
-    `If you were happy with your clean, a quick Google review makes a huge difference ` +
-    `for our small local business: ${GOOGLE_REVIEW_URL}`
+    `If you have a minute for a Google review it makes a huge difference for us — ` +
+    `and if you can mention what we cleaned and how it turned out, that's the part ` +
+    `future customers actually read: ${GOOGLE_REVIEW_URL}`
   )
 }
 
