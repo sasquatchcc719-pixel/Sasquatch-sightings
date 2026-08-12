@@ -65,6 +65,43 @@ const TOOL_LABEL: Record<string, string> = {
   local_falcon: 'Local Falcon',
 }
 
+/**
+ * These two are NOT the same tool doing the same job. They overlap on exactly
+ * one thing — "where do we rank in the Google map pack at a given point" — and
+ * are otherwise complementary. Spelled out here so nobody has to re-derive it.
+ */
+const TOOL_BLURB: Record<
+  string,
+  { role: string; pros: string[]; cons: string[] }
+> = {
+  dataforseo_grid: {
+    role: 'Raw data plumbing. Cheap per call, no analysis layer, Google map pack only in this card — but the account can reach data Falcon has no equivalent for.',
+    pros: [
+      'Cheapest per-point cost — dense grids (141 pts) are affordable',
+      'Tight spacing/edge-buffer control; we own the grid geometry',
+      'Account also unlocks full review TEXT, Bing, competitor organic SERP, backlinks, LLM mentions — none of which Falcon does',
+    ],
+    cons: [
+      'Google only in this card (no Apple/ChatGPT/Gemini/AI Mode)',
+      'No SAIV/OSOLV, heat maps, competitor reports, or AI analysis — we build all of it',
+      'Not geo-grid natively; the lattice is ours, so bugs are ours',
+    ],
+  },
+  local_falcon: {
+    role: 'Purpose-built local visibility instrument. Buys the finished answer across 7 platforms instead of raw rows.',
+    pros: [
+      'Scans Google, Apple, ChatGPT, Gemini, Grok, AI Overviews, AI Mode',
+      'SAIV / OSOLV / ARP / ATRP, heat maps, competitor + trend reports built in',
+      'Reads Google’s official Places API — independent second opinion, and gives us a timestamped review-count log',
+    ],
+    cons: [
+      'Credit-based and pricier per scan (9×9 = 81 credits)',
+      'Fixed square grid + radius; less geometry control than ours',
+      'Closed analysis layer — we take their metric definitions as given',
+    ],
+  },
+}
+
 function cfg(s: Schedule): ScheduleConfig {
   return s.config && typeof s.config === 'object' ? s.config : {}
 }
@@ -135,9 +172,12 @@ export function ScanScheduleCard() {
         {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-white/40" />}
       </div>
       <p className="mb-3 text-xs text-white/40">
-        Weekly (or whatever interval) runs for both tools. Set the{' '}
-        <span className="text-white/60">same keyword</span> on both for a fair
-        A/B — right now they can drift. Changes apply on the next due tick.
+        Weekly (or whatever interval) runs for both tools. They overlap on{' '}
+        <span className="text-white/60">one</span> thing — Google map pack rank
+        at a point — so keep the{' '}
+        <span className="text-white/60">same keyword</span> on both if you want
+        that comparison to mean anything. Everything else they do is different,
+        not redundant. Changes apply on the next due tick.
       </p>
 
       {error && (
@@ -200,6 +240,46 @@ export function ScanScheduleCard() {
                   <span className="text-xs text-white/50">days</span>
                 </div>
               </div>
+
+              {TOOL_BLURB[s.tool] && (
+                <div className="rounded-md border border-white/10 bg-black/20 px-3 py-2">
+                  <p className="text-[11px] leading-relaxed text-white/50">
+                    {TOOL_BLURB[s.tool].role}
+                  </p>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wider text-emerald-400/70">
+                        Good at
+                      </p>
+                      <ul className="mt-1 space-y-0.5">
+                        {TOOL_BLURB[s.tool].pros.map((p) => (
+                          <li
+                            key={p}
+                            className="text-[11px] leading-snug text-white/45"
+                          >
+                            <span className="text-emerald-400/50">+</span> {p}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wider text-amber-400/70">
+                        Trade-offs
+                      </p>
+                      <ul className="mt-1 space-y-0.5">
+                        {TOOL_BLURB[s.tool].cons.map((c) => (
+                          <li
+                            key={c}
+                            className="text-[11px] leading-snug text-white/45"
+                          >
+                            <span className="text-amber-400/50">−</span> {c}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="flex flex-wrap items-end gap-3">
                 <label className="flex min-w-[12rem] flex-1 flex-col gap-1 text-[10px] uppercase tracking-wider text-white/40">

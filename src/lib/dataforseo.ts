@@ -47,13 +47,81 @@ function locationCoordinate(lat: number, lng: number, zoom: number): string {
   return `${lat},${lng},${zoom}z`
 }
 
-function auth(): string {
+export function auth(): string {
   const login = process.env.DATAFORSEO_LOGIN
   const password = process.env.DATAFORSEO_PASSWORD
   if (!login || !password) {
     throw new Error('DATAFORSEO_LOGIN / DATAFORSEO_PASSWORD is not set')
   }
   return Buffer.from(`${login}:${password}`).toString('base64')
+}
+
+export const DFS_BASE = BASE
+
+/**
+ * Generic DataForSEO POST. Every v3 endpoint takes an array of task objects and
+ * returns `{ status_code, tasks: [{ status_code, result: [...] }] }`, so one
+ * helper covers SERP, Business Data, Reviews, Keywords and AI Optimization.
+ *
+ * `softEmpty` matches status messages that mean "nothing found" rather than
+ * "broken" — a sparse rural grid point or a business with no Q&A is a normal
+ * empty result, not an error worth failing a whole sync over.
+ */
+export async function dfsPost<T = unknown>(
+  path: string,
+  task: Record<string, unknown>,
+  opts: { softEmpty?: RegExp } = {},
+): Promise<{ result: T[]; taskId: string | null; cost: number }> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${auth()}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify([task]),
+  })
+
+  const text = await res.text()
+  let json: {
+    status_code?: number
+    status_message?: string
+    cost?: number
+    tasks?: Array<{
+      id?: string
+      status_code?: number
+      status_message?: string
+      cost?: number
+      result?: T[] | null
+    }>
+  }
+  try {
+    json = JSON.parse(text)
+  } catch {
+    throw new Error(
+      `DataForSEO returned non-JSON (${res.status}) from ${path}: ${text.slice(0, 200)}`,
+    )
+  }
+
+  if (!res.ok || json.status_code !== 20000) {
+    throw new Error(
+      `DataForSEO error on ${path}: ${json.status_message || text.slice(0, 200)}`,
+    )
+  }
+
+  const t = json.tasks?.[0]
+  const softEmpty = opts.softEmpty ?? /no results|no search results|not found/i
+  if (t && t.status_code !== 20000 && t.status_code !== 20100) {
+    if (softEmpty.test(t.status_message || '')) {
+      return { result: [], taskId: t.id ?? null, cost: t.cost ?? 0 }
+    }
+    throw new Error(`DataForSEO task error on ${path}: ${t.status_message}`)
+  }
+
+  return {
+    result: t?.result ?? [],
+    taskId: t?.id ?? null,
+    cost: t?.cost ?? json.cost ?? 0,
+  }
 }
 
 type RawMapsItem = {
