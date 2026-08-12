@@ -75,6 +75,30 @@ export async function PATCH(
       if (!allowedStatuses.has(status)) {
         return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
       }
+      // Fallback fiber-check gate. The primary gate is the customer signature,
+      // but jobs with pricing hidden (Recovery Village, batch-monthly) have no
+      // signature step at all — so completion is the backstop for those.
+      if (status === 'completed' && current.status !== 'completed') {
+        const unchecked = current.lineItems.filter(
+          (line) =>
+            line.requiresFiberCheck &&
+            !line.excludedAt &&
+            !current.fiberChecks.some(
+              (check) => check.appointmentLineItemId === line.id,
+            ),
+        )
+        if (unchecked.length > 0) {
+          return NextResponse.json(
+            {
+              error: `Fiber check required before closing this job: ${unchecked
+                .map((l) => l.name)
+                .join(', ')}`,
+            },
+            { status: 400 },
+          )
+        }
+      }
+
       const transitionError = getTechStatusTransitionError(
         current.status,
         status,

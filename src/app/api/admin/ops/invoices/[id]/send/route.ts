@@ -247,7 +247,8 @@ export async function POST(
           description,
           quantity,
           unit_price,
-          line_total
+          line_total,
+          excluded_at
         )
       `,
       )
@@ -295,12 +296,15 @@ export async function POST(
       ? `${address.street_1}, ${address.city}, ${address.state} ${address.zip_code}`
       : 'your service address'
 
-    const lineItems = (invoice.ops_invoice_line_items || []) as Array<{
+    // Excluded work (fiber we could not safely clean, customer declines) stays
+    // on the internal record but never reaches the customer's invoice.
+    const lineItems = ((invoice.ops_invoice_line_items || []) as Array<{
       description: string
       quantity: number
       unit_price: number
       line_total: number
-    }>
+      excluded_at?: string | null
+    }>).filter((line) => !line.excluded_at)
 
     const venmoUrl = buildVenmoPaymentLink({
       username: VENMO_USERNAME,

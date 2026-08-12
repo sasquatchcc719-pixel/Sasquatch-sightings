@@ -1,4 +1,6 @@
 import { createAdminClient } from '@/supabase/server'
+import { requiresFiberCheck } from '@/lib/fiber/requires-check'
+import type { FiberVerdict } from '@/lib/fiber/types'
 
 type SupabaseAdminClient = ReturnType<typeof createAdminClient>
 
@@ -10,6 +12,13 @@ export type TechLineItem = {
   unitPrice: number | null
   lineTotal: number | null
   notes: string | null
+  /** Catalog category, used to decide whether a fiber check is required. */
+  catalogCategory: string | null
+  /** True for rug and upholstery items — these gate the customer signature. */
+  requiresFiberCheck: boolean
+  excludedAt: string | null
+  excludedReason: string | null
+  excludedOriginalTotal: number | null
 }
 
 export type TechPhoto = {
@@ -62,6 +71,25 @@ export type TechAppointment = {
   } | null
   lineItems: TechLineItem[]
   photos: TechPhoto[]
+  fiberChecks: TechFiberCheck[]
+}
+
+export type TechFiberCheck = {
+  id: string
+  appointmentLineItemId: string | null
+  itemLabel: string
+  verdict: FiberVerdict
+  determinedBy: string
+  fiber: string | null
+  confidence: string | null
+  hasTag: boolean
+  tagText: string | null
+  burnResult: string | null
+  photoUrls: string[]
+  warnings: string[]
+  recommendedMethod: string | null
+  checkedByLabel: string | null
+  createdAt: string
 }
 
 const TECH_APPOINTMENT_SELECT = `
@@ -100,7 +128,32 @@ const TECH_APPOINTMENT_SELECT = `
     quantity,
     unit_price,
     line_total,
-    notes
+    notes,
+    service_catalog_item_id,
+    excluded_at,
+    excluded_reason,
+    excluded_original_total,
+    fiber_check_id,
+    service_catalog_items (
+      category
+    )
+  ),
+  fiber_checks (
+    id,
+    appointment_line_item_id,
+    item_label,
+    verdict,
+    determined_by,
+    fiber,
+    confidence,
+    has_tag,
+    tag_text,
+    burn_result,
+    photo_urls,
+    warnings,
+    recommended_method,
+    checked_by_label,
+    created_at
   ),
   ops_invoices (
     id,
@@ -283,7 +336,16 @@ export function mapTechAppointment(
         unit_price?: number | null
         line_total?: number | null
         notes?: string | null
+        service_catalog_item_id?: string | null
+        excluded_at?: string | null
+        excluded_reason?: string | null
+        excluded_original_total?: number | null
+        fiber_check_id?: string | null
+        service_catalog_items?: unknown
       }>)
+    : []
+  const fiberCheckRows = Array.isArray(row.fiber_checks)
+    ? (row.fiber_checks as Array<Record<string, unknown>>)
     : []
   const photos = Array.isArray(row.ops_job_photos)
     ? (row.ops_job_photos as Array<{
@@ -359,17 +421,62 @@ export function mapTechAppointment(
           signatureCustomerName: invoice.signature_customer_name ?? null,
         }
       : null,
-    lineItems: lineItems.map((line) => ({
-      id: line.id,
-      invoiceLineId:
-        invoiceLines.find(
-          (invoiceLine) => invoiceLine.appointment_line_item_id === line.id,
-        )?.id ?? null,
-      name: line.name_snapshot || 'Service',
-      quantity: Number(line.quantity || 1),
-      unitPrice: hidePricing ? null : Number(line.unit_price || 0),
-      lineTotal: hidePricing ? null : Number(line.line_total || 0),
-      notes: line.notes ?? null,
+    lineItems: lineItems.map((line) => {
+      const name = line.name_snapshot || 'Service'
+      const catalogCategory =
+        unwrapRelation(
+          (line as { service_catalog_items?: unknown }).service_catalog_items as
+            | { category?: string | null }
+            | Array<{ category?: string | null }>
+            | null,
+        )?.category ?? null
+      return {
+        id: line.id,
+        invoiceLineId:
+          invoiceLines.find(
+            (invoiceLine) => invoiceLine.appointment_line_item_id === line.id,
+          )?.id ?? null,
+        name,
+        quantity: Number(line.quantity || 1),
+        unitPrice: hidePricing ? null : Number(line.unit_price || 0),
+        lineTotal: hidePricing ? null : Number(line.line_total || 0),
+        notes: line.notes ?? null,
+        catalogCategory,
+        requiresFiberCheck: requiresFiberCheck({ name, catalogCategory }),
+        excludedAt: line.excluded_at ?? null,
+        excludedReason: line.excluded_reason ?? null,
+        excludedOriginalTotal:
+          line.excluded_original_total == null
+            ? null
+            : Number(line.excluded_original_total),
+      }
+    }),
+    fiberChecks: fiberCheckRows.map((check) => ({
+      id: String(check.id),
+      appointmentLineItemId: check.appointment_line_item_id
+        ? String(check.appointment_line_item_id)
+        : null,
+      itemLabel: String(check.item_label ?? 'Item'),
+      verdict: String(check.verdict) as FiberVerdict,
+      determinedBy: String(check.determined_by ?? ''),
+      fiber: check.fiber ? String(check.fiber) : null,
+      confidence: check.confidence ? String(check.confidence) : null,
+      hasTag: check.has_tag === true,
+      tagText: check.tag_text ? String(check.tag_text) : null,
+      burnResult: check.burn_result ? String(check.burn_result) : null,
+      photoUrls: Array.isArray(check.photo_urls)
+        ? (check.photo_urls as string[])
+        : [],
+      warnings: Array.isArray(check.warnings)
+        ? (check.warnings as string[])
+        : [],
+      recommendedMethod: check.recommended_method
+        ? String(check.recommended_method)
+        : null,
+      checkedByLabel: check.checked_by_label
+        ? String(check.checked_by_label)
+        : null,
+      createdAt: String(check.created_at ?? ''),
     })),
     photos: photos.map((photo) => ({
       id: photo.id,

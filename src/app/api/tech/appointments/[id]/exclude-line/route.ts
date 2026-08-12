@@ -1,0 +1,204 @@
+/**
+ * Exclude a line item from an invoice without deleting it.
+ *
+ * The row stays on the record with its original price preserved; line_total
+ * goes to 0 so every existing revenue consumer (stats, rollups, QuickBooks
+ * sync) is correct with no changes. Only the customer- and QuickBooks-facing
+ * paths filter the row out entirely.
+ *
+ * This is the ONLY way a tech can take money off a rug or upholstery line, so
+ * every dollar removed leaves a photo, a verdict, a name and a timestamp.
+ */
+
+import { NextRequest, NextResponse } from 'next/server'
+import { requireAnyRole } from '@/lib/auth'
+import { getAssignedTechAppointment } from '@/lib/tech/appointments'
+import { createAdminClient } from '@/supabase/server'
+import { sendTelegramNotification } from '@/lib/telegram'
+
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  let access
+  try {
+    access = await requireAnyRole(['admin', 'owner', 'tech'])
+  } catch {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  try {
+    const supabase = createAdminClient()
+    const { id: appointmentId } = await params
+    const staffUserId = access.staff?.id ?? access.id
+    const appointment = await getAssignedTechAppointment(
+      supabase,
+      staffUserId,
+      appointmentId,
+    )
+    if (!appointment) {
+      return NextResponse.json({ error: 'Job not found' }, { status: 404 })
+    }
+
+    const body = await request.json()
+    const lineItemId = String(body.lineItemId || '')
+    const reason = String(body.reason || '').trim()
+    const restore = body.restore === true
+
+    const line = appointment.lineItems.find((l) => l.id === lineItemId)
+    if (!line) {
+      return NextResponse.json({ error: 'Line item not found' }, { status: 404 })
+    }
+
+    if (restore) {
+      const original = line.excludedOriginalTotal ?? 0
+      const quantity = line.quantity || 1
+      await supabase
+        .from('ops_appointment_line_items')
+        .update({
+          excluded_at: null,
+          excluded_by: null,
+          excluded_reason: null,
+          excluded_original_total: null,
+          line_total: original,
+          unit_price: Number((original / quantity).toFixed(2)),
+        })
+        .eq('id', lineItemId)
+    } else {
+      if (!reason) {
+        return NextResponse.json(
+          { error: 'A reason is required to exclude work' },
+          { status: 400 },
+        )
+      }
+
+      // A rug or upholstery line can only be excluded once it has been
+      // identified — that is what makes the record evidence rather than a
+      // silent write-off.
+      const check = appointment.fiberChecks.find(
+        (c) => c.appointmentLineItemId === lineItemId,
+      )
+      if (line.requiresFiberCheck && !check) {
+        return NextResponse.json(
+          {
+            error:
+              'Run the fiber check on this item before removing it from the invoice',
+          },
+          { status: 400 },
+        )
+      }
+
+      const originalTotal = line.lineTotal ?? 0
+      const { error: updateError } = await supabase
+        .from('ops_appointment_line_items')
+        .update({
+          excluded_at: new Date().toISOString(),
+          excluded_by: access.id,
+          excluded_reason: reason,
+          excluded_original_total: originalTotal,
+          fiber_check_id: check?.id ?? null,
+          line_total: 0,
+          unit_price: 0,
+        })
+        .eq('id', lineItemId)
+
+      if (updateError) throw updateError
+
+      const who = access.staff?.display_name ?? access.email
+      const amount = originalTotal.toFixed(2)
+      void sendTelegramNotification(
+        `Work removed from an invoice\n\n` +
+          `Item: ${line.name}\n` +
+          `Customer: ${appointment.customerName}\n` +
+          `Value removed: $${amount}\n` +
+          `Reason: ${reason}\n` +
+          (check
+            ? `Fiber: ${check.fiber ?? 'unknown'} (${check.verdict})\n`
+            : '') +
+          `By: ${who}`,
+      )
+    }
+
+    await recalculateInvoice(supabase, appointmentId)
+
+    const updated = await getAssignedTechAppointment(
+      supabase,
+      staffUserId,
+      appointmentId,
+    )
+    return NextResponse.json({ appointment: updated })
+  } catch (error) {
+    console.error('[tech/appointments/:id/exclude-line][POST]', error)
+    return NextResponse.json(
+      { error: 'Could not update the invoice' },
+      { status: 500 },
+    )
+  }
+}
+
+async function recalculateInvoice(
+  supabase: ReturnType<typeof createAdminClient>,
+  appointmentId: string,
+) {
+  const { data: lines } = await supabase
+    .from('ops_appointment_line_items')
+    .select(
+      'id, name_snapshot, quantity, unit_price, line_total, excluded_at, excluded_reason, excluded_original_total',
+    )
+    .eq('appointment_id', appointmentId)
+
+  const { data: invoice } = await supabase
+    .from('ops_invoices')
+    .select(
+      'id, discount_amount, percentage_discount_amount, tax_amount, minimum_charge_adjustment',
+    )
+    .eq('appointment_id', appointmentId)
+    .maybeSingle()
+
+  const subtotal = (lines ?? []).reduce(
+    (sum, line) => sum + Number(line.line_total || 0),
+    0,
+  )
+  const nowIso = new Date().toISOString()
+
+  await supabase
+    .from('ops_appointments')
+    .update({ quoted_total: subtotal, updated_at: nowIso })
+    .eq('id', appointmentId)
+
+  if (!invoice) return
+
+  // Mirror exclusion state onto the invoice lines so the customer-facing and
+  // QuickBooks paths can filter them out.
+  for (const line of lines ?? []) {
+    await supabase
+      .from('ops_invoice_line_items')
+      .update({
+        unit_price: Number(line.unit_price || 0),
+        line_total: Number(line.line_total || 0),
+        excluded_at: line.excluded_at ?? null,
+        excluded_reason: line.excluded_reason ?? null,
+        excluded_original_total: line.excluded_original_total ?? null,
+      })
+      .eq('appointment_line_item_id', line.id)
+  }
+
+  const total = Number(
+    (
+      subtotal -
+      Number(invoice.discount_amount || 0) -
+      Number(invoice.percentage_discount_amount || 0) +
+      Number(invoice.minimum_charge_adjustment || 0) +
+      Number(invoice.tax_amount || 0)
+    ).toFixed(2),
+  )
+
+  await supabase
+    .from('ops_invoices')
+    .update({
+      subtotal: Number(subtotal.toFixed(2)),
+      total,
+      updated_at: nowIso,
+    })
+    .eq('id', invoice.id)
+}

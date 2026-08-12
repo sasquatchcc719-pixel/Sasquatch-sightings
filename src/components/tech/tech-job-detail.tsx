@@ -11,13 +11,16 @@ import {
   MapPin,
   Navigation,
   Phone,
+  ShieldAlert,
+  ShieldQuestion,
   Trash2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import type { TechAppointment } from '@/lib/tech/appointments'
+import type { TechAppointment, TechFiberCheck } from '@/lib/tech/appointments'
 import { SignatureModal } from '@/components/admin/ops/signature-modal'
+import { FiberCheckModal } from '@/components/tech/fiber-check-modal'
 import { CleaningReminderButtons } from '@/components/ops/cleaning-reminder-buttons'
 import { formatSquareAmount } from '@/lib/payments/square'
 import { FLOOR_PLAN_MAPS } from '@/lib/ops/floor-plan-maps'
@@ -45,6 +48,64 @@ function addressLine(appointment: TechAppointment): string {
   ]
     .filter(Boolean)
     .join(', ')
+}
+
+/**
+ * Per-item fiber check status. Shown on rug and upholstery lines only —
+ * carpet is not gated, so this never becomes routine noise.
+ */
+function FiberCheckRow({
+  check,
+  onOpen,
+}: {
+  check: TechFiberCheck | null
+  onOpen: () => void
+}) {
+  if (!check) {
+    return (
+      <button
+        onClick={onOpen}
+        className="mt-2 flex w-full items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-950/30 p-2 text-left"
+      >
+        <ShieldQuestion className="h-4 w-4 shrink-0 text-amber-400" />
+        <span className="text-sm font-medium text-amber-200">
+          Fiber check required — tap to identify
+        </span>
+      </button>
+    )
+  }
+
+  const styles =
+    check.verdict === 'do_not_wet_clean'
+      ? 'border-red-500/50 bg-red-950/40 text-red-200'
+      : check.verdict === 'low_moisture'
+        ? 'border-amber-500/50 bg-amber-950/40 text-amber-200'
+        : 'border-emerald-500/40 bg-emerald-950/30 text-emerald-200'
+  const label =
+    check.verdict === 'do_not_wet_clean'
+      ? 'DO NOT WET CLEAN'
+      : check.verdict === 'low_moisture'
+        ? 'Low moisture only'
+        : 'Safe to clean'
+
+  return (
+    <button
+      onClick={onOpen}
+      className={`mt-2 w-full rounded-lg border p-2 text-left ${styles}`}
+    >
+      <div className="flex items-center gap-2">
+        {check.verdict === 'go' ? (
+          <CheckCircle2 className="h-4 w-4 shrink-0" />
+        ) : (
+          <ShieldAlert className="h-4 w-4 shrink-0" />
+        )}
+        <span className="text-sm font-bold">{label}</span>
+      </div>
+      {check.fiber ? (
+        <p className="mt-0.5 text-xs opacity-90">{check.fiber}</p>
+      ) : null}
+    </button>
+  )
 }
 
 function SquareLogoMark({ className = '' }: { className?: string }) {
@@ -79,8 +140,22 @@ export function TechJobDetail({
   )
   const [streetViewFailed, setStreetViewFailed] = useState(false)
   const [showSignatureModal, setShowSignatureModal] = useState(false)
+  const [fiberCheckLineId, setFiberCheckLineId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
+
+  const fiberCheckFor = (lineId: string) =>
+    appointment.fiberChecks.find((c) => c.appointmentLineItemId === lineId) ??
+    null
+
+  // Rug and upholstery items must be identified before the customer signs.
+  // The signature is the pre-work price approval, so this is the last moment
+  // before the wand touches anything.
+  const uncheckedItems = appointment.lineItems.filter(
+    (line) =>
+      line.requiresFiberCheck && !line.excludedAt && !fiberCheckFor(line.id),
+  )
+  const signatureBlocked = uncheckedItems.length > 0
   const fullAddress = addressLine(appointment)
   const mapsHref = fullAddress
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress)}`
@@ -623,6 +698,28 @@ export function TechJobDetail({
               {line.notes ? (
                 <p className="mt-2 text-sm text-slate-400">{line.notes}</p>
               ) : null}
+              {line.excludedAt ? (
+                <div className="mt-2 rounded-lg border border-red-500/40 bg-red-950/40 p-2">
+                  <p className="text-xs font-bold uppercase tracking-wide text-red-300">
+                    Not performed — removed from invoice
+                  </p>
+                  <p className="mt-0.5 text-xs text-slate-300">
+                    {line.excludedReason}
+                  </p>
+                  {line.excludedOriginalTotal != null &&
+                  !appointment.hidePricing ? (
+                    <p className="mt-0.5 text-xs text-slate-400">
+                      Original value ${line.excludedOriginalTotal.toFixed(2)} —
+                      not charged
+                    </p>
+                  ) : null}
+                </div>
+              ) : line.requiresFiberCheck ? (
+                <FiberCheckRow
+                  check={fiberCheckFor(line.id)}
+                  onOpen={() => setFiberCheckLineId(line.id)}
+                />
+              ) : null}
             </div>
           ))}
         </div>
@@ -716,13 +813,23 @@ export function TechJobDetail({
               Mark Venmo Paid
             </Button>
             {!appointment.invoice?.signatureUrl ? (
-              <Button
-                variant="outline"
-                className="w-full border-white/20 bg-white/5 text-white"
-                onClick={() => setShowSignatureModal(true)}
-              >
-                Get Customer Signature
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  className="w-full border-white/20 bg-white/5 text-white disabled:opacity-40"
+                  disabled={signatureBlocked}
+                  onClick={() => setShowSignatureModal(true)}
+                >
+                  Get Customer Signature
+                </Button>
+                {signatureBlocked ? (
+                  <p className="text-center text-xs text-amber-300">
+                    Fiber check required on{' '}
+                    {uncheckedItems.map((l) => l.name).join(', ')} before the
+                    customer signs.
+                  </p>
+                ) : null}
+              </>
             ) : (
               <p className="text-center text-sm text-emerald-300">
                 Signed by {appointment.invoice.signatureCustomerName}
@@ -815,6 +922,22 @@ export function TechJobDetail({
         </Button>
       </section>
 
+      {/* Fiber checks apply to every job, including ones with pricing hidden. */}
+      {fiberCheckLineId ? (
+        <FiberCheckModal
+          isOpen
+          onClose={() => setFiberCheckLineId(null)}
+          appointmentId={appointment.id}
+          lineItemId={fiberCheckLineId}
+          lineItemName={
+            appointment.lineItems.find((l) => l.id === fiberCheckLineId)
+              ?.name ?? 'Item'
+          }
+          existingCheck={fiberCheckFor(fiberCheckLineId)}
+          onAppointmentUpdate={setAppointment}
+        />
+      ) : null}
+
       {!appointment.hidePricing && appointment.invoice ? (
         <SignatureModal
           isOpen={showSignatureModal}
@@ -822,6 +945,13 @@ export function TechJobDetail({
           onSave={saveSignature}
           totalAmount={Number(payableTotal ?? 0)}
           customerName={appointment.customerName}
+          excludedItems={appointment.lineItems
+            .filter((line) => line.excludedAt)
+            .map((line) => ({
+              name: line.name,
+              reason: line.excludedReason,
+              originalTotal: line.excludedOriginalTotal,
+            }))}
         />
       ) : null}
     </div>

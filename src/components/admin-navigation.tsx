@@ -33,6 +33,7 @@ import {
   Ban,
   PhoneCall,
   FlaskConical,
+  ShieldAlert,
 } from 'lucide-react'
 
 interface NavTab {
@@ -310,6 +311,13 @@ export function AdminNavigation() {
       icon: FlaskConical,
       active: pathname === '/admin/foreman-logs',
       description: 'Field AI stain/fiber diagnoses given to techs',
+    },
+    {
+      name: 'Fiber Checks',
+      href: '/admin/fiber-checks',
+      icon: ShieldAlert,
+      active: pathname === '/admin/fiber-checks',
+      description: 'Rugs and upholstery identified before cleaning',
     },
   ]
 

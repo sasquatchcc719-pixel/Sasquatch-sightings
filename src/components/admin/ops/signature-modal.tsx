@@ -14,6 +14,17 @@ type SignatureModalProps = {
   onSave: (signatureData: string, customerName: string) => Promise<void>
   totalAmount: number
   customerName?: string
+  /**
+   * Work removed from this invoice. Shown above the signature so the customer
+   * signs knowing what is not being done and not being charged — this turns
+   * the signature from a price approval into informed consent, which is the
+   * document that matters if a claim is ever filed.
+   */
+  excludedItems?: Array<{
+    name: string
+    reason: string | null
+    originalTotal: number | null
+  }>
 }
 
 export function SignatureModal({
@@ -22,6 +33,7 @@ export function SignatureModal({
   onSave,
   totalAmount,
   customerName: initialCustomerName = '',
+  excludedItems = [],
 }: SignatureModalProps) {
   const sigCanvas = useRef<SignatureCanvas>(null)
   const [customerName, setCustomerName] = useState(initialCustomerName)
@@ -129,6 +141,34 @@ export function SignatureModal({
             <X className="h-5 w-5" />
           </Button>
         </div>
+
+        {/* Work not being performed — the customer sees this before signing. */}
+        {excludedItems.length > 0 ? (
+          <div className="border-b border-red-500/30 bg-red-50 p-4 dark:bg-red-950/30">
+            <p className="text-sm font-bold uppercase tracking-wide text-red-700 dark:text-red-300">
+              Not being cleaned today — not charged
+            </p>
+            <ul className="mt-2 space-y-1.5">
+              {excludedItems.map((item, i) => (
+                <li key={i} className="text-sm">
+                  <span className="font-medium line-through opacity-70">
+                    {item.name}
+                  </span>
+                  {item.originalTotal != null ? (
+                    <span className="ml-2 font-mono text-xs opacity-60">
+                      (${item.originalTotal.toFixed(2)} removed)
+                    </span>
+                  ) : null}
+                  {item.reason ? (
+                    <p className="text-muted-foreground text-xs">
+                      {item.reason}
+                    </p>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
 
         {/* Signature area */}
         <div className="flex min-h-0 flex-1 flex-col p-4">
