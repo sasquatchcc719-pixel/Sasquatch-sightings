@@ -313,6 +313,15 @@ export function NewJobWorkspace() {
   >(() => getPublicLeadSourceOptions(CANONICAL_LEAD_SOURCE_OPTIONS))
   const [useCustomTime, setUseCustomTime] = useState(false)
 
+  // Custom time is a per-day decision, not a mode you get stuck in. It flips on
+  // automatically when a day has no opening long enough (see the slot loader
+  // below), and without this reset it stayed on for every day picked
+  // afterwards — so the open-window buttons appeared to have vanished for
+  // good, even on wide-open days.
+  useEffect(() => {
+    setUseCustomTime(false)
+  }, [appointmentForm.appointment_date])
+
   // Address lookup (server /api/.../address-suggest) — manual fields still canonical
   const [addrSearchQuery, setAddrSearchQuery] = useState('')
   const [addrSuggestions, setAddrSuggestions] = useState<
