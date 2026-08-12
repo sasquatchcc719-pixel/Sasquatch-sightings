@@ -16,6 +16,11 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 // $0.025), which is what makes a dense weekly service-area scan affordable.
 import { fetchMapsAtPoint } from '@/lib/dataforseo'
 import {
+  fetchAiSurfaceAtPoint,
+  type AiSurfacePlace,
+} from '@/lib/dataforseo-data'
+import type { SerpMapPackPlace } from '@/lib/serpApi'
+import {
   buildAreaGrid,
   buildGrid,
   computeStats,
@@ -52,6 +57,55 @@ export type GridScanOptions = {
   centerLng?: number
   /** Odd N for N×N square grids. Defaults to 5. */
   gridSize?: number
+  /**
+   * Which Google surface to scan. These are genuinely different results, not
+   * views of one ranking — verified 2026-08-11 at 38.8076,-104.7442, where the
+   * local pack, organic and AI Overview all placed us nowhere while AI Mode
+   * named five competitors.
+   *
+   * Note on cost: AI surfaces are $0.004/point vs ~$0.002 for Maps. A 141-point
+   * service-area AI Mode grid is about $0.56.
+   */
+  platform?: GridPlatform
+}
+
+export type GridPlatform = 'google_maps' | 'ai_mode' | 'ai_overview' | 'ai_summary'
+
+export const GRID_PLATFORMS: GridPlatform[] = [
+  'google_maps',
+  'ai_mode',
+  'ai_overview',
+  'ai_summary',
+]
+
+export const GRID_PLATFORM_LABELS: Record<GridPlatform, string> = {
+  google_maps: 'Google Maps (local pack)',
+  ai_mode: 'Google AI Mode',
+  ai_overview: 'Google AI Overview',
+  ai_summary: 'Google AI Summary',
+}
+
+/**
+ * Adapt an AI answer to the map-pack shape so the rest of the grid pipeline —
+ * findMyRank, ARP, the heat map, radar_grid_points — works unchanged.
+ *
+ * `position` is order of mention, not a ranking: AI answers have no rank field.
+ * Treating it as one is the least-wrong option and keeps a single storage
+ * format, but don't read "position 4" as equivalent to map-pack rank 4.
+ * Rating/reviews/place_id are genuinely absent, not merely unparsed.
+ */
+function aiToMapPackShape(items: AiSurfacePlace[]): SerpMapPackPlace[] {
+  return items.map((i) => ({
+    position: i.position,
+    title: i.domain,
+    domain: i.domain,
+    rating: null,
+    reviews: null,
+    address: null,
+    place_id: null,
+    lat: null,
+    lng: null,
+  }))
 }
 
 export async function runGridScan(
@@ -60,6 +114,7 @@ export async function runGridScan(
 ): Promise<GridScanResult> {
   const preset: GridPreset = options?.preset ?? 'tri-lakes'
   const keyword = options?.keyword ?? DEFAULT_GRID.keyword
+  const platform: GridPlatform = options?.platform ?? 'google_maps'
   const isArea = preset === 'service-area'
 
   const spacingMiles =
@@ -118,6 +173,7 @@ export async function runGridScan(
       keyword,
       label: isArea ? areaLabel : squareLabel,
       preset,
+      platform,
       center_lat: centerLat,
       center_lng: centerLng,
       // Square grids have an edge length; polygon-clipped ones don't.
@@ -180,7 +236,12 @@ export async function runGridScan(
     while (cursor < points.length) {
       const pt = points[cursor++]
       try {
-        const places = await fetchMapsAtPoint(keyword, pt.lat, pt.lng)
+        const places =
+          platform === 'google_maps'
+            ? await fetchMapsAtPoint(keyword, pt.lat, pt.lng)
+            : aiToMapPackShape(
+                await fetchAiSurfaceAtPoint(keyword, pt.lat, pt.lng, platform),
+              )
         const myRank = findMyRank(places)
         ranks.push(myRank)
         scanned++

@@ -355,6 +355,88 @@ export async function fetchBingOrganic(
 }
 
 /* ------------------------------------------------------------------ */
+/* Google AI surfaces at a coordinate                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Google's three AI surfaces, all queryable at an exact lat/lng for $0.004.
+ *   ai_mode     — the conversational tab (udm=50). Verified live 2026-08-11.
+ *   ai_overview — the AI box above normal results.
+ *   ai_summary  — summary variant.
+ * These are NOT interchangeable: at 38.8076,-104.7442 the local pack, organic
+ * and AI Overview all placed us nowhere while AI Mode named six competitors.
+ */
+export type GoogleAiSurface = 'ai_mode' | 'ai_overview' | 'ai_summary'
+
+export type AiSurfacePlace = {
+  /** Order of appearance in the answer. There is no numeric rank in AI answers. */
+  position: number
+  domain: string | null
+  website: string | null
+  snippet: string | null
+}
+
+/** Website links appear as markdown `[Website](url)`; the domain identifies the business. */
+const WEBSITE_LINK_RE = /\[Website\]\((https?:\/\/[^)\s]+)\)/gi
+
+function hostOf(url: string): string | null {
+  try {
+    return new URL(url).hostname.toLowerCase().replace(/^www\./, '')
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Which businesses does a Google AI surface name at this exact point?
+ *
+ * Identity comes from each entry's Website link domain, not from parsing names
+ * out of prose — the answers never state names as structured fields, and prose
+ * name-matching is far more fragile than a domain compare (and matches how the
+ * Maps grid already resolves places).
+ *
+ * Keyword choice dominates the result. "carpet cleaning" returns a national
+ * cost guide citing Angi and Thumbtack with zero local businesses; "carpet
+ * cleaning near me" at the same coordinate returns a ranked local list. Scan
+ * with local intent or the output is meaningless.
+ */
+export async function fetchAiSurfaceAtPoint(
+  keyword: string,
+  lat: number,
+  lng: number,
+  surface: GoogleAiSurface = 'ai_mode',
+): Promise<AiSurfacePlace[]> {
+  const { result } = await dfsPost<{
+    items?: Array<{ markdown?: string }>
+  }>(`/serp/google/${surface}/live/advanced`, {
+    keyword: keyword.trim(),
+    location_coordinate: `${lat},${lng}`,
+    language_code: 'en',
+  })
+
+  const markdown = result?.[0]?.items?.[0]?.markdown ?? ''
+  if (!markdown) return []
+
+  const out: AiSurfacePlace[] = []
+  const seen = new Set<string>()
+  for (const m of markdown.matchAll(WEBSITE_LINK_RE)) {
+    const url = m[1]
+    const domain = hostOf(url)
+    if (!domain || seen.has(domain)) continue
+    seen.add(domain)
+    // Prose immediately after the link describes that business.
+    const after = markdown.slice((m.index ?? 0) + m[0].length, (m.index ?? 0) + m[0].length + 220)
+    out.push({
+      position: out.length + 1,
+      domain,
+      website: url,
+      snippet: after.split('\n')[0]?.trim() || null,
+    })
+  }
+  return out
+}
+
+/* ------------------------------------------------------------------ */
 /* Brand mentions across the web                                       */
 /* ------------------------------------------------------------------ */
 

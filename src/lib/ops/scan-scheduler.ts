@@ -16,7 +16,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { runGridScan } from '@/lib/radar-grid'
+import { runGridScan, type GridPlatform } from '@/lib/radar-grid'
 import { runScan, scanCost } from '@/lib/local-falcon'
 
 export type ScanSchedule = {
@@ -73,6 +73,7 @@ export async function runDueScans(supabase: SupabaseClient): Promise<SchedulerRe
           preset,
           spacingMiles: spacing,
           keyword: String(s.config.keyword ?? 'carpet cleaning'),
+          platform: String(s.config.platform ?? 'google_maps') as GridPlatform,
           bufferMiles: Number.isFinite(buffer) ? buffer : 0,
           ...(Number.isFinite(centerLat) ? { centerLat } : {}),
           ...(Number.isFinite(centerLng) ? { centerLng } : {}),

@@ -40,6 +40,22 @@ type ScheduleConfig = {
   ai_analysis?: boolean
 }
 
+/**
+ * Google surfaces our own grid can scan. These are NOT views of one ranking —
+ * verified 2026-08-11 at 38.8076,-104.7442, where the local pack, organic and
+ * AI Overview all placed us nowhere while AI Mode named five competitors.
+ *
+ * Keyword intent matters more here than on Maps: "carpet cleaning" in AI Mode
+ * returns a national cost guide with zero local businesses, while "carpet
+ * cleaning near me" at the same point returns a ranked local list.
+ */
+const DFS_PLATFORMS = [
+  { value: 'google_maps', label: 'Google Maps · local pack' },
+  { value: 'ai_mode', label: 'Google AI Mode · $0.004/pt' },
+  { value: 'ai_overview', label: 'Google AI Overview · $0.004/pt' },
+  { value: 'ai_summary', label: 'Google AI Summary · $0.004/pt' },
+]
+
 const LF_PLATFORMS = [
   'google',
   'apple',
@@ -302,6 +318,24 @@ export function ScanScheduleCard() {
                 {isDfs && (
                   <>
                     <label className="flex flex-col gap-1 text-[10px] uppercase tracking-wider text-white/40">
+                      Platform
+                      <select
+                        value={draft.platform ?? 'google_maps'}
+                        disabled={savingId === s.id}
+                        onChange={(e) =>
+                          setDraft(s.id, { platform: e.target.value })
+                        }
+                        className="rounded-md border border-white/15 bg-slate-950 px-2 py-1.5 text-xs normal-case tracking-normal text-white"
+                      >
+                        {DFS_PLATFORMS.map((p) => (
+                          <option key={p.value} value={p.value}>
+                            {p.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="flex flex-col gap-1 text-[10px] uppercase tracking-wider text-white/40">
                       Spacing
                       <select
                         value={spacing}
@@ -455,6 +489,7 @@ export function ScanScheduleCard() {
                       config.buffer_miles = bufferMiles
                       config.preset =
                         draft.preset === 'tri-lakes' ? 'tri-lakes' : 'service-area'
+                      config.platform = draft.platform ?? 'google_maps'
                     }
                     if (isLf) {
                       config.grid_size = gridSize
@@ -484,8 +519,15 @@ export function ScanScheduleCard() {
                 {isDfs && (
                   <>
                     next run ≈ {dfsPts} pts @ {spacing} mi
-                    {bufferMiles > 0 ? ` + ${bufferMiles} mi edge` : ''} · &quot;
-                    {draft.keyword || '—'}&quot;
+                    {bufferMiles > 0 ? ` + ${bufferMiles} mi edge` : ''} ·{' '}
+                    {draft.platform ?? 'google_maps'} · ~$
+                    {(
+                      dfsPts *
+                      ((draft.platform ?? 'google_maps') === 'google_maps'
+                        ? 0.002
+                        : 0.004)
+                    ).toFixed(2)}{' '}
+                    · &quot;{draft.keyword || '—'}&quot;
                   </>
                 )}
                 {isLf && (
