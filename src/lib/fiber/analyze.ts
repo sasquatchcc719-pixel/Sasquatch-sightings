@@ -196,6 +196,10 @@ async function researchTag(
 export type FiberAnalysis = FiberCheckResult & {
   tagText: string
   raw: ModelOutput | null
+  /** Plain-language record of how the verdict was reached, in order. */
+  trail: string[]
+  /** Verbatim what a web lookup returned, when one ran. */
+  researchNotes: string | null
 }
 
 export async function analyzeFiber(
@@ -257,6 +261,7 @@ export async function analyzeFiber(
 
   let parsed = JSON.parse(content) as ModelOutput
   let usedResearch = false
+  let researchNotes: string | null = null
 
   // Second pass: when the tag names a product but never says what it is made
   // of, look it up rather than guessing from the pile. The model sees its own
@@ -264,6 +269,7 @@ export async function analyzeFiber(
   const query = lookupQueryFor(parsed.tag_text ?? '')
   if (query) {
     const research = await researchTag(openai, query)
+    researchNotes = research
     if (research) {
       try {
         const second = await openai.chat.completions.create({
@@ -306,7 +312,13 @@ export async function analyzeFiber(
     }
   }
 
-  return reconcile(parsed, { ...input, usedResearch })
+  return reconcile(parsed, {
+    ...input,
+    usedResearch,
+    researchNotes,
+    researchQuery: query,
+    hasTag: input.hasTag,
+  })
 }
 
 /**
@@ -315,14 +327,29 @@ export async function analyzeFiber(
  */
 export function reconcile(
   parsed: ModelOutput,
-  input: Pick<AnalyzeInput, 'burnResult'> & { usedResearch?: boolean },
+  input: Pick<AnalyzeInput, 'burnResult'> & {
+    usedResearch?: boolean
+    researchNotes?: string | null
+    researchQuery?: string | null
+    hasTag?: boolean
+  },
 ): FiberAnalysis {
+  const trail: string[] = []
   let verdict: FiberVerdict = parsed.verdict
   let determinedBy: FiberAnalysis['determinedBy'] = 'ai_vision'
   let fiber = parsed.fiber
   let warnings = [...(parsed.warnings ?? [])]
   let recommendedMethod = parsed.recommended_method
   let confidence: FiberConfidence = parsed.confidence
+
+  const tagRead = (parsed.tag_text ?? '').trim()
+  trail.push(
+    tagRead
+      ? `Tag read from the photo: "${tagRead.replace(/\s+/g, ' ').slice(0, 200)}"`
+      : input.hasTag
+        ? 'Tech said there was a tag, but nothing readable was found in the photo.'
+        : 'No care tag — identified from the photo of the pile.',
+  )
 
   // 1. Burn test bucket, if one was run.
   if (input.burnResult) {
@@ -335,12 +362,24 @@ export function reconcile(
       warnings = [...burn.warnings, ...warnings]
       recommendedMethod = burn.recommendedMethod
       confidence = 'high'
+      trail.push(
+        `Burn test: fibres ${input.burnResult.replace(/_/g, ' ')} → ${burn.fiber}.`,
+      )
     }
+  } else {
+    trail.push('Burn test: not run.')
   }
 
   // 2. The stop list, run over the model's own tag transcription. This is the
   // authority — it overrides everything above it.
   const hits = scanTagText(parsed.tag_text ?? '')
+  trail.push(
+    hits.length > 0
+      ? `Our fibre list matched "${hits[0].term}" on that tag → ${hits[0].fiber}.`
+      : tagRead
+        ? 'Our fibre list found nothing dangerous in the tag text.'
+        : 'Our fibre list had no tag text to check.',
+  )
   if (hits.length > 0) {
     const top = hits[0]
     const escalated = escalate(verdict, top.verdict)
@@ -393,6 +432,30 @@ export function reconcile(
       'Encapsulation until this is identified. Snip a few fibres from the fringe or back edge and burn them — if they melt, it is synthetic and safe to extract.'
   }
 
+  if (input.usedResearch && input.researchNotes) {
+    trail.push(
+      `Tag named a product but no fibre, so it was looked up${input.researchQuery ? ` ("${input.researchQuery.slice(0, 80)}")` : ''}. The web said: ${input.researchNotes.replace(/\s+/g, ' ').slice(0, 400)}`,
+    )
+    trail.push(
+      'Web results are treated as weak evidence and can never clear an item on their own.',
+    )
+  } else if (input.researchQuery) {
+    trail.push('A web lookup was attempted but returned nothing usable.')
+  }
+
+  trail.push(
+    `AI read of the photo: ${parsed.fiber || 'no call'} (confidence ${parsed.confidence}).`,
+  )
+  trail.push(
+    `FINAL: ${verdict.replace(/_/g, ' ').toUpperCase()} — decided by ${
+      determinedBy === 'stop_list'
+        ? 'the tag matching our fibre list (not a judgment call)'
+        : determinedBy === 'burn_test'
+          ? 'the burn test'
+          : 'the AI read of the photo'
+    }.`,
+  )
+
   // De-duplicate while preserving order.
   warnings = [...new Set(warnings.map((w) => w.trim()).filter(Boolean))]
 
@@ -407,5 +470,7 @@ export function reconcile(
     summary: parsed.summary,
     tagText: parsed.tag_text ?? '',
     raw: parsed,
+    trail,
+    researchNotes: input.researchNotes ?? null,
   }
 }

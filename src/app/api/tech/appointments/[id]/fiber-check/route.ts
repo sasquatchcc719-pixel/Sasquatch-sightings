@@ -204,6 +204,8 @@ export async function POST(
         warnings: analysis.warnings,
         recommended_method: analysis.recommendedMethod,
         ai_response: analysis.raw,
+        decision_trail: analysis.trail,
+        research_notes: analysis.researchNotes,
       })
       .select('*')
       .single()
@@ -282,6 +284,7 @@ export async function POST(
       summary: analysis.summary,
       warnings: analysis.warnings,
       recommendedMethod: analysis.recommendedMethod,
+      trail: analysis.trail,
       photoUrls,
     })
 
@@ -349,6 +352,7 @@ async function reportCheck(check: {
   summary: string
   warnings: string[]
   recommendedMethod: string | null
+  trail: string[]
   photoUrls: string[]
 }) {
   try {
@@ -385,6 +389,9 @@ async function reportCheck(check: {
     }
     if (check.recommendedMethod) {
       lines.push('', `Method: ${check.recommendedMethod}`)
+    }
+    if (check.trail.length > 0) {
+      lines.push('', 'HOW IT DECIDED:', ...check.trail.map((t) => `• ${t}`))
     }
 
     const body = lines.join('\n')

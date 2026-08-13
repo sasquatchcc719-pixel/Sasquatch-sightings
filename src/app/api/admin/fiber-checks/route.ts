@@ -35,6 +35,8 @@ export async function GET() {
       photo_urls,
       warnings,
       recommended_method,
+      decision_trail,
+      research_notes,
       checked_by_label,
       created_at,
       ops_appointments (

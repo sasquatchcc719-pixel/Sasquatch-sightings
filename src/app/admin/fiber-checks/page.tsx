@@ -24,6 +24,8 @@ type Check = {
   photo_urls: string[]
   warnings: string[]
   recommended_method: string | null
+  decision_trail: string[]
+  research_notes: string | null
   checked_by_label: string | null
   created_at: string
   appointmentDate: string | null
@@ -215,6 +217,21 @@ export default function FiberChecksPage() {
                     </p>
                   ))}
                 </div>
+              ) : null}
+
+              {check.decision_trail?.length > 0 ? (
+                <details className="mt-3">
+                  <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    How it decided
+                  </summary>
+                  <ol className="mt-2 space-y-1">
+                    {check.decision_trail.map((step, i) => (
+                      <li key={i} className="text-xs text-slate-300">
+                        {i + 1}. {step}
+                      </li>
+                    ))}
+                  </ol>
+                </details>
               ) : null}
 
               {check.photo_urls.length > 0 ? (
