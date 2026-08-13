@@ -75,7 +75,10 @@ const INVOICE_SELECT = `
     description,
     quantity,
     unit_price,
-    line_total
+    line_total,
+    excluded_at,
+    excluded_reason,
+    excluded_original_total
   )
 `
 
@@ -226,7 +229,8 @@ export async function PATCH(
             description,
             quantity,
             unit_price,
-            line_total
+            line_total,
+            excluded_at
           )
         `,
       )
@@ -432,10 +436,19 @@ export async function PATCH(
           if (insertError) throw insertError
         } else {
           const existingLine = existingInvoiceLines.find(
-            (line: { id: string; appointment_line_item_id: string | null }) =>
-              line.id === lineId,
+            (line: {
+              id: string
+              appointment_line_item_id: string | null
+              excluded_at?: string | null
+            }) => line.id === lineId,
           )
           if (!existingLine) continue
+
+          // Excluded work stays at zero. The editor may still be showing the
+          // original price if the screen has not reloaded since the item was
+          // removed, and writing that back would silently re-bill a rug we
+          // told the customer we could not clean.
+          if (existingLine.excluded_at) continue
 
           const { error: invoiceLineError } = await supabase
             .from('ops_invoice_line_items')

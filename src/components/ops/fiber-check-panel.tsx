@@ -24,10 +24,17 @@ type GateResponse = {
 export function FiberCheckPanel({
   appointmentId,
   onGateChange,
+  onInvoiceChanged,
   refreshKey = 0,
 }: {
   appointmentId: string
   onGateChange?: (allowed: boolean) => void
+  /**
+   * Called when a check changes the invoice (an item was removed), so the
+   * screen around this panel can reload its line items and total. Without it
+   * the price box keeps the old amount and saving would write it back.
+   */
+  onInvoiceChanged?: () => void
   /**
    * Bump to force a reload. The admin invoice screen adds and removes line
    * items after this panel has mounted, and router.refresh() does not re-run a
@@ -166,6 +173,7 @@ export function FiberCheckPanel({
             setTarget(null)
             void load()
           }}
+          onInvoiceChanged={onInvoiceChanged}
           appointmentId={appointmentId}
           lineItemId={target.lineId}
           unitIndex={target.unitIndex}

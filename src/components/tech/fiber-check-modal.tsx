@@ -91,6 +91,7 @@ export function FiberCheckModal({
   lineItemName,
   existingCheck,
   onAppointmentUpdate,
+  onInvoiceChanged,
 }: {
   isOpen: boolean
   onClose: () => void
@@ -101,6 +102,8 @@ export function FiberCheckModal({
   lineItemName: string
   existingCheck: TechFiberCheck | null
   onAppointmentUpdate: (appointment: TechAppointment) => void
+  /** Fired after an item is removed, so the surrounding invoice can reload. */
+  onInvoiceChanged?: () => void
 }) {
   const [hasTag, setHasTag] = useState<boolean | null>(null)
   const [images, setImages] = useState<string[]>([])
@@ -178,6 +181,7 @@ export function FiberCheckModal({
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Could not remove the item')
       onAppointmentUpdate(data.appointment)
+      onInvoiceChanged?.()
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not remove the item')

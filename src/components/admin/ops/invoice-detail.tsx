@@ -2640,6 +2640,10 @@ export function InvoiceDetail({
             <FiberCheckPanel
               appointmentId={appointment.id}
               onGateChange={setFiberGateAllowed}
+              onInvoiceChanged={() => {
+                void loadInvoice()
+                router.refresh()
+              }}
               refreshKey={fiberRefreshKey}
             />
           ) : null}
