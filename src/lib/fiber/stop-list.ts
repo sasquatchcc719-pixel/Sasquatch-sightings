@@ -78,7 +78,7 @@ const RULES: Rule[] = [
       'Even plain water can leave a permanent ring. Do not spot test on the face.',
     ],
     recommendedMethod:
-      'Do not introduce water. Dry vacuum / dry compound only, or refer to a rug plant that accepts viscose. Exclude the item from the invoice and document it.',
+      'Do not extract. Take it off the invoice and document it. If the customer insists after being told, encapsulation only with a signed waiver — never the truckmount.',
   },
   {
     // Construction, not fibre. A wool hand-tufted rug passes a fibre check and
@@ -99,7 +99,7 @@ const RULES: Rule[] = [
       'Never saturate and never hot rinse, no matter how safe the face fibre is.',
     ],
     recommendedMethod:
-      'Low moisture only. Light application, minimal dwell, extract dry, force-air dry fast. Do not flood.',
+      'Encapsulation is safest. If extracting, light prespray, CRB gently, and pull it as dry as the machine will go — the danger is the water reaching the latex, not the pile.',
   },
   {
     // Finishes that are destroyed by moisture regardless of the fibre under
@@ -112,7 +112,7 @@ const RULES: Rule[] = [
       'Usually carries an X code. Damage shows immediately and cannot be corrected.',
     ],
     recommendedMethod:
-      'Vacuum only with an upholstery tool. No water, no solvent. Refer out if the customer insists.',
+      'Vacuum only with the upholstery tool. Neither extraction nor encapsulation is safe on this finish. Take it off the invoice.',
   },
   {
     terms: ['velvet', 'velour', 'chenille'],
@@ -124,7 +124,7 @@ const RULES: Rule[] = [
       'Groom the pile in one direction while it dries.',
     ],
     recommendedMethod:
-      'Low moisture, no scrubbing, dry strokes with the nap, groom while drying.',
+      'Encapsulation preferred. If extracting, light moisture only, dry strokes with the nap, and groom the pile one direction while it dries.',
   },
   {
     // Peels no matter what is done to it — say so BEFORE touching it.
@@ -143,7 +143,7 @@ const RULES: Rule[] = [
       'Moisture accelerates the delamination.',
     ],
     recommendedMethod:
-      'Dry wipe only. Photograph existing peeling first and tell the customer it will continue.',
+      'Dry wipe only — no extraction, no encapsulation. Photograph any existing peeling BEFORE touching it and tell the customer it will keep peeling regardless.',
   },
   {
     // Real leather is a service Sasquatch sells — it just is not extraction.
@@ -155,7 +155,7 @@ const RULES: Rule[] = [
       'Nubuck and suede are napped — water spots them instantly; these are specialist items.',
     ],
     recommendedMethod:
-      'Dedicated leather cleaner applied to the cloth, not the hide, then condition. No water, no extraction.',
+      'Leather cleaner on the cloth, not the hide, then condition. Never run the wand over leather.',
   },
   {
     terms: ['sheepskin', 'cowhide', 'hide rug', 'animal hide'],
@@ -164,7 +164,7 @@ const RULES: Rule[] = [
     warnings: [
       'The leather backing shrinks and stiffens permanently once wet.',
     ],
-    recommendedMethod: 'Dry methods only, or refer to a hide specialist.',
+    recommendedMethod: 'Dry vacuum only. Take it off the invoice — neither of our methods is safe on a hide.',
   },
   {
     terms: ['haitian cotton'],
@@ -174,7 +174,7 @@ const RULES: Rule[] = [
       'Notorious for browning — assume it WILL brown, not that it might.',
     ],
     recommendedMethod:
-      'Dry solvent methods only if any. Do not introduce water.',
+      'Do not extract. Encapsulation still risks browning on Haitian cotton — take it off the invoice and document it.',
   },
   {
     // Brands, not fibres. Listed so a brand-only tag still gets a right answer.
@@ -218,7 +218,7 @@ const RULES: Rule[] = [
       'Heat sensitive — it will glaze or melt under a hot rinse.',
     ],
     recommendedMethod:
-      'No water, no solvent, no heat. Dry vacuum only and refer it out. If a spotter has already been applied, stop and document it.',
+      'Do not extract and do not spot it. Dry vacuum only, take it off the invoice and document it. If any spotter has already been applied, stop and photograph it now.',
   },
   {
     // Faux fur and some throws. Cleanable, but melts at surprisingly low heat.
@@ -230,7 +230,7 @@ const RULES: Rule[] = [
       'Pile mats permanently if agitated while wet.',
     ],
     recommendedMethod:
-      'Low moisture, cool solution, no agitation on the pile, air dry and groom.',
+      'Encapsulation with a cool solution. No CRB on the pile. Air dry and groom.',
   },
   {
     // Real silk. Cleanable by a specialist, not in a customer's living room.
@@ -242,7 +242,7 @@ const RULES: Rule[] = [
       'Loses luster and can pucker with any agitation while wet.',
     ],
     recommendedMethod:
-      'Do not wet clean on site. Dry vacuum only; refer to a rug specialist. Note that "art silk" / "faux silk" is viscose, not silk — same answer either way.',
+      'Do not extract. Dry vacuum only, take it off the invoice and refer it out. Note that "art silk" / "faux silk" is viscose, not silk — same answer either way.',
   },
   {
     // Bast and leaf fibers. Brown, shrink, and buckle. Charles has avoided
@@ -265,7 +265,7 @@ const RULES: Rule[] = [
       'Jute backing bleeds brown into the face fiber above it.',
     ],
     recommendedMethod:
-      'Dry compound or dry vacuum only. No water, no rinse. Exclude the item and document it.',
+      'Do not extract. Dry vacuum only and take it off the invoice. Encapsulation still carries browning risk here — do not offer it as a workaround.',
   },
   {
     terms: ['linen', 'flax', 'ramie'],
@@ -276,7 +276,7 @@ const RULES: Rule[] = [
       'Water spots readily and may shrink.',
     ],
     recommendedMethod:
-      'Low moisture only, neutral pH, no heat, minimal agitation, fast forced-air dry.',
+      'Encapsulation with the 19" bonnet is the safe call. If extracting, light Hydro-Force pass, no flooding, plenty of dry strokes, air movers on it immediately.',
   },
   {
     terms: ['cotton', '100% cotton'],
@@ -287,7 +287,7 @@ const RULES: Rule[] = [
       'Prone to wicking — spots reappear as it dries.',
     ],
     recommendedMethod:
-      'Low moisture, neutral pH, fast dry. Anti-browning agent if one is in stock.',
+      'Encapsulation, or a light extraction with fast forced-air drying. Keep it dry enough that nothing wicks. Anti-browning agent if one is in stock.',
   },
   {
     terms: ['wool', 'new zealand wool', 'virgin wool'],
@@ -299,7 +299,7 @@ const RULES: Rule[] = [
       'No aggressive agitation while wet.',
     ],
     recommendedMethod:
-      'Standard wool-safe protocol: neutral to mildly acidic, 120°F max, gentle agitation, thorough rinse, fast dry.',
+      'Standard hot water extraction is fine — wool is our bread and butter. Neutral to mildly acidic, 120°F cap, CRB gently, thorough rinse, fast dry.',
   },
 ]
 
@@ -319,7 +319,7 @@ const CODE_RULES: Array<{
       'Code X means vacuum only. Any liquid — water or solvent — risks shrinking or staining.',
     ],
     recommendedMethod:
-      'Dry vacuum with upholstery tool only. No cleaning agents of any kind.',
+      'Vacuum with the upholstery tool only. No prespray, no encapsulation, no extraction. This is the one code we do not clean.',
   },
   {
     // W/S and SW mean either method is acceptable — still test first.
@@ -340,7 +340,7 @@ const CODE_RULES: Array<{
       'Code S is solvent only — water will ring, shrink, or stain this fabric.',
     ],
     recommendedMethod:
-      'Dry solvent method only, if a suitable solvent is in stock. No water-based prespray or rinse.',
+      'We do not run solvent. Encapsulation with the 19" bonnet is the call here. Hot water extraction has worked on S-code fabric in this shop, but pre-test a hidden area for dye bleed first and keep the moisture down.',
   },
 ]
 

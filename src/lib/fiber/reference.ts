@@ -11,6 +11,43 @@
  * the stop list. Researched against rug-industry and IICRC sources 2026-08-13.
  */
 
+
+export const EQUIPMENT_REALITY = `
+WHAT THIS CREW CAN ACTUALLY DO — never recommend anything else
+
+There are exactly TWO methods available in the field:
+
+1. HOT WATER EXTRACTION — truckmount, prespray through a Hydro-Force in-line
+   injection sprayer, CRB for agitation, hot rinse. This is the house method
+   and it is a good one. Wool included: this crew has extracted wool rugs of
+   every type for decades without incident.
+2. ENCAPSULATION — Releasit Encap-Clean DS2 with the 19" microfibre scrub
+   bonnet, post-vacuumed when dry. This is the LOW MOISTURE option. Any time
+   the answer is "less water", encapsulation is what that means here.
+
+There is NO solvent machine, NO dry compound system, and none is being bought.
+Never recommend dry solvent cleaning, dry powder, or "take it to a plant" as
+the method — a plant referral is a business decision, not a cleaning method.
+
+So every recommendation must resolve to one of:
+  - Hot water extraction (optionally lighter, with faster drying)
+  - Encapsulation
+  - Vacuum only
+  - Do not clean it: take it off the invoice and document why
+
+FIELD EXPERIENCE THAT OVERRIDES TEXTBOOK CAUTION
+- Wool: extracted routinely here without problems. Keep the 120°F cap and
+  neutral-to-acidic pH, but do not tell this crew wool is a low moisture job.
+- Code S upholstery: cleaned successfully here with hot water extraction many
+  times. Encapsulation is the safer call and the honest first recommendation,
+  but do not refuse the job — pre-test for dye bleed and keep moisture down.
+- Code X: the one genuine refusal on the upholstery side. Vacuum only.
+
+The real refusals are the fibres and finishes that water destroys — viscose and
+its family, acetate, hides, glazed finishes — not methods this crew is simply
+being conservative about.
+`
+
 export const RUG_CONSTRUCTION_REFERENCE = `
 RUG CONSTRUCTION — the damage that has nothing to do with face fiber
 
@@ -27,8 +64,8 @@ HAND-TUFTED (the big one, and very common)
 - Tells: a cloth scrim glued across the whole back hiding the knots; a stiff
   rubbery feel; white or yellow crumbs when you scratch the back; you cannot
   see the pattern from the back.
-- Verdict: LOW MOISTURE AT MOST. Never saturate, never hot rinse. Say so out
-  loud even when the face fiber is wool.
+- Verdict: ENCAPSULATION, or a deliberately light extraction pulled very dry.
+  Never saturate. Say so out loud even when the face fiber is wool.
 
 HAND-KNOTTED
 - Knots tied around warp threads; the pattern is visible from the back and the
@@ -59,8 +96,8 @@ SHAG / HIGH PILE
   problem; matting on drying is common.
 
 SHEEPSKIN / HIDE / COWHIDE
-- Leather backing. Water stiffens and shrinks the hide permanently. Not a
-  wet-clean item.
+- Leather backing. Water stiffens and shrinks the hide permanently. Neither of
+  our two methods is safe on it.
 `
 
 export const RUG_BACKING_REFERENCE = `
@@ -101,10 +138,11 @@ FABRICS THAT NEED CARE FOR REASONS OTHER THAN FIBRE
   Any moisture must be minimal and the pile must be groomed in one direction
   while drying. Crushed velvet and glazed finishes are usually X.
 - CHENILLE: the pile distorts and mats; a great deal of chenille is rayon, so
-  suspect viscose. Chenille with an S code must not see water.
+  suspect viscose. Encapsulation is the right first answer on chenille.
 - LINEN and LINEN BLENDS: browning, shrinkage, watermarking.
-- SILK / RAW SILK: specialist only.
-- LEATHER, BONDED LEATHER, "VEGAN LEATHER" (PU): never wet clean. Bonded
+- SILK / RAW SILK: do not extract. Off the invoice.
+- LEATHER, BONDED LEATHER, "VEGAN LEATHER" (PU): never run the wand over it.
+  Bonded
   leather peels regardless of what you do; say so before touching it so the
   customer does not blame the cleaning.
 - HAITIAN COTTON: notorious for browning. Assume it will brown.
@@ -153,6 +191,7 @@ moisture will run when the rug is saturated and the water carries it.
 
 /** Everything above, for injection into the vision prompt. */
 export const FIBER_FIELD_REFERENCE = [
+  EQUIPMENT_REALITY,
   RUG_CONSTRUCTION_REFERENCE,
   RUG_BACKING_REFERENCE,
   UPHOLSTERY_REFERENCE,
