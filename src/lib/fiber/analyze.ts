@@ -129,6 +129,70 @@ const RESPONSE_SCHEMA = {
   },
 } as const
 
+
+/** Fibre words that mean the tag already states its content. */
+const CONTENT_WORDS =
+  /\b(viscose|rayon|wool|silk|cotton|polyester|nylon|olefin|polypropylene|acrylic|linen|jute|sisal|acetate|leather|bamboo|tencel|lyocell|modal|hemp|ramie|modacrylic)\b/i
+
+/**
+ * A tag that names a collection or a brand but no fibre content is the case
+ * worth looking up — that is a guess from the pile otherwise. A tag that
+ * already states its content does not need the internet.
+ */
+export function lookupQueryFor(tagText: string): string | null {
+  const text = (tagText || '').trim()
+  if (text.length < 8) return null
+  if (CONTENT_WORDS.test(text) || /\d\s*%/.test(text)) return null
+
+  // Keep the identifying bits: brand words and design codes, dropped of the
+  // boilerplate care paragraph that appears on every tag.
+  const cleaned = text
+    .split(/\n/)
+    .filter(
+      (line) =>
+        !/care|clean|vacuum|professional|warranty|made in|www\.|\.com/i.test(
+          line,
+        ),
+    )
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120)
+
+  if (cleaned.length < 6) return null
+  return `${cleaned} rug upholstery fiber content material`
+}
+
+/**
+ * Look up a tag that names a product but not its fibre. Never throws — a
+ * failed search must not block a tech, it just means we fall back to the
+ * photo.
+ */
+async function researchTag(
+  openai: OpenAI,
+  query: string,
+): Promise<string | null> {
+  try {
+    const result = await (
+      openai as unknown as {
+        responses: {
+          create: (args: unknown) => Promise<{ output_text?: string }>
+        }
+      }
+    ).responses.create({
+      model: MODEL,
+      tools: [{ type: 'web_search' }],
+      input: `What fibre content is this rug or upholstery item made of? Quote the source. If you cannot find this exact product, say so plainly rather than guessing.\n\n${query}`,
+    })
+    const text = result.output_text?.trim()
+    return text ? text.slice(0, 2000) : null
+  } catch (error) {
+    // No search available, or the call failed. Never blocks the tech.
+    console.error('[fiber] tag lookup failed:', error)
+    return null
+  }
+}
+
 export type FiberAnalysis = FiberCheckResult & {
   tagText: string
   raw: ModelOutput | null
@@ -191,8 +255,58 @@ export async function analyzeFiber(
   const content = completion.choices[0]?.message?.content
   if (!content) throw new Error('Fiber analysis returned no content')
 
-  const parsed = JSON.parse(content) as ModelOutput
-  return reconcile(parsed, input)
+  let parsed = JSON.parse(content) as ModelOutput
+  let usedResearch = false
+
+  // Second pass: when the tag names a product but never says what it is made
+  // of, look it up rather than guessing from the pile. The model sees its own
+  // first answer and the search results, and may revise.
+  const query = lookupQueryFor(parsed.tag_text ?? '')
+  if (query) {
+    const research = await researchTag(openai, query)
+    if (research) {
+      try {
+        const second = await openai.chat.completions.create({
+          model: MODEL,
+          max_completion_tokens: 900,
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: contextLines.join('\n') },
+            { role: 'assistant', content: JSON.stringify(parsed) },
+            {
+              role: 'user',
+              content: `The tag names a product but not its fibre content, so these search results were pulled for "${query}".\n\n${research}\n\nIf they identify the fibre, revise your answer and raise confidence. If they are irrelevant or contradictory, keep your original answer and do NOT raise confidence. Keep tag_text exactly as you transcribed it — do not add anything the tag does not say.`,
+            },
+          ],
+          response_format: {
+            type: 'json_schema',
+            json_schema: {
+              name: 'fiber_check',
+              strict: true,
+              schema: RESPONSE_SCHEMA,
+            },
+          },
+        })
+        const revisedRaw = second.choices[0]?.message?.content
+        if (revisedRaw) {
+          const revised = JSON.parse(revisedRaw) as ModelOutput
+          // The tag transcription is evidence. Keep the one read off the photo
+          // so the stop list never scans text that came from the internet.
+          parsed = {
+            ...revised,
+            // The tag transcription is evidence from the photo. Never let
+            // text from the internet reach the stop list.
+            tag_text: parsed.tag_text,
+          }
+          usedResearch = true
+        }
+      } catch (error) {
+        console.error('[fiber] second pass failed, using first answer:', error)
+      }
+    }
+  }
+
+  return reconcile(parsed, { ...input, usedResearch })
 }
 
 /**
@@ -201,7 +315,7 @@ export async function analyzeFiber(
  */
 export function reconcile(
   parsed: ModelOutput,
-  input: Pick<AnalyzeInput, 'burnResult'>,
+  input: Pick<AnalyzeInput, 'burnResult'> & { usedResearch?: boolean },
 ): FiberAnalysis {
   let verdict: FiberVerdict = parsed.verdict
   let determinedBy: FiberAnalysis['determinedBy'] = 'ai_vision'
@@ -240,6 +354,43 @@ export function reconcile(
     } else {
       verdict = escalated
     }
+  }
+
+  // A web lookup may RAISE suspicion but must never clear an item. Asked about
+  // the exact rug that started this project — Surya Graphite GPH-52, a tag that
+  // reads 100% VISCOSE — web search answered "polyester". Confidently, and
+  // wrong. Anything cleared on internet evidence alone gets held at
+  // encapsulation until a tag or a burn test says otherwise.
+  if (verdict === 'go' && input.usedResearch && !input.burnResult) {
+    verdict = 'low_moisture'
+    warnings = [
+      'Cleared only by a web lookup, which is not reliable for rug fibre content — held at low moisture.',
+      'Burn a few fibres from the fringe or back edge to confirm before extracting.',
+      ...warnings,
+    ]
+    recommendedMethod =
+      'Encapsulation until confirmed. A burn test clears it for extraction; a product listing does not.'
+  }
+
+  // A rug with no tag, no burn test and no confident identification must not
+  // come back "safe". Being wrong the safe way costs a light clean; being wrong
+  // the other way costs the rug. Encapsulation is the floor until something
+  // actually identifies it.
+  if (
+    verdict === 'go' &&
+    determinedBy === 'ai_vision' &&
+    confidence !== 'high' &&
+    !input.burnResult &&
+    !(parsed.tag_text ?? '').trim()
+  ) {
+    verdict = 'low_moisture'
+    warnings = [
+      'Not positively identified — no tag, no burn test, and the photo alone is not conclusive.',
+      'Treated as low moisture until identified. Run the burn test to clear it for extraction.',
+      ...warnings,
+    ]
+    recommendedMethod =
+      'Encapsulation until this is identified. Snip a few fibres from the fringe or back edge and burn them — if they melt, it is synthetic and safe to extract.'
   }
 
   // De-duplicate while preserving order.

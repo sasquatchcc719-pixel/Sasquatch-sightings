@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { burnTestVerdict, escalate, scanTagText } from './stop-list'
-import { reconcile } from './analyze'
+import { lookupQueryFor, reconcile } from './analyze'
 import { fiberItemKind, requiresFiberCheck } from './requires-check'
 
 describe('scanTagText', () => {
@@ -246,6 +246,106 @@ describe('reconcile', () => {
     const result = reconcile(base, {})
     expect(result.verdict).toBe('go')
     expect(result.determinedBy).toBe('ai_vision')
+  })
+})
+
+describe('lookupQueryFor', () => {
+  it('looks up a tag that names a product but not its fibre', () => {
+    const q = lookupQueryFor('SURYA\nCollection: Graphite\nDesign: GPH-52')
+    expect(q).toContain('Graphite')
+    expect(q).toContain('GPH-52')
+  })
+
+  it('does not bother when the tag already states content', () => {
+    expect(lookupQueryFor('Contents: 100% VISCOSE')).toBeNull()
+    expect(lookupQueryFor('80% wool 20% nylon')).toBeNull()
+    expect(lookupQueryFor('Contents: 55% cotton')).toBeNull()
+  })
+
+  it('drops the care boilerplate that appears on every tag', () => {
+    const q = lookupQueryFor(
+      'SAFAVIEH\nHeritage HG-652\nProfessional cleaning recommended\nwww.safavieh.com',
+    )
+    expect(q).not.toMatch(/professional|www/i)
+    expect(q).toContain('Heritage')
+  })
+
+  it('skips tags with nothing identifying on them', () => {
+    expect(lookupQueryFor('')).toBeNull()
+    expect(lookupQueryFor('Made in')).toBeNull()
+  })
+})
+
+describe('never clearing an unidentified rug', () => {
+  const noTag = {
+    tag_text: '',
+    fiber: 'Possibly synthetic',
+    confidence: 'medium' as const,
+    verdict: 'go' as const,
+    warnings: [],
+    recommended_method: 'Hot water extraction',
+    next_test: '',
+    summary: 'Looks synthetic.',
+  }
+
+  it('drops a low-confidence no-tag "go" to low moisture', () => {
+    const r = reconcile(noTag, {})
+    expect(r.verdict).toBe('low_moisture')
+    expect(r.warnings.join(' ')).toMatch(/not positively identified/i)
+    expect(r.recommendedMethod).toMatch(/encapsulation/i)
+  })
+
+  it('allows a confident identification through', () => {
+    const r = reconcile({ ...noTag, confidence: 'high' }, {})
+    expect(r.verdict).toBe('go')
+  })
+
+  it('allows it through once a burn test says synthetic', () => {
+    const r = reconcile(noTag, { burnResult: 'melts' })
+    expect(r.verdict).toBe('go')
+  })
+
+  it('does not interfere when a tag was read', () => {
+    const r = reconcile({ ...noTag, tag_text: '100% polyester' }, {})
+    expect(r.verdict).toBe('go')
+  })
+})
+
+describe('web research may never clear an item', () => {
+  const base = {
+    tag_text: 'SURYA Collection: Graphite Design: GPH-52',
+    fiber: 'Polyester',
+    confidence: 'high' as const,
+    verdict: 'go' as const,
+    warnings: [],
+    recommended_method: 'Hot water extraction',
+    next_test: '',
+    summary: 'Product listing says polyester.',
+  }
+
+  it('holds a web-cleared item at low moisture', () => {
+    // Asked about this exact rug, web search answered "polyester". The tag on
+    // the real thing reads 100% VISCOSE. This is why a listing cannot clear.
+    const r = reconcile(base, { usedResearch: true })
+    expect(r.verdict).toBe('low_moisture')
+    expect(r.warnings.join(' ')).toMatch(/web lookup/i)
+  })
+
+  it('lets a burn test clear what research could not', () => {
+    const r = reconcile(base, { usedResearch: true, burnResult: 'melts' })
+    expect(r.verdict).toBe('go')
+  })
+
+  it('still lets research escalate to a refusal', () => {
+    const r = reconcile(
+      { ...base, verdict: 'do_not_wet_clean', fiber: 'Viscose' },
+      { usedResearch: true },
+    )
+    expect(r.verdict).toBe('do_not_wet_clean')
+  })
+
+  it('does not interfere when no research was used', () => {
+    expect(reconcile(base, {}).verdict).toBe('go')
   })
 })
 
