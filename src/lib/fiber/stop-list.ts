@@ -54,6 +54,20 @@ const RULES: Rule[] = [
       'bamboo viscose',
       'wood pulp',
       'regenerated cellulose',
+      // Silk-sounding marketing names for the same regenerated cellulose.
+      // The trade invents new ones constantly; they are all this fiber.
+      'manmade silk',
+      'man made silk',
+      'eucalyptus silk',
+      'vegan silk',
+      'soy silk',
+      'soya silk',
+      'cactus silk',
+      'sabra',
+      'sabra silk',
+      'seacell',
+      'bemberg',
+      'viscose rayon',
     ],
     fiber: 'Viscose / rayon (regenerated cellulose)',
     verdict: 'do_not_wet_clean',
@@ -65,6 +79,33 @@ const RULES: Rule[] = [
     ],
     recommendedMethod:
       'Do not introduce water. Dry vacuum / dry compound only, or refer to a rug plant that accepts viscose. Exclude the item from the invoice and document it.',
+  },
+  {
+    // Acetate is the one that punishes the wrong BOTTLE, not just water. It
+    // dissolves outright in acetone and is damaged by alcohol — which rules
+    // out most solvent spotters sitting on a truck.
+    terms: ['acetate', 'cellulose acetate', 'triacetate', 'diacetate'],
+    fiber: 'Acetate (cellulose acetate)',
+    verdict: 'do_not_wet_clean',
+    warnings: [
+      'DISSOLVES in acetone and is damaged by alcohol — do not use any solvent spotter on this.',
+      'Loses strength when wet and distorts easily; water spots permanently.',
+      'Heat sensitive — it will glaze or melt under a hot rinse.',
+    ],
+    recommendedMethod:
+      'No water, no solvent, no heat. Dry vacuum only and refer it out. If a spotter has already been applied, stop and document it.',
+  },
+  {
+    // Faux fur and some throws. Cleanable, but melts at surprisingly low heat.
+    terms: ['modacrylic', 'faux fur'],
+    fiber: 'Modacrylic (faux fur)',
+    verdict: 'low_moisture',
+    warnings: [
+      'Melts and mats at low heat — keep well under 120°F and never use a hot rinse.',
+      'Pile mats permanently if agitated while wet.',
+    ],
+    recommendedMethod:
+      'Low moisture, cool solution, no agitation on the pile, air dry and groom.',
   },
   {
     // Real silk. Cleanable by a specialist, not in a customer's living room.

@@ -36,7 +36,7 @@ WHAT YOU RECEIVE
 - Optionally, notes from the tech.
 
 THE FIBER THAT MATTERS MOST
-Viscose (also sold as rayon, art silk, faux silk, bamboo silk, banana silk, sari silk, Tencel, lyocell, modal) is regenerated cellulose from wood pulp. It loses roughly half its tensile strength when wet, browns permanently, and the pile crushes and never recovers. It is the single most common cause of destroyed rugs in this trade and it is extremely common in mass-market rugs sold since the mid-2010s. If a rug has a bright silvery sheen that shifts dramatically with viewing angle ("flops" light to dark as you walk around it) on a low dense pile, suspect viscose even with no tag.
+Viscose (also sold as rayon, art silk, faux silk, bamboo silk, banana silk, sari silk, cactus silk, Sabra silk, eucalyptus silk, vegan silk, soy silk, manmade silk, Tencel, lyocell, modal, cupro, Bemberg) is regenerated cellulose from wood pulp. Treat ANY silk-sounding name that is not verified real silk as viscose until proven otherwise — the trade invents new ones constantly. It loses roughly half its tensile strength when wet, browns permanently, and the pile crushes and never recovers. It is the single most common cause of destroyed rugs in this trade and it is extremely common in mass-market rugs sold since the mid-2010s. If a rug has a bright silvery sheen that shifts dramatically with viewing angle ("flops" light to dark as you walk around it) on a low dense pile, suspect viscose even with no tag.
 
 VISUAL TELLS
 - Viscose: silvery shifting sheen, low dense pile, cool slick hand, often machine-made with a cotton foundation.
@@ -44,6 +44,10 @@ VISUAL TELLS
 - Silk: extremely fine, high natural luster, usually hand-knotted, very high knot density.
 - Synthetic: uniform color, plasticky sheen, springs back, no variation between fibers.
 - Jute/sisal: coarse, ropy, visibly plant-like, often flatwoven.
+
+ALSO WATCH FOR
+- ACETATE: destroyed by acetone and damaged by alcohol, so a solvent spotter ruins it as surely as water does. Call it out explicitly if a tag shows acetate or triacetate.
+- MODACRYLIC / faux fur: melts and mats at low heat.
 
 TRANSCRIBE THE TAG EXACTLY
 If any tag is visible, put its full text in tag_text verbatim, including fiber percentages, collection and design codes, and any care symbols or cleaning codes. Do not summarize it. Downstream safety checks run string matching over this field, so a paraphrase can defeat them.

@@ -44,6 +44,42 @@ Origin: INDIA`
     )
   })
 
+  it('catches the newer silk-sounding names for viscose', () => {
+    // Researched 2026-08-13: the trade keeps inventing silk-like names for
+    // regenerated cellulose. Cactus/Sabra is the Moroccan one.
+    for (const alias of [
+      'manmade silk',
+      'eucalyptus silk',
+      'vegan silk',
+      'soy silk',
+      'cactus silk',
+      'sabra silk',
+      'bemberg',
+      'seacell',
+    ]) {
+      expect(scanTagText(`Contents: ${alias}`)[0]?.verdict, alias).toBe(
+        'do_not_wet_clean',
+      )
+    }
+  })
+
+  it('flags acetate, which is destroyed by solvent as well as water', () => {
+    for (const alias of ['acetate', 'triacetate', 'cellulose acetate']) {
+      const hits = scanTagText(`100% ${alias}`)
+      expect(hits[0]?.verdict, alias).toBe('do_not_wet_clean')
+    }
+    // The solvent warning is the point — a spotter destroys this fiber.
+    expect(scanTagText('100% acetate')[0].warnings.join(' ')).toMatch(
+      /acetone|alcohol/i,
+    )
+  })
+
+  it('puts modacrylic on low moisture for heat', () => {
+    const hits = scanTagText('100% modacrylic')
+    expect(hits[0]?.verdict).toBe('low_moisture')
+    expect(hits[0]?.warnings.join(' ')).toMatch(/melt|heat/i)
+  })
+
   it('flags jute, sisal and seagrass', () => {
     for (const fiber of ['jute', 'sisal', 'seagrass', 'coir']) {
       expect(scanTagText(`100% ${fiber}`)[0]?.verdict, fiber).toBe(
