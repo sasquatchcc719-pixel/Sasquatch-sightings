@@ -21,6 +21,10 @@ import {
   signatureAllowed,
   unitsForLine,
 } from '@/lib/fiber/gate'
+import {
+  sendTelegramNotification,
+  sendTelegramPhoto,
+} from '@/lib/telegram'
 
 export const maxDuration = 60
 
@@ -204,6 +208,29 @@ export async function POST(
 
     if (insertError) throw insertError
 
+    // Every identification is reported, not just the refusals. The tool is new
+    // and unproven in the field, so Charles watches each call — the photo the
+    // tech shot alongside what the model made of it — to catch a bad read
+    // before it becomes a damaged rug.
+    void reportCheck({
+      itemLabel: line?.name ?? itemLabel,
+      unitIndex,
+      unitsRequired,
+      customerName: appointment.customerName,
+      appointmentDate: appointment.appointmentDate,
+      checkedBy: access.staff?.display_name ?? access.email,
+      verdict: analysis.verdict,
+      determinedBy: analysis.determinedBy,
+      fiber: analysis.fiber,
+      confidence: analysis.confidence,
+      tagText: analysis.tagText,
+      burnResult,
+      summary: analysis.summary,
+      warnings: analysis.warnings,
+      recommendedMethod: analysis.recommendedMethod,
+      photoUrls,
+    })
+
     // Return the refreshed appointment so the signature gate clears without a
     // page reload.
     const updatedAppointment = await getTechAppointmentForAccess(supabase, {
@@ -239,5 +266,88 @@ export async function POST(
       { error: `Fiber check failed: ${detail.slice(0, 200)}` },
       { status: 500 },
     )
+  }
+}
+
+const VERDICT_HEADLINE: Record<string, string> = {
+  go: 'SAFE TO CLEAN',
+  low_moisture: 'LOW MOISTURE ONLY',
+  do_not_wet_clean: 'DO NOT WET CLEAN',
+}
+
+/**
+ * Telegram report for one fiber check. Fire-and-forget: a messaging failure
+ * must never block a tech standing in a customer's house.
+ */
+async function reportCheck(check: {
+  itemLabel: string
+  unitIndex: number
+  unitsRequired: number
+  customerName: string
+  appointmentDate: string
+  checkedBy: string
+  verdict: string
+  determinedBy: string
+  fiber: string | null
+  confidence: string
+  tagText: string
+  burnResult: string | null
+  summary: string
+  warnings: string[]
+  recommendedMethod: string | null
+  photoUrls: string[]
+}) {
+  try {
+    const piece =
+      check.unitsRequired > 1
+        ? `${check.itemLabel} (#${check.unitIndex} of ${check.unitsRequired})`
+        : check.itemLabel
+
+    const source =
+      check.determinedBy === 'stop_list'
+        ? 'care tag match (not a judgment call)'
+        : check.determinedBy === 'burn_test'
+          ? 'burn test'
+          : check.determinedBy.replace('_', ' ')
+
+    const lines = [
+      `FIBER CHECK — ${VERDICT_HEADLINE[check.verdict] ?? check.verdict}`,
+      '',
+      `Item: ${piece}`,
+      `Customer: ${check.customerName} (${check.appointmentDate})`,
+      `Tech: ${check.checkedBy}`,
+      '',
+      `Fiber: ${check.fiber ?? 'unidentified'}`,
+      `Confidence: ${check.confidence}`,
+      `Decided by: ${source}`,
+    ]
+    if (check.burnResult) lines.push(`Burn test: ${check.burnResult}`)
+    if (check.tagText.trim()) {
+      lines.push('', `Tag read: ${check.tagText.trim().slice(0, 300)}`)
+    }
+    if (check.summary) lines.push('', check.summary)
+    if (check.warnings.length > 0) {
+      lines.push('', 'Warnings:', ...check.warnings.map((w) => `• ${w}`))
+    }
+    if (check.recommendedMethod) {
+      lines.push('', `Method: ${check.recommendedMethod}`)
+    }
+
+    const body = lines.join('\n')
+
+    if (check.photoUrls.length > 0) {
+      // First photo carries the report; the rest follow so nothing the tech
+      // shot is lost.
+      await sendTelegramPhoto(check.photoUrls[0], body)
+      for (const extra of check.photoUrls.slice(1)) {
+        await sendTelegramPhoto(extra)
+      }
+      // The caption cap means a long report can be cut short on the photo.
+      if (body.length > 1024) await sendTelegramNotification(body)
+    } else {
+      await sendTelegramNotification(body)
+    }
+  } catch (error) {
+    console.error('[fiber-check] Telegram report failed:', error)
   }
 }

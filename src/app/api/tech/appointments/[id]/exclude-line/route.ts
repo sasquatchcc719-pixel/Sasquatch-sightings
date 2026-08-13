@@ -220,7 +220,7 @@ async function recalculateInvoice(
     .eq('appointment_id', appointmentId)
     .maybeSingle()
 
-  const subtotal = (lines ?? []).reduce(
+  const appointmentSubtotal = (lines ?? []).reduce(
     (sum, line) => sum + Number(line.line_total || 0),
     0,
   )
@@ -228,7 +228,7 @@ async function recalculateInvoice(
 
   await supabase
     .from('ops_appointments')
-    .update({ quoted_total: subtotal, updated_at: nowIso })
+    .update({ quoted_total: appointmentSubtotal, updated_at: nowIso })
     .eq('id', appointmentId)
 
   if (!invoice) return
@@ -270,6 +270,21 @@ async function recalculateInvoice(
       })
     }
   }
+
+  // The invoice total comes from the INVOICE's own lines, not the
+  // appointment's. Lines added through the admin screen before they were
+  // linked to an appointment line item exist only here, and summing the
+  // appointment side silently dropped them — leaving a stored total lower
+  // than what the customer actually owes.
+  const { data: invoiceLines } = await supabase
+    .from('ops_invoice_line_items')
+    .select('line_total')
+    .eq('invoice_id', invoice.id)
+
+  const subtotal = (invoiceLines ?? []).reduce(
+    (sum, line) => sum + Number(line.line_total || 0),
+    0,
+  )
 
   const total = Number(
     (

@@ -72,6 +72,48 @@ export async function sendTelegramNotification(
 }
 
 /**
+ * Send a photo with a caption. Telegram fetches the URL itself, so the image
+ * must be publicly reachable (Supabase `job-images` public URLs are).
+ *
+ * Captions are hard-capped at 1024 characters by the API — anything longer is
+ * rejected outright, so it is truncated here rather than silently failing.
+ */
+export async function sendTelegramPhoto(
+  photoUrl: string,
+  caption?: string,
+): Promise<boolean> {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+    console.warn('Telegram credentials not configured, skipping photo')
+    return false
+  }
+
+  try {
+    const response = await fetch(
+      `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: TELEGRAM_CHAT_ID,
+          photo: photoUrl,
+          caption: caption ? caption.slice(0, 1024) : undefined,
+        }),
+      },
+    )
+
+    if (!response.ok) {
+      console.error('Telegram sendPhoto error:', await response.text())
+      return false
+    }
+    const result = await response.json()
+    return result.ok === true
+  } catch (error) {
+    console.error('Failed to send Telegram photo:', error)
+    return false
+  }
+}
+
+/**
  * Send a new booking notification
  */
 export async function sendBookingNotification(params: {

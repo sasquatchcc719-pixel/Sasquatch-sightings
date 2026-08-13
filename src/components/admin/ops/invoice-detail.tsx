@@ -360,6 +360,9 @@ export function InvoiceDetail({
       description: string
       quantity: number
       unit_price: string
+      excluded_at?: string | null
+      excluded_reason?: string | null
+      excluded_original_total?: number | null
     }>
   >([])
   type OnMyWaySmsInfo = { body: string; actuallySent: boolean }
@@ -606,12 +609,21 @@ export function InvoiceDetail({
             description: string
             quantity: number
             unit_price: number
+            excluded_at?: string | null
+            excluded_reason?: string | null
+            excluded_original_total?: number | null
           }) => ({
             id: item.id,
             appointment_line_item_id: item.appointment_line_item_id,
             description: item.description,
             quantity: Number(item.quantity),
             unit_price: String(item.unit_price),
+            excluded_at: item.excluded_at ?? null,
+            excluded_reason: item.excluded_reason ?? null,
+            excluded_original_total:
+              item.excluded_original_total == null
+                ? null
+                : Number(item.excluded_original_total),
           }),
         ),
       )
@@ -2423,7 +2435,32 @@ export function InvoiceDetail({
         ) : null}
         <div className="mt-3 space-y-2">
           {lineItems.map((item, index) => (
-            <div key={item.id} className="rounded-xl bg-white p-3 shadow-sm">
+            <div
+              key={item.id}
+              className={`rounded-xl p-3 shadow-sm ${
+                item.excluded_at
+                  ? 'border-2 border-red-500/60 bg-red-50 opacity-90'
+                  : 'bg-white'
+              }`}
+            >
+              {item.excluded_at ? (
+                <div className="mb-2 rounded-lg bg-red-600 px-2.5 py-1.5">
+                  <p className="text-xs font-bold tracking-wide text-white uppercase">
+                    Not performed — removed from invoice
+                  </p>
+                  {item.excluded_reason ? (
+                    <p className="text-[11px] text-red-50">
+                      {item.excluded_reason}
+                    </p>
+                  ) : null}
+                  {item.excluded_original_total != null ? (
+                    <p className="text-[11px] text-red-100">
+                      Was ${item.excluded_original_total.toFixed(2)} — not
+                      charged
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
               <div className="flex flex-col gap-2">
                 <div className="flex items-start gap-2">
                   <div className="flex-1">
