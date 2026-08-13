@@ -137,7 +137,7 @@ type JobPhoto = {
   appointment_id: string
   storage_path: string
   public_url: string
-  label: 'before' | 'after' | 'general'
+  label: 'before' | 'after' | 'general' | 'fiber_check'
   watermarked: boolean
   source?: 'staff' | 'customer' | null
   uploaded_by_label?: string | null

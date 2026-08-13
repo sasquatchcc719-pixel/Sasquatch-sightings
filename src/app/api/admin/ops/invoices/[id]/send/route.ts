@@ -322,10 +322,14 @@ export async function POST(
       : null
     let photoUrls: string[] = []
     if (apptId) {
+      // Fiber check photos stay internal. A shot of a care tag or a rug
+      // backing is documentation for us, not something to attach to the
+      // customer's invoice.
       const { data: photos } = await supabase
         .from('ops_job_photos')
         .select('public_url')
         .eq('appointment_id', apptId)
+        .neq('label', 'fiber_check')
         .order('created_at', { ascending: true })
       photoUrls = (photos ?? []).map(
         (p: { public_url: string }) => p.public_url,

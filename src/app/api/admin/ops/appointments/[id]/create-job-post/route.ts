@@ -175,11 +175,26 @@ export async function POST(_request: NextRequest, { params }: Params) {
       )
     }
 
+    // Fiber check photos are evidence, not marketing — a customer's care tag
+    // or rug backing must never become the hero of a public job post.
+    const publishablePhotos = photos.filter(
+      (p: { label?: string | null }) => p.label !== 'fiber_check',
+    )
+    if (publishablePhotos.length === 0) {
+      return NextResponse.json(
+        {
+          error:
+            'This job only has fiber check photos. Upload a job photo before creating a job post.',
+        },
+        { status: 400 },
+      )
+    }
+
     // Prefer an "after" photo as the hero, then any
     const heroPhoto =
-      photos.find((p) => p.label === 'after') ??
-      photos.find((p) => p.label === 'before') ??
-      photos[0]
+      publishablePhotos.find((p) => p.label === 'after') ??
+      publishablePhotos.find((p) => p.label === 'before') ??
+      publishablePhotos[0]
 
     // Geocode the address
     const geo = await geocodeAddress(

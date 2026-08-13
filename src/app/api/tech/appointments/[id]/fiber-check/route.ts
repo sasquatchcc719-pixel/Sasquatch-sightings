@@ -140,6 +140,7 @@ export async function POST(
 
     // Upload first so the evidence survives even if the analysis call fails.
     const photoUrls: string[] = []
+    const storedPaths: string[] = []
     for (const [index, dataUrl] of images.entries()) {
       const match = /^data:(image\/\w+);base64,(.+)$/.exec(dataUrl)
       if (!match) continue
@@ -160,6 +161,7 @@ export async function POST(
         data: { publicUrl },
       } = supabase.storage.from('job-images').getPublicUrl(uploaded.path)
       photoUrls.push(publicUrl)
+      storedPaths.push(uploaded.path)
     }
 
     const analysis = await analyzeFiber({
@@ -207,6 +209,58 @@ export async function POST(
       .single()
 
     if (insertError) throw insertError
+
+    // File the photos into the job's own photo set as well, so a year from now
+    // the tag shot sits with everything else from that job instead of only
+    // inside the fiber check record. Labelled 'fiber_check' so nothing that
+    // publishes job photos can pick it up.
+    if (storedPaths.length > 0) {
+      const { error: photoFileError } = await supabase
+        .from('ops_job_photos')
+        .insert(
+          storedPaths.map((path, index) => ({
+            appointment_id: appointmentId,
+            storage_path: path,
+            public_url: photoUrls[index],
+            label: 'fiber_check',
+            watermarked: false,
+            source: 'staff',
+            uploaded_by_label: access.staff?.display_name ?? access.email,
+            original_filename: `${line?.name ?? itemLabel} — fiber check`,
+          })),
+        )
+      if (photoFileError) {
+        // Never fail the check over filing: the fiber_checks row already holds
+        // these URLs, so the evidence is not lost.
+        console.error('[fiber-check] could not file job photos:', photoFileError)
+      }
+    }
+
+    // Keep the photos with the rest of the job's photos too, so a year from
+    // now the tag shot sits alongside everything else from that job instead of
+    // only inside the fiber check record. Labelled 'fiber_check' so it is
+    // excluded from the customer's invoice email and from public job posts.
+    if (storedPaths.length > 0) {
+      const { error: photoFileError } = await supabase
+        .from('ops_job_photos')
+        .insert(
+          storedPaths.map((path, index) => ({
+            appointment_id: appointmentId,
+            storage_path: path,
+            public_url: photoUrls[index],
+            label: 'fiber_check',
+            watermarked: false,
+            source: 'staff',
+            uploaded_by_label: access.staff?.display_name ?? access.email,
+            original_filename: `${line?.name ?? itemLabel} — fiber check`,
+          })),
+        )
+      if (photoFileError) {
+        // Never fail the check over filing. The fiber_checks row already holds
+        // these URLs, so the evidence is not lost either way.
+        console.error('[fiber-check] could not file job photos:', photoFileError)
+      }
+    }
 
     // Every identification is reported, not just the refusals. The tool is new
     // and unproven in the field, so Charles watches each call — the photo the
