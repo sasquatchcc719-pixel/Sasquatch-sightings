@@ -302,7 +302,6 @@ export function FiberCheckModal({
                   ref={fileRef}
                   type="file"
                   accept="image/*"
-                  capture="environment"
                   multiple
                   hidden
                   onChange={(e) => void addPhotos(e.target.files)}
@@ -314,7 +313,7 @@ export function FiberCheckModal({
                 >
                   <Camera className="mr-2 h-4 w-4" />
                   {images.length === 0
-                    ? 'Take photo'
+                    ? 'Take photo or choose from library'
                     : `${images.length} photo${images.length > 1 ? 's' : ''} — add another`}
                 </Button>
               </div>

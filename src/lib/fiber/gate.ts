@@ -22,20 +22,39 @@ export type GateLine = {
 }
 
 /**
- * Quantity only counts physical pieces for some catalog items. "Custom-Size
- * Area Rug Cleaning" is priced per square foot, so quantity 600 is 600 sqft of
- * ONE rug, not 600 rugs. "Leather Sectional" is priced per seat. Getting this
- * wrong would demand hundreds of checks and make the gate unusable.
+ * Quantity only counts separately identifiable pieces on rug lines, and even
+ * then not always. "Custom-Size Area Rug Cleaning" is priced per square foot,
+ * so quantity 600 is 600 sqft of ONE rug, not 600 rugs. Getting this wrong
+ * would demand hundreds of checks and make the gate unusable.
  */
 const PIECE_COUNTED_UNITS = new Set(['per rug', 'fixed'])
 
 /** Guard against a typo in quantity demanding an absurd number of checks. */
 const MAX_UNITS = 12
 
+/** Hand-typed upholstery lines, which carry no catalog category. */
+const UPHOLSTERY_NAME =
+  /\b(sofa|couch|sectional|love\s*seat|loveseat|recliner|armchair|arm\s*chair|chair|ottoman|mattress|cushion|settee|chaise|headboard|upholster\w*)\b/i
+
 export function unitsForLine(line: {
+  name?: string
   quantity: number
+  catalogCategory?: string | null
   catalogPricingUnit?: string | null
 }): number {
+  // Upholstery is one identifiable piece per line. Quantity there counts seats
+  // on one sectional, or chairs in one matching set — all the same fabric. Two
+  // different couches get two line items, which is how Charles enters them.
+  //
+  // This has to be a POSITIVE test. fiberItemKind() defaults anything it cannot
+  // classify to 'upholstery', and routing unknown items down this branch would
+  // quietly drop a multi-rug line to a single check.
+  const category = (line.catalogCategory ?? '').trim().toLowerCase()
+  const isUpholstery =
+    category === 'upholstery cleaning' ||
+    (!category && UPHOLSTERY_NAME.test(line.name ?? ''))
+  if (isUpholstery) return 1
+
   const unit = (line.catalogPricingUnit ?? '').trim().toLowerCase()
   // No catalog link (manually typed lines) falls back to counting pieces,
   // since those are entered by hand as "2 rugs" rather than as an area.

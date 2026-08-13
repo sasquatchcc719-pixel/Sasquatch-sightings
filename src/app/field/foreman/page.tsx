@@ -185,7 +185,6 @@ export default function ForemanPage() {
             ref={fileRef}
             type="file"
             accept="image/*"
-            capture="environment"
             multiple
             className="hidden"
             onChange={(e) => addPhotos(e.target.files)}

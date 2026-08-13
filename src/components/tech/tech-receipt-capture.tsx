@@ -150,7 +150,7 @@ export function TechReceiptCapture({
           Expense receipts
         </p>
         <h1 className="mt-2 text-3xl font-bold tracking-tight">
-          Snap a Receipt
+          Add a Receipt
         </h1>
         <p className="mt-1 text-sm text-slate-300">
           Photograph a gas or supply receipt and it goes straight to QuickBooks.
@@ -162,7 +162,6 @@ export function TechReceiptCapture({
           ref={fileInputRef}
           type="file"
           accept="image/*"
-          capture="environment"
           className="hidden"
           onChange={(event) => pickFile(event.target.files?.[0] ?? null)}
         />

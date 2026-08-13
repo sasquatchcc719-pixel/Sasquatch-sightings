@@ -892,7 +892,6 @@ export function TechJobDetail({
             <input
               type="file"
               accept="image/*"
-              capture="environment"
               className="hidden"
               disabled={uploadingPhoto}
               onChange={(event) => {

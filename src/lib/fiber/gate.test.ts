@@ -106,6 +106,47 @@ describe('unitsForLine', () => {
     expect(unitsForLine({ quantity: 8, catalogPricingUnit: 'per seat' })).toBe(1)
   })
 
+  it('treats a sectional as ONE piece however many seats it is charged for', () => {
+    // Real case: "Sectional (cloth)" is catalogued as `fixed` but quantity 3
+    // means three seats of one couch. One couch, one fabric, one check.
+    expect(
+      unitsForLine({
+        name: 'Sectional (cloth)',
+        quantity: 3,
+        catalogCategory: 'Upholstery Cleaning',
+        catalogPricingUnit: 'fixed',
+      }),
+    ).toBe(1)
+  })
+
+  it('treats a set of matching chairs as one piece', () => {
+    expect(
+      unitsForLine({
+        name: 'Dining Chair',
+        quantity: 6,
+        catalogCategory: 'Upholstery Cleaning',
+        catalogPricingUnit: 'fixed',
+      }),
+    ).toBe(1)
+  })
+
+  it('treats hand-typed upholstery as one piece too', () => {
+    expect(
+      unitsForLine({ name: 'sectional couch', quantity: 4 }),
+    ).toBe(1)
+  })
+
+  it('still counts rugs separately — they can be different fibers', () => {
+    expect(
+      unitsForLine({
+        name: 'Area Rug 8x11',
+        quantity: 3,
+        catalogCategory: 'rug cleaning',
+        catalogPricingUnit: 'per rug',
+      }),
+    ).toBe(3)
+  })
+
   it('counts pieces for per-rug and fixed items', () => {
     expect(unitsForLine({ quantity: 3, catalogPricingUnit: 'per rug' })).toBe(3)
     expect(unitsForLine({ quantity: 2, catalogPricingUnit: 'fixed' })).toBe(2)
