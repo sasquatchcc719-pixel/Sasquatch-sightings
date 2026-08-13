@@ -81,6 +81,131 @@ const RULES: Rule[] = [
       'Do not introduce water. Dry vacuum / dry compound only, or refer to a rug plant that accepts viscose. Exclude the item from the invoice and document it.',
   },
   {
+    // Construction, not fibre. A wool hand-tufted rug passes a fibre check and
+    // still comes apart: the latex holding the tufts breaks down with water.
+    terms: [
+      'hand tufted',
+      'handtufted',
+      'latex backing',
+      'latex back',
+      'glued backing',
+      'scrim backing',
+    ],
+    fiber: 'Hand-tufted construction (latex adhesive backing)',
+    verdict: 'low_moisture',
+    warnings: [
+      'The latex holding the tufts breaks down with water — delamination and lifelong shedding.',
+      'Wet latex smells strongly of wet cardboard or dirty socks, and the customer will blame the cleaning.',
+      'Never saturate and never hot rinse, no matter how safe the face fibre is.',
+    ],
+    recommendedMethod:
+      'Low moisture only. Light application, minimal dwell, extract dry, force-air dry fast. Do not flood.',
+  },
+  {
+    // Finishes that are destroyed by moisture regardless of the fibre under
+    // them. These are the classic X-code textiles.
+    terms: ['crushed velvet', 'chintz', 'glazed chintz', 'moire'],
+    fiber: 'Moisture-sensitive finish (crushed velvet / glazed chintz / moiré)',
+    verdict: 'do_not_wet_clean',
+    warnings: [
+      'The finish is the fragile part — water permanently marks and flattens it.',
+      'Usually carries an X code. Damage shows immediately and cannot be corrected.',
+    ],
+    recommendedMethod:
+      'Vacuum only with an upholstery tool. No water, no solvent. Refer out if the customer insists.',
+  },
+  {
+    terms: ['velvet', 'velour', 'chenille'],
+    fiber: 'Pile fabric (velvet / velour / chenille)',
+    verdict: 'low_moisture',
+    warnings: [
+      'Pile crushes and watermarks; marks show as light and dark patches after drying.',
+      'A great deal of chenille is rayon — check the content before adding any water.',
+      'Groom the pile in one direction while it dries.',
+    ],
+    recommendedMethod:
+      'Low moisture, no scrubbing, dry strokes with the nap, groom while drying.',
+  },
+  {
+    // Peels no matter what is done to it — say so BEFORE touching it.
+    terms: [
+      'bonded leather',
+      'faux leather',
+      'vegan leather',
+      'pu leather',
+      'leatherette',
+      'pleather',
+    ],
+    fiber: 'Bonded / faux leather (polyurethane over backing)',
+    verdict: 'do_not_wet_clean',
+    warnings: [
+      'Bonded and faux leather peel and flake with age regardless of cleaning — set that expectation before touching it.',
+      'Moisture accelerates the delamination.',
+    ],
+    recommendedMethod:
+      'Dry wipe only. Photograph existing peeling first and tell the customer it will continue.',
+  },
+  {
+    // Real leather is a service Sasquatch sells — it just is not extraction.
+    terms: ['leather', 'top grain', 'full grain', 'aniline', 'nubuck', 'suede'],
+    fiber: 'Leather',
+    verdict: 'low_moisture',
+    warnings: [
+      'Never extract or saturate. Water staining and stiffening are permanent.',
+      'Nubuck and suede are napped — water spots them instantly; these are specialist items.',
+    ],
+    recommendedMethod:
+      'Dedicated leather cleaner applied to the cloth, not the hide, then condition. No water, no extraction.',
+  },
+  {
+    terms: ['sheepskin', 'cowhide', 'hide rug', 'animal hide'],
+    fiber: 'Hide / sheepskin',
+    verdict: 'do_not_wet_clean',
+    warnings: [
+      'The leather backing shrinks and stiffens permanently once wet.',
+    ],
+    recommendedMethod: 'Dry methods only, or refer to a hide specialist.',
+  },
+  {
+    terms: ['haitian cotton'],
+    fiber: 'Haitian cotton',
+    verdict: 'do_not_wet_clean',
+    warnings: [
+      'Notorious for browning — assume it WILL brown, not that it might.',
+    ],
+    recommendedMethod:
+      'Dry solvent methods only if any. Do not introduce water.',
+  },
+  {
+    // Brands, not fibres. Listed so a brand-only tag still gets a right answer.
+    terms: ['crypton'],
+    fiber: 'Crypton (performance fabric, moisture barrier)',
+    verdict: 'go',
+    warnings: [
+      'NEVER use bleach or solvents on Crypton — it is built from many different base fibres.',
+    ],
+    recommendedMethod:
+      'Water-based cleaning and hot water extraction are approved by the manufacturer.',
+  },
+  {
+    terms: ['sunbrella'],
+    fiber: 'Sunbrella (solution-dyed acrylic)',
+    verdict: 'go',
+    warnings: [
+      'Air dry only — never apply heat.',
+      'Unusually, dilute bleach IS approved by the manufacturer for stubborn stains.',
+    ],
+    recommendedMethod:
+      'Water-based cleaning. Rinse thoroughly and air dry.',
+  },
+  {
+    terms: ['revolution fabric', 'revolution performance'],
+    fiber: 'Revolution (olefin/polypropylene performance fabric)',
+    verdict: 'go',
+    warnings: ['Heat sensitive — keep the solution temperature moderate.'],
+    recommendedMethod: 'Water-based cleaning; bleach-cleanable if needed.',
+  },
+  {
     // Acetate is the one that punishes the wrong BOTTLE, not just water. It
     // dissolves outright in acetone and is damaged by alcohol — which rules
     // out most solvent spotters sitting on a truck.
@@ -195,6 +320,17 @@ const CODE_RULES: Array<{
     ],
     recommendedMethod:
       'Dry vacuum with upholstery tool only. No cleaning agents of any kind.',
+  },
+  {
+    // W/S and SW mean either method is acceptable — still test first.
+    pattern: /\b(?:cleaning\s*)?code[\s:.\-]*(?:w\s*\/?\s*s|s\s*\/?\s*w)\b/i,
+    code: 'W/S',
+    verdict: 'go',
+    warnings: [
+      'W/S allows water or solvent, but the tag is not a substitute for testing an inconspicuous area first.',
+    ],
+    recommendedMethod:
+      'Water-based cleaning is acceptable. Pre-test a hidden area for dye stability before full application.',
   },
   {
     pattern: /\b(?:cleaning\s*)?code[\s:.\-]*s\b/i,

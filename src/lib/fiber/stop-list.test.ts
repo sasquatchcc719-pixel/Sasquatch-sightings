@@ -80,6 +80,59 @@ Origin: INDIA`
     expect(hits[0]?.warnings.join(' ')).toMatch(/melt|heat/i)
   })
 
+  it('flags hand-tufted construction even when the fibre is safe', () => {
+    // A wool hand-tufted rug passes a fibre check and still delaminates.
+    const hits = scanTagText('100% Wool. Hand Tufted in India.')
+    expect(hits[0]?.verdict).toBe('low_moisture')
+    expect(hits[0]?.warnings.join(' ')).toMatch(/latex|delaminat/i)
+  })
+
+  it('stops on finishes that water destroys regardless of fibre', () => {
+    for (const finish of ['crushed velvet', 'chintz', 'moire']) {
+      expect(scanTagText(`100% polyester ${finish}`)[0]?.verdict, finish).toBe(
+        'do_not_wet_clean',
+      )
+    }
+  })
+
+  it('puts pile fabrics on low moisture', () => {
+    for (const pile of ['velvet', 'velour', 'chenille']) {
+      expect(scanTagText(`${pile} upholstery`)[0]?.verdict, pile).toBe(
+        'low_moisture',
+      )
+    }
+  })
+
+  it('separates real leather from bonded leather', () => {
+    // Leather cleaning is a service Sasquatch sells — it must not be blocked.
+    expect(scanTagText('Top grain leather')[0]?.verdict).toBe('low_moisture')
+    // Bonded leather peels no matter what; that has to be said up front.
+    expect(scanTagText('Bonded leather sofa')[0]?.verdict).toBe(
+      'do_not_wet_clean',
+    )
+  })
+
+  it('knows the performance brands, which are not fibre contents', () => {
+    const crypton = scanTagText('Crypton Home performance fabric')
+    expect(crypton[0]?.verdict).toBe('go')
+    expect(crypton[0]?.warnings.join(' ')).toMatch(/bleach|solvent/i)
+
+    const sunbrella = scanTagText('Sunbrella acrylic')
+    expect(sunbrella[0]?.verdict).toBe('go')
+    expect(sunbrella[0]?.warnings.join(' ')).toMatch(/bleach/i)
+  })
+
+  it('reads the W/S code without mistaking it for S', () => {
+    const hits = scanTagText('Cleaning Code: W/S')
+    expect(hits[0]?.verdict).toBe('go')
+    expect(hits[0]?.warnings.join(' ')).toMatch(/test/i)
+  })
+
+  it('flags Haitian cotton and hides', () => {
+    expect(scanTagText('Haitian cotton')[0]?.verdict).toBe('do_not_wet_clean')
+    expect(scanTagText('100% sheepskin')[0]?.verdict).toBe('do_not_wet_clean')
+  })
+
   it('flags jute, sisal and seagrass', () => {
     for (const fiber of ['jute', 'sisal', 'seagrass', 'coir']) {
       expect(scanTagText(`100% ${fiber}`)[0]?.verdict, fiber).toBe(

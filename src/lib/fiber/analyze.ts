@@ -18,6 +18,7 @@ import {
   scanTagText,
   type BurnBucket,
 } from './stop-list'
+import { FIBER_FIELD_REFERENCE } from './reference'
 import type {
   FiberCheckResult,
   FiberConfidence,
@@ -55,7 +56,9 @@ If any tag is visible, put its full text in tag_text verbatim, including fiber p
 CONFIDENCE
 Use "high" only when a tag states fiber content, or the item is unmistakable. Photos of pile alone rarely justify "high". When you are not confident, set confidence low and put the single most useful next test in next_test — one test, the simplest one, not a list.
 
-The tech reads this on a phone with a customer standing next to them. Be terse and concrete.`
+The tech reads this on a phone with a customer standing next to them. Be terse and concrete.
+
+${FIBER_FIELD_REFERENCE}`
 
 type AnalyzeInput = {
   /** Data URLs or public URLs. */
