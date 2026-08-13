@@ -379,6 +379,7 @@ export function InvoiceDetail({
   const [showSignatureModal, setShowSignatureModal] = useState(false)
   // Rugs and upholstery must be identified before a signature is captured.
   const [fiberGateAllowed, setFiberGateAllowed] = useState(true)
+  const [fiberRefreshKey, setFiberRefreshKey] = useState(0)
   const [driveElapsedMs, setDriveElapsedMs] = useState(0)
 
   const [editingCustomer, setEditingCustomer] = useState(false)
@@ -748,6 +749,8 @@ export function InvoiceDetail({
         throw new Error(result.error || 'Failed to update invoice')
       }
       router.refresh()
+      // Line items may have been added or removed — reload the fiber gate.
+      setFiberRefreshKey((k) => k + 1)
     } catch (saveError) {
       setError(
         saveError instanceof Error
@@ -2637,6 +2640,7 @@ export function InvoiceDetail({
             <FiberCheckPanel
               appointmentId={appointment.id}
               onGateChange={setFiberGateAllowed}
+              refreshKey={fiberRefreshKey}
             />
           ) : null}
 

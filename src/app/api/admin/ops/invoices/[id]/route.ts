@@ -360,11 +360,30 @@ export async function PATCH(
         (dbId: string) => !submittedRealIds.includes(dbId),
       )
       if (idsToDelete.length > 0) {
+        // Remove the appointment line items too. Leaving them orphaned would
+        // keep the fiber gate asking to identify a rug that is no longer on
+        // the invoice.
+        const orphanedAppointmentLineIds = existingInvoiceLines
+          .filter((line: { id: string }) => idsToDelete.includes(line.id))
+          .map(
+            (line: { appointment_line_item_id: string | null }) =>
+              line.appointment_line_item_id,
+          )
+          .filter((v: string | null): v is string => Boolean(v))
+
         const { error: deleteError } = await supabase
           .from('ops_invoice_line_items')
           .delete()
           .in('id', idsToDelete)
         if (deleteError) throw deleteError
+
+        if (orphanedAppointmentLineIds.length > 0) {
+          const { error: apptDeleteError } = await supabase
+            .from('ops_appointment_line_items')
+            .delete()
+            .in('id', orphanedAppointmentLineIds)
+          if (apptDeleteError) throw apptDeleteError
+        }
       }
 
       for (const item of lineItems) {
@@ -377,11 +396,34 @@ export async function PATCH(
         const isNew = !lineId || lineId.startsWith('new-')
 
         if (isNew) {
+          // Give the new line a real appointment line item. Without one it is
+          // invisible to anything that reads the appointment — including the
+          // fiber-check gate, which would let a rug added here reach a wet
+          // clean with no identification at all.
+          let appointmentLineItemId: string | null = null
+          if (current.appointment_id) {
+            const { data: apptLine, error: apptLineError } = await supabase
+              .from('ops_appointment_line_items')
+              .insert({
+                appointment_id: current.appointment_id,
+                name_snapshot: description,
+                quantity,
+                unit_price: unitPrice,
+                line_total: lineTotal,
+                duration_minutes: 60,
+                buffer_minutes: 0,
+              })
+              .select('id')
+              .single()
+            if (apptLineError) throw apptLineError
+            appointmentLineItemId = apptLine.id
+          }
+
           const { error: insertError } = await supabase
             .from('ops_invoice_line_items')
             .insert({
               invoice_id: id,
-              appointment_line_item_id: null,
+              appointment_line_item_id: appointmentLineItemId,
               description,
               quantity,
               unit_price: unitPrice,

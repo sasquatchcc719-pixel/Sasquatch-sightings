@@ -24,9 +24,17 @@ type GateResponse = {
 export function FiberCheckPanel({
   appointmentId,
   onGateChange,
+  refreshKey = 0,
 }: {
   appointmentId: string
   onGateChange?: (allowed: boolean) => void
+  /**
+   * Bump to force a reload. The admin invoice screen adds and removes line
+   * items after this panel has mounted, and router.refresh() does not re-run a
+   * client component's fetch — so without this a rug added to a saved invoice
+   * never appeared here.
+   */
+  refreshKey?: number
 }) {
   const [data, setData] = useState<GateResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -52,7 +60,7 @@ export function FiberCheckPanel({
 
   useEffect(() => {
     void load()
-  }, [load])
+  }, [load, refreshKey])
 
   if (loading) {
     return (
