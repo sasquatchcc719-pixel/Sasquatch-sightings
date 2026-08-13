@@ -72,112 +72,54 @@ export type DayTimelineItem =
       detail?: string | null
     }
   | {
-      kind: 'gap'
+      kind: 'open'
       key: string
       start: number
       end: number
-      /**
-       * Every arrival window that fits inside this gap. A wide-open day is one
-       * gap holding four starts (9, 11, 1, 3) — collapsing it to a single
-       * start would throw away three of the choices.
-       */
-      bookableStarts: string[]
+      /** Time to book if this row is tapped, "HH:MM". */
+      startTime: string
     }
 
 /**
- * The day as one chronological list: what is booked, and the gaps between.
- * The gaps are the point — you are looking for where this job fits, so a gap
- * big enough to take is a button. Gaps too short to hold the job are still
- * returned, so the day reads honestly instead of looking emptier than it is.
+ * The day, top to bottom: the jobs already on it, and each available slot as
+ * its own row with its own time range. Booked and open rows are interleaved in
+ * clock order, so the day reads exactly as it runs.
  *
- * Appointments must already be sorted by start time.
+ * Deliberately NOT computed by subtracting jobs from the day. The slots come
+ * from the availability API, which is tech-aware — on a two-tech day a slot can
+ * legitimately overlap a job the other tech is on. Listing the slots as given
+ * keeps those bookable instead of erasing them.
  */
 export function buildDayTimeline(
   appointments: DayPickerAppointment[],
   availableSlots: DayPickerSlot[],
 ): DayTimelineItem[] {
-  const busy = appointments
-    .map((appt) => ({
-      start: toMinutes(appt.start_time),
-      end: appt.end_time
-        ? toMinutes(appt.end_time)
-        : toMinutes(appt.start_time) + 120,
-      appt,
-    }))
-    .filter((b) => b.end > b.start)
+  const booked: DayTimelineItem[] = appointments.map((appt) => ({
+    kind: 'booked' as const,
+    key: appt.id,
+    start: toMinutes(appt.start_time),
+    end: appt.end_time
+      ? toMinutes(appt.end_time)
+      : toMinutes(appt.start_time) + 120,
+    label: appt.label,
+    detail: appt.detail,
+  }))
 
-  // The window the day is drawn across: standard hours, stretched to cover
-  // anything booked outside them (after-hours commercial work).
-  const DAY_OPEN = 540 // 9:00 AM
-  const DAY_CLOSE = 1020 // 5:00 PM
-  const dayStart = Math.min(
-    DAY_OPEN,
-    ...busy.map((b) => b.start),
-    ...availableSlots.map((s) => toMinutes(s.start_time)),
+  const open: DayTimelineItem[] = availableSlots.map((slot) => ({
+    kind: 'open' as const,
+    key: `open-${slot.start_time}`,
+    start: toMinutes(slot.start_time),
+    end: toMinutes(slot.end_time),
+    startTime: slot.start_time.slice(0, 5),
+  }))
+
+  // Clock order. When a job and an opening start together, the job comes
+  // first — it is the fact, the opening is the offer.
+  return [...booked, ...open].sort(
+    (a, b) =>
+      a.start - b.start ||
+      (a.kind === 'booked' ? 0 : 1) - (b.kind === 'booked' ? 0 : 1),
   )
-  const dayEnd = Math.max(
-    DAY_CLOSE,
-    ...busy.map((b) => b.end),
-    ...availableSlots.map((s) => toMinutes(s.end_time)),
-  )
-
-  const items: DayTimelineItem[] = []
-  let cursor = dayStart
-
-  const pushGap = (start: number, end: number) => {
-    if (end - start <= 0) return
-    const bookableStarts = availableSlots
-      .filter((s) => {
-        const slotStart = toMinutes(s.start_time)
-        return slotStart >= start && toMinutes(s.end_time) <= end
-      })
-      .map((s) => s.start_time.slice(0, 5))
-      .sort()
-    items.push({
-      kind: 'gap',
-      key: `gap-${start}`,
-      start,
-      end,
-      bookableStarts,
-    })
-  }
-
-  for (const block of busy) {
-    if (block.start > cursor) pushGap(cursor, block.start)
-    items.push({
-      kind: 'booked',
-      key: block.appt.id,
-      start: block.start,
-      end: block.end,
-      label: block.appt.label,
-      detail: block.appt.detail,
-    })
-    cursor = Math.max(cursor, block.end)
-  }
-  if (cursor < dayEnd) pushGap(cursor, dayEnd)
-
-  return items
-}
-
-/**
- * Openings the day view cannot draw as a gap.
- *
- * The timeline merges every tech's jobs, so on a two-tech day an hour can look
- * solidly booked while one tech is actually free then. Those starts are real
- * and bookable — they must never be silently swallowed just because the
- * drawing model has no room for them.
- */
-export function startsOutsideTimeline(
-  items: DayTimelineItem[],
-  availableSlots: DayPickerSlot[],
-): string[] {
-  const shown = new Set(
-    items.flatMap((item) => (item.kind === 'gap' ? item.bookableStarts : [])),
-  )
-  return availableSlots
-    .map((slot) => slot.start_time.slice(0, 5))
-    .filter((start) => !shown.has(start))
-    .sort()
 }
 
 // ─── Month calendar with green (open) / red (full) day coding ──────────────────
@@ -401,13 +343,7 @@ export function DayTimePicker({
     () => buildDayTimeline(sortedAppointments, availableSlots),
     [sortedAppointments, availableSlots],
   )
-  const otherStarts = useMemo(
-    () => startsOutsideTimeline(dayTimeline, availableSlots),
-    [dayTimeline, availableSlots],
-  )
 
-  const minutesLabel = (mins: number) =>
-    mins % 60 === 0 ? `${mins / 60} hr` : `${(mins / 60).toFixed(1)} hr`
 
   return (
     <div className="space-y-5">
@@ -433,12 +369,20 @@ export function DayTimePicker({
           </div>
         ) : null}
         <div className="space-y-2">
+          {dayTimeline.length === 0 ? (
+            <p className="text-muted-foreground py-2 text-sm">
+              Nothing booked yet — add services above to see open times.
+            </p>
+          ) : null}
+
           {dayTimeline.map((item) => {
+            const range = `${formatClock(minutesToClock(item.start))} – ${formatClock(minutesToClock(item.end))}`
+
             if (item.kind === 'booked') {
               return (
                 <div
                   key={item.key}
-                  className="border-border/60 bg-card flex items-start gap-3 rounded-xl border px-3 py-2"
+                  className="border-border/60 bg-card flex items-start gap-3 rounded-xl border px-3 py-2.5"
                 >
                   <div className="text-sm font-semibold whitespace-nowrap">
                     {formatClock(minutesToClock(item.start))}{' '}
@@ -460,89 +404,27 @@ export function DayTimePicker({
               )
             }
 
-            const length = item.end - item.start
-            const range = `${formatClock(minutesToClock(item.start))} – ${formatClock(minutesToClock(item.end))}`
-
-            // An opening long enough for the job: show the window, and every
-            // arrival time inside it as its own button.
-            if (item.bookableStarts.length > 0) {
-              return (
-                <div
-                  key={item.key}
-                  className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-2.5"
-                >
-                  <div className="mb-2 flex items-center justify-between gap-3">
-                    <span className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">
-                      {range}
-                    </span>
-                    <span className="text-xs text-emerald-700/80 dark:text-emerald-300/80">
-                      {minutesLabel(length)} open
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    {item.bookableStarts.map((start) => {
-                      const active = start === selectedTime
-                      return (
-                        <button
-                          key={start}
-                          type="button"
-                          onClick={() => onSelectTime(start)}
-                          className={`rounded-lg border py-2.5 text-sm font-semibold transition-all ${
-                            active
-                              ? 'border-emerald-500 bg-emerald-600 text-white shadow-sm'
-                              : 'border-emerald-500/40 bg-background/60 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300'
-                          }`}
-                        >
-                          {formatClock(start)}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-              )
-            }
-
-            // Too short for this job — still shown, so the day reads honestly.
+            const active = item.startTime === selectedTime
             return (
-              <div
+              <button
                 key={item.key}
-                className="border-border/40 text-muted-foreground flex items-center justify-between gap-3 rounded-xl border border-dashed px-3 py-2"
+                type="button"
+                onClick={() => onSelectTime(item.startTime)}
+                className={`flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left transition-all ${
+                  active
+                    ? 'border-emerald-500 bg-emerald-600 text-white shadow-sm'
+                    : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300'
+                }`}
               >
-                <span className="text-sm whitespace-nowrap">{range}</span>
-                <span className="text-xs">
-                  {minutesLabel(length)} open — too short for this job
+                <span className="text-sm font-semibold whitespace-nowrap">
+                  {range}
                 </span>
-              </div>
+                <span className="text-xs font-semibold">
+                  {active ? 'Selected' : 'Available'}
+                </span>
+              </button>
             )
           })}
-
-          {otherStarts.length > 0 ? (
-            <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-2.5">
-              <p className="mb-2 text-xs text-emerald-700/90 dark:text-emerald-300/90">
-                Also open — another technician is free at these times, even
-                though the day above looks booked.
-              </p>
-              <div className="grid grid-cols-2 gap-2">
-                {otherStarts.map((start) => {
-                  const active = start === selectedTime
-                  return (
-                    <button
-                      key={start}
-                      type="button"
-                      onClick={() => onSelectTime(start)}
-                      className={`rounded-lg border py-2.5 text-sm font-semibold transition-all ${
-                        active
-                          ? 'border-emerald-500 bg-emerald-600 text-white shadow-sm'
-                          : 'border-emerald-500/40 bg-background/60 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300'
-                      }`}
-                    >
-                      {formatClock(start)}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          ) : null}
         </div>
       </div>
 
