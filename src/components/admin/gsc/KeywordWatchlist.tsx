@@ -21,6 +21,7 @@ interface TrendPoint {
   date: string
   position: number | null
   impressions: number
+  clicks: number
 }
 
 export interface WatchlistKeyword {
@@ -55,50 +56,78 @@ function formatDate(ts: string): string {
   return new Date(ts).toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
+    timeZone: 'America/Denver',
   })
 }
 
 /**
- * Position sparkline. Rank is inverted — a better (lower) position draws a
- * taller bar, so "up and to the right" means what everyone expects it to.
+ * Weekly rank chart. Bar height is inverted so a better (lower) rank draws a
+ * taller bar. The number on top is the rank. Views sit under the date — that
+ * is the other number Search Console gives us besides position and clicks.
  */
-function PositionTrend({ points }: { points: TrendPoint[] }) {
-  const ranked = points
+function RankHistory({ points }: { points: TrendPoint[] }) {
+  const weeks = points.slice(-10)
+  const ranked = weeks
     .map((point) => point.position)
     .filter((value): value is number => value != null)
 
-  if (ranked.length < 2) {
-    return (
-      <span className="text-muted-foreground text-xs">
-        {ranked.length === 1 ? 'One week of data' : 'No history yet'}
-      </span>
-    )
+  if (weeks.length === 0) {
+    return <p className="text-muted-foreground text-xs">No history yet</p>
   }
 
-  const best = Math.min(...ranked)
-  const worst = Math.max(...ranked)
+  const best = ranked.length > 0 ? Math.min(...ranked) : 1
+  const worst = ranked.length > 0 ? Math.max(...ranked) : 1
   const span = worst - best || 1
 
   return (
-    <div className="flex h-8 items-end gap-1">
-      {points.slice(-10).map((point, index) =>
-        point.position == null ? (
-          <div
-            key={index}
-            title={`${formatDate(point.date)} — no views`}
-            className="bg-muted-foreground/25 h-1 w-2 rounded-sm"
-          />
-        ) : (
-          <div
-            key={index}
-            title={`${formatDate(point.date)} — #${Math.round(point.position)}`}
-            className="w-2 rounded-sm bg-sky-500/70"
-            style={{
-              height: `${20 + (1 - (point.position - best) / span) * 80}%`,
-            }}
-          />
-        ),
-      )}
+    <div>
+      <p className="text-muted-foreground mb-2 text-[11px] tracking-wide uppercase">
+        Rank by week · lower is better
+      </p>
+      <div className="flex h-36 items-end gap-1 sm:gap-2">
+        {weeks.map((point, index) => {
+          const isCurrent = index === weeks.length - 1
+          const value = point.position
+          const height =
+            value == null
+              ? 4
+              : Math.max(10, Math.round((1 - (value - best) / span) * 96))
+          const title =
+            value == null
+              ? `${formatDate(point.date)} — no views`
+              : `${formatDate(point.date)} — #${Math.round(value)} · ${point.impressions} view${point.impressions === 1 ? '' : 's'}${point.clicks > 0 ? ` · ${point.clicks} click${point.clicks === 1 ? '' : 's'}` : ''}`
+          return (
+            <div
+              key={`${point.date}-${index}`}
+              className="flex min-w-0 flex-1 flex-col items-center justify-end"
+              title={title}
+            >
+              <span
+                className={`mb-1 text-[11px] tabular-nums ${isCurrent ? 'text-sky-300' : 'text-muted-foreground'}`}
+              >
+                {value == null ? '—' : `#${Math.round(value)}`}
+              </span>
+              <div
+                className={`w-full max-w-10 rounded-sm ${
+                  value == null
+                    ? 'bg-white/10'
+                    : isCurrent
+                      ? 'bg-sky-400'
+                      : 'bg-sky-500/55'
+                }`}
+                style={{ height }}
+              />
+              <span className="text-muted-foreground mt-1 text-[10px] leading-tight">
+                {formatDate(point.date)}
+              </span>
+              <span className="text-muted-foreground/80 text-[10px] tabular-nums">
+                {point.impressions}v
+                {point.clicks > 0 ? ` · ${point.clicks}c` : ''}
+              </span>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -357,7 +386,7 @@ export function KeywordWatchlist({
             key={entry.id}
             className={`p-4 ${entry.active ? '' : 'opacity-50'}`}
           >
-            <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0 flex-1 space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-medium">{entry.keyword}</span>
@@ -392,9 +421,7 @@ export function KeywordWatchlist({
                 )}
               </div>
 
-              <div className="flex items-center gap-3">
-                <PositionTrend points={entry.trend} />
-
+              <div className="flex items-center gap-1">
                 <Button
                   variant="ghost"
                   size="sm"
@@ -446,6 +473,10 @@ export function KeywordWatchlist({
                   </Button>
                 )}
               </div>
+            </div>
+
+            <div className="mt-4">
+              <RankHistory points={entry.trend} />
             </div>
           </Card>
         ))}
