@@ -27,6 +27,16 @@ import {
   isScoutWebToolsEnabled,
   SCOUT_WEB_TOOLS,
 } from '@/lib/ops/scout-web-tools'
+import {
+  sendScoutBookingFailureAlert,
+  sendScoutPhantomBookingAlert,
+} from '@/lib/telegram'
+import {
+  BOOKING_NOT_COMPLETED_REPLY,
+  BOOKING_TOOLS,
+  claimsBooking,
+} from '@/lib/ops/scout-booking-claim'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 // Scout's tool-calling loop (up to 8 rounds × GPT-4o + DB) can run long. The
 // Vercel default function timeout (10–15s on Pro) is too tight — if we hit it,
@@ -108,6 +118,187 @@ function getClientIp(request: NextRequest): string {
   const real = request.headers.get('x-real-ip')
   if (real) return real
   return 'unknown'
+}
+
+// ── Honesty gate ──────────────────────────────────────────────────────────────
+
+/**
+ * Did a booking already succeed earlier in this session? Scout legitimately
+ * says "you're all set" on the turn *after* a successful booking, so the gate
+ * has to be session-scoped, not turn-scoped.
+ */
+/**
+ * Pull the most recent failed booking attempt in this session.
+ *
+ * Scout can claim a booking on a later turn than the one where the tool
+ * actually failed, in which case this turn has no args to build an alert from.
+ * Without this, Charles gets "a booking failed" with no phone number to call.
+ */
+async function loadLastFailedBookingAttempt(
+  supabase: SupabaseClient,
+  sessionId: string,
+): Promise<{ args: Record<string, unknown>; error: string | null } | null> {
+  try {
+    const { data } = await supabase
+      .from('ai_tool_calls')
+      .select('args, error')
+      .eq('session_id', sessionId)
+      .in('tool_name', BOOKING_TOOLS)
+      .eq('success', false)
+      .order('created_at', { ascending: false })
+      .limit(1)
+    const row = data?.[0]
+    if (!row) return null
+    return {
+      args: (row.args ?? {}) as Record<string, unknown>,
+      error: (row.error as string | null) ?? null,
+    }
+  } catch (err) {
+    console.error('[scout] failed-attempt lookup failed:', err)
+    return null
+  }
+}
+
+async function sessionHasSuccessfulBooking(
+  supabase: SupabaseClient,
+  sessionId: string,
+): Promise<boolean> {
+  try {
+    const { data } = await supabase
+      .from('ai_tool_calls')
+      .select('id')
+      .eq('session_id', sessionId)
+      .in('tool_name', BOOKING_TOOLS)
+      .eq('success', true)
+      .limit(1)
+    return Boolean(data?.length)
+  } catch (err) {
+    console.error('[scout] booking-history lookup failed:', err)
+    // Fail closed: assume no prior booking so the gate stays active.
+    return false
+  }
+}
+
+// ── Session memory ────────────────────────────────────────────────────────────
+
+/** Slot tokens are valid 15 minutes; leave margin so we never offer a dead one. */
+const SLOT_TOKEN_USABLE_MS = 13 * 60 * 1000
+
+type ChatTurn = { role: 'user' | 'assistant'; content: string }
+
+/**
+ * Rebuild conversation state from our own tables rather than the browser.
+ *
+ * Two problems this solves. First, `conversationHistory` arrives from the
+ * client, so it is neither trustworthy nor authoritative. Second — and this is
+ * what broke the 2026-08-23 booking — tool calls and their results were never
+ * carried across turns, so each turn Scout woke up with no memory of what its
+ * tools had returned. It re-searched the catalog every turn and, needing a
+ * slot_token it could no longer see, passed the literal string "token123".
+ */
+async function loadSessionMemory(
+  supabase: SupabaseClient,
+  sessionId: string,
+): Promise<{ history: ChatTurn[]; note: string }> {
+  const [historyResult, toolResult] = await Promise.allSettled([
+    supabase
+      .from('ai_chat_logs')
+      .select('role, content, created_at')
+      .eq('session_id', sessionId)
+      .in('role', ['user', 'assistant'])
+      .order('created_at', { ascending: false })
+      .limit(MAX_HISTORY_ITEMS),
+    supabase
+      .from('ai_tool_calls')
+      .select('tool_name, result, success, created_at')
+      .eq('session_id', sessionId)
+      .eq('success', true)
+      .order('created_at', { ascending: false })
+      .limit(25),
+  ])
+
+  const history: ChatTurn[] =
+    historyResult.status === 'fulfilled'
+      ? ((historyResult.value.data ?? []) as ChatTurn[])
+          .filter((r) => typeof r.content === 'string' && r.content.length > 0)
+          .reverse()
+      : []
+
+  const toolRows =
+    toolResult.status === 'fulfilled'
+      ? ((toolResult.value.data ?? []) as Array<{
+          tool_name: string
+          result: unknown
+          created_at: string
+        }>)
+      : []
+
+  return { history, note: buildToolStateNote(toolRows) }
+}
+
+function buildToolStateNote(
+  toolRows: Array<{ tool_name: string; result: unknown; created_at: string }>,
+): string {
+  const lines: string[] = []
+
+  const booked = toolRows.find((r) => BOOKING_TOOLS.includes(r.tool_name))
+  if (booked) {
+    const res = (booked.result ?? {}) as Record<string, unknown>
+    lines.push(
+      `- ALREADY BOOKED in this conversation: confirmation ${res.confirmation_number ?? '(unknown)'} on ${res.appointment_date ?? '?'} at ${res.start_time ?? '?'}. Do NOT book again. For changes, tell them to text (719) 249-8791.`,
+    )
+  }
+
+  const freshSlots = toolRows.find(
+    (r) =>
+      r.tool_name === 'get_calendar_slots' &&
+      Date.now() - new Date(r.created_at).getTime() < SLOT_TOKEN_USABLE_MS,
+  )
+  if (freshSlots) {
+    const res = (freshSlots.result ?? {}) as {
+      date?: string
+      required_minutes?: number
+      slots?: Array<{ start_time?: string; slot_token?: string }>
+    }
+    const slots = (res.slots ?? []).filter((s) => s.slot_token)
+    if (slots.length) {
+      lines.push(
+        `- LIVE SLOT TOKENS for ${res.date ?? '?'} (${res.required_minutes ?? '?'} min). Copy a slot_token EXACTLY as written — never invent one:`,
+        ...slots.map(
+          (s) => `    ${s.start_time} → slot_token: ${s.slot_token}`,
+        ),
+      )
+    }
+  }
+
+  const seen = new Map<string, string>()
+  for (const row of toolRows) {
+    if (row.tool_name !== 'search_service_catalog') continue
+    const res = (row.result ?? {}) as {
+      services?: Array<{
+        id?: string
+        name?: string
+        category?: string
+        base_price?: number
+      }>
+    }
+    for (const s of res.services ?? []) {
+      if (!s.id || !s.name || seen.has(s.id)) continue
+      seen.set(
+        s.id,
+        `    "${s.name}" [${s.category}] $${s.base_price} → ${s.id}`,
+      )
+    }
+  }
+  if (seen.size) {
+    lines.push(
+      '- CATALOG IDS already looked up this conversation (reuse these, do not re-search):',
+      ...Array.from(seen.values()).slice(0, 20),
+    )
+  }
+
+  if (!lines.length) return ''
+  return `## LIVE STATE FROM THIS CONVERSATION (server-verified — trust this over your own memory)\n${lines.join('\n')}`
 }
 
 // ── System prompt ─────────────────────────────────────────────────────────────
@@ -194,16 +385,23 @@ If a customer asks "where do I book?" the answer is: "Right here with me! Let me
 ## BOOKING FLOW (hard rules — follow in order)
 
 Step 1. Collect job details: what rooms/areas, sizes (sq ft), services. Confirm the list back to them: "So that's [list], correct?"
-Step 2. Ask what DAY works. Recommend one if they're unsure.
-Step 3. Once they pick a day, call get_calendar_slots (pass a duration_minutes estimate if you have one, otherwise default).
-Step 4. Offer 2–3 real available time slots from the result and ask which they prefer.
-Step 5. Wait for them to pick.
-Step 6. Collect any missing required info: first name, last name, email, phone, full address (street, city, zip), lead_source.
-Step 7. Call book_new_job. After success, confirm with a full line-item breakdown.
+Step 2. Call search_service_catalog and settle the exact line items (service IDs + quantities) BEFORE you talk about times. Job length is derived from the price, so you cannot offer a time until you know what you're booking.
+Step 3. Ask what DAY works. Recommend one if they're unsure.
+Step 4. Once they pick a day, call get_calendar_slots for that date and PASS line_items — the same list you're about to book. This guarantees the times you offer are long enough for the job.
+Step 5. Offer 2–3 real available time slots from the result and ask which they prefer.
+Step 6. Wait for them to pick.
+Step 7. Collect any missing required info: first name, last name, email, phone, full address (street, city, zip), lead_source.
+Step 8. Call book_new_job with the slot_token copied EXACTLY from the get_calendar_slots result for the time they chose. After success, confirm with a full line-item breakdown.
+
+If get_calendar_slots comes back with no slots, that date genuinely cannot fit
+this job. Say so and offer a different date. Do NOT re-run the same date with a
+smaller duration to force a slot open.
 
 Hard stops:
 - NEVER call book_new_job without a time the customer explicitly picked from get_calendar_slots.
 - NEVER auto-pick a time.
+- NEVER make up a slot_token. It is a long signed string that only get_calendar_slots can produce. If you don't have one in front of you, call get_calendar_slots again.
+- If a line item changes after you fetched slots (they add a room, correct a size), you MUST call get_calendar_slots again with the updated line_items. The old slot_token is no longer valid.
 - NEVER call book_new_job without first AND last name, email, phone, full address (street/city/zip), and lead_source.
 - MINIMUM JOB TOTAL: $150. If selected services total under $150, tell the customer: "Our minimum job total is $150. Would you like to add more rooms or services, or book this at the $150 minimum?" If they explicitly accept the $150 minimum, you may call book_new_job with accepted_minimum_charge=true. Do NOT escalate this as a technical issue.
 - Commercial jobs do NOT use book_new_job. Use book_commercial_estimate to schedule a free on-site walkthrough — see the COMMERCIAL / WALKTHROUGH ESTIMATES section below.
@@ -270,20 +468,54 @@ Hard rules:
 - The walkthrough is about an hour. Don't offer a 3-hour slot, and don't undersell it as "a few minutes" either.
 - NEVER send commercial customers to a link or form. You book them right here.
 
+## THE TWO CARPET TIERS (never mix them in one job)
+
+We sell carpet cleaning at two levels. Same room sizes, different process and price.
+
+1. **Standard Clean** — Pre-Spray + CRB scrub + Hot Water Extraction. The default.
+   Catalog category: "Carpet Cleaning"
+2. **Legendary Restoration Clean** — everything in Standard plus rotary extraction
+   and sanitize. This is our best clean and our answer for deep soil, heavy pet
+   traffic, rentals that have been abused, and "make it look new again".
+   Catalog category: "Legendary Restoration Clean"
+
+Offer Legendary whenever a customer says deeply soiled, really dirty, heavy pet
+odor, hasn't been cleaned in years, "the best you've got", or asks what your
+best/deepest option is. Explain the difference and let them choose — do NOT
+quietly downgrade someone who asked for the best clean.
+
+CRITICAL: searching a size name like "Sasquatch Size Room" returns BOTH tiers.
+Tell them apart by the "category" field, never by guessing. Every line item on a
+single job must come from the SAME tier.
+
 ## SQUARE FOOTAGE → SERVICE MAPPING (use these EXACT search terms with search_service_catalog)
 
+Standard Clean (category "Carpet Cleaning"):
 - Under 100 sqft → "Small Area / Walk-in Closet" ($30)
 - 100–200 sqft → "Regular Size Room" ($46)
 - 200–400 sqft → "Sasquatch Size Room" ($90)
 - 400–600 sqft → "Monster Size Room" ($138)
-- 600–800 sqft → "Jumbo Humungous Room" ($175)
-- Over 800 sqft → "Oversized Room Carpet Cleaning" ($0.25/sqft; quantity = measured sqft, e.g. 1000 sqft = quantity 1000)
+- 600–800 sqft → "Jumbo" ($175)
+- Over 800 sqft → "Oversized Room" ($0.25/sqft; quantity = measured sqft, e.g. 1000 sqft = quantity 1000)
 - Stairs → "Step Carpet Cleaning" ($4/step; quantity = number of steps)
+
+Legendary Restoration Clean (category "Legendary Restoration Clean"):
+- Search "Legendary" ONE time — that returns all six tiers with their IDs in a single call.
+- Up to 100 sqft → $50 · 100–200 → $75 · 200–400 → $145 · 400–600 → $210 · 600–800 → $265
+- Stairs / landings → $6 per step (quantity = number of steps)
+- There is no Legendary tier above 800 sqft — quote those as Standard, or call notify_charles.
+
+Add-ons and other surfaces (apply to either tier):
 - Pet urine treatment → "Urine Eliminator" ($30/room)
 - Sofa / Loveseat / Sectional / Recliner / Ottoman → search by name
 - Leather Chair / Leather Loveseat / Leather Sofa → search by name
-- Tile & Grout → "Tile and Grout"
+- Tile & Grout → "grout" ($0.75/sqft)
 - Area Rug → "Area Rug"
+
+NEVER invent a service name. If search_service_catalog returns an empty list,
+that service does not exist under that name — search a SHORTER term (one or two
+words) before concluding anything. Never tell a customer we can't find a service
+in "the catalog"; that's internal plumbing and it makes us look broken.
 
 NEVER assume a room size from its name. A "living room" could be 150 sqft or 600 sqft. A "basement" could be anything. ALWAYS ask for square footage before picking a tier. The only soft default: if the customer says "X bedrooms" without sizes, default to Regular Size Room ($46) but confirm: "Are those standard-size bedrooms, roughly under 200 sq ft?"
 
@@ -311,14 +543,14 @@ Example:
 **Standard Carpet Cleaning** (Pre-Spray + CRB scrub + Hot Water Extraction):
 - Up to 100 sq ft: $30 · 100–200: $46 · 200–400: $90 · 400–600: $138 · 600–800: $175 · Over 800: $0.25/sqft · Stairs: $4/step · Pet urine: $30/room
 
-**Deep Restoration** (adds rotary extraction + sanitize; only when they say "really dirty" / "deep"):
-- 100–200: $75 · 201–400: $150 · 401–600: $225 · 601–800: $300
+**Legendary Restoration Clean** (Standard plus rotary extraction + sanitize — our best clean):
+- Up to 100 sq ft: $50 · 100–200: $75 · 200–400: $145 · 400–600: $210 · 600–800: $265 · Stairs: $6/step
 
 **Upholstery**: Sofa $150 · Loveseat $100 · Sectional $50/seat · Recliner $75 · Ottoman $40
 
 **Leather** (Leather Master 3-step): Chair $99 · Loveseat $159 · Sofa $199
 
-**Hard Surfaces**: Tile & Grout $0.80/sqft · Area Rugs $0.80/sqft
+**Hard Surfaces**: Tile & Grout $0.75/sqft · Area Rugs $0.80/sqft
 
 **Carpet Protector (Scotchgard)**: Not available — banned in Colorado under PFAS regulations. Say: "Carpet protector products are banned in Colorado due to PFAS rules, so we can't apply them. Our deep-clean process keeps carpets looking great without it."
 
@@ -349,27 +581,37 @@ Use notify_charles for:
 - Any situation where you told the customer Charles will contact them
 - Anything truly stuck that a human needs to resolve
 
-## HONESTY GUARDRAIL
+## HONESTY GUARDRAIL (the single most important rule you have)
 
 - ONLY tell the customer something was booked if book_new_job returned "success": true and a confirmation_number.
+- Quote the confirmation_number the tool gave you, character for character. NEVER type a made-up or example confirmation number. If you don't have one from a tool, you don't have a booking.
+- NEVER write a placeholder like "[total to be confirmed]" into a confirmation. If you can't state the real total, you are not ready to confirm anything.
 - If a tool returns "error", do NOT claim it worked. Handle the error:
   - Missing data → ask the customer for it ("I need your email for the confirmation — what's the best one?")
-  - Time not available → call get_calendar_slots again and offer the real suggested_slots
+  - Time not available → offer the real suggested_slots from the error, or a different date if the list is empty
   - Under $150 minimum → tell them and offer to add services or book at the $150 minimum. If they explicitly accept the minimum, retry book_new_job with accepted_minimum_charge=true.
   - Out-of-area / technical / truly stuck → collect their phone number, then call notify_charles.
+- If you cannot get a booking through after a genuine attempt, say so plainly, collect their phone number, and call notify_charles. A customer who knows they still need to be booked is a saved job. A customer who was told they're booked when they aren't is a lost customer and a missed appointment.
 - NEVER use phrases like "I'll go ahead and update that" or "Done!" unless a tool just returned success.
+
+Note: the server independently verifies every booking claim against the actual
+tool results. If you claim a booking that did not happen, your message is
+replaced with a correction and Charles is paged. You cannot talk your way past
+this — just be accurate.
 
 ## TONE
 
 - Friendly, professional, concise. Think helpful neighbor, not a robot.
 - Use the customer's name once you know it.
 - Keep replies tight on mobile — short paragraphs, bulleted line items on quotes/confirmations.
-- After a successful book_new_job, ALWAYS give the full breakdown, example:
-  "You're booked! Confirmation #ABCD1234
-  • 4 bedrooms × $46 = $184
-  • 1 living room × $90 = $90
-  Total: $274
-  See you Saturday, April 20 at 10:00 AM. We'll text a reminder the day before."
+- After a successful book_new_job, ALWAYS give the full breakdown in this SHAPE.
+  Every value in angle brackets must be copied from the tool result or your own
+  confirmed line items — the brackets are placeholders, never type them:
+  "You're booked! Confirmation #<confirmation_number from the tool result>
+  • <qty> <room> × $<unit price> = $<line total>
+  • <qty> <room> × $<unit price> = $<line total>
+  Total: $<total from the tool result>
+  See you <day>, <date> at <time>. We'll text a reminder the day before."
 
 ## CONVERSATION START
 
@@ -499,7 +741,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const conversationHistory = Array.isArray(body.conversationHistory)
+    // Only a fallback now — server-side history from ai_chat_logs is
+    // authoritative (see loadSessionMemory). Kept for the first turn of a
+    // session and for the case where the history read fails.
+    const clientHistory: ChatTurn[] = Array.isArray(body.conversationHistory)
       ? (body.conversationHistory as Array<{ role: string; content: string }>)
           .filter(
             (m) =>
@@ -508,6 +753,10 @@ export async function POST(request: NextRequest) {
               (m.role === 'user' || m.role === 'assistant'),
           )
           .slice(-MAX_HISTORY_ITEMS)
+          .map((m) => ({
+            role: m.role as 'user' | 'assistant',
+            content: m.content,
+          }))
       : []
 
     const clientIp = getClientIp(request)
@@ -553,7 +802,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 6. Log inbound message (best-effort; logging never throws)
+    const supabase = createAdminClient()
+
+    // 6. Rebuild state from our own tables. Must happen BEFORE the inbound
+    //    message is logged, otherwise it comes back as history of itself.
+    const sessionMemory = await loadSessionMemory(supabase, sessionId)
+    const conversationHistory =
+      sessionMemory.history.length > 0 ? sessionMemory.history : clientHistory
+
+    // 7. Log inbound message (best-effort; logging never throws)
     await logChatMessage({
       agent: 'scout',
       channel: 'web',
@@ -565,13 +822,13 @@ export async function POST(request: NextRequest) {
         origin,
         user_agent: userAgent,
         history_length: conversationHistory.length,
+        history_source: sessionMemory.history.length > 0 ? 'server' : 'client',
       },
     })
 
-    // 7. Generate Scout's reply (with tool-calling loop)
+    // 8. Generate Scout's reply (with tool-calling loop)
     const started = Date.now()
     const model = 'gpt-4o'
-    const supabase = createAdminClient()
     const toolsEnabled = isScoutWebToolsEnabled()
 
     // Fetch active promo codes to inject into Scout's system prompt
@@ -616,6 +873,9 @@ export async function POST(request: NextRequest) {
     try {
       const messages: OpenAI.ChatCompletionMessageParam[] = [
         { role: 'system', content: buildSystemPrompt(promoBlock) },
+        ...(sessionMemory.note
+          ? [{ role: 'system' as const, content: sessionMemory.note }]
+          : []),
         ...conversationHistory.map((m) => ({
           role: m.role as 'user' | 'assistant',
           content: m.content,
@@ -625,6 +885,13 @@ export async function POST(request: NextRequest) {
 
       let finalText = ''
       let lastUsage: OpenAI.CompletionUsage | undefined
+
+      // Booking outcomes for this turn, used by the honesty gate below.
+      let bookingSucceeded = false
+      const bookingAttempts: Array<{
+        args: Record<string, unknown>
+        error: string | null
+      }> = []
 
       for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
         const completion = await openai.chat.completions.create({
@@ -670,6 +937,18 @@ export async function POST(request: NextRequest) {
               parsedResult = { raw: out }
             }
 
+            const toolError = success
+              ? null
+              : String((parsedResult?.error as string) ?? 'error')
+
+            if (BOOKING_TOOLS.includes(tc.function.name)) {
+              if (success && parsedResult?.success === true) {
+                bookingSucceeded = true
+              } else {
+                bookingAttempts.push({ args: parsedArgs, error: toolError })
+              }
+            }
+
             await logToolCall({
               agent: 'scout',
               sessionId,
@@ -677,9 +956,7 @@ export async function POST(request: NextRequest) {
               args: parsedArgs,
               result: parsedResult,
               success,
-              error: success
-                ? null
-                : String((parsedResult?.error as string) ?? 'error'),
+              error: toolError,
               durationMs: Date.now() - toolStarted,
             })
 
@@ -696,12 +973,83 @@ export async function POST(request: NextRequest) {
         break
       }
 
-      const response =
+      let response =
         finalText ||
         "I'm right here — tell me what you need cleaned and I'll get you quoted and booked."
+
+      // 9. HONESTY GATE. The model is not allowed to be the last word on
+      //    whether a booking exists. If the reply asserts one and no booking
+      //    tool has ever succeeded in this session, the claim is replaced and
+      //    Charles is paged.
+      let phantomBooking = false
+      if (!bookingSucceeded && claimsBooking(response)) {
+        phantomBooking = !(await sessionHasSuccessfulBooking(
+          supabase,
+          sessionId,
+        ))
+        if (phantomBooking) {
+          console.error(
+            `[scout] BLOCKED phantom booking claim (session ${sessionId}): ${response.slice(0, 300)}`,
+          )
+          response = BOOKING_NOT_COMPLETED_REPLY
+        }
+      }
+
       const latencyMs = Date.now() - started
 
-      // 8. Log Scout's reply
+      // 10. Page Charles on any booking that did not land. Awaited rather than
+      //     fire-and-forget: the serverless invocation is torn down as soon as
+      //     the response returns, which would drop the alert.
+      if (phantomBooking || (bookingAttempts.length > 0 && !bookingSucceeded)) {
+        // Prefer this turn's attempt; fall back to the last failure logged in
+        // this session so the alert always carries a phone number.
+        const lastAttempt =
+          bookingAttempts[bookingAttempts.length - 1] ??
+          (await loadLastFailedBookingAttempt(supabase, sessionId))
+        const a = (lastAttempt?.args ?? {}) as Record<string, unknown>
+        const str = (v: unknown) => (typeof v === 'string' && v ? v : null)
+        const name =
+          [str(a.first_name), str(a.last_name)].filter(Boolean).join(' ') ||
+          null
+        const street = str(a.street_1)
+        const errors = (
+          bookingAttempts.length > 0
+            ? bookingAttempts.map((t) => t.error)
+            : [lastAttempt?.error ?? null]
+        ).filter((e): e is string => Boolean(e))
+        const alertContext = {
+          sessionId,
+          customerName: name,
+          phone: str(a.customer_phone),
+          email: str(a.email),
+          address: street
+            ? `${street}, ${str(a.city) ?? ''} ${str(a.zip_code) ?? ''}`.trim()
+            : null,
+          requestedDate: str(a.appointment_date),
+          requestedTime: str(a.start_time),
+          errors,
+          lastCustomerMessage: rawMessage,
+        }
+
+        const alerted = await (
+          phantomBooking
+            ? sendScoutPhantomBookingAlert({
+                ...alertContext,
+                claimedText: finalText.slice(0, 600),
+              })
+            : sendScoutBookingFailureAlert(alertContext)
+        ).catch((err) => {
+          console.error('[scout] failed to send Telegram alert:', err)
+          return false
+        })
+        if (!alerted) {
+          console.error(
+            `[scout] TELEGRAM ALERT FAILED for session ${sessionId} — check bot config`,
+          )
+        }
+      }
+
+      // 11. Log Scout's reply
       await logChatMessage({
         agent: 'scout',
         channel: 'web',
@@ -713,7 +1061,15 @@ export async function POST(request: NextRequest) {
         tokensPrompt: lastUsage?.prompt_tokens ?? undefined,
         tokensCompletion: lastUsage?.completion_tokens ?? undefined,
         latencyMs,
-        metadata: { origin, tools_enabled: toolsEnabled },
+        metadata: {
+          origin,
+          tools_enabled: toolsEnabled,
+          booking_succeeded: bookingSucceeded,
+          booking_attempts: bookingAttempts.length,
+          ...(phantomBooking
+            ? { phantom_booking_blocked: true, suppressed_reply: finalText }
+            : {}),
+        },
       })
 
       return NextResponse.json(

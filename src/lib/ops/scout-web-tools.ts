@@ -11,6 +11,7 @@ import { getStaffPrioritizedSlots } from '@/lib/ops/staff-availability'
 import { createSlotToken, verifySlotToken } from '@/lib/ops/slot-token'
 import { checkServiceArea } from '@/lib/service-area'
 import { isExcludedFromBooking } from '@/lib/ops/bookable-catalog'
+import { sendScoutEscalationAlert } from '@/lib/telegram'
 
 /**
  * Scout Web Tools
@@ -73,6 +74,75 @@ function normalizePhone(raw: string): string {
   return '+1' + digits.slice(-10)
 }
 
+export type ParsedLineItem = { service_id: string; quantity: number }
+
+export function parseLineItems(raw: unknown): ParsedLineItem[] {
+  if (!Array.isArray(raw)) return []
+  return raw.map((row) => {
+    const r = row as { service_id?: string; quantity?: number }
+    return {
+      service_id: String(r.service_id || '').trim(),
+      quantity: Math.max(1, Number(r.quantity) || 1),
+    }
+  })
+}
+
+/**
+ * Price line items and derive the calendar duration they require.
+ *
+ * get_calendar_slots and book_new_job MUST size availability identically.
+ * Duration is a function of the dollar total, so when get_calendar_slots sizes
+ * from a guessed duration_minutes and book_new_job re-derives it from the real
+ * total, the slot Scout honestly offered disappears at booking time AND the
+ * signed slot_token stops verifying (it commits to required_minutes). That
+ * leaves Scout with no winnable move, which is how the 2026-08-23 phantom
+ * booking happened. Both paths go through here so they cannot drift again.
+ */
+export async function priceLineItems(
+  supabase: SupabaseClient,
+  lineItems: ParsedLineItem[],
+): Promise<
+  | { ok: true; serviceTotal: number; requiredMinutes: number }
+  | { ok: false; error: string }
+> {
+  const ids = lineItems.map((l) => l.service_id).filter(Boolean)
+  if (!ids.length) return { ok: false, error: 'line_items required' }
+
+  const { data: catalogRows } = await supabase
+    .from('service_catalog_items')
+    .select('id, base_price')
+    .in('id', ids)
+    .eq('is_active', true)
+
+  if (!catalogRows || catalogRows.length === 0) {
+    return {
+      ok: false,
+      error: 'None of the requested services matched active catalog items.',
+    }
+  }
+
+  // Sum PER LINE ITEM, not per catalog row. The model routinely emits the same
+  // service twice as separate rows ("2 Sasquatch rooms" → two quantity-1 rows),
+  // and a catalog-row reduce with .find() silently keeps only the first, halving
+  // the total. createAiStyleBooking prices per line item, so anything else here
+  // under-sizes the calendar block against the job it actually stores.
+  const priceById = new Map(
+    catalogRows.map((row) => [row.id as string, Number(row.base_price || 0)]),
+  )
+  const serviceTotal = lineItems.reduce((sum, item) => {
+    const price = priceById.get(item.service_id)
+    return price === undefined ? sum : sum + price * item.quantity
+  }, 0)
+
+  return {
+    ok: true,
+    serviceTotal,
+    requiredMinutes: applyAppointmentBuffer(
+      calculateAppointmentDurationFromTotal(serviceTotal),
+    ),
+  }
+}
+
 export type ScoutWebToolContext = {
   supabase: SupabaseClient
   /** Identifier used for per-session rate limiting (IP or session id). */
@@ -104,15 +174,29 @@ export const SCOUT_WEB_TOOLS: OpenAI.ChatCompletionTool[] = [
     function: {
       name: 'get_calendar_slots',
       description:
-        'Get available start times for a calendar date (YYYY-MM-DD) in America/Denver. Call this before offering times to the customer.',
+        'Get available start times for a calendar date (YYYY-MM-DD) in America/Denver. Call this before offering times to the customer. ALWAYS pass line_items once you know the services — job length is derived from the price, so without line_items the times returned may not survive booking.',
       parameters: {
         type: 'object',
         properties: {
           date: { type: 'string', description: 'YYYY-MM-DD' },
+          line_items: {
+            type: 'array',
+            description:
+              'The exact services you intend to book, same shape as book_new_job. Pass this whenever you know the services so the slot you offer is guaranteed long enough.',
+            items: {
+              type: 'object',
+              properties: {
+                service_id: { type: 'string' },
+                quantity: { type: 'number' },
+              },
+              required: ['service_id', 'quantity'],
+              additionalProperties: false,
+            },
+          },
           duration_minutes: {
             type: 'number',
             description:
-              'Total job duration in minutes before buffer (default 120)',
+              'Rough job duration in minutes (default 120). ONLY used when line_items is omitted — prefer line_items.',
           },
         },
         required: ['date'],
@@ -376,10 +460,24 @@ export async function executeScoutWebTool(
           })
         }
 
-        const durationParam = Number(args.duration_minutes || 120)
-        const requiredMinutes = applyAppointmentBuffer(
-          durationParam > 0 ? durationParam : 120,
-        )
+        // Size the search off the real priced services when Scout has them.
+        // Falling back to a guessed duration is what lets book_new_job disagree
+        // later, so the response says so out loud when that happens.
+        const slotLineItems = parseLineItems(args.line_items)
+        let requiredMinutes: number
+        let pricedTotal: number | null = null
+
+        if (slotLineItems.length) {
+          const priced = await priceLineItems(supabase, slotLineItems)
+          if (!priced.ok) return JSON.stringify({ error: priced.error })
+          requiredMinutes = priced.requiredMinutes
+          pricedTotal = priced.serviceTotal
+        } else {
+          const durationParam = Number(args.duration_minutes || 120)
+          requiredMinutes = applyAppointmentBuffer(
+            durationParam > 0 ? durationParam : 120,
+          )
+        }
 
         const staffResult = await getStaffPrioritizedSlots({
           supabase,
@@ -388,16 +486,29 @@ export async function executeScoutWebTool(
           maxResults: 12,
         })
 
-        if (!staffResult) {
+        const estimateWarning = slotLineItems.length
+          ? undefined
+          : 'These times are based on an ESTIMATED job length. Once you know the services, call get_calendar_slots again with line_items before you offer a time.'
+
+        if (!staffResult || staffResult.slots.length === 0) {
           return JSON.stringify({
             date,
             slots: [],
-            message: 'No availability on this date',
+            required_minutes: requiredMinutes,
+            ...(pricedTotal !== null
+              ? { priced_service_total: pricedTotal }
+              : {}),
+            message: `No ${requiredMinutes}-minute opening on this date. This job needs a ${requiredMinutes}-minute window. Offer the customer a DIFFERENT DATE — do not retry this date with a shorter duration.`,
           })
         }
 
         return JSON.stringify({
           date,
+          required_minutes: requiredMinutes,
+          ...(pricedTotal !== null
+            ? { priced_service_total: pricedTotal }
+            : {}),
+          ...(estimateWarning ? { warning: estimateWarning } : {}),
           slots: staffResult.slots.map((s) => ({
             start_time: s.start_time.slice(0, 5),
             end_time: s.end_time.slice(0, 5),
@@ -490,36 +601,15 @@ export async function executeScoutWebTool(
           }
         }
 
-        const parsedLineItems = lineItems.map((row: unknown) => {
-          const r = row as { service_id?: string; quantity?: number }
-          return {
-            service_id: String(r.service_id || '').trim(),
-            quantity: Math.max(1, Number(r.quantity) || 1),
-          }
-        })
+        const parsedLineItems = parseLineItems(lineItems)
 
-        const catalogIds = parsedLineItems.map((l) => l.service_id)
-        const { data: catalogRows } = await supabase
-          .from('service_catalog_items')
-          .select(
-            'id, slug, default_duration_minutes, base_price, pricing_unit',
-          )
-          .in('id', catalogIds)
-          .eq('is_active', true)
-
-        if (!catalogRows || catalogRows.length === 0) {
-          return JSON.stringify({
-            error:
-              'None of the requested services matched active catalog items.',
-          })
+        const priced = await priceLineItems(supabase, parsedLineItems)
+        if (!priced.ok) {
+          return JSON.stringify({ error: priced.error })
         }
 
         const MIN_JOB_TOTAL = 150
-        const preServiceTotal = catalogRows.reduce((sum, row) => {
-          const qty =
-            parsedLineItems.find((p) => p.service_id === row.id)?.quantity ?? 1
-          return sum + Number(row.base_price || 0) * qty
-        }, 0)
+        const preServiceTotal = priced.serviceTotal
         const serviceAreaCheck = checkServiceArea(zipCode)
         if (!serviceAreaCheck.allowed) {
           return JSON.stringify({ error: serviceAreaCheck.message })
@@ -531,12 +621,10 @@ export async function executeScoutWebTool(
           })
         }
 
-        // Check availability with the SAME duration createAiStyleBooking
+        // Availability is checked with the SAME duration createAiStyleBooking
         // stores (dollar tiers on the service subtotal) so the verified slot
         // and the stored calendar block can never disagree.
-        const requiredMinutes = applyAppointmentBuffer(
-          calculateAppointmentDurationFromTotal(preServiceTotal),
-        )
+        const requiredMinutes = priced.requiredMinutes
         const bookStaffResult = await getStaffPrioritizedSlots({
           supabase,
           date: appointmentDate,
@@ -549,11 +637,19 @@ export async function executeScoutWebTool(
         const wantStart = normClock5(startTime)
         const match = slots.find((s) => normClock5(s.start_time) === wantStart)
         if (!match) {
+          const openStarts = slots
+            .slice(0, 8)
+            .map((s) => s.start_time.slice(0, 5))
+          // Spell out WHY, and what the only valid next move is. The old message
+          // just said "call get_calendar_slots first", which sent Scout into a
+          // loop re-offering the same rejected time.
           return JSON.stringify({
-            error: `That start time is not available on ${appointmentDate}. Call get_calendar_slots first and offer a listed time.`,
-            suggested_slots: slots
-              .slice(0, 8)
-              .map((s) => s.start_time.slice(0, 5)),
+            error: openStarts.length
+              ? `${wantStart} is not open on ${appointmentDate}. This job prices at $${preServiceTotal.toFixed(2)}, so it needs a ${requiredMinutes}-minute window. Offer the customer one of the open start times listed below, then book the one they pick.`
+              : `There is NO ${requiredMinutes}-minute opening anywhere on ${appointmentDate}. This job prices at $${preServiceTotal.toFixed(2)}, which needs ${requiredMinutes} minutes, and the calendar cannot fit it that day. Apologise, offer the customer a DIFFERENT DATE, and call get_calendar_slots with these same line_items to find one. Do NOT tell the customer they are booked, and do NOT retry this date.`,
+            required_minutes: requiredMinutes,
+            priced_service_total: preServiceTotal,
+            suggested_slots: openStarts,
           })
         }
         const slotTokenCheck = verifySlotToken(slotToken, {
@@ -737,6 +833,18 @@ export async function executeScoutWebTool(
           })
         }
 
+        // Telegram first, and independently of email. An escalation that only
+        // lands in an inbox is one Charles won't see for hours.
+        const telegramSent = await sendScoutEscalationAlert({
+          reason,
+          customerName: customerName || null,
+          phone: customerPhone || null,
+          notes: conversationSummary,
+        }).catch((err) => {
+          console.error('[scout] notify_charles telegram error:', err)
+          return false
+        })
+
         const resendKey = process.env.RESEND_API_KEY
         const toEmail = process.env.OWNER_ALERT_EMAIL
         const fromEmail =
@@ -747,9 +855,16 @@ export async function executeScoutWebTool(
             '[scout] notify_charles: RESEND_API_KEY or OWNER_ALERT_EMAIL not set',
           )
           return JSON.stringify({
-            success: true,
-            message:
-              'Alert logged (email not configured — set RESEND_API_KEY and OWNER_ALERT_EMAIL in env).',
+            success: telegramSent,
+            message: telegramSent
+              ? 'Charles has been notified by Telegram.'
+              : 'Alert could not be delivered — no notification channel is configured.',
+            ...(telegramSent
+              ? {}
+              : {
+                  error:
+                    'Alert not delivered. Tell the customer to call (719) 249-8791.',
+                }),
           })
         }
 
@@ -784,14 +899,16 @@ ${rows ? `<table border="1" cellpadding="6" cellspacing="0" style="border-collap
 
         if (sendError) {
           console.error('[scout] notify_charles email error:', sendError)
-          return JSON.stringify({
-            error: 'Failed to send alert email. The issue has been logged.',
-          })
+          if (!telegramSent) {
+            return JSON.stringify({
+              error: 'Failed to send alert. The issue has been logged.',
+            })
+          }
         }
 
         return JSON.stringify({
           success: true,
-          message: 'Charles has been notified by email.',
+          message: `Charles has been notified${telegramSent ? ' by Telegram' : ''}${!sendError ? `${telegramSent ? ' and' : ' by'} email` : ''}.`,
         })
       }
 

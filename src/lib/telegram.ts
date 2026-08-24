@@ -243,6 +243,128 @@ ${details}`
   await sendTelegramNotification(message, { parseMode: 'Markdown' })
 }
 
+// ── Scout (website chat) alerts ────────────────────────────────────────────────
+
+const SCOUT_LOGS_URL = 'https://sightings.sasquatchcarpet.com/admin/scout/logs'
+const TELEGRAM_MAX_CHARS = 4_096
+
+/** Deep link that opens this session's transcript directly. */
+function scoutTranscriptUrl(sessionId: string): string {
+  return `${SCOUT_LOGS_URL}?session=${encodeURIComponent(sessionId)}`
+}
+
+/**
+ * Scout alerts quote raw customer text (names, addresses, their own messages),
+ * which regularly contains `_`, `*` and `[`. Telegram rejects the whole request
+ * when Markdown doesn't parse, so these deliberately send as PLAIN TEXT — a
+ * dropped booking-failure alert is exactly the outage we're trying to close.
+ */
+async function sendScoutAlert(lines: Array<string | null>): Promise<boolean> {
+  const text = lines.filter((l) => l !== null).join('\n')
+  return sendTelegramNotification(text.slice(0, TELEGRAM_MAX_CHARS))
+}
+
+export type ScoutBookingAttemptContext = {
+  sessionId: string
+  customerName?: string | null
+  phone?: string | null
+  email?: string | null
+  address?: string | null
+  requestedDate?: string | null
+  requestedTime?: string | null
+  errors?: string[]
+  lastCustomerMessage?: string | null
+}
+
+function contactLines(ctx: ScoutBookingAttemptContext): Array<string | null> {
+  return [
+    ctx.customerName ? `👤 ${ctx.customerName}` : null,
+    ctx.phone ? `📞 ${ctx.phone}` : null,
+    ctx.email ? `✉️ ${ctx.email}` : null,
+    ctx.address ? `📍 ${ctx.address}` : null,
+    ctx.requestedDate
+      ? `📅 Wanted: ${ctx.requestedDate}${ctx.requestedTime ? ` at ${ctx.requestedTime}` : ''}`
+      : null,
+  ]
+}
+
+/**
+ * Scout told a customer they were booked when no booking tool ever succeeded.
+ * This is the highest-severity Scout failure: the customer walks away believing
+ * they have an appointment that does not exist.
+ */
+export async function sendScoutPhantomBookingAlert(
+  ctx: ScoutBookingAttemptContext & { claimedText?: string | null },
+): Promise<boolean> {
+  return sendScoutAlert([
+    '🚨 SCOUT CLAIMED A BOOKING THAT NEVER HAPPENED',
+    '',
+    'Scout told a website visitor they were booked, but no booking was',
+    'created. The customer has been sent a correction and told you will',
+    'follow up. CALL THEM.',
+    '',
+    ...contactLines(ctx),
+    ...(ctx.errors?.length
+      ? ['', 'Why booking failed:', ...ctx.errors.map((e) => `• ${e}`)]
+      : ['', 'Scout never even attempted a booking tool call.']),
+    ctx.lastCustomerMessage
+      ? `\nTheir last message:\n"${ctx.lastCustomerMessage}"`
+      : null,
+    ctx.claimedText ? `\nWhat Scout wrongly said:\n"${ctx.claimedText}"` : null,
+    '',
+    `Transcript: ${scoutTranscriptUrl(ctx.sessionId)}`,
+    `Session: ${ctx.sessionId}`,
+  ])
+}
+
+/**
+ * A booking tool returned an error. Scout was honest with the customer, but a
+ * lead is stalled mid-booking and needs a human.
+ */
+export async function sendScoutBookingFailureAlert(
+  ctx: ScoutBookingAttemptContext,
+): Promise<boolean> {
+  return sendScoutAlert([
+    '⚠️ SCOUT COULD NOT COMPLETE A BOOKING',
+    '',
+    'A website visitor tried to book and the booking tool failed. Scout did',
+    'NOT claim it worked, but this lead is stuck.',
+    '',
+    ...contactLines(ctx),
+    ...(ctx.errors?.length
+      ? ['', 'Errors:', ...ctx.errors.map((e) => `• ${e}`)]
+      : []),
+    ctx.lastCustomerMessage
+      ? `\nTheir last message:\n"${ctx.lastCustomerMessage}"`
+      : null,
+    '',
+    `Transcript: ${scoutTranscriptUrl(ctx.sessionId)}`,
+    `Session: ${ctx.sessionId}`,
+  ])
+}
+
+/**
+ * Scout escalated on purpose via notify_charles. Mirrors the Resend email to
+ * Telegram so it lands on the phone, not just the inbox.
+ */
+export async function sendScoutEscalationAlert(params: {
+  reason: string
+  customerName?: string | null
+  phone?: string | null
+  notes?: string | null
+}): Promise<boolean> {
+  return sendScoutAlert([
+    '🔔 SCOUT NEEDS YOU',
+    '',
+    `Reason: ${params.reason}`,
+    params.customerName ? `👤 ${params.customerName}` : null,
+    params.phone ? `📞 ${params.phone}` : null,
+    params.notes ? `\nNotes:\n${params.notes}` : null,
+    '',
+    `Transcript: ${SCOUT_LOGS_URL}`,
+  ])
+}
+
 /**
  * Schedule a Telegram reminder for 30 minutes before a job.
  * Uses a simple setTimeout approach - for production, consider a job queue.
