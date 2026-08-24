@@ -1,6 +1,5 @@
 import { createClient } from '@/supabase/server'
 import { MapView } from '@/components/public/MapView'
-import { DarkHero } from '@/components/public/DarkHero'
 import { ContactSection } from '@/components/public/ContactSection'
 import { Button } from '@/components/ui/button'
 import { Suspense } from 'react'
@@ -83,10 +82,7 @@ export default async function Home() {
         </Suspense>
       </div>
 
-      {/* Dark Hero Section */}
-      <DarkHero />
-
-      {/* Map Section */}
+      {/* Map Section — this page leads with the map on purpose. */}
       <section id="map" className="relative h-screen bg-[#0a0a0a]">
         {/* Section header */}
         <div className="absolute top-0 right-0 left-0 z-10 bg-gradient-to-b from-[#0a0a0a] to-transparent py-8">
