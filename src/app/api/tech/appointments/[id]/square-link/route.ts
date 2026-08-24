@@ -10,6 +10,7 @@ import {
   createInvoicePaymentToken,
 } from '@/lib/payments/signed-payment-link'
 import { normalizeUsPhoneInput, sendCustomerSMSWithResult } from '@/lib/twilio'
+import { paymentTextSenderName } from '@/lib/ops/payment-texts'
 import { createAdminClient } from '@/supabase/server'
 
 function publicSiteOrigin(request: Request): string {
@@ -148,8 +149,13 @@ export async function POST(
     const sms = await sendCustomerSMSWithResult(
       destinationPhone,
       smsBody,
-      appointment.invoice.id,
+      undefined,
       'square_payment_link',
+      undefined,
+      {
+        invoiceId: appointment.invoice.id,
+        sentBy: paymentTextSenderName(access),
+      },
     )
 
     return NextResponse.json({

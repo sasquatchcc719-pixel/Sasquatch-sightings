@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { opsPhoneLookupVariants } from '@/lib/ops/phone'
+import { PAYMENT_TEXT_TYPES } from '@/lib/ops/payment-texts'
 import { createAdminClient } from '@/supabase/server'
 
-/** Outbound Operations / lifecycle SMS (Twilio), stored in sms_logs with message_type ops_* */
+/** Outbound Operations SMS (Twilio): lifecycle ops_* plus invoice payment texts */
 export async function GET(request: NextRequest) {
   try {
     await requireAnyRole(['admin', 'owner', 'dispatcher', 'marketing'])
@@ -47,14 +48,21 @@ export async function GET(request: NextRequest) {
         message_content,
         status,
         twilio_sid,
-        sent_at
+        sent_at,
+        sent_by,
+        invoice_id
       `,
         { count: 'exact' },
       )
-      .like('message_type', 'ops_%')
       .order('sent_at', { ascending: false })
 
-    if (messageType) query = query.eq('message_type', messageType)
+    if (messageType) {
+      query = query.eq('message_type', messageType)
+    } else {
+      query = query.or(
+        `message_type.like.ops_%,message_type.in.(${PAYMENT_TEXT_TYPES.join(',')})`,
+      )
+    }
     if (status) query = query.eq('status', status)
     if (q) {
       const escaped = q.replace(/[,%]/g, ' ').trim()

@@ -21,6 +21,7 @@ import {
   createInvoicePaymentToken,
 } from '@/lib/payments/signed-payment-link'
 import { isBlacklisted } from '@/lib/blacklist'
+import { paymentTextSenderName } from '@/lib/ops/payment-texts'
 
 const VENMO_USERNAME = process.env.VENMO_BUSINESS_USERNAME ?? 'SasquatchCarpet'
 
@@ -185,6 +186,10 @@ export async function POST(
     const supabase = createAdminClient()
     const { id } = await params
     await assertTechInvoiceAccess(supabase, access, id)
+    const smsMeta = {
+      invoiceId: id,
+      sentBy: paymentTextSenderName(access),
+    }
     const body = (await request.json()) as {
       channel: 'sms' | 'email' | 'both'
       type?:
@@ -298,13 +303,15 @@ export async function POST(
 
     // Excluded work (fiber we could not safely clean, customer declines) stays
     // on the internal record but never reaches the customer's invoice.
-    const lineItems = ((invoice.ops_invoice_line_items || []) as Array<{
-      description: string
-      quantity: number
-      unit_price: number
-      line_total: number
-      excluded_at?: string | null
-    }>).filter((line) => !line.excluded_at)
+    const lineItems = (
+      (invoice.ops_invoice_line_items || []) as Array<{
+        description: string
+        quantity: number
+        unit_price: number
+        line_total: number
+        excluded_at?: string | null
+      }>
+    ).filter((line) => !line.excluded_at)
 
     const venmoUrl = buildVenmoPaymentLink({
       username: VENMO_USERNAME,
@@ -379,8 +386,10 @@ export async function POST(
       const sms = await sendCustomerSMSWithResult(
         customerPhone,
         linkBody,
-        id,
+        undefined,
         'square_payment_link',
+        undefined,
+        smsMeta,
       )
       return NextResponse.json({
         ok: true,
@@ -412,8 +421,10 @@ export async function POST(
       const sms = await sendCustomerSMSWithResult(
         customerPhone,
         linkBody,
-        id,
+        undefined,
         'venmo_payment_link',
+        undefined,
+        smsMeta,
       )
       return NextResponse.json({
         ok: true,
@@ -518,8 +529,10 @@ export async function POST(
       const sms = await sendCustomerSMSWithResult(
         customerPhone,
         linkBody,
-        id,
+        undefined,
         'payment_link',
+        undefined,
+        smsMeta,
       )
       return NextResponse.json({ ok: true, payment_url: paymentUrl, sms })
     }
@@ -537,7 +550,14 @@ export async function POST(
         errors.push('No phone number on file for this customer.')
       } else {
         const smsBody = buildSmsBody(customerName, addressText, total, venmoUrl)
-        await sendCustomerSMS(customerPhone, smsBody, id, 'invoice_send')
+        await sendCustomerSMS(
+          customerPhone,
+          smsBody,
+          undefined,
+          'invoice_send',
+          undefined,
+          smsMeta,
+        )
       }
     }
 

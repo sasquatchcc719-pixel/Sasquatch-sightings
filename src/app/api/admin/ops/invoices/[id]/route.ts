@@ -15,6 +15,7 @@ import {
   normalizeLeadSourceForWrite,
 } from '@/lib/server/lead-sources'
 import { isBlacklisted } from '@/lib/blacklist'
+import { loadInvoicePaymentTexts } from '@/lib/ops/load-payment-texts'
 
 const INVOICE_SELECT = `
   *,
@@ -182,8 +183,9 @@ export async function GET(
     if (error) throw error
 
     const customerMessages = await loadCustomerMessages(supabase, data)
+    const paymentTexts = await loadInvoicePaymentTexts(supabase, id)
 
-    return NextResponse.json({ invoice: data, customerMessages })
+    return NextResponse.json({ invoice: data, customerMessages, paymentTexts })
   } catch (error) {
     console.error('[ops/invoices/:id][GET] Error:', error)
     return NextResponse.json(

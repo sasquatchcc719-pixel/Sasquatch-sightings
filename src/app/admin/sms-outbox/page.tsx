@@ -14,6 +14,7 @@ type SmsLogEntry = {
   status: string | null
   twilio_sid: string | null
   sent_at: string
+  sent_by?: string | null
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -23,6 +24,10 @@ const TYPE_LABELS: Record<string, string> = {
   ops_job_rescheduled_sms: 'Rescheduled',
   ops_day_before_residential_sms: 'Day-before reminder (Residential)',
   ops_day_before_recovery_village_sms: 'Day-before reminder (Recovery Village)',
+  square_payment_link: 'Square Pay link',
+  venmo_payment_link: 'Venmo Pay link',
+  payment_link: 'QuickBooks Pay link',
+  invoice_send: 'Invoice text',
 }
 
 export default function SmsOutboxPage() {
@@ -75,13 +80,13 @@ export default function SmsOutboxPage() {
         <div>
           <h1 className="text-xl font-semibold">SMS Outbox (Operations)</h1>
           <p className="text-sm text-white/50">
-            Outbound texts from booking, on-my-way, job finished, etc. {total}{' '}
-            message{total !== 1 ? 's' : ''} logged
+            Outbound texts from booking, on-my-way, job finished, and payment
+            links. {total} message{total !== 1 ? 's' : ''} logged
           </p>
           <p className="mt-1 max-w-2xl text-xs text-white/35">
             Inbound texts to your business number live under Comms → Direct
-            Texts. This list is only automated Operations SMS (not lead/contest
-            nurture).
+            Texts. This list is automated Operations SMS plus Square / Venmo /
+            invoice payment texts.
           </p>
         </div>
         <MessageSquare className="h-5 w-5 text-white/30" />
@@ -159,6 +164,11 @@ export default function SmsOutboxPage() {
                   <Badge variant="outline" className="text-xs">
                     {TYPE_LABELS[row.message_type] || row.message_type}
                   </Badge>
+                  {row.sent_by ? (
+                    <span className="text-muted-foreground text-xs">
+                      by {row.sent_by}
+                    </span>
+                  ) : null}
                 </div>
                 <p className="text-muted-foreground mt-2 text-xs break-words whitespace-pre-wrap">
                   {row.message_content}

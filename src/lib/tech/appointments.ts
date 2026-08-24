@@ -1,6 +1,8 @@
 import { createAdminClient } from '@/supabase/server'
 import { requiresFiberCheck } from '@/lib/fiber/requires-check'
 import type { FiberVerdict } from '@/lib/fiber/types'
+import { loadInvoicePaymentTexts } from '@/lib/ops/load-payment-texts'
+import type { PaymentTextSend } from '@/lib/ops/payment-texts'
 
 type SupabaseAdminClient = ReturnType<typeof createAdminClient>
 
@@ -70,6 +72,7 @@ export type TechAppointment = {
     signatureUrl: string | null
     signatureCapturedAt: string | null
     signatureCustomerName: string | null
+    paymentTexts: PaymentTextSend[]
   } | null
   lineItems: TechLineItem[]
   photos: TechPhoto[]
@@ -424,6 +427,7 @@ export function mapTechAppointment(
           signatureUrl: invoice.signature_url ?? null,
           signatureCapturedAt: invoice.signature_captured_at ?? null,
           signatureCustomerName: invoice.signature_customer_name ?? null,
+          paymentTexts: [],
         }
       : null,
     lineItems: lineItems.map((line) => {
@@ -551,7 +555,25 @@ export async function getTechAppointmentForAccess(
     return null
   }
 
-  return mapTechAppointment(data)
+  return withPaymentTexts(supabase, mapTechAppointment(data))
+}
+
+async function withPaymentTexts(
+  supabase: SupabaseAdminClient,
+  appointment: TechAppointment,
+): Promise<TechAppointment> {
+  if (!appointment.invoice) return appointment
+  const paymentTexts = await loadInvoicePaymentTexts(
+    supabase,
+    appointment.invoice.id,
+  )
+  return {
+    ...appointment,
+    invoice: {
+      ...appointment.invoice,
+      paymentTexts,
+    },
+  }
 }
 
 /**

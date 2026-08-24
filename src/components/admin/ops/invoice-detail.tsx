@@ -41,6 +41,11 @@ import {
 import { SignatureModal } from './signature-modal'
 import { CityQuickPick } from './city-quick-pick'
 import { nextZipForCityPick } from '@/lib/ops/service-cities'
+import { lastPaymentText, type PaymentTextSend } from '@/lib/ops/payment-texts'
+import {
+  PaymentTextHistoryList,
+  PaymentTextLastSent,
+} from '@/components/ops/payment-text-history'
 
 /** A ring-within-a-ring progress node for the Sightings Map Post stepper. */
 function PublishStepNode({
@@ -378,6 +383,7 @@ export function InvoiceDetail({
   const [customerMessages, setCustomerMessages] = useState<CustomerMessage[]>(
     [],
   )
+  const [paymentTexts, setPaymentTexts] = useState<PaymentTextSend[]>([])
   const [driveStartedAtMs, setDriveStartedAtMs] = useState<number | null>(null)
   const [showSignatureModal, setShowSignatureModal] = useState(false)
   // Rugs and upholstery must be identified before a signature is captured.
@@ -545,98 +551,104 @@ export function InvoiceDetail({
     }
   }
 
-  const loadInvoice = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const response = await fetch(`/api/admin/ops/invoices/${invoiceId}`, {
-        cache: 'no-store',
-      })
-      const result = await response.json()
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to load invoice')
-      }
-      setInvoice(result.invoice)
-      setStatus(result.invoice.status)
-      setDiscount(String(result.invoice.discount_amount || 0))
-      setPaymentMethod(result.invoice.payment_method ?? null)
-      setCustomerMessages(
-        Array.isArray(result.customerMessages) ? result.customerMessages : [],
-      )
-
-      // Load appointment data for GPS and photos
-      const appt = Array.isArray(result.invoice.ops_appointments)
-        ? result.invoice.ops_appointments[0]
-        : result.invoice.ops_appointments
-
-      const custForPhone = appt
-        ? Array.isArray(appt.ops_customers)
-          ? appt.ops_customers[0]
-          : appt.ops_customers
-        : null
-      setPaymentLinkPhone((prev) => prev || custForPhone?.phone || '')
-
-      // Load GPS coordinates if they exist
-      if (
-        appt?.gps_lat &&
-        appt?.gps_lng &&
-        Number.isFinite(appt.gps_lat) &&
-        Number.isFinite(appt.gps_lng)
-      ) {
-        setGpsCoords({ lat: appt.gps_lat, lng: appt.gps_lng })
-      }
-
-      // Photos are now embedded in the invoice response via the appointment join
-      const embeddedPhotos = appt?.ops_job_photos ?? null
-      if (Array.isArray(embeddedPhotos)) {
-        setPhotos(embeddedPhotos)
-      } else if (appt?.id) {
-        // Fallback: fetch separately if the join didn't return photos
-        const photosRes = await fetch(
-          `/api/admin/ops/appointments/${appt.id}/photos`,
-          { cache: 'no-store' },
-        )
-        if (photosRes.ok) {
-          const photosData = await photosRes.json()
-          setPhotos(photosData.photos ?? [])
+  const loadInvoice = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!opts?.silent) setLoading(true)
+      setError(null)
+      try {
+        const response = await fetch(`/api/admin/ops/invoices/${invoiceId}`, {
+          cache: 'no-store',
+        })
+        const result = await response.json()
+        if (!response.ok) {
+          throw new Error(result.error || 'Failed to load invoice')
         }
+        setInvoice(result.invoice)
+        setStatus(result.invoice.status)
+        setDiscount(String(result.invoice.discount_amount || 0))
+        setPaymentMethod(result.invoice.payment_method ?? null)
+        setCustomerMessages(
+          Array.isArray(result.customerMessages) ? result.customerMessages : [],
+        )
+        setPaymentTexts(
+          Array.isArray(result.paymentTexts) ? result.paymentTexts : [],
+        )
+
+        // Load appointment data for GPS and photos
+        const appt = Array.isArray(result.invoice.ops_appointments)
+          ? result.invoice.ops_appointments[0]
+          : result.invoice.ops_appointments
+
+        const custForPhone = appt
+          ? Array.isArray(appt.ops_customers)
+            ? appt.ops_customers[0]
+            : appt.ops_customers
+          : null
+        setPaymentLinkPhone((prev) => prev || custForPhone?.phone || '')
+
+        // Load GPS coordinates if they exist
+        if (
+          appt?.gps_lat &&
+          appt?.gps_lng &&
+          Number.isFinite(appt.gps_lat) &&
+          Number.isFinite(appt.gps_lng)
+        ) {
+          setGpsCoords({ lat: appt.gps_lat, lng: appt.gps_lng })
+        }
+
+        // Photos are now embedded in the invoice response via the appointment join
+        const embeddedPhotos = appt?.ops_job_photos ?? null
+        if (Array.isArray(embeddedPhotos)) {
+          setPhotos(embeddedPhotos)
+        } else if (appt?.id) {
+          // Fallback: fetch separately if the join didn't return photos
+          const photosRes = await fetch(
+            `/api/admin/ops/appointments/${appt.id}/photos`,
+            { cache: 'no-store' },
+          )
+          if (photosRes.ok) {
+            const photosData = await photosRes.json()
+            setPhotos(photosData.photos ?? [])
+          }
+        }
+        setLineItems(
+          (result.invoice.ops_invoice_line_items || []).map(
+            (item: {
+              id: string
+              appointment_line_item_id: string | null
+              description: string
+              quantity: number
+              unit_price: number
+              excluded_at?: string | null
+              excluded_reason?: string | null
+              excluded_original_total?: number | null
+            }) => ({
+              id: item.id,
+              appointment_line_item_id: item.appointment_line_item_id,
+              description: item.description,
+              quantity: Number(item.quantity),
+              unit_price: String(item.unit_price),
+              excluded_at: item.excluded_at ?? null,
+              excluded_reason: item.excluded_reason ?? null,
+              excluded_original_total:
+                item.excluded_original_total == null
+                  ? null
+                  : Number(item.excluded_original_total),
+            }),
+          ),
+        )
+      } catch (loadError) {
+        setError(
+          loadError instanceof Error
+            ? loadError.message
+            : 'Failed to load invoice',
+        )
+      } finally {
+        setLoading(false)
       }
-      setLineItems(
-        (result.invoice.ops_invoice_line_items || []).map(
-          (item: {
-            id: string
-            appointment_line_item_id: string | null
-            description: string
-            quantity: number
-            unit_price: number
-            excluded_at?: string | null
-            excluded_reason?: string | null
-            excluded_original_total?: number | null
-          }) => ({
-            id: item.id,
-            appointment_line_item_id: item.appointment_line_item_id,
-            description: item.description,
-            quantity: Number(item.quantity),
-            unit_price: String(item.unit_price),
-            excluded_at: item.excluded_at ?? null,
-            excluded_reason: item.excluded_reason ?? null,
-            excluded_original_total:
-              item.excluded_original_total == null
-                ? null
-                : Number(item.excluded_original_total),
-          }),
-        ),
-      )
-    } catch (loadError) {
-      setError(
-        loadError instanceof Error
-          ? loadError.message
-          : 'Failed to load invoice',
-      )
-    } finally {
-      setLoading(false)
-    }
-  }, [invoiceId])
+    },
+    [invoiceId],
+  )
 
   useEffect(() => {
     void loadInvoice()
@@ -1010,6 +1022,7 @@ export function InvoiceDetail({
             body: JSON.stringify({ status: 'sent' }),
           })
         }
+        if (channel === 'sms') await loadInvoice({ silent: true })
       }
     } catch {
       setSendFeedback({ channel, ok: false, message: 'Failed to send' })
@@ -1228,9 +1241,9 @@ export function InvoiceDetail({
                 ? `Square payment link sent to ${result.sms?.to || 'customer'}${result.sms?.sid ? ` (${result.sms.sid})` : ''}.`
                 : `Venmo payment link sent to ${result.sms?.to || 'customer'}${result.sms?.sid ? ` (${result.sms.sid})` : ''}.`,
         })
-        if (type === 'quickbooks') await loadInvoice()
         if (type === 'quickbooks') setError(null)
         setTimeout(() => setPaymentLinkFeedback(null), 8000)
+        await loadInvoice({ silent: true })
       }
     } catch (sendError) {
       const message =
@@ -1454,6 +1467,8 @@ export function InvoiceDetail({
   )
   const billableTotal = total > 0.005 ? total : Number(invoice?.total || 0)
   const squareAmount = formatSquareAmount(billableTotal)
+  const lastSquareText = lastPaymentText(paymentTexts, 'square_payment_link')
+  const lastVenmoText = lastPaymentText(paymentTexts, 'venmo_payment_link')
   const receiptEmail = customer?.email?.trim() ?? ''
   const publishNeedsAttention = /needs? attention/i.test(publishMessage ?? '')
   const selectedLeadSource = leadSourceOptions.find(
@@ -2263,9 +2278,14 @@ export function InvoiceDetail({
                     ) : (
                       <SquareLogoMark className="h-4 w-4" />
                     )}
-                    {paymentLinkLoading === 'square' ? 'Sending…' : 'Text Link'}
+                    {paymentLinkLoading === 'square'
+                      ? 'Sending…'
+                      : lastSquareText
+                        ? 'Text Again'
+                        : 'Text Link'}
                   </Button>
                 </div>
+                <PaymentTextLastSent send={lastSquareText} tone="dark" />
                 {paymentLinkFeedback?.type === 'square' ? (
                   <p
                     className={`mt-2 text-sm ${paymentLinkFeedback.ok ? 'text-green-300' : 'text-red-300'}`}
@@ -2297,8 +2317,11 @@ export function InvoiceDetail({
                 )}
                 {paymentLinkLoading === 'venmo'
                   ? 'Sending Venmo Link...'
-                  : 'Text Venmo Pay Link'}
+                  : lastVenmoText
+                    ? 'Text Venmo Pay Link Again'
+                    : 'Text Venmo Pay Link'}
               </Button>
+              <PaymentTextLastSent send={lastVenmoText} tone="light" />
               {paymentLinkFeedback?.type === 'venmo' ? (
                 <p
                   className={`mt-2 text-sm ${paymentLinkFeedback.ok ? 'text-green-600' : 'text-red-500'}`}
@@ -2323,6 +2346,8 @@ export function InvoiceDetail({
             </Button>
           </div>
         )}
+
+        <PaymentTextHistoryList sends={paymentTexts} />
       </Card>
 
       <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">

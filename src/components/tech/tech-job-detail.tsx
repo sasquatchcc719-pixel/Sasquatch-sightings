@@ -30,6 +30,11 @@ import {
 import { CleaningReminderButtons } from '@/components/ops/cleaning-reminder-buttons'
 import { formatSquareAmount } from '@/lib/payments/square'
 import { FLOOR_PLAN_MAPS } from '@/lib/ops/floor-plan-maps'
+import { lastPaymentText } from '@/lib/ops/payment-texts'
+import {
+  PaymentTextHistoryList,
+  PaymentTextLastSent,
+} from '@/components/ops/payment-text-history'
 
 function formatTime(value: string | null): string {
   if (!value) return 'Time TBD'
@@ -79,7 +84,9 @@ function FiberCheckRow({
       >
         <ShieldQuestion className="h-4 w-4 shrink-0 text-amber-400" />
         <span className="text-sm font-medium text-amber-200">
-          {showLabel ? `${label} — tap to identify` : 'Fiber check required — tap to identify'}
+          {showLabel
+            ? `${label} — tap to identify`
+            : 'Fiber check required — tap to identify'}
         </span>
       </button>
     )
@@ -103,9 +110,7 @@ function FiberCheckRow({
       onClick={onOpen}
       className={`w-full rounded-lg border p-2 text-left ${styles}`}
     >
-      {showLabel ? (
-        <p className="mb-0.5 text-xs opacity-75">{label}</p>
-      ) : null}
+      {showLabel ? <p className="mb-0.5 text-xs opacity-75">{label}</p> : null}
       <div className="flex items-center gap-2">
         {check.verdict === 'go' ? (
           <CheckCircle2 className="h-4 w-4 shrink-0" />
@@ -196,6 +201,10 @@ export function TechJobDetail({
     ? null
     : (appointment.invoice?.total ?? appointment.quotedTotal)
   const squareAmount = formatSquareAmount(payableTotal)
+  const lastSquareText = lastPaymentText(
+    appointment.invoice?.paymentTexts ?? [],
+    'square_payment_link',
+  )
 
   async function updateJob(body: Record<string, unknown>) {
     setError(null)
@@ -405,6 +414,18 @@ export function TechJobDetail({
       setSquareLinkFeedback(
         `Square payment link sent to ${result.sms?.to || 'customer'}${result.sms?.sid ? ` (${result.sms.sid})` : ''}.`,
       )
+      const refreshed = await fetch(
+        `/api/tech/appointments/${appointment.id}`,
+        { cache: 'no-store' },
+      )
+      if (refreshed.ok) {
+        const refreshedResult = (await refreshed.json()) as {
+          appointment?: TechAppointment
+        }
+        if (refreshedResult.appointment) {
+          setAppointment(refreshedResult.appointment)
+        }
+      }
     } catch (err) {
       setError(
         err instanceof Error
@@ -729,7 +750,7 @@ export function TechJobDetail({
               ) : null}
               {line.excludedAt ? (
                 <div className="mt-2 rounded-lg border border-red-500/40 bg-red-950/40 p-2">
-                  <p className="text-xs font-bold uppercase tracking-wide text-red-300">
+                  <p className="text-xs font-bold tracking-wide text-red-300 uppercase">
                     Not performed — removed from invoice
                   </p>
                   <p className="mt-0.5 text-xs text-slate-300">
@@ -755,7 +776,10 @@ export function TechJobDetail({
                       showLabel={unitsForLine(line) > 1}
                       check={fiberCheckFor(line.id, unit)}
                       onOpen={() =>
-                        setFiberCheckTarget({ lineId: line.id, unitIndex: unit })
+                        setFiberCheckTarget({
+                          lineId: line.id,
+                          unitIndex: unit,
+                        })
                       }
                     />
                   ))}
@@ -818,8 +842,13 @@ export function TechJobDetail({
                 )}
                 {sendingSquareLink
                   ? 'Sending Square Link...'
-                  : `Text Square Pay Link · ${squareAmount}`}
+                  : lastSquareText
+                    ? `Text Square Pay Link Again · ${squareAmount}`
+                    : `Text Square Pay Link · ${squareAmount}`}
               </Button>
+            ) : null}
+            {squareAmount ? (
+              <PaymentTextLastSent send={lastSquareText} tone="dark" />
             ) : null}
             {squareAmount ? (
               <p className="text-center text-xs text-slate-400">
@@ -830,6 +859,12 @@ export function TechJobDetail({
               <p className="text-center text-xs text-emerald-300">
                 {squareLinkFeedback}
               </p>
+            ) : null}
+            {appointment.invoice ? (
+              <PaymentTextHistoryList
+                sends={appointment.invoice.paymentTexts}
+                tone="dark"
+              />
             ) : null}
             <Button
               variant="outline"
@@ -865,8 +900,8 @@ export function TechJobDetail({
                 </Button>
                 {signatureBlocked ? (
                   <p className="text-center text-xs text-amber-300">
-                    Fiber check required on {blockedItems.join(', ')} before
-                    the customer signs.
+                    Fiber check required on {blockedItems.join(', ')} before the
+                    customer signs.
                   </p>
                 ) : null}
               </>

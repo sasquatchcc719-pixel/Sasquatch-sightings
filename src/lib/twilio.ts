@@ -32,12 +32,21 @@ export function normalizeSmsBody(message: string): string {
     .trim()
 }
 
+export type CustomerSmsMeta = {
+  invoiceId?: string
+  sentBy?: string
+}
+
 /**
- * Log SMS to database for tracking and history
+ * Log SMS to database for tracking and history.
+ * Never put an invoice UUID in lead_id — that column FKs to leads(id) and the
+ * insert fails silently, which is how payment texts vanished from history.
  */
 async function logSMS(params: {
   leadId?: string
   partnerId?: string
+  invoiceId?: string
+  sentBy?: string
   recipientPhone: string
   messageType: string
   messageContent: string
@@ -46,15 +55,20 @@ async function logSMS(params: {
 }): Promise<void> {
   try {
     const supabase = createAdminClient()
-    await supabase.from('sms_logs').insert({
+    const { error } = await supabase.from('sms_logs').insert({
       lead_id: params.leadId || null,
       partner_id: params.partnerId || null,
+      invoice_id: params.invoiceId || null,
+      sent_by: params.sentBy?.trim() || null,
       recipient_phone: params.recipientPhone,
       message_type: params.messageType,
       message_content: params.messageContent,
       twilio_sid: params.twilioSid || null,
       status: params.status || 'sent',
     })
+    if (error) {
+      console.error('Failed to log SMS:', error)
+    }
   } catch (error) {
     console.error('Failed to log SMS:', error)
     // Don't throw - logging failure shouldn't break SMS sending
@@ -175,6 +189,7 @@ export async function sendCustomerSMS(
   leadId?: string,
   messageType: string = 'customer_notification',
   fromNumber?: string,
+  meta?: CustomerSmsMeta,
 ): Promise<void> {
   const normalizedMessage = normalizeSmsBody(message)
 
@@ -185,6 +200,7 @@ export async function sendCustomerSMS(
       leadId,
       messageType,
       fromNumber,
+      meta,
     )
   } catch (error) {
     console.error(
@@ -193,7 +209,9 @@ export async function sendCustomerSMS(
     )
 
     await logSMS({
-      leadId,
+      leadId: meta?.invoiceId ? undefined : leadId,
+      invoiceId: meta?.invoiceId,
+      sentBy: meta?.sentBy,
       recipientPhone: toE164(customerPhone),
       messageType,
       messageContent: normalizedMessage,
@@ -212,6 +230,7 @@ export async function sendCustomerSMSWithResult(
   leadId?: string,
   messageType: string = 'customer_notification',
   fromNumber?: string,
+  meta?: CustomerSmsMeta,
 ): Promise<{ sid: string; to: string; from: string }> {
   if (!client || (!twilioPhone && !messagingServiceSid)) {
     throw new Error(
@@ -259,7 +278,9 @@ export async function sendCustomerSMSWithResult(
   )
 
   await logSMS({
-    leadId,
+    leadId: meta?.invoiceId ? undefined : leadId,
+    invoiceId: meta?.invoiceId,
+    sentBy: meta?.sentBy,
     recipientPhone: toPhone,
     messageType,
     messageContent: normalizedMessage,
