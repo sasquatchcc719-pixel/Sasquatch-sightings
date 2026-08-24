@@ -1,6 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
+import { createPortal } from 'react-dom'
 import {
   AlertTriangle,
   CheckCircle2,
@@ -30,6 +37,9 @@ import {
   type SessionSummary,
 } from './shared'
 
+/** Hydration flag only — there is nothing external to subscribe to. */
+const NOOP_SUBSCRIBE = () => () => {}
+
 type SessionBrowserProps = {
   summaries: SessionSummary[]
   /** Server-rendered detail for a ?session= deep link, so it opens instantly. */
@@ -58,6 +68,19 @@ export function SessionBrowser({
   const [detail, setDetail] = useState<SessionDetail | null>(initialDetail)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // The overlay has to be portalled to <body>. The /admin content wrapper uses
+  // .glass-panel, whose backdrop-filter makes it the containing block for
+  // fixed-position descendants — so inset-0 resolved against the full height of
+  // the page instead of the viewport and centred the window far below the fold,
+  // where the scroll lock made it unreachable.
+  //
+  // Portals cannot be server-rendered, so the overlay waits for hydration.
+  const mounted = useSyncExternalStore(
+    NOOP_SUBSCRIBE,
+    () => true,
+    () => false,
+  )
 
   // Transcripts are immutable once logged, so a fetched session can be reopened
   // from memory. Seeded with the deep-linked session the server already sent.
@@ -127,13 +150,22 @@ export function SessionBrowser({
     }
     document.addEventListener('keydown', onKeyDown)
 
+    // Hiding overflow removes the scrollbar, which shifts the page sideways
+    // behind the overlay unless its width is given back as padding.
     const previousOverflow = document.body.style.overflow
+    const previousPaddingRight = document.body.style.paddingRight
+    const scrollbarWidth =
+      window.innerWidth - document.documentElement.clientWidth
     document.body.style.overflow = 'hidden'
+    if (scrollbarWidth > 0) {
+      document.body.style.paddingRight = `${scrollbarWidth}px`
+    }
     closeButtonRef.current?.focus()
 
     return () => {
       document.removeEventListener('keydown', onKeyDown)
       document.body.style.overflow = previousOverflow
+      document.body.style.paddingRight = previousPaddingRight
     }
   }, [openSessionId, close])
 
@@ -220,236 +252,243 @@ export function SessionBrowser({
         )}
       </section>
 
-      {openSessionId && (
-        <div
-          className="fixed inset-0 z-[220] flex items-stretch justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) close()
-          }}
-        >
+      {openSessionId &&
+        mounted &&
+        createPortal(
           <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="scout-session-title"
-            className="bg-card flex h-full w-full max-w-5xl flex-col border-white/10 shadow-2xl sm:h-auto sm:max-h-[90vh] sm:rounded-2xl sm:border"
+            className="fixed inset-0 z-[9999] flex items-stretch justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) close()
+            }}
           >
-            {/* Header stays put; only the body below scrolls. */}
-            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-white/10 p-4">
-              <div className="min-w-0">
-                <h2
-                  id="scout-session-title"
-                  className="flex flex-wrap items-center gap-2 text-lg font-semibold"
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="scout-session-title"
+              className="bg-card flex h-[100dvh] w-full max-w-5xl flex-col border-white/10 shadow-2xl sm:h-auto sm:max-h-[90dvh] sm:rounded-2xl sm:border"
+            >
+              {/* Header stays put; only the body below scrolls. */}
+              <div className="flex shrink-0 items-start justify-between gap-3 border-b border-white/10 p-4">
+                <div className="min-w-0">
+                  <h2
+                    id="scout-session-title"
+                    className="flex flex-wrap items-center gap-2 text-lg font-semibold"
+                  >
+                    <span className="font-mono">
+                      {shortSessionId(openSessionId)}
+                    </span>
+                    {summary?.booked && (
+                      <Badge className="bg-emerald-500 text-slate-950 hover:bg-emerald-500">
+                        Booked
+                      </Badge>
+                    )}
+                    {summary?.phantomBlocked && (
+                      <Badge variant="destructive">Phantom blocked</Badge>
+                    )}
+                    {(summary?.failedToolCount ?? 0) > 0 && (
+                      <Badge variant="destructive">Review</Badge>
+                    )}
+                  </h2>
+                  {summary && (
+                    <div className="text-muted-foreground mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+                      <span>Started {formatDateTime(summary.startedAt)}</span>
+                      <span>Updated {formatDateTime(summary.updatedAt)}</span>
+                      <span>{summarizeUserAgent(summary.userAgent)}</span>
+                      {summary.origin && <span>{summary.origin}</span>}
+                    </div>
+                  )}
+                </div>
+                <button
+                  ref={closeButtonRef}
+                  type="button"
+                  onClick={close}
+                  aria-label="Close conversation"
+                  className="text-muted-foreground hover:text-foreground shrink-0 rounded-md p-1 hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:outline-none"
                 >
-                  <span className="font-mono">
-                    {shortSessionId(openSessionId)}
-                  </span>
-                  {summary?.booked && (
-                    <Badge className="bg-emerald-500 text-slate-950 hover:bg-emerald-500">
-                      Booked
-                    </Badge>
-                  )}
-                  {summary?.phantomBlocked && (
-                    <Badge variant="destructive">Phantom blocked</Badge>
-                  )}
-                  {(summary?.failedToolCount ?? 0) > 0 && (
-                    <Badge variant="destructive">Review</Badge>
-                  )}
-                </h2>
-                {summary && (
-                  <div className="text-muted-foreground mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
-                    <span>Started {formatDateTime(summary.startedAt)}</span>
-                    <span>Updated {formatDateTime(summary.updatedAt)}</span>
-                    <span>{summarizeUserAgent(summary.userAgent)}</span>
-                    {summary.origin && <span>{summary.origin}</span>}
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
+                {loading && (
+                  <div className="text-muted-foreground flex items-center justify-center gap-2 py-16 text-sm">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Loading conversation...
+                  </div>
+                )}
+
+                {error && (
+                  <div className="rounded-lg border border-red-400/40 bg-red-500/10 p-4 text-sm text-red-100">
+                    {error}
+                  </div>
+                )}
+
+                {!loading && !error && detail && (
+                  <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+                    <div className="min-w-0 space-y-3">
+                      <h3 className="flex items-center gap-2 text-sm font-semibold">
+                        <MessageSquare className="h-4 w-4 text-cyan-300" />
+                        Transcript
+                      </h3>
+                      {detail.logs.map((log) => {
+                        const suppressed =
+                          typeof log.metadata?.suppressed_reply === 'string'
+                            ? log.metadata.suppressed_reply
+                            : null
+                        return (
+                          <article
+                            key={log.id}
+                            className={cn(
+                              'rounded-lg border p-3',
+                              transcriptRoleClass(log.role),
+                            )}
+                          >
+                            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <Badge variant="outline" className="capitalize">
+                                  {log.role}
+                                </Badge>
+                                {log.model && (
+                                  <span className="text-muted-foreground text-xs">
+                                    {log.model}
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-muted-foreground text-xs">
+                                {formatTime(log.created_at)}
+                              </span>
+                            </div>
+                            <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                              {log.content || '(empty)'}
+                            </p>
+                            {suppressed && (
+                              <div className="mt-3 rounded-md border border-red-400/40 bg-red-950/40 p-2">
+                                <div className="flex items-center gap-2 text-xs font-semibold text-red-100">
+                                  <ShieldAlert className="h-3.5 w-3.5" />
+                                  Blocked claim (never sent to the customer)
+                                </div>
+                                <p className="mt-1 text-xs whitespace-pre-wrap text-red-100/80">
+                                  {suppressed}
+                                </p>
+                              </div>
+                            )}
+                            {(log.latency_ms ||
+                              log.tokens_prompt ||
+                              log.tokens_completion) && (
+                              <div className="text-muted-foreground mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+                                {log.latency_ms != null && (
+                                  <span>{formatDuration(log.latency_ms)}</span>
+                                )}
+                                {log.tokens_prompt != null && (
+                                  <span>{log.tokens_prompt} prompt tokens</span>
+                                )}
+                                {log.tokens_completion != null && (
+                                  <span>
+                                    {log.tokens_completion} completion tokens
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </article>
+                        )
+                      })}
+                      {detail.logs.length === 0 && (
+                        <div className="text-muted-foreground rounded-lg border border-white/10 bg-white/5 p-4 text-sm">
+                          No messages were logged for this session.
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="min-w-0 space-y-3">
+                      <h3 className="flex items-center gap-2 text-sm font-semibold">
+                        <TerminalSquare className="h-4 w-4 text-amber-300" />
+                        Tool Calls
+                      </h3>
+                      {detail.tools.map((tool) => {
+                        const booked = bookingFingerprint(tool)
+                        return (
+                          <article
+                            key={tool.id}
+                            className={cn(
+                              'rounded-lg border p-3',
+                              tool.success
+                                ? 'border-white/10 bg-white/5'
+                                : 'border-red-400/40 bg-red-500/10',
+                            )}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="font-medium">
+                                    {humanizeToolName(tool.tool_name)}
+                                  </span>
+                                  {tool.success ? (
+                                    <CheckCircle2 className="h-4 w-4 text-emerald-300" />
+                                  ) : (
+                                    <AlertTriangle className="h-4 w-4 text-red-300" />
+                                  )}
+                                </div>
+                                <div className="text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+                                  <span>{formatTime(tool.created_at)}</span>
+                                  <span>
+                                    {formatDuration(tool.duration_ms)}
+                                  </span>
+                                </div>
+                              </div>
+                              <Badge
+                                variant={
+                                  tool.success ? 'outline' : 'destructive'
+                                }
+                              >
+                                {tool.success ? 'ok' : 'failed'}
+                              </Badge>
+                            </div>
+
+                            {tool.error && (
+                              <p className="mt-3 rounded-md bg-red-950/40 p-2 text-xs text-red-100">
+                                {tool.error}
+                              </p>
+                            )}
+
+                            {booked && (
+                              <div className="mt-3 rounded-md border border-emerald-400/30 bg-emerald-500/10 p-2 text-xs">
+                                <div className="font-semibold text-emerald-100">
+                                  {booked.confirmationNumber}
+                                </div>
+                                <div className="text-muted-foreground mt-1">
+                                  {booked.appointmentDate} at {booked.startTime}{' '}
+                                  · {formatMoney(booked.total)}
+                                </div>
+                              </div>
+                            )}
+
+                            <details className="mt-3">
+                              <summary className="cursor-pointer text-xs font-medium text-cyan-100">
+                                Args and result
+                              </summary>
+                              <pre className="mt-2 max-h-80 overflow-auto rounded-md bg-slate-950/70 p-3 text-xs leading-relaxed">
+                                {safeJson({
+                                  args: tool.args,
+                                  result: tool.result,
+                                })}
+                              </pre>
+                            </details>
+                          </article>
+                        )
+                      })}
+                      {detail.tools.length === 0 && (
+                        <div className="text-muted-foreground rounded-lg border border-white/10 bg-white/5 p-4 text-sm">
+                          No tool calls were logged for this session.
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
-              <button
-                ref={closeButtonRef}
-                type="button"
-                onClick={close}
-                aria-label="Close conversation"
-                className="text-muted-foreground hover:text-foreground shrink-0 rounded-md p-1 hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:outline-none"
-              >
-                <X className="h-5 w-5" />
-              </button>
             </div>
-
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
-              {loading && (
-                <div className="text-muted-foreground flex items-center justify-center gap-2 py-16 text-sm">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Loading conversation...
-                </div>
-              )}
-
-              {error && (
-                <div className="rounded-lg border border-red-400/40 bg-red-500/10 p-4 text-sm text-red-100">
-                  {error}
-                </div>
-              )}
-
-              {!loading && !error && detail && (
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-                  <div className="min-w-0 space-y-3">
-                    <h3 className="flex items-center gap-2 text-sm font-semibold">
-                      <MessageSquare className="h-4 w-4 text-cyan-300" />
-                      Transcript
-                    </h3>
-                    {detail.logs.map((log) => {
-                      const suppressed =
-                        typeof log.metadata?.suppressed_reply === 'string'
-                          ? log.metadata.suppressed_reply
-                          : null
-                      return (
-                        <article
-                          key={log.id}
-                          className={cn(
-                            'rounded-lg border p-3',
-                            transcriptRoleClass(log.role),
-                          )}
-                        >
-                          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                            <div className="flex items-center gap-2">
-                              <Badge variant="outline" className="capitalize">
-                                {log.role}
-                              </Badge>
-                              {log.model && (
-                                <span className="text-muted-foreground text-xs">
-                                  {log.model}
-                                </span>
-                              )}
-                            </div>
-                            <span className="text-muted-foreground text-xs">
-                              {formatTime(log.created_at)}
-                            </span>
-                          </div>
-                          <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                            {log.content || '(empty)'}
-                          </p>
-                          {suppressed && (
-                            <div className="mt-3 rounded-md border border-red-400/40 bg-red-950/40 p-2">
-                              <div className="flex items-center gap-2 text-xs font-semibold text-red-100">
-                                <ShieldAlert className="h-3.5 w-3.5" />
-                                Blocked claim (never sent to the customer)
-                              </div>
-                              <p className="mt-1 text-xs whitespace-pre-wrap text-red-100/80">
-                                {suppressed}
-                              </p>
-                            </div>
-                          )}
-                          {(log.latency_ms ||
-                            log.tokens_prompt ||
-                            log.tokens_completion) && (
-                            <div className="text-muted-foreground mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs">
-                              {log.latency_ms != null && (
-                                <span>{formatDuration(log.latency_ms)}</span>
-                              )}
-                              {log.tokens_prompt != null && (
-                                <span>{log.tokens_prompt} prompt tokens</span>
-                              )}
-                              {log.tokens_completion != null && (
-                                <span>
-                                  {log.tokens_completion} completion tokens
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </article>
-                      )
-                    })}
-                    {detail.logs.length === 0 && (
-                      <div className="text-muted-foreground rounded-lg border border-white/10 bg-white/5 p-4 text-sm">
-                        No messages were logged for this session.
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="min-w-0 space-y-3">
-                    <h3 className="flex items-center gap-2 text-sm font-semibold">
-                      <TerminalSquare className="h-4 w-4 text-amber-300" />
-                      Tool Calls
-                    </h3>
-                    {detail.tools.map((tool) => {
-                      const booked = bookingFingerprint(tool)
-                      return (
-                        <article
-                          key={tool.id}
-                          className={cn(
-                            'rounded-lg border p-3',
-                            tool.success
-                              ? 'border-white/10 bg-white/5'
-                              : 'border-red-400/40 bg-red-500/10',
-                          )}
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="font-medium">
-                                  {humanizeToolName(tool.tool_name)}
-                                </span>
-                                {tool.success ? (
-                                  <CheckCircle2 className="h-4 w-4 text-emerald-300" />
-                                ) : (
-                                  <AlertTriangle className="h-4 w-4 text-red-300" />
-                                )}
-                              </div>
-                              <div className="text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs">
-                                <span>{formatTime(tool.created_at)}</span>
-                                <span>{formatDuration(tool.duration_ms)}</span>
-                              </div>
-                            </div>
-                            <Badge
-                              variant={tool.success ? 'outline' : 'destructive'}
-                            >
-                              {tool.success ? 'ok' : 'failed'}
-                            </Badge>
-                          </div>
-
-                          {tool.error && (
-                            <p className="mt-3 rounded-md bg-red-950/40 p-2 text-xs text-red-100">
-                              {tool.error}
-                            </p>
-                          )}
-
-                          {booked && (
-                            <div className="mt-3 rounded-md border border-emerald-400/30 bg-emerald-500/10 p-2 text-xs">
-                              <div className="font-semibold text-emerald-100">
-                                {booked.confirmationNumber}
-                              </div>
-                              <div className="text-muted-foreground mt-1">
-                                {booked.appointmentDate} at {booked.startTime} ·{' '}
-                                {formatMoney(booked.total)}
-                              </div>
-                            </div>
-                          )}
-
-                          <details className="mt-3">
-                            <summary className="cursor-pointer text-xs font-medium text-cyan-100">
-                              Args and result
-                            </summary>
-                            <pre className="mt-2 max-h-80 overflow-auto rounded-md bg-slate-950/70 p-3 text-xs leading-relaxed">
-                              {safeJson({
-                                args: tool.args,
-                                result: tool.result,
-                              })}
-                            </pre>
-                          </details>
-                        </article>
-                      )
-                    })}
-                    {detail.tools.length === 0 && (
-                      <div className="text-muted-foreground rounded-lg border border-white/10 bg-white/5 p-4 text-sm">
-                        No tool calls were logged for this session.
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
     </>
   )
 }
