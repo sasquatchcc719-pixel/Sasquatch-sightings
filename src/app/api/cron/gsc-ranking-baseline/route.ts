@@ -1,9 +1,9 @@
 /**
  * Cron: weekly GSC ranking-baseline snapshot (Mondays, after gsc-watch).
- * Stores site-wide totals + watchlist keyword positions, diffs vs last week
- * and vs ~28 days ago, and sends Charles a Telegram digest so ranking
- * progress (not just index coverage) is visible week to week and month to
- * month.
+ * Stores site-wide totals + watchlist keyword positions, then sends Charles a
+ * report-card image plus a plain-English write-up comparing this week against
+ * the whole stored history, so ranking progress (not just index coverage) is
+ * visible week to week.
  */
 
 import { NextRequest, NextResponse } from 'next/server'

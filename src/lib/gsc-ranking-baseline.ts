@@ -1,10 +1,11 @@
 /**
  * Weekly GSC ranking-baseline snapshot.
+ *
  * Stores site-wide 28-day totals (clicks, impressions, CTR, avg position) for
- * both properties plus a fixed watchlist of priority unbranded keywords that
- * are currently off page 1. Diffs against the prior weekly snapshot (WoW) and
- * the snapshot closest to 28 days back (MoM) so Charles can see whether the
- * SEO push is actually moving the needle, not just index coverage.
+ * both properties plus a fixed watchlist of priority unbranded keywords, then
+ * reports the trend against the full stored history rather than a single prior
+ * week. The wording, thresholds and verdict live in gsc-ranking-report.ts; this
+ * module is the IO around them — pull from Google, persist, render, deliver.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -14,21 +15,27 @@ import {
   queryKeywordRows,
   GSC_WWW_PROPERTY,
   GSC_SIGHTINGS_PROPERTY,
-  type GscTotals,
 } from '@/lib/gsc'
-import { sendTelegramNotification } from '@/lib/telegram'
+import {
+  buildGscReport,
+  classifyKeyword,
+  type KeywordCurrent,
+  type KeywordSnapshot,
+  type KeywordVerdict,
+  type SiteSnapshot,
+} from '@/lib/gsc-ranking-report'
+import { deliverReportCard } from '@/lib/reports/telegram-report'
 
 const WINDOW_DAYS = 28
 /** GSC data lags ~2-3 days; never ask for the freshest days. */
 const DATA_LAG_DAYS = 3
-/** How far back a "month ago" comparison snapshot may be to still count. */
-const MOM_TARGET_DAYS = 28
-const MOM_TOLERANCE_DAYS = 6
+/** Weeks of history to pull for trend and record-run detection. */
+const HISTORY_LIMIT = 12
 
 /**
- * Priority unbranded keywords that have real impression volume but are
- * stuck off page 1 (see the baseline pull from 2026-07-02). Update this list
- * as terms move onto page 1 or new targets emerge.
+ * Priority unbranded keywords that have real impression volume but were stuck
+ * off page 1 at the 2026-07-02 baseline. Update as terms move or new targets
+ * emerge. (Slated to become an editable list in the admin Telegram tab.)
  */
 export const RANKING_WATCHLIST_KEYWORDS = [
   'carpet cleaners colorado springs',
@@ -39,133 +46,58 @@ export const RANKING_WATCHLIST_KEYWORDS = [
   'briargate cleaning',
 ]
 
-type SiteSnapshotRow = {
-  property: string
-  window_days: number
-  clicks: number
-  impressions: number
-  ctr: number
-  avg_position: number
-  checked_at: string
-}
-
-type KeywordSnapshotRow = {
-  property: string
-  keyword: string
-  page: string | null
-  clicks: number
-  impressions: number
-  avg_position: number
-  checked_at: string
-}
-
 export type RankingBaselineResult = {
   digest: string
-}
-
-function pctDelta(current: number, prior: number): string {
-  if (prior === 0) return current === 0 ? '0%' : 'new'
-  const pct = ((current - prior) / prior) * 100
-  const sign = pct >= 0 ? '+' : ''
-  return `${sign}${pct.toFixed(0)}%`
-}
-
-function posDelta(current: number, prior: number): string {
-  const diff = prior - current // positive = improved (moved up = lower number)
-  if (Math.abs(diff) < 0.05) return 'flat'
-  const sign = diff >= 0 ? '↑' : '↓'
-  return `${sign}${Math.abs(diff).toFixed(1)}`
+  imageUrl: string | null
 }
 
 async function fetchPriorSiteSnapshots(
   supabase: SupabaseClient,
   property: string,
-): Promise<SiteSnapshotRow[]> {
+): Promise<SiteSnapshot[]> {
   const { data } = await supabase
     .from('gsc_ranking_snapshots')
-    .select('*')
+    .select('clicks, impressions, ctr, avg_position, checked_at')
     .eq('property', property)
     .order('checked_at', { ascending: false })
-    .limit(12)
-  return (data || []) as SiteSnapshotRow[]
+    .limit(HISTORY_LIMIT)
+  return (data || []) as SiteSnapshot[]
 }
 
+/** One query for the whole watchlist, grouped in memory (newest first). */
 async function fetchPriorKeywordSnapshots(
   supabase: SupabaseClient,
-  keyword: string,
-): Promise<KeywordSnapshotRow[]> {
+  keywords: string[],
+): Promise<Map<string, KeywordSnapshot[]>> {
   const { data } = await supabase
     .from('gsc_keyword_snapshots')
-    .select('*')
-    .eq('keyword', keyword)
+    .select('keyword, page, clicks, impressions, avg_position, checked_at')
+    .in('keyword', keywords)
     .order('checked_at', { ascending: false })
-    .limit(12)
-  return (data || []) as KeywordSnapshotRow[]
-}
+    .limit(HISTORY_LIMIT * keywords.length)
 
-function findMomRow<T extends { checked_at: string }>(rows: T[]): T | null {
-  let best: T | null = null
-  let bestDiff = Infinity
-  for (const row of rows) {
-    const ageDays = (Date.now() - Date.parse(row.checked_at)) / 86_400_000
-    const diff = Math.abs(ageDays - MOM_TARGET_DAYS)
-    if (diff < bestDiff && ageDays >= MOM_TARGET_DAYS - MOM_TOLERANCE_DAYS) {
-      best = row
-      bestDiff = diff
-    }
+  const grouped = new Map<string, KeywordSnapshot[]>()
+  for (const row of (data || []) as KeywordSnapshot[]) {
+    const bucket = grouped.get(row.keyword)
+    if (bucket) bucket.push(row)
+    else grouped.set(row.keyword, [row])
   }
-  return best
-}
-
-function shortPath(url: string): string {
-  return (
-    url.replace(/https:\/\/(www\.|sightings\.)?sasquatchcarpet\.com/, '') || '/'
-  )
-}
-
-function buildSiteLines(
-  label: string,
-  current: GscTotals,
-  wow: SiteSnapshotRow | null,
-  mom: SiteSnapshotRow | null,
-): string[] {
-  const lines = [`${label} (${WINDOW_DAYS}d):`]
-  lines.push(
-    `  Clicks: ${current.clicks}` +
-      (wow ? ` · WoW ${pctDelta(current.clicks, wow.clicks)}` : '') +
-      (mom ? ` · MoM ${pctDelta(current.clicks, mom.clicks)}` : ''),
-  )
-  lines.push(
-    `  Impressions: ${current.impressions}` +
-      (wow ? ` · WoW ${pctDelta(current.impressions, wow.impressions)}` : '') +
-      (mom ? ` · MoM ${pctDelta(current.impressions, mom.impressions)}` : ''),
-  )
-  lines.push(
-    `  Avg CTR: ${(current.ctr * 100).toFixed(1)}%` +
-      (wow ? ` · WoW ${pctDelta(current.ctr, wow.ctr)}` : '') +
-      (mom ? ` · MoM ${pctDelta(current.ctr, mom.ctr)}` : ''),
-  )
-  lines.push(
-    `  Avg position: ${current.position.toFixed(1)}` +
-      (wow ? ` · WoW ${posDelta(current.position, wow.avg_position)}` : '') +
-      (mom ? ` · MoM ${posDelta(current.position, mom.avg_position)}` : ''),
-  )
-  return lines
+  return grouped
 }
 
 export async function runGscRankingBaseline(
   supabase: SupabaseClient,
   options: {
     notifyOwner?: (text: string) => Promise<unknown>
+    /** Skip the image and post text only (used by scripts and dry runs). */
+    textOnly?: boolean
+    now?: Date
   } = {},
 ): Promise<RankingBaselineResult> {
-  const notifyOwner =
-    options.notifyOwner ??
-    ((text: string) => sendTelegramNotification(text, { disablePreview: true }))
-
+  const now = options.now ?? new Date()
+  const dataThrough = new Date(now.getTime() - DATA_LAG_DAYS * 86_400_000)
   const sc = getSearchConsoleClient()
 
-  // Site-wide totals for both properties.
   const [wwwTotals, sightingsTotals] = await Promise.all([
     queryTotals(
       sc,
@@ -181,14 +113,11 @@ export async function runGscRankingBaseline(
     ),
   ])
 
-  const [wwwPrior, sightingsPrior] = await Promise.all([
+  const [wwwHistory, sightingsHistory, keywordHistory] = await Promise.all([
     fetchPriorSiteSnapshots(supabase, GSC_WWW_PROPERTY),
     fetchPriorSiteSnapshots(supabase, GSC_SIGHTINGS_PROPERTY),
+    fetchPriorKeywordSnapshots(supabase, RANKING_WATCHLIST_KEYWORDS),
   ])
-  const wwwWow = wwwPrior[0] ?? null
-  const wwwMom = findMomRow(wwwPrior)
-  const sightingsWow = sightingsPrior[0] ?? null
-  const sightingsMom = findMomRow(sightingsPrior)
 
   // Watchlist keyword positions (www property only — that's where the
   // priority local terms live).
@@ -198,16 +127,7 @@ export async function runGscRankingBaseline(
     WINDOW_DAYS + DATA_LAG_DAYS,
     DATA_LAG_DAYS,
   )
-  const bestPerKeyword = new Map<
-    string,
-    {
-      keyword: string
-      page: string
-      clicks: number
-      impressions: number
-      position: number
-    }
-  >()
+  const bestPerKeyword = new Map<string, KeywordCurrent>()
   for (const row of keywordRows) {
     const key = row.keyword.toLowerCase()
     if (!RANKING_WATCHLIST_KEYWORDS.includes(key)) continue
@@ -217,43 +137,32 @@ export async function runGscRankingBaseline(
     }
   }
 
-  const keywordLines: string[] = []
+  const verdicts: KeywordVerdict[] = []
   const keywordSnapshotInserts: Array<Record<string, unknown>> = []
-  for (const keyword of RANKING_WATCHLIST_KEYWORDS) {
-    const found = bestPerKeyword.get(keyword)
-    const priorRows = await fetchPriorKeywordSnapshots(supabase, keyword)
-    const wow = priorRows[0] ?? null
-    const mom = findMomRow(priorRows)
+  let keywordClicks = 0
 
-    if (found) {
-      const deltas = [
-        wow ? `WoW ${posDelta(found.position, wow.avg_position)}` : null,
-        mom ? `MoM ${posDelta(found.position, mom.avg_position)}` : null,
-      ]
-        .filter(Boolean)
-        .join(' · ')
-      keywordLines.push(
-        `  "${keyword}" — pos ${found.position.toFixed(1)} · ${found.impressions} impr${deltas ? ` · ${deltas}` : ''} (${shortPath(found.page)})`,
-      )
-      keywordSnapshotInserts.push({
-        property: GSC_WWW_PROPERTY,
+  for (const keyword of RANKING_WATCHLIST_KEYWORDS) {
+    const current = bestPerKeyword.get(keyword) ?? null
+    keywordClicks += current?.clicks ?? 0
+
+    verdicts.push(
+      classifyKeyword({
         keyword,
-        page: found.page,
-        clicks: found.clicks,
-        impressions: found.impressions,
-        avg_position: found.position,
-      })
-    } else {
-      keywordLines.push(`  "${keyword}" — no impressions this window`)
-      keywordSnapshotInserts.push({
-        property: GSC_WWW_PROPERTY,
-        keyword,
-        page: null,
-        clicks: 0,
-        impressions: 0,
-        avg_position: 0,
-      })
-    }
+        current,
+        history: keywordHistory.get(keyword) ?? [],
+      }),
+    )
+
+    keywordSnapshotInserts.push({
+      property: GSC_WWW_PROPERTY,
+      keyword,
+      page: current?.page ?? null,
+      clicks: current?.clicks ?? 0,
+      impressions: current?.impressions ?? 0,
+      // NULL, never 0 — a stored 0 used to read as "position zero" next week
+      // and turned a keyword's return into a phantom ranking collapse.
+      avg_position: current?.position ?? null,
+    })
   }
 
   // Persist this week's snapshot after reading priors above.
@@ -294,20 +203,40 @@ export async function runGscRankingBaseline(
       )
   }
 
-  const lines = [
-    `📈 GSC Ranking Baseline`,
-    ...buildSiteLines('Main site', wwwTotals, wwwWow, wwwMom),
-    '',
-    ...buildSiteLines('Sightings', sightingsTotals, sightingsWow, sightingsMom),
-    '',
-    `Watchlist keywords (unbranded, off page 1):`,
-    ...keywordLines,
-  ]
-  const digest = lines.join('\n')
+  const report = buildGscReport({
+    now,
+    dataThrough,
+    windowDays: WINDOW_DAYS,
+    main: { current: wwwTotals, history: wwwHistory },
+    secondary: {
+      label: 'Sightings site',
+      current: sightingsTotals,
+      history: sightingsHistory,
+    },
+    keywords: verdicts,
+    keywordClicks,
+    footerNote: 'Source: Google Search Console · sasquatchcarpet.com',
+  })
 
-  await notifyOwner(digest).catch((err) =>
-    console.error('[gsc-ranking-baseline] owner notify failed:', err),
-  )
+  // Text-only path keeps the old injectable contract for scripts and tests.
+  if (options.textOnly || options.notifyOwner) {
+    const notify = options.notifyOwner
+    if (notify) {
+      await notify([report.caption, '', report.text].join('\n')).catch((err) =>
+        console.error('[gsc-ranking-baseline] owner notify failed:', err),
+      )
+      return { digest: report.text, imageUrl: null }
+    }
+  }
 
-  return { digest }
+  const delivery = await deliverReportCard({
+    supabase,
+    slug: 'gsc-ranking',
+    runKey: now.toISOString().slice(0, 10),
+    card: report.card,
+    caption: report.caption,
+    text: report.text,
+  })
+
+  return { digest: report.text, imageUrl: delivery.imageUrl }
 }
