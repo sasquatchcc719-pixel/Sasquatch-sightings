@@ -8,6 +8,22 @@ const nextConfig: NextConfig = {
         destination: '/tap',
         permanent: false,
       },
+      ...[
+        'radar',
+        'reviews',
+        'coverage',
+        'briefing',
+        'grid',
+        'sweep',
+        'opportunities',
+        'truck',
+        'alerts',
+      ].map((view) => ({
+        source: '/admin/telegram',
+        has: [{ type: 'query' as const, key: 'view', value: view }],
+        destination: `/admin/telegram/${view}`,
+        permanent: false,
+      })),
     ]
   },
   cacheComponents: true,

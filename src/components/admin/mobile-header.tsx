@@ -332,7 +332,9 @@ function DrawerSection({
           {section.items.map((item) => {
             const ItemIcon = item.icon
             const isActive =
-              pathname === item.href || pathname.startsWith(item.href + '?')
+              pathname === item.href ||
+              pathname.startsWith(item.href + '/') ||
+              pathname.startsWith(item.href + '?')
 
             if (item.external) {
               return (

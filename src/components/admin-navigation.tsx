@@ -367,7 +367,9 @@ export function AdminNavigation() {
       name: 'Telegram',
       href: '/admin/telegram',
       icon: Send,
-      active: pathname === '/admin/telegram',
+      active:
+        pathname === '/admin/telegram' ||
+        pathname.startsWith('/admin/telegram/'),
       description:
         'Google Search rankings, keyword watchlist, and weekly alerts',
     },

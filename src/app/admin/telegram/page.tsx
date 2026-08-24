@@ -1,10 +1,9 @@
 'use client'
 
-import { useEffect, useState, Suspense } from 'react'
+import { useEffect, useState } from 'react'
 import { Card } from '@/components/ui/card'
 import { Send, Loader2 } from 'lucide-react'
 import { KeywordWatchlist } from '@/components/admin/gsc/KeywordWatchlist'
-import { LeftoverReportsHub } from '@/components/admin/telegram/LeftoverReportsHub'
 
 type Point = {
   date: string
@@ -139,8 +138,8 @@ export default function TelegramPage() {
         <div>
           <h1 className="text-xl font-bold">Rankings</h1>
           <p className="text-muted-foreground text-sm">
-            Monday you get a push with this card — not Telegram. Other channels
-            are the strip above. Edit the keyword list anytime.
+            Monday you get a push with this card — not Telegram. The other tabs
+            open their own screens. Edit the keyword list anytime.
           </p>
         </div>
       </div>
@@ -273,10 +272,6 @@ export default function TelegramPage() {
           )}
         </section>
       )}
-
-      <Suspense fallback={null}>
-        <LeftoverReportsHub />
-      </Suspense>
 
       <KeywordWatchlist showPageChrome={false} />
     </div>

@@ -19,7 +19,7 @@ export const LEFTOVER_CHANNELS = [
 export const TELEGRAM_CHANNELS: TelegramChannel[] = [
   { href: '/admin/telegram', name: 'Rankings', when: 'Monday push' },
   ...LEFTOVER_CHANNELS.map((channel) => ({
-    href: `/admin/telegram?view=${channel.id}#leftover-reports`,
+    href: `/admin/telegram/${channel.id}`,
     name: channel.name,
     when: channel.when,
   })),
