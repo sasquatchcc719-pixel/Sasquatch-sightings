@@ -926,9 +926,19 @@ export async function PATCH(
     })
   } catch (error) {
     console.error('[ops/appointments/:id][PATCH] Error:', error)
+    const message =
+      error &&
+      typeof error === 'object' &&
+      'message' in error &&
+      typeof (error as { message: unknown }).message === 'string'
+        ? (error as { message: string }).message
+        : error instanceof Error
+          ? error.message
+          : 'Failed to update appointment'
+    const isScheduleConflict = /overlap/i.test(message)
     return NextResponse.json(
-      { error: 'Failed to update appointment' },
-      { status: 500 },
+      { error: isScheduleConflict ? message : 'Failed to update appointment' },
+      { status: isScheduleConflict ? 409 : 500 },
     )
   }
 }
