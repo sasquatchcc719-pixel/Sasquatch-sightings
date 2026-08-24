@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { Card } from '@/components/ui/card'
 import { Send, Loader2 } from 'lucide-react'
 import { KeywordWatchlist } from '@/components/admin/gsc/KeywordWatchlist'
+import { LeftoverReportsHub } from '@/components/admin/telegram/LeftoverReportsHub'
 
 type Point = {
   date: string
@@ -99,24 +100,6 @@ function WeekBars({
   )
 }
 
-const OTHER_REPORTS = [
-  {
-    name: 'Search Console coverage',
-    when: 'Mondays at 8:00am',
-    what: 'Pages Google dropped or stopped indexing.',
-  },
-  {
-    name: 'Marketing weekly rollup',
-    when: 'Mondays at 9:30am',
-    what: 'Spend, rank, demand, and jobs by town.',
-  },
-  {
-    name: 'Inventory and maintenance',
-    when: 'Every afternoon',
-    what: 'Low chemicals, due service on a truck.',
-  },
-]
-
 export default function TelegramPage() {
   const [www, setWww] = useState<Point[]>([])
   const [sightings, setSightings] = useState<Point[]>([])
@@ -148,16 +131,16 @@ export default function TelegramPage() {
   const prior = www.at(-2) ?? null
 
   return (
-    <div className="space-y-8 p-4 sm:p-6">
+    <div className="space-y-8">
       <div className="flex items-center gap-3">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-500/20">
           <Send className="h-5 w-5 text-sky-400" />
         </div>
         <div>
-          <h1 className="text-xl font-bold">Telegram</h1>
+          <h1 className="text-xl font-bold">Rankings</h1>
           <p className="text-muted-foreground text-sm">
-            Rankings live here. Monday you get a push with the summary card —
-            tap it to open this page. Edit the keyword list anytime.
+            Monday you get a push with this card — not Telegram. Other channels
+            are the strip above. Edit the keyword list anytime.
           </p>
         </div>
       </div>
@@ -291,24 +274,11 @@ export default function TelegramPage() {
         </section>
       )}
 
-      <KeywordWatchlist showPageChrome={false} />
+      <Suspense fallback={null}>
+        <LeftoverReportsHub />
+      </Suspense>
 
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold">What else lands on Telegram</h2>
-        <Card className="divide-y divide-white/10">
-          {OTHER_REPORTS.map((report) => (
-            <div key={report.name} className="px-4 py-3">
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <p className="font-medium">{report.name}</p>
-                <p className="text-muted-foreground text-xs">{report.when}</p>
-              </div>
-              <p className="text-muted-foreground mt-0.5 text-sm">
-                {report.what}
-              </p>
-            </div>
-          ))}
-        </Card>
-      </section>
+      <KeywordWatchlist showPageChrome={false} />
     </div>
   )
 }

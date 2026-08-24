@@ -134,7 +134,7 @@ async function fetchRollup(weeks: number): Promise<Response> {
   return response.json()
 }
 
-export function WeeklyRollupView() {
+export function WeeklyRollupView({ embedded = false }: { embedded?: boolean }) {
   const [weeks, setWeeks] = useState(53)
   const [town, setTown] = useState('all')
   const [refreshing, setRefreshing] = useState(false)
@@ -306,44 +306,46 @@ export function WeeklyRollupView() {
 
   return (
     <div className="space-y-5">
-      <section className="relative overflow-hidden rounded-2xl border border-emerald-500/20 bg-slate-950/70 p-5 shadow-[0_0_40px_rgba(16,185,129,0.08)] sm:p-6">
-        <div className="pointer-events-none absolute -top-24 -right-20 h-64 w-64 rounded-full bg-emerald-500/10 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-28 left-1/3 h-64 w-64 rounded-full bg-cyan-500/10 blur-3xl" />
-        <div className="relative flex flex-col justify-between gap-4 md:flex-row md:items-end">
-          <div>
-            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1 text-[11px] font-semibold tracking-[0.18em] text-emerald-300 uppercase">
-              <Sparkles className="h-3.5 w-3.5" />
-              Weekly business briefing
+      {!embedded ? (
+        <section className="relative overflow-hidden rounded-2xl border border-emerald-500/20 bg-slate-950/70 p-5 shadow-[0_0_40px_rgba(16,185,129,0.08)] sm:p-6">
+          <div className="pointer-events-none absolute -top-24 -right-20 h-64 w-64 rounded-full bg-emerald-500/10 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-28 left-1/3 h-64 w-64 rounded-full bg-cyan-500/10 blur-3xl" />
+          <div className="relative flex flex-col justify-between gap-4 md:flex-row md:items-end">
+            <div>
+              <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1 text-[11px] font-semibold tracking-[0.18em] text-emerald-300 uppercase">
+                <Sparkles className="h-3.5 w-3.5" />
+                Weekly business briefing
+              </div>
+              <h1 className="text-3xl font-bold tracking-tight text-white">
+                What happened, what it means, and what to do next
+              </h1>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">
+                A plain-English view of the last completed week. It connects
+                search visibility, website activity, completed work, and known
+                costs without pretending that one automatically caused another.
+              </p>
             </div>
-            <h1 className="text-3xl font-bold tracking-tight text-white">
-              What happened, what it means, and what to do next
-            </h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">
-              A plain-English view of the last completed week. It connects
-              search visibility, website activity, completed work, and known
-              costs without pretending that one automatically caused another.
-            </p>
+            <div className="flex flex-col items-start gap-2 md:items-end">
+              <button
+                type="button"
+                onClick={refresh}
+                disabled={refreshing}
+                className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm font-medium text-white transition hover:bg-white/10 disabled:opacity-50"
+              >
+                <RefreshCw
+                  className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`}
+                />
+                {refreshing ? 'Updating the numbers…' : 'Update this report'}
+              </button>
+              {data?.builtAt ? (
+                <span className="text-xs text-slate-500">
+                  Data assembled {new Date(data.builtAt).toLocaleString()}
+                </span>
+              ) : null}
+            </div>
           </div>
-          <div className="flex flex-col items-start gap-2 md:items-end">
-            <button
-              type="button"
-              onClick={refresh}
-              disabled={refreshing}
-              className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm font-medium text-white transition hover:bg-white/10 disabled:opacity-50"
-            >
-              <RefreshCw
-                className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`}
-              />
-              {refreshing ? 'Updating the numbers…' : 'Update this report'}
-            </button>
-            {data?.builtAt ? (
-              <span className="text-xs text-slate-500">
-                Data assembled {new Date(data.builtAt).toLocaleString()}
-              </span>
-            ) : null}
-          </div>
-        </div>
-      </section>
+        </section>
+      ) : null}
 
       <div className="flex flex-col gap-3 rounded-xl border border-white/10 bg-slate-950/50 p-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap rounded-lg border border-white/10 bg-slate-900/60 p-1">
@@ -378,6 +380,19 @@ export function WeeklyRollupView() {
             ))}
           </select>
         </label>
+        {embedded ? (
+          <button
+            type="button"
+            onClick={refresh}
+            disabled={refreshing}
+            className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm font-medium text-white transition hover:bg-white/10 disabled:opacity-50"
+          >
+            <RefreshCw
+              className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`}
+            />
+            {refreshing ? 'Updating…' : 'Update this report'}
+          </button>
+        ) : null}
       </div>
 
       {refreshError ? (
