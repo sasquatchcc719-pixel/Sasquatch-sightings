@@ -1,8 +1,8 @@
 /**
  * Cron: weekly GSC ranking-baseline snapshot (Mondays, after gsc-watch).
  * Stores site-wide totals + watchlist keyword positions, then sends a short
- * admin push. The full chart lives on Comms → Telegram; this is not important
- * enough for the owner Telegram chat.
+ * admin push with the summary card attached. The full page lives on
+ * Comms → Telegram; this is not important enough for the owner Telegram chat.
  */
 
 import { NextRequest, NextResponse } from 'next/server'

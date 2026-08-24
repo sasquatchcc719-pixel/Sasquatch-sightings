@@ -6,7 +6,7 @@
  * reports the trend against the full stored history rather than a single prior
  * week. The wording, thresholds and verdict live in gsc-ranking-report.ts; this
  * module is the IO around them — pull from Google, persist, then a short admin
- * push (this is not important enough for Telegram).
+ * push with the summary card attached (this is not important enough for Telegram).
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -26,6 +26,7 @@ import {
   type SiteSnapshot,
 } from '@/lib/gsc-ranking-report'
 import { sendOneSignalNotification } from '@/lib/onesignal'
+import { uploadReportCard } from '@/lib/reports/telegram-report'
 import {
   fetchWatchlistKeywords,
   RANKING_DATA_LAG_DAYS as DATA_LAG_DAYS,
@@ -230,12 +231,20 @@ export async function runGscRankingBaseline(
   const heading = report.card.verdict?.text ?? 'Google Search this week'
   const content = report.caption.split('\n').slice(1).join(' · ').slice(0, 180)
 
+  const imageUrl = await uploadReportCard({
+    supabase,
+    slug: 'gsc-ranking',
+    card: report.card,
+    runKey: now.toISOString().slice(0, 10),
+  })
+
   await sendOneSignalNotification({
     heading,
     content: content || 'Tap to open the ranking page.',
     data: { type: 'gsc_ranking' },
     url: `${siteUrl.replace(/\/$/, '')}/admin/telegram`,
+    imageUrl: imageUrl ?? undefined,
   }).catch((err) => console.error('[gsc-ranking-baseline] push failed:', err))
 
-  return { digest: report.text, imageUrl: null }
+  return { digest: report.text, imageUrl }
 }

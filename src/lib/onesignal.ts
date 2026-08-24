@@ -14,6 +14,8 @@ interface OneSignalNotification {
   data?: Record<string, unknown>
   /** Opens this URL when the notification is tapped. */
   url?: string
+  /** Public HTTPS image shown as the expanded notification picture. */
+  imageUrl?: string
 }
 
 interface OneSignalExternalIdNotification extends OneSignalNotification {
@@ -28,8 +30,9 @@ export async function sendOneSignalNotification({
   content,
   data = {},
   url,
+  imageUrl,
 }: OneSignalNotification): Promise<void> {
-  await sendOneSignalToAudience('admin', heading, content, data, url)
+  await sendOneSignalToAudience('admin', heading, content, data, url, imageUrl)
 }
 
 /** Send a transactional push to identified users only. */
@@ -131,6 +134,7 @@ export async function sendOneSignalToAudience(
   content: string,
   data: Record<string, unknown> = {},
   url?: string,
+  imageUrl?: string,
 ): Promise<{ id: string } | null> {
   const appId = process.env.ONESIGNAL_APP_ID
   const apiKey = process.env.ONESIGNAL_API_KEY
@@ -150,6 +154,12 @@ export async function sendOneSignalToAudience(
       data: { ...data, audience },
     }
     if (url) body.url = url
+    if (imageUrl) {
+      body.chrome_web_image = imageUrl
+      body.big_picture = imageUrl
+      body.huawei_big_picture = imageUrl
+      body.ios_attachments = { report: imageUrl }
+    }
     if ('included_segments' in targeting && targeting.included_segments) {
       body.included_segments = targeting.included_segments
     } else if ('filters' in targeting && targeting.filters) {

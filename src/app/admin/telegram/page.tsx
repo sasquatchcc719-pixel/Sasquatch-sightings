@@ -120,6 +120,7 @@ const OTHER_REPORTS = [
 export default function TelegramPage() {
   const [www, setWww] = useState<Point[]>([])
   const [sightings, setSightings] = useState<Point[]>([])
+  const [cardUrl, setCardUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -129,11 +130,13 @@ export default function TelegramPage() {
         const data = (await res.json()) as {
           www?: Point[]
           sightings?: Point[]
+          latestCardUrl?: string | null
           error?: string
         }
         if (!res.ok) throw new Error(data.error ?? 'Failed to load')
         setWww(data.www ?? [])
         setSightings(data.sightings ?? [])
+        setCardUrl(data.latestCardUrl ?? null)
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : 'Failed to load history')
@@ -153,7 +156,7 @@ export default function TelegramPage() {
         <div>
           <h1 className="text-xl font-bold">Telegram</h1>
           <p className="text-muted-foreground text-sm">
-            Rankings live here. Monday you get a short push with the headline —
+            Rankings live here. Monday you get a push with the summary card —
             tap it to open this page. Edit the keyword list anytime.
           </p>
         </div>
@@ -265,6 +268,23 @@ export default function TelegramPage() {
                 valueOf={(point) => point.clicks}
                 accentClass="bg-amber-400"
                 formatValue={formatCount}
+              />
+            </Card>
+          )}
+
+          {cardUrl && (
+            <Card className="overflow-hidden p-0">
+              <p className="text-muted-foreground px-4 pt-3 text-xs tracking-wide uppercase">
+                Last summary card
+              </p>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={cardUrl}
+                alt="Last Google Search summary card"
+                className="mt-2 w-full max-w-xl"
+                onError={(event) => {
+                  event.currentTarget.parentElement?.classList.add('hidden')
+                }}
               />
             </Card>
           )}
