@@ -111,6 +111,7 @@ function mountainToday(): string {
 
 function scopeLabel(slug: string): string {
   if (slug === BUSINESS_WIDE) return 'Business-wide (not tied to one town)'
+  if (slug === 'unknown') return 'Unmapped jobs'
   return townLabel(slug)
 }
 
@@ -270,6 +271,7 @@ export function WeeklyRollupView({ embedded = false }: { embedded?: boolean }) {
           hasSignal(row) &&
           (town === 'all'
             ? row.town_slug === BUSINESS_WIDE ||
+              row.town_slug === 'unknown' ||
               isActiveServiceTown(row.town_slug)
             : row.town_slug === town),
       ),
@@ -667,7 +669,7 @@ export function WeeklyRollupView({ embedded = false }: { embedded?: boolean }) {
                 QuickBooks and separately recorded campaign costs. Green line =
                 completed residential revenue{' '}
                 {town === 'all'
-                  ? 'across active service areas'
+                  ? 'from completed jobs (including jobs whose address was never tagged to a town)'
                   : `in ${townLabel(town)}`}
                 . The timing comparison can reveal patterns, but it is not ROAS:
                 jobs often close weeks after the marketing that produced them.
@@ -819,9 +821,10 @@ export function WeeklyRollupView({ embedded = false }: { embedded?: boolean }) {
               Open the underlying weekly numbers for auditing
             </summary>
             <div className="border-t border-white/10 px-4 py-3 text-sm leading-6 text-slate-400">
-              This is supporting evidence, not the main decision screen. Only
-              active service areas are shown. Scanner-only benchmark towns stay
-              out of the business report.
+              This is supporting evidence, not the main decision screen.
+              Completed jobs still count if the address was never tagged to a
+              town. Scanner-only benchmark towns stay out of the business
+              report.
             </div>
             <div className="overflow-x-auto border-t border-white/10">
               <table className="w-full min-w-[1280px] border-collapse">

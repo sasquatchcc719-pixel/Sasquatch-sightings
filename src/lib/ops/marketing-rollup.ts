@@ -307,6 +307,14 @@ function normalizeRollupTown(value: string | null): RollupTownSlug {
   return normalizeTown(value) ?? UNKNOWN_TOWN
 }
 
+/** Prefer the stored slug; if it was never written, recover from the city. */
+export function resolveJobTown(
+  townSlug: string | null | undefined,
+  city: string | null | undefined,
+): string | null {
+  return normalizeTown(townSlug) ?? normalizeTown(city)
+}
+
 function allocateCents(totalCents: number, towns: RollupTownSlug[]) {
   const base = Math.floor(totalCents / towns.length)
   let remainder = totalCents - base * towns.length
@@ -802,7 +810,7 @@ export async function refreshMarketingWeeklyRollup(
       ? loadPages<Record<string, unknown>>(async (from, to) => {
           const result = await supabase
             .from('ops_service_addresses')
-            .select('id, town_slug')
+            .select('id, town_slug, city')
             .in('id', addressIds)
             .range(from, to)
           return result as PageResult<Record<string, unknown>>
@@ -822,7 +830,10 @@ export async function refreshMarketingWeeklyRollup(
   const townsByAddress = new Map(
     addresses.map((address) => [
       String(address.id),
-      address.town_slug ? String(address.town_slug) : null,
+      resolveJobTown(
+        address.town_slug ? String(address.town_slug) : null,
+        address.city ? String(address.city) : null,
+      ),
     ]),
   )
   const customersById = new Map(

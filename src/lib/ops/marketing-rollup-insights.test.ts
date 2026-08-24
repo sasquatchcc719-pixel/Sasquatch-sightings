@@ -99,6 +99,22 @@ describe('marketing rollup business interpretation', () => {
     expect(scoped).toHaveLength(5)
   })
 
+  it('still counts completed revenue when the address was never tagged to a town', () => {
+    const withUnknown = [
+      ...rows,
+      row({
+        town_slug: 'unknown',
+        residential_jobs: 10,
+        residential_revenue: 4373,
+      }),
+    ]
+    const summary = summarizeRollup(
+      scopedWeekRows(withUnknown, '2026-08-03', 'all'),
+    )
+    expect(summary.residentialJobs).toBe(23)
+    expect(summary.residentialRevenue).toBe(9638)
+  })
+
   it('produces plain business totals without treating scan noise as a market', () => {
     const summary = summarizeRollup(scopedWeekRows(rows, '2026-08-03', 'all'))
     expect(summary).toMatchObject({

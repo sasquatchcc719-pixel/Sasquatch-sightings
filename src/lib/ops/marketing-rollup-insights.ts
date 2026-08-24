@@ -1,4 +1,7 @@
-import type { MarketingWeeklyRollupRow } from '@/lib/ops/marketing-rollup'
+import {
+  UNKNOWN_TOWN,
+  type MarketingWeeklyRollupRow,
+} from '@/lib/ops/marketing-rollup'
 import { ACTIVE_SERVICE_TOWN_SLUGS, townLabel } from '@/lib/geo/towns'
 
 const BUSINESS_WIDE = 'business-wide'
@@ -60,7 +63,9 @@ export function scopedWeekRows(
     (row) =>
       row.week_start === weekStart &&
       (town === 'all'
-        ? row.town_slug === BUSINESS_WIDE || isActiveServiceTown(row.town_slug)
+        ? row.town_slug === BUSINESS_WIDE ||
+          row.town_slug === UNKNOWN_TOWN ||
+          isActiveServiceTown(row.town_slug)
         : row.town_slug === town),
   )
 }

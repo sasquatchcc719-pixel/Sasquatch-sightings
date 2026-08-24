@@ -8,6 +8,7 @@ import {
   completedWeeks,
   inferTownFromPath,
   mountainDateKey,
+  resolveJobTown,
   weekForDateKey,
   weeksThroughCurrent,
 } from './marketing-rollup'
@@ -46,6 +47,14 @@ describe('town attribution', () => {
       inferTownFromPath('/carpet-cleaning-briargate-colorado-springs'),
     ).toBe('colorado-springs')
     expect(inferTownFromPath('/services/carpet-cleaning')).toBeNull()
+  })
+
+  it('recovers a job town from the city when town_slug was never written', () => {
+    expect(resolveJobTown(null, 'Castle Rock')).toBe('castle-rock')
+    expect(resolveJobTown(null, 'Monument')).toBe('monument')
+    expect(resolveJobTown(null, 'Colorado Springs')).toBe('colorado-springs')
+    expect(resolveJobTown('monument', 'Colorado Springs')).toBe('monument')
+    expect(resolveJobTown(null, null)).toBeNull()
   })
 })
 
