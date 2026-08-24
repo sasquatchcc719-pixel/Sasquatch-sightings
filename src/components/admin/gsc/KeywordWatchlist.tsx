@@ -237,7 +237,7 @@ export function KeywordWatchlist({
               <h1 className="text-xl font-bold">Search Rankings</h1>
               <p className="text-muted-foreground text-sm">
                 {activeCount} {activeCount === 1 ? 'keyword' : 'keywords'}{' '}
-                tracked in the Monday Google Search report
+                tracked in the Monday Google Search push
               </p>
             </div>
           </div>
@@ -246,7 +246,7 @@ export function KeywordWatchlist({
             <h2 className="text-lg font-semibold">Keywords we track</h2>
             <p className="text-muted-foreground text-sm">
               {activeCount} {activeCount === 1 ? 'keyword' : 'keywords'} named
-              in Monday&apos;s Google Search Telegram
+              in Monday&apos;s Google Search push
             </p>
           </div>
         )}
@@ -263,11 +263,11 @@ export function KeywordWatchlist({
       {showPageChrome && (
         <Card className="text-muted-foreground p-4 text-sm">
           These are the keywords called out by name in the weekly Google Search
-          report on Telegram. Adding one pulls its last 8 weeks from Google
-          straight away, so its trend is real on the very next report instead of
-          filling in over two months. Google only reports keywords that actually
-          got views — a term you don&apos;t rank for at all will sit here saying
-          &ldquo;no views yet&rdquo;.
+          push. Adding one pulls its last 8 weeks from Google straight away, so
+          its trend is real on the very next report instead of filling in over
+          two months. Google only reports keywords that actually got views — a
+          term you don&apos;t rank for at all will sit here saying &ldquo;no
+          views yet&rdquo;.
         </Card>
       )}
 

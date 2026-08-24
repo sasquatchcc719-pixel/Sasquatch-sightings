@@ -368,7 +368,8 @@ export function AdminNavigation() {
       href: '/admin/telegram',
       icon: Send,
       active: pathname === '/admin/telegram',
-      description: 'Google Search report, keyword watchlist, and weekly alerts',
+      description:
+        'Google Search rankings, keyword watchlist, and weekly alerts',
     },
     {
       name: 'Email Outbox',

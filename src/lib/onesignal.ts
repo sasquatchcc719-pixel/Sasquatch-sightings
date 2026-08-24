@@ -12,6 +12,8 @@ interface OneSignalNotification {
   heading: string
   content: string
   data?: Record<string, unknown>
+  /** Opens this URL when the notification is tapped. */
+  url?: string
 }
 
 interface OneSignalExternalIdNotification extends OneSignalNotification {
@@ -25,8 +27,9 @@ export async function sendOneSignalNotification({
   heading,
   content,
   data = {},
+  url,
 }: OneSignalNotification): Promise<void> {
-  await sendOneSignalToAudience('admin', heading, content, data)
+  await sendOneSignalToAudience('admin', heading, content, data, url)
 }
 
 /** Send a transactional push to identified users only. */
@@ -127,6 +130,7 @@ export async function sendOneSignalToAudience(
   heading: string,
   content: string,
   data: Record<string, unknown> = {},
+  url?: string,
 ): Promise<{ id: string } | null> {
   const appId = process.env.ONESIGNAL_APP_ID
   const apiKey = process.env.ONESIGNAL_API_KEY
@@ -145,6 +149,7 @@ export async function sendOneSignalToAudience(
       contents: { en: content },
       data: { ...data, audience },
     }
+    if (url) body.url = url
     if ('included_segments' in targeting && targeting.included_segments) {
       body.included_segments = targeting.included_segments
     } else if ('filters' in targeting && targeting.filters) {

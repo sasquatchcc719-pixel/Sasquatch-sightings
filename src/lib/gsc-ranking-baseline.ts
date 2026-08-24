@@ -5,7 +5,8 @@
  * both properties plus a fixed watchlist of priority unbranded keywords, then
  * reports the trend against the full stored history rather than a single prior
  * week. The wording, thresholds and verdict live in gsc-ranking-report.ts; this
- * module is the IO around them — pull from Google, persist, render, deliver.
+ * module is the IO around them — pull from Google, persist, then a short admin
+ * push (this is not important enough for Telegram).
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -24,7 +25,7 @@ import {
   type KeywordVerdict,
   type SiteSnapshot,
 } from '@/lib/gsc-ranking-report'
-import { deliverReportCard } from '@/lib/reports/telegram-report'
+import { sendOneSignalNotification } from '@/lib/onesignal'
 import {
   fetchWatchlistKeywords,
   RANKING_DATA_LAG_DAYS as DATA_LAG_DAYS,
@@ -224,14 +225,17 @@ export async function runGscRankingBaseline(
     }
   }
 
-  const delivery = await deliverReportCard({
-    supabase,
-    slug: 'gsc-ranking',
-    runKey: now.toISOString().slice(0, 10),
-    card: report.card,
-    caption: report.caption,
-    text: report.text,
-  })
+  const siteUrl =
+    process.env.NEXT_PUBLIC_SITE_URL || 'https://sightings.sasquatchcarpet.com'
+  const heading = report.card.verdict?.text ?? 'Google Search this week'
+  const content = report.caption.split('\n').slice(1).join(' · ').slice(0, 180)
 
-  return { digest: report.text, imageUrl: delivery.imageUrl }
+  await sendOneSignalNotification({
+    heading,
+    content: content || 'Tap to open the ranking page.',
+    data: { type: 'gsc_ranking' },
+    url: `${siteUrl.replace(/\/$/, '')}/admin/telegram`,
+  }).catch((err) => console.error('[gsc-ranking-baseline] push failed:', err))
+
+  return { digest: report.text, imageUrl: null }
 }

@@ -1,9 +1,8 @@
 /**
  * Cron: weekly GSC ranking-baseline snapshot (Mondays, after gsc-watch).
- * Stores site-wide totals + watchlist keyword positions, then sends Charles a
- * report-card image plus a plain-English write-up comparing this week against
- * the whole stored history, so ranking progress (not just index coverage) is
- * visible week to week.
+ * Stores site-wide totals + watchlist keyword positions, then sends a short
+ * admin push. The full chart lives on Comms → Telegram; this is not important
+ * enough for the owner Telegram chat.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
