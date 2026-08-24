@@ -20,8 +20,7 @@ async function main() {
   const { buildGscReport, classifyKeyword } =
     await import('../src/lib/gsc-ranking-report')
   const { renderReportCardPng } = await import('../src/lib/reports/report-card')
-  const { RANKING_WATCHLIST_KEYWORDS } =
-    await import('../src/lib/gsc-ranking-baseline')
+  const { fetchWatchlistKeywords } = await import('../src/lib/gsc-watchlist')
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -62,10 +61,13 @@ async function main() {
     process.exit(1)
   }
 
+  const watchlist = await fetchWatchlistKeywords(supabase, WWW)
+  const watchlistKeywords = watchlist.map((row) => row.keyword)
+
   const { data: keywordRows } = await supabase
     .from('gsc_keyword_snapshots')
     .select('keyword, page, clicks, impressions, avg_position, checked_at')
-    .in('keyword', RANKING_WATCHLIST_KEYWORDS)
+    .in('keyword', watchlistKeywords)
     .order('checked_at', { ascending: false })
 
   const grouped = new Map<string, typeof keywordRows>()
@@ -77,7 +79,7 @@ async function main() {
 
   const now = new Date(wwwLatest.checked_at)
   let keywordClicks = 0
-  const verdicts = RANKING_WATCHLIST_KEYWORDS.map((keyword) => {
+  const verdicts = watchlistKeywords.map((keyword) => {
     const rows = grouped.get(keyword) || []
     const [latest, ...prior] = rows
     keywordClicks += latest?.clicks ?? 0

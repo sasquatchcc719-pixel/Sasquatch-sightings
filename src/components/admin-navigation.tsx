@@ -34,6 +34,8 @@ import {
   PhoneCall,
   FlaskConical,
   ShieldAlert,
+  Search,
+  Send,
 } from 'lucide-react'
 
 interface NavTab {
@@ -198,7 +200,15 @@ export function AdminNavigation() {
       description: 'Local rank tracking & competitor SERPs',
     },
     {
-      name: 'Weekly Rollup',      href: '/admin/marketing/rollup',
+      name: 'Search Rankings',
+      href: '/admin/marketing/search-rankings',
+      icon: Search,
+      active: pathname === '/admin/marketing/search-rankings',
+      description: 'Google keywords we track in the weekly report',
+    },
+    {
+      name: 'Weekly Rollup',
+      href: '/admin/marketing/rollup',
       icon: BarChart3,
       active: pathname === '/admin/marketing/rollup',
       description: 'Spend, rank, demand, jobs, and revenue by town',
@@ -352,6 +362,13 @@ export function AdminNavigation() {
       icon: MessageSquare,
       active: pathname === '/admin/sms-outbox',
       description: 'Outbound Operations texts (booking, on my way, job done)',
+    },
+    {
+      name: 'Telegram',
+      href: '/admin/telegram',
+      icon: Send,
+      active: pathname === '/admin/telegram',
+      description: 'Google Search report, keyword watchlist, and weekly alerts',
     },
     {
       name: 'Email Outbox',

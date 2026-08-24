@@ -150,6 +150,55 @@ export async function queryPageRows(
 }
 
 /**
+ * Per-keyword, per-page search analytics over an exact inclusive date window.
+ * Search Console retains roughly 16 months, so this can reach back far enough
+ * to reconstruct a newly-watched keyword's history.
+ */
+export async function queryKeywordRowsBetween(
+  sc: searchconsole_v1.Searchconsole,
+  property: string,
+  startDate: string,
+  endDate: string,
+  rowLimit = 5000,
+  /** Exact query to filter to server-side, so a single-keyword lookup does
+   *  not have to pull thousands of rows back. */
+  exactQuery?: string,
+): Promise<GscKeywordRow[]> {
+  const { data } = await sc.searchanalytics.query({
+    siteUrl: property,
+    requestBody: {
+      startDate,
+      endDate,
+      dimensions: ['query', 'page'],
+      rowLimit,
+      ...(exactQuery
+        ? {
+            dimensionFilterGroups: [
+              {
+                filters: [
+                  {
+                    dimension: 'query',
+                    operator: 'equals',
+                    expression: exactQuery,
+                  },
+                ],
+              },
+            ],
+          }
+        : {}),
+    },
+  })
+  return (data.rows || []).map((r) => ({
+    keyword: r.keys?.[0] ?? '',
+    page: r.keys?.[1] ?? '',
+    clicks: Number(r.clicks || 0),
+    impressions: Number(r.impressions || 0),
+    ctr: Number(r.ctr || 0),
+    position: Number(r.position || 0),
+  }))
+}
+
+/**
  * Per-keyword, per-page search analytics (the data the page-2 opportunity
  * report runs on). Returns every query+page pair with its average position,
  * impressions, clicks and CTR over the window.
@@ -163,23 +212,13 @@ export async function queryKeywordRows(
 ): Promise<GscKeywordRow[]> {
   const day = (d: number) =>
     new Date(Date.now() - d * 86_400_000).toISOString().slice(0, 10)
-  const { data } = await sc.searchanalytics.query({
-    siteUrl: property,
-    requestBody: {
-      startDate: day(startDaysAgo),
-      endDate: day(endDaysAgo),
-      dimensions: ['query', 'page'],
-      rowLimit,
-    },
-  })
-  return (data.rows || []).map((r) => ({
-    keyword: r.keys?.[0] ?? '',
-    page: r.keys?.[1] ?? '',
-    clicks: Number(r.clicks || 0),
-    impressions: Number(r.impressions || 0),
-    ctr: Number(r.ctr || 0),
-    position: Number(r.position || 0),
-  }))
+  return queryKeywordRowsBetween(
+    sc,
+    property,
+    day(startDaysAgo),
+    day(endDaysAgo),
+    rowLimit,
+  )
 }
 
 /** Extract <loc> URLs from a live sitemap XML. */

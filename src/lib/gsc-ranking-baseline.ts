@@ -25,26 +25,14 @@ import {
   type SiteSnapshot,
 } from '@/lib/gsc-ranking-report'
 import { deliverReportCard } from '@/lib/reports/telegram-report'
+import {
+  fetchWatchlistKeywords,
+  RANKING_DATA_LAG_DAYS as DATA_LAG_DAYS,
+  RANKING_WINDOW_DAYS as WINDOW_DAYS,
+} from '@/lib/gsc-watchlist'
 
-const WINDOW_DAYS = 28
-/** GSC data lags ~2-3 days; never ask for the freshest days. */
-const DATA_LAG_DAYS = 3
 /** Weeks of history to pull for trend and record-run detection. */
 const HISTORY_LIMIT = 12
-
-/**
- * Priority unbranded keywords that have real impression volume but were stuck
- * off page 1 at the 2026-07-02 baseline. Update as terms move or new targets
- * emerge. (Slated to become an editable list in the admin Telegram tab.)
- */
-export const RANKING_WATCHLIST_KEYWORDS = [
-  'carpet cleaners colorado springs',
-  'area rug cleaning near me',
-  'best carpet cleaners in colorado springs',
-  'best carpet cleaner in colorado springs',
-  'carpet cleaner colorado springs',
-  'briargate cleaning',
-]
 
 export type RankingBaselineResult = {
   digest: string
@@ -69,6 +57,8 @@ async function fetchPriorKeywordSnapshots(
   supabase: SupabaseClient,
   keywords: string[],
 ): Promise<Map<string, KeywordSnapshot[]>> {
+  if (keywords.length === 0) return new Map()
+
   const { data } = await supabase
     .from('gsc_keyword_snapshots')
     .select('keyword, page, clicks, impressions, avg_position, checked_at')
@@ -113,10 +103,15 @@ export async function runGscRankingBaseline(
     ),
   ])
 
+  // Editable from Comms → Telegram (and Marketing → Search Rankings), so the
+  // report tracks whatever is on the list at run time.
+  const watchlist = await fetchWatchlistKeywords(supabase, GSC_WWW_PROPERTY)
+  const watchlistKeywords = watchlist.map((row) => row.keyword)
+
   const [wwwHistory, sightingsHistory, keywordHistory] = await Promise.all([
     fetchPriorSiteSnapshots(supabase, GSC_WWW_PROPERTY),
     fetchPriorSiteSnapshots(supabase, GSC_SIGHTINGS_PROPERTY),
-    fetchPriorKeywordSnapshots(supabase, RANKING_WATCHLIST_KEYWORDS),
+    fetchPriorKeywordSnapshots(supabase, watchlistKeywords),
   ])
 
   // Watchlist keyword positions (www property only — that's where the
@@ -130,7 +125,7 @@ export async function runGscRankingBaseline(
   const bestPerKeyword = new Map<string, KeywordCurrent>()
   for (const row of keywordRows) {
     const key = row.keyword.toLowerCase()
-    if (!RANKING_WATCHLIST_KEYWORDS.includes(key)) continue
+    if (!watchlistKeywords.includes(key)) continue
     const existing = bestPerKeyword.get(key)
     if (!existing || row.impressions > existing.impressions) {
       bestPerKeyword.set(key, row)
@@ -141,7 +136,7 @@ export async function runGscRankingBaseline(
   const keywordSnapshotInserts: Array<Record<string, unknown>> = []
   let keywordClicks = 0
 
-  for (const keyword of RANKING_WATCHLIST_KEYWORDS) {
+  for (const keyword of watchlistKeywords) {
     const current = bestPerKeyword.get(keyword) ?? null
     keywordClicks += current?.clicks ?? 0
 

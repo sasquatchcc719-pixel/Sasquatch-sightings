@@ -32,6 +32,7 @@ import {
   ChevronDown,
   LogOut,
   UserRoundSearch,
+  Send,
 } from 'lucide-react'
 import { createClient } from '@/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -185,6 +186,12 @@ const navSections: NavSection[] = [
         href: '/admin/sms-outbox',
         icon: MessageSquare,
         description: 'Outbound ops texts',
+      },
+      {
+        name: 'Telegram',
+        href: '/admin/telegram',
+        icon: Send,
+        description: 'Google Search report & keywords',
       },
       {
         name: 'Email Outbox',
