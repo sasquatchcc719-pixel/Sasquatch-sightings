@@ -11,6 +11,7 @@ import {
   Trash2,
   Loader2,
   ChevronUp,
+  ChevronDown,
   Pause,
   Play,
 } from 'lucide-react'
@@ -22,6 +23,7 @@ interface TrendPoint {
   position: number | null
   impressions: number
   clicks: number
+  page?: string | null
 }
 
 export interface WatchlistKeyword {
@@ -58,6 +60,97 @@ function formatDate(ts: string): string {
     day: 'numeric',
     timeZone: 'America/Denver',
   })
+}
+
+function shortPage(page: string | null | undefined): string {
+  if (!page) return '—'
+  return page.replace(/^https?:\/\/[^/]+/, '') || '/'
+}
+
+function clickRate(clicks: number, impressions: number): string {
+  if (impressions <= 0) return '—'
+  return `${((clicks / impressions) * 100).toFixed(1)}%`
+}
+
+function WeekTable({ points }: { points: TrendPoint[] }) {
+  const weeks = [...points].reverse()
+  if (weeks.length === 0) {
+    return (
+      <p className="text-muted-foreground text-sm">No weekly snapshots yet.</p>
+    )
+  }
+
+  const ranked = points
+    .map((point) => point.position)
+    .filter((value): value is number => value != null)
+  const totalViews = points.reduce((sum, point) => sum + point.impressions, 0)
+  const totalClicks = points.reduce((sum, point) => sum + point.clicks, 0)
+  const pages = new Set(
+    points.map((point) => shortPage(point.page)).filter((page) => page !== '—'),
+  )
+
+  return (
+    <div className="space-y-3">
+      <p className="text-muted-foreground text-sm">
+        {ranked.length > 0 && (
+          <>
+            Best rank #{Math.round(Math.min(...ranked))} · worst #
+            {Math.round(Math.max(...ranked))}
+            {' · '}
+          </>
+        )}
+        {totalViews} views across these weeks
+        {totalClicks > 0 ? ` · ${totalClicks} clicks` : ' · no clicks'}
+        {pages.size > 1 ? ` · ranked on ${pages.size} different pages` : ''}
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[520px] text-left text-sm">
+          <thead>
+            <tr className="text-muted-foreground text-xs tracking-wide uppercase">
+              <th className="pr-3 pb-2 font-medium">Week</th>
+              <th className="pr-3 pb-2 font-medium">Rank</th>
+              <th className="pr-3 pb-2 font-medium">Views</th>
+              <th className="pr-3 pb-2 font-medium">Clicks</th>
+              <th className="pr-3 pb-2 font-medium">Click rate</th>
+              <th className="pb-2 font-medium">Ranking page</th>
+            </tr>
+          </thead>
+          <tbody>
+            {weeks.map((point, index) => (
+              <tr
+                key={`${point.date}-${index}`}
+                className="border-t border-white/10"
+              >
+                <td className="py-2 pr-3 whitespace-nowrap">
+                  {formatDate(point.date)}
+                </td>
+                <td className="py-2 pr-3 tabular-nums">
+                  {point.position == null
+                    ? '—'
+                    : `#${Math.round(point.position)}`}
+                </td>
+                <td className="py-2 pr-3 tabular-nums">{point.impressions}</td>
+                <td className="py-2 pr-3 tabular-nums">{point.clicks}</td>
+                <td className="py-2 pr-3 tabular-nums">
+                  {clickRate(point.clicks, point.impressions)}
+                </td>
+                <td
+                  className="text-muted-foreground max-w-[280px] truncate py-2"
+                  title={point.page ?? undefined}
+                >
+                  {shortPage(point.page)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-muted-foreground text-xs">
+        Search Console only reports a keyword in a week if someone actually saw
+        us for it. A dash is no views, not rank zero.
+      </p>
+    </div>
+  )
 }
 
 /**
@@ -150,6 +243,7 @@ export function KeywordWatchlist({
 
   const [busyId, setBusyId] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
@@ -384,7 +478,12 @@ export function KeywordWatchlist({
         keywords.map((entry) => (
           <Card
             key={entry.id}
-            className={`p-4 ${entry.active ? '' : 'opacity-50'}`}
+            className={`cursor-pointer p-4 ${entry.active ? '' : 'opacity-50'}`}
+            onClick={() =>
+              setExpandedId((current) =>
+                current === entry.id ? null : entry.id,
+              )
+            }
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0 flex-1 space-y-1">
@@ -416,12 +515,20 @@ export function KeywordWatchlist({
 
                 {entry.page && (
                   <p className="text-muted-foreground truncate text-xs">
-                    Ranking page: {entry.page.replace(/^https?:\/\/[^/]+/, '')}
+                    Ranking page: {shortPage(entry.page)}
                   </p>
                 )}
               </div>
 
-              <div className="flex items-center gap-1">
+              <div
+                className="flex items-center gap-1"
+                onClick={(event) => event.stopPropagation()}
+              >
+                {expandedId === entry.id ? (
+                  <ChevronUp className="text-muted-foreground mr-1 h-4 w-4" />
+                ) : (
+                  <ChevronDown className="text-muted-foreground mr-1 h-4 w-4" />
+                )}
                 <Button
                   variant="ghost"
                   size="sm"
@@ -478,6 +585,15 @@ export function KeywordWatchlist({
             <div className="mt-4">
               <RankHistory points={entry.trend} />
             </div>
+
+            {expandedId === entry.id && (
+              <div
+                className="mt-4 border-t border-white/10 pt-4"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <WeekTable points={entry.trend} />
+              </div>
+            )}
           </Card>
         ))}
     </div>

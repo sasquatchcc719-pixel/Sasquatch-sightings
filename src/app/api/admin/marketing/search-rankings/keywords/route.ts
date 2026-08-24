@@ -104,6 +104,7 @@ export async function GET() {
               : Number(snapshot.avg_position),
           impressions: snapshot.impressions,
           clicks: snapshot.clicks,
+          page: snapshot.page,
         })),
       }
     })
