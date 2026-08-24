@@ -1,10 +1,8 @@
-import {
-  UNKNOWN_TOWN,
-  type MarketingWeeklyRollupRow,
-} from '@/lib/ops/marketing-rollup'
+import type { MarketingWeeklyRollupRow } from '@/lib/ops/marketing-rollup'
 import { ACTIVE_SERVICE_TOWN_SLUGS, townLabel } from '@/lib/geo/towns'
 
 const BUSINESS_WIDE = 'business-wide'
+const UNKNOWN_TOWN = 'unknown'
 
 export const ACTIVE_SERVICE_TOWNS = ACTIVE_SERVICE_TOWN_SLUGS.map((slug) => ({
   slug,
