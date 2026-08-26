@@ -1,15 +1,13 @@
 /**
- * Builds the <Number> TwiML elements for forwarding an inbound call to the
- * owner's phones. Multiple <Number> nouns inside one <Dial> ring
- * simultaneously and connect the first to answer — so primary + secondary
- * rings both phones at once. Empty/invalid numbers are dropped and exact
- * duplicates deduped (the failover often equals the primary).
+ * Returns forward targets in their routing order. Each target must be dialed
+ * in a separate TwiML step so the primary phone rings before the secondary.
+ * Empty/invalid numbers are dropped and exact duplicates are deduped.
  */
 
-export function buildForwardNumberElements(config: {
+export function getForwardNumbers(config: {
   primaryForwardNumber?: string | null
   secondaryForwardNumber?: string | null
-}): string {
+}): string[] {
   const seen = new Set<string>()
   return [config.primaryForwardNumber, config.secondaryForwardNumber]
     .map((n) => String(n || '').trim())
@@ -19,6 +17,4 @@ export function buildForwardNumberElements(config: {
       seen.add(n)
       return true
     })
-    .map((n) => `<Number>${n}</Number>`)
-    .join('\n    ')
 }

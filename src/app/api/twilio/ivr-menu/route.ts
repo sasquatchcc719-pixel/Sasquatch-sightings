@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCallRoutingConfig } from '@/lib/twilio/call-routing-config'
-import { buildForwardNumberElements } from '@/lib/twilio/forward-numbers'
 
 function getBaseUrl(): string {
   const url = (
@@ -22,27 +21,28 @@ export async function POST(request: NextRequest) {
 
     const baseUrl = getBaseUrl()
     const afterHoursUrl = `${baseUrl}/api/twilio/call-after-hours` // Voicemail
-
-    // Ring both the primary and secondary (e.g. owner's wife) phones at once.
-    const forwardNumbers = buildForwardNumberElements(routingConfig)
+    const failoverUrl = `${baseUrl}/api/twilio/dial-failover`
 
     let twimlResponse
 
     if (digits === '1') {
-      console.log(`[IVR Menu] Option 1 -> Dialing scheduling forward number(s)`)
+      console.log(
+        `[IVR Menu] Option 1 -> Dialing primary scheduling number first`,
+      )
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial timeout="${routingConfig.ivrScheduleTimeoutSeconds}" action="${afterHoursUrl}" callerId="${callerPhone}" answerOnBridge="true">
-    ${forwardNumbers}
+  <Dial timeout="${routingConfig.ivrScheduleTimeoutSeconds}" action="${failoverUrl}?mode=schedule" callerId="${callerPhone}" answerOnBridge="true">
+    <Number>${routingConfig.primaryForwardNumber}</Number>
   </Dial>
 </Response>`
     } else if (digits === '2') {
-      console.log(`[IVR Menu] Option 2 -> Dialing forward number(s) + browser`)
+      console.log(
+        `[IVR Menu] Option 2 -> Dialing primary technical number first`,
+      )
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial timeout="${routingConfig.ivrTechnicalTimeoutSeconds}" action="${afterHoursUrl}" callerId="${callerPhone}" answerOnBridge="true">
-    ${forwardNumbers}
-    <Client>admin_charles</Client>
+  <Dial timeout="${routingConfig.ivrTechnicalTimeoutSeconds}" action="${failoverUrl}?mode=technical" callerId="${callerPhone}" answerOnBridge="true">
+    <Number>${routingConfig.primaryForwardNumber}</Number>
   </Dial>
 </Response>`
     } else {

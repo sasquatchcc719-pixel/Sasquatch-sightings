@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCallRoutingConfig } from '@/lib/twilio/call-routing-config'
-import { buildForwardNumberElements } from '@/lib/twilio/forward-numbers'
 import { sendOneSignalNotification } from '@/lib/onesignal'
 import { isBlacklisted, notifyBlockedAttempt } from '@/lib/blacklist'
 import { createAdminClient } from '@/supabase/server'
@@ -114,13 +113,16 @@ export async function POST(request: NextRequest) {
     const baseUrl = getBaseUrl()
     const afterHoursUrl = `${baseUrl}/api/twilio/call-after-hours`
     const ivrMenuUrl = `${baseUrl}/api/twilio/ivr-menu`
+    const failoverUrl = `${baseUrl}/api/twilio/dial-failover?mode=open-line`
 
     if (routingConfig.temporaryOpenLineMode) {
-      console.log('[Call Router] Temporary open line mode active - direct ring')
+      console.log(
+        '[Call Router] Temporary open line mode active - dialing primary first',
+      )
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial timeout="${routingConfig.openLineTimeoutSeconds}" action="${afterHoursUrl}" callerId="${callerPhone}" answerOnBridge="true">
-    ${buildForwardNumberElements(routingConfig)}
+  <Dial timeout="${routingConfig.openLineTimeoutSeconds}" action="${failoverUrl}" callerId="${callerPhone}" answerOnBridge="true">
+    <Number>${routingConfig.primaryForwardNumber}</Number>
   </Dial>
 </Response>`
     } else if (isBusinessHours) {

@@ -4,42 +4,40 @@ import { describe, it, expect } from 'vitest'
 
 loadEnv({ path: '.env.local' })
 
-import { buildForwardNumberElements } from './forward-numbers'
+import { getForwardNumbers } from './forward-numbers'
 import { getCallRoutingConfig } from './call-routing-config'
 
-describe('buildForwardNumberElements', () => {
-  it('rings both phones when primary + secondary are set', () => {
-    const out = buildForwardNumberElements({
+describe('getForwardNumbers', () => {
+  it('returns the primary phone before the secondary phone', () => {
+    const out = getForwardNumbers({
       primaryForwardNumber: '+17206447577',
       secondaryForwardNumber: '+17197498807',
     })
-    expect(out).toContain('<Number>+17206447577</Number>')
-    expect(out).toContain('<Number>+17197498807</Number>')
-    expect(out.match(/<Number>/g)).toHaveLength(2)
+    expect(out).toEqual(['+17206447577', '+17197498807'])
   })
 
   it('rings only the primary when no secondary is set', () => {
-    const out = buildForwardNumberElements({
+    const out = getForwardNumbers({
       primaryForwardNumber: '+17206447577',
       secondaryForwardNumber: '',
     })
-    expect(out).toBe('<Number>+17206447577</Number>')
+    expect(out).toEqual(['+17206447577'])
   })
 
   it('dedupes identical numbers (failover === primary)', () => {
-    const out = buildForwardNumberElements({
+    const out = getForwardNumbers({
       primaryForwardNumber: '+17206447577',
       secondaryForwardNumber: '+17206447577',
     })
-    expect(out.match(/<Number>/g)).toHaveLength(1)
+    expect(out).toEqual(['+17206447577'])
   })
 
   it('drops invalid/empty numbers', () => {
-    const out = buildForwardNumberElements({
+    const out = getForwardNumbers({
       primaryForwardNumber: '+17206447577',
       secondaryForwardNumber: 'not-a-number',
     })
-    expect(out).toBe('<Number>+17206447577</Number>')
+    expect(out).toEqual(['+17206447577'])
   })
 })
 
@@ -50,9 +48,10 @@ describe('getCallRoutingConfig against the real DB', () => {
     expect(config.primaryForwardNumber).toMatch(/^\+\d{8,}$/)
     if (config.secondaryForwardNumber) {
       expect(config.secondaryForwardNumber).toMatch(/^\+\d{8,}$/)
-      // When both are present, the dial element must ring both.
-      const dial = buildForwardNumberElements(config)
-      expect(dial.match(/<Number>/g)?.length).toBeGreaterThanOrEqual(2)
+      expect(getForwardNumbers(config)).toEqual([
+        config.primaryForwardNumber,
+        config.secondaryForwardNumber,
+      ])
     }
   })
 })
