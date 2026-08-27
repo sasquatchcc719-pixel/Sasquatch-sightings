@@ -6,6 +6,7 @@ import {
   getQuickBooksSyncStatus,
 } from '@/lib/quickbooks'
 import {
+  addMinutesToTimeWithinDay,
   applyAppointmentBuffer,
   calculateAppointmentDurationFromTotal,
 } from '@/lib/ops/availability'
@@ -43,15 +44,6 @@ type NormalizedLineItem = {
   buffer_minutes: number
   line_total: number
   notes: string | null
-}
-
-function addMinutesToTime(value: string, minutesToAdd: number): string {
-  const [hours, minutes] = value.split(':').map(Number)
-  const total = hours * 60 + minutes + minutesToAdd
-  const normalized = ((total % 1440) + 1440) % 1440
-  const nextHours = Math.floor(normalized / 60)
-  const nextMinutes = normalized % 60
-  return `${String(nextHours).padStart(2, '0')}:${String(nextMinutes).padStart(2, '0')}:00`
 }
 
 export async function POST(request: NextRequest) {
@@ -206,13 +198,17 @@ export async function POST(request: NextRequest) {
       const conflict = await findAppointmentConflict(supabase, {
         date: appointmentDate,
         startTime: startTime,
-        endTime: addMinutesToTime(startTime, totalMinutesWithBuffer),
+        endTime: addMinutesToTimeWithinDay(startTime, totalMinutesWithBuffer),
         staffUserId: assignedStaffUserId,
       })
       if (conflict) {
         return NextResponse.json(
           {
-            error: `This job needs ${totalMinutesWithBuffer / 60} hours, which runs into an existing ${conflict.start_time.slice(0, 5)}–${conflict.end_time.slice(0, 5)} appointment. Pick another time, or resubmit with allow_conflict to book it anyway.`,
+            // `code` is what the admin form keys off to offer "Book it anyway"
+            // — telling an admin to "resubmit with allow_conflict" is only
+            // useful if something can actually resubmit.
+            code: 'appointment_conflict',
+            error: `This job needs ${totalMinutesWithBuffer / 60} hours, which runs into an existing ${conflict.start_time.slice(0, 5)}–${conflict.end_time.slice(0, 5)} booking or blocked window. Pick another time, or book it anyway.`,
             conflict,
           },
           { status: 409 },
@@ -379,7 +375,7 @@ export async function POST(request: NextRequest) {
         quickbooks_sync_status: isEstimate ? 'held' : syncStatus,
         appointment_date: appointmentDate,
         start_time: `${startTime}:00`.slice(0, 8),
-        end_time: addMinutesToTime(startTime, totalMinutesWithBuffer),
+        end_time: addMinutesToTimeWithinDay(startTime, totalMinutesWithBuffer),
         quoted_total: Number(quotedTotal.toFixed(2)),
         internal_notes: body.appointment?.internal_notes
           ? String(body.appointment.internal_notes)

@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
+  addMinutesToTimeWithinDay,
   applyAppointmentBuffer,
   calculateAppointmentDurationFromTotal,
   calendarEventsToAppointmentWindows,
   DEFAULT_FALLBACK_AVAILABILITY_TEMPLATES,
   getAvailableSlots,
+  resolveSelectedStartTime,
 } from './availability'
 
 describe('availability gap fill', () => {
@@ -134,5 +136,60 @@ describe('availability gap fill', () => {
       start_time: '11:00:00',
       end_time: '13:00:00',
     })
+  })
+})
+
+describe('after-hours admin bookings', () => {
+  const slots = [
+    { start_time: '09:00:00', end_time: '11:00:00' },
+    { start_time: '13:00:00', end_time: '15:00:00' },
+  ]
+
+  it('keeps a hand-typed after-hours time when the openings reload', () => {
+    // Typing 6:00 PM then assigning a tech reloads the slot list; the evening
+    // start is never one of the openings, and used to be replaced by 09:00.
+    expect(
+      resolveSelectedStartTime({
+        slots,
+        currentStartTime: '18:00',
+        useCustomTime: true,
+      }),
+    ).toBe('18:00')
+  })
+
+  it('still snaps a stale grid pick to the first real opening', () => {
+    expect(
+      resolveSelectedStartTime({
+        slots,
+        currentStartTime: '11:00',
+        useCustomTime: false,
+      }),
+    ).toBe('09:00')
+  })
+
+  it('leaves a start time that is still one of the openings alone', () => {
+    expect(
+      resolveSelectedStartTime({
+        slots,
+        currentStartTime: '13:00',
+        useCustomTime: false,
+      }),
+    ).toBe('13:00')
+  })
+
+  it('keeps the picked time when the day has no openings at all', () => {
+    expect(
+      resolveSelectedStartTime({
+        slots: [],
+        currentStartTime: '19:30',
+        useCustomTime: false,
+      }),
+    ).toBe('19:30')
+  })
+
+  it('ends an evening job at the end of its own day, never past midnight', () => {
+    expect(addMinutesToTimeWithinDay('18:00', 120)).toBe('20:00:00')
+    expect(addMinutesToTimeWithinDay('22:30', 240)).toBe('23:59:00')
+    expect(addMinutesToTimeWithinDay('19:00:00', 180)).toBe('22:00:00')
   })
 })

@@ -330,3 +330,51 @@ export function getAvailableSlots(params: {
   )
   return slots.slice(0, maxResults)
 }
+
+/**
+ * Add minutes to a "HH:MM" / "HH:MM:SS" start time, clamped to the end of the
+ * same day.
+ *
+ * After-hours work is booked by hand, so a late start plus a long job can run
+ * past midnight. Wrapping the clock there wrote an end_time *earlier* than the
+ * start (22:30 + 4h → 02:30), which reads as a negative-length block on the
+ * schedule and makes every overlap check skip the row. Clamp instead: the job
+ * ends when the day does.
+ */
+export function addMinutesToTimeWithinDay(
+  value: string,
+  minutesToAdd: number,
+): string {
+  const [hours, minutes] = value.split(':').map(Number)
+  const total = (hours || 0) * 60 + (minutes || 0) + minutesToAdd
+  const clamped = Math.max(0, Math.min(total, 23 * 60 + 59))
+  const nextHours = Math.floor(clamped / 60)
+  const nextMinutes = clamped % 60
+  return `${String(nextHours).padStart(2, '0')}:${String(nextMinutes).padStart(2, '0')}:00`
+}
+
+/**
+ * Which start time should stay selected after the slot list reloads.
+ *
+ * The admin booking form reloads openings whenever the day, the assigned tech,
+ * or the service mix changes, and used to snap the start back to the first
+ * opening whenever the selected time was not one of them. A hand-typed
+ * after-hours time is never one of them — so assigning a tech (or adding a
+ * service) after typing 6:00 PM silently moved the job back to 9:00 AM. A
+ * deliberate custom time is the admin's decision and outranks the grid.
+ */
+export function resolveSelectedStartTime(params: {
+  slots: SlotOption[]
+  currentStartTime: string
+  useCustomTime: boolean
+}): string {
+  const { slots, currentStartTime, useCustomTime } = params
+  if (useCustomTime) return currentStartTime
+  if (slots.length === 0) return currentStartTime
+
+  const normalizedCurrent = `${currentStartTime}:00`.slice(0, 8)
+  const stillValid = slots.some((slot) => slot.start_time === normalizedCurrent)
+  if (stillValid) return currentStartTime
+
+  return String(slots[0].start_time || '09:00').slice(0, 5)
+}

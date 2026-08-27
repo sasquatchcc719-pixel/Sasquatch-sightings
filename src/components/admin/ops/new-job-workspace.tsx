@@ -13,6 +13,7 @@ import {
   applyAppointmentBuffer,
   calculateAppointmentDurationFromTotal,
   DEFAULT_APPOINTMENT_BUFFER_MINUTES,
+  resolveSelectedStartTime,
 } from '@/lib/ops/availability'
 import {
   CANONICAL_LEAD_SOURCE_OPTIONS,
@@ -312,6 +313,27 @@ export function NewJobWorkspace() {
     PublicLeadSourceOption[]
   >(() => getPublicLeadSourceOptions(CANONICAL_LEAD_SOURCE_OPTIONS))
   const [useCustomTime, setUseCustomTime] = useState(false)
+  // Read by the slot loader below, which must not re-run just because the mode
+  // flipped — it only needs to know whether the time on screen was typed by
+  // hand before it decides to replace it.
+  const useCustomTimeRef = useRef(useCustomTime)
+  useEffect(() => {
+    useCustomTimeRef.current = useCustomTime
+  }, [useCustomTime])
+
+  // A conflict the server refused, held so the admin can confirm and rebook
+  // through it — after-hours and stacked work is exactly what the override is
+  // for.
+  const [conflictOverride, setConflictOverride] = useState<string | null>(null)
+
+  // A refused time that has since been changed is no longer the question.
+  useEffect(() => {
+    setConflictOverride(null)
+  }, [
+    appointmentForm.appointment_date,
+    appointmentForm.start_time,
+    appointmentForm.assigned_staff_user_id,
+  ])
 
   // Custom time is a per-day decision, not a mode you get stuck in. It flips on
   // automatically when a day has no opening long enough (see the slot loader
@@ -891,10 +913,10 @@ export function NewJobWorkspace() {
     })
   }
 
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault()
+  const submitBooking = async (allowConflict: boolean) => {
     setSaving(true)
     setError(null)
+    setConflictOverride(null)
 
     if (!leadSource.trim()) {
       setError('Please select a lead source before saving.')
@@ -924,6 +946,11 @@ export function NewJobWorkspace() {
                 ...addressForm,
               },
         appointment: appointmentForm,
+        // A hand-typed time IS the admin override the picker promises — after
+        // hours, weekends, or stacked on a full day. The server's conflict
+        // guard exists for the silent case (a job that grew past the slot it
+        // was given), not to overrule a deliberate choice.
+        allow_conflict: allowConflict || useCustomTime,
         discount_amount: Math.max(0, Number(discount || 0)),
         lead_source_key: leadSource.trim() || null,
         lead_source_detail: leadSourceDetail.trim() || null,
@@ -944,6 +971,14 @@ export function NewJobWorkspace() {
       })
       const result = await response.json()
       if (!response.ok) {
+        if (response.status === 409 && result.code === 'appointment_conflict') {
+          // Not a dead end: show what it runs into and let the admin book
+          // through it.
+          setConflictOverride(
+            result.error || 'That time is already spoken for.',
+          )
+          return
+        }
         throw new Error(result.error || 'Failed to create job')
       }
 
@@ -960,6 +995,11 @@ export function NewJobWorkspace() {
     } finally {
       setSaving(false)
     }
+  }
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    await submitBooking(false)
   }
 
   useEffect(() => {
@@ -1008,16 +1048,19 @@ export function NewJobWorkspace() {
         }
         setSlotWarning(null)
 
-        const currentStart = `${appointmentForm.start_time}:00`.slice(0, 8)
-        const stillValid = slots.some(
-          (slot) => slot.start_time === currentStart,
-        )
-        if (!stillValid) {
-          setAppointmentForm((current) => ({
-            ...current,
-            start_time: String(slots[0].start_time || '09:00').slice(0, 5),
-          }))
-        }
+        // Snap to the first opening only when the admin is picking from the
+        // grid. A time typed by hand is an override — reassigning the tech or
+        // editing services used to silently drag a 6:00 PM job back to 9:00 AM.
+        setAppointmentForm((current) => {
+          const nextStart = resolveSelectedStartTime({
+            slots,
+            currentStartTime: current.start_time,
+            useCustomTime: useCustomTimeRef.current,
+          })
+          return nextStart === current.start_time
+            ? current
+            : { ...current, start_time: nextStart }
+        })
       } catch (slotError) {
         setError(
           slotError instanceof Error
@@ -1041,6 +1084,37 @@ export function NewJobWorkspace() {
       {error ? (
         <Card className="border-destructive/30 bg-destructive/10 text-destructive p-4 text-sm">
           {error}
+        </Card>
+      ) : null}
+
+      {conflictOverride ? (
+        <Card className="border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-700 dark:text-amber-300">
+          <p>{conflictOverride}</p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={saving}
+              onClick={() => void submitBooking(true)}
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Booking...
+                </>
+              ) : (
+                'Book it anyway'
+              )}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={saving}
+              onClick={() => setConflictOverride(null)}
+            >
+              Pick another time
+            </Button>
+          </div>
         </Card>
       ) : null}
 
