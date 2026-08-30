@@ -873,11 +873,12 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                     </button>
                   ))}
                 </div>
-                {planData.walls.length === 0 && detail.areas.length > 0 ? (
+                {detail.areas.length > 0 ? (
                   <Button
                     size="sm"
                     variant="outline"
                     className="h-7 text-xs"
+                    title="Replaces the walls generated from your measured rooms. Hand-drawn walls are left alone."
                     disabled={busy === 'seed-walls'}
                     onClick={async () => {
                       setBusy('seed-walls')
@@ -893,7 +894,28 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                       setBusy(null)
                     }}
                   >
-                    Draw my measured rooms
+                    {planData.walls.length === 0
+                      ? 'Draw my measured rooms'
+                      : 'Redraw measured rooms'}
+                  </Button>
+                ) : null}
+                {planData.walls.length > 0 ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-muted-foreground h-7 text-xs"
+                    disabled={busy === 'clear-plan'}
+                    onClick={async () => {
+                      setBusy('clear-plan')
+                      await fetch(
+                        `/api/admin/ops/restoration/projects/${projectId}/walls`,
+                        { method: 'DELETE' },
+                      )
+                      await loadPlan()
+                      setBusy(null)
+                    }}
+                  >
+                    Clear plan
                   </Button>
                 ) : null}
               </div>

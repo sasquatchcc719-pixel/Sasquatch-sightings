@@ -57,7 +57,13 @@ export async function POST(
     const supabase = createAdminClient()
     const body = await request.json()
 
-    let segments: Array<{ x1: number; y1: number; x2: number; y2: number }>
+    let segments: Array<{
+      x1: number
+      y1: number
+      x2: number
+      y2: number
+      areaId?: string | null
+    }>
 
     if (body.from_areas) {
       // Rooms measured as length x width predate the wall model, and rooms are
@@ -81,13 +87,19 @@ export async function POST(
         const x0 = cursorX
         const y0 = 0
         segments.push(
-          { x1: x0, y1: y0, x2: x0 + length, y2: y0 },
-          { x1: x0 + length, y1: y0, x2: x0 + length, y2: y0 + width },
-          { x1: x0 + length, y1: y0 + width, x2: x0, y2: y0 + width },
-          { x1: x0, y1: y0 + width, x2: x0, y2: y0 },
+          { x1: x0, y1: y0, x2: x0 + length, y2: y0, areaId: area.id },
+          { x1: x0 + length, y1: y0, x2: x0 + length, y2: y0 + width, areaId: area.id },
+          { x1: x0 + length, y1: y0 + width, x2: x0, y2: y0 + width, areaId: area.id },
+          { x1: x0, y1: y0 + width, x2: x0, y2: y0, areaId: area.id },
         )
         // A gap between rooms, so they are separate until dragged together.
         cursorX += length + 3
+      }
+
+      // Re-drawing replaces a room's walls rather than stacking a second copy.
+      const areaIds = (areas ?? []).map((a) => a.id)
+      if (areaIds.length > 0) {
+        await supabase.from('restoration_plan_walls').delete().in('area_id', areaIds)
       }
 
       if (segments.length === 0) {
@@ -144,10 +156,11 @@ export async function POST(
           project_id: id,
           start_node_id: startId,
           end_node_id: endId,
+          area_id: segment.areaId ?? null,
           is_partial_height: Boolean(body.is_partial_height),
           label: body.label ?? null,
         })
-        .select('id, start_node_id, end_node_id, is_partial_height, label')
+        .select('id, start_node_id, end_node_id, area_id, is_partial_height, label')
         .single()
       if (error) throw error
       createdWalls.push(wall)
@@ -156,6 +169,33 @@ export async function POST(
     return NextResponse.json({ walls: createdWalls })
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Failed to draw wall'
+    return NextResponse.json({ error: message }, { status: message === 'Not authorized' ? 403 : 500 })
+  }
+}
+
+/** Clear the whole plan — the manual escape hatch when it gets tangled. */
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    await requireAnyRole(['admin', 'owner', 'dispatcher', 'tech'])
+    const { id } = await params
+    const supabase = createAdminClient()
+
+    // Walls first: the orphan-node trigger clears the corners behind them.
+    const { error } = await supabase
+      .from('restoration_plan_walls')
+      .delete()
+      .eq('project_id', id)
+    if (error) throw error
+
+    // Anything left had no wall attached to begin with.
+    await supabase.from('restoration_plan_nodes').delete().eq('project_id', id)
+
+    return NextResponse.json({ ok: true })
+  } catch (e) {
+    const message = e instanceof Error ? e.message : 'Failed to clear the plan'
     return NextResponse.json({ error: message }, { status: message === 'Not authorized' ? 403 : 500 })
   }
 }

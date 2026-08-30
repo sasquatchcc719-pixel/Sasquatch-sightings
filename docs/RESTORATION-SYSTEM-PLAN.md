@@ -1253,3 +1253,31 @@ pins. Each one owns its interactions and nothing else claims a tap.
 
 5 new tests cover finding the room under a point, moving every corner together without
 changing wall lengths, leaving out-of-loop nodes alone, and a degenerate loop.
+
+
+---
+
+## Deleting a room now takes its walls with it
+
+Charles deleted a measured room and its walls stayed on the plan. Rooms and walls were
+unrelated records — the "Draw my measured rooms" bridge created walls but recorded nothing
+about where they came from.
+
+- `restoration_plan_walls.area_id` — the room a wall was generated from, cascading on
+  delete. **Walls drawn by hand keep a null `area_id` and survive independently**, which
+  matters because a pony wall belongs to no room.
+- A trigger removes a corner once no wall uses it, so cleanup happens on every path — a
+  room delete, a wall delete, or a project cascade — rather than only in the route that
+  happened to be written for it.
+- Re-seeding now **replaces** a room's walls instead of stacking a second copy, so the
+  button is safe to press twice. It reads "Redraw measured rooms" once a plan exists.
+- **Clear plan** wipes the whole thing, as the manual escape hatch when a plan gets
+  tangled. Same principle as everything else here: there is always a way to fix it by
+  hand.
+
+3 integration tests: a room delete removes its walls and their corners; a hand-drawn wall
+survives; a corner still used by another wall is kept.
+
+**Note for Charles:** the 15 walls currently on the first test project were drawn before
+this change, so they carry no `area_id` and will not disappear with a room. "Clear plan"
+then "Draw my measured rooms" puts that project on the new footing.
