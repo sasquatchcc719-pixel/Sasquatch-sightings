@@ -1035,3 +1035,54 @@ they occur.
    consideration; the restorer decides.
 4. This applies to any future guidance built from EPA, OSHA, or the S500. Reference
    material exists so the software understands the trade, **not so it polices the job**.
+
+
+---
+
+## Final pass — the original list is closed
+
+### The map: now editable
+- **Move** — drag rooms, walls snap flush to neighbours.
+- **Shape** — a handle on every corner; drag to move it, tap the `+` on a wall to add a
+  corner. This is how a diagonal or an L gets cut in. Corners snap to a half foot. Moving
+  a corner recomputes area by shoelace and perimeter by true wall length, so an angled
+  wall bills what it measures rather than its horizontal run.
+- **Doorway** — tap a wall to place a door, tap a door to remove it. Doors anchor to a
+  wall index and an offset along it, so they travel with the room.
+
+### Component extraction
+Now shared: `DirectionsButtons`, `StreetViewCard`, `CustomerContact`, `LineCandidateRow`,
+`FloorPlan`, plus the `address-links` and `arrival` modules.
+
+`arrival.ts` was the important one — haversine distance, geocoding and the 30 m arrival
+threshold sat inline and untested in `appointment-detail.tsx`. Both screens now use the
+same rule.
+
+**Deliberately not merged:** the carpet cleaning invoice line-item *editor*. It carries
+discounts, percentage discounts, minimum-charge adjustment and fiber-check exclusions,
+none of which restoration uses. Forcing one component to serve both would make both
+worse. The row rendering is shared; the editors stay separate, and that is a decision
+rather than an omission.
+
+### Restoration visits gained the status bar they were missing
+On My Way -> Start work -> Finish visit, through the existing appointment endpoint, so
+the customer still gets the on-my-way text.
+
+### Photo capture time now comes from EXIF
+`File.lastModified` is wrong whenever a file has been copied or exported since it was
+taken — exactly the case when uploading a backlog off a phone. Uploads now read EXIF
+`DateTimeOriginal`, reading only the first 128KB since the block sits at the front, and
+fall back to the file timestamp rather than refusing the upload. Hand-parsed rather than
+adding a dependency for one field.
+
+### Final state
+**645 tests pass, 0 lint errors, `next build` exit 0.**
+
+### What remains, and why
+1. **Psychrometry** — deferred by Charles, twice. Temp/RH is captured, so grain
+   depression is a display layer whenever he wants it.
+2. **Four things that need the S500 itself** — dry standard from a reference material,
+   Category degradation triggers, Class selection criteria, completion criteria. Flagged
+   as inferred in the code. Blocked on Charles producing his licensed copy.
+3. **Migrating the Jill job** — held at Charles's instruction until the feature was
+   finished. It now is.
