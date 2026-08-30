@@ -16,6 +16,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { DirectionsButtons } from '@/components/ops/directions-buttons'
 import { buildDryingPlan } from '@/lib/ops/restoration-drying-plan'
+import { GROUP_ORDER } from '@/lib/ops/restoration-catalog-groups'
 import { StreetViewCard } from '@/components/ops/street-view-card'
 
 /**
@@ -104,6 +105,7 @@ type CatalogItem = {
   unit: string
   unit_price: number
   billable: boolean
+  group: string
 }
 
 type ParsedLine = {
@@ -149,6 +151,8 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
   const [activeVisitId, setActiveVisitId] = useState<string | null>(null)
   const [catalog, setCatalog] = useState<CatalogItem[]>([])
   const [catalogQuery, setCatalogQuery] = useState('')
+  const [catalogOpen, setCatalogOpen] = useState(false)
+  const [openGroup, setOpenGroup] = useState<string | null>(null)
 
   const [areaName, setAreaName] = useState('')
   const [areaLength, setAreaLength] = useState('')
@@ -234,6 +238,17 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
       ),
     [detail],
   )
+  const catalogResults = catalog
+  const groupedCatalog = useMemo(() => {
+    const map = new Map<string, CatalogItem[]>()
+    for (const item of catalog) {
+      const list = map.get(item.group)
+      if (list) list.push(item)
+      else map.set(item.group, [item])
+    }
+    return map
+  }, [catalog])
+
   const totalPerimeterFt = useMemo(
     () =>
       Math.round(
@@ -260,6 +275,19 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
     } finally {
       setBusy(null)
     }
+  }
+
+  /** Pre-fill from what was measured: area for SF work, perimeter for LF work. */
+  function suggestedQuantity(unit: string): number {
+    if (unit === 'SF' && dryingPlan.totalAffectedSqft > 0) return dryingPlan.totalAffectedSqft
+    if (unit === 'LF' && totalPerimeterFt > 0) return totalPerimeterFt
+    return 1
+  }
+
+  async function addFromCatalog(item: CatalogItem, quantity: number) {
+    await addLines([
+      { concept_code: item.concept_code, quantity: quantity > 0 ? quantity : 1 },
+    ])
   }
 
   async function addLines(lines: Array<{ concept_code: string; quantity: number | null }>) {
@@ -657,47 +685,74 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
           </div>
 
           <div className="mb-3 flex flex-col gap-2">
-            <Label htmlFor="catalog-search">Or find it</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="catalog-search">Add by hand</Label>
+              <button
+                type="button"
+                className="text-muted-foreground text-xs underline"
+                onClick={() => setCatalogOpen((open) => !open)}
+              >
+                {catalogOpen ? 'Hide list' : 'Browse all items'}
+              </button>
+            </div>
             <Input
               id="catalog-search"
               value={catalogQuery}
-              onChange={(e) => setCatalogQuery(e.target.value)}
+              onChange={(e) => {
+                setCatalogQuery(e.target.value)
+                if (e.target.value.trim()) setCatalogOpen(true)
+              }}
               placeholder="extraction, flood cut, pad…"
             />
-            {catalogQuery.trim().length > 1 ? (
-              <div className="border-border/60 max-h-56 overflow-y-auto rounded-md border">
-                {catalog.slice(0, 25).map((item) => (
-                  <button
-                    key={item.concept_code}
-                    type="button"
-                    className="hover:bg-muted/60 flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm"
-                    onClick={() =>
-                      void addLines([
-                        {
-                          concept_code: item.concept_code,
-                          // Pre-fill from what was measured: area for square-foot
-                          // work, perimeter for anything billed by the foot.
-                          quantity:
-                            item.unit === 'SF' && dryingPlan.totalAffectedSqft > 0
-                              ? dryingPlan.totalAffectedSqft
-                              : item.unit === 'LF' && totalPerimeterFt > 0
-                                ? totalPerimeterFt
-                                : 1,
-                        },
-                      ])
-                    }
-                  >
-                    <span>
-                      <code className="text-xs">{item.code}</code> {item.label}
-                    </span>
-                    <span className="text-muted-foreground whitespace-nowrap text-xs">
-                      {money(item.unit_price)}/{item.unit}
-                    </span>
-                  </button>
-                ))}
-                {catalog.length === 0 ? (
-                  <p className="text-muted-foreground px-3 py-2 text-sm">No match.</p>
-                ) : null}
+
+            {catalogOpen ? (
+              <div className="border-border/60 max-h-80 overflow-y-auto rounded-md border">
+                {catalogQuery.trim().length > 0 ? (
+                  // Searching: a flat list is what you want, not folded groups.
+                  catalogResults.length > 0 ? (
+                    catalogResults
+                      .slice(0, 60)
+                      .map((item) => (
+                        <CatalogRow
+                          key={item.concept_code}
+                          item={item}
+                          defaultQuantity={suggestedQuantity(item.unit)}
+                          onAdd={addFromCatalog}
+                        />
+                      ))
+                  ) : (
+                    <p className="text-muted-foreground px-3 py-2 text-sm">No match.</p>
+                  )
+                ) : (
+                  GROUP_ORDER.filter((group) => groupedCatalog.has(group)).map((group) => {
+                    const items = groupedCatalog.get(group) ?? []
+                    const open = openGroup === group
+                    return (
+                      <div key={group} className="border-border/60 border-b last:border-b-0">
+                        <button
+                          type="button"
+                          className="hover:bg-muted/50 flex w-full items-center justify-between px-3 py-2 text-left text-sm font-medium"
+                          onClick={() => setOpenGroup(open ? null : group)}
+                        >
+                          <span>{group}</span>
+                          <span className="text-muted-foreground text-xs">
+                            {items.length}
+                          </span>
+                        </button>
+                        {open
+                          ? items.map((item) => (
+                              <CatalogRow
+                                key={item.concept_code}
+                                item={item}
+                                defaultQuantity={suggestedQuantity(item.unit)}
+                                onAdd={addFromCatalog}
+                              />
+                            ))
+                          : null}
+                      </div>
+                    )
+                  })
+                )}
               </div>
             ) : null}
           </div>
@@ -1401,6 +1456,57 @@ function DehuReadingRow({
         }}
       >
         Save
+      </Button>
+    </div>
+  )
+}
+
+/**
+ * One row in the manual picker. Carries its own quantity box so a measured
+ * value can be corrected before the line is added, rather than added at 1 and
+ * edited afterwards.
+ */
+function CatalogRow({
+  item,
+  defaultQuantity,
+  onAdd,
+}: {
+  item: CatalogItem
+  defaultQuantity: number
+  onAdd: (item: CatalogItem, quantity: number) => void | Promise<void>
+}) {
+  // Opens pre-filled with what was measured, so the common case is one tap and
+  // the unusual case is one edit.
+  const [quantity, setQuantity] = useState(String(defaultQuantity))
+
+  return (
+    <div className="hover:bg-muted/40 flex items-center gap-2 px-3 py-2 text-sm">
+      <span className="min-w-0 flex-1">
+        <code className="text-xs">{item.code}</code> {item.label}
+        <span className="text-muted-foreground block text-xs">
+          ${item.unit_price.toFixed(2)} per {item.unit}
+          {item.billable ? '' : ' · not linked to QuickBooks'}
+        </span>
+      </span>
+      <Input
+        className="h-8 w-20 text-right"
+        type="number"
+        step="any"
+        min={0}
+        placeholder={item.unit}
+        aria-label={`Quantity for ${item.label}`}
+        value={quantity}
+        onChange={(e) => setQuantity(e.target.value)}
+      />
+      <Button
+        size="sm"
+        variant="secondary"
+        onClick={() => {
+          void onAdd(item, Number(quantity))
+          setQuantity(String(defaultQuantity))
+        }}
+      >
+        Add
       </Button>
     </div>
   )

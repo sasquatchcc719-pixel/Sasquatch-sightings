@@ -3,6 +3,7 @@ import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { loadEnabledCatalog } from '@/lib/ops/restoration-line-entry'
 import { resolveVariant, type WaterCategory } from '@/lib/ops/restoration-catalog'
+import { groupForConcept } from '@/lib/ops/restoration-catalog-groups'
 
 /**
  * The line-item picker: one entry per kind of work, already priced for this
@@ -52,6 +53,7 @@ export async function GET(request: NextRequest) {
         unit: hit.unit,
         unit_price: hit.unit_price,
         billable: Boolean(hit.quickbooks_item_id),
+        group: groupForConcept(concept.code, concept.label),
       })
     }
 
