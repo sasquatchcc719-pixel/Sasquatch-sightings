@@ -145,6 +145,8 @@ export function guidanceFor(key: string): MaterialGuidance | null {
 }
 
 export type LossWarning = {
+  /** Stable id, so a dismissal sticks across reloads. */
+  key: string
   severity: 'critical' | 'warning'
   title: string
   detail: string
@@ -152,28 +154,38 @@ export type LossWarning = {
 }
 
 /**
- * Conditions from EPA Table 1's footnotes that change how a job must be run.
- * Surfaced on the job rather than buried, because both are safety calls that are
- * easy to get wrong at speed.
+ * Conditions from EPA Table 1's footnotes worth raising on a job.
+ *
+ * These are INTERNAL prompts and nothing more. Restoration is full of legitimate
+ * judgement calls — a restorer may well run air movers on a Category 3 loss
+ * having controlled the space — so every one of these can be acknowledged and
+ * stays dismissed for that project.
+ *
+ * They are never shown to a customer. They do not appear on the invoice or in
+ * the drying report, and they must not be added to either.
  */
 export function warningsForLoss(params: {
   waterCategory: number | null
   hoursSinceLoss: number | null
+  /** Keys already dismissed on this project. */
+  acknowledged?: string[] | null
 }): LossWarning[] {
   const warnings: LossWarning[] = []
   const category = params.waterCategory ?? 1
 
   if (category >= 2) {
     warnings.push({
+      key: 'fans_before_clean',
       severity: 'critical',
-      title: 'Do not run air movers yet',
+      title: 'Check the water before running air movers',
       detail:
-        'EPA: do not use fans before determining that the water is clean or sanitary. On contaminated water, airflow spreads the contamination.',
+        'EPA advises against using fans before determining the water is clean or sanitary, since airflow can spread contamination. Your call.',
       source: 'EPA Table 1, footnote',
     })
     warnings.push({
+      key: 'ppe_containment',
       severity: 'critical',
-      title: 'PPE and containment required',
+      title: 'PPE and containment',
       detail:
         'Where water is contaminated with sewage, or chemical or biological pollutants, personal protective equipment and containment are required by OSHA.',
       source: 'EPA Table 1, footnote / OSHA',
@@ -182,15 +194,17 @@ export function warningsForLoss(params: {
 
   if (params.hoursSinceLoss != null && params.hoursSinceLoss > 48) {
     warnings.push({
+      key: 'past_48_hours',
       severity: 'warning',
-      title: 'Past 48 hours — assume mold growth',
+      title: 'Past 48 hours',
       detail:
         'Materials wet for more than 48 hours fall under EPA Table 2 rather than Table 1. Mold growth may have occurred, and drying in place may no longer be appropriate.',
       source: 'EPA Table 1, footnote',
     })
   }
 
-  return warnings
+  const dismissed = new Set(params.acknowledged ?? [])
+  return warnings.filter((warning) => !dismissed.has(warning.key))
 }
 
 /** Hours between the loss and now, for the 48-hour rule. */

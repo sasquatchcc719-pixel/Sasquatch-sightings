@@ -75,6 +75,32 @@ describe('warnings that change how the job is run', () => {
     expect(warningsForLoss({ waterCategory: 1, hoursSinceLoss: 6 })).toEqual([])
   })
 
+  it('stays dismissed once acknowledged — these are prompts, not rules', () => {
+    const all = warningsForLoss({ waterCategory: 3, hoursSinceLoss: 96 })
+    expect(all).toHaveLength(3)
+
+    const afterOne = warningsForLoss({
+      waterCategory: 3,
+      hoursSinceLoss: 96,
+      acknowledged: ['fans_before_clean'],
+    })
+    expect(afterOne.map((w) => w.key)).toEqual(['ppe_containment', 'past_48_hours'])
+
+    expect(
+      warningsForLoss({
+        waterCategory: 3,
+        hoursSinceLoss: 96,
+        acknowledged: ['fans_before_clean', 'ppe_containment', 'past_48_hours'],
+      }),
+    ).toEqual([])
+  })
+
+  it('every warning has a stable key so a dismissal sticks', () => {
+    const keys = warningsForLoss({ waterCategory: 3, hoursSinceLoss: 96 }).map((w) => w.key)
+    expect(new Set(keys).size).toBe(keys.length)
+    expect(keys.every((k) => k.length > 0)).toBe(true)
+  })
+
   it('handles a loss with no recorded time', () => {
     expect(warningsForLoss({ waterCategory: null, hoursSinceLoss: null })).toEqual([])
     expect(hoursSince(null)).toBeNull()

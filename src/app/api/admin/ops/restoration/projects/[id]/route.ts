@@ -35,6 +35,19 @@ export async function PATCH(
       patch.water_category = category
     }
 
+    // Guidance warnings are internal prompts, not rules — acknowledging one
+    // hides it for this project and never reaches a customer document.
+    if (body.acknowledge_warning) {
+      const { data: current } = await supabase
+        .from('restoration_projects')
+        .select('acknowledged_warnings')
+        .eq('id', id)
+        .maybeSingle()
+      const existing = (current?.acknowledged_warnings ?? []) as string[]
+      const key = String(body.acknowledge_warning)
+      patch.acknowledged_warnings = existing.includes(key) ? existing : [...existing, key]
+    }
+
     for (const field of [
       'source_of_loss',
       'cause_narrative',

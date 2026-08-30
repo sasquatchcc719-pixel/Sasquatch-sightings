@@ -1010,3 +1010,28 @@ cites the document it came from.
 
 These are the parts that need the S500 itself, and they are flagged in the code where
 they occur.
+
+
+---
+
+## Guidance warnings are internal prompts, not rules (Charles, explicit)
+
+> "It's fine if you want to put warnings in our software internally, but if we end up
+> doing a cat 3 water loss I don't want you writing all over a customer's invoice saying
+> that we put fans on a category three. There are judgment calls made all the time in
+> the industry... that doesn't mean we're 100% stick to everything it says all the time.
+> Everything needs to be editable."
+
+**Rules that follow from this:**
+1. **Guidance warnings must never appear on a customer-facing document.** Verified: zero
+   occurrences of the warning code or its text in `drying-report.tsx`, the report route,
+   `invoice-pdf.tsx`, or `invoice-detail.tsx`. They render only on the internal project
+   screen. **Do not add them to either document.**
+2. **Every warning is dismissible.** Each carries a stable key; "Got it" writes it to
+   `restoration_projects.acknowledged_warnings` and it stays gone for that project, on
+   every device.
+3. **Wording is advisory, not instructional.** "Check the water before running air
+   movers… Your call." — not "Do not run air movers". The software raises the
+   consideration; the restorer decides.
+4. This applies to any future guidance built from EPA, OSHA, or the S500. Reference
+   material exists so the software understands the trade, **not so it polices the job**.

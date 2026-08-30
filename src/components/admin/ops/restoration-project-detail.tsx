@@ -87,6 +87,7 @@ type Detail = {
     cause_narrative: string | null
     loss_date: string | null
     loss_time: string | null
+    acknowledged_warnings: string[] | null
     invoice_id: string | null
     ops_customers: { id: string; full_name: string; business_name: string | null; phone: string } | null
     ops_service_addresses: {
@@ -389,6 +390,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
     return warningsForLoss({
       waterCategory: detail.project.water_category,
       hoursSinceLoss: hoursSince(lossAt),
+      acknowledged: detail.project.acknowledged_warnings,
     })
   }, [detail])
 
@@ -521,7 +523,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
 
       {lossWarnings.map((warning) => (
         <Card
-          key={warning.title}
+          key={warning.key}
           className={`p-4 text-sm ${
             warning.severity === 'critical'
               ? 'border-red-300 bg-red-50 text-red-900 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200'
@@ -533,7 +535,28 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             {warning.title}
           </p>
           <p className="mt-1">{warning.detail}</p>
-          <p className="mt-1 text-xs opacity-70">{warning.source}</p>
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <p className="text-xs opacity-70">{warning.source} · internal only</p>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 text-xs"
+              onClick={() =>
+                void call(
+                  `/api/admin/ops/restoration/projects/${projectId}`,
+                  {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                      acknowledge_warning: warning.key,
+                    }),
+                  },
+                  `ack-${warning.key}`,
+                )
+              }
+            >
+              Got it
+            </Button>
+          </div>
         </Card>
       ))}
 
