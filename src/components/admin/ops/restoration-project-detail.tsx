@@ -850,6 +850,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                   {(
                     [
                       ['wall', 'Wall'],
+                      ['resize', 'Resize'],
                       ['corner', 'Corner'],
                       ['door', 'Door'],
                       ['pin', 'Place'],
@@ -993,6 +994,17 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 })
                 await loadPlan()
               }}
+              onMoveRoom={async (moves) => {
+                await fetch(
+                  `/api/admin/ops/restoration/projects/${projectId}/plan-nodes`,
+                  {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ moves }),
+                  },
+                )
+                await loadPlan()
+              }}
               onSetWallLength={async (_wallId, endNodeId, x, y) => {
                 await fetch(`/api/admin/ops/restoration/plan-nodes/${endNodeId}`, {
                   method: 'PATCH',
@@ -1073,15 +1085,14 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             />
             <p className="text-muted-foreground mt-1 text-xs">
               {planTool === 'wall'
-                ? 'Drag to draw a wall. Ends snap to nearby corners, so rooms close properly. A wall that closes nothing is a pony wall.'
-                : planTool === 'corner'
-                  ? 'Drag a corner — every wall meeting there follows. Tap a length label to delete that wall.'
-                  : planTool === 'door'
-                    ? 'Tap a wall to put a door on it. Tap a door to remove it.'
-                    : 'Pick equipment or a reading point, then tap the plan.'}
-              {planTool !== 'corner'
-                ? ' Tap any length to type an exact figure.'
-                : ''}
+                ? 'Drag anywhere to draw a wall — ends snap to nearby corners so rooms close. A wall that closes nothing is a pony wall. Measurements are out of the way while you draw.'
+                : planTool === 'resize'
+                  ? 'Drag inside a room to move the whole thing. Tap any measurement to type an exact length.'
+                  : planTool === 'corner'
+                    ? 'Drag a corner — every wall meeting there follows. Tap a measurement to delete that wall.'
+                    : planTool === 'door'
+                      ? 'Tap a wall to put a door on it. Tap a door to remove it.'
+                      : 'Pick equipment or a reading point, then tap the plan.'}
             </p>
           </div>
 

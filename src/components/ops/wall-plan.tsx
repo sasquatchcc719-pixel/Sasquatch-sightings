@@ -6,6 +6,8 @@ import {
   endPointForLength,
   findNodeNear,
   formatFeetInches,
+  loopAt,
+  offsetNodes,
   openingPosition,
   resolveWalls,
   snapToGrid,
@@ -40,7 +42,7 @@ export type PlanPin = {
   removed?: boolean
 }
 
-export type WallPlanTool = 'wall' | 'corner' | 'door' | 'pin'
+export type WallPlanTool = 'wall' | 'resize' | 'corner' | 'door' | 'pin'
 
 type Props = {
   nodes: PlanNode[]
@@ -56,6 +58,8 @@ type Props = {
   /** Typed length: move this wall's end node so it measures exactly this. */
   onSetWallLength?: (wallId: string, endNodeId: string, x: number, y: number) => void
   onMoveNode?: (nodeId: string, x: number, y: number) => void
+  /** Drag a whole room: every corner of the loop moves together. */
+  onMoveRoom?: (moves: Array<{ id: string; x: number; y: number }>) => void
   onPlaceDoor?: (wallId: string, offsetFt: number) => void
   onDeleteWall?: (wallId: string) => void
   onDeleteOpening?: (openingId: string) => void
@@ -77,6 +81,7 @@ export function WallPlan({
   onDrawWall,
   onSetWallLength,
   onMoveNode,
+  onMoveRoom,
   onPlaceDoor,
   onDeleteWall,
   onDeleteOpening,
@@ -88,11 +93,25 @@ export function WallPlan({
   const [nodeDrag, setNodeDrag] = useState<{ id: string; x: number; y: number } | null>(null)
   const [editingWallId, setEditingWallId] = useState<string | null>(null)
   const [lengthDraft, setLengthDraft] = useState('')
+  // Only the editing tools claim taps on a length label. Under the Wall tool a
+  // label sitting mid-room would otherwise block the exact spot you want to
+  // start a wall from — which is usually the middle of a room.
+  const labelsInteractive = tool === 'resize' || tool === 'corner'
 
-  const liveNodes = useMemo(
-    () => nodes.map((n) => (nodeDrag?.id === n.id ? { ...n, x: nodeDrag.x, y: nodeDrag.y } : n)),
-    [nodes, nodeDrag],
-  )
+  const [roomDrag, setRoomDrag] = useState<{
+    ids: string[]
+    fromX: number
+    fromY: number
+    dx: number
+    dy: number
+  } | null>(null)
+
+  const liveNodes = useMemo(() => {
+    const withNode = nodes.map((n) =>
+      nodeDrag?.id === n.id ? { ...n, x: nodeDrag.x, y: nodeDrag.y } : n,
+    )
+    return roomDrag ? offsetNodes(withNode, roomDrag.ids, roomDrag.dx, roomDrag.dy) : withNode
+  }, [nodes, nodeDrag, roomDrag])
   const resolved = useMemo(() => resolveWalls(liveNodes, walls), [liveNodes, walls])
 
   const bounds = useMemo(() => {
@@ -129,12 +148,31 @@ export function WallPlan({
         if (node && node.clientWidth !== width) setWidth(node.clientWidth)
       }}
       className={`border-border/60 relative touch-none overflow-hidden rounded-lg border bg-slate-50 select-none dark:bg-slate-900 ${
-        tool === 'wall' || tool === 'door' || armedPin ? 'cursor-crosshair' : ''
+        tool === 'wall' || tool === 'door' || armedPin
+          ? 'cursor-crosshair'
+          : tool === 'resize'
+            ? 'cursor-move'
+            : ''
       }`}
       style={{ height: heightPx }}
       onPointerDown={(event) => {
-        if (tool !== 'wall' || scale <= 0) return
+        if (scale <= 0) return
         const rect = event.currentTarget.getBoundingClientRect()
+
+        if (tool === 'resize' && onMoveRoom) {
+          const { xFt, yFt } = toPlan(event.clientX, event.clientY, rect)
+          const loop = loopAt(liveNodes, resolved, xFt, yFt)
+          if (!loop) return
+          try {
+            event.currentTarget.setPointerCapture(event.pointerId)
+          } catch {
+            // Capture is a nicety.
+          }
+          setRoomDrag({ ids: loop, fromX: xFt, fromY: yFt, dx: 0, dy: 0 })
+          return
+        }
+
+        if (tool !== 'wall') return
         const { xFt, yFt } = toPlan(event.clientX, event.clientY, rect)
         const start = findNodeNear(liveNodes, snapToGrid(xFt), snapToGrid(yFt))
         const x1 = start ? start.x : snapToGrid(xFt)
@@ -149,6 +187,16 @@ export function WallPlan({
         setDraft({ x1, y1, x2: x1, y2: y1 })
       }}
       onPointerMove={(event) => {
+        if (roomDrag) {
+          const rect = event.currentTarget.getBoundingClientRect()
+          const { xFt, yFt } = toPlan(event.clientX, event.clientY, rect)
+          setRoomDrag({
+            ...roomDrag,
+            dx: snapToGrid(xFt - roomDrag.fromX),
+            dy: snapToGrid(yFt - roomDrag.fromY),
+          })
+          return
+        }
         if (!draft || tool !== 'wall') return
         const rect = event.currentTarget.getBoundingClientRect()
         const { xFt, yFt } = toPlan(event.clientX, event.clientY, rect)
@@ -165,13 +213,33 @@ export function WallPlan({
         } catch {
           // Already released.
         }
+        if (roomDrag) {
+          if (roomDrag.dx !== 0 || roomDrag.dy !== 0) {
+            const byId = new Map(nodes.map((n) => [n.id, n]))
+            onMoveRoom?.(
+              roomDrag.ids
+                .map((id) => byId.get(id))
+                .filter(Boolean)
+                .map((node) => ({
+                  id: node!.id,
+                  x: Math.round((node!.x + roomDrag.dx) * 100) / 100,
+                  y: Math.round((node!.y + roomDrag.dy) * 100) / 100,
+                })),
+            )
+          }
+          setRoomDrag(null)
+          return
+        }
         if (!draft) return
         const moved = Math.hypot(draft.x2 - draft.x1, draft.y2 - draft.y1)
         // Anything under a foot is a mis-tap, not a wall.
         if (moved >= 1) onDrawWall?.(draft)
         setDraft(null)
       }}
-      onPointerCancel={() => setDraft(null)}
+      onPointerCancel={() => {
+        setDraft(null)
+        setRoomDrag(null)
+      }}
       onClick={(event) => {
         if (scale <= 0) return
         const rect = event.currentTarget.getBoundingClientRect()
@@ -298,13 +366,20 @@ export function WallPlan({
                     ? 'Tap to delete this wall'
                     : 'Tap to type an exact length'
                 }
+                aria-hidden={!labelsInteractive}
                 aria-label={`Wall ${wall.lengthFt} feet`}
-                className="bg-background/90 text-muted-foreground hover:text-foreground absolute -translate-x-1/2 -translate-y-1/2 rounded px-1 text-[10px] tabular-nums underline decoration-dotted"
+                className={`bg-background/90 text-muted-foreground absolute -translate-x-1/2 -translate-y-1/2 rounded px-1 text-[10px] tabular-nums ${
+                  labelsInteractive
+                    ? 'hover:text-foreground underline decoration-dotted'
+                    : 'pointer-events-none opacity-70'
+                }`}
                 style={{ left: mid.left, top: mid.top }}
+                tabIndex={labelsInteractive ? 0 : -1}
                 onPointerDown={(event) => event.stopPropagation()}
                 onClick={(event) => {
+                  if (!labelsInteractive) return
                   event.stopPropagation()
-                  // Corner tool is the destructive one; every other tool edits.
+                  // Corner is the destructive tool; Resize edits the number.
                   if (tool === 'corner') {
                     onDeleteWall?.(wall.id)
                     return
@@ -333,7 +408,9 @@ export function WallPlan({
                 type="button"
                 title={`${opening.kind} · ${opening.widthFt}′ — tap to remove`}
                 aria-label={`${opening.kind} on wall`}
-                className="absolute h-2 rounded-sm bg-amber-500 hover:bg-red-500"
+                className={`absolute h-2 rounded-sm bg-amber-500 ${
+                  tool === 'door' ? 'hover:bg-red-500' : 'pointer-events-none'
+                }`}
                 style={{
                   left: screen.left,
                   top: screen.top,

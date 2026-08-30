@@ -6,6 +6,9 @@ import {
   formatFeetInches,
   findNodeNear,
   loopAreaSqft,
+  loopAt,
+  loopContains,
+  offsetNodes,
   openingPosition,
   projectOntoWall,
   rectangleWalls,
@@ -242,5 +245,45 @@ describe('readouts', () => {
     expect(formatFeetInches(7.25)).toBe('7′ 3″')
     // Rounding up a hair should not produce 12 inches.
     expect(formatFeetInches(11.99)).toBe('12′')
+  })
+})
+
+describe('dragging a whole room', () => {
+  const { nodes, resolved } = scene()
+
+  it('finds the enclosed room under a point', () => {
+    const loop = loopAt(nodes, resolved, 10, 7)
+    expect(loop).not.toBeNull()
+    expect(loop).toHaveLength(4)
+    // The pony wall's free end is not part of the room boundary.
+    expect(loop).not.toContain('p')
+  })
+
+  it('finds nothing outside the walls', () => {
+    expect(loopAt(nodes, resolved, 40, 40)).toBeNull()
+  })
+
+  it('moves every corner of the room together, so walls do not tear', () => {
+    const loop = loopAt(nodes, resolved, 10, 7)!
+    const moved = offsetNodes(nodes, loop, 5, -2)
+    const movedWalls = resolveWalls(moved, [
+      { id: 'w1', startNodeId: 'a', endNodeId: 'b' },
+      { id: 'w2', startNodeId: 'b', endNodeId: 'c' },
+    ])
+    // Lengths are unchanged: the room moved rather than stretched.
+    expect(movedWalls[0].lengthFt).toBe(20)
+    expect(movedWalls[1].lengthFt).toBe(15)
+    expect(moved.find((n) => n.id === 'a')).toMatchObject({ x: 5, y: -2 })
+  })
+
+  it('leaves nodes outside the loop where they are', () => {
+    const loop = loopAt(nodes, resolved, 10, 7)!
+    const moved = offsetNodes(nodes, loop, 5, 5)
+    // The pony wall's free end stays put, so the wall stretches with the room.
+    expect(moved.find((n) => n.id === 'p')).toMatchObject({ x: 10, y: 7 })
+  })
+
+  it('handles a point-in-loop test on a degenerate loop', () => {
+    expect(loopContains(nodes, ['a', 'b'], 5, 5)).toBe(false)
   })
 })

@@ -279,3 +279,66 @@ export function formatFeetInches(feet: number): string {
   if (inches === 12) return `${whole + 1}′`
   return inches === 0 ? `${whole}′` : `${whole}′ ${inches}″`
 }
+
+/** Is a point inside a closed loop of nodes? Even-odd rule. */
+export function loopContains(
+  nodes: PlanNode[],
+  loop: string[],
+  x: number,
+  y: number,
+): boolean {
+  const byId = new Map(nodes.map((n) => [n.id, n]))
+  const points = loop.map((id) => byId.get(id)).filter(Boolean) as PlanNode[]
+  if (points.length < 3) return false
+
+  let inside = false
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+    const a = points[i]
+    const b = points[j]
+    if (
+      a.y > y !== b.y > y &&
+      x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y || Number.EPSILON) + a.x
+    ) {
+      inside = !inside
+    }
+  }
+  return inside
+}
+
+/**
+ * The enclosed room under a point, as the set of node ids to move together.
+ * Dragging a room has to move every corner of it at once, or the walls tear
+ * apart.
+ */
+export function loopAt(
+  nodes: PlanNode[],
+  walls: ResolvedWall[],
+  x: number,
+  y: number,
+): string[] | null {
+  const loops = findLoops(walls)
+  // Smallest enclosing loop first, so an inner room wins over an outer one.
+  const containing = loops
+    .filter((loop) => loopContains(nodes, loop, x, y))
+    .sort((a, b) => loopAreaSqft(nodes, a) - loopAreaSqft(nodes, b))
+  return containing[0] ?? null
+}
+
+/** Offset a set of nodes, for dragging a whole room. */
+export function offsetNodes(
+  nodes: PlanNode[],
+  ids: string[],
+  dx: number,
+  dy: number,
+): PlanNode[] {
+  const moving = new Set(ids)
+  return nodes.map((node) =>
+    moving.has(node.id)
+      ? {
+          ...node,
+          x: Math.round((node.x + dx) * 100) / 100,
+          y: Math.round((node.y + dy) * 100) / 100,
+        }
+      : node,
+  )
+}

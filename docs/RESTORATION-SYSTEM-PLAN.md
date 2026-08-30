@@ -1216,3 +1216,40 @@ this.
 **Worth watching for elsewhere:** anywhere the app assumes a completed job has an
 invoice will show the same dead end. The calendar and the customer directory are handled;
 the pattern to follow is invoice if there is one, project if it is a restoration visit.
+
+
+---
+
+## Tools split so drawing is never blocked
+
+Charles: "if I tried to drag exactly where the number is it won't let me grab it... in
+this particular case I wanted to put the wall exactly where the measurement already was
+because it was dead center of the room... also I can't seem to drag the boxes."
+
+Both were the same root cause: **one tool was doing several jobs**, so the affordances of
+one blocked another.
+
+### Length labels are now inert while drawing
+Under the Wall tool the measurements are `pointer-events: none`. A label sits at the
+midpoint of a wall — which is frequently the exact spot you want to start a new wall
+from, since that is the centre of a room. Doors are likewise inert unless the Door tool is
+active.
+
+### A Resize tool
+- **Drag inside a room to move the whole thing.** The enclosed loop is found under the
+  pointer, and every corner of it moves in one write — otherwise the walls tear apart
+  between requests. The smallest enclosing loop wins, so an inner room beats the outer
+  one.
+- **Tap a measurement to type an exact length.** Editing moved here from "any tool", which
+  is what was stealing the drag.
+
+Nodes attached to the room but outside the loop — a pony wall's free end — deliberately
+stay put, so the pony wall stretches with the room rather than sliding along with it.
+
+### The five tools now
+**Wall** draws. **Resize** moves rooms and edits lengths. **Corner** drags a single corner
+and deletes walls. **Door** places and removes doors. **Place** drops equipment and reading
+pins. Each one owns its interactions and nothing else claims a tap.
+
+5 new tests cover finding the room under a point, moving every corner together without
+changing wall lengths, leaving out-of-loop nodes alone, and a degenerate loop.
