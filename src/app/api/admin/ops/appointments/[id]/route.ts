@@ -672,6 +672,15 @@ export async function PATCH(
 
     // Determine if this is a batch_monthly recurring appointment — skip
     // lifecycle notifications and QB sync for commercial batch clients.
+    // A restoration visit never invoices on its own. A water loss spans a
+    // mitigation day plus monitor days; nothing is ever dry on day 1, so closing
+    // out a single visit must not push a QuickBooks invoice for a job that is
+    // still running. The customer is billed once, when the project is closed
+    // from whichever monitor day reaches dry standard (see restoration_projects).
+    const isRestorationVisit =
+      (current as { kind?: string | null }).kind === 'restoration' ||
+      Boolean((current as { restoration_project_id?: string | null }).restoration_project_id)
+
     let isBatchMonthlyRecurring = false
     if (effRecurringTid && current.status !== nextStatus) {
       const { data: tplMeta } = await supabase
@@ -770,7 +779,11 @@ export async function PATCH(
         await sendAppointmentCancellationNotifications(supabase, id)
     }
 
-    if (nextStatus === 'completed' && !isBatchMonthlyRecurring) {
+    if (
+      nextStatus === 'completed' &&
+      !isBatchMonthlyRecurring &&
+      !isRestorationVisit
+    ) {
       const { data: inv } = await supabase
         .from('ops_invoices')
         .select('id, status')
@@ -805,7 +818,13 @@ export async function PATCH(
     }
 
     // Auto-record revenue stats whenever a job is closed. Idempotent.
-    if (nextStatus === 'completed' && current.status !== 'completed') {
+    // Restoration visits are excluded: their revenue is recorded once at project
+    // close, so that a four-day loss does not book revenue four times.
+    if (
+      nextStatus === 'completed' &&
+      current.status !== 'completed' &&
+      !isRestorationVisit
+    ) {
       const { data: invForStats } = await supabase
         .from('ops_invoices')
         .select('id')
