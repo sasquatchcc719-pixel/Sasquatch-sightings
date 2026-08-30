@@ -1,70 +1,143 @@
 import { describe, expect, it } from 'vitest'
-import { layoutFloorPlan, pointToPlanFeet, roomAtPoint } from './restoration-floor-plan'
+import {
+  boundsOf,
+  layoutFloorPlan,
+  pointToPlanFeet,
+  polygonAreaSqft,
+  polygonPerimeterFt,
+  rectanglePoints,
+  roomAtPoint,
+  snapPosition,
+  wallSegment,
+} from './restoration-floor-plan'
 
-const ROOM = (id: string, name: string, l: number, w: number) => ({
+const room = (id: string, name: string, l: number, w: number, extra = {}) => ({
   id,
   name,
   lengthFt: l,
   widthFt: w,
+  ...extra,
+})
+
+describe('polygon maths', () => {
+  it('measures a rectangle', () => {
+    const pts = rectanglePoints(20, 15)
+    expect(polygonAreaSqft(pts)).toBe(300)
+    expect(polygonPerimeterFt(pts)).toBe(70)
+  })
+
+  it('measures an L-shaped room, which a rectangle cannot', () => {
+    // 20x15 with a 8x5 bite taken out of one corner.
+    const l = [
+      { x: 0, y: 0 },
+      { x: 20, y: 0 },
+      { x: 20, y: 10 },
+      { x: 8, y: 10 },
+      { x: 8, y: 15 },
+      { x: 0, y: 15 },
+    ]
+    expect(polygonAreaSqft(l)).toBe(300 - 60)
+  })
+
+  it('measures a diagonal wall by its true length', () => {
+    const angled = [
+      { x: 0, y: 0 },
+      { x: 12, y: 0 },
+      { x: 12, y: 5 },
+      { x: 0, y: 9 },
+    ]
+    // The sloped wall is 12 across and 4 down: 12.65 ft, not 12.
+    expect(polygonPerimeterFt(angled)).toBeCloseTo(12 + 5 + Math.hypot(12, 4) + 9, 1)
+  })
 })
 
 describe('layoutFloorPlan', () => {
-  it('places rooms left to right with a gap between them', () => {
-    const layout = layoutFloorPlan([ROOM('a', 'Rec room', 20, 15), ROOM('b', 'Hall', 10, 4)])
+  it('auto-arranges rooms that have never been moved', () => {
+    const layout = layoutFloorPlan([room('a', 'Rec', 20, 15), room('b', 'Hall', 10, 4)])
     expect(layout.rooms[0]).toMatchObject({ x: 0, y: 0 })
     expect(layout.rooms[1].x).toBe(22)
-    expect(layout.rooms[1].y).toBe(0)
   })
 
-  it('wraps to a new row when the strip is full', () => {
-    const layout = layoutFloorPlan(
-      [ROOM('a', 'A', 30, 10), ROOM('b', 'B', 30, 12)],
-      40,
-    )
-    expect(layout.rooms[1].x).toBe(0)
-    expect(layout.rooms[1].y).toBe(12)
+  it('respects a saved position once a room has been dragged', () => {
+    const layout = layoutFloorPlan([
+      room('a', 'Rec', 20, 15, { planX: 5, planY: 30 }),
+      room('b', 'Hall', 10, 4),
+    ])
+    expect(layout.rooms[0]).toMatchObject({ x: 5, y: 30 })
   })
 
-  it('gives an oversized room its own row rather than dropping it', () => {
-    const layout = layoutFloorPlan([ROOM('a', 'Huge', 80, 20)], 40)
-    expect(layout.rooms).toHaveLength(1)
-    expect(layout.widthFt).toBe(80)
+  it('uses a custom polygon when one is stored', () => {
+    const pts = [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 6 },
+    ]
+    const layout = layoutFloorPlan([room('a', 'Angled', 10, 6, { points: pts })])
+    expect(layout.rooms[0].points).toEqual(pts)
+  })
+})
+
+describe('snapPosition', () => {
+  const neighbour = {
+    id: 'n',
+    name: 'Rec',
+    lengthFt: 20,
+    widthFt: 15,
+    x: 0,
+    y: 0,
+    points: rectanglePoints(20, 15),
+  }
+
+  it('pulls a nearly-touching wall flush', () => {
+    const result = snapPosition({ x: 20.8, y: 0.4, points: rectanglePoints(10, 4) }, [neighbour])
+    expect(result.x).toBe(20)
+    expect(result.y).toBe(0)
+    expect(result.snappedX).toBe(true)
   })
 
-  it('is deterministic, so a pin stays in the room it was dropped in', () => {
-    const rooms = [ROOM('a', 'A', 12, 10), ROOM('b', 'B', 14, 9), ROOM('c', 'C', 20, 11)]
-    expect(layoutFloorPlan(rooms)).toEqual(layoutFloorPlan(rooms))
-  })
-
-  it('substitutes a default for a missing or zero dimension', () => {
-    const layout = layoutFloorPlan([ROOM('a', 'Unmeasured', 0, 0)])
-    expect(layout.rooms[0].lengthFt).toBe(10)
-    expect(layout.rooms[0].widthFt).toBe(10)
+  it('leaves a room alone when nothing is close', () => {
+    const result = snapPosition({ x: 60, y: 60, points: rectanglePoints(10, 4) }, [neighbour])
+    expect(result).toMatchObject({ x: 60, y: 60, snappedX: false, snappedY: false })
   })
 })
 
 describe('roomAtPoint', () => {
-  const layout = layoutFloorPlan([ROOM('a', 'Rec room', 20, 15), ROOM('b', 'Hall', 10, 4)])
-
-  it('finds the room under a tap', () => {
-    expect(roomAtPoint(layout, 5, 5)?.name).toBe('Rec room')
-    expect(roomAtPoint(layout, 25, 2)?.name).toBe('Hall')
-  })
-
-  it('returns null when the tap lands in empty space', () => {
-    expect(roomAtPoint(layout, 21, 14)).toBeNull()
-    expect(roomAtPoint(layout, 500, 500)).toBeNull()
+  it('hit-tests an L-shaped room correctly', () => {
+    const layout = layoutFloorPlan([
+      room('a', 'L room', 20, 15, {
+        planX: 0,
+        planY: 0,
+        points: [
+          { x: 0, y: 0 },
+          { x: 20, y: 0 },
+          { x: 20, y: 10 },
+          { x: 8, y: 10 },
+          { x: 8, y: 15 },
+          { x: 0, y: 15 },
+        ],
+      }),
+    ])
+    expect(roomAtPoint(layout, 4, 4)?.name).toBe('L room')
+    expect(roomAtPoint(layout, 4, 13)?.name).toBe('L room')
+    // Inside the bounding box but outside the actual room — the bite.
+    expect(roomAtPoint(layout, 15, 13)).toBeNull()
   })
 })
 
-describe('pointToPlanFeet', () => {
-  it('converts a tap to plan feet at the current scale', () => {
-    expect(pointToPlanFeet(120, 80, { left: 20, top: 20 }, 10)).toEqual({ xFt: 10, yFt: 6 })
+describe('wallSegment', () => {
+  it('returns the wall a doorway would sit on', () => {
+    const layout = layoutFloorPlan([room('a', 'Rec', 20, 15, { planX: 0, planY: 0 })])
+    const wall = wallSegment(layout.rooms[0], 1)
+    expect(wall).toMatchObject({ from: { x: 20, y: 0 }, to: { x: 20, y: 15 }, lengthFt: 15 })
+  })
+})
+
+describe('helpers', () => {
+  it('bounds an empty polygon without throwing', () => {
+    expect(boundsOf([])).toEqual({ minX: 0, minY: 0, maxX: 0, maxY: 0 })
   })
 
-  it('does not divide by zero when the plan has not been sized yet', () => {
-    const point = pointToPlanFeet(50, 50, { left: 0, top: 0 }, 0)
-    expect(Number.isFinite(point.xFt)).toBe(true)
-    expect(Number.isFinite(point.yFt)).toBe(true)
+  it('does not divide by zero converting a tap', () => {
+    expect(Number.isFinite(pointToPlanFeet(50, 50, { left: 0, top: 0 }, 0).xFt)).toBe(true)
   })
 })

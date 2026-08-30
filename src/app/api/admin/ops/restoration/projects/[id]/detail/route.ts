@@ -66,7 +66,7 @@ export async function GET(
         .order('placed_at'),
       supabase
         .from('restoration_areas')
-        .select('id, name, floor_sqft, affected_sqft, wall_linear_ft, ceiling_height_ft, geometry')
+        .select('id, name, floor_sqft, affected_sqft, wall_linear_ft, ceiling_height_ft, geometry, plan_x, plan_y, points')
         .eq('project_id', id)
         .order('sort_order')
         .order('created_at'),

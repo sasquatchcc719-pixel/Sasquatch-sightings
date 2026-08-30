@@ -101,6 +101,9 @@ type Detail = {
     wall_linear_ft: number | null
     ceiling_height_ft: number | null
     geometry: { length_ft?: number; width_ft?: number } | null
+    plan_x: number | null
+    plan_y: number | null
+    points: Array<{ x: number; y: number }> | null
   }>
   payments: Array<{ id: string; kind: string; method: string; amount_cents: number }>
   photos: Array<{
@@ -155,6 +158,19 @@ const PHOTO_PHASES = [
   { value: 'completion', label: 'Complete' },
 ]
 
+const MATERIALS = [
+  'Drywall',
+  'Subfloor',
+  'Framing',
+  'Hardwood',
+  'Concrete',
+  'Insulation',
+  'Plaster',
+  'Tile',
+  'Cabinet',
+  'Trim',
+]
+
 const EQUIPMENT_CODES = [
   { code: 'DRY++', label: 'Axial fan 1 HP' },
   { code: 'DRY+', label: 'Axial fan' },
@@ -176,6 +192,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
   const [catalogOpen, setCatalogOpen] = useState(false)
   const [openGroup, setOpenGroup] = useState<string | null>(null)
 
+  const [selectedPointId, setSelectedPointId] = useState<string | null>(null)
   const [armedTool, setArmedTool] = useState<
     { kind: 'equipment' | 'reading'; label: string; code?: string } | null
   >(null)
@@ -271,6 +288,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
         name: area.name,
         lengthFt: Number(area.geometry?.length_ft ?? 0),
         widthFt: Number(area.geometry?.width_ft ?? 0),
+        planX: area.plan_x,
+        planY: area.plan_y,
+        points: area.points,
       })),
     [detail],
   )
@@ -634,6 +654,23 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 rooms={planRooms}
                 pins={planPins}
                 armed={armedTool}
+                selectedPinId={selectedPointId}
+                onMoveRoom={(areaId, x, y) =>
+                  void call(
+                    `/api/admin/ops/restoration/areas/${areaId}`,
+                    { method: 'PATCH', body: JSON.stringify({ plan_x: x, plan_y: y }) },
+                    `move-${areaId}`,
+                  )
+                }
+                onPinClick={(pin) => {
+                  if (pin.kind !== 'reading') return
+                  setSelectedPointId(pin.id)
+                  // Jump to the point's row so its history and entry box are
+                  // right there, rather than making Charles hunt for it.
+                  document
+                    .getElementById(`reading-point-${pin.id}`)
+                    ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                }}
                 onDrop={async ({ areaId, xFt, yFt }) => {
                   const tool = armedTool
                   if (!tool) return
@@ -1045,24 +1082,64 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
           ) : null}
 
           {runningEquipment.length > 0 ? (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {runningEquipment.map((placement) => (
-                <Button
-                  key={placement.id}
-                  size="sm"
-                  variant="ghost"
-                  className="text-muted-foreground gap-1 text-xs"
-                  onClick={() =>
-                    void call(
-                      `/api/admin/ops/restoration/equipment/${placement.id}`,
-                      { method: 'PATCH', body: JSON.stringify({}) },
-                      `pull-${placement.id}`,
-                    )
-                  }
-                >
-                  Pull {placement.catalog_code}
-                </Button>
-              ))}
+            <div className="border-border/60 mt-3 border-t pt-3">
+              <Label className="text-muted-foreground mb-2 block text-xs">
+                Pull equipment as you take it out
+              </Label>
+              <div className="flex flex-col gap-1.5">
+                {Object.entries(
+                  runningEquipment.reduce<Record<string, string[]>>((groups, placement) => {
+                    const list = groups[placement.catalog_code]
+                    if (list) list.push(placement.id)
+                    else groups[placement.catalog_code] = [placement.id]
+                    return groups
+                  }, {}),
+                ).map(([code, ids]) => (
+                  <div key={code} className="flex items-center gap-2 text-sm">
+                    <span className="min-w-0 flex-1">
+                      <code className="font-mono text-xs text-sky-600 dark:text-sky-400">
+                        {code}
+                      </code>{' '}
+                      <span className="text-muted-foreground">
+                        {ids.length} running
+                      </span>
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8"
+                      disabled={busy === `pull-${code}`}
+                      onClick={() =>
+                        void call(
+                          `/api/admin/ops/restoration/equipment/${ids[ids.length - 1]}`,
+                          { method: 'PATCH', body: JSON.stringify({}) },
+                          `pull-${code}`,
+                        )
+                      }
+                    >
+                      Pull 1
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-muted-foreground h-8"
+                      disabled={busy === `pull-all-${code}`}
+                      onClick={async () => {
+                        for (const id of ids) {
+                          await fetch(`/api/admin/ops/restoration/equipment/${id}`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({}),
+                          })
+                        }
+                        await load()
+                      }}
+                    >
+                      Pull all {ids.length}
+                    </Button>
+                  </div>
+                ))}
+              </div>
             </div>
           ) : null}
         </Card>
@@ -1088,47 +1165,115 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 latest != null &&
                 Number(latest.value) <= Number(point.dry_standard)
               return (
-                <div key={point.id} className="flex items-center gap-3 py-2 text-sm">
-                  <span className="min-w-0 flex-1">
-                    <span className="font-medium">{point.label}</span>
-                    {point.material ? (
-                      <span className="text-muted-foreground"> · {point.material}</span>
-                    ) : null}
-                    <span className="text-muted-foreground block text-xs">
-                      {history.length > 0
-                        ? history.map((r) => r.value).join(' → ')
-                        : 'no readings yet'}
-                      {point.dry_standard != null ? ` (goal ${point.dry_standard})` : ''}
-                      {atGoal ? ' · dry' : ''}
-                    </span>
-                  </span>
-                  <Input
-                    className="h-9 w-20 text-right"
-                    type="number"
-                    step="any"
-                    placeholder="%"
-                    aria-label={`Reading for ${point.label}`}
-                    onKeyDown={(e) => {
-                      if (e.key !== 'Enter') return
-                      const input = e.target as HTMLInputElement
-                      const value = Number(input.value)
-                      if (!Number.isFinite(value) || input.value === '') return
-                      input.value = ''
-                      void call(
-                        `/api/admin/ops/restoration/projects/${projectId}/readings`,
-                        {
-                          method: 'POST',
-                          body: JSON.stringify({
-                            kind: 'material',
-                            reading_point_id: point.id,
-                            appointment_id: activeVisitId,
-                            value,
-                          }),
-                        },
-                        `read-${point.id}`,
-                      )
-                    }}
-                  />
+                <div
+                  key={point.id}
+                  id={`reading-point-${point.id}`}
+                  className={`flex flex-col gap-2 rounded-md py-3 transition-colors ${
+                    selectedPointId === point.id ? 'bg-sky-50 dark:bg-sky-950/40' : ''
+                  }`}
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Input
+                      className="h-9 min-w-40 flex-1"
+                      defaultValue={point.label}
+                      aria-label="Point name"
+                      onBlur={(e) => {
+                        const label = e.target.value.trim()
+                        if (label && label !== point.label) {
+                          void call(
+                            `/api/admin/ops/restoration/reading-points/${point.id}`,
+                            { method: 'PATCH', body: JSON.stringify({ label }) },
+                            `pt-${point.id}`,
+                          )
+                        }
+                      }}
+                    />
+                    <select
+                      className="border-input bg-background h-9 rounded-md border px-2 text-sm"
+                      aria-label="Material"
+                      value={point.material ?? ''}
+                      onChange={(e) =>
+                        void call(
+                          `/api/admin/ops/restoration/reading-points/${point.id}`,
+                          {
+                            method: 'PATCH',
+                            body: JSON.stringify({ material: e.target.value || null }),
+                          },
+                          `pt-${point.id}`,
+                        )
+                      }
+                    >
+                      {MATERIALS.map((material) => (
+                        <option key={material} value={material}>
+                          {material}
+                        </option>
+                      ))}
+                    </select>
+                    <Input
+                      className="h-9 w-24"
+                      type="number"
+                      step="any"
+                      placeholder="goal %"
+                      aria-label="Dry standard"
+                      defaultValue={point.dry_standard ?? ''}
+                      onBlur={(e) =>
+                        void call(
+                          `/api/admin/ops/restoration/reading-points/${point.id}`,
+                          {
+                            method: 'PATCH',
+                            body: JSON.stringify({ dry_standard: e.target.value }),
+                          },
+                          `pt-${point.id}`,
+                        )
+                      }
+                    />
+                    <Input
+                      className="h-9 w-20 text-right"
+                      type="number"
+                      step="any"
+                      placeholder="%"
+                      aria-label={`Reading for ${point.label}`}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'Enter') return
+                        const input = e.target as HTMLInputElement
+                        const value = Number(input.value)
+                        if (!Number.isFinite(value) || input.value === '') return
+                        input.value = ''
+                        void call(
+                          `/api/admin/ops/restoration/projects/${projectId}/readings`,
+                          {
+                            method: 'POST',
+                            body: JSON.stringify({
+                              kind: 'material',
+                              reading_point_id: point.id,
+                              appointment_id: activeVisitId,
+                              value,
+                            }),
+                          },
+                          `read-${point.id}`,
+                        )
+                      }}
+                    />
+                    <button
+                      type="button"
+                      aria-label={`Remove ${point.label}`}
+                      onClick={() =>
+                        void call(
+                          `/api/admin/ops/restoration/reading-points/${point.id}`,
+                          { method: 'DELETE' },
+                          `pt-${point.id}`,
+                        )
+                      }
+                    >
+                      <Trash2 className="text-muted-foreground h-4 w-4" />
+                    </button>
+                  </div>
+                  <p className="text-muted-foreground text-xs">
+                    {history.length > 0
+                      ? history.map((r) => `${r.value}%`).join(' → ')
+                      : 'no readings yet'}
+                    {atGoal ? ' · dry' : ''}
+                  </p>
                 </div>
               )
             })}

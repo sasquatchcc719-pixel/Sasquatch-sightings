@@ -21,6 +21,10 @@ export async function PATCH(
       'ceiling_height_ft',
       'flooring_type',
       'carpet_glue_down',
+      'plan_x',
+      'plan_y',
+      'rotation_deg',
+      'points',
     ]) {
       if (field in body) patch[field] = body[field]
     }

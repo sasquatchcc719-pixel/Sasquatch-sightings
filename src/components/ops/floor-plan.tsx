@@ -2,19 +2,26 @@
 
 import { useMemo, useRef, useState } from 'react'
 import {
+  boundsOf,
   layoutFloorPlan,
   pointToPlanFeet,
   roomAtPoint,
+  snapPosition,
+  wallSegment,
+  type Opening,
   type PlanRoom,
 } from '@/lib/ops/restoration-floor-plan'
 
 /**
  * The plan view of a water loss.
  *
- * Rooms are drawn from the dimensions already measured — nobody has to draw
- * anything. Tapping inside a room drops whatever tool is armed at that spot, so
- * an air mover or a reading point gets a real location, and the readings can be
- * seen where they were actually taken.
+ * Rooms start auto-arranged from the dimensions already measured, then get
+ * dragged into the shape of the actual house. Walls snap flush to a neighbour
+ * so rooms join up instead of leaving slivers. Doorways are drawn on the wall
+ * they belong to.
+ *
+ * Tapping inside a room with a tool armed drops equipment or a reading point at
+ * that spot; tapping a pin selects it.
  */
 
 export type PlanPin = {
@@ -24,7 +31,6 @@ export type PlanPin = {
   areaId: string | null
   xFt: number | null
   yFt: number | null
-  /** Latest reading value, shown on the pin so a stalled spot is obvious. */
   value?: number | null
   atGoal?: boolean
   removed?: boolean
@@ -33,21 +39,38 @@ export type PlanPin = {
 type FloorPlanProps = {
   rooms: PlanRoom[]
   pins: PlanPin[]
-  /** When set, a tap inside a room drops a pin instead of doing nothing. */
+  openings?: Opening[]
   armed?: { kind: 'equipment' | 'reading'; label: string } | null
+  selectedPinId?: string | null
   onDrop?: (position: { areaId: string; xFt: number; yFt: number }) => void
   onPinClick?: (pin: PlanPin) => void
+  onMoveRoom?: (areaId: string, x: number, y: number) => void
 }
 
-export function FloorPlan({ rooms, pins, armed, onDrop, onPinClick }: FloorPlanProps) {
-  const containerRef = useRef<HTMLDivElement>(null)
+export function FloorPlan({
+  rooms,
+  pins,
+  openings = [],
+  armed,
+  selectedPinId,
+  onDrop,
+  onPinClick,
+  onMoveRoom,
+}: FloorPlanProps) {
   const [width, setWidth] = useState(0)
+  const [dragging, setDragging] = useState<{
+    id: string
+    grabX: number
+    grabY: number
+    x: number
+    y: number
+  } | null>(null)
 
   const layout = useMemo(() => layoutFloorPlan(rooms), [rooms])
 
-  // Fit the plan to the container, so it works at phone width without pinching.
-  const scale = width > 0 && layout.widthFt > 0 ? width / (layout.widthFt + 4) : 0
-  const heightPx = scale > 0 ? (layout.heightFt + 4) * scale : 160
+  // Leave room on the right and below so a dragged room is never clipped.
+  const scale = width > 0 && layout.widthFt > 0 ? width / (layout.widthFt + 6) : 0
+  const heightPx = scale > 0 ? Math.max(180, (layout.heightFt + 6) * scale) : 180
 
   if (rooms.length === 0) {
     return (
@@ -57,13 +80,15 @@ export function FloorPlan({ rooms, pins, armed, onDrop, onPinClick }: FloorPlanP
     )
   }
 
+  const positionOf = (roomId: string, fallbackX: number, fallbackY: number) =>
+    dragging?.id === roomId ? { x: dragging.x, y: dragging.y } : { x: fallbackX, y: fallbackY }
+
   return (
     <div
       ref={(node) => {
-        containerRef.current = node
         if (node && node.clientWidth !== width) setWidth(node.clientWidth)
       }}
-      className={`border-border/60 relative overflow-hidden rounded-lg border bg-slate-50 dark:bg-slate-900 ${
+      className={`border-border/60 relative touch-none overflow-hidden rounded-lg border bg-slate-50 select-none dark:bg-slate-900 ${
         armed ? 'cursor-crosshair ring-2 ring-sky-500' : ''
       }`}
       style={{ height: heightPx }}
@@ -73,58 +98,152 @@ export function FloorPlan({ rooms, pins, armed, onDrop, onPinClick }: FloorPlanP
         const { xFt, yFt } = pointToPlanFeet(event.clientX, event.clientY, rect, scale)
         const room = roomAtPoint(layout, xFt, yFt)
         if (!room) return
-        onDrop({ areaId: room.id, xFt, yFt })
+        onDrop({ areaId: room.id, xFt: xFt - room.x, yFt: yFt - room.y })
       }}
-      role={armed ? 'button' : undefined}
-      aria-label={armed ? `Tap a room to place ${armed.label}` : 'Floor plan'}
     >
       {scale > 0
-        ? layout.rooms.map((room) => (
-            <div
-              key={room.id}
-              className="absolute rounded-sm border-2 border-slate-400 bg-white/70 dark:border-slate-600 dark:bg-slate-800/60"
-              style={{
-                left: room.x * scale,
-                top: room.y * scale,
-                width: room.lengthFt * scale,
-                height: room.widthFt * scale,
-              }}
-            >
-              <span className="text-muted-foreground absolute top-1 left-1 text-[10px] leading-tight font-medium">
-                {room.name}
-                <span className="block opacity-70">
-                  {room.lengthFt}′ × {room.widthFt}′
+        ? layout.rooms.map((room) => {
+            const b = boundsOf(room.points)
+            const w = b.maxX - b.minX
+            const h = b.maxY - b.minY
+            const pos = positionOf(room.id, room.x, room.y)
+            const isRect = room.points.length === 4
+            return (
+              <div
+                key={room.id}
+                className={`absolute ${armed ? '' : 'cursor-move'} ${
+                  dragging?.id === room.id ? 'z-10 opacity-80' : ''
+                }`}
+                style={{ left: pos.x * scale, top: pos.y * scale, width: w * scale, height: h * scale }}
+                onPointerDown={(event) => {
+                  if (armed || !onMoveRoom) return
+                  event.stopPropagation()
+                  const rect = event.currentTarget.parentElement?.getBoundingClientRect()
+                  if (!rect) return
+                  const { xFt, yFt } = pointToPlanFeet(event.clientX, event.clientY, rect, scale)
+                  event.currentTarget.setPointerCapture(event.pointerId)
+                  setDragging({
+                    id: room.id,
+                    grabX: xFt - room.x,
+                    grabY: yFt - room.y,
+                    x: room.x,
+                    y: room.y,
+                  })
+                }}
+                onPointerMove={(event) => {
+                  if (dragging?.id !== room.id) return
+                  const rect = event.currentTarget.parentElement?.getBoundingClientRect()
+                  if (!rect) return
+                  const { xFt, yFt } = pointToPlanFeet(event.clientX, event.clientY, rect, scale)
+                  const next = snapPosition(
+                    {
+                      x: Math.max(0, xFt - dragging.grabX),
+                      y: Math.max(0, yFt - dragging.grabY),
+                      points: room.points,
+                    },
+                    layout.rooms.filter((r) => r.id !== room.id),
+                  )
+                  setDragging({ ...dragging, x: next.x, y: next.y })
+                }}
+                onPointerUp={(event) => {
+                  if (dragging?.id !== room.id) return
+                  event.currentTarget.releasePointerCapture(event.pointerId)
+                  onMoveRoom?.(room.id, dragging.x, dragging.y)
+                  setDragging(null)
+                }}
+              >
+                {isRect ? (
+                  <div className="h-full w-full rounded-sm border-2 border-slate-400 bg-white/70 dark:border-slate-600 dark:bg-slate-800/60" />
+                ) : (
+                  <svg
+                    viewBox={`0 0 ${w} ${h}`}
+                    className="h-full w-full"
+                    preserveAspectRatio="none"
+                  >
+                    <polygon
+                      points={room.points.map((p) => `${p.x - b.minX},${p.y - b.minY}`).join(' ')}
+                      className="fill-white/70 stroke-slate-400 dark:fill-slate-800/60 dark:stroke-slate-600"
+                      strokeWidth={0.4}
+                    />
+                  </svg>
+                )}
+                <span className="text-muted-foreground pointer-events-none absolute top-1 left-1 text-[10px] leading-tight font-medium">
+                  {room.name}
+                  <span className="block opacity-70">
+                    {Math.round(w)}′ × {Math.round(h)}′
+                  </span>
                 </span>
-              </span>
-            </div>
-          ))
+              </div>
+            )
+          })
+        : null}
+
+      {/* Doorways, drawn as a gap marker on the wall they belong to. */}
+      {scale > 0
+        ? openings.map((opening) => {
+            const room = layout.rooms.find((r) => r.id === opening.areaId)
+            if (!room) return null
+            const wall = wallSegment(room, opening.wallIndex)
+            if (!wall) return null
+            const t = wall.lengthFt > 0 ? opening.offsetFt / wall.lengthFt : 0
+            const x = wall.from.x + (wall.to.x - wall.from.x) * t
+            const y = wall.from.y + (wall.to.y - wall.from.y) * t
+            const angle =
+              (Math.atan2(wall.to.y - wall.from.y, wall.to.x - wall.from.x) * 180) / Math.PI
+            return (
+              <div
+                key={opening.id}
+                title={`${opening.kind} · ${opening.widthFt}′`}
+                className="pointer-events-none absolute h-1 rounded bg-amber-500"
+                style={{
+                  left: x * scale,
+                  top: y * scale,
+                  width: opening.widthFt * scale,
+                  transform: `rotate(${angle}deg)`,
+                  transformOrigin: '0 50%',
+                }}
+              />
+            )
+          })
         : null}
 
       {scale > 0
         ? pins
             .filter((pin) => pin.xFt != null && pin.yFt != null && !pin.removed)
-            .map((pin) => (
-              <button
-                key={pin.id}
-                type="button"
-                title={pin.label}
-                aria-label={pin.label}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  onPinClick?.(pin)
-                }}
-                className={`absolute flex h-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white text-[10px] font-bold text-white shadow ${
-                  pin.kind === 'equipment'
-                    ? 'w-6 bg-sky-600'
-                    : pin.atGoal
-                      ? 'min-w-6 bg-emerald-600 px-1'
-                      : 'min-w-6 bg-amber-600 px-1'
-                }`}
-                style={{ left: (pin.xFt ?? 0) * scale, top: (pin.yFt ?? 0) * scale }}
-              >
-                {pin.kind === 'equipment' ? '◈' : (pin.value ?? '?')}
-              </button>
-            ))
+            .map((pin) => {
+              const room = layout.rooms.find((r) => r.id === pin.areaId)
+              const base = room
+                ? positionOf(room.id, room.x, room.y)
+                : { x: 0, y: 0 }
+              const left = (base.x + (pin.xFt ?? 0)) * scale
+              const top = (base.y + (pin.yFt ?? 0)) * scale
+              const selected = selectedPinId === pin.id
+              return (
+                <button
+                  key={pin.id}
+                  type="button"
+                  title={pin.label}
+                  aria-label={pin.label}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onPinClick?.(pin)
+                  }}
+                  className={`absolute flex h-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 text-[10px] font-bold text-white shadow ${
+                    selected ? 'border-slate-900 ring-2 ring-slate-900/40' : 'border-white'
+                  } ${
+                    pin.kind === 'equipment'
+                      ? 'w-6 bg-sky-600'
+                      : pin.atGoal
+                        ? 'min-w-6 bg-emerald-600 px-1'
+                        : 'min-w-6 bg-amber-600 px-1'
+                  }`}
+                  style={{ left, top }}
+                >
+                  {pin.kind === 'equipment' ? '◈' : (pin.value ?? '?')}
+                </button>
+              )
+            })
         : null}
     </div>
   )
