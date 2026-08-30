@@ -844,7 +844,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
 
           <div className="mt-4">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Label className="text-sm">Plan</Label>
                 <div className="border-border/60 flex rounded-md border p-0.5">
                   {(
@@ -872,6 +872,29 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                     </button>
                   ))}
                 </div>
+                {planData.walls.length === 0 && detail.areas.length > 0 ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
+                    disabled={busy === 'seed-walls'}
+                    onClick={async () => {
+                      setBusy('seed-walls')
+                      await fetch(
+                        `/api/admin/ops/restoration/projects/${projectId}/walls`,
+                        {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ from_areas: true }),
+                        },
+                      )
+                      await loadPlan()
+                      setBusy(null)
+                    }}
+                  >
+                    Draw my measured rooms
+                  </Button>
+                ) : null}
               </div>
 
               {planTool === 'pin' ? (

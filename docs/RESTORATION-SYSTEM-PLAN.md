@@ -1162,3 +1162,35 @@ Nothing should be settable only by dragging.
   build-out density and the deposit amount were already editable; this closes the rest.
 
 `formatFeetInches` is used for anything a person reads as a measurement.
+
+
+---
+
+## Two problems from the schedule screen
+
+### 1. Six tray cards — two test projects, not a duplication bug
+Both projects were real and active, three queued monitor visits each. They were
+indistinguishable because a tray card showed only the customer name, and both losses
+belong to the same customer.
+
+Fixed: cards now show the **street and city** under the name, are **sorted by loss** so
+one job's visits sit together, and the tray header says "· 2 losses" when more than one
+is open. The placing bar names the address too.
+
+### 2. The wall plan was empty
+Two causes, both real:
+
+- **Rooms already measured never became walls.** Replacing the polygon model with the
+  wall model left existing rooms invisible on the plan. There is now a **"Draw my
+  measured rooms"** button that lays each measured room out as a rectangle of walls, side
+  by side with a gap, ready to be dragged into the real shape of the house. Rooms are
+  still entered as length x width on a phone, so this bridge is permanent, not a one-off
+  migration.
+- **The drag gesture had no pointer capture.** A wall drag died the moment the pointer
+  left the element or moved quickly — which is most drags, especially on a phone. Now
+  captured, released on pointer-up, and cancelled cleanly.
+
+Persistence itself was never broken: a new integration test draws four walls against the
+real database, proves a shared corner is reused rather than duplicated (three nodes after
+two walls, not four), closes a room measuring 70 ft of wall, hosts a door on a wall,
+rejects a wall with the same node at both ends, and confirms cascade cleanup.

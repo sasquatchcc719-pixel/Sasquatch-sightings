@@ -57,10 +57,50 @@ export async function POST(
     const supabase = createAdminClient()
     const body = await request.json()
 
-    const segments: Array<{ x1: number; y1: number; x2: number; y2: number }> =
-      Array.isArray(body.segments)
+    let segments: Array<{ x1: number; y1: number; x2: number; y2: number }>
+
+    if (body.from_areas) {
+      // Rooms measured as length x width predate the wall model, and rooms are
+      // still entered that way on the phone. Lay them out as rectangles side by
+      // side so an existing measurement appears on the plan instead of a blank
+      // canvas, then drag them into the real shape of the house.
+      const { data: areas } = await supabase
+        .from('restoration_areas')
+        .select('id, name, geometry, affected_sqft')
+        .eq('project_id', id)
+        .order('created_at')
+
+      segments = []
+      let cursorX = 0
+      for (const area of areas ?? []) {
+        const geometry = area.geometry as { length_ft?: number; width_ft?: number } | null
+        const length = Number(geometry?.length_ft ?? 0)
+        const width = Number(geometry?.width_ft ?? 0)
+        if (!(length > 0 && width > 0)) continue
+
+        const x0 = cursorX
+        const y0 = 0
+        segments.push(
+          { x1: x0, y1: y0, x2: x0 + length, y2: y0 },
+          { x1: x0 + length, y1: y0, x2: x0 + length, y2: y0 + width },
+          { x1: x0 + length, y1: y0 + width, x2: x0, y2: y0 + width },
+          { x1: x0, y1: y0 + width, x2: x0, y2: y0 },
+        )
+        // A gap between rooms, so they are separate until dragged together.
+        cursorX += length + 3
+      }
+
+      if (segments.length === 0) {
+        return NextResponse.json(
+          { error: 'no measured rooms to draw' },
+          { status: 400 },
+        )
+      }
+    } else {
+      segments = Array.isArray(body.segments)
         ? body.segments
         : [{ x1: body.x1, y1: body.y1, x2: body.x2, y2: body.y2 }]
+    }
 
     const { data: existing } = await supabase
       .from('restoration_plan_nodes')

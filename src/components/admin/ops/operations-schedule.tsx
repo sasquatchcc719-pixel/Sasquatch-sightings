@@ -34,7 +34,10 @@ type ScheduleView = 'week' | 'day' | 'month'
 
 type QueuedVisit = {
   id: string
+  projectId: string
   label: string
+  /** Street and city — two losses for the same customer look identical without it. */
+  place: string
   visitType: string
   sequence: number | null
 }
@@ -940,15 +943,26 @@ export function OperationsSchedule() {
           : project.ops_customers
         for (const queued of project.restoration_visit_queue ?? []) {
           if (queued.status !== 'queued') continue
+          const address = Array.isArray(project.ops_service_addresses)
+            ? project.ops_service_addresses[0]
+            : project.ops_service_addresses
           rows.push({
             id: queued.id,
+            projectId: project.id,
             label: customer?.business_name || customer?.full_name || 'Water loss',
+            place: address
+              ? [address.street_1, address.city].filter(Boolean).join(', ')
+              : '',
             visitType: queued.visit_type,
             sequence: queued.visit_sequence,
           })
         }
       }
-      rows.sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0))
+      // Group by loss first, then visit order, so one job's visits sit together.
+      rows.sort(
+        (a, b) =>
+          a.projectId.localeCompare(b.projectId) || (a.sequence ?? 0) - (b.sequence ?? 0),
+      )
       setQueuedVisits(rows)
     } catch {
       // The tray is additive — a failure here must not break the calendar.
@@ -2748,6 +2762,10 @@ export function OperationsSchedule() {
             <div className="mb-2 flex items-center justify-between gap-2">
               <p className="text-xs font-semibold tracking-wide text-sky-900 uppercase">
                 Unscheduled monitor visits
+                {(() => {
+                  const losses = new Set(queuedVisits.map((v) => v.projectId)).size
+                  return losses > 1 ? ` · ${losses} losses` : ''
+                })()}
               </p>
               {armedVisit ? (
                 <button
@@ -2761,7 +2779,8 @@ export function OperationsSchedule() {
             </div>
             {armedVisit ? (
               <p className="mb-2 rounded-lg bg-sky-600 px-3 py-2 text-sm font-semibold text-white">
-                Placing: {armedVisit.label} · {armedVisit.visitType}
+                Placing: {armedVisit.label}
+                {armedVisit.place ? ` (${armedVisit.place})` : ''} · {armedVisit.visitType}
                 {armedVisit.sequence ? ` ${armedVisit.sequence}` : ''} — tap a slot
               </p>
             ) : null}
@@ -2782,6 +2801,9 @@ export function OperationsSchedule() {
                   }`}
                 >
                   <span className="font-medium">{visit.label}</span>
+                  {visit.place ? (
+                    <span className="block text-xs opacity-70">{visit.place}</span>
+                  ) : null}
                   <span className="block text-xs opacity-80">
                     {visit.visitType}
                     {visit.sequence ? ` ${visit.sequence}` : ''} · 1 hr

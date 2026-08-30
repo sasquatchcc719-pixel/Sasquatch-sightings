@@ -139,6 +139,13 @@ export function WallPlan({
         const start = findNodeNear(liveNodes, snapToGrid(xFt), snapToGrid(yFt))
         const x1 = start ? start.x : snapToGrid(xFt)
         const y1 = start ? start.y : snapToGrid(yFt)
+        // Capture the pointer, or the drag dies the moment it leaves this
+        // element — which is most drags, especially on a phone.
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId)
+        } catch {
+          // Capture is a nicety; the draft still works without it.
+        }
         setDraft({ x1, y1, x2: x1, y2: y1 })
       }}
       onPointerMove={(event) => {
@@ -152,12 +159,19 @@ export function WallPlan({
           y2: near ? near.y : snapToGrid(yFt),
         })
       }}
-      onPointerUp={() => {
+      onPointerUp={(event) => {
+        try {
+          event.currentTarget.releasePointerCapture(event.pointerId)
+        } catch {
+          // Already released.
+        }
         if (!draft) return
         const moved = Math.hypot(draft.x2 - draft.x1, draft.y2 - draft.y1)
+        // Anything under a foot is a mis-tap, not a wall.
         if (moved >= 1) onDrawWall?.(draft)
         setDraft(null)
       }}
+      onPointerCancel={() => setDraft(null)}
       onClick={(event) => {
         if (scale <= 0) return
         const rect = event.currentTarget.getBoundingClientRect()
@@ -425,9 +439,11 @@ export function WallPlan({
             })
         : null}
 
-      {walls.length === 0 ? (
-        <p className="text-muted-foreground pointer-events-none absolute inset-0 flex items-center justify-center text-sm">
-          Pick the Wall tool and drag to draw.
+      {walls.length === 0 && !draft ? (
+        <p className="text-muted-foreground pointer-events-none absolute inset-0 flex items-center justify-center px-6 text-center text-sm">
+          {tool === 'wall'
+            ? 'Drag anywhere here to draw your first wall.'
+            : 'Switch to the Wall tool and drag to draw.'}
         </p>
       ) : null}
     </div>
