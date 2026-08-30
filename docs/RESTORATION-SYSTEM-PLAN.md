@@ -907,3 +907,67 @@ The booking route is not exposed to this because it requires a phone up front.
 596 tests pass (16 on customer resolution, 4 of them against the real database),
 typecheck clean, lint clean, `next build` exit 0. Test customers cleaned up — verified 0
 remaining.
+
+
+---
+
+## Status — pass 13: drying plan rebuilt on the actual S500
+
+Charles: "I'm just gonna defer you to the S500 for all that information. That's the
+standard. Just use it."
+
+The previous factors (one air mover per 60 sf, one PPD per 45 cu ft) were rules of
+thumb I chose, and they were **wrong in a way that mattered: they ignored Class
+entirely**, which is the single biggest input to dehumidification sizing.
+
+### Sources, read directly rather than recalled
+- **ANSI/IICRC S500-2021 §12.5.3 "Controlling Airflow", pp. 67-68** — air movers.
+- **IICRC "Initial Dehumidification Recommendation Factors and Formulas", Imperial
+  revision 3.1.22** — the factor chart, fetched from iicrc.org and read as a PDF.
+
+Two web sources disagreed (factors of "6/3/2.4" versus "50"), which is why the IICRC
+document itself was fetched instead of trusting a summary.
+
+### The chart, as published
+| Dehumidifier type | Class 1 | Class 2 | Class 3 | Class 4 |
+|---|---|---|---|---|
+| Conventional refrigerant | 100 | 40 | 30 | N/A |
+| Low Grain Refrigerant (LGR) | 100 | 50 | 40 | 40 |
+| Desiccant (air changes/hour) | 1 ACH | 2 ACH | 3 ACH | 3 ACH |
+
+Refrigerant: `Cubic Footage ÷ Chart Factor = Total PPD ÷ AHAM rating = number of units`
+Desiccant: `Cubic Footage × ACH ÷ 60 = Total CFM ÷ unit CFM rating = number of units`
+
+### Air movers, per §12.5.3
+One in **each affected room**, plus:
+- one per **50-70 sf** of affected wet floor in that room (floor and lower wall to ~2 ft)
+- one per **100-150 sf** of affected wet ceiling and wall above ~2 ft
+- one for **each wall inset and offset greater than 18 inches**
+- fractions **round up**; a room under 25 sf may need only the single room unit
+
+The published ranges are exposed as an Open / Normal / Dense selector, because S500 says
+the number varies with build-out density and obstructions. Normal sits at the midpoint.
+
+Also implemented as a separate function: the standard's alternative for losses that
+mainly wet the lower wall with little floor migration — **one air mover per 14 affected
+linear feet of wall** — which S500 states is NOT to be combined with the square-foot
+calculation.
+
+### What changed in the app
+- `restoration_areas` gained `affected_wall_ceiling_sqft` and `insets_offsets`, because
+  the standard counts three separate quantities per room, not just floor area.
+- **Class is now editable on the screen** and drives the factor. It was captured at
+  intake and then never used.
+- The suggestion box shows its own working — per room, "1 for the room + 5 for wet floor
+  + 2 for wall/ceiling = 8" — and cites the standard, so the number can be checked
+  rather than trusted.
+- AHAM ratings use the **low end** of each Xactimate band (70 for `DHM>`, 110 for
+  `DHM>>`), so the plan never under-sizes.
+- Class 4 on a conventional unit reports as unavailable rather than inventing a factor,
+  matching the chart's N/A.
+
+16 tests assert the published numbers directly, including the worked example
+(4,000 cu ft, Class 2, LGR = 80 PPD).
+
+### Verified
+609 tests pass, typecheck clean, lint clean, `next build` exit 0.

@@ -20,7 +20,11 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { DirectionsButtons } from '@/components/ops/directions-buttons'
-import { buildDryingPlan } from '@/lib/ops/restoration-drying-plan'
+import {
+  buildDryingPlan,
+  type AirflowDensity,
+  type LossClass,
+} from '@/lib/ops/restoration-drying-plan'
 import { GROUP_ORDER } from '@/lib/ops/restoration-catalog-groups'
 import { FloorPlan, type PlanPin } from '@/components/ops/floor-plan'
 import { CustomerContact } from '@/components/ops/customer-contact'
@@ -72,6 +76,7 @@ type Detail = {
     id: string
     status: string
     water_category: number | null
+    loss_class: number | null
     after_hours_call: boolean
     source_of_loss: string | null
     cause_narrative: string | null
@@ -105,6 +110,8 @@ type Detail = {
     affected_sqft: number | null
     wall_linear_ft: number | null
     ceiling_height_ft: number | null
+    affected_wall_ceiling_sqft: number | null
+    insets_offsets: number | null
     geometry: { length_ft?: number; width_ft?: number } | null
     plan_x: number | null
     plan_y: number | null
@@ -213,6 +220,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
   const [catalogOpen, setCatalogOpen] = useState(false)
   const [openGroup, setOpenGroup] = useState<string | null>(null)
 
+  const [airflowDensity, setAirflowDensity] = useState<AirflowDensity>('normal')
   const [selectedPointId, setSelectedPointId] = useState<string | null>(null)
   const [armedTool, setArmedTool] = useState<
     { kind: 'equipment' | 'reading'; label: string; code?: string } | null
@@ -296,11 +304,19 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
     () =>
       buildDryingPlan(
         (detail?.areas ?? []).map((area) => ({
+          name: area.name,
           affectedSqft: area.affected_sqft,
           ceilingHeightFt: area.ceiling_height_ft,
+          affectedWallCeilingSqft: area.affected_wall_ceiling_sqft,
+          insetsOffsets: area.insets_offsets,
         })),
+        {
+          lossClass: (detail?.project.loss_class ?? 2) as LossClass,
+          dehuType: 'lgr',
+          density: airflowDensity,
+        },
       ),
-    [detail],
+    [detail, airflowDensity],
   )
   const planRooms = useMemo(
     () =>
@@ -777,19 +793,90 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
           ) : null}
 
           {dryingPlan.totalAffectedSqft > 0 ? (
-            <div className="mt-4 rounded-lg border border-sky-200 bg-sky-50/70 p-3 text-sm">
-              <p className="font-medium text-sky-900">
-                {dryingPlan.totalAffectedSqft} SF · {dryingPlan.totalCubicFt.toLocaleString()} cu ft
-              </p>
-              <p className="mt-1 text-xs text-sky-900">
-                Starting point: <strong>{dryingPlan.airMovers} air movers</strong>
+            <div className="mt-4 rounded-lg border border-sky-200 bg-sky-50/70 p-3 text-sm dark:border-sky-900 dark:bg-sky-950/40">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <p className="font-medium text-sky-900 dark:text-sky-200">
+                  {dryingPlan.totalAffectedSqft} SF ·{' '}
+                  {dryingPlan.totalCubicFt.toLocaleString()} cu ft
+                </p>
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="loss-class" className="text-xs">
+                    Class
+                  </Label>
+                  <select
+                    id="loss-class"
+                    className="border-input bg-background h-8 rounded-md border px-2 text-sm"
+                    value={project.loss_class ?? 2}
+                    onChange={(e) =>
+                      void call(
+                        `/api/admin/ops/restoration/projects/${projectId}`,
+                        {
+                          method: 'PATCH',
+                          body: JSON.stringify({ loss_class: Number(e.target.value) }),
+                        },
+                        'class',
+                      )
+                    }
+                  >
+                    {[1, 2, 3, 4].map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    aria-label="Build-out density"
+                    className="border-input bg-background h-8 rounded-md border px-2 text-sm"
+                    value={airflowDensity}
+                    onChange={(e) => setAirflowDensity(e.target.value as AirflowDensity)}
+                  >
+                    <option value="open">Open</option>
+                    <option value="normal">Normal</option>
+                    <option value="dense">Dense</option>
+                  </select>
+                </div>
+              </div>
+
+              <p className="text-sky-900 dark:text-sky-200">
+                <strong>{dryingPlan.airMovers} air movers</strong>
                 {dryingPlan.suggestedDehu
-                  ? ` and ${dryingPlan.dehuCount} × ${
+                  ? ` · ${dryingPlan.dehuCount} × ${
                       dryingPlan.suggestedDehu === 'DHM>>' ? 'LGR' : 'small'
-                    } dehumidifier (${dryingPlan.dehumidifierPintsPerDay} PPD)`
+                    } dehumidifier`
                   : ''}
-                . Adjust to what the job actually needs — only what you place gets billed.
+                {dryingPlan.dehumidifierPintsPerDay
+                  ? ` (${dryingPlan.dehumidifierPintsPerDay} PPD needed)`
+                  : ''}
               </p>
+
+              <details className="mt-2">
+                <summary className="cursor-pointer text-xs text-sky-800 dark:text-sky-300">
+                  How this was worked out
+                </summary>
+                <div className="text-muted-foreground mt-2 flex flex-col gap-1 text-xs">
+                  {dryingPlan.perArea.map((area) => (
+                    <span key={area.name}>
+                      <strong>{area.name}</strong>: {area.perRoom} for the room
+                      {area.forFloor > 0 ? ` + ${area.forFloor} for wet floor` : ''}
+                      {area.forWallCeiling > 0
+                        ? ` + ${area.forWallCeiling} for wall/ceiling`
+                        : ''}
+                      {area.forInsets > 0 ? ` + ${area.forInsets} for insets` : ''} ={' '}
+                      {area.total}
+                    </span>
+                  ))}
+                  <span>
+                    Dehumidification: {dryingPlan.totalCubicFt.toLocaleString()} cu ft ÷{' '}
+                    {dryingPlan.dehuFactor ?? '—'} (LGR, Class {project.loss_class ?? 2}) ={' '}
+                    {dryingPlan.dehumidifierPintsPerDay ?? '—'} PPD
+                  </span>
+                  <span className="mt-1">
+                    ANSI/IICRC S500-2021 §12.5.3 and the IICRC dehumidification factor
+                    chart. An initial recommendation — readings decide when it is dry.
+                  </span>
+                </div>
+              </details>
+
               <div className="mt-2 flex flex-wrap gap-2">
                 <Button
                   size="sm"

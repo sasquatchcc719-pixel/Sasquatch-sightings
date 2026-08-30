@@ -21,6 +21,8 @@ export async function PATCH(
       'ceiling_height_ft',
       'flooring_type',
       'carpet_glue_down',
+      'affected_wall_ceiling_sqft',
+      'insets_offsets',
       'plan_x',
       'plan_y',
       'rotation_deg',
