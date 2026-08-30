@@ -595,11 +595,30 @@ remembering for a 4,400-line component: batch the edits and assert, do not nudge
 2. The map: draw areas, derive square footage and ceiling volume, place equipment and
    reading points spatially.
 3. Photo phase/room tagging UI and the EXIF bulk backfill for the Jill photo set.
-4. Air and dehumidifier reading entry (the API accepts them; no UI yet).
-5. Reading points are created by API only — no UI to place them yet, so the readings
-   panel stays empty until the map lands.
-6. Square Tap to Pay deep link for the deposit (currently records the payment only).
-7. The final drying report.
+4. Square Tap to Pay deep link for the deposit (currently records the payment only).
+5. The final drying report.
+
+### Pass 5 additions (same day)
+- **Reading points can now be created from the screen** — label, material, and a dry
+  standard. Previously API-only, which left the monitor-day panel empty and useless.
+- Readings show their history inline (24.5 -> 19.2 -> 14.1) and mark a point "dry" once
+  it is at or below its goal.
+- **Air readings** for affected / unaffected reference / exterior, with a note in the UI
+  explaining why the reference matters: it proves the affected area is drying rather
+  than the whole house being humid that day.
+- **Dehumidifier readings** (inlet and outlet temp/RH) for each running dehu.
+- Integration tests against the real database cover the drying trend, the location
+  constraint rejecting an unknown ambient location, and cascade cleanup.
+
+### Verification limits, stated honestly
+The screens have NOT been exercised through a browser. Port 3000 is occupied by another
+of Charles's Next dev servers and the preview tool would not bind elsewhere; logging in
+as Charles is not something to do. What IS verified: both routes respond on the running
+dev server (`/admin/operations/restoration/new` -> 307 to login,
+`/api/admin/ops/restoration/catalog` -> "Not authorized"), so the routes exist and the
+auth guards work; the full data lifecycle passes against the real database; typecheck,
+lint and `next build` are clean. **The first person to click through these screens will
+be Charles**, and some UI wiring may need fixing on that first pass.
 
 ### Reminder
 **Do not migrate the Jill job** until the whole feature is finished — Charles's

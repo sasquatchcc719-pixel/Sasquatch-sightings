@@ -122,6 +122,10 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
   const [catalog, setCatalog] = useState<CatalogItem[]>([])
   const [catalogQuery, setCatalogQuery] = useState('')
 
+  const [pointLabel, setPointLabel] = useState('')
+  const [pointMaterial, setPointMaterial] = useState('Drywall')
+  const [pointGoal, setPointGoal] = useState('')
+
   const [transcript, setTranscript] = useState('')
   const [proposed, setProposed] = useState<ParsedLine[]>([])
   const [unmatched, setUnmatched] = useState<string[]>([])
@@ -609,15 +613,25 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
         </Card>
       ) : null}
 
-      {/* ── Readings ───────────────────────────────────────── */}
-      {!closed && !isMitigation && detail.reading_points.length > 0 ? (
+      {/* ── Reading points (placed on day 1, tapped on every visit) ── */}
+      {!closed ? (
         <Card className="border-border/60 bg-card/80 p-5">
-          <h2 className="mb-3 text-lg font-semibold">Readings</h2>
+          <h2 className="mb-1 text-lg font-semibold">Moisture readings</h2>
+          <p className="text-muted-foreground mb-3 text-sm">
+            Points are placed once and re-read on every monitor visit, so you can see a
+            spot trending down — or stalling.
+          </p>
+
           <div className="flex flex-col divide-y">
             {detail.reading_points.map((point) => {
               const history = [...point.restoration_readings].sort(
                 (a, b) => new Date(a.taken_at).getTime() - new Date(b.taken_at).getTime(),
               )
+              const latest = history[history.length - 1]
+              const atGoal =
+                point.dry_standard != null &&
+                latest != null &&
+                Number(latest.value) <= Number(point.dry_standard)
               return (
                 <div key={point.id} className="flex items-center gap-3 py-2 text-sm">
                   <span className="min-w-0 flex-1">
@@ -625,23 +639,26 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                     {point.material ? (
                       <span className="text-muted-foreground"> · {point.material}</span>
                     ) : null}
-                    {history.length > 0 ? (
-                      <span className="text-muted-foreground block text-xs">
-                        {history.map((r) => r.value).join(' → ')}
-                        {point.dry_standard ? ` (goal ${point.dry_standard})` : ''}
-                      </span>
-                    ) : null}
+                    <span className="text-muted-foreground block text-xs">
+                      {history.length > 0
+                        ? history.map((r) => r.value).join(' → ')
+                        : 'no readings yet'}
+                      {point.dry_standard != null ? ` (goal ${point.dry_standard})` : ''}
+                      {atGoal ? ' · dry' : ''}
+                    </span>
                   </span>
                   <Input
-                    className="h-8 w-20 text-right"
+                    className="h-9 w-20 text-right"
                     type="number"
                     step="any"
                     placeholder="%"
+                    aria-label={`Reading for ${point.label}`}
                     onKeyDown={(e) => {
                       if (e.key !== 'Enter') return
-                      const value = Number((e.target as HTMLInputElement).value)
-                      if (!Number.isFinite(value)) return
-                      ;(e.target as HTMLInputElement).value = ''
+                      const input = e.target as HTMLInputElement
+                      const value = Number(input.value)
+                      if (!Number.isFinite(value) || input.value === '') return
+                      input.value = ''
                       void call(
                         `/api/admin/ops/restoration/projects/${projectId}/readings`,
                         {
@@ -660,10 +677,134 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 </div>
               )
             })}
+            {detail.reading_points.length === 0 ? (
+              <p className="text-muted-foreground py-2 text-sm">
+                No points yet. Add one for each material you are drying.
+              </p>
+            ) : null}
           </div>
-          <p className="text-muted-foreground mt-2 text-xs">
-            Type a value and press Enter.
+
+          <div className="border-border/60 mt-4 border-t pt-4">
+            <Label className="mb-2 block text-sm">Add a point</Label>
+            <div className="flex flex-wrap gap-2">
+              <Input
+                className="h-9 min-w-40 flex-1"
+                value={pointLabel}
+                onChange={(e) => setPointLabel(e.target.value)}
+                placeholder="North wall, base"
+              />
+              <select
+                className="border-input bg-background h-9 rounded-md border px-2 text-sm"
+                value={pointMaterial}
+                onChange={(e) => setPointMaterial(e.target.value)}
+              >
+                {['Drywall', 'Subfloor', 'Framing', 'Hardwood', 'Concrete', 'Insulation'].map(
+                  (material) => (
+                    <option key={material} value={material}>
+                      {material}
+                    </option>
+                  ),
+                )}
+              </select>
+              <Input
+                className="h-9 w-24"
+                type="number"
+                step="any"
+                value={pointGoal}
+                onChange={(e) => setPointGoal(e.target.value)}
+                placeholder="goal %"
+              />
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={busy === 'add-point' || !pointLabel.trim()}
+                onClick={async () => {
+                  await call(
+                    `/api/admin/ops/restoration/projects/${projectId}/readings`,
+                    {
+                      method: 'PUT',
+                      body: JSON.stringify({
+                        label: pointLabel.trim(),
+                        material: pointMaterial,
+                        dry_standard: pointGoal === '' ? null : Number(pointGoal),
+                      }),
+                    },
+                    'add-point',
+                  )
+                  setPointLabel('')
+                  setPointGoal('')
+                }}
+              >
+                <Plus className="h-4 w-4" /> Add
+              </Button>
+            </div>
+          </div>
+        </Card>
+      ) : null}
+
+      {/* ── Air + dehumidifier readings ────────────────────── */}
+      {!closed && !isMitigation ? (
+        <Card className="border-border/60 bg-card/80 p-5">
+          <h2 className="mb-1 text-lg font-semibold">Air readings</h2>
+          <p className="text-muted-foreground mb-3 text-sm">
+            The unaffected reference is what proves the affected area is drying rather
+            than the whole house being humid today.
           </p>
+          <div className="flex flex-col gap-2">
+            {(['affected', 'reference', 'exterior'] as const).map((location) => (
+              <AirReadingRow
+                key={location}
+                location={location}
+                busy={busy === `air-${location}`}
+                onSubmit={(tempF, rhPct) =>
+                  void call(
+                    `/api/admin/ops/restoration/projects/${projectId}/readings`,
+                    {
+                      method: 'POST',
+                      body: JSON.stringify({
+                        kind: 'air',
+                        location,
+                        appointment_id: activeVisitId,
+                        temp_f: tempF,
+                        rh_pct: rhPct,
+                      }),
+                    },
+                    `air-${location}`,
+                  )
+                }
+              />
+            ))}
+          </div>
+
+          {runningEquipment.filter((e) => e.catalog_code.startsWith('DHM')).length > 0 ? (
+            <div className="border-border/60 mt-4 border-t pt-4">
+              <Label className="mb-2 block text-sm">Dehumidifier</Label>
+              {runningEquipment
+                .filter((e) => e.catalog_code.startsWith('DHM'))
+                .map((dehu) => (
+                  <DehuReadingRow
+                    key={dehu.id}
+                    code={dehu.catalog_code}
+                    busy={busy === `dehu-${dehu.id}`}
+                    onSubmit={(values) =>
+                      void call(
+                        `/api/admin/ops/restoration/projects/${projectId}/readings`,
+                        {
+                          method: 'POST',
+                          body: JSON.stringify({
+                            kind: 'dehu',
+                            equipment_placement_id: dehu.id,
+                            appointment_id: activeVisitId,
+                            ...values,
+                          }),
+                        },
+                        `dehu-${dehu.id}`,
+                      )
+                    }
+                  />
+                ))}
+            </div>
+          ) : null}
         </Card>
       ) : null}
 
@@ -772,6 +913,122 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
           Nothing is dry on day one — the project closes from a monitor visit.
         </p>
       ) : null}
+    </div>
+  )
+}
+
+/** One ambient reading: temperature and relative humidity at a location. */
+function AirReadingRow({
+  location,
+  busy,
+  onSubmit,
+}: {
+  location: 'affected' | 'reference' | 'exterior'
+  busy: boolean
+  onSubmit: (tempF: number | null, rhPct: number | null) => void
+}) {
+  const [tempF, setTempF] = useState('')
+  const [rhPct, setRhPct] = useState('')
+
+  const labels: Record<typeof location, string> = {
+    affected: 'Affected area',
+    reference: 'Unaffected reference',
+    exterior: 'Outside',
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <span className="min-w-0 flex-1 text-sm">{labels[location]}</span>
+      <Input
+        className="h-9 w-20 text-right"
+        type="number"
+        step="any"
+        placeholder="°F"
+        aria-label={`${labels[location]} temperature`}
+        value={tempF}
+        onChange={(e) => setTempF(e.target.value)}
+      />
+      <Input
+        className="h-9 w-20 text-right"
+        type="number"
+        step="any"
+        placeholder="RH%"
+        aria-label={`${labels[location]} relative humidity`}
+        value={rhPct}
+        onChange={(e) => setRhPct(e.target.value)}
+      />
+      <Button
+        size="sm"
+        variant="secondary"
+        disabled={busy || (tempF === '' && rhPct === '')}
+        onClick={() => {
+          onSubmit(tempF === '' ? null : Number(tempF), rhPct === '' ? null : Number(rhPct))
+          setTempF('')
+          setRhPct('')
+        }}
+      >
+        Save
+      </Button>
+    </div>
+  )
+}
+
+/** Inlet and outlet at a running dehumidifier — the pair that shows it working. */
+function DehuReadingRow({
+  code,
+  busy,
+  onSubmit,
+}: {
+  code: string
+  busy: boolean
+  onSubmit: (values: {
+    inlet_temp_f: number | null
+    inlet_rh_pct: number | null
+    outlet_temp_f: number | null
+    outlet_rh_pct: number | null
+  }) => void
+}) {
+  const [values, setValues] = useState({ it: '', ir: '', ot: '', or: '' })
+  const num = (v: string) => (v === '' ? null : Number(v))
+
+  return (
+    <div className="mb-2 flex flex-wrap items-center gap-2">
+      <code className="text-xs">{code}</code>
+      {(
+        [
+          ['it', 'in °F'],
+          ['ir', 'in RH'],
+          ['ot', 'out °F'],
+          ['or', 'out RH'],
+        ] as const
+      ).map(([key, placeholder]) => (
+        <Input
+          key={key}
+          className="h-9 w-20 text-right"
+          type="number"
+          step="any"
+          placeholder={placeholder}
+          aria-label={`${code} ${placeholder}`}
+          value={values[key]}
+          onChange={(e) => setValues((c) => ({ ...c, [key]: e.target.value }))}
+        />
+      ))}
+      <Button
+        size="sm"
+        variant="secondary"
+        disabled={busy || Object.values(values).every((v) => v === '')}
+        onClick={() => {
+          onSubmit({
+            inlet_temp_f: num(values.it),
+            inlet_rh_pct: num(values.ir),
+            outlet_temp_f: num(values.ot),
+            outlet_rh_pct: num(values.or),
+          })
+          setValues({ it: '', ir: '', ot: '', or: '' })
+        }}
+      >
+        Save
+      </Button>
     </div>
   )
 }
