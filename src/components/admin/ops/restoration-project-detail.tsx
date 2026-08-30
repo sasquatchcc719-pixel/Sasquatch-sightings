@@ -774,17 +774,18 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 ) : (
                   <Mic className="h-4 w-4" />
                 )}
-                Read it
+                Scan
               </Button>
               {proposed.length > 0 ? (
                 <Button
                   size="sm"
+                  variant="outline"
                   disabled={busy === 'add-lines'}
                   onClick={async () => {
                     await addLines(
                       proposed.map((p) => ({
                         concept_code: p.conceptCode,
-                        quantity: p.quantity,
+                        quantity: p.quantity ?? suggestedQuantity(p.unit),
                       })),
                     )
                     setProposed([])
@@ -792,48 +793,53 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                     setTranscript('')
                   }}
                 >
-                  Add {proposed.length} line{proposed.length === 1 ? '' : 's'}
+                  Add all {proposed.length}
                 </Button>
               ) : null}
             </div>
 
             {proposed.length > 0 ? (
-              <div className="border-border/60 mt-1 rounded-md border p-3">
-                <p className="text-muted-foreground mb-2 text-xs">
-                  Priced for Category {category}
-                  {afterHours ? ', after hours' : ''}. Check before adding.
-                </p>
-                {proposed.map((line, index) => (
-                  <div
-                    key={`${line.code}-${index}`}
-                    className="flex items-center justify-between gap-2 py-1 text-sm"
+              <div className="border-border/60 mt-1 overflow-hidden rounded-md border">
+                <div className="bg-muted/40 flex items-center justify-between gap-2 px-3 py-2">
+                  <p className="text-muted-foreground text-xs">
+                    Priced for Category {category}
+                    {afterHours ? ', after hours' : ''}. Set a quantity and add.
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs"
+                    onClick={() => {
+                      setProposed([])
+                      setUnmatched([])
+                    }}
                   >
-                    <span>
-                      <code className="text-xs">{line.code}</code> {line.label}
-                      {line.quantity ? (
-                        <span className="text-muted-foreground"> · {line.quantity} {line.unit}</span>
-                      ) : (
-                        <span className="text-muted-foreground"> · qty?</span>
-                      )}
-                    </span>
-                    <span className="flex items-center gap-2">
-                      <span className="text-muted-foreground text-xs">
-                        {money(line.unitPrice)}/{line.unit}
-                      </span>
-                      <button
-                        type="button"
-                        aria-label={`Remove ${line.label}`}
-                        onClick={() =>
-                          setProposed((current) => current.filter((_, i) => i !== index))
-                        }
-                      >
-                        <Trash2 className="text-muted-foreground h-4 w-4" />
-                      </button>
-                    </span>
-                  </div>
+                    Clear
+                  </Button>
+                </div>
+                {proposed.map((line, index) => (
+                  <LineCandidateRow
+                    key={`${line.code}-${index}`}
+                    code={line.code}
+                    label={line.label}
+                    unit={line.unit}
+                    unitPrice={line.unitPrice}
+                    // Use a spoken quantity when there was one, otherwise fall
+                    // back to what the room measured out at.
+                    defaultQuantity={line.quantity ?? suggestedQuantity(line.unit)}
+                    onAdd={async (quantity) => {
+                      await addLines([
+                        { concept_code: line.conceptCode, quantity },
+                      ])
+                      setProposed((current) => current.filter((_, i) => i !== index))
+                    }}
+                    onDismiss={() =>
+                      setProposed((current) => current.filter((_, i) => i !== index))
+                    }
+                  />
                 ))}
                 {unmatched.length > 0 ? (
-                  <p className="text-muted-foreground mt-2 text-xs">
+                  <p className="text-muted-foreground border-border/60 border-t px-3 py-2 text-xs">
                     Couldn&apos;t match: {unmatched.join(', ')}
                   </p>
                 ) : null}
@@ -870,11 +876,15 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                     catalogResults
                       .slice(0, 60)
                       .map((item) => (
-                        <CatalogRow
+                        <LineCandidateRow
                           key={item.concept_code}
-                          item={item}
+                          code={item.code}
+                          label={item.label}
+                          unit={item.unit}
+                          unitPrice={item.unit_price}
+                          billable={item.billable}
                           defaultQuantity={suggestedQuantity(item.unit)}
-                          onAdd={addFromCatalog}
+                          onAdd={(quantity) => addFromCatalog(item, quantity)}
                         />
                       ))
                   ) : (
@@ -898,11 +908,15 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                         </button>
                         {open
                           ? items.map((item) => (
-                              <CatalogRow
+                              <LineCandidateRow
                                 key={item.concept_code}
-                                item={item}
+                                code={item.code}
+                                label={item.label}
+                                unit={item.unit}
+                                unitPrice={item.unit_price}
+                                billable={item.billable}
                                 defaultQuantity={suggestedQuantity(item.unit)}
-                                onAdd={addFromCatalog}
+                                onAdd={(quantity) => addFromCatalog(item, quantity)}
                               />
                             ))
                           : null}
@@ -1631,52 +1645,69 @@ function DehuReadingRow({
 }
 
 /**
- * One row in the manual picker. Carries its own quantity box so a measured
- * value can be corrected before the line is added, rather than added at 1 and
- * edited afterwards.
+ * One candidate line, used by both the scan results and the manual picker —
+ * they are the same interaction: see what it is, set how much, add it.
+ *
+ * The quantity box opens pre-filled (from a spoken number, or from what the room
+ * measured out at) so the common case is one tap, and correcting it is one edit.
  */
-function CatalogRow({
-  item,
+function LineCandidateRow({
+  code,
+  label,
+  unit,
+  unitPrice,
   defaultQuantity,
+  billable = true,
   onAdd,
+  onDismiss,
 }: {
-  item: CatalogItem
+  code: string
+  label: string
+  unit: string
+  unitPrice: number
   defaultQuantity: number
-  onAdd: (item: CatalogItem, quantity: number) => void | Promise<void>
+  billable?: boolean
+  onAdd: (quantity: number) => void | Promise<void>
+  onDismiss?: () => void
 }) {
-  // Opens pre-filled with what was measured, so the common case is one tap and
-  // the unusual case is one edit.
   const [quantity, setQuantity] = useState(String(defaultQuantity))
+  const amount = Number(quantity) > 0 ? Number(quantity) * unitPrice : 0
 
   return (
-    <div className="hover:bg-muted/40 flex items-center gap-2 px-3 py-2 text-sm">
+    <div className="hover:bg-muted/40 border-border/60 flex items-center gap-2 border-t px-3 py-2 text-sm first:border-t-0">
       <span className="min-w-0 flex-1">
-        <code className="text-xs">{item.code}</code> {item.label}
+        <code className="text-xs">{code}</code> {label}
         <span className="text-muted-foreground block text-xs">
-          ${item.unit_price.toFixed(2)} per {item.unit}
-          {item.billable ? '' : ' · not linked to QuickBooks'}
+          ${unitPrice.toFixed(2)} per {unit}
+          {amount > 0 ? ` · ${money(amount)}` : ''}
+          {billable ? '' : ' · not linked to QuickBooks'}
         </span>
       </span>
       <Input
-        className="h-8 w-20 text-right"
+        className="h-9 w-20 text-right"
         type="number"
         step="any"
         min={0}
-        placeholder={item.unit}
-        aria-label={`Quantity for ${item.label}`}
+        placeholder={unit}
+        aria-label={`Quantity for ${label}`}
         value={quantity}
         onChange={(e) => setQuantity(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && Number(quantity) > 0) void onAdd(Number(quantity))
+        }}
       />
       <Button
         size="sm"
-        variant="secondary"
-        onClick={() => {
-          void onAdd(item, Number(quantity))
-          setQuantity(String(defaultQuantity))
-        }}
+        disabled={!(Number(quantity) > 0)}
+        onClick={() => void onAdd(Number(quantity))}
       >
         Add
       </Button>
+      {onDismiss ? (
+        <button type="button" aria-label={`Dismiss ${label}`} onClick={onDismiss}>
+          <Trash2 className="text-muted-foreground h-4 w-4" />
+        </button>
+      ) : null}
     </div>
   )
 }

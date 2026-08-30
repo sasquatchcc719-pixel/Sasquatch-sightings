@@ -839,3 +839,31 @@ pass with the carpet cleaning flow verified click-by-click afterwards.
 ### Final verification for the session
 **580 tests pass**, typecheck clean, **0 eslint errors** (15 pre-existing `<img>`
 warnings), `next build` exit 0.
+
+
+---
+
+## Status — pass 11 (2026-08-30): line entry fixed from Charles's first real use
+
+Charles used the mitigation screen on a live-looking job and reported three things.
+
+1. **"Read it" was the wrong word** — now **Scan**.
+2. **The scanned lines looked un-addable.** They could only be added by a bulk
+   "Add 3 lines" button sitting up beside Scan, nowhere near the rows it applied to, so
+   the rows read as dead — deletable but not addable. Each scanned line now carries its
+   own quantity box and Add button. "Add all N" remains as a secondary convenience.
+3. **He liked the pre-population**, so that stayed and got stronger: the quantity opens
+   pre-filled from a spoken number where there was one, otherwise from what the room
+   measured out at, and each row shows its running dollar amount so the total is visible
+   before adding.
+
+The scan results and the manual picker were doing the same job with two components, so
+they are now one — `LineCandidateRow`. Enter adds from the quantity field.
+
+Verified by rendering the new layout and looking at it. 580 tests, build clean.
+
+### Note on how this feedback arrived
+This is the first round of feedback from actually using the screen, and all three points
+were interaction problems invisible from the code — the bulk-add button *worked*, it was
+just placed where it read as unrelated to the rows. Expect more of this; it is the
+cheapest kind of fix and the reason Charles clicking through matters more than any test.
