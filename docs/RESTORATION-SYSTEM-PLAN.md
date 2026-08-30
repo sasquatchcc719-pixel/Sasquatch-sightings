@@ -386,12 +386,10 @@ screen; extract carefully.
 - Equipment day rounding used a bare `ceil()`, so exactly 3 days elapsed billed as 4.
   Now uses a one-hour grace. Caught by the live self-test.
 
-### NOT DONE — no UI was built this pass
-Everything below is schema-and-logic only. There is still no restoration screen.
+### NOT DONE after pass 1 — no UI
 1. Restoration button on the calendar; `/admin/operations/restoration/[id]` route
 2. Loss intake form UI
-3. Project close action ("dry standard reached") — the endpoint that assembles the
-   invoice, credits the deposit, cancels remaining queued visits, and records revenue
+3. Project close action  -- DONE in pass 2
 4. Deposit collection UI (Square Tap to Pay writing to `ops_payments`)
 5. Unscheduled tray + drag / tap-to-place
 6. Component extraction from `appointment-detail.tsx` / `invoice-detail.tsx`
@@ -399,6 +397,67 @@ Everything below is schema-and-logic only. There is still no restoration screen.
 8. Photo phase/room tagging UI and EXIF bulk backfill
 9. Voice -> line items
 10. Final report
+
+---
+
+## Status — pass 2 (2026-08-30): the server spine
+
+### DONE and verified end-to-end against the real database
+- **`src/lib/ops/restoration-projects.ts`**
+  - `buildProjectInvoiceLines` — pure, testable assembly of one invoice from every
+    visit's line items plus equipment unit-days.
+  - `closeRestorationProject` — the "dry standard reached" action.
+  - `scheduleQueuedVisit` — tray -> calendar.
+  - `addMinutes` — time arithmetic for visit windows.
+- **API routes**
+  - `POST/GET /api/admin/ops/restoration/projects` — start a loss (project + day-1
+    mitigation visit + N queued monitor visits), and list open projects for the tray.
+  - `POST /api/admin/ops/restoration/projects/[id]/close` — closes, then hands off to
+    `recordRevenueFromOpsInvoice` and `ensureInvoiceQuickBooksSyncJob`. Neither
+    handoff failing undoes a close that already succeeded.
+  - `POST /api/admin/ops/restoration/queue/[id]/schedule` — place a queued visit.
+- **`restoration-projects.integration.test.ts`** — 5 tests, real DB, seeds and deletes
+  everything. Verified: monitor visits queue WITHOUT hitting the calendar; closing on
+  the mitigation day is refused; placing a queued visit produces a 1-hour restoration
+  appointment; closing from a monitor day produces exactly ONE invoice
+  ($588 Cat 3 extraction + $440 Cat 3 tear-out + 18 fan-days at $35 = $1,658) with the
+  $1,000 deposit credited and a $658 balance, the two unused queued visits cancelled;
+  closing twice is refused. Cleanup verified — zero rows left behind.
+- Full suite: **540 passed**, typecheck clean.
+
+### Close semantics as built
+- Available on ANY monitor visit; hard-refused on the mitigation day at the library
+  level, not just the UI.
+- Stops equipment accrual at the moment of close, then reads the billing view.
+- The single invoice attaches to the CLOSING appointment, which keeps the existing
+  invoice detail page, QuickBooks sync, and revenue recorder working unchanged.
+- Cancels both remaining queued visits AND any monitor visits already placed on the
+  calendar but not yet completed.
+- Marks the closing visit `visit_type='final'`, status completed.
+
+### Bug found and fixed in pass 2
+`ops_payments.invoice_id` was created NOT NULL in pass 1, which made the day-1 deposit
+impossible to record — the invoice does not exist until the project closes days later.
+Now nullable, with a check constraint requiring an invoice OR an appointment, and
+`closeRestorationProject` attaches waiting deposits to the invoice it creates.
+
+### Decision made by default, worth confirming with Charles
+Revenue is recorded against the CLOSING visit's date, because that is when the job is
+billed and collectible, and it is what the existing recorder does naturally. Charles
+said labour is effectively all on day 1 and that monitor days should carry ~1 hour so
+statistics stay honest — which the 60-minute monitor visits already achieve. If he
+wants revenue dated to the mitigation day instead, that is a small change.
+
+### Still NOT built (all UI)
+1. Restoration button on the calendar and the project screen
+2. Loss intake form
+3. Deposit collection UI (Square Tap to Pay)
+4. Unscheduled tray + drag / tap-to-place
+5. Component extraction from the two monolith screens
+6. Map, equipment placement, reading entry
+7. Photo phase/room tagging + EXIF backfill
+8. Voice -> line items
+9. Final report
 
 ### QuickBooks — DONE (2026-08-30, same day)
 Unblocked by using the app's own QuickBooks OAuth tokens (`getValidQBAccessToken`)
