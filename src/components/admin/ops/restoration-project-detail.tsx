@@ -219,14 +219,24 @@ const MATERIALS = [
   'Trim',
 ]
 
+/**
+ * The four pieces of equipment Charles actually runs. Everything else in the
+ * catalog is still addable by hand from the line-item picker; these are the
+ * quick buttons, and there are four because there are four.
+ *
+ * The glyph goes on the map pin — four identical blue dots tell you nothing
+ * about what is sitting in the room.
+ */
 const EQUIPMENT_CODES = [
-  { code: 'DRY++', label: 'Axial fan 1 HP' },
-  { code: 'DRY+', label: 'Axial fan' },
-  { code: 'DRY', label: 'Air mover' },
-  { code: 'DHM>>', label: 'LGR dehu' },
-  { code: 'DHM>', label: 'Small dehu' },
-  { code: 'NAFAN', label: 'Air scrubber' },
+  { code: 'DRY++', label: 'Air mover', glyph: 'AM' },
+  { code: 'DHM>>', label: 'Large dehu', glyph: 'LG' },
+  { code: 'DHM>', label: 'Small dehu', glyph: 'SM' },
+  { code: 'NAFAN', label: 'Air scrubber', glyph: 'AS' },
 ]
+
+export function equipmentGlyph(code: string): string {
+  return EQUIPMENT_CODES.find((e) => e.code === code)?.glyph ?? '◈'
+}
 
 export function RestorationProjectDetail({ projectId }: { projectId: string }) {
   const [detail, setDetail] = useState<Detail | null>(null)
@@ -390,6 +400,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
         id: placement.id,
         kind: 'equipment',
         label: placement.catalog_code,
+        glyph: equipmentGlyph(placement.catalog_code),
         xFt: placement.map_x,
         yFt: placement.map_y,
         removed: Boolean(placement.removed_at),
@@ -932,7 +943,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                     </button>
                   ) : (
                     <>
-                      {EQUIPMENT_CODES.slice(0, 4).map((equipment) => (
+                      {EQUIPMENT_CODES.map((equipment) => (
                         <button
                           key={equipment.code}
                           type="button"
@@ -948,13 +959,29 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                           + {equipment.label}
                         </button>
                       ))}
-                      <button
-                        type="button"
-                        className="rounded-full border border-amber-400 px-2.5 py-1 text-xs text-amber-700 hover:bg-amber-50"
-                        onClick={() => setArmedTool({ kind: 'reading', label: 'reading point' })}
-                      >
-                        + Reading point
-                      </button>
+                      <span className="flex items-center gap-1">
+                        <select
+                          aria-label="Material for the next reading point"
+                          className="border-input bg-background h-7 rounded-full border px-2 text-xs"
+                          value={pointMaterial}
+                          onChange={(e) => setPointMaterial(e.target.value)}
+                        >
+                          {MATERIALS.map((material) => (
+                            <option key={material} value={material}>
+                              {material}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          className="rounded-full border border-amber-400 px-2.5 py-1 text-xs text-amber-700 hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950/40"
+                          onClick={() =>
+                            setArmedTool({ kind: 'reading', label: `${pointMaterial} point` })
+                          }
+                        >
+                          + Reading point
+                        </button>
+                      </span>
                     </>
                   )}
                 </div>
@@ -1090,8 +1117,12 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                     {
                       method: 'PUT',
                       body: JSON.stringify({
-                        label: 'Reading point',
-                        material: 'Drywall',
+                        label: `${pointMaterial} ${
+                          (detail.reading_points.filter(
+                            (p) => p.material === pointMaterial,
+                          ).length ?? 0) + 1
+                        }`,
+                        material: pointMaterial,
                         map_x: xFt,
                         map_y: yFt,
                       }),

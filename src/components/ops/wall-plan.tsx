@@ -35,6 +35,8 @@ export type PlanPin = {
   id: string
   kind: 'equipment' | 'reading'
   label: string
+  /** Two letters on an equipment pin, so a dehu reads differently to a fan. */
+  glyph?: string
   xFt: number | null
   yFt: number | null
   value?: number | null
@@ -499,18 +501,20 @@ export function WallPlan({
                     event.stopPropagation()
                     onPinClick?.(pin)
                   }}
-                  className={`absolute flex h-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 text-[10px] font-bold text-white shadow ${
-                    selectedPinId === pin.id ? 'border-slate-900 ring-2 ring-slate-900/40' : 'border-white'
+                  className={`absolute flex h-6 min-w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 px-1 text-[10px] font-bold text-white shadow ${
+                    selectedPinId === pin.id
+                      ? 'border-slate-900 ring-2 ring-slate-900/40'
+                      : 'border-white'
                   } ${
                     pin.kind === 'equipment'
-                      ? 'w-6 bg-sky-600'
+                      ? 'bg-sky-600'
                       : pin.atGoal
-                        ? 'min-w-6 bg-emerald-600 px-1'
-                        : 'min-w-6 bg-amber-600 px-1'
+                        ? 'bg-emerald-600'
+                        : 'bg-amber-600'
                   }`}
                   style={{ left: screen.left, top: screen.top }}
                 >
-                  {pin.kind === 'equipment' ? '◈' : (pin.value ?? '?')}
+                  {pin.kind === 'equipment' ? (pin.glyph ?? '◈') : (pin.value ?? '?')}
                 </button>
               )
             })

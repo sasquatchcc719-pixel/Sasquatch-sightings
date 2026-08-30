@@ -1281,3 +1281,35 @@ survives; a corner still used by another wall is kept.
 **Note for Charles:** the 15 walls currently on the first test project were drawn before
 this change, so they carry no `area_id` and will not disappear with a room. "Clear plan"
 then "Draw my measured rooms" puts that project on the new footing.
+
+
+---
+
+## Equipment placing: four pieces, each readable on the pin
+
+Charles: "we only have four different pieces of equipment — a large DU, a small DU, an
+air mover and an air scrubber."
+
+**There was also a bug:** the plan toolbar rendered `EQUIPMENT_CODES.slice(0, 4)` from a
+six-item list, so **Air scrubber never appeared on the plan at all**. It was reachable
+from the Equipment card but not from the place tool.
+
+Now four, matching what actually gets loaded on the truck:
+
+| Button | Code | |
+|---|---|---|
+| Air mover | `DRY++` | Axial fan air mover, 1 HP, $35/day |
+| Large dehu | `DHM>>` | LGR 110-159 PPD, $105.46/day |
+| Small dehu | `DHM>` | 70-109 PPD, $72.50/day |
+| Air scrubber | `NAFAN` | Negative air / air scrubber, $70.50/day |
+
+The two air movers Charles does not run (`DRY` at $24.50, `DRY+` at $28.18) stay in the
+catalog and can still be added by hand from the line-item picker — they are just not quick
+buttons.
+
+**Pins now carry a two-letter glyph** — AM / LG / SM / AS — because six identical blue
+dots said nothing about what was actually sitting in the room.
+
+**Reading points pick their material before placing**, from a dropdown next to the button,
+and are named after it (`Drywall 1`, `Drywall 2`, `Subfloor 1`). They previously all
+landed as "Reading point · Drywall" and had to be renamed one at a time afterwards.
