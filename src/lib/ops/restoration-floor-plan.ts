@@ -253,3 +253,83 @@ export function wallSegment(
     lengthFt: Math.round(Math.hypot(b.x - a.x, b.y - a.y) * 100) / 100,
   }
 }
+
+
+/** Nearest point on a segment to an arbitrary point, and how far along it sits. */
+export function projectOntoWall(
+  from: Point,
+  to: Point,
+  point: Point,
+): { distanceFt: number; offsetFt: number; t: number } {
+  const dx = to.x - from.x
+  const dy = to.y - from.y
+  const lengthSq = dx * dx + dy * dy
+  if (lengthSq === 0) {
+    return { distanceFt: Math.hypot(point.x - from.x, point.y - from.y), offsetFt: 0, t: 0 }
+  }
+  const rawT = ((point.x - from.x) * dx + (point.y - from.y) * dy) / lengthSq
+  const t = Math.max(0, Math.min(1, rawT))
+  const closest = { x: from.x + dx * t, y: from.y + dy * t }
+  return {
+    distanceFt: Math.hypot(point.x - closest.x, point.y - closest.y),
+    offsetFt: Math.round(Math.hypot(closest.x - from.x, closest.y - from.y) * 100) / 100,
+    t,
+  }
+}
+
+/**
+ * Which wall of a room a tap is nearest, for placing a doorway. Returns null if
+ * the tap is further from every wall than `maxDistanceFt`.
+ */
+export function nearestWall(
+  room: PlacedRoom,
+  xFt: number,
+  yFt: number,
+  maxDistanceFt = 2.5,
+): { wallIndex: number; offsetFt: number; distanceFt: number } | null {
+  const local = { x: xFt - room.x, y: yFt - room.y }
+  let best: { wallIndex: number; offsetFt: number; distanceFt: number } | null = null
+
+  for (let i = 0; i < room.points.length; i++) {
+    const from = room.points[i]
+    const to = room.points[(i + 1) % room.points.length]
+    const hit = projectOntoWall(from, to, local)
+    if (hit.distanceFt <= maxDistanceFt && (!best || hit.distanceFt < best.distanceFt)) {
+      best = { wallIndex: i, offsetFt: hit.offsetFt, distanceFt: hit.distanceFt }
+    }
+  }
+  return best
+}
+
+/** Move one corner of a room, keeping the polygon closed. */
+export function moveCorner(
+  points: Point[],
+  index: number,
+  x: number,
+  y: number,
+): Point[] {
+  if (index < 0 || index >= points.length) return points
+  const next = points.map((p) => ({ ...p }))
+  next[index] = { x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100 }
+  return next
+}
+
+/** Insert a corner at the midpoint of a wall, so an L or a diagonal can be cut in. */
+export function splitWall(points: Point[], wallIndex: number): Point[] {
+  if (points.length < 3) return points
+  const from = points[wallIndex % points.length]
+  const to = points[(wallIndex + 1) % points.length]
+  const mid = {
+    x: Math.round(((from.x + to.x) / 2) * 100) / 100,
+    y: Math.round(((from.y + to.y) / 2) * 100) / 100,
+  }
+  const next = points.map((p) => ({ ...p }))
+  next.splice((wallIndex % points.length) + 1, 0, mid)
+  return next
+}
+
+/** Remove a corner. A polygon must keep at least three. */
+export function removeCorner(points: Point[], index: number): Point[] {
+  if (points.length <= 3) return points
+  return points.filter((_, i) => i !== index)
+}

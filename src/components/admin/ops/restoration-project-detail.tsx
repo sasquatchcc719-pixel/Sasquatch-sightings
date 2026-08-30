@@ -32,6 +32,14 @@ import {
 } from '@/lib/ops/restoration-drying-plan'
 import { GROUP_ORDER } from '@/lib/ops/restoration-catalog-groups'
 import { FloorPlan, type PlanPin } from '@/components/ops/floor-plan'
+import {
+  moveCorner,
+  polygonAreaSqft,
+  polygonPerimeterFt,
+  rectanglePoints,
+  splitWall,
+  type Opening,
+} from '@/lib/ops/restoration-floor-plan'
 import { CustomerContact } from '@/components/ops/customer-contact'
 import { StreetViewCard } from '@/components/ops/street-view-card'
 
@@ -123,6 +131,14 @@ type Detail = {
     plan_x: number | null
     plan_y: number | null
     points: Array<{ x: number; y: number }> | null
+  }>
+  openings: Array<{
+    id: string
+    area_id: string
+    kind: string
+    wall_index: number
+    offset_ft: number
+    width_ft: number
   }>
   payments: Array<{ id: string; kind: string; method: string; amount_cents: number }>
   photos: Array<{
@@ -227,6 +243,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
   const [catalogOpen, setCatalogOpen] = useState(false)
   const [openGroup, setOpenGroup] = useState<string | null>(null)
 
+  const [planMode, setPlanMode] = useState<'move' | 'shape' | 'doorway'>('move')
   const [airflowDensity, setAirflowDensity] = useState<AirflowDensity>('normal')
   const [selectedPointId, setSelectedPointId] = useState<string | null>(null)
   const [armedTool, setArmedTool] = useState<
@@ -335,6 +352,19 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
         planX: area.plan_x,
         planY: area.plan_y,
         points: area.points,
+      })),
+    [detail],
+  )
+
+  const planOpenings = useMemo<Opening[]>(
+    () =>
+      (detail?.openings ?? []).map((o) => ({
+        id: o.id,
+        areaId: o.area_id,
+        kind: o.kind as Opening['kind'],
+        wallIndex: o.wall_index,
+        offsetFt: Number(o.offset_ft),
+        widthFt: Number(o.width_ft),
       })),
     [detail],
   )
@@ -711,7 +741,28 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
           {planRooms.length > 0 ? (
             <div className="mt-4">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <Label className="text-sm">Plan</Label>
+                <div className="flex items-center gap-2">
+                  <Label className="text-sm">Plan</Label>
+                  <div className="border-border/60 flex rounded-md border p-0.5">
+                    {(['move', 'shape', 'doorway'] as const).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => {
+                          setPlanMode(m)
+                          setArmedTool(null)
+                        }}
+                        className={`rounded px-2 py-1 text-xs capitalize ${
+                          planMode === m
+                            ? 'bg-sky-600 text-white'
+                            : 'text-muted-foreground hover:bg-muted/60'
+                        }`}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className="flex flex-wrap gap-1.5">
                   {armedTool ? (
                     <button
@@ -756,7 +807,76 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
               <FloorPlan
                 rooms={planRooms}
                 pins={planPins}
+                openings={planOpenings}
+                mode={planMode}
                 armed={armedTool}
+                onMoveCorner={(areaId, index, x, y) => {
+                  const area = detail.areas.find((a) => a.id === areaId)
+                  if (!area) return
+                  const current =
+                    area.points && area.points.length >= 3
+                      ? area.points
+                      : rectanglePoints(
+                          Number(area.geometry?.length_ft ?? 0),
+                          Number(area.geometry?.width_ft ?? 0),
+                        )
+                  const next = moveCorner(current, index, x, y)
+                  void call(
+                    `/api/admin/ops/restoration/areas/${areaId}`,
+                    {
+                      method: 'PATCH',
+                      body: JSON.stringify({
+                        points: next,
+                        // Square footage and perimeter follow the shape, so a
+                        // diagonal wall bills its real length.
+                        affected_sqft: polygonAreaSqft(next),
+                        wall_linear_ft: polygonPerimeterFt(next),
+                      }),
+                    },
+                    `corner-${areaId}`,
+                  )
+                }}
+                onSplitWall={(areaId, wallIndex) => {
+                  const area = detail.areas.find((a) => a.id === areaId)
+                  if (!area) return
+                  const current =
+                    area.points && area.points.length >= 3
+                      ? area.points
+                      : rectanglePoints(
+                          Number(area.geometry?.length_ft ?? 0),
+                          Number(area.geometry?.width_ft ?? 0),
+                        )
+                  void call(
+                    `/api/admin/ops/restoration/areas/${areaId}`,
+                    {
+                      method: 'PATCH',
+                      body: JSON.stringify({ points: splitWall(current, wallIndex) }),
+                    },
+                    `split-${areaId}`,
+                  )
+                }}
+                onPlaceDoorway={(areaId, wallIndex, offsetFt) =>
+                  void call(
+                    `/api/admin/ops/restoration/areas/${areaId}/openings`,
+                    {
+                      method: 'POST',
+                      body: JSON.stringify({
+                        kind: 'doorway',
+                        wall_index: wallIndex,
+                        offset_ft: offsetFt,
+                        width_ft: 3,
+                      }),
+                    },
+                    `door-${areaId}`,
+                  )
+                }
+                onOpeningClick={(opening) =>
+                  void call(
+                    `/api/admin/ops/restoration/openings/${opening.id}`,
+                    { method: 'DELETE' },
+                    `door-del-${opening.id}`,
+                  )
+                }
                 selectedPinId={selectedPointId}
                 onMoveRoom={(areaId, x, y) =>
                   void call(
@@ -847,8 +967,11 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 }}
               />
               <p className="text-muted-foreground mt-1 text-xs">
-                Blue is equipment, amber is a moisture point showing its latest reading —
-                green once it hits the dry standard.
+                {planMode === 'move'
+                  ? 'Drag rooms into place — walls snap to each other. Blue is equipment, amber a moisture point, green once it hits the dry standard.'
+                  : planMode === 'shape'
+                    ? 'Drag a corner to move it. Tap a + on a wall to add a corner, which is how you cut in a diagonal or an L.'
+                    : 'Tap a wall to put a doorway on it. Tap a doorway to remove it.'}
               </p>
             </div>
           ) : null}

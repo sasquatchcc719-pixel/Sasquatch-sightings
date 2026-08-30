@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest'
 import {
   boundsOf,
   layoutFloorPlan,
+  moveCorner,
+  nearestWall,
+  projectOntoWall,
+  removeCorner,
+  splitWall,
   pointToPlanFeet,
   polygonAreaSqft,
   polygonPerimeterFt,
@@ -139,5 +144,79 @@ describe('helpers', () => {
 
   it('does not divide by zero converting a tap', () => {
     expect(Number.isFinite(pointToPlanFeet(50, 50, { left: 0, top: 0 }, 0).xFt)).toBe(true)
+  })
+})
+
+describe('shape editing', () => {
+  const rect = rectanglePoints(20, 15)
+
+  it('moves a corner, which is how a diagonal wall gets made', () => {
+    const moved = moveCorner(rect, 1, 16, 4)
+    expect(moved[1]).toEqual({ x: 16, y: 4 })
+    expect(moved).toHaveLength(4)
+    // The wall from corner 0 to 1 is now sloped, so its length is the hypotenuse.
+    expect(polygonPerimeterFt(moved)).toBeCloseTo(
+      Math.hypot(16, 4) + Math.hypot(20 - 16, 15 - 4) + 20 + 15,
+      1,
+    )
+  })
+
+  it('ignores a corner index that does not exist', () => {
+    expect(moveCorner(rect, 9, 1, 1)).toEqual(rect)
+    expect(moveCorner(rect, -1, 1, 1)).toEqual(rect)
+  })
+
+  it('splits a wall at its midpoint so an L can be cut in', () => {
+    const split = splitWall(rect, 0)
+    expect(split).toHaveLength(5)
+    expect(split[1]).toEqual({ x: 10, y: 0 })
+    // Splitting a wall does not change the shape.
+    expect(polygonAreaSqft(split)).toBe(polygonAreaSqft(rect))
+  })
+
+  it('removes a corner but never below three', () => {
+    const five = splitWall(rect, 0)
+    expect(removeCorner(five, 1)).toHaveLength(4)
+    const triangle = [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 8 },
+    ]
+    expect(removeCorner(triangle, 0)).toEqual(triangle)
+  })
+})
+
+describe('nearestWall', () => {
+  const room = layoutFloorPlan([
+    { id: 'a', name: 'Rec', lengthFt: 20, widthFt: 15, planX: 0, planY: 0 },
+  ]).rooms[0]
+
+  it('finds the wall a tap is nearest and how far along it', () => {
+    // Just inside the top wall, six feet across.
+    const hit = nearestWall(room, 6, 0.5)
+    expect(hit?.wallIndex).toBe(0)
+    expect(hit?.offsetFt).toBeCloseTo(6, 1)
+  })
+
+  it('finds the right wall on the far side', () => {
+    expect(nearestWall(room, 19.8, 7)?.wallIndex).toBe(1)
+  })
+
+  it('returns null for a tap in open floor, so a doorway is not placed by accident', () => {
+    expect(nearestWall(room, 10, 7)).toBeNull()
+  })
+})
+
+describe('projectOntoWall', () => {
+  it('handles a zero-length wall without dividing by zero', () => {
+    const hit = projectOntoWall({ x: 3, y: 3 }, { x: 3, y: 3 }, { x: 6, y: 7 })
+    expect(Number.isFinite(hit.distanceFt)).toBe(true)
+    expect(hit.offsetFt).toBe(0)
+  })
+
+  it('clamps a tap beyond the end of a wall to that end', () => {
+    const hit = projectOntoWall({ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 25, y: 0 })
+    expect(hit.t).toBe(1)
+    expect(hit.offsetFt).toBe(10)
   })
 })

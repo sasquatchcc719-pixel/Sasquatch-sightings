@@ -4,12 +4,14 @@ import { useMemo, useState, type ReactNode } from 'react'
 import {
   boundsOf,
   layoutFloorPlan,
+  nearestWall,
   pointToPlanFeet,
   roomAtPoint,
   snapPosition,
   wallSegment,
   type Opening,
   type PlanRoom,
+  type Point,
 } from '@/lib/ops/restoration-floor-plan'
 
 /**
@@ -41,6 +43,16 @@ type FloorPlanProps = {
   pins: PlanPin[]
   openings?: Opening[]
   armed?: { kind: 'equipment' | 'reading'; label: string } | null
+  /**
+   * move   — drag whole rooms into the shape of the house
+   * shape  — drag corners and split walls, for diagonals and L-shapes
+   * doorway— tap a wall to put a door on it
+   */
+  mode?: 'move' | 'shape' | 'doorway'
+  onMoveCorner?: (areaId: string, index: number, x: number, y: number) => void
+  onSplitWall?: (areaId: string, wallIndex: number) => void
+  onPlaceDoorway?: (areaId: string, wallIndex: number, offsetFt: number) => void
+  onOpeningClick?: (opening: Opening) => void
   selectedPinId?: string | null
   /**
    * Editor for the selected pin, floated next to it on the plan. Editing has to
@@ -58,11 +70,16 @@ export function FloorPlan({
   pins,
   openings = [],
   armed,
+  mode = 'move',
   selectedPinId,
   pinEditor,
   onDrop,
   onPinClick,
   onMoveRoom,
+  onMoveCorner,
+  onSplitWall,
+  onPlaceDoorway,
+  onOpeningClick,
 }: FloorPlanProps) {
   const [width, setWidth] = useState(0)
   const [dragging, setDragging] = useState<{
@@ -71,6 +88,11 @@ export function FloorPlan({
     grabY: number
     x: number
     y: number
+  } | null>(null)
+  const [cornerDrag, setCornerDrag] = useState<{
+    areaId: string
+    index: number
+    point: Point
   } | null>(null)
 
   const layout = useMemo(() => layoutFloorPlan(rooms), [rooms])
@@ -107,16 +129,32 @@ export function FloorPlan({
         if (node && node.clientWidth !== width) setWidth(node.clientWidth)
       }}
       className={`border-border/60 relative touch-none overflow-hidden rounded-lg border bg-slate-50 select-none dark:bg-slate-900 ${
-        armed ? 'cursor-crosshair ring-2 ring-sky-500' : ''
+        armed || mode === 'doorway' ? 'cursor-crosshair ring-2 ring-sky-500' : ''
       }`}
       style={{ height: heightPx }}
       onClick={(event) => {
-        if (!armed || !onDrop || scale <= 0) return
+        if (scale <= 0) return
         const rect = event.currentTarget.getBoundingClientRect()
         const { xFt, yFt } = pointToPlanFeet(event.clientX, event.clientY, rect, scale)
-        const room = roomAtPoint(layout, xFt, yFt)
-        if (!room) return
-        onDrop({ areaId: room.id, xFt: xFt - room.x, yFt: yFt - room.y })
+
+        if (armed && onDrop) {
+          const room = roomAtPoint(layout, xFt, yFt)
+          if (!room) return
+          onDrop({ areaId: room.id, xFt: xFt - room.x, yFt: yFt - room.y })
+          return
+        }
+
+        if (mode === 'doorway' && onPlaceDoorway) {
+          // Doors go on walls, so find the nearest wall rather than the room
+          // under the tap — the tap will usually land just off the edge.
+          for (const room of layout.rooms) {
+            const hit = nearestWall(room, xFt, yFt)
+            if (hit) {
+              onPlaceDoorway(room.id, hit.wallIndex, hit.offsetFt)
+              return
+            }
+          }
+        }
       }}
     >
       {scale > 0
@@ -134,7 +172,7 @@ export function FloorPlan({
                 }`}
                 style={{ left: pos.x * scale, top: pos.y * scale, width: w * scale, height: h * scale }}
                 onPointerDown={(event) => {
-                  if (armed || !onMoveRoom) return
+                  if (armed || mode !== 'move' || !onMoveRoom) return
                   event.stopPropagation()
                   const rect = event.currentTarget.parentElement?.getBoundingClientRect()
                   if (!rect) return
@@ -196,6 +234,79 @@ export function FloorPlan({
           })
         : null}
 
+      {scale > 0 && mode === 'shape'
+        ? layout.rooms.flatMap((room) => {
+            const pos = positionOf(room.id, room.x, room.y)
+            const handles = room.points.map((corner, index) => {
+              const live =
+                cornerDrag && cornerDrag.areaId === room.id && cornerDrag.index === index
+                  ? cornerDrag.point
+                  : corner
+              return (
+                <button
+                  key={`c-${room.id}-${index}`}
+                  type="button"
+                  aria-label={`Corner ${index + 1} of ${room.name}`}
+                  className="absolute z-10 h-4 w-4 -translate-x-1/2 -translate-y-1/2 cursor-grab rounded-sm border-2 border-white bg-slate-700 shadow active:cursor-grabbing dark:bg-slate-200"
+                  style={{ left: (pos.x + live.x) * scale, top: (pos.y + live.y) * scale }}
+                  onPointerDown={(event) => {
+                    event.stopPropagation()
+                    event.currentTarget.setPointerCapture(event.pointerId)
+                    setCornerDrag({ areaId: room.id, index, point: live })
+                  }}
+                  onPointerMove={(event) => {
+                    if (cornerDrag?.areaId !== room.id || cornerDrag.index !== index) return
+                    const rect = event.currentTarget.parentElement?.getBoundingClientRect()
+                    if (!rect) return
+                    const { xFt, yFt } = pointToPlanFeet(event.clientX, event.clientY, rect, scale)
+                    setCornerDrag({
+                      areaId: room.id,
+                      index,
+                      // Half-foot grid: fine enough for a real wall, coarse
+                      // enough that a corner does not land on 7.83 feet.
+                      point: {
+                        x: Math.round((xFt - pos.x) * 2) / 2,
+                        y: Math.round((yFt - pos.y) * 2) / 2,
+                      },
+                    })
+                  }}
+                  onPointerUp={(event) => {
+                    if (cornerDrag?.areaId !== room.id || cornerDrag.index !== index) return
+                    event.currentTarget.releasePointerCapture(event.pointerId)
+                    onMoveCorner?.(room.id, index, cornerDrag.point.x, cornerDrag.point.y)
+                    setCornerDrag(null)
+                  }}
+                />
+              )
+            })
+
+            const splits = room.points.map((corner, index) => {
+              const next = room.points[(index + 1) % room.points.length]
+              const midX = pos.x + (corner.x + next.x) / 2
+              const midY = pos.y + (corner.y + next.y) / 2
+              return (
+                <button
+                  key={`s-${room.id}-${index}`}
+                  type="button"
+                  title="Add a corner here"
+                  aria-label={`Add a corner to wall ${index + 1} of ${room.name}`}
+                  className="absolute z-10 flex h-4 w-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white bg-sky-600 text-[9px] font-bold text-white shadow"
+                  style={{ left: midX * scale, top: midY * scale }}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onSplitWall?.(room.id, index)
+                  }}
+                >
+                  +
+                </button>
+              )
+            })
+
+            return [...handles, ...splits]
+          })
+        : null}
+
       {/* Doorways, drawn as a gap marker on the wall they belong to. */}
       {scale > 0
         ? openings.map((opening) => {
@@ -209,16 +320,23 @@ export function FloorPlan({
             const angle =
               (Math.atan2(wall.to.y - wall.from.y, wall.to.x - wall.from.x) * 180) / Math.PI
             return (
-              <div
+              <button
                 key={opening.id}
+                type="button"
                 title={`${opening.kind} · ${opening.widthFt}′`}
-                className="pointer-events-none absolute h-1 rounded bg-amber-500"
+                aria-label={`${opening.kind} on ${room.name}`}
+                className="absolute h-1.5 rounded bg-amber-500 hover:bg-amber-400"
                 style={{
                   left: x * scale,
                   top: y * scale,
                   width: opening.widthFt * scale,
                   transform: `rotate(${angle}deg)`,
                   transformOrigin: '0 50%',
+                }}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onOpeningClick?.(opening)
                 }}
               />
             )
