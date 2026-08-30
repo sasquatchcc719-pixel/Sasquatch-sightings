@@ -90,6 +90,7 @@ describe('appointment conflict checks against the real DB', () => {
         end_time: '15:00:00',
         status: 'booked',
         assigned_staff_user_id: CHARLES_STAFF_ID,
+        source: 'integration_test',
       })
       .select('id')
       .single()
@@ -106,6 +107,7 @@ describe('appointment conflict checks against the real DB', () => {
         end_time: '17:00:00',
         status: 'booked',
         assigned_staff_user_id: CHARLES_STAFF_ID,
+        source: 'integration_test',
       })
       .select('id')
       .single()

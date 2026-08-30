@@ -733,3 +733,40 @@ anything.
 
 ### Verified
 562 tests pass, typecheck clean, lint clean, `next build` exit 0.
+
+
+---
+
+## Incident — fake booking alerts to Telegram (2026-08-30)
+
+**What happened.** Charles reported repeated "new job booked" Telegram alerts. They were
+mine. `ops_appointments` has an `appointment_booked_trigger` that POSTs to
+`/api/webhooks/appointment-booked` on every INSERT, which sends Charles a Telegram
+message. The restoration integration test seeds real appointment rows (deliberately — it
+has to, to exercise the real constraints), and it took a valid customer by grabbing the
+first row of `ops_service_addresses`. That is **Dominic Carro**, a real customer, whose
+name and phone number therefore appeared in roughly a dozen fake booking alerts across
+six or seven suite runs.
+
+**Blast radius.** Telegram only. The webhook notifies Charles and does not text or email
+the customer, so no customer was contacted. No data was left behind — every test cleaned
+up, verified as 0 restoration appointments, 0 projects, 0 invoices, 0 revenue entries.
+
+**This was not new to the restoration work.** The pre-existing
+`duration-conflict.test.ts` inserts appointments the same way and has been firing the
+same alerts on every run.
+
+**Fix.** `notify_appointment_booked()` now returns early when
+`NEW.source = 'integration_test'`. No existing appointment uses that source (checked
+against all 12 values in use), so genuine bookings are unaffected. Both
+`duration-conflict.test.ts` and `restoration-projects.integration.test.ts` now set it,
+and `scheduleQueuedVisit` takes an optional `source` so the visit it creates can be
+marked too.
+
+**Verified by observation, not assumption:** `net._http_response` showed 4 webhook calls
+from those tests in the preceding half hour and **0** after the fix, with the tests
+still passing.
+
+**Lesson for future work here:** seeding a row in this database can reach the outside
+world. Before writing a test that inserts into a production table, check
+`pg_trigger` for that table.

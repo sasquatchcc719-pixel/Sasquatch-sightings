@@ -331,6 +331,9 @@ export async function scheduleQueuedVisit(
     appointmentDate: string
     startTime: string
     assignedStaffUserId?: string | null
+    /** Overridden by tests to 'integration_test' so the booked-webhook trigger
+     *  ignores the row and no fake booking alert is sent. */
+    source?: string
   },
 ): Promise<{ ok: true; appointmentId: string } | { ok: false; error: string }> {
   const { data: queued } = await supabase
@@ -359,7 +362,7 @@ export async function scheduleQueuedVisit(
       customer_id: project.customer_id,
       service_address_id: project.service_address_id,
       booking_channel: 'admin',
-      source: 'admin',
+      source: params.source ?? 'admin',
       status: 'booked',
       payment_status: 'unpaid',
       quickbooks_sync_status: 'held',

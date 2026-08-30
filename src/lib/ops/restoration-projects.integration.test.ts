@@ -59,7 +59,9 @@ beforeAll(async () => {
       customer_id: customerId,
       service_address_id: addressId,
       booking_channel: 'admin',
-      source: 'admin',
+      // Ignored by the booked-webhook trigger, so seeding a test does not
+      // send a fake booking alert carrying a real customer's details.
+      source: 'integration_test',
       status: 'completed',
       payment_status: 'unpaid',
       quickbooks_sync_status: 'held',
@@ -162,6 +164,7 @@ describe('restoration project lifecycle', () => {
       queueId: queued!.id,
       appointmentDate: futureDate(2),
       startTime: '14:00',
+      source: 'integration_test',
     })
     expect(result.ok).toBe(true)
     if (!result.ok) return
