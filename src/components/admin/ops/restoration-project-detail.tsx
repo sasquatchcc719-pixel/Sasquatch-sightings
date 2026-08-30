@@ -6,6 +6,7 @@ import {
   Droplets, Loader2, Mic, Phone, Plus, Trash2, Wind, CheckCircle2, MessageSquare,
   Camera,
   FileText,
+  Ruler,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -14,6 +15,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { DirectionsButtons } from '@/components/ops/directions-buttons'
+import { buildDryingPlan } from '@/lib/ops/restoration-drying-plan'
 import { StreetViewCard } from '@/components/ops/street-view-card'
 
 /**
@@ -78,6 +80,13 @@ type Detail = {
     units: number; unit_days: number; line_total: number
   }>
   reading_points: ReadingPoint[]
+  areas: Array<{
+    id: string
+    name: string
+    affected_sqft: number | null
+    wall_linear_ft: number | null
+    ceiling_height_ft: number | null
+  }>
   payments: Array<{ id: string; kind: string; method: string; amount_cents: number }>
   photos: Array<{
     id: string
@@ -140,6 +149,11 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
   const [activeVisitId, setActiveVisitId] = useState<string | null>(null)
   const [catalog, setCatalog] = useState<CatalogItem[]>([])
   const [catalogQuery, setCatalogQuery] = useState('')
+
+  const [areaName, setAreaName] = useState('')
+  const [areaLength, setAreaLength] = useState('')
+  const [areaWidth, setAreaWidth] = useState('')
+  const [areaHeight, setAreaHeight] = useState('8')
 
   const [depositAmount, setDepositAmount] = useState('1000')
 
@@ -209,6 +223,24 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
     [detail, activeVisitId],
   )
   const isMitigation = activeVisit?.visit_type === 'mitigation'
+
+  const dryingPlan = useMemo(
+    () =>
+      buildDryingPlan(
+        (detail?.areas ?? []).map((area) => ({
+          affectedSqft: area.affected_sqft,
+          ceilingHeightFt: area.ceiling_height_ft,
+        })),
+      ),
+    [detail],
+  )
+  const totalPerimeterFt = useMemo(
+    () =>
+      Math.round(
+        (detail?.areas ?? []).reduce((sum, a) => sum + Number(a.wall_linear_ft ?? 0), 0) * 100,
+      ) / 100,
+    [detail],
+  )
 
   async function call(url: string, init: RequestInit, key: string) {
     setBusy(key)
@@ -368,6 +400,154 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
         </div>
       </Card>
 
+      {/* ── Affected areas ─────────────────────────────────── */}
+      {!closed ? (
+        <Card className="border-border/60 bg-card/80 p-5">
+          <h2 className="mb-1 flex items-center gap-2 text-lg font-semibold">
+            <Ruler className="h-4 w-4" /> Affected areas
+          </h2>
+          <p className="text-muted-foreground mb-3 text-sm">
+            Measure once. Square footage fills the line items, and the volume sizes the
+            drying equipment.
+          </p>
+
+          {detail.areas.length > 0 ? (
+            <div className="mb-3 flex flex-col divide-y">
+              {detail.areas.map((area) => (
+                <div key={area.id} className="flex items-center gap-3 py-2 text-sm">
+                  <span className="min-w-0 flex-1">
+                    <span className="font-medium">{area.name}</span>
+                    <span className="text-muted-foreground block text-xs">
+                      {area.affected_sqft ?? '—'} SF
+                      {area.wall_linear_ft ? ` · ${area.wall_linear_ft} LF perimeter` : ''}
+                      {area.ceiling_height_ft ? ` · ${area.ceiling_height_ft} ft ceiling` : ''}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${area.name}`}
+                    onClick={() =>
+                      void call(
+                        `/api/admin/ops/restoration/areas/${area.id}`,
+                        { method: 'DELETE' },
+                        `del-area-${area.id}`,
+                      )
+                    }
+                  >
+                    <Trash2 className="text-muted-foreground h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="min-w-32 flex-1">
+              <Label htmlFor="area-name" className="text-xs">Room</Label>
+              <Input
+                id="area-name"
+                className="h-9"
+                value={areaName}
+                onChange={(e) => setAreaName(e.target.value)}
+                placeholder="Basement rec room"
+              />
+            </div>
+            <div className="w-20">
+              <Label htmlFor="area-len" className="text-xs">Length</Label>
+              <Input id="area-len" className="h-9" type="number" step="any"
+                value={areaLength} onChange={(e) => setAreaLength(e.target.value)} />
+            </div>
+            <div className="w-20">
+              <Label htmlFor="area-wid" className="text-xs">Width</Label>
+              <Input id="area-wid" className="h-9" type="number" step="any"
+                value={areaWidth} onChange={(e) => setAreaWidth(e.target.value)} />
+            </div>
+            <div className="w-20">
+              <Label htmlFor="area-hgt" className="text-xs">Ceiling</Label>
+              <Input id="area-hgt" className="h-9" type="number" step="any"
+                value={areaHeight} onChange={(e) => setAreaHeight(e.target.value)} />
+            </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={busy === 'add-area' || !areaName.trim() || !areaLength || !areaWidth}
+              onClick={async () => {
+                await call(
+                  `/api/admin/ops/restoration/projects/${projectId}/areas`,
+                  {
+                    method: 'POST',
+                    body: JSON.stringify({
+                      name: areaName.trim(),
+                      length_ft: Number(areaLength),
+                      width_ft: Number(areaWidth),
+                      ceiling_height_ft: Number(areaHeight) || 8,
+                    }),
+                  },
+                  'add-area',
+                )
+                setAreaName('')
+                setAreaLength('')
+                setAreaWidth('')
+              }}
+            >
+              <Plus className="h-4 w-4" /> Add
+            </Button>
+          </div>
+
+          {dryingPlan.totalAffectedSqft > 0 ? (
+            <div className="mt-4 rounded-lg border border-sky-200 bg-sky-50/70 p-3 text-sm">
+              <p className="font-medium text-sky-900">
+                {dryingPlan.totalAffectedSqft} SF · {dryingPlan.totalCubicFt.toLocaleString()} cu ft
+              </p>
+              <p className="mt-1 text-xs text-sky-900">
+                Starting point: <strong>{dryingPlan.airMovers} air movers</strong>
+                {dryingPlan.suggestedDehu
+                  ? ` and ${dryingPlan.dehuCount} × ${
+                      dryingPlan.suggestedDehu === 'DHM>>' ? 'LGR' : 'small'
+                    } dehumidifier (${dryingPlan.dehumidifierPintsPerDay} PPD)`
+                  : ''}
+                . Adjust to what the job actually needs — only what you place gets billed.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={busy === 'place-plan'}
+                  onClick={async () => {
+                    await call(
+                      `/api/admin/ops/restoration/projects/${projectId}/equipment`,
+                      {
+                        method: 'POST',
+                        body: JSON.stringify({
+                          catalog_code: 'DRY++',
+                          count: dryingPlan.airMovers,
+                        }),
+                      },
+                      'place-plan',
+                    )
+                    if (dryingPlan.suggestedDehu) {
+                      await call(
+                        `/api/admin/ops/restoration/projects/${projectId}/equipment`,
+                        {
+                          method: 'POST',
+                          body: JSON.stringify({
+                            catalog_code: dryingPlan.suggestedDehu,
+                            count: dryingPlan.dehuCount,
+                          }),
+                        },
+                        'place-plan',
+                      )
+                    }
+                  }}
+                >
+                  Place this equipment
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </Card>
+      ) : null}
+
       {/* ── Work on this visit ─────────────────────────────── */}
       {activeVisit && !closed ? (
         <Card className="border-border/60 bg-card/80 p-5">
@@ -492,7 +672,19 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                     type="button"
                     className="hover:bg-muted/60 flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm"
                     onClick={() =>
-                      void addLines([{ concept_code: item.concept_code, quantity: 1 }])
+                      void addLines([
+                        {
+                          concept_code: item.concept_code,
+                          // Pre-fill from what was measured: area for square-foot
+                          // work, perimeter for anything billed by the foot.
+                          quantity:
+                            item.unit === 'SF' && dryingPlan.totalAffectedSqft > 0
+                              ? dryingPlan.totalAffectedSqft
+                              : item.unit === 'LF' && totalPerimeterFt > 0
+                                ? totalPerimeterFt
+                                : 1,
+                        },
+                      ])
                     }
                   >
                     <span>

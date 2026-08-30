@@ -694,3 +694,42 @@ check instead" fallback, because Square being unavailable must not block the job
 Needs `SQUARE_APPLICATION_ID` set, and the Square POS app installed on the field
 phone — see [[project_square_tap_to_pay]]. The route returns a clear 503 if the
 application id is missing rather than failing obscurely.
+
+
+---
+
+## Status — pass 8 (2026-08-30): measured areas and the drying plan
+
+### DONE
+- **Affected areas** on the project screen: name, length, width, ceiling height. Square
+  footage and wall perimeter are derived, and both are stored.
+- **`src/lib/ops/restoration-drying-plan.ts`** turns the measured rooms into a starting
+  equipment plan — total affected square footage, total cubic feet, an air-mover count,
+  and a dehumidifier size and count. One tap places that equipment.
+- **Measurement now fills the line items**: adding a square-foot item from the catalog
+  pre-fills the total affected square footage, and a linear-foot item pre-fills the total
+  wall perimeter, instead of defaulting to 1.
+- API: `POST/GET /projects/[id]/areas`, `PATCH/DELETE /areas/[areaId]`.
+- 6 unit tests on the sizing maths, including the nonsense-input case (NaN and negative
+  measurements are ignored rather than producing a NaN plan).
+
+### Honesty note on the sizing factors
+The two constants — one air mover per **60 sq ft** of affected floor, and one pint per
+day of dehumidification per **45 cubic feet** — are commonly used industry rules of
+thumb. **They are not quoted IICRC S500 values and I did not verify them against the
+standard.** They exist to replace a blank field with a plausible starting number. The
+UI says so directly ("Starting point… adjust to what the job actually needs — only what
+you place gets billed"), and the equipment that is billed is always what was physically
+placed. **Charles should confirm or replace these two numbers**; they are isolated as
+named exports at the top of the file for exactly that reason.
+
+### What "the map" still does not do
+This pass delivers the *numbers* the map was wanted for — square footage driving line
+items, and volume sizing equipment. It does **not** yet deliver the drawing: there is no
+canvas, so equipment and reading points are not placed spatially, and photos cannot be
+pinned to a location. The schema already carries `map_x` / `map_y` / `area_id` on
+placements, reading points and photos, so the drawing can be added without migrating
+anything.
+
+### Verified
+562 tests pass, typecheck clean, lint clean, `next build` exit 0.
