@@ -18,6 +18,7 @@ import { DirectionsButtons } from '@/components/ops/directions-buttons'
 import { buildDryingPlan } from '@/lib/ops/restoration-drying-plan'
 import { GROUP_ORDER } from '@/lib/ops/restoration-catalog-groups'
 import { FloorPlan, type PlanPin } from '@/components/ops/floor-plan'
+import { CustomerContact } from '@/components/ops/customer-contact'
 import { StreetViewCard } from '@/components/ops/street-view-card'
 
 /**
@@ -130,6 +131,14 @@ type ParsedLine = {
   quantity: number | null
   heard: string
   confidence: 'high' | 'low'
+}
+
+/** Local calendar day, matching how appointment_date is stored. */
+function toDateKey(date: Date): string {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
 }
 
 const money = (n: number) =>
@@ -419,16 +428,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             </Badge>
           </div>
         </div>
-        {customer?.phone ? (
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" asChild className="gap-2">
-              <a href={`tel:${customer.phone}`}><Phone className="h-4 w-4" /> Call</a>
-            </Button>
-            <Button variant="outline" size="sm" asChild className="gap-2">
-              <a href={`sms:${customer.phone}`}><MessageSquare className="h-4 w-4" /> Text</a>
-            </Button>
-          </div>
-        ) : null}
+        <CustomerContact phone={customer?.phone} className="min-w-64" />
       </div>
 
       {error ? (
@@ -1244,6 +1244,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
           </h2>
           <p className="text-muted-foreground mb-3 text-sm">
             Pick the phase once, then shoot as many as you need — they all land tagged.
+            Uploading a backlog sorts each photo onto the visit it was taken on.
           </p>
 
           <div className="mb-3 flex flex-wrap gap-1.5">
@@ -1290,11 +1291,22 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                     form.append('restoration_phase', photoPhase)
                     // The camera's own timestamp, so a bulk upload of an earlier
                     // day still lands on the day the work actually happened.
-                    if (file.lastModified) {
-                      form.append('captured_at', new Date(file.lastModified).toISOString())
+                    const capturedAt = file.lastModified
+                      ? new Date(file.lastModified)
+                      : null
+                    if (capturedAt) {
+                      form.append('captured_at', capturedAt.toISOString())
                     }
+                    // Attach to the visit that happened on the day the photo was
+                    // taken, so uploading a backlog sorts itself onto the right
+                    // days instead of piling onto whichever visit is open.
+                    const targetVisitId = capturedAt
+                      ? (detail.visits.find(
+                          (v) => v.appointment_date === toDateKey(capturedAt),
+                        )?.id ?? activeVisitId)
+                      : activeVisitId
                     const response = await fetch(
-                      `/api/admin/ops/appointments/${activeVisitId}/photos`,
+                      `/api/admin/ops/appointments/${targetVisitId}/photos`,
                       { method: 'POST', body: form },
                     )
                     if (!response.ok) {

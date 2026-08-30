@@ -26,6 +26,7 @@ import { CleaningReminderButtons } from '@/components/ops/cleaning-reminder-butt
 import { FiberCheckPanel } from '@/components/ops/fiber-check-panel'
 import { DirectionsButtons } from '@/components/ops/directions-buttons'
 import { StreetViewCard } from '@/components/ops/street-view-card'
+import { CustomerContact } from '@/components/ops/customer-contact'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -2009,28 +2010,7 @@ export function InvoiceDetail({
 
             {/* Contact info */}
             <div className="mt-5 space-y-2 text-sm">
-              {customer?.phone ? (
-                <div className="flex items-center gap-3">
-                  <Phone className="text-muted-foreground h-4 w-4 shrink-0" />
-                  <span className="flex-1 text-base tabular-nums">
-                    {customer.phone}
-                  </span>
-                  <Button className="gap-2" asChild>
-                    <a href={`tel:${customer.phone}`}>
-                      <Phone className="h-4 w-4" />
-                      Call
-                    </a>
-                  </Button>
-                  <Button variant="outline" className="gap-2" asChild>
-                    <a href={`sms:${customer.phone}`}>
-                      <MessageSquare className="h-4 w-4" />
-                      Text
-                    </a>
-                  </Button>
-                </div>
-              ) : (
-                <p className="text-muted-foreground">No phone on file</p>
-              )}
+              <CustomerContact phone={customer?.phone} />
               {customer?.email ? (
                 <div className="text-muted-foreground flex items-center gap-2">
                   <Mail className="h-4 w-4 shrink-0" />

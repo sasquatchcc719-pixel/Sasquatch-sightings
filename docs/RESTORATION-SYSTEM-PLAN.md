@@ -816,3 +816,26 @@ know the word.
 
 ### Verified
 576 tests pass, typecheck clean, lint clean, `next build` exit 0.
+
+
+---
+
+## Status — pass 10 (2026-08-30): extraction and photo day-sorting
+
+- **`CustomerContact` extracted** — phone with Call and Text, plus email. Pulled out of
+  `invoice-detail.tsx` and now used by both the invoice screen and the restoration
+  screen. `invoice-detail.tsx` is down to **3,131 lines** from 3,194 at the start.
+- **Photos sort themselves onto the right day.** Uploading a backlog now attaches each
+  photo to the visit whose date matches the photo's capture time, falling back to the
+  open visit. Day matching uses local calendar days — a photo taken at 11pm must not
+  roll into the next day. 4 unit tests cover it.
+
+### Shared components so far
+`DirectionsButtons`, `StreetViewCard`, `CustomerContact`, and the `address-links`
+helpers. **Still inline and still to extract:** the On My Way / Arrived / GPS-arrival
+status bar, and the line-items editor. Those carry real state and belong in a focused
+pass with the carpet cleaning flow verified click-by-click afterwards.
+
+### Final verification for the session
+**580 tests pass**, typecheck clean, **0 eslint errors** (15 pre-existing `<img>`
+warnings), `next build` exit 0.
