@@ -79,6 +79,23 @@ export async function POST(request: NextRequest, { params }: Params) {
     const imageFile = formData.get('image') as File | null
     const label = (formData.get('label') as string | null) ?? 'general'
     const watermark = formData.get('watermark') === 'true'
+    // Restoration photos carry the drying phase they document, and the camera's
+    // own capture time so a bulk upload lands on the right day of the job.
+    const restorationPhase = formData.get('restoration_phase') as string | null
+    const capturedAt = formData.get('captured_at') as string | null
+    const validPhases = [
+      'arrival',
+      'source_of_loss',
+      'affected_materials',
+      'moisture_reading',
+      'equipment_placement',
+      'demo',
+      'completion',
+    ]
+    const safePhase =
+      restorationPhase && validPhases.includes(restorationPhase)
+        ? restorationPhase
+        : null
 
     if (!imageFile) {
       return NextResponse.json({ error: 'No image provided' }, { status: 400 })
@@ -167,6 +184,9 @@ export async function POST(request: NextRequest, { params }: Params) {
         public_url: publicUrl,
         label: safeLabel,
         watermarked: watermark,
+        restoration_phase: safePhase,
+        restoration_area_id: (formData.get('area_id') as string | null) || null,
+        captured_at: capturedAt || null,
       })
       .select()
       .single()
@@ -180,6 +200,49 @@ export async function POST(request: NextRequest, { params }: Params) {
       { error: 'Failed to upload photo' },
       { status: 500 },
     )
+  }
+}
+
+/** Retag a photo's drying phase after the fact. */
+export async function PATCH(request: NextRequest, { params }: Params) {
+  try {
+    await requireAnyRole(['admin', 'owner', 'dispatcher', 'tech'])
+    await params
+    const supabase = createAdminClient()
+    const body = await request.json()
+
+    const photoId = String(body.photo_id ?? '')
+    if (!photoId) {
+      return NextResponse.json({ error: 'photo_id is required' }, { status: 400 })
+    }
+
+    const validPhases = [
+      'arrival',
+      'source_of_loss',
+      'affected_materials',
+      'moisture_reading',
+      'equipment_placement',
+      'demo',
+      'completion',
+    ]
+    const phase = body.restoration_phase
+    if (phase != null && !validPhases.includes(String(phase))) {
+      return NextResponse.json({ error: 'unknown phase' }, { status: 400 })
+    }
+
+    const { data, error } = await supabase
+      .from('ops_job_photos')
+      .update({ restoration_phase: phase ?? null })
+      .eq('id', photoId)
+      .select('id, restoration_phase')
+      .maybeSingle()
+
+    if (error) throw error
+    if (!data) return NextResponse.json({ error: 'photo_not_found' }, { status: 404 })
+    return NextResponse.json({ photo: data })
+  } catch (err) {
+    console.error('[ops/photos][PATCH]', err)
+    return NextResponse.json({ error: 'Failed to update photo' }, { status: 500 })
   }
 }
 

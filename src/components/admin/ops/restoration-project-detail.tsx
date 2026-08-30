@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
   Droplets, Loader2, Mic, Phone, Plus, Trash2, Wind, CheckCircle2, MessageSquare,
+  Camera,
+  FileText,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -77,6 +79,12 @@ type Detail = {
   }>
   reading_points: ReadingPoint[]
   payments: Array<{ id: string; kind: string; method: string; amount_cents: number }>
+  photos: Array<{
+    id: string
+    public_url: string
+    restoration_phase: string | null
+    appointment_id: string
+  }>
   totals: { work: number; equipment: number; subtotal: number; paid_cents: number; balance_cents: number }
 }
 
@@ -103,6 +111,17 @@ type ParsedLine = {
 const money = (n: number) =>
   n.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 
+/** The standard arc of a water-loss file, which is also how the report is organised. */
+const PHOTO_PHASES = [
+  { value: 'arrival', label: 'Arrival' },
+  { value: 'source_of_loss', label: 'Source' },
+  { value: 'affected_materials', label: 'Affected' },
+  { value: 'moisture_reading', label: 'Readings' },
+  { value: 'equipment_placement', label: 'Equipment' },
+  { value: 'demo', label: 'Demo' },
+  { value: 'completion', label: 'Complete' },
+]
+
 const EQUIPMENT_CODES = [
   { code: 'DRY++', label: 'Axial fan 1 HP' },
   { code: 'DRY+', label: 'Axial fan' },
@@ -121,6 +140,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
   const [activeVisitId, setActiveVisitId] = useState<string | null>(null)
   const [catalog, setCatalog] = useState<CatalogItem[]>([])
   const [catalogQuery, setCatalogQuery] = useState('')
+
+  const [photoPhase, setPhotoPhase] = useState<string>('affected_materials')
+  const [uploading, setUploading] = useState(false)
 
   const [pointLabel, setPointLabel] = useState('')
   const [pointMaterial, setPointMaterial] = useState('Drywall')
@@ -808,6 +830,105 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
         </Card>
       ) : null}
 
+      {/* ── Photos ─────────────────────────────────────────── */}
+      {activeVisitId && !closed ? (
+        <Card className="border-border/60 bg-card/80 p-5">
+          <h2 className="mb-1 flex items-center gap-2 text-lg font-semibold">
+            <Camera className="h-4 w-4" /> Photos
+          </h2>
+          <p className="text-muted-foreground mb-3 text-sm">
+            Pick the phase once, then shoot as many as you need — they all land tagged.
+          </p>
+
+          <div className="mb-3 flex flex-wrap gap-1.5">
+            {PHOTO_PHASES.map((phase) => (
+              <button
+                key={phase.value}
+                type="button"
+                onClick={() => setPhotoPhase(phase.value)}
+                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                  photoPhase === phase.value
+                    ? 'border-sky-600 bg-sky-600 text-white'
+                    : 'border-border/60 hover:bg-muted/60'
+                }`}
+              >
+                {phase.label}
+              </button>
+            ))}
+          </div>
+
+          <label className="border-border/60 hover:bg-muted/40 flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed px-4 py-6 text-sm">
+            {uploading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Camera className="h-4 w-4" />
+            )}
+            {uploading ? 'Uploading…' : 'Add photos'}
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              disabled={uploading}
+              onChange={async (e) => {
+                const files = Array.from(e.target.files ?? [])
+                if (files.length === 0 || !activeVisitId) return
+                e.target.value = ''
+                setUploading(true)
+                setError(null)
+                try {
+                  for (const file of files) {
+                    const form = new FormData()
+                    form.append('image', file)
+                    form.append('label', 'general')
+                    form.append('restoration_phase', photoPhase)
+                    // The camera's own timestamp, so a bulk upload of an earlier
+                    // day still lands on the day the work actually happened.
+                    if (file.lastModified) {
+                      form.append('captured_at', new Date(file.lastModified).toISOString())
+                    }
+                    const response = await fetch(
+                      `/api/admin/ops/appointments/${activeVisitId}/photos`,
+                      { method: 'POST', body: form },
+                    )
+                    if (!response.ok) {
+                      const result = await response.json().catch(() => ({}))
+                      throw new Error(result.error || 'Upload failed')
+                    }
+                  }
+                  await load()
+                } catch (uploadError) {
+                  setError(
+                    uploadError instanceof Error ? uploadError.message : 'Upload failed',
+                  )
+                } finally {
+                  setUploading(false)
+                }
+              }}
+            />
+          </label>
+
+          {detail.photos.length > 0 ? (
+            <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
+              {detail.photos.map((photo) => (
+                <figure key={photo.id} className="overflow-hidden rounded-md border">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={photo.public_url}
+                    alt={photo.restoration_phase ?? 'Job photo'}
+                    className="h-20 w-full object-cover"
+                  />
+                  <figcaption className="bg-muted/40 text-muted-foreground truncate px-1.5 py-1 text-[10px]">
+                    {PHOTO_PHASES.find((p) => p.value === photo.restoration_phase)?.label ??
+                      'Untagged'}
+                  </figcaption>
+                </figure>
+              ))}
+            </div>
+          ) : null}
+        </Card>
+      ) : null}
+
       {/* ── Money ──────────────────────────────────────────── */}
       <Card className="border-border/60 bg-card/80 p-5">
         <h2 className="mb-3 text-lg font-semibold">Money</h2>
@@ -867,8 +988,19 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
           </div>
         ) : null}
 
+        <Button asChild variant="outline" className="mt-4 w-full gap-2">
+          <a
+            href={`/api/admin/ops/restoration/projects/${projectId}/report`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <FileText className="h-4 w-4" />
+            Drying report (PDF)
+          </a>
+        </Button>
+
         {project.invoice_id ? (
-          <Button asChild variant="outline" className="mt-4 w-full">
+          <Button asChild variant="outline" className="mt-2 w-full">
             <Link href={`/admin/operations/invoices/${project.invoice_id}`}>
               Open invoice
             </Link>

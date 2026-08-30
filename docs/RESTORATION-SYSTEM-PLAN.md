@@ -623,3 +623,57 @@ be Charles**, and some UI wiring may need fixing on that first pass.
 ### Reminder
 **Do not migrate the Jill job** until the whole feature is finished — Charles's
 instruction on 2026-08-30.
+
+
+---
+
+## Status — pass 6 (2026-08-30): photos and the drying report
+
+### DONE
+- **Photo capture on the project screen.** Pick a phase once (Arrival / Source /
+  Affected / Readings / Equipment / Demo / Complete), then upload as many as you like —
+  they all land tagged. Per-photo tagging is what kills photo documentation, so it is
+  never required. The camera's own capture time is sent as `captured_at`, so a bulk
+  upload of an earlier day still lands on the day the work happened.
+- The **existing** `/api/admin/ops/appointments/[id]/photos` route was extended rather
+  than duplicated: it now accepts `restoration_phase`, `area_id`, and `captured_at`, and
+  gained a PATCH for retagging a photo after the fact.
+- **The drying report** (`/api/admin/ops/restoration/projects/[id]/report`) — a two-page
+  PDF built with the same `@react-pdf/renderer` stack as the invoice.
+  - Page 1: customer and property, category with the **dated classification history and
+    the S500 note explaining why it changed**, cause of loss, scope of work grouped by
+    visit, drying equipment with unit-days, and totals with the deposit credited.
+  - Page 2: material moisture readings as a trend per point with the dry standard and
+    whether it was reached, atmospheric readings, and a photo appendix.
+  - **A single unreachable photo cannot kill the report**: if the render throws with
+    images in, the route retries the same document without them rather than returning
+    an error at the moment the report is being handed over.
+
+### Bugs found and fixed by actually looking at the output
+Rendering a realistic sample and reading it caught two things a byte-length assertion
+never would have:
+- **Date of loss rendered one day early.** `new Date('2026-08-26')` parses as UTC
+  midnight, which is the previous day in Mountain time. Date-only values are now read
+  as local calendar dates. A wrong date of loss on a document handed to an adjuster is
+  not a cosmetic bug. Covered by a unit test.
+- The deposit's minus sign was invisible — U+2212 is not in the PDF core font. Now an
+  ASCII hyphen.
+
+### Nearly shipped a fabricated business detail
+The report's letterhead was written with an invented phone number, **(719) 219-1717**.
+The real published number is **(719) 249-8791**. It was caught before commit and the
+value now carries a comment marking it as canonical NAP. This is exactly the failure
+mode recorded in [[feedback_never_hallucinate_business_details]] — a business detail
+that looks plausible is still fabricated. **Do not type a phone number, address, or
+price from memory; look it up.**
+
+### Verified
+556 tests pass, typecheck clean, lint clean, `next build` exit 0.
+
+### Still to build
+1. The map: draw areas, derive square footage and ceiling volume, place equipment and
+   reading points spatially, pin photos.
+2. Component extraction of the customer panel, visit status bar (On My Way / GPS), and
+   the line-items editor.
+3. Square Tap to Pay deep link for the deposit (currently records the payment only).
+4. EXIF bulk backfill for the existing Jill photo set.
