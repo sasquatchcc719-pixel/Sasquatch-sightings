@@ -869,7 +869,12 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             />
 
             {catalogOpen ? (
-              <div className="border-border/60 max-h-80 overflow-y-auto rounded-md border">
+              <div className="border-border/60 max-h-80 overflow-hidden overflow-y-auto rounded-md border">
+                <div className="bg-muted/40 text-muted-foreground sticky top-0 px-3 py-2 text-xs">
+                  {catalogQuery.trim()
+                    ? `Matching "${catalogQuery.trim()}" · priced for Category ${category}${afterHours ? ', after hours' : ''}`
+                    : `Priced for Category ${category}${afterHours ? ', after hours' : ''}. Pick a group.`}
+                </div>
                 {catalogQuery.trim().length > 0 ? (
                   // Searching: a flat list is what you want, not folded groups.
                   catalogResults.length > 0 ? (
@@ -898,11 +903,19 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                       <div key={group} className="border-border/60 border-b last:border-b-0">
                         <button
                           type="button"
-                          className="hover:bg-muted/50 flex w-full items-center justify-between px-3 py-2 text-left text-sm font-medium"
+                          className="hover:bg-muted/50 flex w-full items-center justify-between px-3 py-2.5 text-left text-sm font-medium"
                           onClick={() => setOpenGroup(open ? null : group)}
                         >
-                          <span>{group}</span>
-                          <span className="text-muted-foreground text-xs">
+                          <span className="flex items-center gap-2">
+                            <span
+                              className={`text-muted-foreground text-xs transition-transform ${open ? 'rotate-90' : ''}`}
+                              aria-hidden
+                            >
+                              ▸
+                            </span>
+                            {group}
+                          </span>
+                          <span className="text-muted-foreground text-xs tabular-nums">
                             {items.length}
                           </span>
                         </button>
@@ -1674,10 +1687,15 @@ function LineCandidateRow({
   const amount = Number(quantity) > 0 ? Number(quantity) * unitPrice : 0
 
   return (
-    <div className="hover:bg-muted/40 border-border/60 flex items-center gap-2 border-t px-3 py-2 text-sm first:border-t-0">
+    <div className="hover:bg-muted/40 border-border/60 flex items-center gap-2 border-t px-3 py-2.5 text-sm first:border-t-0">
       <span className="min-w-0 flex-1">
-        <code className="text-xs">{code}</code> {label}
-        <span className="text-muted-foreground block text-xs">
+        <span className="leading-snug">
+          <code className="font-mono text-xs tracking-tight text-sky-600 dark:text-sky-400">
+            {code}
+          </code>{' '}
+          {label}
+        </span>
+        <span className="text-muted-foreground mt-0.5 block text-xs tabular-nums">
           ${unitPrice.toFixed(2)} per {unit}
           {amount > 0 ? ` · ${money(amount)}` : ''}
           {billable ? '' : ' · not linked to QuickBooks'}
