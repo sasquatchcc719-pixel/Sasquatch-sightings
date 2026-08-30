@@ -19,6 +19,11 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import {
+  ARRIVAL_THRESHOLD_METERS,
+  distanceMeters as calculateDistance,
+  geocodeAddress,
+} from '@/lib/ops/arrival'
+import {
   CANONICAL_LEAD_SOURCE_OPTIONS,
   PublicLeadSourceOption,
   getPublicLeadSourceOptions,
@@ -126,53 +131,6 @@ function timeToMinutes(value: string): number {
   return (h || 0) * 60 + (m || 0)
 }
 
-// Calculate distance between two lat/lng points using Haversine formula (returns meters)
-function calculateDistance(
-  lat1: number,
-  lng1: number,
-  lat2: number,
-  lng2: number,
-): number {
-  const R = 6371e3 // Earth's radius in meters
-  const φ1 = (lat1 * Math.PI) / 180
-  const φ2 = (lat2 * Math.PI) / 180
-  const Δφ = ((lat2 - lat1) * Math.PI) / 180
-  const Δλ = ((lng2 - lng1) * Math.PI) / 180
-
-  const a =
-    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2)
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-
-  return R * c
-}
-
-// Geocode an address using Mapbox Geocoding API
-async function geocodeAddress(
-  address: string,
-): Promise<{ lat: number; lng: number } | null> {
-  const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN
-  if (!token) return null
-
-  try {
-    const encoded = encodeURIComponent(address)
-    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encoded}.json?access_token=${token}&limit=1`
-    const res = await fetch(url)
-    if (!res.ok) return null
-
-    const data = (await res.json()) as {
-      features?: Array<{ center?: [number, number] }>
-    }
-    const coords = data.features?.[0]?.center
-    if (!coords || coords.length !== 2) return null
-
-    return { lng: coords[0], lat: coords[1] }
-  } catch {
-    return null
-  }
-}
-
-const ARRIVAL_THRESHOLD_METERS = 30 // ~100 feet
 
 export function AppointmentDetail({ appointmentId }: AppointmentDetailProps) {
   const router = useRouter()

@@ -11,6 +11,7 @@ import {
   CalendarDays,
   Thermometer,
   DollarSign,
+  Truck,
   X,
   AlertTriangle,
 } from 'lucide-react'
@@ -41,6 +42,8 @@ import {
   type Opening,
 } from '@/lib/ops/restoration-floor-plan'
 import { CustomerContact } from '@/components/ops/customer-contact'
+import { nextVisitAction, type VisitStatus } from '@/lib/ops/arrival'
+import { captureDateFor } from '@/lib/ops/exif-capture-date'
 import { StreetViewCard } from '@/components/ops/street-view-card'
 
 /**
@@ -643,6 +646,54 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
           ) : null}
         </div>
       </Card>
+
+      {activeVisit && !closed ? (
+        <Card className={SECTION_CARD}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className={SECTION_TITLE}>
+                <Truck className={SECTION_ICON} />
+                <span className="capitalize">{activeVisit.visit_type}</span> visit
+              </h2>
+              <p className="text-muted-foreground mt-1 text-sm">
+                {activeVisit.appointment_date} at {activeVisit.start_time.slice(0, 5)} ·{' '}
+                {activeVisit.status.replace(/_/g, ' ')}
+              </p>
+            </div>
+            {(() => {
+              const action = nextVisitAction(activeVisit.status as VisitStatus)
+              if (!action) return null
+              return (
+                <Button
+                  size="lg"
+                  className={ACTION_BUTTON}
+                  disabled={busy === 'visit-status'}
+                  onClick={() =>
+                    void call(
+                      `/api/admin/ops/appointments/${activeVisit.id}`,
+                      {
+                        method: 'PATCH',
+                        body: JSON.stringify({ status: action.status }),
+                      },
+                      'visit-status',
+                    )
+                  }
+                >
+                  {busy === 'visit-status' ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : null}
+                  {action.label}
+                </Button>
+              )
+            })()}
+          </div>
+          {activeVisit.status === 'booked' || activeVisit.status === 'confirmed' ? (
+            <p className="text-muted-foreground mt-2 text-xs">
+              On My Way texts the customer that you are heading over.
+            </p>
+          ) : null}
+        </Card>
+      ) : null}
 
       {/* ── Affected areas ─────────────────────────────────── */}
       {!closed ? (
@@ -1792,11 +1843,10 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                     form.append('image', file)
                     form.append('label', 'general')
                     form.append('restoration_phase', photoPhase)
-                    // The camera's own timestamp, so a bulk upload of an earlier
-                    // day still lands on the day the work actually happened.
-                    const capturedAt = file.lastModified
-                      ? new Date(file.lastModified)
-                      : null
+                    // EXIF DateTimeOriginal where the file carries it, falling
+                    // back to the filesystem timestamp. A backlog exported off a
+                    // phone often has the wrong file date but the right EXIF.
+                    const capturedAt = await captureDateFor(file)
                     if (capturedAt) {
                       form.append('captured_at', capturedAt.toISOString())
                     }
