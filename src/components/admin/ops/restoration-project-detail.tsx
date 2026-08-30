@@ -7,6 +7,11 @@ import {
   Camera,
   FileText,
   Ruler,
+  MapPin,
+  CalendarDays,
+  Thermometer,
+  DollarSign,
+  X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -157,6 +162,22 @@ const PHOTO_PHASES = [
   { value: 'demo', label: 'Demo' },
   { value: 'completion', label: 'Complete' },
 ]
+
+/**
+ * One accent system for the whole screen.
+ *
+ * Water losses are sky/teal throughout — the same colour as the calendar block —
+ * with amber reserved for a wet reading and green for one that has hit its dry
+ * standard. Semantic colour stays semantic: it never gets spent on decoration,
+ * so when something is amber on this screen it always means "not dry yet".
+ */
+const SECTION_CARD =
+  'border-border/60 bg-card/80 relative overflow-hidden p-5 before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-sky-500/70'
+const SECTION_TITLE = 'flex items-center gap-2 text-lg font-semibold'
+const SECTION_ICON = 'h-4 w-4 text-sky-600 dark:text-sky-400'
+const PANEL_HEAD =
+  'bg-sky-50 text-sky-900 dark:bg-sky-950/50 dark:text-sky-200 px-3 py-2 text-xs'
+const ACTION_BUTTON = 'bg-sky-600 text-white hover:bg-sky-500'
 
 const MATERIALS = [
   'Drywall',
@@ -330,6 +351,11 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
     return pins
   }, [detail])
 
+  const selectedPoint = useMemo(
+    () => detail?.reading_points.find((p) => p.id === selectedPointId) ?? null,
+    [detail, selectedPointId],
+  )
+
   const catalogResults = catalog
   const groupedCatalog = useMemo(() => {
     const map = new Map<string, CatalogItem[]>()
@@ -458,8 +484,8 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
       ) : null}
 
       {address ? (
-        <Card className="border-border/60 bg-card/80 p-5">
-          <h2 className="mb-2 text-lg font-semibold">Service address</h2>
+        <Card className={SECTION_CARD}>
+          <h2 className={`${SECTION_TITLE} mb-2`}><MapPin className={SECTION_ICON} /> Service address</h2>
           <p className="text-sm">
             {address.street_1}
             {address.street_2 ? `, ${address.street_2}` : ''}
@@ -477,8 +503,8 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
       <StreetViewCard address={address} />
 
       {/* ── Visits ─────────────────────────────────────────── */}
-      <Card className="border-border/60 bg-card/80 p-5">
-        <h2 className="mb-3 text-lg font-semibold">Visits</h2>
+      <Card className={SECTION_CARD}>
+        <h2 className={`${SECTION_TITLE} mb-3`}><CalendarDays className={SECTION_ICON} /> Visits</h2>
         <div className="flex flex-col gap-2">
           {detail.visits.map((visit) => (
             <button
@@ -513,9 +539,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
 
       {/* ── Affected areas ─────────────────────────────────── */}
       {!closed ? (
-        <Card className="border-border/60 bg-card/80 p-5">
-          <h2 className="mb-1 flex items-center gap-2 text-lg font-semibold">
-            <Ruler className="h-4 w-4" /> Affected areas
+        <Card className={SECTION_CARD}>
+          <h2 className={`${SECTION_TITLE} mb-1`}>
+            <Ruler className={SECTION_ICON} /> Affected areas
           </h2>
           <p className="text-muted-foreground mb-3 text-sm">
             Measure once. Square footage fills the line items, and the volume sizes the
@@ -664,13 +690,47 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 }
                 onPinClick={(pin) => {
                   if (pin.kind !== 'reading') return
-                  setSelectedPointId(pin.id)
-                  // Jump to the point's row so its history and entry box are
-                  // right there, rather than making Charles hunt for it.
-                  document
-                    .getElementById(`reading-point-${pin.id}`)
-                    ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                  setSelectedPointId((current) => (current === pin.id ? null : pin.id))
                 }}
+                pinEditor={
+                  selectedPoint ? (
+                    <MapPointEditor
+                      key={selectedPoint.id}
+                      point={selectedPoint}
+                      onClose={() => setSelectedPointId(null)}
+                      onSave={(patch) =>
+                        call(
+                          `/api/admin/ops/restoration/reading-points/${selectedPoint.id}`,
+                          { method: 'PATCH', body: JSON.stringify(patch) },
+                          `pt-${selectedPoint.id}`,
+                        )
+                      }
+                      onReading={(value) =>
+                        call(
+                          `/api/admin/ops/restoration/projects/${projectId}/readings`,
+                          {
+                            method: 'POST',
+                            body: JSON.stringify({
+                              kind: 'material',
+                              reading_point_id: selectedPoint.id,
+                              appointment_id: activeVisitId,
+                              value,
+                            }),
+                          },
+                          `read-${selectedPoint.id}`,
+                        )
+                      }
+                      onRemove={async () => {
+                        await call(
+                          `/api/admin/ops/restoration/reading-points/${selectedPoint.id}`,
+                          { method: 'DELETE' },
+                          `pt-${selectedPoint.id}`,
+                        )
+                        setSelectedPointId(null)
+                      }}
+                    />
+                  ) : null
+                }
                 onDrop={async ({ areaId, xFt, yFt }) => {
                   const tool = armedTool
                   if (!tool) return
@@ -772,10 +832,11 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
 
       {/* ── Work on this visit ─────────────────────────────── */}
       {activeVisit && !closed ? (
-        <Card className="border-border/60 bg-card/80 p-5">
+        <Card className={SECTION_CARD}>
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-lg font-semibold">
-              Work · <span className="capitalize">{activeVisit.visit_type}</span>
+            <h2 className={SECTION_TITLE}>
+              <Mic className={SECTION_ICON} /> Work ·{' '}
+              <span className="capitalize">{activeVisit.visit_type}</span>
             </h2>
             <span className="text-muted-foreground text-sm">
               {money(
@@ -801,10 +862,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             <div className="flex gap-2">
               <Button
                 size="sm"
-                variant="secondary"
+                className={`${ACTION_BUTTON} gap-2`}
                 disabled={busy === 'parse' || !transcript.trim()}
                 onClick={() => void runParse()}
-                className="gap-2"
               >
                 {busy === 'parse' ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -837,8 +897,8 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
 
             {proposed.length > 0 ? (
               <div className="border-border/60 mt-1 overflow-hidden rounded-md border">
-                <div className="bg-muted/40 flex items-center justify-between gap-2 px-3 py-2">
-                  <p className="text-muted-foreground text-xs">
+                <div className={`${PANEL_HEAD} flex items-center justify-between gap-2`}>
+                  <p className="text-xs">
                     Priced for Category {category}
                     {afterHours ? ', after hours' : ''}. Set a quantity and add.
                   </p>
@@ -907,7 +967,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
 
             {catalogOpen ? (
               <div className="border-border/60 max-h-80 overflow-hidden overflow-y-auto rounded-md border">
-                <div className="bg-muted/40 text-muted-foreground sticky top-0 px-3 py-2 text-xs">
+                <div className={`${PANEL_HEAD} sticky top-0`}>
                   {catalogQuery.trim()
                     ? `Matching "${catalogQuery.trim()}" · priced for Category ${category}${afterHours ? ', after hours' : ''}`
                     : `Priced for Category ${category}${afterHours ? ', after hours' : ''}. Pick a group.`}
@@ -1029,10 +1089,10 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
 
       {/* ── Equipment ──────────────────────────────────────── */}
       {!closed ? (
-        <Card className="border-border/60 bg-card/80 p-5">
+        <Card className={SECTION_CARD}>
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="flex items-center gap-2 text-lg font-semibold">
-              <Wind className="h-4 w-4" /> Equipment
+            <h2 className={SECTION_TITLE}>
+              <Wind className={SECTION_ICON} /> Equipment
             </h2>
             <span className="text-muted-foreground text-sm">
               {runningEquipment.length} running · {money(detail.totals.equipment)}
@@ -1045,7 +1105,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 key={equipment.code}
                 size="sm"
                 variant="outline"
-                className="gap-1"
+                className="gap-1 border-sky-500/40 text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-950/40"
                 disabled={busy === `place-${equipment.code}`}
                 onClick={() =>
                   void call(
@@ -1147,8 +1207,8 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
 
       {/* ── Reading points (placed on day 1, tapped on every visit) ── */}
       {!closed ? (
-        <Card className="border-border/60 bg-card/80 p-5">
-          <h2 className="mb-1 text-lg font-semibold">Moisture readings</h2>
+        <Card className={SECTION_CARD}>
+          <h2 className={`${SECTION_TITLE} mb-1`}><Droplets className={SECTION_ICON} /> Moisture readings</h2>
           <p className="text-muted-foreground mb-3 text-sm">
             Points are placed once and re-read on every monitor visit, so you can see a
             spot trending down — or stalling.
@@ -1316,7 +1376,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
               />
               <Button
                 size="sm"
-                variant="secondary"
+                className={ACTION_BUTTON}
                 disabled={busy === 'add-point' || !pointLabel.trim()}
                 onClick={async () => {
                   await call(
@@ -1344,8 +1404,8 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
 
       {/* ── Air + dehumidifier readings ────────────────────── */}
       {!closed && !isMitigation ? (
-        <Card className="border-border/60 bg-card/80 p-5">
-          <h2 className="mb-1 text-lg font-semibold">Air readings</h2>
+        <Card className={SECTION_CARD}>
+          <h2 className={`${SECTION_TITLE} mb-1`}><Thermometer className={SECTION_ICON} /> Air readings</h2>
           <p className="text-muted-foreground mb-3 text-sm">
             The unaffected reference is what proves the affected area is drying rather
             than the whole house being humid today.
@@ -1410,9 +1470,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
 
       {/* ── Photos ─────────────────────────────────────────── */}
       {activeVisitId && !closed ? (
-        <Card className="border-border/60 bg-card/80 p-5">
-          <h2 className="mb-1 flex items-center gap-2 text-lg font-semibold">
-            <Camera className="h-4 w-4" /> Photos
+        <Card className={SECTION_CARD}>
+          <h2 className={`${SECTION_TITLE} mb-1`}>
+            <Camera className={SECTION_ICON} /> Photos
           </h2>
           <p className="text-muted-foreground mb-3 text-sm">
             Pick the phase once, then shoot as many as you need — they all land tagged.
@@ -1520,8 +1580,8 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
       ) : null}
 
       {/* ── Money ──────────────────────────────────────────── */}
-      <Card className="border-border/60 bg-card/80 p-5">
-        <h2 className="mb-3 text-lg font-semibold">Money</h2>
+      <Card className={SECTION_CARD}>
+        <h2 className={`${SECTION_TITLE} mb-3`}><DollarSign className={SECTION_ICON} /> Money</h2>
         <div className="flex flex-col gap-1 text-sm">
           <div className="flex justify-between">
             <span className="text-muted-foreground">Work</span>
@@ -1531,9 +1591,11 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             <span className="text-muted-foreground">Equipment</span>
             <span>{money(detail.totals.equipment)}</span>
           </div>
-          <div className="flex justify-between border-t pt-1 font-semibold">
+          <div className="mt-1 flex justify-between border-t pt-2 text-base font-semibold">
             <span>Running total</span>
-            <span>{money(detail.totals.subtotal)}</span>
+            <span className="text-sky-700 tabular-nums dark:text-sky-300">
+              {money(detail.totals.subtotal)}
+            </span>
           </div>
           {detail.totals.paid_cents !== 0 ? (
             <>
@@ -1541,9 +1603,11 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 <span className="text-muted-foreground">Deposit taken</span>
                 <span>−{money(detail.totals.paid_cents / 100)}</span>
               </div>
-              <div className="flex justify-between font-semibold">
+              <div className="flex justify-between text-base font-semibold">
                 <span>Balance</span>
-                <span>{money(detail.totals.balance_cents / 100)}</span>
+                <span className="text-sky-700 tabular-nums dark:text-sky-300">
+                  {money(detail.totals.balance_cents / 100)}
+                </span>
               </div>
             </>
           ) : null}
@@ -1647,7 +1711,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
 
       {/* ── Close ──────────────────────────────────────────── */}
       {!closed && activeVisit && !isMitigation ? (
-        <Card className="border-border/60 bg-card/80 p-5">
+        <Card className={SECTION_CARD}>
           <h2 className="mb-1 text-lg font-semibold">Dry standard reached?</h2>
           <p className="text-muted-foreground mb-3 text-sm">
             Closing pulls all remaining equipment, cancels the monitor visits you no
@@ -1861,6 +1925,7 @@ function LineCandidateRow({
       />
       <Button
         size="sm"
+        className={ACTION_BUTTON}
         disabled={!(Number(quantity) > 0)}
         onClick={() => void onAdd(Number(quantity))}
       >
@@ -1872,5 +1937,134 @@ function LineCandidateRow({
         </button>
       ) : null}
     </div>
+  )
+}
+
+/**
+ * Editing a moisture point where it actually is, on the plan.
+ *
+ * The reading box is first and focused, because that is the thing being done
+ * ninety percent of the time: walk to the wall, hold the meter, type the number.
+ * Renaming the point or changing its material is right there for the times the
+ * point was dropped before it was known what it was measuring.
+ */
+function MapPointEditor({
+  point,
+  onSave,
+  onReading,
+  onRemove,
+  onClose,
+}: {
+  point: ReadingPoint
+  onSave: (patch: Record<string, unknown>) => void | Promise<unknown>
+  onReading: (value: number) => void | Promise<unknown>
+  onRemove: () => void | Promise<unknown>
+  onClose: () => void
+}) {
+  const [value, setValue] = useState('')
+  const [expanded, setExpanded] = useState(false)
+
+  const history = [...point.restoration_readings].sort(
+    (a, b) => new Date(a.taken_at).getTime() - new Date(b.taken_at).getTime(),
+  )
+  const latest = history[history.length - 1]
+  const atGoal =
+    point.dry_standard != null && latest != null && Number(latest.value) <= Number(point.dry_standard)
+
+  function submit() {
+    const numeric = Number(value)
+    if (!Number.isFinite(numeric) || value === '') return
+    void onReading(numeric)
+    setValue('')
+  }
+
+  return (
+    <Card className="border-sky-400/60 bg-card p-3 shadow-lg dark:border-sky-500/50">
+      <div className="mb-2 flex items-start justify-between gap-2">
+        <span className="min-w-0 text-sm font-medium">{point.label}</span>
+        <button type="button" aria-label="Close" onClick={onClose}>
+          <X className="text-muted-foreground h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <Input
+          autoFocus
+          className="h-10 flex-1 text-right text-base"
+          type="number"
+          step="any"
+          inputMode="decimal"
+          placeholder="reading %"
+          aria-label={`Reading for ${point.label}`}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') submit()
+          }}
+        />
+        <Button size="sm" className={ACTION_BUTTON} onClick={submit}>
+          Save
+        </Button>
+      </div>
+
+      <p className="text-muted-foreground mt-2 text-xs">
+        {history.length > 0 ? history.map((r) => `${r.value}%`).join(' → ') : 'no readings yet'}
+        {point.dry_standard != null ? ` · goal ${point.dry_standard}%` : ''}
+        {atGoal ? ' · dry' : ''}
+      </p>
+
+      {expanded ? (
+        <div className="mt-3 flex flex-col gap-2 border-t pt-3">
+          <Input
+            className="h-9"
+            defaultValue={point.label}
+            aria-label="Point name"
+            onBlur={(e) => {
+              const label = e.target.value.trim()
+              if (label && label !== point.label) void onSave({ label })
+            }}
+          />
+          <div className="flex gap-2">
+            <select
+              className="border-input bg-background h-9 flex-1 rounded-md border px-2 text-sm"
+              aria-label="Material"
+              value={point.material ?? ''}
+              onChange={(e) => void onSave({ material: e.target.value || null })}
+            >
+              {MATERIALS.map((material) => (
+                <option key={material} value={material}>
+                  {material}
+                </option>
+              ))}
+            </select>
+            <Input
+              className="h-9 w-24"
+              type="number"
+              step="any"
+              placeholder="goal %"
+              aria-label="Dry standard"
+              defaultValue={point.dry_standard ?? ''}
+              onBlur={(e) => void onSave({ dry_standard: e.target.value })}
+            />
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-muted-foreground justify-start"
+            onClick={() => void onRemove()}
+          >
+            <Trash2 className="mr-1 h-4 w-4" /> Remove point
+          </Button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          className="text-muted-foreground mt-2 text-xs underline"
+          onClick={() => setExpanded(true)}
+        >
+          Rename, material, goal
+        </button>
+      )}
+    </Card>
   )
 }

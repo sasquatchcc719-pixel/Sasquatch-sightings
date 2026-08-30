@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import {
   boundsOf,
   layoutFloorPlan,
@@ -42,6 +42,12 @@ type FloorPlanProps = {
   openings?: Opening[]
   armed?: { kind: 'equipment' | 'reading'; label: string } | null
   selectedPinId?: string | null
+  /**
+   * Editor for the selected pin, floated next to it on the plan. Editing has to
+   * happen ON the map: standing in a flooded house you want to tap the point you
+   * are holding the meter against and type the number, not hunt down a list.
+   */
+  pinEditor?: ReactNode
   onDrop?: (position: { areaId: string; xFt: number; yFt: number }) => void
   onPinClick?: (pin: PlanPin) => void
   onMoveRoom?: (areaId: string, x: number, y: number) => void
@@ -53,6 +59,7 @@ export function FloorPlan({
   openings = [],
   armed,
   selectedPinId,
+  pinEditor,
   onDrop,
   onPinClick,
   onMoveRoom,
@@ -70,7 +77,10 @@ export function FloorPlan({
 
   // Leave room on the right and below so a dragged room is never clipped.
   const scale = width > 0 && layout.widthFt > 0 ? width / (layout.widthFt + 6) : 0
-  const heightPx = scale > 0 ? Math.max(180, (layout.heightFt + 6) * scale) : 180
+  const heightPx =
+    scale > 0
+      ? Math.max(220, (layout.heightFt + 6) * scale + (pinEditor ? 70 : 0))
+      : 220
 
   if (rooms.length === 0) {
     return (
@@ -82,6 +92,14 @@ export function FloorPlan({
 
   const positionOf = (roomId: string, fallbackX: number, fallbackY: number) =>
     dragging?.id === roomId ? { x: dragging.x, y: dragging.y } : { x: fallbackX, y: fallbackY }
+
+  const selectedPin = pins.find((pin) => pin.id === selectedPinId) ?? null
+  const selectedPinRoom = selectedPin
+    ? (layout.rooms.find((room) => room.id === selectedPin.areaId) ?? null)
+    : null
+  const selectedPinBase = selectedPinRoom
+    ? positionOf(selectedPinRoom.id, selectedPinRoom.x, selectedPinRoom.y)
+    : { x: 0, y: 0 }
 
   return (
     <div
@@ -206,6 +224,24 @@ export function FloorPlan({
             )
           })
         : null}
+
+      {scale > 0 && pinEditor && selectedPin ? (
+        <div
+          className="absolute z-20 w-64 max-w-[calc(100%-1rem)]"
+          style={{
+            // Nudged away from the edges so the editor never opens off-screen.
+            left: Math.min(
+              Math.max(8, (selectedPinBase.x + (selectedPin.xFt ?? 0)) * scale + 16),
+              Math.max(8, width - 264),
+            ),
+            top: Math.max(8, (selectedPinBase.y + (selectedPin.yFt ?? 0)) * scale - 8),
+          }}
+          onClick={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          {pinEditor}
+        </div>
+      ) : null}
 
       {scale > 0
         ? pins
