@@ -770,3 +770,49 @@ still passing.
 **Lesson for future work here:** seeding a row in this database can reach the outside
 world. Before writing a test that inserts into a production table, check
 `pg_trigger` for that table.
+
+
+---
+
+## Status — pass 9 (2026-08-30): manual entry and the plan
+
+### Manual line entry, made first-class (Charles asked for this explicitly)
+Dictation cannot be the only way in — it fails on unusual phrasing, in a basement with
+no signal, and when Charles simply wants to see what is available. The old picker only
+appeared once you typed, which is useless for browsing: search only works if you already
+know the word.
+
+- Items are now **grouped by kind of work** — Extraction, Carpet & pad, Drywall/trim &
+  insulation, Treatment & cleanup, Equipment, Containment & safety, Service calls &
+  labor. Grouping is derived from the Xactimate **code stem**, because codes are
+  systematic and the abbreviated descriptions are not.
+- "Browse all items" opens the grouped list with no typing; typing switches to a flat
+  search list.
+- Every row has its own quantity box, **pre-filled from what was measured** — area for
+  square-foot work, perimeter for linear-foot work — so the common case is one tap.
+
+### The plan (the map)
+- `src/lib/ops/restoration-floor-plan.ts` — deterministic shelf-packing layout that
+  turns measured length x width into placed rectangles, plus hit-testing and
+  pixel-to-feet conversion. 9 unit tests, including that the layout is stable (a pin
+  dropped yesterday is still in the same room today) and that a zero dimension falls back
+  rather than collapsing.
+- `src/components/ops/floor-plan.tsx` — draws the rooms from the dimensions already
+  entered, so **nobody has to draw anything**. Arm a tool (air mover, dehu, air scrubber,
+  or a reading point) and tap inside a room to drop it there.
+- Equipment pins are blue; reading points are amber showing their latest value, turning
+  green once at or below the dry standard. So a stalled spot is visible at a glance.
+- Verified by rendering a three-room plan with pins in a browser and looking at it:
+  layout, wrapping, scale (12.37 px/ft) and pin colouring all correct.
+
+### Known limitations of the plan
+- Rooms are rectangles auto-arranged in a strip — it is a schematic, not a true floor
+  plan. It is enough to say *which room* and *roughly where*, which is what readings and
+  equipment need.
+- Equipment placed via the bulk "Place this equipment" button has no coordinates, so it
+  bills correctly but does not appear as a pin until placed by tapping.
+- A pin keeps its coordinates if its room is later resized or deleted, so it can end up
+  drawn outside a room. It stays visible and clickable rather than disappearing.
+
+### Verified
+576 tests pass, typecheck clean, lint clean, `next build` exit 0.

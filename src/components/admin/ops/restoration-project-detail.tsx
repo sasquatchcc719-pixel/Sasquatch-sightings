@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge'
 import { DirectionsButtons } from '@/components/ops/directions-buttons'
 import { buildDryingPlan } from '@/lib/ops/restoration-drying-plan'
 import { GROUP_ORDER } from '@/lib/ops/restoration-catalog-groups'
+import { FloorPlan, type PlanPin } from '@/components/ops/floor-plan'
 import { StreetViewCard } from '@/components/ops/street-view-card'
 
 /**
@@ -54,6 +55,9 @@ type ReadingPoint = {
   label: string
   material: string | null
   dry_standard: number | null
+  map_x: number | null
+  map_y: number | null
+  area_id: string | null
   restoration_readings: Array<{ id: string; value: number; taken_at: string }>
 }
 
@@ -75,7 +79,15 @@ type Detail = {
   }
   visits: Visit[]
   queue: Array<{ id: string; visit_type: string; visit_sequence: number | null; status: string }>
-  equipment: Array<{ id: string; catalog_code: string; placed_at: string; removed_at: string | null }>
+  equipment: Array<{
+    id: string
+    catalog_code: string
+    placed_at: string
+    removed_at: string | null
+    area_id: string | null
+    map_x: number | null
+    map_y: number | null
+  }>
   equipment_billing: Array<{
     catalog_code: string; description: string; unit_price: number
     units: number; unit_days: number; line_total: number
@@ -87,6 +99,7 @@ type Detail = {
     affected_sqft: number | null
     wall_linear_ft: number | null
     ceiling_height_ft: number | null
+    geometry: { length_ft?: number; width_ft?: number } | null
   }>
   payments: Array<{ id: string; kind: string; method: string; amount_cents: number }>
   photos: Array<{
@@ -153,6 +166,10 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
   const [catalogQuery, setCatalogQuery] = useState('')
   const [catalogOpen, setCatalogOpen] = useState(false)
   const [openGroup, setOpenGroup] = useState<string | null>(null)
+
+  const [armedTool, setArmedTool] = useState<
+    { kind: 'equipment' | 'reading'; label: string; code?: string } | null
+  >(null)
 
   const [areaName, setAreaName] = useState('')
   const [areaLength, setAreaLength] = useState('')
@@ -238,6 +255,52 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
       ),
     [detail],
   )
+  const planRooms = useMemo(
+    () =>
+      (detail?.areas ?? []).map((area) => ({
+        id: area.id,
+        name: area.name,
+        lengthFt: Number(area.geometry?.length_ft ?? 0),
+        widthFt: Number(area.geometry?.width_ft ?? 0),
+      })),
+    [detail],
+  )
+
+  const planPins = useMemo<PlanPin[]>(() => {
+    const pins: PlanPin[] = []
+    for (const placement of detail?.equipment ?? []) {
+      pins.push({
+        id: placement.id,
+        kind: 'equipment',
+        label: placement.catalog_code,
+        areaId: placement.area_id ?? null,
+        xFt: placement.map_x,
+        yFt: placement.map_y,
+        removed: Boolean(placement.removed_at),
+      })
+    }
+    for (const point of detail?.reading_points ?? []) {
+      const history = [...point.restoration_readings].sort(
+        (a, b) => new Date(a.taken_at).getTime() - new Date(b.taken_at).getTime(),
+      )
+      const latest = history[history.length - 1]
+      pins.push({
+        id: point.id,
+        kind: 'reading',
+        label: point.label,
+        areaId: point.area_id,
+        xFt: point.map_x,
+        yFt: point.map_y,
+        value: latest ? Number(latest.value) : null,
+        atGoal:
+          point.dry_standard != null &&
+          latest != null &&
+          Number(latest.value) <= Number(point.dry_standard),
+      })
+    }
+    return pins
+  }, [detail])
+
   const catalogResults = catalog
   const groupedCatalog = useMemo(() => {
     const map = new Map<string, CatalogItem[]>()
@@ -521,6 +584,100 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
               <Plus className="h-4 w-4" /> Add
             </Button>
           </div>
+
+          {planRooms.length > 0 ? (
+            <div className="mt-4">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <Label className="text-sm">Plan</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {armedTool ? (
+                    <button
+                      type="button"
+                      className="rounded-full bg-sky-600 px-3 py-1 text-xs font-semibold text-white"
+                      onClick={() => setArmedTool(null)}
+                    >
+                      Placing {armedTool.label} — tap a room (cancel)
+                    </button>
+                  ) : (
+                    <>
+                      {EQUIPMENT_CODES.slice(0, 4).map((equipment) => (
+                        <button
+                          key={equipment.code}
+                          type="button"
+                          className="border-border/60 hover:bg-muted/60 rounded-full border px-2.5 py-1 text-xs"
+                          onClick={() =>
+                            setArmedTool({
+                              kind: 'equipment',
+                              label: equipment.label,
+                              code: equipment.code,
+                            })
+                          }
+                        >
+                          + {equipment.label}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        className="rounded-full border border-amber-400 px-2.5 py-1 text-xs text-amber-700 hover:bg-amber-50"
+                        onClick={() =>
+                          setArmedTool({ kind: 'reading', label: 'reading point' })
+                        }
+                      >
+                        + Reading point
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <FloorPlan
+                rooms={planRooms}
+                pins={planPins}
+                armed={armedTool}
+                onDrop={async ({ areaId, xFt, yFt }) => {
+                  const tool = armedTool
+                  if (!tool) return
+                  setArmedTool(null)
+                  if (tool.kind === 'equipment' && tool.code) {
+                    await call(
+                      `/api/admin/ops/restoration/projects/${projectId}/equipment`,
+                      {
+                        method: 'POST',
+                        body: JSON.stringify({
+                          catalog_code: tool.code,
+                          count: 1,
+                          area_id: areaId,
+                          map_x: xFt,
+                          map_y: yFt,
+                        }),
+                      },
+                      'place-pin',
+                    )
+                  } else {
+                    const area = detail.areas.find((a) => a.id === areaId)
+                    await call(
+                      `/api/admin/ops/restoration/projects/${projectId}/readings`,
+                      {
+                        method: 'PUT',
+                        body: JSON.stringify({
+                          label: `${area?.name ?? 'Room'} point`,
+                          material: 'Drywall',
+                          area_id: areaId,
+                          map_x: xFt,
+                          map_y: yFt,
+                        }),
+                      },
+                      'place-pin',
+                    )
+                  }
+                }}
+              />
+              <p className="text-muted-foreground mt-1 text-xs">
+                Blue is equipment, amber is a moisture point showing its latest reading —
+                green once it hits the dry standard.
+              </p>
+            </div>
+          ) : null}
 
           {dryingPlan.totalAffectedSqft > 0 ? (
             <div className="mt-4 rounded-lg border border-sky-200 bg-sky-50/70 p-3 text-sm">

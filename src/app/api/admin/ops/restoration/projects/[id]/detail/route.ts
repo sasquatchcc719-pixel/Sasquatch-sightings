@@ -61,12 +61,12 @@ export async function GET(
         .order('visit_sequence'),
       supabase
         .from('restoration_equipment_placements')
-        .select('id, catalog_code, label, placed_at, removed_at, area_id')
+        .select('id, catalog_code, label, placed_at, removed_at, area_id, map_x, map_y')
         .eq('project_id', id)
         .order('placed_at'),
       supabase
         .from('restoration_areas')
-        .select('id, name, floor_sqft, affected_sqft, wall_linear_ft, ceiling_height_ft')
+        .select('id, name, floor_sqft, affected_sqft, wall_linear_ft, ceiling_height_ft, geometry')
         .eq('project_id', id)
         .order('sort_order')
         .order('created_at'),
