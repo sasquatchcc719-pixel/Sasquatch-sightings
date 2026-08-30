@@ -19,6 +19,7 @@ import {
   ShieldBan,
   Truck,
   UserRoundCog,
+  Droplets,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -30,6 +31,13 @@ import { getCalendarPopupPosition } from '@/lib/ops/calendar-popup-position'
 import { appointmentDisplayRevenue } from '@/lib/ops/utilization-metrics'
 
 type ScheduleView = 'week' | 'day' | 'month'
+
+type QueuedVisit = {
+  id: string
+  label: string
+  visitType: string
+  sequence: number | null
+}
 
 type StaffMember = {
   id: string
@@ -86,8 +94,10 @@ type Appointment = {
       }[]
     | null
   recurring_template_id?: string | null
-  kind?: 'service' | 'estimate' | null
+  kind?: 'service' | 'estimate' | 'restoration' | null
   estimate_status?: string | null
+  visit_type?: 'mitigation' | 'monitor' | 'final' | null
+  restoration_project_id?: string | null
   is_subcontracted?: boolean | null
   subcontractor_name?: string | null
   ops_appointment_line_items: Array<{
@@ -506,6 +516,15 @@ function getEstimateTone(appointment: Appointment): string {
   return 'border-amber-400 bg-amber-100 text-slate-800'
 }
 
+// Water losses read sky blue so a mitigation day is instantly distinguishable
+// from a cleaning job. Monitor visits are lighter — a short readings stop, not
+// a day's work.
+function getRestorationTone(appointment: Appointment): string {
+  return appointment.visit_type === 'mitigation'
+    ? 'border-sky-500 bg-sky-100 text-slate-800'
+    : 'border-sky-300 bg-sky-50 text-slate-700'
+}
+
 function intersectsDay(event: CalendarEvent, dateKey: string): boolean {
   return event.start_date <= dateKey && event.end_date >= dateKey
 }
@@ -898,6 +917,48 @@ export function OperationsSchedule() {
     assigned_staff_user_id: null,
   })
 
+  // ── Unscheduled restoration visits (the tray) ──────────────────────
+  // Monitor visits are never auto-dropped onto the calendar: they have to be
+  // fitted around cleaning work. On a phone, dragging can only ever reach the
+  // day already on screen, so a card is ARMED by tapping it and then placed by
+  // tapping a slot — which works across days, weeks, and month view.
+  const [queuedVisits, setQueuedVisits] = useState<QueuedVisit[]>([])
+  const [armedVisit, setArmedVisit] = useState<QueuedVisit | null>(null)
+
+  const loadQueuedVisits = useCallback(async () => {
+    try {
+      const response = await fetch('/api/admin/ops/restoration/projects', {
+        cache: 'no-store',
+      })
+      if (!response.ok) return
+      const result = await response.json()
+      const rows: QueuedVisit[] = []
+      for (const project of result.projects ?? []) {
+        if (project.status !== 'active') continue
+        const customer = Array.isArray(project.ops_customers)
+          ? project.ops_customers[0]
+          : project.ops_customers
+        for (const queued of project.restoration_visit_queue ?? []) {
+          if (queued.status !== 'queued') continue
+          rows.push({
+            id: queued.id,
+            label: customer?.business_name || customer?.full_name || 'Water loss',
+            visitType: queued.visit_type,
+            sequence: queued.visit_sequence,
+          })
+        }
+      }
+      rows.sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0))
+      setQueuedVisits(rows)
+    } catch {
+      // The tray is additive — a failure here must not break the calendar.
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadQueuedVisits()
+  }, [loadQueuedVisits])
+
   const loadSchedule = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -953,6 +1014,53 @@ export function OperationsSchedule() {
       setLoading(false)
     }
   }, [anchorDate, view])
+
+  const placeArmedVisit = useCallback(
+    async (dateKey: string, hour: number, staffId: string | null) => {
+      if (!armedVisit) return
+      const visit = armedVisit
+      setArmedVisit(null)
+      try {
+        const response = await fetch(
+          `/api/admin/ops/restoration/queue/${visit.id}/schedule`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              appointment_date: dateKey,
+              start_time: `${String(hour).padStart(2, '0')}:00`,
+              assigned_staff_user_id: staffId,
+            }),
+          },
+        )
+        if (!response.ok) {
+          const result = await response.json().catch(() => ({}))
+          setError(result.error || 'Could not place that visit')
+          setArmedVisit(visit)
+          return
+        }
+        await Promise.all([loadSchedule(), loadQueuedVisits()])
+      } catch {
+        setError('Could not place that visit')
+        setArmedVisit(visit)
+      }
+    },
+    [armedVisit, loadQueuedVisits, loadSchedule],
+  )
+
+  /** An armed tray card claims the tap; otherwise the normal create menu opens. */
+  const handleCellTap = (
+    dateKey: string,
+    hour: number,
+    e: React.MouseEvent,
+    staffId: string | null,
+  ) => {
+    if (armedVisit) {
+      void placeArmedVisit(dateKey, hour, staffId)
+      return
+    }
+    setCellMenu({ dateKey, hour, x: e.clientX, y: e.clientY, staffId })
+  }
 
   useEffect(() => {
     void loadSchedule()
@@ -2108,7 +2216,10 @@ export function OperationsSchedule() {
           : null
       const placement = getAppointmentPlacement(appointment, endOverride)
       const isEstimate = appointment.kind === 'estimate'
-      const href = isEstimate
+      const isRestoration = appointment.kind === 'restoration'
+      const href = isRestoration
+        ? `/admin/operations/restoration/${appointment.restoration_project_id}`
+        : isEstimate
         ? `/admin/operations/estimates/${appointment.id}`
         : invoice?.id
           ? `/admin/operations/invoices/${invoice.id}`
@@ -2117,7 +2228,9 @@ export function OperationsSchedule() {
             : `/admin/operations/appointments/${appointment.id}`
       const isDragging = draggingAppointment?.id === appointment.id
       const oc = overlapCols.get(appointment.id) ?? { col: 0, totalCols: 1 }
-      const blockTone = isEstimate
+      const blockTone = isRestoration
+        ? getRestorationTone(appointment)
+        : isEstimate
         ? getEstimateTone(appointment)
         : appointment.status === 'completed' ||
             appointment.status === 'cancelled'
@@ -2611,6 +2724,12 @@ export function OperationsSchedule() {
               Book Job
             </Link>
           </Button>
+          <Button asChild variant="outline" className="h-11 gap-2 rounded-xl px-4 font-semibold">
+            <Link href="/admin/operations/restoration/new">
+              <Droplets className="h-5 w-5 text-sky-600" />
+              Water Loss
+            </Link>
+          </Button>
           <Button
             size="icon"
             variant="outline"
@@ -2623,6 +2742,55 @@ export function OperationsSchedule() {
             )}
           </Button>
         </div>
+
+        {queuedVisits.length > 0 ? (
+          <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50/70 p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-xs font-semibold tracking-wide text-sky-900 uppercase">
+                Unscheduled monitor visits
+              </p>
+              {armedVisit ? (
+                <button
+                  type="button"
+                  className="text-xs font-medium text-sky-800 underline"
+                  onClick={() => setArmedVisit(null)}
+                >
+                  Cancel
+                </button>
+              ) : null}
+            </div>
+            {armedVisit ? (
+              <p className="mb-2 rounded-lg bg-sky-600 px-3 py-2 text-sm font-semibold text-white">
+                Placing: {armedVisit.label} · {armedVisit.visitType}
+                {armedVisit.sequence ? ` ${armedVisit.sequence}` : ''} — tap a slot
+              </p>
+            ) : null}
+            <div className="flex flex-wrap gap-2">
+              {queuedVisits.map((visit) => (
+                <button
+                  key={visit.id}
+                  type="button"
+                  onClick={() =>
+                    setArmedVisit((current) =>
+                      current?.id === visit.id ? null : visit,
+                    )
+                  }
+                  className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
+                    armedVisit?.id === visit.id
+                      ? 'border-sky-600 bg-sky-600 text-white'
+                      : 'border-sky-300 bg-white text-slate-800 hover:bg-sky-100'
+                  }`}
+                >
+                  <span className="font-medium">{visit.label}</span>
+                  <span className="block text-xs opacity-80">
+                    {visit.visitType}
+                    {visit.sequence ? ` ${visit.sequence}` : ''} · 1 hr
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         {/* Row 2: tappable date label that opens a mini month calendar */}
         <div className="relative mt-3">
@@ -3819,13 +3987,7 @@ export function OperationsSchedule() {
                                   className="focus-visible:ring-ring relative z-0 block w-full border-b border-slate-200 text-left transition hover:bg-emerald-50/60 focus-visible:ring-2 focus-visible:outline-none"
                                   style={{ height: HOUR_HEIGHT }}
                                   onClick={(e) => {
-                                    setCellMenu({
-                                      dateKey,
-                                      hour,
-                                      x: e.clientX,
-                                      y: e.clientY,
-                                      staffId: staff.id,
-                                    })
+                                    handleCellTap(dateKey, hour, e, staff.id)
                                   }}
                                   title={`Create at ${String(hour).padStart(2, '0')}:00`}
                                   aria-label={`Create on ${dateKey} at ${String(hour).padStart(2, '0')}:00`}
@@ -4041,13 +4203,7 @@ export function OperationsSchedule() {
                                           className="focus-visible:ring-ring relative z-0 block w-full border-b border-slate-200 text-left transition hover:bg-emerald-50/60 focus-visible:ring-2 focus-visible:outline-none"
                                           style={{ height: HOUR_HEIGHT }}
                                           onClick={(e) => {
-                                            setCellMenu({
-                                              dateKey,
-                                              hour,
-                                              x: e.clientX,
-                                              y: e.clientY,
-                                              staffId: staff.id,
-                                            })
+                                            handleCellTap(dateKey, hour, e, staff.id)
                                           }}
                                           title={`Create at ${String(hour).padStart(2, '0')}:00`}
                                           aria-label={`Create on ${dateKey} at ${String(hour).padStart(2, '0')}:00`}
@@ -4268,12 +4424,7 @@ export function OperationsSchedule() {
                                     className="focus-visible:ring-ring relative z-0 block w-full border-b border-slate-200 text-left transition hover:bg-emerald-50/60 focus-visible:ring-2 focus-visible:outline-none"
                                     style={{ height: HOUR_HEIGHT }}
                                     onClick={(e) => {
-                                      setCellMenu({
-                                        dateKey,
-                                        hour,
-                                        x: e.clientX,
-                                        y: e.clientY,
-                                      })
+                                      handleCellTap(dateKey, hour, e, null)
                                     }}
                                     title={`Create at ${String(hour).padStart(2, '0')}:00`}
                                     aria-label={`Create on ${dateKey} at ${String(hour).padStart(2, '0')}:00`}

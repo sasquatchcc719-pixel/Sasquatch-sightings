@@ -546,3 +546,61 @@ that actually must not diverge is the URLs.
 Customer panel (info + call/text), the visit status bar (On My Way / Arrived / Start,
 with GPS arrival detection), and the line-items editor. These are larger and carry
 state, so they come next.
+
+
+---
+
+## Status — pass 4 (2026-08-30): the screens exist
+
+### DONE — there is now something to open
+- **`/admin/operations/restoration/new`** — start a water loss. Customer lookup,
+  source of loss (which PRE-SELECTS the category and stays overridable), category,
+  standing water, after-hours (defaults from the clock), narrative, mitigation day and
+  duration, and how many monitor visits to queue. Shows the live emergency service fee
+  ($197.29 / $295.92) rather than asking for an estimate.
+- **`/admin/operations/restoration/[id]`** — the project screen.
+  - Customer header with call/text, service address, **reuses `DirectionsButtons` and
+    `StreetViewCard`** rather than copying them.
+  - Visit switcher; the tray count is shown when monitor visits are still unplaced.
+  - **Voice / shorthand entry**: type or dictate, "Read it", review the proposed lines
+    with code, unit and price, drop any that are wrong, then add them in one tap.
+  - Catalog search as the fallback for finding a single item.
+  - Line items with editable quantities (quantity only — price is server-resolved).
+  - Equipment: one tap per unit to place, one tap to pull, with live unit-day billing.
+  - Readings on monitor days: type a value, press Enter, history shown as 24 -> 19 -> 14.
+  - Money: work + equipment + running total, deposit credit, balance.
+  - **Close from a monitor visit only.** Day 1 shows "Nothing is dry on day one" instead.
+- **Calendar integration** (`operations-schedule.tsx`)
+  - **"Water Loss" button** beside Book Job.
+  - Restoration visits render sky blue (mitigation darker than monitor) and link to the
+    project screen rather than the invoice screen.
+  - **The unscheduled tray**, above the calendar: tap a card to ARM it, a sticky bar
+    says "Placing: <customer> · monitor 2 — tap a slot", then tap any empty slot to
+    place it. Works in day, week, and month view, which is why this beats drag on a
+    phone: a drag can only ever reach the day already on screen.
+
+### Verified
+- Full suite **548 passed**, typecheck clean, eslint clean on all touched files.
+- **`next build` exit 0**; both screens and all eight restoration API routes present.
+
+### Note on how this pass went
+The first attempt at inserting the tray put it inside the toolbar's flex row and then a
+second edit corrupted the JSX. The file was reverted to its committed state and all ten
+edits re-applied in a single scripted pass with assertions on each match. Worth
+remembering for a 4,400-line component: batch the edits and assert, do not nudge.
+
+### Still to build
+1. Component extraction of the customer panel, visit status bar (On My Way / GPS
+   arrival), and the line-items editor — only the address/map pieces are shared so far.
+2. The map: draw areas, derive square footage and ceiling volume, place equipment and
+   reading points spatially.
+3. Photo phase/room tagging UI and the EXIF bulk backfill for the Jill photo set.
+4. Air and dehumidifier reading entry (the API accepts them; no UI yet).
+5. Reading points are created by API only — no UI to place them yet, so the readings
+   panel stays empty until the map lands.
+6. Square Tap to Pay deep link for the deposit (currently records the payment only).
+7. The final drying report.
+
+### Reminder
+**Do not migrate the Jill job** until the whole feature is finished — Charles's
+instruction on 2026-08-30.
