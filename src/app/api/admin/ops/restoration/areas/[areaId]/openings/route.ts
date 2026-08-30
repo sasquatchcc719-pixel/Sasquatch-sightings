@@ -20,9 +20,11 @@ export async function POST(
       return NextResponse.json({ error: 'unknown opening kind' }, { status: 400 })
     }
 
-    const wallIndex = Number(body.wall_index)
-    if (!Number.isInteger(wallIndex) || wallIndex < 0) {
-      return NextResponse.json({ error: 'wall_index is required' }, { status: 400 })
+    // Openings host on a WALL now. The old room-edge index drifted whenever a
+    // room shape changed, which is why doors ended up mid-room.
+    const wallId = body.wall_id ? String(body.wall_id) : null
+    if (!wallId) {
+      return NextResponse.json({ error: 'wall_id is required' }, { status: 400 })
     }
 
     const offsetFt = Number(body.offset_ft ?? 0)
@@ -31,14 +33,15 @@ export async function POST(
     const { data, error } = await supabase
       .from('restoration_area_openings')
       .insert({
-        area_id: areaId,
+        area_id: areaId === 'none' ? null : areaId,
+        wall_id: wallId,
         kind,
-        wall_index: wallIndex,
+        wall_index: 0,
         offset_ft: Number.isFinite(offsetFt) ? Math.max(0, offsetFt) : 0,
         width_ft: Number.isFinite(widthFt) && widthFt > 0 ? widthFt : 3,
         connects_area_id: body.connects_area_id ?? null,
       })
-      .select('id, area_id, kind, wall_index, offset_ft, width_ft, connects_area_id')
+      .select('id, area_id, wall_id, kind, offset_ft, width_ft, connects_area_id')
       .single()
 
     if (error) throw error

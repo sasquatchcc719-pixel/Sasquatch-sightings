@@ -32,15 +32,8 @@ import {
   type LossClass,
 } from '@/lib/ops/restoration-drying-plan'
 import { GROUP_ORDER } from '@/lib/ops/restoration-catalog-groups'
-import { FloorPlan, type PlanPin } from '@/components/ops/floor-plan'
-import {
-  moveCorner,
-  polygonAreaSqft,
-  polygonPerimeterFt,
-  rectanglePoints,
-  splitWall,
-  type Opening,
-} from '@/lib/ops/restoration-floor-plan'
+import { WallPlan, type PlanPin, type WallPlanTool } from '@/components/ops/wall-plan'
+import type { PlanNode, PlanWall, WallOpening } from '@/lib/ops/restoration-walls'
 import { CustomerContact } from '@/components/ops/customer-contact'
 import { LineCandidateRow } from '@/components/ops/line-candidate-row'
 import { nextVisitAction, type VisitStatus } from '@/lib/ops/arrival'
@@ -247,7 +240,12 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
   const [catalogOpen, setCatalogOpen] = useState(false)
   const [openGroup, setOpenGroup] = useState<string | null>(null)
 
-  const [planMode, setPlanMode] = useState<'move' | 'shape' | 'doorway'>('move')
+  const [planTool, setPlanTool] = useState<WallPlanTool>('wall')
+  const [planData, setPlanData] = useState<{
+    nodes: PlanNode[]
+    walls: PlanWall[]
+    openings: WallOpening[]
+  }>({ nodes: [], walls: [], openings: [] })
   const [airflowDensity, setAirflowDensity] = useState<AirflowDensity>('normal')
   const [selectedPointId, setSelectedPointId] = useState<string | null>(null)
   const [armedTool, setArmedTool] = useState<
@@ -293,9 +291,48 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
     }
   }, [projectId])
 
+  const loadPlan = useCallback(async () => {
+    try {
+      const response = await fetch(
+        `/api/admin/ops/restoration/projects/${projectId}/walls`,
+        { cache: 'no-store' },
+      )
+      if (!response.ok) return
+      const result = await response.json()
+      setPlanData({
+        nodes: (result.nodes ?? []).map((n: { id: string; x: string; y: string }) => ({
+          id: n.id,
+          x: Number(n.x),
+          y: Number(n.y),
+        })),
+        walls: (result.walls ?? []).map(
+          (w: { id: string; start_node_id: string; end_node_id: string; is_partial_height: boolean; label: string | null }) => ({
+            id: w.id,
+            startNodeId: w.start_node_id,
+            endNodeId: w.end_node_id,
+            isPartialHeight: w.is_partial_height,
+            label: w.label,
+          }),
+        ),
+        openings: (result.openings ?? []).map(
+          (o: { id: string; wall_id: string; kind: string; offset_ft: string; width_ft: string }) => ({
+            id: o.id,
+            wallId: o.wall_id,
+            kind: o.kind as WallOpening['kind'],
+            offsetFt: Number(o.offset_ft),
+            widthFt: Number(o.width_ft),
+          }),
+        ),
+      })
+    } catch {
+      // The plan is additive; a failure must not break the screen.
+    }
+  }, [projectId])
+
   useEffect(() => {
     void load()
-  }, [load])
+    void loadPlan()
+  }, [load, loadPlan])
 
   const project = detail?.project
   const category = project?.water_category ?? 1
@@ -346,33 +383,6 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
       ),
     [detail, airflowDensity],
   )
-  const planRooms = useMemo(
-    () =>
-      (detail?.areas ?? []).map((area) => ({
-        id: area.id,
-        name: area.name,
-        lengthFt: Number(area.geometry?.length_ft ?? 0),
-        widthFt: Number(area.geometry?.width_ft ?? 0),
-        planX: area.plan_x,
-        planY: area.plan_y,
-        points: area.points,
-      })),
-    [detail],
-  )
-
-  const planOpenings = useMemo<Opening[]>(
-    () =>
-      (detail?.openings ?? []).map((o) => ({
-        id: o.id,
-        areaId: o.area_id,
-        kind: o.kind as Opening['kind'],
-        wallIndex: o.wall_index,
-        offsetFt: Number(o.offset_ft),
-        widthFt: Number(o.width_ft),
-      })),
-    [detail],
-  )
-
   const planPins = useMemo<PlanPin[]>(() => {
     const pins: PlanPin[] = []
     for (const placement of detail?.equipment ?? []) {
@@ -380,7 +390,6 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
         id: placement.id,
         kind: 'equipment',
         label: placement.catalog_code,
-        areaId: placement.area_id ?? null,
         xFt: placement.map_x,
         yFt: placement.map_y,
         removed: Boolean(placement.removed_at),
@@ -395,7 +404,6 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
         id: point.id,
         kind: 'reading',
         label: point.label,
-        areaId: point.area_id,
         xFt: point.map_x,
         yFt: point.map_y,
         value: latest ? Number(latest.value) : null,
@@ -790,31 +798,39 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             </Button>
           </div>
 
-          {planRooms.length > 0 ? (
-            <div className="mt-4">
-              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <Label className="text-sm">Plan</Label>
-                  <div className="border-border/60 flex rounded-md border p-0.5">
-                    {(['move', 'shape', 'doorway'] as const).map((m) => (
-                      <button
-                        key={m}
-                        type="button"
-                        onClick={() => {
-                          setPlanMode(m)
-                          setArmedTool(null)
-                        }}
-                        className={`rounded px-2 py-1 text-xs capitalize ${
-                          planMode === m
-                            ? 'bg-sky-600 text-white'
-                            : 'text-muted-foreground hover:bg-muted/60'
-                        }`}
-                      >
-                        {m}
-                      </button>
-                    ))}
-                  </div>
+          <div className="mt-4">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Label className="text-sm">Plan</Label>
+                <div className="border-border/60 flex rounded-md border p-0.5">
+                  {(
+                    [
+                      ['wall', 'Wall'],
+                      ['corner', 'Corner'],
+                      ['door', 'Door'],
+                      ['pin', 'Place'],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => {
+                        setPlanTool(value)
+                        if (value !== 'pin') setArmedTool(null)
+                      }}
+                      className={`rounded px-2 py-1 text-xs ${
+                        planTool === value
+                          ? 'bg-sky-600 text-white'
+                          : 'text-muted-foreground hover:bg-muted/60'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
                 </div>
+              </div>
+
+              {planTool === 'pin' ? (
                 <div className="flex flex-wrap gap-1.5">
                   {armedTool ? (
                     <button
@@ -822,7 +838,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                       className="rounded-full bg-sky-600 px-3 py-1 text-xs font-semibold text-white"
                       onClick={() => setArmedTool(null)}
                     >
-                      Placing {armedTool.label} — tap a room (cancel)
+                      Placing {armedTool.label} — tap the plan (cancel)
                     </button>
                   ) : (
                     <>
@@ -845,188 +861,151 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                       <button
                         type="button"
                         className="rounded-full border border-amber-400 px-2.5 py-1 text-xs text-amber-700 hover:bg-amber-50"
-                        onClick={() =>
-                          setArmedTool({ kind: 'reading', label: 'reading point' })
-                        }
+                        onClick={() => setArmedTool({ kind: 'reading', label: 'reading point' })}
                       >
                         + Reading point
                       </button>
                     </>
                   )}
                 </div>
-              </div>
+              ) : null}
+            </div>
 
-              <FloorPlan
-                rooms={planRooms}
-                pins={planPins}
-                openings={planOpenings}
-                mode={planMode}
-                armed={armedTool}
-                onMoveCorner={(areaId, index, x, y) => {
-                  const area = detail.areas.find((a) => a.id === areaId)
-                  if (!area) return
-                  const current =
-                    area.points && area.points.length >= 3
-                      ? area.points
-                      : rectanglePoints(
-                          Number(area.geometry?.length_ft ?? 0),
-                          Number(area.geometry?.width_ft ?? 0),
-                        )
-                  const next = moveCorner(current, index, x, y)
-                  void call(
-                    `/api/admin/ops/restoration/areas/${areaId}`,
-                    {
-                      method: 'PATCH',
-                      body: JSON.stringify({
-                        points: next,
-                        // Square footage and perimeter follow the shape, so a
-                        // diagonal wall bills its real length.
-                        affected_sqft: polygonAreaSqft(next),
-                        wall_linear_ft: polygonPerimeterFt(next),
-                      }),
-                    },
-                    `corner-${areaId}`,
-                  )
-                }}
-                onSplitWall={(areaId, wallIndex) => {
-                  const area = detail.areas.find((a) => a.id === areaId)
-                  if (!area) return
-                  const current =
-                    area.points && area.points.length >= 3
-                      ? area.points
-                      : rectanglePoints(
-                          Number(area.geometry?.length_ft ?? 0),
-                          Number(area.geometry?.width_ft ?? 0),
-                        )
-                  void call(
-                    `/api/admin/ops/restoration/areas/${areaId}`,
-                    {
-                      method: 'PATCH',
-                      body: JSON.stringify({ points: splitWall(current, wallIndex) }),
-                    },
-                    `split-${areaId}`,
-                  )
-                }}
-                onPlaceDoorway={(areaId, wallIndex, offsetFt) =>
-                  void call(
-                    `/api/admin/ops/restoration/areas/${areaId}/openings`,
+            <WallPlan
+              nodes={planData.nodes}
+              walls={planData.walls}
+              openings={planData.openings}
+              pins={planPins}
+              tool={planTool}
+              armedPin={armedTool}
+              selectedPinId={selectedPointId}
+              pinEditor={
+                selectedPoint ? (
+                  <MapPointEditor
+                    key={selectedPoint.id}
+                    point={selectedPoint}
+                    onClose={() => setSelectedPointId(null)}
+                    onSave={(patch) =>
+                      call(
+                        `/api/admin/ops/restoration/reading-points/${selectedPoint.id}`,
+                        { method: 'PATCH', body: JSON.stringify(patch) },
+                        `pt-${selectedPoint.id}`,
+                      )
+                    }
+                    onReading={(value) =>
+                      call(
+                        `/api/admin/ops/restoration/projects/${projectId}/readings`,
+                        {
+                          method: 'POST',
+                          body: JSON.stringify({
+                            kind: 'material',
+                            reading_point_id: selectedPoint.id,
+                            appointment_id: activeVisitId,
+                            value,
+                          }),
+                        },
+                        `read-${selectedPoint.id}`,
+                      )
+                    }
+                    onRemove={async () => {
+                      await call(
+                        `/api/admin/ops/restoration/reading-points/${selectedPoint.id}`,
+                        { method: 'DELETE' },
+                        `pt-${selectedPoint.id}`,
+                      )
+                      setSelectedPointId(null)
+                    }}
+                  />
+                ) : null
+              }
+              onDrawWall={async (segment) => {
+                await fetch(`/api/admin/ops/restoration/projects/${projectId}/walls`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(segment),
+                })
+                await loadPlan()
+              }}
+              onMoveNode={async (nodeId, x, y) => {
+                await fetch(`/api/admin/ops/restoration/plan-nodes/${nodeId}`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ x, y }),
+                })
+                await loadPlan()
+              }}
+              onDeleteWall={async (wallId) => {
+                await fetch(`/api/admin/ops/restoration/walls/${wallId}`, { method: 'DELETE' })
+                await loadPlan()
+              }}
+              onPlaceDoor={async (wallId, offsetFt) => {
+                await fetch(`/api/admin/ops/restoration/areas/none/openings`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    wall_id: wallId,
+                    kind: 'doorway',
+                    offset_ft: offsetFt,
+                    width_ft: 3,
+                  }),
+                })
+                await loadPlan()
+              }}
+              onDeleteOpening={async (openingId) => {
+                await fetch(`/api/admin/ops/restoration/openings/${openingId}`, {
+                  method: 'DELETE',
+                })
+                await loadPlan()
+              }}
+              onDropPin={async ({ xFt, yFt }) => {
+                const tool = armedTool
+                if (!tool) return
+                setArmedTool(null)
+                if (tool.kind === 'equipment' && tool.code) {
+                  await call(
+                    `/api/admin/ops/restoration/projects/${projectId}/equipment`,
                     {
                       method: 'POST',
                       body: JSON.stringify({
-                        kind: 'doorway',
-                        wall_index: wallIndex,
-                        offset_ft: offsetFt,
-                        width_ft: 3,
+                        catalog_code: tool.code,
+                        count: 1,
+                        map_x: xFt,
+                        map_y: yFt,
                       }),
                     },
-                    `door-${areaId}`,
+                    'place-pin',
+                  )
+                } else {
+                  await call(
+                    `/api/admin/ops/restoration/projects/${projectId}/readings`,
+                    {
+                      method: 'PUT',
+                      body: JSON.stringify({
+                        label: 'Reading point',
+                        material: 'Drywall',
+                        map_x: xFt,
+                        map_y: yFt,
+                      }),
+                    },
+                    'place-pin',
                   )
                 }
-                onOpeningClick={(opening) =>
-                  void call(
-                    `/api/admin/ops/restoration/openings/${opening.id}`,
-                    { method: 'DELETE' },
-                    `door-del-${opening.id}`,
-                  )
-                }
-                selectedPinId={selectedPointId}
-                onMoveRoom={(areaId, x, y) =>
-                  void call(
-                    `/api/admin/ops/restoration/areas/${areaId}`,
-                    { method: 'PATCH', body: JSON.stringify({ plan_x: x, plan_y: y }) },
-                    `move-${areaId}`,
-                  )
-                }
-                onPinClick={(pin) => {
-                  if (pin.kind !== 'reading') return
-                  setSelectedPointId((current) => (current === pin.id ? null : pin.id))
-                }}
-                pinEditor={
-                  selectedPoint ? (
-                    <MapPointEditor
-                      key={selectedPoint.id}
-                      point={selectedPoint}
-                      onClose={() => setSelectedPointId(null)}
-                      onSave={(patch) =>
-                        call(
-                          `/api/admin/ops/restoration/reading-points/${selectedPoint.id}`,
-                          { method: 'PATCH', body: JSON.stringify(patch) },
-                          `pt-${selectedPoint.id}`,
-                        )
-                      }
-                      onReading={(value) =>
-                        call(
-                          `/api/admin/ops/restoration/projects/${projectId}/readings`,
-                          {
-                            method: 'POST',
-                            body: JSON.stringify({
-                              kind: 'material',
-                              reading_point_id: selectedPoint.id,
-                              appointment_id: activeVisitId,
-                              value,
-                            }),
-                          },
-                          `read-${selectedPoint.id}`,
-                        )
-                      }
-                      onRemove={async () => {
-                        await call(
-                          `/api/admin/ops/restoration/reading-points/${selectedPoint.id}`,
-                          { method: 'DELETE' },
-                          `pt-${selectedPoint.id}`,
-                        )
-                        setSelectedPointId(null)
-                      }}
-                    />
-                  ) : null
-                }
-                onDrop={async ({ areaId, xFt, yFt }) => {
-                  const tool = armedTool
-                  if (!tool) return
-                  setArmedTool(null)
-                  if (tool.kind === 'equipment' && tool.code) {
-                    await call(
-                      `/api/admin/ops/restoration/projects/${projectId}/equipment`,
-                      {
-                        method: 'POST',
-                        body: JSON.stringify({
-                          catalog_code: tool.code,
-                          count: 1,
-                          area_id: areaId,
-                          map_x: xFt,
-                          map_y: yFt,
-                        }),
-                      },
-                      'place-pin',
-                    )
-                  } else {
-                    const area = detail.areas.find((a) => a.id === areaId)
-                    await call(
-                      `/api/admin/ops/restoration/projects/${projectId}/readings`,
-                      {
-                        method: 'PUT',
-                        body: JSON.stringify({
-                          label: `${area?.name ?? 'Room'} point`,
-                          material: 'Drywall',
-                          area_id: areaId,
-                          map_x: xFt,
-                          map_y: yFt,
-                        }),
-                      },
-                      'place-pin',
-                    )
-                  }
-                }}
-              />
-              <p className="text-muted-foreground mt-1 text-xs">
-                {planMode === 'move'
-                  ? 'Drag rooms into place — walls snap to each other. Blue is equipment, amber a moisture point, green once it hits the dry standard.'
-                  : planMode === 'shape'
-                    ? 'Drag a corner to move it. Tap a + on a wall to add a corner, which is how you cut in a diagonal or an L.'
-                    : 'Tap a wall to put a doorway on it. Tap a doorway to remove it.'}
-              </p>
-            </div>
-          ) : null}
+              }}
+              onPinClick={(pin) => {
+                if (pin.kind !== 'reading') return
+                setSelectedPointId((current) => (current === pin.id ? null : pin.id))
+              }}
+            />
+            <p className="text-muted-foreground mt-1 text-xs">
+              {planTool === 'wall'
+                ? 'Drag to draw a wall. Ends snap to nearby corners, so rooms close properly. A wall that closes nothing is a pony wall.'
+                : planTool === 'corner'
+                  ? 'Drag a corner — every wall meeting there follows. Tap a length label to delete that wall.'
+                  : planTool === 'door'
+                    ? 'Tap a wall to put a door on it. Tap a door to remove it.'
+                    : 'Pick equipment or a reading point, then tap the plan.'}
+            </p>
+          </div>
 
           {dryingPlan.totalAffectedSqft > 0 ? (
             <div className="mt-4 rounded-lg border border-sky-200 bg-sky-50/70 p-3 text-sm dark:border-sky-900 dark:bg-sky-950/40">

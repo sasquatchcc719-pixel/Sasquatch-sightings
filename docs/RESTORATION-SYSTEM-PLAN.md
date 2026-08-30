@@ -1086,3 +1086,53 @@ adding a dependency for one field.
    as inferred in the code. Blocked on Charles producing his licensed copy.
 3. **Migrating the Jill job** — held at Charles's instruction until the feature was
    finished. It now is.
+
+
+---
+
+## The plan rebuilt on walls — the model was wrong, not the code
+
+Charles, after using the shape and door tools: "your door and shape tools really don't
+work whatsoever... I think you're just trying to invent it from scratch."
+
+He was right, and the fix was a model change rather than bug fixing.
+
+### What was wrong
+The plan modelled **rooms as independent polygons**. That model cannot express:
+- **a pony wall** — a wall that encloses nothing. Jill had one dividing a room and
+  drywall came off it, so it has to be drawable and billable.
+- **shared corners** — two rooms sharing a wall had two separate corner lists that drifted
+  apart the moment either was edited.
+- **a door that stays on a wall** — openings were anchored to a room-edge *index*, which
+  moved out from under them whenever a shape changed. That is why doors floated mid-room.
+
+### The model real floor plan editors use
+Confirmed against CAD and floorplan-reconstruction literature: **walls are the primitive**,
+built on **shared nodes**, and **rooms are enclosed loops derived from walls**. Doors are
+**hosted on a wall** at an offset from its start node.
+
+A pony wall then needs no special case at all — it is simply a wall belonging to no loop.
+
+### Now built
+- `restoration_plan_nodes` / `restoration_plan_walls`, with openings re-anchored to
+  `wall_id` instead of a room-edge index.
+- `src/lib/ops/restoration-walls.ts` — resolve, snap, node merging, wall hit-testing,
+  opening placement, loop finding, shoelace area. **18 tests**, including that a pony
+  wall exists, counts toward billable wall length, and is excluded from the room loop;
+  that moving a node moves every wall attached to it; and that a door cannot be placed in
+  open floor.
+- `src/components/ops/wall-plan.tsx` — four tools: **Wall** (drag to draw, ends snap to
+  nearby corners so rooms close), **Corner** (drag a corner, every attached wall follows;
+  tap a length label to delete that wall), **Door** (tap a wall; tap a door to remove),
+  **Place** (equipment and reading pins). One-foot grid, live wall lengths, partial-height
+  walls drawn dashed.
+- The old polygon model and `floor-plan.tsx` were deleted rather than left to rot.
+
+Verified by rendering a room plus a pony wall with doors on both, and looking at it.
+
+### Also fixed: the schedule card total
+`ops_appointments.quoted_total` was set at booking and never updated, so the calendar card
+showed **$0** on a restoration job while the estimate grew. Now recomputed by a database
+trigger on line-item insert/update/delete, so it cannot drift regardless of which code
+path edits a line. **Scoped to restoration only** — carpet cleaning still sets its own
+total at booking, verified by test.
