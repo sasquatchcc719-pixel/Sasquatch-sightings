@@ -675,5 +675,22 @@ price from memory; look it up.**
    reading points spatially, pin photos.
 2. Component extraction of the customer panel, visit status bar (On My Way / GPS), and
    the line-items editor.
-3. Square Tap to Pay deep link for the deposit (currently records the payment only).
-4. EXIF bulk backfill for the existing Jill photo set.
+3. EXIF bulk backfill for the existing Jill photo set.
+
+### Pass 7: Square Tap to Pay for the deposit — DONE
+The existing tech charge route could not be reused: it requires a *chargeable invoice*,
+and a restoration deposit is taken days before any invoice exists. A dedicated pair was
+added that reuses `buildSquarePosUrl` / `parseSquarePosReturn`:
+- `POST /api/admin/ops/restoration/visits/[appointmentId]/deposit-link` — builds the
+  deep link, carrying `{appointment, amountCents, returnTo}` in Square's `state`.
+- `GET /api/admin/ops/restoration/deposit-return` — records the payment against the
+  visit and redirects back to the project screen with `?deposit=paid|canceled|error`.
+  Square can deliver the same return twice; the unique index on `square_payment_id`
+  makes a repeat a no-op rather than a double credit.
+
+The deposit amount is editable (defaults to $1,000) and there is a "record cash or
+check instead" fallback, because Square being unavailable must not block the job.
+
+Needs `SQUARE_APPLICATION_ID` set, and the Square POS app installed on the field
+phone — see [[project_square_tap_to_pay]]. The route returns a clear 503 if the
+application id is missing rather than failing obscurely.

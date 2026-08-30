@@ -141,6 +141,8 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
   const [catalog, setCatalog] = useState<CatalogItem[]>([])
   const [catalogQuery, setCatalogQuery] = useState('')
 
+  const [depositAmount, setDepositAmount] = useState('1000')
+
   const [photoPhase, setPhotoPhase] = useState<string>('affected_materials')
   const [uploading, setUploading] = useState(false)
 
@@ -960,19 +962,66 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
         </div>
 
         {isMitigation && !closed && detail.totals.paid_cents === 0 ? (
-          <div className="mt-4">
+          <div className="mt-4 flex flex-col gap-2">
+            <Label htmlFor="deposit-amount">Deposit</Label>
+            <div className="flex gap-2">
+              <Input
+                id="deposit-amount"
+                className="w-28"
+                type="number"
+                min={1}
+                step="any"
+                value={depositAmount}
+                onChange={(e) => setDepositAmount(e.target.value)}
+              />
+              <Button
+                className="flex-1"
+                disabled={busy === 'deposit-link' || Number(depositAmount) <= 0}
+                onClick={async () => {
+                  setBusy('deposit-link')
+                  setError(null)
+                  try {
+                    const response = await fetch(
+                      `/api/admin/ops/restoration/visits/${activeVisitId}/deposit-link`,
+                      {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          amount_cents: Math.round(Number(depositAmount) * 100),
+                          returnTo: `/admin/operations/restoration/${projectId}`,
+                        }),
+                      },
+                    )
+                    const result = await response.json()
+                    if (!response.ok) throw new Error(result.error || 'Square is unavailable')
+                    // Hands off to the Square app; it returns to this page.
+                    window.location.href = result.url
+                  } catch (e) {
+                    setError(e instanceof Error ? e.message : 'Square is unavailable')
+                    setBusy(null)
+                  }
+                }}
+              >
+                {busy === 'deposit-link' ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  'Tap to Pay'
+                )}
+              </Button>
+            </div>
             <Button
-              variant="secondary"
-              className="w-full"
-              disabled={busy === 'deposit'}
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground"
+              disabled={busy === 'deposit' || Number(depositAmount) <= 0}
               onClick={() =>
                 void call(
                   `/api/admin/ops/restoration/visits/${activeVisitId}/deposit`,
                   {
                     method: 'POST',
                     body: JSON.stringify({
-                      amount_cents: 100000,
-                      method: 'square_tap',
+                      amount_cents: Math.round(Number(depositAmount) * 100),
+                      method: 'other',
                       kind: 'deposit',
                     }),
                   },
@@ -980,9 +1029,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 )
               }
             >
-              Record $1,000 deposit
+              Record cash or check instead
             </Button>
-            <p className="text-muted-foreground mt-1 text-xs">
+            <p className="text-muted-foreground text-xs">
               Credited against the final invoice when the project closes.
             </p>
           </div>
