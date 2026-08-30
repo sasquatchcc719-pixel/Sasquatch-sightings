@@ -400,11 +400,46 @@ Everything below is schema-and-logic only. There is still no restoration screen.
 9. Voice -> line items
 10. Final report
 
-### BLOCKED
-- **53 enabled catalog items have no QuickBooks item.** They cannot be invoiced until
-  those are created. The QuickBooks MCP connector is not authorized in this session, so
-  they could not be created here. Needs either connector auth or a code path using the
-  app's own QuickBooks OAuth integration (`src/app/api/admin/quickbooks/*`).
+### QuickBooks — DONE (2026-08-30, same day)
+Unblocked by using the app's own QuickBooks OAuth tokens (`getValidQBAccessToken`)
+rather than the unauthorized MCP connector. Credentials pulled with
+`vercel env pull .env.vercel.production` (gitignored).
+
+- `scripts/audit-restoration-qb-items.ts` — READ-ONLY. Lists restoration-looking QB
+  items, and reports catalog rows as linked / name-matched / missing, with price drift.
+- `scripts/sync-restoration-qb-items.ts` — creates missing items. Dry run by default,
+  `--apply` to write.
+
+**Result: all 70 enabled catalog items now resolve to a live QuickBooks item (0 missing).**
+53 items created (ids 140-192), QuickBooks went from 119 to 172 items. Every pre-existing
+price reconciled exactly against the catalog — no drift anywhere.
+
+Decisions Charles made:
+- New items are sub-items of the root **"Water Restoration"** category (id 44), income
+  account **Services** (id 5), `Taxable: false` — mirroring the existing items.
+- Names are **"CODE - description"** (e.g. `EXTS - Water extraction from carpeted floor
+  - Category 3 water`) so Cat 1/2/3 variants stay distinguishable in a QB dropdown.
+  The 17 pre-existing items kept their original names.
+- `Emergency Service Call, Business Hours` (id 46) was moved out of the orphaned
+  `Restoration > Repair > Water Damage` branch into `Water Restoration` so both
+  emergency-call items sit together. Price and active state preserved.
+
+Note for later: five orphan items already existed in `Water Restoration`, named by raw
+Xactimate code from an earlier partial attempt — `DUCTLF`, `HEPAF`, `HMR CLNHRZ`,
+`PPEE`, and `PPERC`. **`PPERC` is priced at $0** and would post a zero-dollar line if
+used. Not touched; worth cleaning up with Charles.
+
+### Bug found by the QuickBooks audit
+Xactimate uses a trailing `+` for two different things: the **Heavy** labor modifier
+(`EXT+`, `MUCK+`) and **equipment size upgrades** (`DRY+`, `DRY++`). The importer
+treated every `+` as Heavy, which folded `DRY+` and `DRY++` into the floor-fan concept
+as "heavy variants" and left `DRY++` — the $35 1 HP axial fan Charles actually runs —
+disabled. Also `EXTSA+` abbreviates Heavy as "Hvy" and had been missed.
+
+Fixed: `is_heavy` now derives from the description only (`heavy|hvy`), the five
+size-upgrade codes became their own concepts, and `DRY++` is enabled and linked to the
+existing QuickBooks item 70. Air movers are now three distinct products: `DRY` $24.50
+floor fan, `DRY+` $28.18 axial, `DRY++` $35 1 HP axial.
 
 ### Still unresolved (asked, not yet answered)
 1. Saturday emergency call — after hours ($295.92) or business hours ($197.29)?
