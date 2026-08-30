@@ -971,3 +971,42 @@ calculation.
 
 ### Verified
 609 tests pass, typecheck clean, lint clean, `next build` exit 0.
+
+
+---
+
+## Reference sources for this feature — what we can and cannot use
+
+**ANSI/IICRC S500-2021 is a paid, copyrighted standard** ($125 print / $144 PDF). We do
+not hold a copy and will not source one improperly. Only two parts are public and both
+have been read directly:
+- **§12.5.3 "Controlling Airflow"** (pp. 67-68), reproduced in a contractor training
+  handout — the air mover rules.
+- **IICRC "Initial Dehumidification Recommendation Factors and Formulas"**, Imperial rev
+  3.1.22, published free by IICRC — the class factor chart.
+
+**If Charles produces his own licensed copy**, it can be read and the inferred parts
+corrected. Until then, the free authorities below are used, and every number in the code
+cites the document it came from.
+
+### Free, authoritative sources now in use
+- **EPA, *Mold Remediation in Schools and Commercial Buildings* (EPA 402-K-01-001),
+  Table 1: "Water Damage — Cleanup and Mold Prevention", p. 11** — per-material salvage
+  guidance, encoded verbatim in `src/lib/ops/restoration-material-guidance.ts`. This
+  answers the question S500 was wanted for most: dry it in place, or tear it out.
+- Table 1's own footnotes, encoded as job warnings:
+  - **Do not run fans before determining the water is clean or sanitary** — surfaced as a
+    critical warning on any Category 2 or 3 loss, because airflow spreads contamination.
+  - **PPE and containment are required by OSHA** on sewage or chemically contaminated
+    water — surfaced alongside it.
+  - **Past 48 hours, EPA Table 2 applies instead of Table 1** — mold growth may have
+    occurred and drying in place may no longer be appropriate.
+
+### Still inferred, and marked as such
+- The exact method for establishing a dry standard from unaffected reference material.
+- The precise Category degradation triggers and timings.
+- Class 1-4 selection criteria (Charles picks; the app does not guide).
+- Completion criteria beyond "Charles says it is dry".
+
+These are the parts that need the S500 itself, and they are flagged in the code where
+they occur.

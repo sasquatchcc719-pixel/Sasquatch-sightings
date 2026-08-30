@@ -12,6 +12,7 @@ import {
   Thermometer,
   DollarSign,
   X,
+  AlertTriangle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -20,6 +21,10 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { DirectionsButtons } from '@/components/ops/directions-buttons'
+import {
+  hoursSince,
+  warningsForLoss,
+} from '@/lib/ops/restoration-material-guidance'
 import {
   buildDryingPlan,
   type AirflowDensity,
@@ -81,6 +86,7 @@ type Detail = {
     source_of_loss: string | null
     cause_narrative: string | null
     loss_date: string | null
+    loss_time: string | null
     invoice_id: string | null
     ops_customers: { id: string; full_name: string; business_name: string | null; phone: string } | null
     ops_service_addresses: {
@@ -372,6 +378,20 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
     [detail, selectedPointId],
   )
 
+  // Safety conditions that change how the job is run, surfaced rather than
+  // buried: contaminated water means no fans yet, and past 48 hours the
+  // dry-in-place guidance no longer applies.
+  const lossWarnings = useMemo(() => {
+    if (!detail?.project) return []
+    const lossAt = detail.project.loss_date
+      ? `${detail.project.loss_date}T${detail.project.loss_time ?? '00:00'}`
+      : null
+    return warningsForLoss({
+      waterCategory: detail.project.water_category,
+      hoursSinceLoss: hoursSince(lossAt),
+    })
+  }, [detail])
+
   const catalogResults = catalog
   const groupedCatalog = useMemo(() => {
     const map = new Map<string, CatalogItem[]>()
@@ -498,6 +518,24 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
           {error}
         </Card>
       ) : null}
+
+      {lossWarnings.map((warning) => (
+        <Card
+          key={warning.title}
+          className={`p-4 text-sm ${
+            warning.severity === 'critical'
+              ? 'border-red-300 bg-red-50 text-red-900 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200'
+              : 'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200'
+          }`}
+        >
+          <p className="flex items-center gap-2 font-semibold">
+            <AlertTriangle className="h-4 w-4" />
+            {warning.title}
+          </p>
+          <p className="mt-1">{warning.detail}</p>
+          <p className="mt-1 text-xs opacity-70">{warning.source}</p>
+        </Card>
+      ))}
 
       {address ? (
         <Card className={SECTION_CARD}>
