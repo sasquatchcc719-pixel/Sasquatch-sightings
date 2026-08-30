@@ -71,7 +71,7 @@ export async function GET(request: NextRequest) {
       const { data: jobRows } = await supabase
         .from('ops_appointments')
         .select(
-          `id, status, appointment_date, start_time,
+          `id, status, appointment_date, start_time, kind, visit_type, restoration_project_id,
            ops_invoices ( id ),
            ops_service_addresses ( street_1, city ),
            ops_job_photos (

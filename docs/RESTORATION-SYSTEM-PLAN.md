@@ -1194,3 +1194,25 @@ Persistence itself was never broken: a new integration test draws four walls aga
 real database, proves a shared corner is reused rather than duplicated (three nodes after
 two walls, not four), closes a room measuring 70 ft of wall, hosts a door on a wall,
 rejects a wall with the same node at both ends, and confirms cascade cleanup.
+
+
+---
+
+## Water losses were a dead end on the customer record
+
+Charles went looking for a water loss through customer lookup and found the visits listed
+with **"No invoice"** and nothing to click.
+
+That is a correct consequence of holding invoicing until a project closes — the visit
+genuinely has no invoice — but it left the customer record as a dead end, which is the
+one place you look when you cannot remember which job you want.
+
+Both places in the customer directory that linked to an invoice now fall back to the
+**project screen** for a restoration visit, and the row carries a **"Water loss ·
+mitigation"** badge so it reads as a different kind of job rather than a broken one.
+`/api/admin/ops/customers` returns `kind`, `visit_type` and `restoration_project_id` for
+this.
+
+**Worth watching for elsewhere:** anywhere the app assumes a completed job has an
+invoice will show the same dead end. The calendar and the customer directory are handled;
+the pattern to follow is invoice if there is one, project if it is a restoration visit.

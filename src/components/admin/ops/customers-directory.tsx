@@ -43,6 +43,9 @@ type CustomerJob = {
   status: string
   appointment_date: string
   start_time: string | null
+  kind?: string | null
+  visit_type?: string | null
+  restoration_project_id?: string | null
   ops_invoices: { id: string } | null
   ops_service_addresses: { street_1: string; city: string } | null
   ops_job_photos?: CustomerJobPhoto[]
@@ -866,10 +869,22 @@ export function CustomersDirectory() {
                               {expandedList.map((job) => {
                                 const addr = job.ops_service_addresses
                                 const invoiceId = job.ops_invoices?.id
+                                // A water loss has no invoice until the project
+                                // closes, so link the project itself rather than
+                                // leaving a dead end on the customer record.
+                                const projectId =
+                                  job.kind === 'restoration'
+                                    ? job.restoration_project_id
+                                    : null
+                                const href = invoiceId
+                                  ? `/admin/operations/invoices/${invoiceId}`
+                                  : projectId
+                                    ? `/admin/operations/restoration/${projectId}`
+                                    : null
                                 const content = (
                                   <div
                                     className={`flex items-center justify-between rounded-lg border px-3 py-2 text-sm ${
-                                      invoiceId
+                                      href
                                         ? 'border-border/60 bg-background/70 hover:border-primary/40 hover:bg-primary/5 cursor-pointer transition-colors'
                                         : 'border-border/40 bg-background/50'
                                     }`}
@@ -889,20 +904,25 @@ export function CustomersDirectory() {
                                         </span>
                                       ) : null}
                                     </div>
-                                    {invoiceId ? (
-                                      <ExternalLink className="text-muted-foreground h-3.5 w-3.5 shrink-0" />
-                                    ) : (
-                                      <span className="text-muted-foreground text-xs">
-                                        No invoice
-                                      </span>
-                                    )}
+                                    <span className="flex shrink-0 items-center gap-2">
+                                      {projectId ? (
+                                        <span className="rounded-full bg-sky-500/15 px-2 py-0.5 text-xs font-medium text-sky-600 dark:text-sky-300">
+                                          Water loss
+                                          {job.visit_type ? ` · ${job.visit_type}` : ''}
+                                        </span>
+                                      ) : null}
+                                      {href ? (
+                                        <ExternalLink className="text-muted-foreground h-3.5 w-3.5" />
+                                      ) : (
+                                        <span className="text-muted-foreground text-xs">
+                                          No invoice
+                                        </span>
+                                      )}
+                                    </span>
                                   </div>
                                 )
-                                return invoiceId ? (
-                                  <Link
-                                    key={job.id}
-                                    href={`/admin/operations/invoices/${invoiceId}`}
-                                  >
+                                return href ? (
+                                  <Link key={job.id} href={href}>
                                     {content}
                                   </Link>
                                 ) : (
@@ -974,6 +994,13 @@ export function CustomersDirectory() {
                                 ))}
                                 {photoJobs.flatMap((job) => {
                                   const invoiceId = job.ops_invoices?.id
+                                  // Same as above: a water loss has no invoice
+                                  // until it closes, so open the project.
+                                  const jobHref = invoiceId
+                                    ? `/admin/operations/invoices/${invoiceId}`
+                                    : job.kind === 'restoration' && job.restoration_project_id
+                                      ? `/admin/operations/restoration/${job.restoration_project_id}`
+                                      : null
                                   const address = formatJobAddress(
                                     job.ops_service_addresses,
                                   )
@@ -1021,17 +1048,15 @@ export function CustomersDirectory() {
                                               {address}
                                             </div>
                                           ) : null}
-                                          {invoiceId ? (
+                                          {jobHref ? (
                                             <Button
                                               asChild
                                               size="sm"
                                               variant="ghost"
                                               className="h-7 w-full justify-start px-2 text-xs"
                                             >
-                                              <Link
-                                                href={`/admin/operations/invoices/${invoiceId}`}
-                                              >
-                                                Open invoice
+                                              <Link href={jobHref}>
+                                                {invoiceId ? 'Open invoice' : 'Open water loss'}
                                                 <ExternalLink className="ml-auto h-3 w-3" />
                                               </Link>
                                             </Button>
