@@ -2,7 +2,10 @@
 
 import { useMemo, useState } from 'react'
 import {
+  draftLengthFt,
+  endPointForLength,
   findNodeNear,
+  formatFeetInches,
   openingPosition,
   resolveWalls,
   snapToGrid,
@@ -50,6 +53,8 @@ type Props = {
   selectedPinId?: string | null
   pinEditor?: React.ReactNode
   onDrawWall?: (segment: { x1: number; y1: number; x2: number; y2: number }) => void
+  /** Typed length: move this wall's end node so it measures exactly this. */
+  onSetWallLength?: (wallId: string, endNodeId: string, x: number, y: number) => void
   onMoveNode?: (nodeId: string, x: number, y: number) => void
   onPlaceDoor?: (wallId: string, offsetFt: number) => void
   onDeleteWall?: (wallId: string) => void
@@ -70,6 +75,7 @@ export function WallPlan({
   selectedPinId,
   pinEditor,
   onDrawWall,
+  onSetWallLength,
   onMoveNode,
   onPlaceDoor,
   onDeleteWall,
@@ -80,6 +86,8 @@ export function WallPlan({
   const [width, setWidth] = useState(0)
   const [draft, setDraft] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
   const [nodeDrag, setNodeDrag] = useState<{ id: string; x: number; y: number } | null>(null)
+  const [editingWallId, setEditingWallId] = useState<string | null>(null)
+  const [lengthDraft, setLengthDraft] = useState('')
 
   const liveNodes = useMemo(
     () => nodes.map((n) => (nodeDrag?.id === n.id ? { ...n, x: nodeDrag.x, y: nodeDrag.y } : n)),
@@ -215,30 +223,83 @@ export function WallPlan({
         </svg>
       ) : null}
 
-      {/* Wall lengths and a delete affordance. */}
+      {/* Live length while a wall is being dragged out. */}
+      {scale > 0 && draft ? (
+        <span
+          className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-full rounded bg-sky-600 px-1.5 py-0.5 text-xs font-semibold text-white tabular-nums"
+          style={{
+            left: toScreen((draft.x1 + draft.x2) / 2, (draft.y1 + draft.y2) / 2).left,
+            top: toScreen((draft.x1 + draft.x2) / 2, (draft.y1 + draft.y2) / 2).top - 6,
+          }}
+        >
+          {formatFeetInches(draftLengthFt(draft))}
+        </span>
+      ) : null}
+
+      {/* Wall lengths — click one to type an exact figure. */}
       {scale > 0
         ? resolved.map((wall) => {
             const mid = toScreen(
               (wall.start.x + wall.end.x) / 2,
               (wall.start.y + wall.end.y) / 2,
             )
+            if (editingWallId === wall.id) {
+              return (
+                <input
+                  key={`len-${wall.id}`}
+                  autoFocus
+                  type="number"
+                  step="any"
+                  min={0.5}
+                  aria-label="Wall length in feet"
+                  className="border-input bg-background absolute z-20 w-16 -translate-x-1/2 -translate-y-1/2 rounded border px-1 py-0.5 text-center text-xs tabular-nums"
+                  style={{ left: mid.left, top: mid.top }}
+                  value={lengthDraft}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => event.stopPropagation()}
+                  onChange={(event) => setLengthDraft(event.target.value)}
+                  onBlur={() => setEditingWallId(null)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') {
+                      setEditingWallId(null)
+                      return
+                    }
+                    if (event.key !== 'Enter') return
+                    const point = endPointForLength(wall, Number(lengthDraft))
+                    if (point) {
+                      onSetWallLength?.(wall.id, wall.endNodeId, point.x, point.y)
+                    }
+                    setEditingWallId(null)
+                  }}
+                />
+              )
+            }
+
             return (
               <button
                 key={`len-${wall.id}`}
                 type="button"
                 title={
-                  wall.isPartialHeight ? 'Partial-height wall — tap to remove' : 'Tap to remove'
+                  tool === 'corner'
+                    ? 'Tap to delete this wall'
+                    : 'Tap to type an exact length'
                 }
                 aria-label={`Wall ${wall.lengthFt} feet`}
-                className="bg-background/90 text-muted-foreground absolute -translate-x-1/2 -translate-y-1/2 rounded px-1 text-[10px] tabular-nums hover:text-red-600"
+                className="bg-background/90 text-muted-foreground hover:text-foreground absolute -translate-x-1/2 -translate-y-1/2 rounded px-1 text-[10px] tabular-nums underline decoration-dotted"
                 style={{ left: mid.left, top: mid.top }}
                 onPointerDown={(event) => event.stopPropagation()}
                 onClick={(event) => {
                   event.stopPropagation()
-                  if (tool === 'corner') onDeleteWall?.(wall.id)
+                  // Corner tool is the destructive one; every other tool edits.
+                  if (tool === 'corner') {
+                    onDeleteWall?.(wall.id)
+                    return
+                  }
+                  setLengthDraft(String(wall.lengthFt))
+                  setEditingWallId(wall.id)
                 }}
               >
-                {wall.lengthFt}′
+                {formatFeetInches(wall.lengthFt)}
               </button>
             )
           })

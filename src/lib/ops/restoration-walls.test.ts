@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
+  draftLengthFt,
+  endPointForLength,
   findLoops,
+  formatFeetInches,
   findNodeNear,
   loopAreaSqft,
   openingPosition,
@@ -187,5 +190,57 @@ describe('helpers', () => {
       [{ id: 'w', startNodeId: 'a', endNodeId: 'b' }],
     )
     expect(Number.isFinite(projectOntoWall(wall, 9, 9).distanceFt)).toBe(true)
+  })
+})
+
+describe('editing a wall by its number', () => {
+  const walls = resolveWalls(
+    [
+      { id: 'a', x: 0, y: 0 },
+      { id: 'b', x: 10, y: 0 },
+      { id: 'c', x: 0, y: 0 },
+      { id: 'd', x: 6, y: 8 },
+    ],
+    [
+      { id: 'h', startNodeId: 'a', endNodeId: 'b' },
+      { id: 'diag', startNodeId: 'c', endNodeId: 'd' },
+    ],
+  )
+
+  it('extends a horizontal wall to an exact length', () => {
+    const point = endPointForLength(walls[0], 14)
+    expect(point).toEqual({ x: 14, y: 0 })
+  })
+
+  it('shortens it too', () => {
+    expect(endPointForLength(walls[0], 6)).toEqual({ x: 6, y: 0 })
+  })
+
+  it('keeps a diagonal wall on its own angle', () => {
+    // The 6-8-10 wall set to 20 ft should land at 12,16.
+    const point = endPointForLength(walls[1], 20)
+    expect(point?.x).toBeCloseTo(12, 2)
+    expect(point?.y).toBeCloseTo(16, 2)
+  })
+
+  it('refuses a length that is not a positive number', () => {
+    expect(endPointForLength(walls[0], 0)).toBeNull()
+    expect(endPointForLength(walls[0], -5)).toBeNull()
+    expect(endPointForLength(walls[0], Number.NaN)).toBeNull()
+  })
+})
+
+describe('readouts', () => {
+  it('measures a wall being dragged', () => {
+    expect(draftLengthFt({ x1: 0, y1: 0, x2: 3, y2: 4 })).toBe(5)
+    expect(draftLengthFt({ x1: 2, y1: 2, x2: 2, y2: 2 })).toBe(0)
+  })
+
+  it('reads lengths the way a builder says them', () => {
+    expect(formatFeetInches(12)).toBe('12′')
+    expect(formatFeetInches(12.5)).toBe('12′ 6″')
+    expect(formatFeetInches(7.25)).toBe('7′ 3″')
+    // Rounding up a hair should not produce 12 inches.
+    expect(formatFeetInches(11.99)).toBe('12′')
   })
 })

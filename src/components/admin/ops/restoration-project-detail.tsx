@@ -718,15 +718,55 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
           {detail.areas.length > 0 ? (
             <div className="mb-3 flex flex-col divide-y">
               {detail.areas.map((area) => (
-                <div key={area.id} className="flex items-center gap-3 py-2 text-sm">
-                  <span className="min-w-0 flex-1">
-                    <span className="font-medium">{area.name}</span>
-                    <span className="text-muted-foreground block text-xs">
-                      {area.affected_sqft ?? '—'} SF
-                      {area.wall_linear_ft ? ` · ${area.wall_linear_ft} LF perimeter` : ''}
-                      {area.ceiling_height_ft ? ` · ${area.ceiling_height_ft} ft ceiling` : ''}
-                    </span>
-                  </span>
+                <div key={area.id} className="flex flex-wrap items-center gap-2 py-2 text-sm">
+                  <Input
+                    className="h-9 min-w-32 flex-1"
+                    aria-label="Room name"
+                    defaultValue={area.name}
+                    onBlur={(e) => {
+                      const name = e.target.value.trim()
+                      if (name && name !== area.name) {
+                        void call(
+                          `/api/admin/ops/restoration/areas/${area.id}`,
+                          { method: 'PATCH', body: JSON.stringify({ name }) },
+                          `area-${area.id}`,
+                        )
+                      }
+                    }}
+                  />
+                  {(
+                    [
+                      ['affected_sqft', 'SF', area.affected_sqft],
+                      ['wall_linear_ft', 'LF', area.wall_linear_ft],
+                      ['ceiling_height_ft', 'ceil', area.ceiling_height_ft],
+                      ['affected_wall_ceiling_sqft', 'wall SF', area.affected_wall_ceiling_sqft],
+                      ['insets_offsets', 'insets', area.insets_offsets],
+                    ] as const
+                  ).map(([field, label, value]) => (
+                    <label key={field} className="flex items-center gap-1">
+                      <Input
+                        className="h-9 w-20 text-right"
+                        type="number"
+                        step="any"
+                        aria-label={`${area.name} ${label}`}
+                        defaultValue={value ?? ''}
+                        onBlur={(e) => {
+                          const next = e.target.value === '' ? null : Number(e.target.value)
+                          if (next !== (value ?? null)) {
+                            void call(
+                              `/api/admin/ops/restoration/areas/${area.id}`,
+                              {
+                                method: 'PATCH',
+                                body: JSON.stringify({ [field]: next }),
+                              },
+                              `area-${area.id}`,
+                            )
+                          }
+                        }}
+                      />
+                      <span className="text-muted-foreground text-xs">{label}</span>
+                    </label>
+                  ))}
                   <button
                     type="button"
                     aria-label={`Remove ${area.name}`}
@@ -742,6 +782,10 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                   </button>
                 </div>
               ))}
+              <p className="text-muted-foreground py-2 text-xs">
+                Every figure here is editable — measured area, wall perimeter, ceiling
+                height, wet wall/ceiling above 2 ft, and insets over 18 inches.
+              </p>
             </div>
           ) : null}
 
@@ -926,6 +970,14 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 })
                 await loadPlan()
               }}
+              onSetWallLength={async (_wallId, endNodeId, x, y) => {
+                await fetch(`/api/admin/ops/restoration/plan-nodes/${endNodeId}`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ x, y }),
+                })
+                await loadPlan()
+              }}
               onMoveNode={async (nodeId, x, y) => {
                 await fetch(`/api/admin/ops/restoration/plan-nodes/${nodeId}`, {
                   method: 'PATCH',
@@ -1004,6 +1056,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                   : planTool === 'door'
                     ? 'Tap a wall to put a door on it. Tap a door to remove it.'
                     : 'Pick equipment or a reading point, then tap the plan.'}
+              {planTool !== 'corner'
+                ? ' Tap any length to type an exact figure.'
+                : ''}
             </p>
           </div>
 

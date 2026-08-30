@@ -1136,3 +1136,29 @@ showed **$0** on a restoration job while the estimate grew. Now recomputed by a 
 trigger on line-item insert/update/delete, so it cannot drift regardless of which code
 path edits a line. **Scoped to restoration only** — carpet cleaning still sets its own
 total at booking, verified by test.
+
+
+---
+
+## Everything is editable by number, not only by dragging
+
+Charles: "when we drag a wall out, there needs to be a read out with the length as we
+move it and then once we set it, we should be able to click on the number and edit that
+number if we don't get it exactly right. That pretty much goes for everything. There
+should be a way to manually fix things."
+
+Standing principle for this feature: **dragging gets it close, typing gets it right.**
+Nothing should be settable only by dragging.
+
+- **Live readout while drawing** — the length follows the cursor in feet and inches
+  (`11′ 7″`, not `11.58`), because that is how the measurement is taken and spoken.
+- **Every wall length is clickable** — type an exact figure and the end node moves along
+  the wall's existing direction, so a diagonal keeps its angle. Enter commits, Escape
+  cancels.
+- **Every room figure is editable in place** — name, affected square footage, wall
+  perimeter, ceiling height, wet wall/ceiling above 2 ft, and insets over 18 inches. They
+  were previously write-once at creation and delete-only afterwards.
+- Reading points, equipment quantities, line-item quantities, water category, class,
+  build-out density and the deposit amount were already editable; this closes the rest.
+
+`formatFeetInches` is used for anything a person reads as a measurement.

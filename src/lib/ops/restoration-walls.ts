@@ -231,3 +231,51 @@ export function rectangleWalls(
   }))
   return { nodes, walls }
 }
+
+/**
+ * Where the end node has to move for a wall to be exactly `lengthFt` long,
+ * keeping its direction and its start node fixed.
+ *
+ * Typing an exact length is how a plan gets accurate: dragging gets it close,
+ * and the number gets it right. Nothing here should only be settable by dragging.
+ */
+export function endPointForLength(
+  wall: ResolvedWall,
+  lengthFt: number,
+): { x: number; y: number } | null {
+  const target = Number(lengthFt)
+  if (!Number.isFinite(target) || target <= 0) return null
+
+  const dx = wall.end.x - wall.start.x
+  const dy = wall.end.y - wall.start.y
+  const current = Math.hypot(dx, dy)
+
+  // A zero-length wall has no direction to preserve; extend east by convention.
+  if (current === 0) {
+    return { x: Math.round((wall.start.x + target) * 100) / 100, y: wall.start.y }
+  }
+
+  return {
+    x: Math.round((wall.start.x + (dx / current) * target) * 100) / 100,
+    y: Math.round((wall.start.y + (dy / current) * target) * 100) / 100,
+  }
+}
+
+/** Length of a wall being dragged, for the live readout. */
+export function draftLengthFt(segment: {
+  x1: number
+  y1: number
+  x2: number
+  y2: number
+}): number {
+  return Math.round(Math.hypot(segment.x2 - segment.x1, segment.y2 - segment.y1) * 10) / 10
+}
+
+/** Feet as builders say them: 12′ 6″ rather than 12.5. */
+export function formatFeetInches(feet: number): string {
+  if (!Number.isFinite(feet)) return '—'
+  const whole = Math.floor(Math.abs(feet))
+  const inches = Math.round((Math.abs(feet) - whole) * 12)
+  if (inches === 12) return `${whole + 1}′`
+  return inches === 0 ? `${whole}′` : `${whole}′ ${inches}″`
+}
