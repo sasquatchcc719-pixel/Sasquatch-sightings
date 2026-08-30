@@ -77,6 +77,16 @@ export function RestorationNewWorkspace() {
   const [customer, setCustomer] = useState<CustomerSearchResult | null>(null)
   const [addressId, setAddressId] = useState('')
 
+  // Most flood calls are somebody who has never used us before.
+  const [isNewCustomer, setIsNewCustomer] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newPhone, setNewPhone] = useState('')
+  const [newEmail, setNewEmail] = useState('')
+  const [newStreet, setNewStreet] = useState('')
+  const [newCity, setNewCity] = useState('')
+  const [newState, setNewState] = useState('CO')
+  const [newZip, setNewZip] = useState('')
+
   const [sourceOfLoss, setSourceOfLoss] = useState('supply_line')
   const [waterCategory, setWaterCategory] = useState<1 | 2 | 3>(1)
   const [categoryTouched, setCategoryTouched] = useState(false)
@@ -137,7 +147,16 @@ export function RestorationNewWorkspace() {
   }
 
   async function handleCreate() {
-    if (!customer || !addressId) {
+    if (isNewCustomer) {
+      if (!newName.trim() || !newPhone.trim()) {
+        setError('A name and phone number are needed to open the job.')
+        return
+      }
+      if (!newStreet.trim() || !newCity.trim()) {
+        setError('A street and city are needed so the crew can get there.')
+        return
+      }
+    } else if (!customer || !addressId) {
       setError('Pick a customer and a service address first.')
       return
     }
@@ -148,8 +167,21 @@ export function RestorationNewWorkspace() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          customer_id: customer.id,
-          service_address_id: addressId,
+          ...(isNewCustomer
+            ? {
+                customer: {
+                  full_name: newName.trim(),
+                  phone: newPhone.trim(),
+                  email: newEmail.trim() || null,
+                },
+                address: {
+                  street_1: newStreet.trim(),
+                  city: newCity.trim(),
+                  state: newState.trim() || 'CO',
+                  zip_code: newZip.trim() || null,
+                },
+              }
+            : { customer_id: customer!.id, service_address_id: addressId }),
           water_category: waterCategory,
           source_of_loss: sourceOfLoss,
           loss_date: lossDate || null,
@@ -184,8 +216,109 @@ export function RestorationNewWorkspace() {
       </div>
 
       <Card className="border-border/60 bg-card/80 p-5">
-        <h2 className="mb-3 text-lg font-semibold">Customer</h2>
-        {customer ? (
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold">Customer</h2>
+          <div className="flex gap-1">
+            <Button
+              type="button"
+              size="sm"
+              variant={isNewCustomer ? 'outline' : 'default'}
+              onClick={() => setIsNewCustomer(false)}
+            >
+              Existing
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={isNewCustomer ? 'default' : 'outline'}
+              onClick={() => {
+                setIsNewCustomer(true)
+                setCustomer(null)
+                setAddressId('')
+              }}
+            >
+              New
+            </Button>
+          </div>
+        </div>
+
+        {isNewCustomer ? (
+          <div className="flex flex-col gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="new-name">Name</Label>
+                <Input
+                  id="new-name"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="Jill Andersen"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="new-phone">Phone</Label>
+                <Input
+                  id="new-phone"
+                  type="tel"
+                  value={newPhone}
+                  onChange={(e) => setNewPhone(e.target.value)}
+                  placeholder="(719) 555-0134"
+                />
+              </div>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="new-email">
+                Email <span className="text-muted-foreground">(optional)</span>
+              </Label>
+              <Input
+                id="new-email"
+                type="email"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="new-street">Service address</Label>
+              <Input
+                id="new-street"
+                value={newStreet}
+                onChange={(e) => setNewStreet(e.target.value)}
+                placeholder="742 Spruce Rd"
+              />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="new-city">City</Label>
+                <Input
+                  id="new-city"
+                  value={newCity}
+                  onChange={(e) => setNewCity(e.target.value)}
+                  placeholder="Monument"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="new-state">State</Label>
+                <Input
+                  id="new-state"
+                  value={newState}
+                  onChange={(e) => setNewState(e.target.value)}
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="new-zip">ZIP</Label>
+                <Input
+                  id="new-zip"
+                  value={newZip}
+                  onChange={(e) => setNewZip(e.target.value)}
+                  placeholder="80132"
+                />
+              </div>
+            </div>
+            <p className="text-muted-foreground text-xs">
+              If this number is already on file the existing customer is reused, so a
+              repeat caller does not become a duplicate.
+            </p>
+          </div>
+        ) : customer ? (
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="font-medium">{customer.business_name || customer.full_name}</p>
@@ -239,7 +372,7 @@ export function RestorationNewWorkspace() {
           </div>
         )}
 
-        {customer && customer.ops_service_addresses.length > 0 ? (
+        {!isNewCustomer && customer && customer.ops_service_addresses.length > 0 ? (
           <div className="mt-4 flex flex-col gap-2">
             <Label htmlFor="loss-address">Service address</Label>
             <select
@@ -408,7 +541,12 @@ export function RestorationNewWorkspace() {
       <div className="flex items-center gap-3">
         <Button
           size="lg"
-          disabled={saving || !customer || !addressId}
+          disabled={
+            saving ||
+            (isNewCustomer
+              ? !newName.trim() || !newPhone.trim() || !newStreet.trim()
+              : !customer || !addressId)
+          }
           onClick={() => void handleCreate()}
           className="gap-2"
         >

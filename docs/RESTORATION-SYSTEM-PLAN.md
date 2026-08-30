@@ -867,3 +867,43 @@ This is the first round of feedback from actually using the screen, and all thre
 were interaction problems invisible from the code — the bulk-add button *worked*, it was
 just placed where it read as unrelated to the rows. Expect more of this; it is the
 cheapest kind of fix and the reason Charles clicking through matters more than any test.
+
+
+---
+
+## Status — pass 12: new customers on the intake (Charles spotted the gap)
+
+The water-loss intake could only search for an existing customer. A flood call is
+almost always somebody new, so the job could not be opened at all for a first-time
+caller.
+
+- **`src/lib/ops/resolve-customer.ts`** — find-or-create, matching on phone. Extracted
+  rather than written fresh, because the booking route already had this logic and a
+  second, subtly different copy is how duplicate-customer bugs start.
+- **One deliberate difference from carpet cleaning booking: email is optional.** The
+  booking route requires first name, last name, email and phone. Refusing to open a
+  water-loss job because the caller did not spell out an email while their basement
+  fills would be absurd. Name and phone are required; a single typed name is split.
+- The intake form has Existing / New toggle, with name, phone, optional email, and the
+  service address. If the number is already on file the existing customer is reused, so
+  a repeat caller does not become a duplicate.
+
+### Bug found by the integration test — worth reading
+A customer submitted with **no phone at all** resolved to an *existing customer record*
+and returned success. Cause: `normalizeOpsPhone('')` returns **`'+'`** — a truthy string
+— so the empty check passed, and the lookup then matched a real customer whose stored
+phone is literally `'+'`.
+
+That is a wrong-customer bug: a job could have been attached to a stranger's record.
+The resolver now validates that the raw input has at least 10 digits **before**
+normalising. Six junk values are covered by tests (`''`, whitespace, `'+'`, `'555'`,
+`'call back'`, a partial number).
+
+**One existing customer in the database has `phone = '+'`** and was left untouched —
+that is Charles's data to decide on, not mine to delete. Nothing new can land on it now.
+The booking route is not exposed to this because it requires a phone up front.
+
+### Verified
+596 tests pass (16 on customer resolution, 4 of them against the real database),
+typecheck clean, lint clean, `next build` exit 0. Test customers cleaned up — verified 0
+remaining.

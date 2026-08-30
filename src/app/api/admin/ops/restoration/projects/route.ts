@@ -6,6 +6,8 @@ import {
   MONITOR_VISIT_MINUTES,
   addMinutes,
 } from '@/lib/ops/restoration-projects'
+import { resolveOrCreateCustomer } from '@/lib/ops/resolve-customer'
+import { resolveServiceAddress } from '@/lib/ops/addresses'
 
 /** Open water-loss projects, newest first — the source for the schedule tray. */
 export async function GET() {
@@ -45,13 +47,35 @@ export async function POST(request: NextRequest) {
     const supabase = createAdminClient()
     const body = await request.json()
 
-    const customerId = String(body.customer_id ?? '')
-    const serviceAddressId = String(body.service_address_id ?? '')
-    if (!customerId || !serviceAddressId) {
-      return NextResponse.json(
-        { error: 'customer_id and service_address_id are required' },
-        { status: 400 },
+    // A flood call is usually a brand-new customer, so the intake takes either
+    // an existing id or the details to create one. Email is not required here:
+    // refusing to open the job because someone did not spell out an email while
+    // their basement fills would be absurd.
+    const resolved = await resolveOrCreateCustomer(supabase, {
+      customerId: body.customer_id ? String(body.customer_id) : null,
+      customer: body.customer ?? null,
+    })
+    if (!resolved.ok) {
+      return NextResponse.json({ error: resolved.error }, { status: 400 })
+    }
+    const customerId = resolved.customerId
+
+    let serviceAddressId = body.service_address_id
+      ? String(body.service_address_id)
+      : ''
+    if (!serviceAddressId) {
+      const address = await resolveServiceAddress(
+        supabase,
+        customerId,
+        body.address ?? null,
       )
+      if (!address?.id) {
+        return NextResponse.json(
+          { error: 'A service address is required' },
+          { status: 400 },
+        )
+      }
+      serviceAddressId = address.id
     }
 
     const appointmentDate = String(body.appointment_date ?? '')
@@ -151,6 +175,8 @@ export async function POST(request: NextRequest) {
       project_id: project.id,
       appointment_id: appointment.id,
       queued_monitor_visits: monitorVisits,
+      customer_id: customerId,
+      customer_created: resolved.created,
     })
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Failed to create project'
