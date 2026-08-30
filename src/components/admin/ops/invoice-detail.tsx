@@ -24,6 +24,8 @@ import {
 import { Button } from '@/components/ui/button'
 import { CleaningReminderButtons } from '@/components/ops/cleaning-reminder-buttons'
 import { FiberCheckPanel } from '@/components/ops/fiber-check-panel'
+import { DirectionsButtons } from '@/components/ops/directions-buttons'
+import { StreetViewCard } from '@/components/ops/street-view-card'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -320,7 +322,6 @@ export function InvoiceDetail({
     ok: boolean
     message: string
   } | null>(null)
-  const [streetViewFailed, setStreetViewFailed] = useState(false)
   const [paymentLinkLoading, setPaymentLinkLoading] = useState<
     'quickbooks' | 'square' | 'venmo' | null
   >(null)
@@ -2066,36 +2067,7 @@ export function InvoiceDetail({
                       </p>
                     </div>
                   ) : null}
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button
-                      size="default"
-                      className="w-full gap-2 bg-green-600 font-bold tracking-widest text-white uppercase hover:bg-green-500"
-                      asChild
-                    >
-                      <a
-                        href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${address.street_1}, ${address.city}, ${address.state} ${address.zip_code}`)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <MapPin className="h-4 w-4" />
-                        Google Maps
-                      </a>
-                    </Button>
-                    <Button
-                      size="default"
-                      className="w-full gap-2 bg-sky-600 font-bold tracking-widest text-white uppercase hover:bg-sky-500"
-                      asChild
-                    >
-                      <a
-                        href={`https://maps.apple.com/?daddr=${encodeURIComponent(`${address.street_1}, ${address.city}, ${address.state} ${address.zip_code}`)}&dirflg=d`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <MapPin className="h-4 w-4" />
-                        Apple Maps
-                      </a>
-                    </Button>
-                  </div>
+                  <DirectionsButtons address={address} />
                 </div>
               ) : null}
               {appointment?.lead_source ? (
@@ -2149,22 +2121,7 @@ export function InvoiceDetail({
       </Card>
 
       {/* ── Street View panel ───────────────────────────────── */}
-      {address && !streetViewFailed ? (
-        <Card className="border-border/60 overflow-hidden shadow-sm">
-          <img
-            src={`/api/admin/streetview?address=${encodeURIComponent(
-              `${address.street_1}, ${address.city}, ${address.state} ${address.zip_code}`,
-            )}`}
-            alt={`Street view of ${address.street_1}`}
-            className="w-full object-cover"
-            style={{ height: '200px' }}
-            onError={() => setStreetViewFailed(true)}
-          />
-          <div className="bg-muted/40 text-muted-foreground px-4 py-2 text-xs">
-            Street View · {address.street_1}, {address.city}
-          </div>
-        </Card>
-      ) : null}
+      <StreetViewCard address={address} />
 
       {/* ── Invoice status card ─────────────────────────────── */}
       <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">

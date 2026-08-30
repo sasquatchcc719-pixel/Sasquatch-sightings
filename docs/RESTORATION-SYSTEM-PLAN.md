@@ -509,3 +509,40 @@ floor fan, `DRY+` $28.18 axial, `DRY++` $35 1 HP axial.
 5. **NEW — equipment day counting.** Current rule is elapsed 24-hour periods with a
    one-hour grace (Mon 9am -> Thu 9am = 3 days). Confirm this matches how Charles counts
    days today, since he has been doing it in his head.
+
+
+---
+
+## Status — pass 3 (2026-08-30): component extraction begins
+
+Charles: "every time we create a new invoice you tend to drop all that stuff that we
+worked on." Extraction has to come BEFORE the restoration screen, or the copies drift.
+
+### DONE
+- **`src/lib/ops/address-links.ts`** — map, directions, and Street View URL construction,
+  previously written inline in THREE places (`invoice-detail.tsx`, `estimate-detail.tsx`,
+  `tech-job-detail.tsx`). 5 unit tests pin the exact URL strings, because changing one
+  changes where a tech ends up driving.
+- **`src/components/ops/directions-buttons.tsx`** — the green/blue Google + Apple pair.
+- **`src/components/ops/street-view-card.tsx`** — the photo of the house. Now owns its
+  own failure state instead of having the flag hoisted into the parent screen.
+- `invoice-detail.tsx` rewired to use both: **3,194 -> 3,151 lines**.
+- `tech-job-detail.tsx` rewired to use the shared URL helpers.
+
+### Deliberate scope decision
+The admin screens and the tech screen use DIFFERENT visual treatments (Cards vs dark
+glass panels) and different link modes (turn-by-turn directions vs pin-drop search).
+Only the URL construction was shared; each screen keeps its own styling. Forcing one
+visual treatment would have been a much riskier change for no benefit, and the thing
+that actually must not diverge is the URLs.
+
+### Verified
+- Full suite **545 passed**, typecheck clean, eslint clean on touched files
+  (the 2 remaining `<img>` warnings in `invoice-detail.tsx` are pre-existing, elsewhere).
+- **`next build` succeeded** — the real check after touching the money screen. All three
+  restoration API routes present in the build output.
+
+### Still to extract before the restoration screen
+Customer panel (info + call/text), the visit status bar (On My Way / Arrived / Start,
+with GPS arrival detection), and the line-items editor. These are larger and carry
+state, so they come next.

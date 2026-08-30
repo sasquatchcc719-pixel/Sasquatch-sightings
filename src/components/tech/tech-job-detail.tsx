@@ -32,6 +32,11 @@ import { formatSquareAmount } from '@/lib/payments/square'
 import { FLOOR_PLAN_MAPS } from '@/lib/ops/floor-plan-maps'
 import { lastPaymentText } from '@/lib/ops/payment-texts'
 import {
+  appleSearchHref,
+  googleSearchHref,
+  streetViewSrc,
+} from '@/lib/ops/address-links'
+import {
   PaymentTextHistoryList,
   PaymentTextLastSent,
 } from '@/components/ops/payment-text-history'
@@ -191,12 +196,8 @@ export function TechJobDetail({
   const signatureBlocked = !signatureAllowed(gateLines, gateChecks)
   const blockedItems = blockedSummary(gateLines, gateChecks)
   const fullAddress = addressLine(appointment)
-  const mapsHref = fullAddress
-    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress)}`
-    : null
-  const appleMapsHref = fullAddress
-    ? `https://maps.apple.com/?q=${encodeURIComponent(fullAddress)}`
-    : null
+  const mapsHref = fullAddress ? googleSearchHref(fullAddress) : null
+  const appleMapsHref = fullAddress ? appleSearchHref(fullAddress) : null
   const payableTotal = appointment.hidePricing
     ? null
     : (appointment.invoice?.total ?? appointment.quotedTotal)
@@ -530,9 +531,7 @@ export function TechJobDetail({
       {fullAddress && !streetViewFailed ? (
         <section className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.06]">
           <Image
-            src={`/api/admin/streetview?address=${encodeURIComponent(
-              fullAddress,
-            )}`}
+            src={streetViewSrc(fullAddress)}
             alt={`Street view of ${fullAddress}`}
             width={900}
             height={360}
