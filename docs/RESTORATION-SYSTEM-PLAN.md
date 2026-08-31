@@ -2175,7 +2175,7 @@ two different units — a number describing neither, and one that reads healthie
 than the struggling unit actually is. It now says the readings are from
 different units and points at the pin, rather than inventing a figure.
 
-### Sunday, second pass
+### Sunday, collapsible
 
 Charles dropped a monitor onto the sliver and then could not open it: the bars I
 drew were decoration, not links, and 48px is not a tap target.
@@ -2186,6 +2186,20 @@ links, and they resolve through the **same** `appointmentHref` the full-size
 blocks use, so a restoration monitor reached from the sliver lands on the
 project screen where the readings live rather than on a bare appointment page.
 
-Worth noting for next time: showing something without making it do anything is
-the same mistake twice in one feature — the sliver could not be dropped on, and
-then what was dropped could not be opened.
+Worth noting: showing something without making it do anything was the same
+mistake twice in one feature — the sliver could not be dropped on, and then what
+was dropped could not be opened.
+
+Charles then named the better answer: *"just make Sunday collapsible... there's
+no distinction between my schedule and David's schedule. Either one of us could
+be doing monitoring on Sunday."*
+
+He is right, and it exposes what a sliver can never do. Widening it was still
+answering the wrong question — a monitor visit needs **staff lanes**, because
+either tech might take it, and a bar in a 96px column cannot say which. So
+Sunday now collapses and opens: closed it is a 56px sliver showing its date, its
+total and any bars; clicking it opens the day into a full column with both
+lanes, identical to every other day, and "Hide" in the header closes it again.
+
+It defaults closed because we still do not sell Sundays. It opens because
+sometimes we work them.
