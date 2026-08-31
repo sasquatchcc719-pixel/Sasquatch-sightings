@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { unitDays, equipmentLedger } from './restoration-equipment-ledger'
+import {
+  unitDays,
+  equipmentLedger,
+  ledgerAsOf,
+  placementsAsOf,
+} from './restoration-equipment-ledger'
 
 const NOW = new Date('2026-08-31T23:45:00Z')
 
@@ -74,5 +79,36 @@ describe('equipmentLedger', () => {
   it('keeps each kind of equipment apart', () => {
     const codes = equipmentLedger(placements, NOW).map((l) => l.code).sort()
     expect(codes).toEqual(['DHM>>', 'DRY'])
+  })
+})
+
+describe('what the equipment had cost on a given day', () => {
+  const placements = [
+    { id: 'a', catalog_code: 'DRY', placed_at: '2026-08-29T15:00:00Z', removed_at: null },
+    { id: 'b', catalog_code: 'DRY', placed_at: '2026-08-31T15:00:00Z', removed_at: null },
+  ]
+  const now = new Date('2026-09-02T18:00:00Z')
+
+  it('climbs day by day, which is the shape of a drying job', () => {
+    const days = ['2026-08-29', '2026-08-30', '2026-08-31', '2026-09-01'].map((day) => {
+      const asOf = ledgerAsOf(day, now)
+      const [line] = equipmentLedger(placementsAsOf(placements, asOf), asOf)
+      return line?.unitDays ?? 0
+    })
+    // One fan for one day, then two, then two fans across two and one days...
+    expect(days).toEqual([1, 2, 4, 6])
+    // Strictly increasing: a monitor day always costs more than the one before.
+    for (let i = 1; i < days.length; i++) {
+      expect(days[i]).toBeGreaterThan(days[i - 1])
+    }
+  })
+
+  it('counts nothing on a day before the equipment was set down', () => {
+    const asOf = ledgerAsOf('2026-08-28', now)
+    expect(placementsAsOf(placements, asOf)).toHaveLength(0)
+  })
+
+  it('never runs a future visit past today', () => {
+    expect(ledgerAsOf('2026-12-01', now)).toEqual(now)
   })
 })

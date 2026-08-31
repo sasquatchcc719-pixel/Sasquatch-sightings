@@ -87,3 +87,26 @@ export function equipmentLedger(placements: Placement[], now: Date): LedgerLine[
     ),
   }))
 }
+
+/**
+ * The moment to compute a ledger against, for the visit being viewed.
+ *
+ * Equipment accrues continuously, so "what does this job owe" and "what did it
+ * owe on Monday" are different questions and the screen was only ever answering
+ * the first. Looking back at Monday showed Wednesday's total, which hides the
+ * daily climb that is the whole shape of a drying job.
+ *
+ * End of the visit's day, never later than now — a visit in the future has
+ * accrued nothing yet.
+ */
+export function ledgerAsOf(visitDate: string | null, now: Date): Date {
+  if (!visitDate) return now
+  const endOfDay = new Date(`${visitDate}T23:59:59`)
+  if (Number.isNaN(endOfDay.getTime())) return now
+  return endOfDay > now ? now : endOfDay
+}
+
+/** Units that had actually been placed by that moment. */
+export function placementsAsOf(placements: Placement[], asOf: Date): Placement[] {
+  return placements.filter((p) => new Date(p.placed_at).getTime() <= asOf.getTime())
+}

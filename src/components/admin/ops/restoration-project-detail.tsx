@@ -55,7 +55,11 @@ import { grainsPerPound } from '@/lib/ops/restoration-psychrometry'
 import { readingForVisit, visitIsFuture } from '@/lib/ops/restoration-visit-scope'
 import { positionForVisit } from '@/lib/ops/restoration-equipment-position'
 import { noteTextFor, noteIsDirty } from '@/lib/ops/restoration-note-scope'
-import { equipmentLedger } from '@/lib/ops/restoration-equipment-ledger'
+import {
+  equipmentLedger,
+  ledgerAsOf,
+  placementsAsOf,
+} from '@/lib/ops/restoration-equipment-ledger'
 
 /**
  * The restoration project screen.
@@ -552,12 +556,6 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
     return visit?.visit_type !== 'monitor'
   }, [workOpenOverride, detail?.visits, activeVisitId])
 
-  /** The per-unit arithmetic behind each equipment line, so it can be checked. */
-  const ledger = useMemo(
-    () => equipmentLedger(detail?.equipment ?? [], new Date()),
-    [detail?.equipment],
-  )
-
   /** True when the visit being viewed has not been worked yet. */
   const activeVisitNotYet = useMemo(() => {
     const visit = detail?.visits.find((v) => v.id === activeVisitId) ?? null
@@ -569,6 +567,37 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
     () => detail?.visits.find((v) => v.id === activeVisitId)?.appointment_date ?? null,
     [detail?.visits, activeVisitId],
   )
+
+  /**
+   * The per-unit arithmetic behind each equipment line, as of the visit being
+   * viewed — so stepping back through the days shows the cost climbing, which
+   * is the shape of a drying job and was invisible when every day showed today's
+   * total.
+   */
+  const ledgerMoment = useMemo(
+    () => ledgerAsOf(activeVisitDate, new Date()),
+    [activeVisitDate],
+  )
+  const ledger = useMemo(
+    () =>
+      equipmentLedger(
+        placementsAsOf(detail?.equipment ?? [], ledgerMoment),
+        ledgerMoment,
+      ),
+    [detail?.equipment, ledgerMoment],
+  )
+  const ledgerTotal = useMemo(() => {
+    const priceByCode = new Map(
+      (detail?.equipment_billing ?? []).map((row) => [
+        row.catalog_code,
+        Number(row.unit_price),
+      ]),
+    )
+    return ledger.reduce(
+      (sum, line) => sum + line.unitDays * (priceByCode.get(line.code) ?? 0),
+      0,
+    )
+  }, [ledger, detail?.equipment_billing])
 
   const planPins = useMemo<PlanPin[]>(() => {
     const pins: PlanPin[] = []
@@ -2592,8 +2621,20 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             <h2 className={SECTION_TITLE}>
               <Wind className={SECTION_ICON} /> Equipment
             </h2>
-            <span className="text-muted-foreground text-sm">
-              {runningEquipment.length} running · {money(detail.totals.equipment)}
+            <span className="text-muted-foreground text-right text-sm">
+              {ledger.reduce((n, l) => n + l.running, 0)} running ·{' '}
+              {money(ledgerTotal)}
+              {activeVisitDate && activeVisitDate !== toDateKey(new Date()) ? (
+                // Looking back at an earlier visit shows what it had cost by
+                // then, not what it costs today.
+                <span className="block text-xs">
+                  as of{' '}
+                  {new Date(`${activeVisitDate}T12:00:00`).toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                  })}
+                </span>
+              ) : null}
             </span>
           </div>
 
@@ -2658,10 +2699,11 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                         {row.description}
                       </span>
                       <span className="text-muted-foreground whitespace-nowrap text-xs tabular-nums">
-                        {row.unit_days} unit-day{row.unit_days === 1 ? '' : 's'}
+                        {line?.unitDays ?? 0} unit-day
+                        {(line?.unitDays ?? 0) === 1 ? '' : 's'}
                       </span>
                       <span className="w-20 text-right font-medium">
-                        {money(Number(row.line_total))}
+                        {money((line?.unitDays ?? 0) * Number(row.unit_price))}
                       </span>
                     </div>
                     {line ? (

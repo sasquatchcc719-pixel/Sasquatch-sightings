@@ -3122,3 +3122,31 @@ Yes, and that part was never in doubt: the total is computed from placement and
 removal timestamps every time the screen loads, so it climbs on its own and is
 correct at any moment, including the close. What was missing was any way to look
 at it and agree.
+
+### And why the price was not climbing
+
+Charles: *"that means every monitor day should have a slightly increasing price
+as we move onto the job, but that's not what I'm noticing."*
+
+Right on the principle, and there were two separate reasons he could not see it.
+
+**The honest one:** all nine units were placed **today**, at 09:37 Mountain,
+eight hours before he looked. There is no history to climb through yet. They tick
+to two days tomorrow at about 10:37, and the total goes $301.46 → $602.92.
+
+**The real fault:** the equipment card computed against `now()` no matter which
+visit was open, so stepping back to Sunday showed Wednesday's total. Even once
+the job had days behind it, the climb would have been invisible — every day
+showing the same number, which is exactly what he reported.
+
+Equipment is now computed **as of the visit being viewed**: end of that day,
+never later than now, counting only units already placed by then. Stepping
+through the visits walks the cost up, one day at a time, and the header says
+"as of Aug 30" when looking back so the figure cannot be mistaken for today's.
+
+A test walks four consecutive days of a two-fan job and asserts the totals are
+**strictly increasing** — 1, 2, 4, 6 unit-days — because "it should go up every
+day" is the property, not any particular number.
+
+The Money card still shows the job's running total to now. That one is the bottom
+line, and it should not change because of which visit is selected.
