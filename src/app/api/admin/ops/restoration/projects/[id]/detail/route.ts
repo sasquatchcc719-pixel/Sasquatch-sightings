@@ -80,7 +80,9 @@ export async function GET(
         ),
       supabase
         .from('restoration_estimate_lines')
-        .select('id, name_snapshot, quantity, unit_price, line_total, unit, restoration_catalog_code')
+        .select(
+          'id, name_snapshot, quantity, units, days, unit_price, line_total, unit, restoration_catalog_code',
+        )
         .eq('project_id', id)
         .order('sort_order')
         .order('created_at'),

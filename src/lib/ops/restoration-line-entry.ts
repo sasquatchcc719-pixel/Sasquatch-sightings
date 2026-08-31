@@ -5,6 +5,7 @@ import {
   type LossContext,
   type RestorationCatalogItem,
 } from '@/lib/ops/restoration-catalog'
+import { isDailyBilled } from '@/lib/ops/restoration-daily-billing'
 
 /**
  * Speech / shorthand -> restoration line items.
@@ -26,6 +27,10 @@ export type ParsedLine = {
   unit: string
   unitPrice: number
   quantity: number | null
+  /** Priced per 24-hour period: the spoken number is units, not a quantity. */
+  daily: boolean
+  /** Days spoken out loud, if any. Never assumed — the screen defaults it. */
+  days: number | null
   heard: string
   confidence: 'high' | 'low'
 }
@@ -94,6 +99,11 @@ export async function parseRestorationLines(
     'If a quantity is clearly stated ("four hundred square feet", "sixty feet of"),',
     'return it as a number. If not stated, return null. Never invent a quantity.',
     '',
+    'Equipment is rented by the day. For equipment, the number spoken is HOW MANY',
+    'units ("eight fans" is eight air movers), and it goes in "quantity". If they',
+    'also say how long it runs ("for four days"), put that in "days". If they do',
+    'not say, return null for days — do not assume a length.',
+    '',
     'Put anything you could not confidently match into "unmatched" rather than',
     'guessing at a concept.',
   ].join('\n')
@@ -108,11 +118,12 @@ export async function parseRestorationLines(
         items: {
           type: 'object',
           additionalProperties: false,
-          required: ['concept_id', 'heard', 'quantity', 'confident'],
+          required: ['concept_id', 'heard', 'quantity', 'days', 'confident'],
           properties: {
             concept_id: { type: 'string' },
             heard: { type: 'string', description: 'the words this came from' },
             quantity: { type: ['number', 'null'] },
+            days: { type: ['number', 'null'], description: 'equipment only' },
             confident: { type: 'boolean' },
           },
         },
@@ -126,6 +137,7 @@ export async function parseRestorationLines(
       concept_id: string
       heard: string
       quantity: number | null
+      days: number | null
       confident: boolean
     }>
     unmatched: string[]
@@ -175,6 +187,11 @@ export async function parseRestorationLines(
       code: hit.code,
       unit: hit.unit,
       unitPrice: hit.unit_price,
+      daily: isDailyBilled(hit.description, hit.unit),
+      days:
+        typeof entry.days === 'number' && Number.isFinite(entry.days) && entry.days > 0
+          ? entry.days
+          : null,
       quantity:
         typeof entry.quantity === 'number' && Number.isFinite(entry.quantity)
           ? entry.quantity

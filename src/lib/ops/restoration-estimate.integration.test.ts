@@ -266,3 +266,64 @@ describe('signing the estimate', () => {
     expect(project!.estimate_signed_at).toBeNull()
   })
 })
+
+describe('equipment on the estimate', () => {
+  it('multiplies units by days, and never disagrees with itself', async () => {
+    const { data: line } = await supabase
+      .from('restoration_estimate_lines')
+      .insert({
+        project_id: projectId,
+        restoration_catalog_code: 'DRY',
+        name_snapshot: 'DRY - Air mover (per 24 hour period) - No monitoring',
+        units: 8,
+        days: 3,
+        quantity: 1, // deliberately wrong: the trigger owns this number
+        unit_price: 24.5,
+        line_total: 0,
+        unit: 'EA',
+      })
+      .select('quantity, units, days, line_total')
+      .single()
+
+    expect(Number(line!.quantity)).toBe(24)
+    expect(Number(line!.line_total)).toBeCloseTo(588, 2)
+  })
+
+  it('reprices when a day is added, without touching the quantity', async () => {
+    const { data: updated } = await supabase
+      .from('restoration_estimate_lines')
+      .update({ days: 4 })
+      .eq('project_id', projectId)
+      .eq('restoration_catalog_code', 'DRY')
+      .select('quantity, line_total')
+      .single()
+
+    expect(Number(updated!.quantity)).toBe(32)
+    expect(Number(updated!.line_total)).toBeCloseTo(784, 2)
+  })
+
+  it('leaves measured work priced by its own quantity', async () => {
+    const { data: ext } = await supabase
+      .from('restoration_estimate_lines')
+      .select('units, days, quantity')
+      .eq('project_id', projectId)
+      .eq('restoration_catalog_code', 'EXT')
+      .single()
+
+    expect(ext!.units).toBeNull()
+    expect(ext!.days).toBeNull()
+    expect(Number(ext!.quantity)).toBe(400)
+  })
+
+  it('refuses days without a unit count, which would price to nothing', async () => {
+    const { error } = await supabase.from('restoration_estimate_lines').insert({
+      project_id: projectId,
+      name_snapshot: 'days with no units',
+      quantity: 1,
+      days: 3,
+      unit_price: 10,
+      line_total: 10,
+    })
+    expect(error).not.toBeNull()
+  })
+})

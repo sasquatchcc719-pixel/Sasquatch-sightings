@@ -3,8 +3,15 @@ import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { loadEnabledCatalog } from '@/lib/ops/restoration-line-entry'
 import { resolveVariant, type WaterCategory } from '@/lib/ops/restoration-catalog'
+import { isDailyBilled } from '@/lib/ops/restoration-daily-billing'
 
 const round2 = (n: number) => Math.round(n * 100) / 100
+
+/** A quantity a caller sent, or null — never a zero or a NaN that prices to nothing. */
+function positive(value: unknown): number | null {
+  const n = Number(value)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
 
 /**
  * Estimate lines for a water loss.
@@ -23,8 +30,12 @@ export async function POST(
     const supabase = createAdminClient()
     const body = await request.json()
 
-    const requested: Array<{ concept_code: string; quantity?: number | null }> =
-      Array.isArray(body.lines) ? body.lines : []
+    const requested: Array<{
+      concept_code: string
+      quantity?: number | null
+      units?: number | null
+      days?: number | null
+    }> = Array.isArray(body.lines) ? body.lines : []
     if (requested.length === 0) {
       return NextResponse.json({ error: 'lines is required' }, { status: 400 })
     }
@@ -57,15 +68,23 @@ export async function POST(
         rejected.push(String(line.concept_code))
         continue
       }
-      const quantity = Number(line.quantity ?? 1)
-      const safeQuantity = Number.isFinite(quantity) && quantity > 0 ? quantity : 1
+      // Equipment is rented by the day, so it carries the two numbers a person
+      // actually says — how many, for how long — and the quantity is their
+      // product. Everything else has one number and keeps it.
+      const daily = isDailyBilled(hit.description, hit.unit)
+      const units = positive(line.units)
+      const days = daily ? positive(line.days) ?? 1 : null
+      const quantity = units != null ? units * (days ?? 1) : positive(line.quantity) ?? 1
+
       rows.push({
         project_id: id,
         restoration_catalog_code: hit.code,
         name_snapshot: `${hit.code} - ${hit.description}`,
-        quantity: safeQuantity,
+        quantity,
+        units,
+        days: units != null ? days : null,
         unit_price: hit.unit_price,
-        line_total: round2(safeQuantity * hit.unit_price),
+        line_total: round2(quantity * hit.unit_price),
         unit: hit.unit,
       })
     }
@@ -77,7 +96,9 @@ export async function POST(
     const { data, error } = await supabase
       .from('restoration_estimate_lines')
       .insert(rows)
-      .select('id, name_snapshot, quantity, unit_price, line_total, unit, restoration_catalog_code')
+      .select(
+        'id, name_snapshot, quantity, units, days, unit_price, line_total, unit, restoration_catalog_code',
+      )
 
     if (error) throw error
     return NextResponse.json({ lines: data ?? [], rejected })
@@ -113,6 +134,21 @@ export async function PUT(
       return NextResponse.json({ error: 'estimate_is_empty' }, { status: 400 })
     }
 
+    // Equipment does NOT come across. On the work side it is billed from what
+    // is actually placed on the map and when it came out, so copying the
+    // quoted days here would bill the same fans twice — once as a guess and
+    // once as the real thing. The quote says three days; the invoice says what
+    // it ran.
+    const work = lines.filter((line) => !isDailyBilled(line.name_snapshot, line.unit))
+    const equipmentSkipped = lines.length - work.length
+
+    if (work.length === 0) {
+      return NextResponse.json(
+        { copied: 0, equipment_skipped: equipmentSkipped },
+        { status: 200 },
+      )
+    }
+
     const targetVisitId = body.appointment_id ? String(body.appointment_id) : null
     const { data: visit } = targetVisitId
       ? await supabase
@@ -132,7 +168,7 @@ export async function PUT(
     const { data: inserted, error } = await supabase
       .from('ops_appointment_line_items')
       .insert(
-        lines.map((line) => ({
+        work.map((line) => ({
           appointment_id: visit.id,
           restoration_catalog_code: line.restoration_catalog_code,
           name_snapshot: line.name_snapshot,
@@ -153,7 +189,11 @@ export async function PUT(
       .update({ estimate_copied_at: new Date().toISOString() })
       .eq('id', id)
 
-    return NextResponse.json({ copied: inserted?.length ?? 0, appointment_id: visit.id })
+    return NextResponse.json({
+      copied: inserted?.length ?? 0,
+      equipment_skipped: equipmentSkipped,
+      appointment_id: visit.id,
+    })
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Failed to copy the estimate'
     return NextResponse.json({ error: message }, { status: message === 'Not authorized' ? 403 : 500 })

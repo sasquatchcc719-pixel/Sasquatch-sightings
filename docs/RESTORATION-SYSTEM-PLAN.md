@@ -1571,3 +1571,63 @@ wording changes, not structural.
 4 integration tests: the estimate holds lines without touching the work or the calendar
 total; copying starts the work and the calendar total follows; the work can then diverge
 while the estimate stays as the record of what was quoted; and it cascades with the project.
+
+## Equipment is quoted as units × days
+
+Charles, looking at a scan that read "8 fans large dehu": *"it's not eight fans
+for one day. It's eight fans for three days... there needs to be a multiple
+calculator."*
+
+He is right, and the mistake was structural rather than cosmetic. Every piece of
+drying equipment on the price sheet is priced **per 24-hour period** — `DRY` is
+$24.50 a day, `DHM>>` is $105.46 a day — so a unit count is never a billable
+quantity. Storing 8 against a per-day price quotes one night of drying and
+misses the job by two thirds.
+
+### The two numbers are kept, not just their product
+
+`restoration_estimate_lines` gained `units` and `days`. `quantity` stays the one
+number money is computed from, and a trigger keeps all three from ever
+disagreeing: set `units`, and `quantity` becomes `units × days` no matter which
+code path wrote the row. A check constraint refuses `days` without `units`,
+which would otherwise price to nothing.
+
+Keeping both numbers is the point. A bare `24` on a line means re-deriving the
+arithmetic every time the plan changes, and reads to a customer like a typo.
+Stored as 8 × 3, adding a day is one edit and the estimate says "8 × 3 days".
+
+### What counts as daily is read from the description, not the code
+
+The codes lie. `DRY` and `DRY+` are both per-24-hour; `DAILYMON` has "Daily" in
+its name and is billed by the hour. The price sheet states what it charges for
+in words, so `isDailyBilled()` reads the description (and a `DA` unit), the same
+lesson the `+`/heavy misclassification taught earlier.
+
+### Days default to the monitor count
+
+Equipment goes in on the mitigation day and comes out on the last monitor, so
+the nights it runs is the number of monitor visits — three monitors, three days,
+which is exactly what Charles said out loud. The box is prefilled and editable,
+and voice entry overrides it when a length was actually spoken ("eight fans for
+four days" parses as units 8, days 4).
+
+### Equipment no longer copies onto the work
+
+Found while fixing this: "Start the work from this estimate" copied every line
+onto the mitigation visit, equipment included — and the invoice ALSO bills
+equipment from what is placed on the map and when it came out. The same fans
+would have billed twice, once as a guess and once as the real thing. The copy
+now skips daily-billed lines and reports how many it left behind. The quote says
+three days; the invoice says what it ran.
+
+### The signature freeze now holds on every route
+
+Also found here: the add route refused a signed estimate, but the edit and
+delete routes did not — a quantity could be changed out from under a signature,
+which makes the signature worthless. Both now refuse with the same 409.
+
+### Schema note
+
+Applied by MCP `apply_migration` as `restoration_estimate_line_units_and_days`,
+matching the rest of the restoration schema — none of which has a local
+migration file, because `db push` is dead in this project.

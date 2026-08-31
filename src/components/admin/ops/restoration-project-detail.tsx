@@ -37,6 +37,7 @@ import { WallPlan, type PlanPin, type WallPlanTool } from '@/components/ops/wall
 import type { PlanNode, PlanWall, WallOpening } from '@/lib/ops/restoration-walls'
 import { CustomerContact } from '@/components/ops/customer-contact'
 import { LineCandidateRow } from '@/components/ops/line-candidate-row'
+import { dryingDaysFromVisits } from '@/lib/ops/restoration-daily-billing'
 import { SignatureModal } from '@/components/admin/ops/signature-modal'
 import { nextVisitAction, type VisitStatus } from '@/lib/ops/arrival'
 import { captureDateFor } from '@/lib/ops/exif-capture-date'
@@ -133,6 +134,8 @@ type Detail = {
     id: string
     name_snapshot: string
     quantity: number
+    units: number | null
+    days: number | null
     unit_price: number
     line_total: number
     unit: string | null
@@ -175,6 +178,7 @@ type CatalogItem = {
   unit: string
   unit_price: number
   billable: boolean
+  daily: boolean
   group: string
 }
 
@@ -185,6 +189,8 @@ type ParsedLine = {
   unit: string
   unitPrice: number
   quantity: number | null
+  daily: boolean
+  days: number | null
   heard: string
   confidence: 'high' | 'low'
 }
@@ -541,6 +547,16 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
     }
   }
 
+  /**
+   * How long equipment is quoted to run. It goes in on the mitigation day and
+   * comes out on the last monitor, so the monitor count is the answer — and it
+   * is only ever a starting number, because the box is editable.
+   */
+  const quotedDryingDays = useMemo(
+    () => dryingDaysFromVisits(detail?.visits ?? []),
+    [detail?.visits],
+  )
+
   /** Pre-fill from what was measured: area for SF work, perimeter for LF work. */
   function suggestedQuantity(unit: string): number {
     if (unit === 'SF' && dryingPlan.totalAffectedSqft > 0) return dryingPlan.totalAffectedSqft
@@ -549,7 +565,12 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
   }
 
   async function addEstimateLines(
-    lines: Array<{ concept_code: string; quantity: number | null }>,
+    lines: Array<{
+      concept_code: string
+      quantity: number | null
+      units?: number
+      days?: number
+    }>,
   ) {
     if (lines.length === 0) return
     await call(
@@ -775,10 +796,25 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                   variant="outline"
                   onClick={async () => {
                     await addEstimateLines(
-                      estimateProposed.map((p) => ({
-                        concept_code: p.conceptCode,
-                        quantity: p.quantity ?? suggestedQuantity(p.unit),
-                      })),
+                      estimateProposed.map((p) => {
+                        // "Eight fans" heard on equipment is eight units, and
+                        // the days come from the schedule unless they were
+                        // spoken — never from the unit count.
+                        if (p.daily) {
+                          const units = p.quantity ?? 1
+                          const days = p.days ?? quotedDryingDays
+                          return {
+                            concept_code: p.conceptCode,
+                            quantity: units * days,
+                            units,
+                            days,
+                          }
+                        }
+                        return {
+                          concept_code: p.conceptCode,
+                          quantity: p.quantity ?? suggestedQuantity(p.unit),
+                        }
+                      }),
                     )
                     setEstimateProposed([])
                     setEstimateUnmatched([])
@@ -814,10 +850,14 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                     label={line.label}
                     unit={line.unit}
                     unitPrice={line.unitPrice}
-                    defaultQuantity={line.quantity ?? suggestedQuantity(line.unit)}
-                    onAdd={async (quantity) => {
+                    daily={line.daily}
+                    defaultDays={line.days ?? quotedDryingDays}
+                    defaultQuantity={
+                      line.quantity ?? (line.daily ? 1 : suggestedQuantity(line.unit))
+                    }
+                    onAdd={async (quantity, parts) => {
                       await addEstimateLines([
-                        { concept_code: line.conceptCode, quantity },
+                        { concept_code: line.conceptCode, quantity, ...parts },
                       ])
                       setEstimateProposed((current) =>
                         current.filter((_, i) => i !== index),
@@ -867,10 +907,12 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                         unit={item.unit}
                         unitPrice={item.unit_price}
                         billable={item.billable}
-                        defaultQuantity={suggestedQuantity(item.unit)}
-                        onAdd={(quantity) =>
+                        daily={item.daily}
+                        defaultDays={quotedDryingDays}
+                        defaultQuantity={item.daily ? 1 : suggestedQuantity(item.unit)}
+                        onAdd={(quantity, parts) =>
                           addEstimateLines([
-                            { concept_code: item.concept_code, quantity },
+                            { concept_code: item.concept_code, quantity, ...parts },
                           ])
                         }
                       />
@@ -884,24 +926,73 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 {detail.estimate_lines.map((line) => (
                   <div key={line.id} className="flex items-center gap-2 py-2 text-sm">
                     <span className="min-w-0 flex-1">{line.name_snapshot}</span>
-                    <Input
-                      className="h-8 w-20 text-right"
-                      type="number"
-                      min={0}
-                      step="any"
-                      defaultValue={Number(line.quantity)}
-                      onBlur={(e) => {
-                        const quantity = Number(e.target.value)
-                        if (quantity > 0 && quantity !== Number(line.quantity)) {
-                          void call(
-                            `/api/admin/ops/restoration/estimate-lines/${line.id}`,
-                            { method: 'PATCH', body: JSON.stringify({ quantity }) },
-                            `est-${line.id}`,
-                          )
-                        }
-                      }}
-                    />
-                    <span className="text-muted-foreground w-10 text-xs">{line.unit}</span>
+                    {line.units != null ? (
+                      // Equipment keeps the two numbers it was quoted with, so a
+                      // day added or a fan pulled is one edit, not mental
+                      // arithmetic redone against a bare 24.
+                      <>
+                        <Input
+                          className="h-8 w-14 text-right"
+                          type="number"
+                          min={0}
+                          step="any"
+                          aria-label="How many"
+                          defaultValue={Number(line.units)}
+                          onBlur={(e) => {
+                            const units = Number(e.target.value)
+                            if (units > 0 && units !== Number(line.units)) {
+                              void call(
+                                `/api/admin/ops/restoration/estimate-lines/${line.id}`,
+                                { method: 'PATCH', body: JSON.stringify({ units }) },
+                                `est-${line.id}`,
+                              )
+                            }
+                          }}
+                        />
+                        <span className="text-muted-foreground text-xs">×</span>
+                        <Input
+                          className="h-8 w-14 text-right"
+                          type="number"
+                          min={0}
+                          step="any"
+                          aria-label="Days"
+                          defaultValue={Number(line.days ?? 1)}
+                          onBlur={(e) => {
+                            const days = Number(e.target.value)
+                            if (days > 0 && days !== Number(line.days ?? 1)) {
+                              void call(
+                                `/api/admin/ops/restoration/estimate-lines/${line.id}`,
+                                { method: 'PATCH', body: JSON.stringify({ days }) },
+                                `est-${line.id}`,
+                              )
+                            }
+                          }}
+                        />
+                        <span className="text-muted-foreground w-10 text-xs">days</span>
+                      </>
+                    ) : (
+                      <>
+                        <Input
+                          className="h-8 w-20 text-right"
+                          type="number"
+                          min={0}
+                          step="any"
+                          aria-label="Quantity"
+                          defaultValue={Number(line.quantity)}
+                          onBlur={(e) => {
+                            const quantity = Number(e.target.value)
+                            if (quantity > 0 && quantity !== Number(line.quantity)) {
+                              void call(
+                                `/api/admin/ops/restoration/estimate-lines/${line.id}`,
+                                { method: 'PATCH', body: JSON.stringify({ quantity }) },
+                                `est-${line.id}`,
+                              )
+                            }
+                          }}
+                        />
+                        <span className="text-muted-foreground w-10 text-xs">{line.unit}</span>
+                      </>
+                    )}
                     <span className="w-20 text-right font-medium">
                       {money(Number(line.line_total))}
                     </span>

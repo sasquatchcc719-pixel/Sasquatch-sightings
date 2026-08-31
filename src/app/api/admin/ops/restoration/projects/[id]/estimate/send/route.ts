@@ -57,13 +57,25 @@ export async function POST(
 
     const { data: lines } = await supabase
       .from('restoration_estimate_lines')
-      .select('name_snapshot, quantity, unit_price, line_total, unit')
+      .select('name_snapshot, quantity, units, days, unit_price, line_total, unit')
       .eq('project_id', id)
       .order('created_at')
 
     if (!lines || lines.length === 0) {
       return NextResponse.json({ error: 'estimate_is_empty' }, { status: 400 })
     }
+
+    // Equipment reads the way it was quoted -- "8 x 3 days" rather than a bare
+    // 24, which looks like a typo to whoever opens the email.
+    const quantityLabel = (l: {
+      quantity: number
+      units: number | null
+      days: number | null
+      unit: string | null
+    }) =>
+      l.units != null && l.days != null
+        ? `${l.units} x ${l.days} day${Number(l.days) === 1 ? '' : 's'}`
+        : `${l.quantity} ${l.unit ?? ''}`.trim()
 
     const total = lines.reduce((sum, l) => sum + Number(l.line_total), 0)
     const addressLine = address
@@ -88,7 +100,7 @@ export async function POST(
           .map(
             (l) => `<tr>
               <td style="padding:6px 0;border-bottom:1px solid #eee">${escapeHtml(l.name_snapshot)}</td>
-              <td style="padding:6px 0;border-bottom:1px solid #eee;text-align:right;white-space:nowrap">${l.quantity} ${escapeHtml(l.unit ?? '')}</td>
+              <td style="padding:6px 0;border-bottom:1px solid #eee;text-align:right;white-space:nowrap">${escapeHtml(quantityLabel(l))}</td>
               <td style="padding:6px 0;border-bottom:1px solid #eee;text-align:right;white-space:nowrap">${money(Number(l.line_total))}</td>
             </tr>`,
           )
