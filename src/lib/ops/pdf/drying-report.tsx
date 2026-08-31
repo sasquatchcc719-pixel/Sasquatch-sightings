@@ -1,5 +1,22 @@
 import React from 'react'
-import { Document, Image, Page, StyleSheet, Text, View } from '@react-pdf/renderer'
+import {
+  Document,
+  Image,
+  Page,
+  StyleSheet,
+  Svg,
+  Line,
+  Path,
+  Circle,
+  Text as SvgText,
+  Text,
+  View,
+} from '@react-pdf/renderer'
+import {
+  buildDryingChart,
+  dayLabel,
+} from '@/lib/ops/restoration-drying-series'
+import { moistureBand, BAND_LABEL } from '@/lib/ops/restoration-moisture'
 
 /**
  * The drying report: the document that makes a water loss defensible.
@@ -26,6 +43,7 @@ export type DryingReportData = {
   visits: Array<{
     label: string
     date: string
+    note: string | null
     lines: Array<{ description: string; quantity: number; unit: string | null; total: number }>
   }>
   equipment: Array<{
@@ -50,6 +68,135 @@ export type DryingReportData = {
   photos: Array<{ url: string; phase: string | null }>
   totals: { work: number; equipment: number; subtotal: number; paid: number; balance: number }
   includePhotos: boolean
+}
+
+const CHART_COLORS = [
+  '#0284c7',
+  '#059669',
+  '#d97706',
+  '#dc2626',
+  '#7c3aed',
+  '#0891b2',
+  '#be185d',
+]
+
+/**
+ * The drying trend, drawn from the same model the screen uses.
+ *
+ * @react-pdf can draw SVG primitives, so the chart is built here rather than
+ * rasterised — it stays sharp when an adjuster zooms in, and there is no image
+ * pipeline to go wrong between the office and the claim file.
+ */
+function DryingTrend({ data }: { data: DryingReportData }) {
+  const chart = buildDryingChart(
+    data.readingPoints.map((p) => ({
+      label: p.label,
+      material: p.material,
+      dry_standard: p.dryStandard,
+      restoration_readings: p.readings.map((r) => ({ value: r.value, taken_at: r.takenAt })),
+    })),
+  )
+  if (!chart.plottable) return null
+
+  const W = 520
+  const H = 190
+  const PAD = { top: 10, right: 10, bottom: 22, left: 30 }
+  const plotW = W - PAD.left - PAD.right
+  const plotH = H - PAD.top - PAD.bottom
+  const span = Math.max(1, chart.maxValue - chart.minValue)
+  const x = (i: number) =>
+    PAD.left + (chart.days.length === 1 ? plotW / 2 : (i / (chart.days.length - 1)) * plotW)
+  const y = (v: number) => PAD.top + plotH - ((v - chart.minValue) / span) * plotH
+
+  const standards = [
+    ...new Set(
+      chart.series.map((s) => s.dryStandard).filter((v): v is number => v != null),
+    ),
+  ]
+  const ticks = [chart.minValue, Math.round((chart.minValue + chart.maxValue) / 2), chart.maxValue]
+
+  return (
+    <View style={{ marginTop: 8 }}>
+      <Svg width={W} height={H}>
+        {ticks.map((tick) => (
+          <React.Fragment key={`t${tick}`}>
+            <Line
+              x1={PAD.left}
+              x2={W - PAD.right}
+              y1={y(tick)}
+              y2={y(tick)}
+              strokeWidth={0.5}
+              stroke="#cbd5e1"
+            />
+            <SvgText x={PAD.left - 4} y={y(tick) + 3} textAnchor="end" style={{ fontSize: 7, fill: '#64748b' }}>
+              {`${tick}%`}
+            </SvgText>
+          </React.Fragment>
+        ))}
+
+        {standards.map((standard) => (
+          <Line
+            key={`s${standard}`}
+            x1={PAD.left}
+            x2={W - PAD.right}
+            y1={y(standard)}
+            y2={y(standard)}
+            strokeWidth={1}
+            stroke="#059669"
+            strokeDasharray="4 3"
+          />
+        ))}
+
+        {chart.days.map((day, i) => (
+          <SvgText
+            key={day}
+            x={x(i)}
+            y={H - 6}
+            textAnchor="middle"
+            style={{ fontSize: 7, fill: '#64748b' }}
+          >
+            {dayLabel(day)}
+          </SvgText>
+        ))}
+
+        {chart.series.map((series, i) => (
+          <React.Fragment key={series.label}>
+            <Path
+              d={series.points
+                .map((p, n) => `${n === 0 ? 'M' : 'L'} ${x(p.dayIndex).toFixed(1)} ${y(p.value).toFixed(1)}`)
+                .join(' ')}
+              stroke={CHART_COLORS[i % CHART_COLORS.length]}
+              strokeWidth={1.5}
+              fill="none"
+            />
+            {series.points.map((p) => (
+              <Circle
+                key={`${series.label}-${p.dayIndex}`}
+                cx={x(p.dayIndex)}
+                cy={y(p.value)}
+                r={2}
+                fill={CHART_COLORS[i % CHART_COLORS.length]}
+              />
+            ))}
+          </React.Fragment>
+        ))}
+      </Svg>
+
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 4 }}>
+        {chart.series.map((series, i) => (
+          <Text
+            key={series.label}
+            style={{ fontSize: 7, marginRight: 10, color: CHART_COLORS[i % CHART_COLORS.length] }}
+          >
+            {`— ${series.label}`}
+          </Text>
+        ))}
+        {standards.length > 0 ? (
+          <Text style={{ fontSize: 7, color: '#059669' }}>- - dry standard</Text>
+        ) : null}
+      </View>
+    </View>
+  )
 }
 
 const styles = StyleSheet.create({
@@ -287,8 +434,12 @@ export function DryingReportPDF({ data }: { data: DryingReportData }) {
           ) : (
             data.readingPoints.map((point, index) => {
               const last = point.readings[point.readings.length - 1]
-              const dry =
-                point.dryStandard != null && last != null && last.value <= point.dryStandard
+              // The same rule the screen colours pins by. Judged strictly on
+              // "at or below the standard", a point reading 11 against a
+              // standard of 10 shows green in the office and unreached in the
+              // claim file — one of them wrong, and the carrier only sees this
+              // one.
+              const band = moistureBand(last?.value ?? null, point.dryStandard)
               return (
                 <View key={index} style={{ marginBottom: 6 }}>
                   <View style={styles.row}>
@@ -298,7 +449,7 @@ export function DryingReportPDF({ data }: { data: DryingReportData }) {
                     </Text>
                     <Text style={styles.muted}>
                       {point.dryStandard != null ? `Dry standard ${point.dryStandard}%` : ''}
-                      {dry ? ' · reached' : ''}
+                      {band !== 'unknown' ? ` · ${BAND_LABEL[band]}` : ''}
                     </Text>
                   </View>
                   <Text style={styles.muted}>
@@ -312,7 +463,30 @@ export function DryingReportPDF({ data }: { data: DryingReportData }) {
               )
             })
           )}
+          <DryingTrend data={data} />
         </View>
+
+        {/*
+          What was observed, day by day. The readings show the numbers moving;
+          this is where a carrier finds out the closet stalled and a fan was
+          moved into it — which is how a five-day job is understood rather than
+          queried.
+        */}
+        {data.visits.some((v) => v.note && v.note.trim()) ? (
+          <View style={styles.section}>
+            <Text style={styles.h2}>Daily monitoring notes</Text>
+            {data.visits
+              .filter((v) => v.note && v.note.trim())
+              .map((visit, index) => (
+                <View key={index} style={{ marginBottom: 5 }}>
+                  <Text style={{ fontFamily: 'Helvetica-Bold' }}>
+                    {visit.date} · {visit.label}
+                  </Text>
+                  <Text>{visit.note}</Text>
+                </View>
+              ))}
+          </View>
+        ) : null}
 
         {data.airReadings.length > 0 ? (
           <View style={styles.section}>

@@ -47,6 +47,7 @@ import { SignatureModal } from '@/components/admin/ops/signature-modal'
 import { nextVisitAction, type VisitStatus } from '@/lib/ops/arrival'
 import { captureDateFor } from '@/lib/ops/exif-capture-date'
 import { StreetViewCard } from '@/components/ops/street-view-card'
+import { DryingChart } from '@/components/ops/drying-chart'
 
 /**
  * The restoration project screen.
@@ -75,6 +76,7 @@ type Visit = {
   visit_type: 'mitigation' | 'monitor' | 'final' | null
   visit_sequence: number | null
   completed_at: string | null
+  restoration_visit_note: string | null
   ops_appointment_line_items: Line[]
 }
 
@@ -2347,6 +2349,48 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             spot trending down — or stalling.
           </p>
 
+          {/*
+            One note per visit, written for whoever reads the report later.
+            Readings say the numbers moved; this says the closet still smells
+            and the customer moved a fan — which is how a carrier understands
+            why a job took five days rather than three.
+          */}
+          {activeVisit ? (
+            <div className="mb-4 flex flex-col gap-1">
+              <Label htmlFor="visit-note">
+                Today&apos;s note
+                {activeVisit.visit_type === 'monitor' ? ' (monitor visit)' : ''}
+              </Label>
+              <Textarea
+                id="visit-note"
+                rows={3}
+                placeholder="What you saw, what moved, what still needs attention…"
+                defaultValue={activeVisit.restoration_visit_note ?? ''}
+                onBlur={(e) => {
+                  const note = e.target.value
+                  if (note.trim() === (activeVisit.restoration_visit_note ?? '').trim()) return
+                  void call(
+                    `/api/admin/ops/restoration/visits/${activeVisit.id}/note`,
+                    { method: 'PUT', body: JSON.stringify({ note }) },
+                    'visit-note',
+                  )
+                }}
+              />
+              <p className="text-muted-foreground text-xs">
+                Goes into the final report, in date order.
+              </p>
+            </div>
+          ) : null}
+
+          {/*
+            The chart is the one artefact that shows a carrier the job was
+            worked rather than merely billed: points falling toward their
+            standard over four days is an argument no invoice line makes.
+          */}
+          <div className="mb-4">
+            <DryingChart points={detail.reading_points} />
+          </div>
+
           <div className="flex flex-col divide-y">
             {detail.reading_points.map((point) => {
               const history = [...point.restoration_readings].sort(
@@ -2354,9 +2398,10 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
               )
               const latest = history[history.length - 1]
               const atGoal =
-                point.dry_standard != null &&
-                latest != null &&
-                Number(latest.value) <= Number(point.dry_standard)
+                moistureBand(
+                  latest ? Number(latest.value) : null,
+                  point.dry_standard ?? defaultDryStandard(point.material),
+                ) === 'dry'
               return (
                 <div
                   key={point.id}

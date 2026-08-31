@@ -41,7 +41,7 @@ export async function GET(
     const { data: visits } = await supabase
       .from('ops_appointments')
       .select(
-        `id, appointment_date, visit_type, visit_sequence,
+        `id, appointment_date, visit_type, visit_sequence, restoration_visit_note,
          ops_appointment_line_items ( name_snapshot, quantity, line_total, pricing_unit_snapshot )`,
       )
       .eq('restoration_project_id', id)
@@ -131,6 +131,7 @@ export async function GET(
       visits: (visits ?? []).map((visit) => ({
         label: VISIT_LABELS[String(visit.visit_type)] ?? 'Visit',
         date: String(visit.appointment_date),
+        note: (visit as { restoration_visit_note?: string | null }).restoration_visit_note ?? null,
         lines: ((visit.ops_appointment_line_items ?? []) as Array<{
           name_snapshot: string
           quantity: number

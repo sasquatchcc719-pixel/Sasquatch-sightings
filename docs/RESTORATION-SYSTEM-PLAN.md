@@ -2017,3 +2017,51 @@ contamination and after-hours combine and the category correctly survives). The
 live test now asserts the property it genuinely owns: whatever the model heard
 came back on the right rate for the loss, and a clean loss never returns a
 Category 3 code.
+
+## The drying graph and the daily note
+
+Two items from the backlog, built together because the note is what makes the
+graph mean something.
+
+### The note
+
+`ops_appointments.restoration_visit_note` — one note per visit, deliberately
+separate from `internal_notes`, which is dispatch scratch and never leaves the
+office. This one is written to be read by a customer or an adjuster.
+
+Readings say the numbers moved. The note says the closet stalled and a fan was
+moved into it, which is how a five-day job gets understood rather than queried.
+It appears on whichever visit is open, and the report prints them all in date
+order under "Daily monitoring notes".
+
+### The graph
+
+`buildDryingChart` shapes readings into one series per point across the days of
+the job. It lives in `lib` rather than in a component **because the screen and
+the PDF must plot identical numbers** — a chart that disagrees with itself
+between the office and the claim file is worse than no chart.
+
+Decisions inside it:
+- **One reading per point per day, the last one taken.** A re-read means the
+  first was wrong or a fan had just moved.
+- **Two days minimum.** One column is not a trend, and the screen says so rather
+  than drawing a chart of one dot.
+- **`dayLabel` builds its date from parts**, because `new Date('2026-08-29')`
+  parses as UTC and renders as the 28th here — a bug this report has already
+  shipped once.
+
+Both are drawn by hand as SVG, on screen and in the PDF (`@react-pdf` can draw
+SVG primitives). No charting library: it is a few lines and a dashed rule, it
+has to render where no JavaScript runs, and it stays sharp when an adjuster
+zooms in.
+
+### Found by looking at the rendered PDF
+
+The document said a point reading 11% against a 10% standard had **not** reached
+dry, while the screen coloured it green — because the PDF still used
+"at or below the standard" and the screen had moved to the ±2 band. One of them
+was wrong and the carrier only ever sees the PDF. Both now use `moistureBand`.
+
+Tests assert the document is larger with a chart than without, and larger with
+notes than without — a rendered PDF is opaque, so size against a known-identical
+document is the honest proxy for "it drew something".

@@ -33,12 +33,18 @@ const BASE: DryingReportData = {
     {
       label: 'Mitigation',
       date: '2026-08-30',
+    note: null,
       lines: [
         { description: 'EXTS - Water extraction, Cat 3', quantity: 400, unit: 'SF', total: 588 },
         { description: 'FCCS - Tear out carpet, Cat 3', quantity: 400, unit: 'SF', total: 440 },
       ],
     },
-    { label: 'Monitoring visit', date: '2026-08-31', lines: [] },
+    {
+      label: 'Monitoring visit',
+      date: '2026-08-31',
+      note: 'North wall down to 14%. Closet still reading high; moved one air mover into it.',
+      lines: [],
+    },
   ],
   equipment: [
     {
@@ -100,5 +106,30 @@ describe('drying report', () => {
       totals: { ...BASE.totals, paid: 0, balance: 1658 },
     })
     expect(buffer.subarray(0, 5).toString()).toBe('%PDF-')
+  }, 30_000)
+})
+
+describe('the drying trend', () => {
+  it('plots one line per point once there are two days of readings', async () => {
+    const buffer = await renderToBuffer(<DryingReportPDF data={BASE} />)
+    // The chart is vector, so a rendered chart makes the document meaningfully
+    // larger than the same document without one.
+    const flat: DryingReportData = {
+      ...BASE,
+      readingPoints: BASE.readingPoints.map((p) => ({
+        ...p,
+        readings: p.readings.slice(0, 1),
+      })),
+    }
+    const withoutChart = await renderToBuffer(<DryingReportPDF data={flat} />)
+    expect(buffer.length).toBeGreaterThan(withoutChart.length)
+  }, 30_000)
+
+  it('carries the daily notes into the document', async () => {
+    const buffer = await renderToBuffer(<DryingReportPDF data={BASE} />)
+    const withoutNotes = await renderToBuffer(
+      <DryingReportPDF data={{ ...BASE, visits: BASE.visits.map((v) => ({ ...v, note: null })) }} />,
+    )
+    expect(buffer.length).toBeGreaterThan(withoutNotes.length)
   }, 30_000)
 })

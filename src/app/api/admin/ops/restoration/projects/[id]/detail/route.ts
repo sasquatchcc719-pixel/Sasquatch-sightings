@@ -33,6 +33,7 @@ export async function GET(
       .select(
         `id, appointment_date, start_time, end_time, status, visit_type, visit_sequence,
          completed_at, on_my_way_at, arrived_at, assigned_staff_user_id, internal_notes,
+         restoration_visit_note,
          ops_appointment_line_items (
            id, name_snapshot, quantity, unit_price, line_total,
            restoration_catalog_code, pricing_unit_snapshot
