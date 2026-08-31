@@ -2755,3 +2755,46 @@ Two rules now:
 
 The correct half stays: once today has a reading, the trend compares it to every
 visit before it.
+
+## Three wrong thresholds, and giving up on the fourth
+
+Charles: *"you're not gonna get a lot of grain depression after you start
+removing a lot of the moisture away. It just goes slower after that... I just
+feel like you're just making shit up."*
+
+He is right, and it is worth listing what I did in order, because the pattern is
+the point:
+
+1. **"A healthy LGR should be pulling 30 or more"** — from trade press about what
+   LGRs can do in general. His Phoenix 200 HT cannot reach 30 even at its rating.
+2. **Scaled to that rating, straight-line by intake wetness.** Better, because it
+   used his machine — and still wrong, because capacity does not fall linearly as
+   air dries.
+3. **A "worth a look" flag below half of that estimate.** Which fired on 54.9 GPP
+   room air — a nearly dry room near the end of a job — and told him to check
+   filters he had already cleaned.
+
+Each fix moved the number and kept the mistake: **asserting a fault from a
+threshold I could not justify.**
+
+A refrigerant dehumidifier can only condense what the air will give up at its
+coil, so depression falls away sharply as a room dries. Modelling that needs
+performance data across temperature and humidity that Phoenix does not publish.
+Without it, every threshold is invention — and invention here costs him a trip
+to a machine that is working.
+
+**So the verdict is gone.** What remains is the depression, the two readings it
+came from, and the machine's rating as a fact rather than a target:
+
+> **Pulling 1.3 GPP** — Room 54.9 GPP, out 53.6 GPP. A Phoenix 200 HT is rated
+> 28 GPP at 80°F and 60% — it pulls less as the room dries out.
+
+One flag survives, because it needs no curve: **air coming out no drier than it
+went in**. Whatever the conditions, that is not dehumidification.
+
+### The rule this leaves behind
+Where the tool has real data — psychrometrics, nameplate ratings, elapsed
+equipment days — it should compute and show. Where the answer needs a judgment
+Charles has and the software does not, it should present the numbers and get out
+of the way. Three rounds of moving a made-up threshold was three rounds of not
+learning that.

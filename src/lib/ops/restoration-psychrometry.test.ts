@@ -45,35 +45,33 @@ describe('dewPointF', () => {
 })
 
 describe('dehumidifierVerdict', () => {
-  it("calls Charles's own reading a working machine", () => {
-    // Room 74/55 = 68.8 GPP, outlet 96/17 = 42.8 GPP: 26 GPP of depression.
-    // The old banner flagged this amber against a magazine's "30 or more".
-    // His Phoenix 200 HT is good for about 21 on air that wet.
-    const v = dehumidifierVerdict(at(74, 55, 'affected'), at(96, 17, 'dehu_outlet'))
+  it("reports Charles's near-dry room without calling it a fault", () => {
+    // Room 74/44 = 54.9 GPP, outlet 92/24 = 53.6: 1.3 GPP of depression on a
+    // room that is nearly dry. Three earlier versions flagged this. There is
+    // little water left to take, which is not a broken machine.
+    const v = dehumidifierVerdict(at(74, 44, 'affected'), at(92, 24, 'dehu_outlet'))
     expect(v.status).toBe('good')
-    expect(v.detail).toMatch(/Phoenix 200 HT/)
+    expect(v.detail).not.toMatch(/filter|coils|breaker|worth a look/i)
   })
 
-  it('names the machine and what it is good for, so the number can be argued with', () => {
+  it('gives the rating as a fact, not as a target to hit', () => {
     const v = dehumidifierVerdict(at(80, 60, 'affected'), at(90, 25, 'dehu_outlet'))
-    expect(v.detail).toMatch(/good for about/)
+    expect(v.detail).toMatch(/rated 28 GPP at 80°F and 60%/)
+    expect(v.detail).toMatch(/pulls less as the room dries out/)
+    expect(v.detail).not.toMatch(/should be/i)
   })
 
-  it('calls out a unit doing almost nothing on wet air', () => {
-    const v = dehumidifierVerdict(at(80, 60, 'affected'), at(80, 55, 'dehu_outlet'))
+  it('flags only the case that needs no performance curve', () => {
+    // Outlet no drier than intake: nothing is being removed, whatever the
+    // conditions are.
+    const v = dehumidifierVerdict(at(74, 44, 'affected'), at(74, 44, 'dehu_outlet'))
     expect(v.status).toBe('problem')
-    expect(v.detail).toMatch(/filter|coils|breaker/i)
-    // Suggests a check; does not pronounce the unit dead.
-    expect(v.detail).not.toMatch(/not working|failing|useless/i)
+    expect(v.headline).toMatch(/Nothing coming out of the air/)
   })
 
-  it('does NOT complain when the air is already dry', () => {
-    // A dehu fed 30 GPP air cannot pull 30 out of it. Flagging this sends
-    // Charles to check a machine that is working fine on a job nearly done.
-    const v = dehumidifierVerdict(at(70, 28, 'affected'), at(78, 18, 'dehu_outlet'))
-    expect(v.status).toBe('good')
-    // Whatever it says, it must not send him to check a working machine.
-    expect(v.detail).not.toMatch(/filter|coils/i)
+  it('treats a wetter outlet the same way', () => {
+    const v = dehumidifierVerdict(at(74, 44, 'affected'), at(74, 50, 'dehu_outlet'))
+    expect(v.status).toBe('problem')
   })
 
   it('says so when a reading is missing rather than guessing', () => {

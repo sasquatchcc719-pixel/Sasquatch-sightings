@@ -17,7 +17,7 @@
 import {
   DEHU_MODELS,
   DEFAULT_DEHU_MODEL,
-  expectedDepression,
+  ratedDepression,
   type DehuModel,
 } from '@/lib/ops/restoration-dehu-specs'
 
@@ -95,17 +95,32 @@ export type Verdict = {
 }
 
 /**
- * Is the dehumidifier working?
+ * What the dehumidifier is pulling.
  *
- * Judged against **the machine**, not against a number from a magazine. A
- * Phoenix 200 HT is rated 28.3 GPP of depression at AHAM, and less than that on
- * drier air, so demanding "30 or more" asked it for something it cannot do —
- * which is exactly what Charles was seeing.
+ * Reported, not judged. Three attempts at a verdict here were each wrong in the
+ * same way — asserting a fault from a number I could not justify:
  *
- * What remains worth interrupting him for is a unit doing almost nothing on air
- * that still has water in it: a clogged filter, an iced coil, or a machine that
- * is not running. Everything between that and its rating is a number to read,
- * not a verdict to argue with.
+ *   1. "A healthy LGR should be pulling 30 or more", from trade press about
+ *      what LGRs can do in general. Charles's Phoenix 200 HT cannot reach 30
+ *      even at its rating.
+ *   2. Scaled to that rating in a straight line by intake wetness. Better, and
+ *      still wrong: capacity does not fall linearly as air dries.
+ *   3. A "worth a look" warning below half of that estimate — which fired on
+ *      54.9 GPP room air, an almost-dry room near the end of a job.
+ *
+ * Charles: *"you're not gonna get a lot of grain depression after you start
+ * removing a lot of the moisture away. It just goes slower after that... I just
+ * feel like you're just making shit up."*
+ *
+ * He is right. A refrigerant dehumidifier can only condense what the air will
+ * give up at its coil, so depression falls away sharply as a room dries — and
+ * modelling that curve needs performance data the manufacturer does not publish.
+ * Without it, every threshold is invention, and invention here sends him to
+ * check filters he has already cleaned.
+ *
+ * So: the depression, the two readings it came from, and the machine's rating as
+ * a fact he can measure against. One flag remains, because it needs no curve —
+ * air coming out no drier than it went in means nothing is being removed at all.
  */
 export function dehumidifierVerdict(
   roomAir: Reading,
@@ -126,47 +141,27 @@ export function dehumidifierVerdict(
       status: 'unknown',
       headline: 'No dehumidifier check',
       detail:
-        'Log the affected area and one dehu outlet reading to see whether it is pulling water.',
+        'Log the affected area and one dehu outlet reading to see what it is pulling.',
     }
   }
 
   const depression = Math.round((intakeGpp - outletGpp) * 10) / 10
-  const expected = expectedDepression(model, intakeGpp)
-  const share = expected > 0 ? depression / expected : 1
+  const rated = ratedDepression(model)
 
-  // Rounded to whole grains: the expectation is a straight-line estimate off a
-  // rating, and a decimal point would dress it up as a measurement.
-  const arithmetic = `Room ${intakeGpp} GPP, out ${outletGpp} GPP. A ${model.name} on air this wet is good for about ${Math.round(expected)}.`
-
-  if (share >= 0.85) {
-    return {
-      status: 'good',
-      headline: `Pulling ${depression} GPP`,
-      detail: arithmetic,
-    }
-  }
-
-  if (share >= 0.5) {
-    return {
-      status: 'good',
-      headline: `Pulling ${depression} GPP`,
-      detail: `${arithmetic} Under its rating, which is what happens as a room dries out.`,
-    }
-  }
-
-  // Little coming out of air that still holds water: worth walking over to.
-  if (intakeGpp >= 50) {
+  // The one unambiguous case: the air is coming out no drier than it went in.
+  // No performance curve is needed to know that is not dehumidification.
+  if (depression <= 0) {
     return {
       status: 'problem',
-      headline: `Only ${depression} GPP of depression`,
-      detail: `${arithmetic} Well under that usually means the filter or the coils want cleaning, or it has tripped a breaker — worth a look before the next visit.`,
+      headline: 'Nothing coming out of the air',
+      detail: `Room ${intakeGpp} GPP, out ${outletGpp} GPP — the outlet is not drier than the room.`,
     }
   }
 
   return {
     status: 'good',
     headline: `Pulling ${depression} GPP`,
-    detail: `${arithmetic} Low depression on air this dry means there is little left to take.`,
+    detail: `Room ${intakeGpp} GPP, out ${outletGpp} GPP. A ${model.name} is rated ${Math.round(rated)} GPP at 80°F and 60% — it pulls less as the room dries out.`,
   }
 }
 
