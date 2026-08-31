@@ -769,6 +769,40 @@ export async function PATCH(
       )
     }
 
+    // Cancelling a restoration monitor visit puts it back in the tray rather
+    // than leaving a dead block on the calendar. The visit still has to happen —
+    // it just needs a different slot.
+    if (
+      current.status !== nextStatus &&
+      nextStatus === 'cancelled' &&
+      isRestorationVisit
+    ) {
+      const { data: queued } = await supabase
+        .from('restoration_visit_queue')
+        .select('id')
+        .eq('scheduled_appointment_id', id)
+        .maybeSingle()
+
+      if (queued?.id) {
+        await supabase
+          .from('restoration_visit_queue')
+          .update({
+            status: 'queued',
+            scheduled_appointment_id: null,
+            updated_at: nowIso,
+          })
+          .eq('id', queued.id)
+
+        // Remove the block entirely; the queue row is the record now.
+        await supabase.from('ops_appointments').delete().eq('id', id)
+
+        return NextResponse.json({
+          appointment: null,
+          returned_to_tray: true,
+        })
+      }
+    }
+
     if (
       current.status !== nextStatus &&
       nextStatus === 'cancelled' &&

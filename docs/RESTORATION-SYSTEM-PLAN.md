@@ -1353,3 +1353,35 @@ checks for that first and places the visit, falling through to the existing
 move-an-appointment path otherwise, so both behaviours share one placement function.
 The carried Y-offset is reset on drag start, or the drop preview sits an hour off. Both
 paths still work; the tray now says which is available.
+
+
+---
+
+## Cancel returns a visit to the tray; a loss can be deleted
+
+### Cancelling a monitor visit
+Cancelling left a dead block on the calendar. A monitor visit that gets cancelled still
+has to happen — it just needs a different slot — so cancelling now **re-queues it and
+removes the block**. It reappears in the unscheduled tray, ready to be placed again.
+Only restoration visits behave this way; carpet cleaning cancellation is unchanged.
+
+### Deleting a water loss
+`DELETE /api/admin/ops/restoration/projects/[id]`, with a button on the project screen
+behind a confirm that names what will go.
+
+Every child table cascades from `restoration_projects` — verified against `pg_constraint`,
+all nine foreign keys are `ON DELETE CASCADE`, **including `ops_appointments`**. So the
+mitigation day and every monitor visit go with it, scheduled or still in the tray, along
+with rooms, walls, nodes, equipment, reading points, air readings and category events.
+
+Two things the cascade does not cover, handled in the route:
+- **Payments** taken before an invoice exists (the day-1 deposit) hang off the visit and
+  do not cascade from it — removed explicitly.
+- **An invoiced loss is refused** (409). Once a job has been billed, deleting it would
+  take the billing record with it; void the invoice first if that is really the intent.
+
+Restricted to `admin` and `owner`, unlike the rest of the restoration routes which allow
+`tech` and `dispatcher`.
+
+3 integration tests: visits and queued visits both disappear; rooms, equipment and
+reading points go too; a second loss is untouched.

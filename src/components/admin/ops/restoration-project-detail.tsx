@@ -2132,6 +2132,47 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
           </div>
         ) : null}
 
+        {!closed ? (
+          <Button
+            variant="ghost"
+            className="text-destructive hover:bg-destructive/10 mt-4 w-full gap-2"
+            disabled={busy === 'delete-project'}
+            onClick={async () => {
+              const visits = detail.visits.length
+              const queued = detail.queue.filter((q) => q.status === 'queued').length
+              if (
+                !window.confirm(
+                  `Delete this water loss?\n\nThis removes ${visits} scheduled visit${
+                    visits === 1 ? '' : 's'
+                  }${queued > 0 ? ` and ${queued} still in the tray` : ''}, plus all rooms, ` +
+                    'equipment, readings and photos. It cannot be undone.',
+                )
+              ) {
+                return
+              }
+              setBusy('delete-project')
+              const response = await fetch(
+                `/api/admin/ops/restoration/projects/${projectId}`,
+                { method: 'DELETE' },
+              )
+              if (!response.ok) {
+                const result = await response.json().catch(() => ({}))
+                setError(result.error || 'Could not delete this loss')
+                setBusy(null)
+                return
+              }
+              window.location.href = '/admin/operations'
+            }}
+          >
+            {busy === 'delete-project' ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Trash2 className="h-4 w-4" />
+            )}
+            Delete this water loss
+          </Button>
+        ) : null}
+
         <Button asChild variant="outline" className="mt-4 w-full gap-2">
           <a
             href={`/api/admin/ops/restoration/projects/${projectId}/report`}

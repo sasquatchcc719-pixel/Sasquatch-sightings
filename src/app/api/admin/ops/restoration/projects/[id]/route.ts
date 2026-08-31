@@ -91,3 +91,62 @@ export async function PATCH(
     return NextResponse.json({ error: message }, { status: message === 'Not authorized' ? 403 : 500 })
   }
 }
+
+/**
+ * Delete a water loss and everything under it.
+ *
+ * Every child table cascades from `restoration_projects`, including
+ * `ops_appointments`, so the mitigation day and every monitor visit go with it —
+ * scheduled or still in the tray.
+ *
+ * Refuses once an invoice exists: at that point the job has been billed and
+ * deleting it would take the billing record with it. Cancel or void the invoice
+ * first if that is really the intent.
+ */
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    await requireAnyRole(['admin', 'owner'])
+    const { id } = await params
+    const supabase = createAdminClient()
+
+    const { data: project } = await supabase
+      .from('restoration_projects')
+      .select('id, status, invoice_id')
+      .eq('id', id)
+      .maybeSingle()
+
+    if (!project) return NextResponse.json({ error: 'project_not_found' }, { status: 404 })
+    if (project.invoice_id) {
+      return NextResponse.json(
+        {
+          error:
+            'This loss has been invoiced. Void or delete the invoice first if you really want to remove it.',
+        },
+        { status: 409 },
+      )
+    }
+
+    const { data: visits } = await supabase
+      .from('ops_appointments')
+      .select('id')
+      .eq('restoration_project_id', id)
+
+    // Payments taken before an invoice exists (the day-1 deposit) hang off the
+    // visit, and ops_payments does not cascade from the appointment.
+    const visitIds = (visits ?? []).map((v) => v.id)
+    if (visitIds.length > 0) {
+      await supabase.from('ops_payments').delete().in('appointment_id', visitIds)
+    }
+
+    const { error } = await supabase.from('restoration_projects').delete().eq('id', id)
+    if (error) throw error
+
+    return NextResponse.json({ ok: true, deleted_visits: visitIds.length })
+  } catch (e) {
+    const message = e instanceof Error ? e.message : 'Failed to delete the loss'
+    return NextResponse.json({ error: message }, { status: message === 'Not authorized' ? 403 : 500 })
+  }
+}
