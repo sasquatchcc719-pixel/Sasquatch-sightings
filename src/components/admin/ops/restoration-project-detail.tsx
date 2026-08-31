@@ -385,6 +385,15 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
     void loadPlan()
   }, [load, loadPlan])
 
+  // A selection that outlived its door leaves a Delete button that deletes
+  // nothing, which reads as the delete being broken.
+  useEffect(() => {
+    if (!selectedOpeningId) return
+    if (!planData.openings.some((o) => o.id === selectedOpeningId)) {
+      setSelectedOpeningId(null)
+    }
+  }, [planData.openings, selectedOpeningId])
+
   // Contact details come from the customer record, editable in case the person
   // standing there wants it sent somewhere else.
   useEffect(() => {

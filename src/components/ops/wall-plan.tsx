@@ -9,6 +9,8 @@ import {
   loopAt,
   offsetNodes,
   openingPosition,
+  clampOpeningOffset,
+  TAP_SLOP_PX,
   resolveWalls,
   snapToGrid,
   wallNear,
@@ -111,10 +113,22 @@ export function WallPlan({
   // start a wall from — which is usually the middle of a room.
   const labelsInteractive = tool === 'resize' || tool === 'corner'
 
+  /**
+   * A door being touched. `grabFt` is where along the door you took hold of it,
+   * so it slides under your finger instead of jumping its left edge to the
+   * cursor; `downX`/`downY` are where the finger landed, which is the only
+   * reliable way to tell a tap from a drag — comparing the computed offset
+   * treated every tap in the middle of a door as a two-foot move, so a door
+   * could be dragged but never selected, and never deleted.
+   */
   const [openingDrag, setOpeningDrag] = useState<{
     id: string
     wallId: string
     offsetFt: number
+    grabFt: number
+    downX: number
+    downY: number
+    moved: boolean
   } | null>(null)
 
   const [roomDrag, setRoomDrag] = useState<{
@@ -458,36 +472,71 @@ export function WallPlan({
                 onPointerDown={(event) => {
                   if (tool !== 'door') return
                   event.stopPropagation()
-                  event.currentTarget.setPointerCapture(event.pointerId)
+                  try {
+                    event.currentTarget.setPointerCapture(event.pointerId)
+                  } catch {
+                    // Capture is a nicety. It must never throw its way out of
+                    // here — that would abandon the tap before it registers,
+                    // and the door would answer to nothing at all.
+                  }
+                  const rect = event.currentTarget.parentElement?.getBoundingClientRect()
+                  let grabFt = opening.widthFt / 2
+                  if (rect) {
+                    const { xFt, yFt } = toPlan(event.clientX, event.clientY, rect)
+                    const hit = wallNear(resolved, xFt, yFt, 3)
+                    if (hit && hit.wall.id === opening.wallId) {
+                      grabFt = Math.max(
+                        0,
+                        Math.min(opening.widthFt, hit.offsetFt - opening.offsetFt),
+                      )
+                    }
+                  }
                   setOpeningDrag({
                     id: opening.id,
                     wallId: opening.wallId,
                     offsetFt: opening.offsetFt,
+                    grabFt,
+                    downX: event.clientX,
+                    downY: event.clientY,
+                    moved: false,
                   })
                 }}
                 onPointerMove={(event) => {
                   if (openingDrag?.id !== opening.id) return
+                  // A tap is a tap until the finger has actually travelled. Six
+                  // pixels is past the wobble of a touch but well short of a
+                  // deliberate drag.
+                  const travel = Math.hypot(
+                    event.clientX - openingDrag.downX,
+                    event.clientY - openingDrag.downY,
+                  )
+                  if (!openingDrag.moved && travel < TAP_SLOP_PX) return
                   const rect = event.currentTarget.parentElement?.getBoundingClientRect()
                   if (!rect) return
                   const { xFt, yFt } = toPlan(event.clientX, event.clientY, rect)
                   // Snap onto whichever wall is nearest, so a door can be moved
                   // from one wall to another, not just slid along its own.
                   const hit = wallNear(resolved, xFt, yFt, 3)
-                  if (hit) {
-                    setOpeningDrag({
-                      id: opening.id,
-                      wallId: hit.wall.id,
-                      offsetFt: hit.offsetFt,
-                    })
-                  }
+                  if (!hit) return
+                  setOpeningDrag({
+                    ...openingDrag,
+                    moved: true,
+                    wallId: hit.wall.id,
+                    offsetFt: clampOpeningOffset(
+                      hit.wall.lengthFt,
+                      opening.widthFt,
+                      hit.offsetFt - openingDrag.grabFt,
+                    ),
+                  })
                 }}
                 onPointerUp={(event) => {
                   if (openingDrag?.id !== opening.id) return
-                  event.currentTarget.releasePointerCapture(event.pointerId)
-                  const moved =
-                    openingDrag.wallId !== opening.wallId ||
-                    Math.abs(openingDrag.offsetFt - opening.offsetFt) > 0.1
-                  if (moved) {
+                  try {
+                    event.currentTarget.releasePointerCapture(event.pointerId)
+                  } catch {
+                    // Already released; the drag still ends normally.
+                  }
+                  if (openingDrag.moved) {
                     onMoveOpening?.(opening.id, openingDrag.wallId, openingDrag.offsetFt)
                   } else {
                     onSelectOpening?.(selected ? null : opening.id)
@@ -498,6 +547,42 @@ export function WallPlan({
             )
           })
         : null}
+
+      {/*
+        Delete sits on the door itself. The toolbar button needs you to notice
+        it somewhere else on the screen, and on a phone that is the difference
+        between deleting a door and giving up on it.
+      */}
+      {(() => {
+        if (scale <= 0 || tool !== 'door' || !selectedOpeningId) return null
+        const opening = openings.find((o) => o.id === selectedOpeningId)
+        if (!opening) return null
+        const wall = resolved.find((w) => w.id === opening.wallId)
+        if (!wall) return null
+        const pos = openingPosition(wall, {
+          ...opening,
+          offsetFt: opening.offsetFt + opening.widthFt / 2,
+        })
+        if (!pos) return null
+        const screen = toScreen(pos.x, pos.y)
+        return (
+          <button
+            type="button"
+            aria-label={`Delete this ${opening.kind}`}
+            title={`Delete this ${opening.kind}`}
+            className="absolute z-20 flex h-6 w-6 -translate-x-1/2 items-center justify-center rounded-full border border-white bg-red-600 text-xs font-bold text-white shadow"
+            style={{ left: screen.left, top: screen.top - 22 }}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation()
+              onDeleteOpening?.(opening.id)
+              onSelectOpening?.(null)
+            }}
+          >
+            ×
+          </button>
+        )
+      })()}
 
       {/* Corner handles, only while the corner tool is active. */}
       {scale > 0 && tool === 'corner'

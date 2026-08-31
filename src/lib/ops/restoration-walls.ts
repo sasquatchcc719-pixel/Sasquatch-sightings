@@ -148,6 +148,29 @@ export function openingPosition(
 }
 
 /**
+ * How far a finger may travel and still count as a tap, in screen pixels.
+ *
+ * A door has to answer to both a tap (select it, so it can be deleted) and a
+ * drag (move it). Deciding between them by how far the door's computed offset
+ * changed does not work: taking hold of the middle of a three-foot door reads as
+ * a one-and-a-half-foot move on the first pointer event, so every tap became a
+ * move and the door could never be selected — or deleted. Screen travel is the
+ * honest measure, and six pixels clears touch wobble without swallowing a drag.
+ */
+export const TAP_SLOP_PX = 6
+
+/** Keep an opening on its wall — a door hanging off the end is not a door. */
+export function clampOpeningOffset(
+  wallLengthFt: number,
+  widthFt: number,
+  offsetFt: number,
+): number {
+  const last = Math.max(0, wallLengthFt - widthFt)
+  if (!Number.isFinite(offsetFt)) return 0
+  return Math.max(0, Math.min(last, offsetFt))
+}
+
+/**
  * Walls that enclose an area, as ordered loops of node ids.
  *
  * Rooms are derived from this rather than stored, which is what makes a pony

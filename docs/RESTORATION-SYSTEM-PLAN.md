@@ -1631,3 +1631,39 @@ which makes the signature worthless. Both now refuse with the same 409.
 Applied by MCP `apply_migration` as `restoration_estimate_line_units_and_days`,
 matching the rest of the restoration schema — none of which has a local
 migration file, because `db push` is dead in this project.
+
+## Why deleting a door did nothing
+
+Charles: *"the door deleting tool does not seem to work. I select it and I press
+delete and it does not delete it."*
+
+The delete route was fine. The **selection** was not: tapping a door usually
+moved it instead, so nothing was ever selected and Delete had nothing to delete.
+
+A door has to answer to both a tap (select, so it can be deleted) and a drag
+(move). It decided between them by comparing the door's computed offset before
+and after — and taking hold of the middle of a three-foot door reads as a
+one-and-a-half-foot move on the very first pointer event. A dead-still mouse
+click fires no pointermove at all, so it selected; anything with a pixel of
+travel — every touch, most trackpad clicks — moved the door instead. That is why
+it looked intermittent rather than broken.
+
+Three things changed:
+
+- **Tap versus drag is decided by screen travel**, not by computed offset. Under
+  six pixels is a tap. A regression test asserts a two-pixel wobble still
+  selects, and fails against the old rule.
+- **A door is grabbed where you touched it.** It slides under the finger instead
+  of snapping its left edge to the cursor, and it is clamped so it cannot hang
+  off the end of its wall.
+- **Delete sits on the door.** A red × appears above the selected opening. The
+  toolbar button stays, but on a phone, needing to find a button elsewhere on
+  the screen is the difference between deleting a door and giving up.
+
+Two smaller faults found alongside: `setPointerCapture` was called unguarded on
+the opening (it throws in some contexts, and would have abandoned the tap before
+it registered — every other call site already had the guard), and a selection
+could outlive its door, leaving a Delete button that deleted nothing.
+
+**Windows are the same code.** Kind only changes the colour and thickness, so
+the fix covers both — no separate window path exists to be broken.

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  clampOpeningOffset,
   draftLengthFt,
   endPointForLength,
   findLoops,
@@ -285,5 +286,21 @@ describe('dragging a whole room', () => {
 
   it('handles a point-in-loop test on a degenerate loop', () => {
     expect(loopContains(nodes, ['a', 'b'], 5, 5)).toBe(false)
+  })
+})
+
+describe('openings stay on their wall', () => {
+  it('keeps a door inside a wall it was dragged past the end of', () => {
+    expect(clampOpeningOffset(12, 3, 20)).toBe(9)
+    expect(clampOpeningOffset(12, 3, -4)).toBe(0)
+    expect(clampOpeningOffset(12, 3, 5)).toBe(5)
+  })
+
+  it('pins a door to the start when the wall is shorter than the door', () => {
+    expect(clampOpeningOffset(2, 6, 1)).toBe(0)
+  })
+
+  it('never returns a NaN offset, which would make the door vanish', () => {
+    expect(clampOpeningOffset(12, 3, Number.NaN)).toBe(0)
   })
 })
