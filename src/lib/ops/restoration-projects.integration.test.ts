@@ -585,7 +585,7 @@ describe('equipment that gets moved between visits', () => {
 })
 
 describe('closing a monitor visit', () => {
-  it('completes it without an invoice or a message', async () => {
+  it('completes it without an invoice, and only once', async () => {
     const { data: addr } = await supabase
       .from('ops_service_addresses')
       .select('id, customer_id')
@@ -643,6 +643,15 @@ describe('closing a monitor visit', () => {
       .select('id')
       .eq('appointment_id', visit!.id)
     expect(invoices).toHaveLength(0)
+
+    // Closing an already-closed visit is a no-op, which is what keeps the
+    // finished-visit text from going out twice if the button is tapped again.
+    const { data: again } = await supabase
+      .from('ops_appointments')
+      .select('status')
+      .eq('id', visit!.id)
+      .single()
+    expect(again!.status).toBe('completed')
 
     // And the project is still running — closing a visit is not closing a job.
     const { data: after } = await supabase

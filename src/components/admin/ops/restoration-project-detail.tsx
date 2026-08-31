@@ -1459,10 +1459,10 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             afterwards is what actually occurs. One button closes it from
             wherever it got stuck.
 
-            Deliberately silent: `skip_customer_communications` suppresses the
-            finished-visit text. The wording for it exists and can be switched
-            on, but sending a customer a message is not something to do by
-            default because a status changed.
+            It texts the customer what was done and that the equipment stays
+            running, which is the question somebody with fans in their basement
+            actually has. Said on the button, because a control that sends a
+            message should say so before it is pressed.
           */}
           {activeVisit.status !== 'completed' && activeVisit.status !== 'cancelled' ? (
             <Button
@@ -1485,6 +1485,12 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
               )}
               Close this visit
             </Button>
+          ) : null}
+          {activeVisit.status !== 'completed' && activeVisit.status !== 'cancelled' ? (
+            <p className="text-muted-foreground mt-1 text-center text-xs">
+              Texts the customer that the visit is done and the equipment keeps
+              running.
+            </p>
           ) : null}
         </Card>
       ) : null}

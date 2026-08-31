@@ -2912,9 +2912,17 @@ The chain is on my way → start work → finish visit. That is three taps to re
 half an hour of readings, so in practice the visit sits on "on my way" and the
 schedule stops telling the truth about what has been done.
 
-One button now closes it from wherever it is stuck. It writes nothing but the
-status and the completion time: **no invoice**, because a restoration visit never
-bills on its own, and **no customer message** — the finished-visit wording exists
-and can be switched on, but texting someone because a status changed is not a
-default worth having. Closing a visit is also not closing the job; the project
-stays active, which a test asserts.
+One button now closes it from wherever it is stuck. **No invoice**, because a
+restoration visit never bills on its own. Closing a visit is also not closing the
+job; the project stays active, which a test asserts.
+
+It **does** text the customer — I had left that off and Charles asked for it back:
+*"I guess we would wanna send that text message. I forgot that we did that."* The
+monitor wording says what was done and that the equipment stays running, which is
+the question somebody with fans in their basement actually has. A monitor visit
+sends `job_finished_restoration_monitor_sms`; a work visit sends the other.
+
+Sent **only on the transition**. The route returns early when the visit is
+already completed, so tapping the button twice does not text anybody twice. And
+the button says what it does before it is pressed — a control that sends a
+message to a customer should not be a surprise.

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
+import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
 
 /**
  * Mark a restoration visit done.
@@ -10,10 +11,14 @@ import { createAdminClient } from '@/supabase/server'
  * worth three taps, so in practice the visit sits on "on my way" forever and
  * the schedule stops telling the truth about what has been done.
  *
- * Deliberately quiet. No customer message, no invoice: a restoration visit
- * never bills on its own, and the whole loss invoices once at the close.
- * Sending someone a text because a status changed is not a default worth
- * having — the finished-visit wording exists and can be switched on.
+ * No invoice: a restoration visit never bills on its own, and the whole loss
+ * invoices once at the project close.
+ *
+ * It does text the customer, which Charles asked for — the monitor wording says
+ * what was done and that the equipment stays running, which is the question a
+ * customer with fans in their basement actually has. The message is sent only on
+ * the transition: closing an already-closed visit sends nothing, so tapping the
+ * button twice does not text somebody twice.
  */
 export async function POST(
   _request: NextRequest,
@@ -46,7 +51,14 @@ export async function POST(
       .single()
 
     if (error) throw error
-    return NextResponse.json({ visit: data })
+
+    // Only on the transition — the early return above covers a second tap.
+    const { sent } = await sendOpsLifecycleCommunications({
+      event: 'job_finished',
+      appointmentId,
+    })
+
+    return NextResponse.json({ visit: data, sent })
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Failed to close the visit'
     return NextResponse.json({ error: message }, { status: message === 'Not authorized' ? 403 : 500 })
