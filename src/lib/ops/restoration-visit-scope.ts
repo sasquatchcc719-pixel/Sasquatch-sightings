@@ -35,27 +35,17 @@ export function readingForVisit<T extends TimedReading>(
 }
 
 /**
- * What this material read as of the end of a given day — that visit's reading
- * if there is one, otherwise the most recent one before it.
+ * Whether a visit has happened yet.
  *
- * A point that was not re-read on Tuesday has not become unknown; it still
- * reads whatever it did on Monday, and the map should say so.
+ * A monitor scheduled for Tuesday has no readings on Monday, and the screen must
+ * say that rather than showing blanks that look like an oversight — or, worse,
+ * numbers carried forward from a day that WAS worked.
  */
-export function readingAsOf<T extends TimedReading>(
-  readings: T[],
-  visitDate: string | null,
-): T | null {
-  if (!visitDate) {
-    const all = [...readings].sort(
-      (a, b) => new Date(b.taken_at).getTime() - new Date(a.taken_at).getTime(),
-    )
-    return all[0] ?? null
-  }
-
-  // End of the visit day, so a reading taken that afternoon still counts.
-  const cutoff = new Date(`${visitDate}T23:59:59`).getTime()
-  const upTo = readings
-    .filter((r) => new Date(r.taken_at).getTime() <= cutoff)
-    .sort((a, b) => new Date(b.taken_at).getTime() - new Date(a.taken_at).getTime())
-  return upTo[0] ?? null
+export function visitIsFuture(
+  visit: { appointment_date: string | null; status?: string | null } | null,
+  today: string,
+): boolean {
+  if (!visit?.appointment_date) return false
+  if (visit.status === 'completed') return false
+  return visit.appointment_date > today
 }

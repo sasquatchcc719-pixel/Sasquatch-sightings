@@ -2526,9 +2526,9 @@ had the identical fault, and worse consequences.
   on a visit with no reading yet, rather than borrowing another day's number.
   Typing over it *corrects that visit's reading* instead of stacking a second
   one on the same day, and the button says "Update" rather than "Save".
-- **What did it read AS OF this visit?** What the map colours. A point not
-  re-read on Tuesday has not become unknown — it still reads what it did on
-  Monday. Opening Saturday now paints Saturday's numbers, not Tuesday's.
+- **What did it read AS OF this visit?** ~~What the map colours, carrying the
+  last known reading forward.~~ **Wrong, and removed the same day it shipped.**
+  See below.
 
 ### The atmospheric case was worse
 
@@ -2544,3 +2544,27 @@ because that is what a trend is.
 
 The list shows this visit's readings, says so, and notes how many belong to other
 visits rather than hiding that they exist.
+
+### The carry-forward was my invention, and it was wrong
+
+I built `readingAsOf` to carry the last known reading onto a day nobody re-read
+it, reasoning that a material "has not become unknown". Charles, immediately:
+
+> *"the readings on the 31st and the first should be blank because we haven't
+> done them yet. That should be blatantly obvious."*
+
+It is. The 31st and the 1st are monitor visits that **have not happened**.
+Painting them with Saturday's numbers makes work that was never done look done —
+on the same screen whose entire purpose is showing what changed between visits.
+A drying log that invents readings for unworked days is worse than no drying log.
+
+**A visit shows what was read on that visit. Nothing is carried forward.** A
+visit with no readings shows none, and says why: *"This visit has not happened
+yet — readings are blank because nobody has taken them."* Blank on its own reads
+as a screen that failed to load; blank with a reason reads as a day not yet
+worked.
+
+The wider fault he named is the real one: I had been fixing the exact thing
+pointed at, one at a time, rather than reasoning about the model. The
+carry-forward was not something he asked for — it was a decision I made and
+justified in a comment, and it was wrong on its face for a drying log.

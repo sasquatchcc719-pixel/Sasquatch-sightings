@@ -52,7 +52,7 @@ import { DryingChart } from '@/components/ops/drying-chart'
 import { AirReadingsCard, type AirReading } from '@/components/ops/air-readings-card'
 import { EquipmentPinEditor } from '@/components/ops/equipment-pin-editor'
 import { grainsPerPound } from '@/lib/ops/restoration-psychrometry'
-import { readingForVisit, readingAsOf } from '@/lib/ops/restoration-visit-scope'
+import { readingForVisit, visitIsFuture } from '@/lib/ops/restoration-visit-scope'
 
 /**
  * The restoration project screen.
@@ -488,6 +488,12 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
       ),
     [detail, airflowDensity],
   )
+  /** True when the visit being viewed has not been worked yet. */
+  const activeVisitNotYet = useMemo(() => {
+    const visit = detail?.visits.find((v) => v.id === activeVisitId) ?? null
+    return visitIsFuture(visit, toDateKey(new Date()))
+  }, [detail?.visits, activeVisitId])
+
   /** The day being viewed, which scopes every reading on the screen. */
   const activeVisitDate = useMemo(
     () => detail?.visits.find((v) => v.id === activeVisitId)?.appointment_date ?? null,
@@ -511,9 +517,10 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
       const history = [...point.restoration_readings].sort(
         (a, b) => new Date(a.taken_at).getTime() - new Date(b.taken_at).getTime(),
       )
-      // What this point read AS OF the visit being viewed — opening Saturday
-      // must not paint Tuesday's numbers onto the map.
-      const latest = readingAsOf(point.restoration_readings, activeVisitDate)
+      // What was read ON this visit. Nothing is carried forward: a day nobody
+      // worked has no readings, and showing the previous day's numbers on it
+      // makes a visit that has not happened look done.
+      const latest = readingForVisit(point.restoration_readings, activeVisitId)
       pins.push({
         id: point.id,
         kind: 'reading',
@@ -531,7 +538,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
       })
     }
     return pins
-  }, [detail, activeVisitDate])
+  }, [detail, activeVisitId])
 
   const selectedPoint = useMemo(
     () => detail?.reading_points.find((p) => p.id === selectedPointId) ?? null,
@@ -1786,6 +1793,18 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             ) : null}
 
             {/*
+              A visit that has not happened has no readings, and blanks on their
+              own look like something failed to load. Saying so is the
+              difference between an empty day and a broken screen.
+            */}
+            {activeVisitNotYet ? (
+              <p className="border-border/60 bg-muted/30 text-muted-foreground mb-3 rounded-lg border px-3 py-2 text-xs">
+                This visit has not happened yet — readings are blank because
+                nobody has taken them.
+              </p>
+            ) : null}
+
+            {/*
               Fixed above the plan rather than in a card further down. These
               readings are taken standing in the room with the meter, on every
               visit — asking Charles to scroll somewhere else for them is how
@@ -1925,7 +1944,6 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                     key={selectedPoint.id}
                     point={selectedPoint}
                     activeVisitId={activeVisitId}
-                    activeVisitDate={activeVisitDate}
                     visitLabel={
                       activeVisit
                         ? `${activeVisit.visit_type === 'mitigation' ? 'Mitigation' : 'Monitor'} · ${new Date(
@@ -3564,7 +3582,6 @@ function DehuReadingRow({
 function MapPointEditor({
   point,
   activeVisitId,
-  activeVisitDate,
   visitLabel,
   onSave,
   onReading,
@@ -3575,7 +3592,6 @@ function MapPointEditor({
 }: {
   point: ReadingPoint
   activeVisitId: string | null
-  activeVisitDate: string | null
   visitLabel: string
   onSave: (patch: Record<string, unknown>) => void | Promise<unknown>
   onReading: (value: number) => void | Promise<unknown>
@@ -3590,14 +3606,11 @@ function MapPointEditor({
   const history = [...point.restoration_readings].sort(
     (a, b) => new Date(a.taken_at).getTime() - new Date(b.taken_at).getTime(),
   )
-  // Two different questions, kept apart. `mine` is what was read on the visit
-  // being viewed — the box you type in and correct. `asOf` is what the material
-  // read by the end of that day, which is what the colour reflects even when
-  // this visit has not been read yet.
+  // What was read on the visit being viewed, and nothing else. A visit with no
+  // reading shows none — the history is below, dated, for context.
   const mine = readingForVisit(point.restoration_readings, activeVisitId)
-  const asOf = readingAsOf(point.restoration_readings, activeVisitDate)
   const standard = point.dry_standard ?? defaultDryStandard(point.material)
-  const band = moistureBand(asOf ? Number(asOf.value) : null, standard)
+  const band = moistureBand(mine ? Number(mine.value) : null, standard)
 
   // Taking a reading is the whole reason the bubble opened, so saving one closes
   // it. On a monitor day that is a dozen points in a row, and dismissing each
