@@ -626,7 +626,11 @@ describe('closing a monitor visit', () => {
       .single()
 
     // What the route does: straight to completed from wherever it was.
-    const now = new Date().toISOString()
+    // Completed well outside the review-request lookback window. A freshly
+    // completed appointment here is picked up by enqueueReviewRequests running
+    // in another test file against the same database, which made that test
+    // fail for reasons that had nothing to do with it.
+    const now = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString()
     const { data: closed } = await supabase
       .from('ops_appointments')
       .update({ status: 'completed', completed_at: now })

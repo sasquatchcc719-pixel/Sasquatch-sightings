@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { BAND_PIN_CLASS, type MoistureBand } from '@/lib/ops/restoration-moisture'
 import {
   draftLengthFt,
@@ -53,7 +53,13 @@ export type PlanPin = {
   removed?: boolean
 }
 
-export type WallPlanTool = 'wall' | 'resize' | 'corner' | 'door' | 'pin'
+/**
+ * `move` is the default and the safe one: it pans, pinch-zooms, and selects
+ * what you tap. Every other tool draws or places something, and having `wall`
+ * lead meant Charles drew walls across a finished plan while trying to reach a
+ * reading point on a phone.
+ */
+export type WallPlanTool = 'move' | 'wall' | 'resize' | 'corner' | 'door' | 'pin'
 
 type Props = {
   nodes: PlanNode[]
@@ -114,6 +120,22 @@ export function WallPlan({
   onMovePin,
 }: Props) {
   const [width, setWidth] = useState(0)
+  /**
+   * Pan and zoom, in screen pixels and a plain multiplier.
+   *
+   * A reading pin is 24px across. On a phone showing a thirty-foot basement
+   * that is a target you cannot hit, which is how Charles ended up drawing
+   * walls while trying to tap a point.
+   */
+  const [zoom, setZoom] = useState(1)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const [selectedWallId, setSelectedWallId] = useState<string | null>(null)
+  /** Live pointers, so two fingers can be told from one. */
+  const pointersRef = useRef(new Map<number, { x: number; y: number }>())
+  const pinchRef = useRef<{ distance: number; zoom: number } | null>(null)
+  const panStartRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(
+    null,
+  )
   const [draft, setDraft] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
   const [nodeDrag, setNodeDrag] = useState<{ id: string; x: number; y: number } | null>(null)
   const [editingWallId, setEditingWallId] = useState<string | null>(null)
@@ -188,15 +210,17 @@ export function WallPlan({
   const scale = width > 0 ? width / planWidthFt : 0
   const heightPx = scale > 0 ? Math.max(240, planHeightFt * scale) : 240
 
-  /** Screen pixels -> plan feet, accounting for the padded origin. */
+  /** Screen pixels -> plan feet, through the pan and zoom. */
   const toPlan = (clientX: number, clientY: number, rect: DOMRect) => ({
-    xFt: (clientX - rect.left) / (scale || 1) + bounds.minX - PADDING_FT,
-    yFt: (clientY - rect.top) / (scale || 1) + bounds.minY - PADDING_FT,
+    xFt:
+      (clientX - rect.left - pan.x) / (scale * zoom || 1) + bounds.minX - PADDING_FT,
+    yFt:
+      (clientY - rect.top - pan.y) / (scale * zoom || 1) + bounds.minY - PADDING_FT,
   })
 
   const toScreen = (xFt: number, yFt: number) => ({
-    left: (xFt - bounds.minX + PADDING_FT) * scale,
-    top: (yFt - bounds.minY + PADDING_FT) * scale,
+    left: (xFt - bounds.minX + PADDING_FT) * scale * zoom + pan.x,
+    top: (yFt - bounds.minY + PADDING_FT) * scale * zoom + pan.y,
   })
 
   return (
@@ -215,6 +239,33 @@ export function WallPlan({
       onPointerDown={(event) => {
         if (scale <= 0) return
         const rect = event.currentTarget.getBoundingClientRect()
+
+        // Track every finger, so two can be told from one.
+        pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
+
+        if (tool === 'move') {
+          try {
+            event.currentTarget.setPointerCapture(event.pointerId)
+          } catch {
+            // Capture is a nicety.
+          }
+          const points = [...pointersRef.current.values()]
+          if (points.length === 2) {
+            pinchRef.current = {
+              distance: Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y),
+              zoom,
+            }
+            panStartRef.current = null
+          } else if (points.length === 1) {
+            panStartRef.current = {
+              x: event.clientX,
+              y: event.clientY,
+              panX: pan.x,
+              panY: pan.y,
+            }
+          }
+          return
+        }
 
         if (tool === 'resize' && onMoveRoom) {
           const { xFt, yFt } = toPlan(event.clientX, event.clientY, rect)
@@ -244,6 +295,36 @@ export function WallPlan({
         setDraft({ x1, y1, x2: x1, y2: y1 })
       }}
       onPointerMove={(event) => {
+        if (tool === 'move') {
+          if (!pointersRef.current.has(event.pointerId)) return
+          pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
+          const points = [...pointersRef.current.values()]
+
+          if (points.length >= 2 && pinchRef.current) {
+            const distance = Math.hypot(
+              points[0].x - points[1].x,
+              points[0].y - points[1].y,
+            )
+            if (pinchRef.current.distance > 0) {
+              const next = Math.max(
+                0.5,
+                Math.min(6, (pinchRef.current.zoom * distance) / pinchRef.current.distance),
+              )
+              setZoom(next)
+            }
+            return
+          }
+
+          const start = panStartRef.current
+          if (start) {
+            setPan({
+              x: start.panX + (event.clientX - start.x),
+              y: start.panY + (event.clientY - start.y),
+            })
+          }
+          return
+        }
+
         if (roomDrag) {
           const rect = event.currentTarget.getBoundingClientRect()
           const { xFt, yFt } = toPlan(event.clientX, event.clientY, rect)
@@ -293,7 +374,15 @@ export function WallPlan({
         if (moved >= 1) onDrawWall?.(draft)
         setDraft(null)
       }}
-      onPointerCancel={() => {
+      onPointerUpCapture={(event) => {
+        pointersRef.current.delete(event.pointerId)
+        if (pointersRef.current.size < 2) pinchRef.current = null
+        if (pointersRef.current.size === 0) panStartRef.current = null
+      }}
+      onPointerCancel={(event) => {
+        pointersRef.current.delete(event.pointerId)
+        pinchRef.current = null
+        panStartRef.current = null
         setDraft(null)
         setRoomDrag(null)
       }}
@@ -301,6 +390,13 @@ export function WallPlan({
         if (scale <= 0) return
         const rect = event.currentTarget.getBoundingClientRect()
         const { xFt, yFt } = toPlan(event.clientX, event.clientY, rect)
+
+        if (tool === 'move') {
+          // Tap a wall to select it; tap the empty plan to let it go.
+          const hit = wallNear(resolved, xFt, yFt, 1.5 / zoom)
+          setSelectedWallId(hit ? hit.wall.id : null)
+          return
+        }
 
         if (tool === 'door' && onPlaceDoor) {
           const hit = wallNear(resolved, xFt, yFt)
@@ -343,9 +439,16 @@ export function WallPlan({
         <svg className="pointer-events-none absolute inset-0 h-full w-full">
           {/* One-foot grid, so measurements read at a glance. */}
           <defs>
-            <pattern id="ft-grid" width={scale} height={scale} patternUnits="userSpaceOnUse">
+            <pattern
+              id="ft-grid"
+              width={scale * zoom}
+              height={scale * zoom}
+              x={pan.x}
+              y={pan.y}
+              patternUnits="userSpaceOnUse"
+            >
               <path
-                d={`M ${scale} 0 L 0 0 0 ${scale}`}
+                d={`M ${scale * zoom} 0 L 0 0 0 ${scale * zoom}`}
                 fill="none"
                 className="stroke-slate-300/50 dark:stroke-slate-700/50"
                 strokeWidth={0.5}
@@ -367,7 +470,11 @@ export function WallPlan({
                 strokeWidth={wall.isPartialHeight ? 4 : 7}
                 strokeLinecap="round"
                 strokeDasharray={wall.isPartialHeight ? '10 5' : undefined}
-                className="stroke-slate-700 dark:stroke-slate-300"
+                className={
+                  wall.id === selectedWallId
+                    ? 'stroke-red-500'
+                    : 'stroke-slate-700 dark:stroke-slate-300'
+                }
               />
             )
           })}
@@ -627,6 +734,40 @@ export function WallPlan({
           </button>
         )
       })()}
+
+      {/*
+        A selected wall, and the X that removes it.
+        Deleting a wall used to mean switching to the Corner tool and tapping
+        its measurement — undiscoverable, and no use at all when the wall was
+        drawn by accident while trying to tap something else.
+      */}
+      {scale > 0 && tool === 'move' && selectedWallId
+        ? (() => {
+            const wall = resolved.find((w) => w.id === selectedWallId)
+            if (!wall) return null
+            const mid = toScreen(
+              (wall.start.x + wall.end.x) / 2,
+              (wall.start.y + wall.end.y) / 2,
+            )
+            return (
+                <button
+                  type="button"
+                  aria-label="Delete this wall"
+                  title={`Delete this ${formatFeetInches(wall.lengthFt)} wall`}
+                  className="absolute z-20 flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white bg-red-600 text-sm font-bold text-white shadow"
+                  style={{ left: mid.left, top: mid.top }}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onDeleteWall?.(wall.id)
+                    setSelectedWallId(null)
+                  }}
+                >
+                  ×
+                </button>
+            )
+          })()
+        : null}
 
       {/* Corner handles, only while the corner tool is active. */}
       {scale > 0 && tool === 'corner'

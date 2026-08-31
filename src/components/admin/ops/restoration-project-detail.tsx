@@ -324,7 +324,10 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
   const [signatureOpen, setSignatureOpen] = useState(false)
   const [sendResult, setSendResult] = useState<string | null>(null)
 
-  const [planTool, setPlanTool] = useState<WallPlanTool>('wall')
+  // Move leads and is the default. Every other tool draws or places something,
+  // and having Wall lead meant walls got drawn across a finished plan while
+  // trying to reach a reading point on a phone.
+  const [planTool, setPlanTool] = useState<WallPlanTool>('move')
   // Common sizes, so the usual case is one tap and anything else is one edit.
   const [openingKind, setOpeningKind] = useState<'doorway' | 'window'>('doorway')
   const [openingWidth, setOpeningWidth] = useState(3)
@@ -1643,6 +1646,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 <div className="border-border/60 flex rounded-md border p-0.5">
                   {(
                     [
+                      ['move', 'Move'],
                       ['wall', 'Wall'],
                       ['resize', 'Resize'],
                       ['corner', 'Corner'],
@@ -1885,68 +1889,6 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 This visit has not happened yet — readings are blank because
                 nobody has taken them.
               </p>
-            ) : null}
-
-            {/*
-              Fixed above the plan rather than in a card further down. These
-              readings are taken standing in the room with the meter, on every
-              visit — asking Charles to scroll somewhere else for them is how
-              they stop being taken.
-            */}
-            {!closed ? (
-              <div className="border-border/60 mb-3 rounded-lg border p-3">
-                <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold">
-                  <Wind className="h-4 w-4 text-sky-600 dark:text-sky-400" /> Air readings
-                </h3>
-                <AirReadingsCard
-                  readings={detail.air_readings}
-                  activeVisitId={activeVisitId}
-                  activeVisitDate={activeVisitDate}
-                  visitLabel={
-                    activeVisit
-                      ? `${activeVisit.visit_type === 'mitigation' ? 'Mitigation' : 'Monitor'} · ${new Date(
-                          `${activeVisit.appointment_date}T12:00:00`,
-                        ).toLocaleDateString('en-US', {
-                          weekday: 'short',
-                          month: 'short',
-                          day: 'numeric',
-                        })}`
-                      : 'No visit selected'
-                  }
-                  busy={busy === 'air-reading'}
-                  onEdit={(readingId, patch) =>
-                    call(
-                      `/api/admin/ops/restoration/air-readings/${readingId}`,
-                      { method: 'PATCH', body: JSON.stringify(patch) },
-                      `air-${readingId}`,
-                    )
-                  }
-                  onRemove={(readingId) =>
-                    call(
-                      `/api/admin/ops/restoration/air-readings/${readingId}`,
-                      { method: 'DELETE' },
-                      `air-${readingId}`,
-                    )
-                  }
-                  onLog={async (reading) => {
-                    // `call` returns null when the request failed, and the card
-                    // keeps the numbers rather than clearing them.
-                    const result = await call(
-                      `/api/admin/ops/restoration/projects/${projectId}/readings`,
-                      {
-                        method: 'POST',
-                        body: JSON.stringify({
-                          kind: 'air',
-                          appointment_id: activeVisitId,
-                          ...reading,
-                        }),
-                      },
-                      'air-reading',
-                    )
-                    return result != null
-                  }}
-                />
-              </div>
             ) : null}
 
             {planTool === 'pin' &&
@@ -2218,7 +2160,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
               }}
             />
             <p className="text-muted-foreground mt-1 text-xs">
-              {planTool === 'wall'
+              {planTool === 'move'
+                ? 'Drag to move the plan, pinch to zoom in on a point. Tap a wall to select it, then × to delete it.'
+                : planTool === 'wall'
                 ? 'Drag anywhere to draw a wall — ends snap to nearby corners so rooms close. A wall that closes nothing is a pony wall. Measurements are out of the way while you draw.'
                 : planTool === 'resize'
                   ? 'Drag inside a room to move the whole thing. Tap any measurement to type an exact length.'
@@ -2720,6 +2664,67 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
               </div>
             </div>
           ) : null}
+        </Card>
+      ) : null}
+
+      {/* ── Air readings ───────────────────────────────────── */}
+      {!closed ? (
+        <Card className={SECTION_CARD}>
+          <h2 className={`${SECTION_TITLE} mb-1`}>
+            <Wind className={SECTION_ICON} /> Air readings
+          </h2>
+          <p className="text-muted-foreground mb-3 text-sm">
+            Temperature and humidity in the chamber, outside, and out of the dehu.
+            Moisture meters say the material is wet; these say what the air is doing.
+          </p>
+          <AirReadingsCard
+                  readings={detail.air_readings}
+                  activeVisitId={activeVisitId}
+                  activeVisitDate={activeVisitDate}
+                  visitLabel={
+                    activeVisit
+                      ? `${activeVisit.visit_type === 'mitigation' ? 'Mitigation' : 'Monitor'} · ${new Date(
+                          `${activeVisit.appointment_date}T12:00:00`,
+                        ).toLocaleDateString('en-US', {
+                          weekday: 'short',
+                          month: 'short',
+                          day: 'numeric',
+                        })}`
+                      : 'No visit selected'
+                  }
+                  busy={busy === 'air-reading'}
+                  onEdit={(readingId, patch) =>
+                    call(
+                      `/api/admin/ops/restoration/air-readings/${readingId}`,
+                      { method: 'PATCH', body: JSON.stringify(patch) },
+                      `air-${readingId}`,
+                    )
+                  }
+                  onRemove={(readingId) =>
+                    call(
+                      `/api/admin/ops/restoration/air-readings/${readingId}`,
+                      { method: 'DELETE' },
+                      `air-${readingId}`,
+                    )
+                  }
+                  onLog={async (reading) => {
+                    // `call` returns null when the request failed, and the card
+                    // keeps the numbers rather than clearing them.
+                    const result = await call(
+                      `/api/admin/ops/restoration/projects/${projectId}/readings`,
+                      {
+                        method: 'POST',
+                        body: JSON.stringify({
+                          kind: 'air',
+                          appointment_id: activeVisitId,
+                          ...reading,
+                        }),
+                      },
+                      'air-reading',
+                    )
+                    return result != null
+                  }}
+                />
         </Card>
       ) : null}
 

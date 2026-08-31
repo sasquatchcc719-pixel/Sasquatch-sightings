@@ -2926,3 +2926,47 @@ Sent **only on the transition**. The route returns early when the visit is
 already completed, so tapping the button twice does not text anybody twice. And
 the button says what it does before it is pressed — a control that sends a
 message to a customer should not be a surprise.
+
+## The map on a phone
+
+Charles, after working a monitor visit on his phone: *"I immediately started
+trying to zoom in on the map so I could see the little points... I literally
+couldn't touch the point that I wanted to. Hence I started creating walls because
+I was touching the map."*
+
+Three faults, one cause: **the map assumed a mouse and a big screen.**
+
+### Move is the default tool now
+
+`wall` led the toolbar, so every mis-aimed tap on a finished plan drew a wall.
+The default is now **Move**, which pans, pinch-zooms and selects — it cannot
+create anything. Wall is still there for when a plan is actually being drawn,
+which is once, on day one.
+
+### The plan pans and pinch-zooms
+
+A reading pin is 24 pixels. On a phone showing a thirty-foot basement that is not
+a target anybody can hit. Two fingers zoom between 0.5x and 6x, one finger drags,
+and the grid scales with it so the map still reads as feet.
+
+### Walls can be deleted where they were made
+
+Deleting a wall meant switching to the Corner tool and tapping its measurement —
+undiscoverable, and useless for a wall drawn by accident while reaching for
+something else. In Move, tapping a wall selects it (it turns red) and an × on it
+removes it.
+
+### Air readings moved below the map
+
+They were above it, which pushed the plan and its tools down the screen — and the
+tools belong next to the thing they act on. They are their own card below the map
+now. The duplicate Charles saw above and below was a stale build; only one has
+existed in the code since the card was moved.
+
+### A test race I caused, fixed at the source
+The new close-a-visit test completed an appointment "now", and
+`enqueueReviewRequests` in another file scans every appointment completed in the
+last 48 hours — so an unrelated test failed once for reasons that had nothing to
+do with it. Its appointment now completes 45 days back, outside that window.
+Leaving it would have meant a suite that fails occasionally and teaches everyone
+to re-run rather than read.
