@@ -239,3 +239,75 @@ describe('points number themselves', () => {
     await supabase.from('restoration_projects').delete().eq('id', scratch!.id)
   })
 })
+
+describe('a reading is dated by its visit, enforced by the database', () => {
+  it('stamps from the visit however the row was written', async () => {
+    const { data: scratch } = await supabase
+      .from('restoration_projects')
+      .select('customer_id, service_address_id')
+      .eq('id', projectId)
+      .single()
+
+    const { data: project } = await supabase
+      .from('restoration_projects')
+      .insert({ ...scratch!, cause_narrative: `${MARKER}_STAMP` })
+      .select('id')
+      .single()
+
+    const { data: visit } = await supabase
+      .from('ops_appointments')
+      .insert({
+        customer_id: scratch!.customer_id,
+        service_address_id: scratch!.service_address_id,
+        booking_channel: 'admin',
+        source: 'integration_test',
+        status: 'booked',
+        payment_status: 'unpaid',
+        quickbooks_sync_status: 'held',
+        appointment_date: '2026-08-30',
+        start_time: '09:00',
+        end_time: '10:00',
+        quoted_total: 0,
+        kind: 'restoration',
+        restoration_project_id: project!.id,
+        visit_type: 'monitor',
+        internal_notes: MARKER,
+      })
+      .select('id')
+      .single()
+
+    const { data: point } = await supabase
+      .from('restoration_reading_points')
+      .insert({ project_id: project!.id, label: '1', material: 'Framing' })
+      .select('id')
+      .single()
+
+    // Written with a deliberately wrong stamp — the moment of typing, which is
+    // exactly what produced a chart drying upwards.
+    const { data: reading } = await supabase
+      .from('restoration_readings')
+      .insert({
+        reading_point_id: point!.id,
+        appointment_id: visit!.id,
+        value: 40,
+        taken_at: '2026-09-15T22:00:00Z',
+      })
+      .select('taken_at')
+      .single()
+
+    // 9am in Monument on 30 Aug is 15:00Z.
+    expect(new Date(reading!.taken_at).toISOString()).toBe('2026-08-30T15:00:00.000Z')
+
+    // And correcting the value later does not reintroduce a typing timestamp.
+    const { data: corrected } = await supabase
+      .from('restoration_readings')
+      .update({ value: 38 })
+      .eq('reading_point_id', point!.id)
+      .select('taken_at')
+      .single()
+    expect(new Date(corrected!.taken_at).toISOString()).toBe('2026-08-30T15:00:00.000Z')
+
+    await supabase.from('ops_appointments').delete().eq('id', visit!.id)
+    await supabase.from('restoration_projects').delete().eq('id', project!.id)
+  })
+})

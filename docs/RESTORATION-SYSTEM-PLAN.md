@@ -2846,3 +2846,43 @@ fact that it's a box."*
 Air movers stay dots. A dehu is drawn as a square roughly double the size, which
 is about its real footprint — a 200 HT is 20″ wide and 23″ deep — so the plan
 reads the way the room does.
+
+## The chart drew the job drying upwards
+
+Charles: *"you got all of these backwards. You have them climbing instead of
+falling... they're correct on the map but here they're backwards. I hope that
+doesn't carry across all jobs going forward."*
+
+Point 1 held two readings:
+
+| Value | Visit | `taken_at` |
+| --- | --- | --- |
+| 40% | 29 Aug, mitigation | **31 Aug 16:04** — the moment it was typed |
+| 30% | 30 Aug, monitor | **30 Aug 09:00** — the visit it belongs to |
+
+Sorted by the stamp, the monitor reading came first and the chart drew **30 → 40,
+climbing**, for a point that had actually fallen 40 → 30.
+
+**Two conventions in one column, both mine.** Readings written before the
+timestamp fix carry the typing moment; readings written after carry the visit.
+The map was right because it reads per visit and never sorts by the stamp — which
+is why the two views disagreed.
+
+All five points were reversed, incidentally, not four: point 3 reads 24 → 26,
+genuinely up. The reversal had made the one rising point look like the only
+falling one.
+
+### Fixed in the database, not the application
+
+The application already knew the rule. It knew it three commits ago, and a
+handful of rows written before that were enough to draw a false picture — because
+every future write path has to remember, and one forgetting is enough.
+
+A trigger on both reading tables now stamps `taken_at` from the visit's date and
+start time, in the shop's timezone, clamped to now. It fires on insert and on
+update, so correcting a value cannot reintroduce a typing timestamp either. The
+existing rows were rewritten through it.
+
+A test writes a reading with a deliberately wrong stamp — a date two weeks out —
+and asserts the database corrects it anyway. **An invariant the application
+merely intends is not an invariant.**
