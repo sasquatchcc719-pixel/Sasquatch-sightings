@@ -52,6 +52,7 @@ import { DryingChart } from '@/components/ops/drying-chart'
 import { AirReadingsCard, type AirReading } from '@/components/ops/air-readings-card'
 import { EquipmentPinEditor } from '@/components/ops/equipment-pin-editor'
 import { grainsPerPound } from '@/lib/ops/restoration-psychrometry'
+import { readingForVisit, readingAsOf } from '@/lib/ops/restoration-visit-scope'
 
 /**
  * The restoration project screen.
@@ -92,7 +93,12 @@ type ReadingPoint = {
   map_x: number | null
   map_y: number | null
   area_id: string | null
-  restoration_readings: Array<{ id: string; value: number; taken_at: string }>
+  restoration_readings: Array<{
+    id: string
+    value: number
+    taken_at: string
+    appointment_id: string | null
+  }>
 }
 
 type Detail = {
@@ -482,6 +488,12 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
       ),
     [detail, airflowDensity],
   )
+  /** The day being viewed, which scopes every reading on the screen. */
+  const activeVisitDate = useMemo(
+    () => detail?.visits.find((v) => v.id === activeVisitId)?.appointment_date ?? null,
+    [detail?.visits, activeVisitId],
+  )
+
   const planPins = useMemo<PlanPin[]>(() => {
     const pins: PlanPin[] = []
     for (const placement of detail?.equipment ?? []) {
@@ -499,7 +511,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
       const history = [...point.restoration_readings].sort(
         (a, b) => new Date(a.taken_at).getTime() - new Date(b.taken_at).getTime(),
       )
-      const latest = history[history.length - 1]
+      // What this point read AS OF the visit being viewed — opening Saturday
+      // must not paint Tuesday's numbers onto the map.
+      const latest = readingAsOf(point.restoration_readings, activeVisitDate)
       pins.push({
         id: point.id,
         kind: 'reading',
@@ -517,7 +531,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
       })
     }
     return pins
-  }, [detail])
+  }, [detail, activeVisitDate])
 
   const selectedPoint = useMemo(
     () => detail?.reading_points.find((p) => p.id === selectedPointId) ?? null,
@@ -1784,6 +1798,18 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 </h3>
                 <AirReadingsCard
                   readings={detail.air_readings}
+                  activeVisitId={activeVisitId}
+                  visitLabel={
+                    activeVisit
+                      ? `${activeVisit.visit_type === 'mitigation' ? 'Mitigation' : 'Monitor'} · ${new Date(
+                          `${activeVisit.appointment_date}T12:00:00`,
+                        ).toLocaleDateString('en-US', {
+                          weekday: 'short',
+                          month: 'short',
+                          day: 'numeric',
+                        })}`
+                      : 'No visit selected'
+                  }
                   busy={busy === 'air-reading'}
                   onEdit={(readingId, patch) =>
                     call(
@@ -1898,6 +1924,15 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                   <MapPointEditor
                     key={selectedPoint.id}
                     point={selectedPoint}
+                    activeVisitId={activeVisitId}
+                    activeVisitDate={activeVisitDate}
+                    visitLabel={
+                      activeVisit
+                        ? `${activeVisit.visit_type === 'mitigation' ? 'Mitigation' : 'Monitor'} · ${new Date(
+                            `${activeVisit.appointment_date}T12:00:00`,
+                          ).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+                        : 'No visit selected'
+                    }
                     onClose={() => setSelectedPointId(null)}
                     onSave={(patch) =>
                       call(
@@ -3528,6 +3563,9 @@ function DehuReadingRow({
  */
 function MapPointEditor({
   point,
+  activeVisitId,
+  activeVisitDate,
+  visitLabel,
   onSave,
   onReading,
   onEditReading,
@@ -3536,6 +3574,9 @@ function MapPointEditor({
   onClose,
 }: {
   point: ReadingPoint
+  activeVisitId: string | null
+  activeVisitDate: string | null
+  visitLabel: string
   onSave: (patch: Record<string, unknown>) => void | Promise<unknown>
   onReading: (value: number) => void | Promise<unknown>
   onEditReading: (readingId: string, value: number) => void | Promise<unknown>
@@ -3549,9 +3590,14 @@ function MapPointEditor({
   const history = [...point.restoration_readings].sort(
     (a, b) => new Date(a.taken_at).getTime() - new Date(b.taken_at).getTime(),
   )
-  const latest = history[history.length - 1]
+  // Two different questions, kept apart. `mine` is what was read on the visit
+  // being viewed — the box you type in and correct. `asOf` is what the material
+  // read by the end of that day, which is what the colour reflects even when
+  // this visit has not been read yet.
+  const mine = readingForVisit(point.restoration_readings, activeVisitId)
+  const asOf = readingAsOf(point.restoration_readings, activeVisitDate)
   const standard = point.dry_standard ?? defaultDryStandard(point.material)
-  const band = moistureBand(latest ? Number(latest.value) : null, standard)
+  const band = moistureBand(asOf ? Number(asOf.value) : null, standard)
 
   // Taking a reading is the whole reason the bubble opened, so saving one closes
   // it. On a monitor day that is a dozen points in a row, and dismissing each
@@ -3559,7 +3605,13 @@ function MapPointEditor({
   function submit() {
     const numeric = Number(value)
     if (!Number.isFinite(numeric) || value === '') return
-    void onReading(numeric)
+    // Re-reading a point on the same visit corrects that visit's number rather
+    // than stacking a second one on the same day.
+    if (mine) {
+      void onEditReading(mine.id, numeric)
+    } else {
+      void onReading(numeric)
+    }
     setValue('')
     if (!expanded) onClose()
   }
@@ -3573,6 +3625,7 @@ function MapPointEditor({
         </button>
       </div>
 
+      <p className="text-muted-foreground mb-1 text-xs">{visitLabel}</p>
       <div className="flex items-center gap-2">
         <Input
           autoFocus
@@ -3580,7 +3633,7 @@ function MapPointEditor({
           type="number"
           step="any"
           inputMode="decimal"
-          placeholder="reading %"
+          placeholder={mine ? String(mine.value) : 'reading %'}
           aria-label={`Reading for ${point.label}`}
           value={value}
           onChange={(e) => setValue(e.target.value)}
@@ -3589,7 +3642,7 @@ function MapPointEditor({
           }}
         />
         <Button size="sm" className={ACTION_BUTTON} onClick={submit}>
-          Save
+          {mine ? 'Update' : 'Save'}
         </Button>
       </div>
 
@@ -3612,6 +3665,10 @@ function MapPointEditor({
                 step="any"
                 min={0}
                 aria-label={`Reading taken ${new Date(reading.taken_at).toLocaleDateString()}`}
+                title={new Date(reading.taken_at).toLocaleDateString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                })}
                 defaultValue={Number(reading.value)}
                 onBlur={(e) => {
                   const value = Number(e.target.value)

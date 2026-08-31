@@ -19,6 +19,7 @@ import {
 
 export type AirReading = {
   id: string
+  appointment_id: string | null
   role: AirRole | null
   location: string
   equipment_placement_id: string | null
@@ -43,12 +44,17 @@ const STATUS_CLASS: Record<Verdict['status'], string> = {
  */
 export function AirReadingsCard({
   readings,
+  activeVisitId,
+  visitLabel,
   busy,
   onLog,
   onEdit,
   onRemove,
 }: {
   readings: AirReading[]
+  /** The visit being viewed. Readings are shown and judged per visit. */
+  activeVisitId: string | null
+  visitLabel: string
   busy: boolean
   /** Resolve to false when the reading did not save, so the numbers are kept. */
   onLog: (reading: {
@@ -74,15 +80,28 @@ export function AirReadingsCard({
   const previewDew =
     Number(tempF) && Number(rhPct) ? dewPointF(Number(tempF), Number(rhPct)) : null
 
+  /**
+   * This visit's readings, not the job's.
+   *
+   * The verdicts describe one moment: what the room held, what came out of the
+   * dehu, how that compared to the unaffected air. Mixing Tuesday's outlet with
+   * Saturday's room reading describes a machine and a room that never existed
+   * together, and reads as confidently as a true one.
+   */
+  const mine = useMemo(
+    () => readings.filter((r) => r.appointment_id === activeVisitId),
+    [readings, activeVisitId],
+  )
+
   const latestByRole = useMemo(() => {
     const map = new Map<string, AirReading>()
-    for (const reading of [...readings].sort(
+    for (const reading of [...mine].sort(
       (a, b) => new Date(a.taken_at).getTime() - new Date(b.taken_at).getTime(),
     )) {
       if (reading.role) map.set(reading.role, reading)
     }
     return map
-  }, [readings])
+  }, [mine])
 
   const toReading = (r: AirReading | undefined) => ({
     role: r?.role ?? null,
@@ -104,6 +123,7 @@ export function AirReadingsCard({
       toReading(latestByRole.get('affected')),
       toReading(latestByRole.get('unaffected')),
     ),
+    // The trend is the one thing that SHOULD span every visit.
     trendVerdict(
       readings.map((r) => ({
         role: r.role,
@@ -226,9 +246,11 @@ export function AirReadingsCard({
         ))}
       </div>
 
-      {readings.length > 0 ? (
+      <p className="text-muted-foreground text-xs">{visitLabel}</p>
+
+      {mine.length > 0 ? (
         <div className="border-border/60 max-h-56 overflow-y-auto rounded-md border text-xs">
-          {[...readings]
+          {[...mine]
             .sort((a, b) => new Date(b.taken_at).getTime() - new Date(a.taken_at).getTime())
             .map((reading) => {
               const gpp =
@@ -300,6 +322,17 @@ export function AirReadingsCard({
               )
             })}
         </div>
+      ) : (
+        <p className="text-muted-foreground text-xs">
+          Nothing logged on this visit yet.
+        </p>
+      )}
+
+      {readings.length > mine.length ? (
+        <p className="text-muted-foreground text-xs">
+          {readings.length - mine.length} more from other visits — pick that visit
+          above to see or correct them.
+        </p>
       ) : null}
     </div>
   )

@@ -2505,3 +2505,42 @@ could not change.
 because a monitor gets fitted around cleaning work by hand — the same tray every
 other monitor is dragged out of. Its sequence number is taken from the highest of
 both the queue and the calendar, so numbers are never reused across the two.
+
+## Readings are per visit, and the screen has to say so
+
+Charles: *"I just tried to change the moisture reading for the very first day to
+40% and then I clicked over to the first day of monitor and it was 40% but it
+should've been 30 because we need to show materials falling over time."*
+
+The data was already right — every reading carries the visit it was taken on.
+**The screen was not.** It showed a point's entire history no matter which visit
+was selected, so one reading looked like it belonged to every day at once, and
+the trend the whole feature exists to show could not be seen or built.
+
+He also assumed I had done the same for atmospheric readings. I had not; they
+had the identical fault, and worse consequences.
+
+### Two different questions, kept apart
+
+- **What did we read on THIS visit?** The box you type into and correct. Empty
+  on a visit with no reading yet, rather than borrowing another day's number.
+  Typing over it *corrects that visit's reading* instead of stacking a second
+  one on the same day, and the button says "Update" rather than "Save".
+- **What did it read AS OF this visit?** What the map colours. A point not
+  re-read on Tuesday has not become unknown — it still reads what it did on
+  Monday. Opening Saturday now paints Saturday's numbers, not Tuesday's.
+
+### The atmospheric case was worse
+
+The verdicts describe **one moment**: what the room held, what came out of the
+dehumidifier, how that compared to the unaffected air. Judging them across every
+visit at once paired Tuesday's outlet with Saturday's room reading — describing a
+machine and a room that never existed together, and reading exactly as
+confidently as a true one.
+
+They are now computed from the selected visit's readings alone. The **trend** is
+deliberately the exception: it is the one verdict that should span every visit,
+because that is what a trend is.
+
+The list shows this visit's readings, says so, and notes how many belong to other
+visits rather than hiding that they exist.
