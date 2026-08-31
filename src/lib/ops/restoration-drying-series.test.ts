@@ -78,3 +78,43 @@ describe('buildDryingChart', () => {
     expect(dayLabel('2026-08-29')).toBe('Aug 29')
   })
 })
+
+describe('two points that share a name', () => {
+  // Charles's own job has two points called "Drywall 1" and two called
+  // "Drywall 2" — a label is free text and repeats. Keying the chart by it
+  // collided them: React drops a duplicate key, so one line silently vanished
+  // and the legend could not tell the survivors apart.
+  const duplicated = [
+    {
+      id: 'point-a',
+      label: 'Drywall 1',
+      material: 'Framing',
+      dry_standard: 10,
+      restoration_readings: [
+        { value: 30, taken_at: '2026-08-29T09:00:00-06:00' },
+        { value: 22, taken_at: '2026-08-30T09:00:00-06:00' },
+      ],
+    },
+    {
+      id: 'point-b',
+      label: 'Drywall 1',
+      material: 'Framing',
+      dry_standard: 10,
+      restoration_readings: [
+        { value: 28, taken_at: '2026-08-29T09:00:00-06:00' },
+        { value: 12, taken_at: '2026-08-30T09:00:00-06:00' },
+      ],
+    },
+  ]
+
+  it('plots both, because they are two different places in the building', () => {
+    const chart = buildDryingChart(duplicated)
+    expect(chart.series).toHaveLength(2)
+  })
+
+  it('gives them distinct identities even with identical labels', () => {
+    const chart = buildDryingChart(duplicated)
+    expect(chart.series[0].id).not.toBe(chart.series[1].id)
+    expect(chart.series[0].label).toBe(chart.series[1].label)
+  })
+})

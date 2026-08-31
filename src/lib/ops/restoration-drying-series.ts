@@ -12,6 +12,8 @@
 export type SeriesPoint = { dayIndex: number; value: number; takenAt: string }
 
 export type DryingSeries = {
+  /** The point's own id. Labels are free text and repeat; this does not. */
+  id: string
   label: string
   material: string | null
   dryStandard: number | null
@@ -48,6 +50,7 @@ function dayKey(iso: string): string {
 
 export function buildDryingChart(
   points: Array<{
+    id?: string
     label: string
     material: string | null
     dry_standard: number | null
@@ -91,6 +94,8 @@ export function buildDryingChart(
     }
 
     series.push({
+      // Falls back to the label only when a caller has no id to give.
+      id: point.id ?? point.label,
       label: point.label,
       material: point.material,
       dryStandard: point.dry_standard == null ? null : Number(point.dry_standard),

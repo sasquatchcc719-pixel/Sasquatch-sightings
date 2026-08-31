@@ -33,6 +33,7 @@ export function DryingChart({
   points,
 }: {
   points: Array<{
+    id?: string
     label: string
     material: string | null
     dry_standard: number | null
@@ -132,7 +133,7 @@ export function DryingChart({
         ))}
 
         {chart.series.map((series, i) => (
-          <g key={series.label}>
+          <g key={series.id}>
             <path
               d={path(series)}
               fill="none"
@@ -143,7 +144,7 @@ export function DryingChart({
             />
             {series.points.map((p) => (
               <circle
-                key={`${series.label}-${p.dayIndex}`}
+                key={`${series.id}-${p.dayIndex}`}
                 cx={x(p.dayIndex)}
                 cy={y(p.value)}
                 r={3}
@@ -156,7 +157,7 @@ export function DryingChart({
 
       <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
         {chart.series.map((series, i) => (
-          <span key={series.label} className="flex items-center gap-1">
+          <span key={series.id} className="flex items-center gap-1">
             <span
               className="h-2 w-3 rounded-sm"
               style={{ background: LINE_COLORS[i % LINE_COLORS.length] }}

@@ -2568,3 +2568,28 @@ The wider fault he named is the real one: I had been fixing the exact thing
 pointed at, one at a time, rather than reasoning about the model. The
 carry-forward was not something he asked for — it was a decision I made and
 justified in a comment, and it was wrong on its face for a drying log.
+
+## Two points with the same name broke the chart
+
+Charles's job has two reading points called "Drywall 1" and two called
+"Drywall 2". A label is free text; of course it repeats.
+
+The drying chart and the PDF keyed each series by that label. Duplicate React
+keys mean **one of the two lines silently disappears**, and the legend cannot
+tell the survivors apart — on a document a carrier reads, with the point that
+was still wet quite possibly the one that vanished.
+
+Series now carry the point's own id. The labels can be identical; the lines
+cannot collide.
+
+### And one change deliberately NOT made
+
+I had also raised grouping the report's readings by visit instead of by point.
+On thinking about it: no. Per-point with dates — *North wall · 8/29: 28% ·
+8/30: 20% · 8/31: 11%* — already shows the fall, which is the whole job of a
+drying log, and the chart shows it graphically besides. Grouping by visit would
+duplicate the daily notes section. That would have been motion, not improvement.
+
+His labels are likewise **his**: "Drywall 1" with the material set to Framing is
+almost certainly probing framing behind a drywall wall, which is ordinary. The
+defect that naming exposed was mine, not his.

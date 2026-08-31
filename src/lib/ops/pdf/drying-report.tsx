@@ -100,7 +100,8 @@ const CHART_COLORS = [
  */
 function DryingTrend({ data }: { data: DryingReportData }) {
   const chart = buildDryingChart(
-    data.readingPoints.map((p) => ({
+    data.readingPoints.map((p, index) => ({
+      id: `${index}-${p.label}`,
       label: p.label,
       material: p.material,
       dry_standard: p.dryStandard,
@@ -171,7 +172,7 @@ function DryingTrend({ data }: { data: DryingReportData }) {
         ))}
 
         {chart.series.map((series, i) => (
-          <React.Fragment key={series.label}>
+          <React.Fragment key={series.id}>
             <Path
               d={series.points
                 .map((p, n) => `${n === 0 ? 'M' : 'L'} ${x(p.dayIndex).toFixed(1)} ${y(p.value).toFixed(1)}`)
@@ -182,7 +183,7 @@ function DryingTrend({ data }: { data: DryingReportData }) {
             />
             {series.points.map((p) => (
               <Circle
-                key={`${series.label}-${p.dayIndex}`}
+                key={`${series.id}-${p.dayIndex}`}
                 cx={x(p.dayIndex)}
                 cy={y(p.value)}
                 r={2}
@@ -196,7 +197,7 @@ function DryingTrend({ data }: { data: DryingReportData }) {
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 4 }}>
         {chart.series.map((series, i) => (
           <Text
-            key={series.label}
+            key={series.id}
             style={{ fontSize: 7, marginRight: 10, color: CHART_COLORS[i % CHART_COLORS.length] }}
           >
             {`— ${series.label}`}
