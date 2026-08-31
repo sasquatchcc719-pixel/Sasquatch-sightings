@@ -2451,3 +2451,28 @@ Sunday's readings went onto Saturday's visit without a word.
 A visit picker beside the readings was drafted and rejected. **The design is
 Charles's call**; the underlying fault — that the target visit is chosen far from
 where readings are entered, and never shown — is real and unaddressed.
+
+### Verifying the chain, on the clock the server actually runs
+
+Charles: *"I just wanna make sure that the logic is correct — if I enter the
+readings on that specific day it needs to be logged correctly in our final
+conclusion and PDF printout."*
+
+Checking it end to end turned up a second way to lose a day, downstream of the
+timestamp. Three links, each with its own failure:
+
+1. **The stamp** — from the visit, not from `now()`. Fixed above.
+2. **The chart column** — `dayKey` used the *server's* calendar day.
+3. **The printed date** — `day()` formatted in the *server's* timezone.
+
+The report renders on Vercel, where the process clock is **UTC**. A reading taken
+at 7:30pm in Monument is already tomorrow in UTC, so both (2) and (3) would move
+an evening reading a day forward — growing a column on the drying chart that
+nobody worked, and printing a date the customer can contradict.
+
+Both now name the day in `America/Denver`. The tests run with `TZ=UTC` forced,
+because under Mountain time they pass while still being wrong in production —
+and reverting `dayKey` proves it: two of them fail immediately.
+
+The chain is now asserted whole: **Sunday's visit → stamped Sunday → Sunday's
+column → "8/30/2026" in the PDF**, all evaluated on a UTC clock.

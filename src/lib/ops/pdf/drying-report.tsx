@@ -15,6 +15,7 @@ import {
 import {
   buildDryingChart,
   dayLabel,
+  SHOP_TIME_ZONE,
 } from '@/lib/ops/restoration-drying-series'
 import { moistureBand, BAND_LABEL } from '@/lib/ops/restoration-moisture'
 import {
@@ -321,13 +322,22 @@ const money = (n: number) =>
  * the previous day anywhere west of Greenwich. Read those as a local calendar
  * date; anything with a time in it is a real instant and converts normally.
  */
+/**
+ * Dates in this document are the shop's, not the server's.
+ *
+ * It renders on Vercel where the clock is UTC, so a reading taken at 7pm in
+ * Monument is already tomorrow by the server's reckoning. A plain date string
+ * is built from its parts because `new Date('2026-08-29')` parses as UTC
+ * midnight and renders as the 28th west of Greenwich — a bug this report has
+ * shipped once already.
+ */
 const day = (value: string) => {
   const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
   if (dateOnly) {
     const [, y, m, d] = dateOnly
     return new Date(Number(y), Number(m) - 1, Number(d)).toLocaleDateString('en-US')
   }
-  return new Date(value).toLocaleDateString('en-US')
+  return new Date(value).toLocaleDateString('en-US', { timeZone: SHOP_TIME_ZONE })
 }
 
 export function DryingReportPDF({ data }: { data: DryingReportData }) {

@@ -28,14 +28,22 @@ export type DryingChartModel = {
   plottable: boolean
 }
 
-/** Local calendar day, so readings taken at 8am and 4pm share a column. */
+/**
+ * The shop's timezone, not the server's.
+ *
+ * This chart and the report it feeds are rendered on Vercel, where the clock is
+ * UTC. A reading taken at 7pm in Monument is already tomorrow in UTC, so
+ * grouping by the server's day silently moves an evening reading to the next
+ * column — and this report has shipped an off-by-one date once already.
+ */
+export const SHOP_TIME_ZONE = 'America/Denver'
+
+/** Calendar day in Monument, so readings taken at 8am and 4pm share a column. */
 function dayKey(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso.slice(0, 10)
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
+  // en-CA gives YYYY-MM-DD, which sorts.
+  return d.toLocaleDateString('en-CA', { timeZone: SHOP_TIME_ZONE })
 }
 
 export function buildDryingChart(
