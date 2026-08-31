@@ -2118,3 +2118,29 @@ The chamber comparison paired Tuesday's outside reading with Thursday's chamber
 air, and said so nowhere. Outside air changes overnight, and this document goes
 in a claim file — the verdict now states when the reference reading came from a
 different day.
+
+## Sunday is a sliver, not a wall
+
+Charles: *"I know we eliminated Sunday from our schedule but here we are doing
+monitors on Sunday... I don't have the ability to actually put that monitor that
+we did on Sunday on that sliver."*
+
+We do not sell Sundays, so the column is collapsed to a vertical label. That is
+right for carpet cleaning and wrong for restoration: **drying does not pause for
+the weekend**, and a monitor visit lands on a Sunday whenever day three does.
+
+The sliver was rendered as an empty `div` — no drop handlers, no contents. So a
+Sunday monitor could neither be scheduled by dragging nor seen once it existed.
+A visit already on a Sunday was invisible on the schedule, which is the worse
+half of the bug.
+
+It stays narrow, because it should keep looking like a day we do not sell. It is
+simply no longer a dead zone: it accepts a drop like any other column, computes
+the time from where the drop landed exactly as the others do, and draws a thin
+bar for anything scheduled with the customer's name on hover.
+
+Nothing server-side ever objected to a Sunday — `scheduleQueuedVisit` has no
+day-of-week check, and the online-booking availability rules that exclude Sunday
+apply to customers booking themselves, not to Charles placing a monitor. A test
+now pins that, so a future business-hours guard cannot quietly break Sunday
+monitors.

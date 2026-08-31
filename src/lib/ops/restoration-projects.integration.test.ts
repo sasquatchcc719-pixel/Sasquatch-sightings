@@ -341,3 +341,61 @@ describe('a payment taken outside the app', () => {
     await supabase.from('restoration_projects').delete().eq('id', project!.id)
   })
 })
+
+describe('a monitor visit on a Sunday', () => {
+  it('schedules, because drying does not pause for the weekend', async () => {
+    const { data: addr } = await supabase
+      .from('ops_service_addresses')
+      .select('id, customer_id')
+      .limit(1)
+      .single()
+
+    const { data: project } = await supabase
+      .from('restoration_projects')
+      .insert({
+        customer_id: addr!.customer_id,
+        service_address_id: addr!.id,
+        cause_narrative: `${MARKER}_SUNDAY`,
+      })
+      .select('id')
+      .single()
+
+    const { data: queued } = await supabase
+      .from('restoration_visit_queue')
+      .insert({
+        project_id: project!.id,
+        visit_type: 'monitor',
+        visit_sequence: 1,
+        duration_minutes: 30,
+        status: 'queued',
+      })
+      .select('id')
+      .single()
+
+    // The next Sunday, whenever that is.
+    const sunday = new Date()
+    sunday.setDate(sunday.getDate() + ((7 - sunday.getDay()) % 7 || 7))
+    const dateKey = sunday.toLocaleDateString('en-CA')
+    expect(new Date(`${dateKey}T12:00:00`).getDay()).toBe(0)
+
+    const result = await scheduleQueuedVisit(supabase, {
+      queueId: queued!.id,
+      appointmentDate: dateKey,
+      startTime: '09:00',
+      source: 'integration_test',
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const { data: placed } = await supabase
+      .from('ops_appointments')
+      .select('appointment_date, visit_type')
+      .eq('id', result.appointmentId)
+      .single()
+    expect(placed!.appointment_date).toBe(dateKey)
+
+    await supabase.from('ops_appointments').delete().eq('id', result.appointmentId)
+    await supabase.from('restoration_projects').delete().eq('id', project!.id)
+  })
+})

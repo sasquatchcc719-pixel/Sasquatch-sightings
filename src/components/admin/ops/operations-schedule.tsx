@@ -581,6 +581,68 @@ function getAppointmentPlacement(
 }
 
 /**
+ * Sunday, kept as a sliver but not as a wall.
+ *
+ * We do not book Sundays, so the column is collapsed to a label. Restoration
+ * disagrees: drying does not pause for the weekend, and a monitor visit lands
+ * on a Sunday whenever day three does. The sliver was inert — nothing could be
+ * dropped on it, and anything already scheduled there was invisible — so a
+ * Sunday monitor could neither be planned nor seen.
+ *
+ * It stays narrow, because it should keep looking like a day we do not sell.
+ * It is simply no longer a dead zone: it takes a drop like any other column,
+ * and marks what is on it.
+ */
+/** The customer's name off an appointment, whichever shape the relation came back in. */
+function customerNameOf(appointment: Appointment): string {
+  const customer = Array.isArray(appointment.ops_customers)
+    ? appointment.ops_customers[0]
+    : appointment.ops_customers
+  return customer?.business_name || customer?.full_name || 'Visit'
+}
+
+function SundaySliver({
+  dateKey,
+  appointments,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+}: {
+  dateKey: string
+  appointments: Appointment[]
+  onDragOver: (e: React.DragEvent<HTMLDivElement>) => void
+  onDragLeave: () => void
+  onDrop: (e: React.DragEvent<HTMLDivElement>) => void
+}) {
+  return (
+    <div
+      data-date-column={dateKey}
+      className="relative border-r border-slate-200 bg-slate-100/70 transition-colors hover:bg-sky-50"
+      title={
+        appointments.length > 0
+          ? `${appointments.length} on Sunday — drag here to schedule another`
+          : 'Sunday — drag a visit here to schedule it'
+      }
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
+      {appointments.map((appointment) => {
+        const placement = getAppointmentPlacement(appointment)
+        return (
+          <div
+            key={appointment.id}
+            className="absolute right-0.5 left-0.5 rounded-sm bg-sky-500/80"
+            style={{ top: placement.top + 6, height: Math.max(6, placement.height / 2) }}
+            title={`${placement.startLabel} · ${customerNameOf(appointment)}`}
+          />
+        )
+      })}
+    </div>
+  )
+}
+
+/**
  * Assigns a horizontal column to each appointment so that overlapping
  * appointments sit side-by-side instead of stacking on top of each other.
  * Returns a Map<appointmentId, {col, totalCols}>.
@@ -4254,9 +4316,13 @@ export function OperationsSchedule() {
                             const isSunday = date.getDay() === 0
                             if (isSunday) {
                               return (
-                                <div
+                                <SundaySliver
                                   key={dateKey}
-                                  className="border-r border-slate-200 bg-slate-100/70"
+                                  dateKey={dateKey}
+                                  appointments={gridAppointmentsByDate.get(dateKey) || []}
+                                  onDragOver={(e) => handleDragOver(e, dateKey, null)}
+                                  onDragLeave={() => setDragPreview(null)}
+                                  onDrop={(e) => void handleDrop(e, dateKey, null)}
                                 />
                               )
                             }
@@ -4491,9 +4557,13 @@ export function OperationsSchedule() {
                             const isSunday = date.getDay() === 0
                             if (isSunday) {
                               return (
-                                <div
+                                <SundaySliver
                                   key={dateKey}
-                                  className="border-r border-slate-200 bg-slate-100/70"
+                                  dateKey={dateKey}
+                                  appointments={appointmentsByDate.get(dateKey) || []}
+                                  onDragOver={(e) => handleDragOver(e, dateKey, null)}
+                                  onDragLeave={() => setDragPreview(null)}
+                                  onDrop={(e) => void handleDrop(e, dateKey, null)}
                                 />
                               )
                             }
