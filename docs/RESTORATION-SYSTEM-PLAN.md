@@ -1843,3 +1843,29 @@ discarding them: eight air movers quoted become eight running, clock started, no
 map position. Pressing it twice does not double them — anything already running
 for that project counts against the quoted number. Days still come from the
 clock, never from the quoted three.
+
+## Splitting the deductible
+
+Charles: *"it's very common to split a deductible with a homeowner. A typical
+deductible is $1000 so what I would do is typically just discount $500 off of my
+services... it's not always exactly that but we need to have that calculated
+somewhere."*
+
+`restoration_projects.deductible_credit` holds the amount discounted off our own
+work. Stored rather than derived, precisely because half is the usual starting
+number and never a rule — the box is prefilled with half the deductible and
+edited per job.
+
+Three decisions worth keeping:
+
+- **It comes off the bottom line, not off a line item.** The work was worth what
+  the work was worth; the concession is a separate fact. Discounting the carpet
+  tear-out to make the arithmetic work would lose both numbers.
+- **It rides `ops_invoices.discount_amount`**, which the QuickBooks sync already
+  passes through as a discount. A negative line item would have needed its own
+  QuickBooks item and a story about what it is.
+- **It is capped at the subtotal.** A credit larger than the bill would invoice
+  a negative total, which QuickBooks will accept and nobody wants to explain.
+
+The Money card renames its bottom row to "Customer owes" once a credit is set,
+so the number on screen is the one the customer will be asked for.

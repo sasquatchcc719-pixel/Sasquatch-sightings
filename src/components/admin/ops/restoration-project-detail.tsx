@@ -101,6 +101,8 @@ type Detail = {
     estimate_sent_at: string | null
     estimate_copied_at: string | null
     acknowledged_warnings: string[] | null
+    deductible: number | null
+    deductible_credit: number | null
     invoice_id: string | null
     ops_customers: {
       id: string
@@ -168,7 +170,15 @@ type Detail = {
     restoration_phase: string | null
     appointment_id: string
   }>
-  totals: { work: number; equipment: number; subtotal: number; paid_cents: number; balance_cents: number }
+  totals: {
+    work: number
+    equipment: number
+    gross_subtotal: number
+    deductible_credit: number
+    subtotal: number
+    paid_cents: number
+    balance_cents: number
+  }
 }
 
 type CatalogItem = {
@@ -2681,8 +2691,61 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             <span className="text-muted-foreground">Equipment</span>
             <span>{money(detail.totals.equipment)}</span>
           </div>
+          {/*
+            Splitting the deductible is routine on an insurance job: they owe
+            $1,000, and we discount $500 of our own work so they are not out of
+            pocket for all of it. Half is the usual starting number and never a
+            rule, so the box is prefilled and editable, and it comes off the
+            bottom line rather than off any one line item.
+          */}
+          <div className="flex items-center justify-between gap-2 border-t pt-2">
+            <span className="text-muted-foreground">
+              Deductible split
+              {detail.project.deductible ? (
+                <span className="ml-1 text-xs">
+                  (deductible {money(Number(detail.project.deductible))})
+                </span>
+              ) : null}
+            </span>
+            <div className="flex items-center gap-1">
+              <span className="text-muted-foreground text-xs">−$</span>
+              <Input
+                className="h-8 w-24 text-right"
+                type="number"
+                min={0}
+                step="any"
+                aria-label="Deductible credit"
+                placeholder={
+                  detail.project.deductible
+                    ? String(Number(detail.project.deductible) / 2)
+                    : '0'
+                }
+                defaultValue={
+                  detail.project.deductible_credit != null
+                    ? Number(detail.project.deductible_credit)
+                    : ''
+                }
+                disabled={closed}
+                onBlur={(e) => {
+                  const raw = e.target.value.trim()
+                  const credit = raw === '' ? null : Number(raw)
+                  if (credit != null && !(credit >= 0)) return
+                  if (credit === Number(detail.project.deductible_credit ?? NaN)) return
+                  void call(
+                    `/api/admin/ops/restoration/projects/${projectId}`,
+                    {
+                      method: 'PATCH',
+                      body: JSON.stringify({ deductible_credit: credit }),
+                    },
+                    'deductible-credit',
+                  )
+                }}
+              />
+            </div>
+          </div>
+
           <div className="mt-1 flex justify-between border-t pt-2 text-base font-semibold">
-            <span>Running total</span>
+            <span>{detail.totals.deductible_credit > 0 ? 'Customer owes' : 'Running total'}</span>
             <span className="text-sky-700 tabular-nums dark:text-sky-300">
               {money(detail.totals.subtotal)}
             </span>

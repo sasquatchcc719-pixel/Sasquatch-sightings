@@ -118,7 +118,7 @@ export async function closeRestorationProject(
 
   const { data: project } = await supabase
     .from('restoration_projects')
-    .select('id, status, invoice_id, closed_at')
+    .select('id, status, invoice_id, closed_at, deductible, deductible_credit')
     .eq('id', projectId)
     .maybeSingle()
 
@@ -183,6 +183,13 @@ export async function closeRestorationProject(
     })),
   })
 
+  // Never more than the job: a credit larger than the bill would invoice a
+  // negative total, which QuickBooks will take and nobody wants to explain.
+  const deductibleCredit = Math.min(
+    subtotal,
+    Math.max(0, Number(project.deductible_credit ?? 0) || 0),
+  )
+
   const lineIdByDescription = new Map(
     (apptLines ?? []).map((l) => [`${l.name_snapshot}|${l.line_total}`, String(l.id)]),
   )
@@ -194,8 +201,13 @@ export async function closeRestorationProject(
       status: 'ready',
       payment_status: 'unpaid',
       subtotal,
-      discount_amount: 0,
-      total: subtotal,
+      // Splitting the deductible with the homeowner is routine on an insurance
+      // job: they owe $1,000, and Charles discounts $500 of his own work so
+      // they are not out of pocket for all of it. It rides the invoice's own
+      // discount field, which QuickBooks already understands, rather than a
+      // negative line item that would need its own QuickBooks item.
+      discount_amount: deductibleCredit,
+      total: round2(subtotal - deductibleCredit),
       sync_status: getQuickBooksSyncStatus(),
     })
     .select('id, total')

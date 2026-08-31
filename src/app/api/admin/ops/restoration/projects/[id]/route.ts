@@ -58,6 +58,7 @@ export async function PATCH(
       'claim_number',
       'adjuster_name',
       'deductible',
+      'deductible_credit',
       'dry_standard_notes',
     ]) {
       if (field in body) patch[field] = body[field]

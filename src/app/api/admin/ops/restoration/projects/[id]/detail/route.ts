@@ -155,13 +155,26 @@ export async function GET(
       category_events: categoryEvents ?? [],
       payments: payments ?? [],
       photos: photos ?? [],
-      totals: {
-        work: Math.round(lineTotal * 100) / 100,
-        equipment: Math.round(equipmentTotal * 100) / 100,
-        subtotal: Math.round((lineTotal + equipmentTotal) * 100) / 100,
-        paid_cents: paidCents,
-        balance_cents: Math.round((lineTotal + equipmentTotal) * 100) - paidCents,
-      },
+      totals: (() => {
+        // Splitting the deductible is a discount off our own work, so it comes
+        // off the bottom line and out of what the customer still owes — not
+        // off any one line item, which is not where the concession lives.
+        const gross = Math.round((lineTotal + equipmentTotal) * 100) / 100
+        const credit = Math.max(
+          0,
+          Math.min(gross, Number(project.deductible_credit ?? 0) || 0),
+        )
+        const net = Math.round((gross - credit) * 100) / 100
+        return {
+          work: Math.round(lineTotal * 100) / 100,
+          equipment: Math.round(equipmentTotal * 100) / 100,
+          gross_subtotal: gross,
+          deductible_credit: credit,
+          subtotal: net,
+          paid_cents: paidCents,
+          balance_cents: Math.round(net * 100) - paidCents,
+        }
+      })(),
     })
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Failed to load project'
