@@ -2271,3 +2271,41 @@ The banner rendered at the top of a page several thousand pixels long, while the
 work happens far down it. It is now pinned to the bottom of the screen with a
 dismiss button. A message about something that just went wrong has to appear
 where the thing that went wrong is.
+
+## I deleted the photos card
+
+Charles: *"I've been trying to get the photo upload tool to work... I click on
+that category. I try to select all the pictures that I wanna upload but it never
+uploads them."*
+
+Bulk upload was never broken. The card was **gone** — deleted whole, by me, in
+`ee88f03`, the commit that moved the air readings above the plan.
+
+The edit removed everything between the Atmospheric card and the Money card by
+index:
+
+```python
+start = s.index("{/* ── Atmospheric readings")
+end   = s.index("{/* ── Money ──")
+assert 'AirReadingsCard' in s[start:end]   # the only thing checked
+s = s[:start] + s[end:]
+```
+
+The assertion confirmed the chunk contained what I meant to move. It did not
+confirm the chunk contained **nothing else** — and the Photos card, 110 lines of
+it, sat in between. TypeScript does not complain about `PHOTO_PHASES`,
+`photoPhase`, `uploading` and `Camera` becoming unused, the build passed, every
+test passed, and the feature was simply absent.
+
+**Deleting a range is only safe when you have asserted what the range is, not
+what it includes.** The section list before and after tells you that in one
+line, and now does: only "Atmospheric readings" moved.
+
+Restored verbatim from `1f161ee`. It already did everything he asked for —
+`multiple`, a loop over every file, EXIF `DateTimeOriginal` to date a backlog,
+and each photo attached to the visit that happened on the day it was taken.
+
+### The pattern, three times now
+The dehu pin editor, imported and never rendered. This card, deleted wholesale.
+Both passed the build and the tests. The only thing that catches either is
+opening the screen and looking at it, and I have not been doing that.
