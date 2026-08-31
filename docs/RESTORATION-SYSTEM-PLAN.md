@@ -2203,3 +2203,36 @@ lanes, identical to every other day, and "Hide" in the header closes it again.
 
 It defaults closed because we still do not sell Sundays. It opens because
 sometimes we work them.
+
+## Three faults found by Charles logging a real monitor visit
+
+### The dehu pin editor was never wired
+
+I reported it shipped. It was not: the script that added the JSX also contained
+a second edit whose assertion failed, so the file was never written — and
+`EquipmentPinEditor` sat imported and unrendered through two commits. TypeScript
+does not complain about an unused import, the build passed, and I did not check
+the rendered result. **A claim that something works is worth nothing without
+having seen it work.**
+
+### Dehu intake was a reading we never needed
+
+Charles: *"we don't need the intake, it's just gonna be whatever the room is."*
+
+He is right, and my own research had said so — grain depression is affected-area
+GPP minus the air leaving the unit. Asking for an intake was asking for the same
+number under a second name, and it made the depression uncomputable whenever
+only one of the two got logged, which is what he hit. `dehu_intake` is gone from
+what can be logged, the room air is the intake, and the pin editor now asks for
+one reading instead of four numbers.
+
+### A failed log looked exactly like a successful one
+
+He logged an outside reading; it is not in the database. The card cleared its
+boxes as soon as the request returned, whether or not it saved, and the error
+banner sits at the top of a long page — so a reading taken in the field could
+vanish with no sign at all.
+
+The boxes now clear only on success. A failure keeps the numbers, in place, and
+says the reading did not save. I still do not know why that particular request
+failed; what I can fix is that it failed silently.

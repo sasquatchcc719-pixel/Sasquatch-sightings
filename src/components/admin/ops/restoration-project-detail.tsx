@@ -49,10 +49,8 @@ import { captureDateFor } from '@/lib/ops/exif-capture-date'
 import { StreetViewCard } from '@/components/ops/street-view-card'
 import { DryingChart } from '@/components/ops/drying-chart'
 import { AirReadingsCard, type AirReading } from '@/components/ops/air-readings-card'
-import {
-  EquipmentPinEditor,
-  isDehumidifier,
-} from '@/components/ops/equipment-pin-editor'
+import { EquipmentPinEditor } from '@/components/ops/equipment-pin-editor'
+import { grainsPerPound } from '@/lib/ops/restoration-psychrometry'
 
 /**
  * The restoration project screen.
@@ -591,6 +589,14 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
    * comes out on the last monitor, so the monitor count is the answer — and it
    * is only ever a starting number, because the box is editable.
    */
+  /** The most recent affected-area reading — the air a dehu is actually fed. */
+  const latestAffectedGpp = useMemo(() => {
+    const latest = (detail?.air_readings ?? [])
+      .filter((r) => r.role === 'affected' && r.temp_f != null && r.rh_pct != null)
+      .sort((a, b) => new Date(b.taken_at).getTime() - new Date(a.taken_at).getTime())[0]
+    return latest ? grainsPerPound(Number(latest.temp_f), Number(latest.rh_pct)) : null
+  }, [detail?.air_readings])
+
   const selectedEquipment = useMemo(
     () => detail?.equipment.find((e) => e.id === selectedEquipmentId) ?? null,
     [detail?.equipment, selectedEquipmentId],
@@ -1678,8 +1684,10 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 <AirReadingsCard
                   readings={detail.air_readings}
                   busy={busy === 'air-reading'}
-                  onLog={(reading) =>
-                    call(
+                  onLog={async (reading) => {
+                    // `call` returns null when the request failed, and the card
+                    // keeps the numbers rather than clearing them.
+                    const result = await call(
                       `/api/admin/ops/restoration/projects/${projectId}/readings`,
                       {
                         method: 'POST',
@@ -1691,7 +1699,8 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                       },
                       'air-reading',
                     )
-                  }
+                    return result != null
+                  }}
                 />
               </div>
             ) : null}
@@ -1727,7 +1736,50 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
               armedPin={armedTool}
               selectedPinId={selectedPointId ?? selectedEquipmentId}
               pinEditor={
-                selectedPoint ? (
+                selectedEquipment ? (
+                  <EquipmentPinEditor
+                    key={selectedEquipment.id}
+                    equipment={selectedEquipment}
+                    label={
+                      EQUIPMENT_CODES.find((e) => e.code === selectedEquipment.catalog_code)
+                        ?.label ?? selectedEquipment.catalog_code
+                    }
+                    readings={detail.air_readings}
+                    busy={busy === 'dehu-outlet'}
+                    roomAirGpp={latestAffectedGpp}
+                    onClose={() => setSelectedEquipmentId(null)}
+                    onPull={async () => {
+                      await fetch(
+                        `/api/admin/ops/restoration/equipment/${selectedEquipment.id}`,
+                        {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ removed_at: new Date().toISOString() }),
+                        },
+                      )
+                      await load()
+                    }}
+                    onLogOutlet={(reading) =>
+                      // Against this unit and this visit, so two dehus on one
+                      // job never get each other's numbers.
+                      call(
+                        `/api/admin/ops/restoration/projects/${projectId}/readings`,
+                        {
+                          method: 'POST',
+                          body: JSON.stringify({
+                            kind: 'air',
+                            role: 'dehu_outlet',
+                            appointment_id: activeVisitId,
+                            equipment_placement_id: selectedEquipment.id,
+                            location: selectedEquipment.catalog_code,
+                            ...reading,
+                          }),
+                        },
+                        'dehu-outlet',
+                      )
+                    }
+                  />
+                ) : selectedPoint ? (
                   <MapPointEditor
                     key={selectedPoint.id}
                     point={selectedPoint}

@@ -18,15 +18,25 @@ export type AirRole =
   | 'affected'
   | 'unaffected'
   | 'outside'
+  /** Kept so readings logged before the intake was dropped still resolve. */
   | 'dehu_intake'
   | 'dehu_outlet'
 
+/**
+ * What you can log.
+ *
+ * There is no dehumidifier intake here on purpose. The air going into a dehu IS
+ * the room air — Charles: *"we don't need the intake, it's just gonna be
+ * whatever the room is"* — and the trade computes grain depression exactly that
+ * way, as affected-area GPP minus the air coming out. Asking for it twice was
+ * asking for the same reading under two names, and it left the depression
+ * uncomputable whenever only one of them got logged.
+ */
 export const AIR_ROLES: Array<{ value: AirRole; label: string; hint: string }> = [
   { value: 'affected', label: 'Affected area', hint: 'inside the drying chamber' },
   { value: 'unaffected', label: 'Unaffected area', hint: 'a dry room in the same building' },
   { value: 'outside', label: 'Outside', hint: 'ambient, outdoors' },
-  { value: 'dehu_intake', label: 'Dehu intake', hint: 'air going in' },
-  { value: 'dehu_outlet', label: 'Dehu outlet', hint: 'air coming out' },
+  { value: 'dehu_outlet', label: 'Dehu outlet', hint: 'air coming out of the unit' },
 ]
 
 /**
@@ -80,16 +90,18 @@ export type Verdict = {
 /**
  * Is the dehumidifier working?
  *
- * Grain depression is intake GPP minus outlet GPP. Published guidance puts a
- * healthy LGR at 30–50 GPP of depression, with conventional units struggling to
- * hold 20.
+ * Grain depression is the room air minus the air coming out of the unit —
+ * the air going in is the room air, so that is the only intake there is.
+ * Published guidance puts a healthy LGR at 30–50 GPP of depression, with
+ * conventional units struggling to hold 20.
  *
  * The important subtlety: **low depression on dry air is not a fault.** A dehu
  * fed 35 GPP air cannot pull 30 out of it, and flagging that would send Charles
  * to check a machine that is working perfectly on a job that is nearly finished.
  * So the complaint is only raised while the intake air is still wet.
  */
-export function dehumidifierVerdict(intake: Reading, outlet: Reading): Verdict {
+export function dehumidifierVerdict(roomAir: Reading, outlet: Reading): Verdict {
+  const intake = roomAir
   const intakeGpp =
     intake.tempF != null && intake.rhPct != null
       ? grainsPerPound(intake.tempF, intake.rhPct)
@@ -103,7 +115,8 @@ export function dehumidifierVerdict(intake: Reading, outlet: Reading): Verdict {
     return {
       status: 'unknown',
       headline: 'No dehumidifier check',
-      detail: 'Log an intake and an outlet reading to see whether it is pulling water.',
+      detail:
+        'Log the affected area and one dehu outlet reading to see whether it is pulling water.',
     }
   }
 

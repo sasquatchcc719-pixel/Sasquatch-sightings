@@ -47,17 +47,19 @@ export function AirReadingsCard({
 }: {
   readings: AirReading[]
   busy: boolean
+  /** Resolve to false when the reading did not save, so the numbers are kept. */
   onLog: (reading: {
     role: AirRole
     location: string
     temp_f: number
     rh_pct: number
-  }) => void | Promise<unknown>
+  }) => Promise<boolean | void> | void
 }) {
   const [role, setRole] = useState<AirRole>('affected')
   const [location, setLocation] = useState('')
   const [tempF, setTempF] = useState('')
   const [rhPct, setRhPct] = useState('')
+  const [failed, setFailed] = useState(false)
 
   const previewGpp =
     Number(tempF) && Number(rhPct) ? grainsPerPound(Number(tempF), Number(rhPct)) : null
@@ -81,25 +83,14 @@ export function AirReadingsCard({
     takenAt: r?.taken_at ?? '',
   })
 
-  // Two dehumidifiers on one job have two intakes and two outlets. Pairing the
-  // newest of each would compute a depression across two different machines,
-  // which is a number that describes nothing — the per-unit reading lives on
-  // the pin instead, and this says so rather than inventing a figure.
-  const intake = latestByRole.get('dehu_intake')
-  const outlet = latestByRole.get('dehu_outlet')
-  const mismatchedUnits =
-    intake != null &&
-    outlet != null &&
-    intake.equipment_placement_id !== outlet.equipment_placement_id
-
+  // The air going into a dehu is the room air, so the affected-area reading is
+  // the intake. One reading, used twice, instead of asking for the same number
+  // under two names.
   const verdicts: Verdict[] = [
-    mismatchedUnits
-      ? {
-          status: 'unknown' as const,
-          headline: 'Dehumidifier readings are from different units',
-          detail: 'Tap a dehumidifier on the plan to see how that one is doing.',
-        }
-      : dehumidifierVerdict(toReading(intake), toReading(outlet)),
+    dehumidifierVerdict(
+      toReading(latestByRole.get('affected')),
+      toReading(latestByRole.get('dehu_outlet')),
+    ),
     chamberVerdict(
       toReading(latestByRole.get('affected')),
       toReading(latestByRole.get('outside') ?? latestByRole.get('unaffected')),
@@ -172,12 +163,20 @@ export function AirReadingsCard({
           className="h-9 bg-sky-600 text-white hover:bg-sky-500"
           disabled={busy || !canLog}
           onClick={async () => {
-            await onLog({
+            // Only clear the boxes once the reading is actually saved. Clearing
+            // regardless is how a failed log looks exactly like a successful
+            // one, and a reading Charles took in the field quietly disappears.
+            setFailed(false)
+            const saved = await onLog({
               role,
               location: location.trim(),
               temp_f: Number(tempF),
               rh_pct: Number(rhPct),
             })
+            if (saved === false) {
+              setFailed(true)
+              return
+            }
             setTempF('')
             setRhPct('')
             setLocation('')
@@ -186,6 +185,12 @@ export function AirReadingsCard({
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Log'}
         </Button>
       </div>
+
+      {failed ? (
+        <p className="text-xs text-red-600 dark:text-red-400">
+          That reading did not save — your numbers are still here. Try again.
+        </p>
+      ) : null}
 
       {/* The number the meter does not show you, before you commit the reading. */}
       {previewGpp != null ? (

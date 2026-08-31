@@ -49,7 +49,8 @@ export function EquipmentPinEditor({
   label,
   readings,
   busy,
-  onLogPair,
+  roomAirGpp,
+  onLogOutlet,
   onPull,
   onClose,
 }: {
@@ -57,56 +58,32 @@ export function EquipmentPinEditor({
   label: string
   readings: PlacementReading[]
   busy: boolean
-  onLogPair: (pair: {
-    intake: { temp_f: number; rh_pct: number }
-    outlet: { temp_f: number; rh_pct: number }
-  }) => void | Promise<unknown>
+  /** The room air this unit is working on, for the depression figure. */
+  roomAirGpp: number | null
+  onLogOutlet: (reading: { temp_f: number; rh_pct: number }) => void | Promise<unknown>
   onPull: () => void | Promise<unknown>
   onClose: () => void
 }) {
-  const [inTemp, setInTemp] = useState('')
-  const [inRh, setInRh] = useState('')
   const [outTemp, setOutTemp] = useState('')
   const [outRh, setOutRh] = useState('')
 
   const dehu = isDehumidifier(equipment.catalog_code)
 
-  const intakeGpp =
-    Number(inTemp) && Number(inRh) ? grainsPerPound(Number(inTemp), Number(inRh)) : null
   const outletGpp =
     Number(outTemp) && Number(outRh) ? grainsPerPound(Number(outTemp), Number(outRh)) : null
+  // The room air is the intake. Depression is what this unit took out of it.
   const depression =
-    intakeGpp != null && outletGpp != null
-      ? Math.round((intakeGpp - outletGpp) * 10) / 10
+    roomAirGpp != null && outletGpp != null
+      ? Math.round((roomAirGpp - outletGpp) * 10) / 10
       : null
 
-  const complete =
-    Number(inTemp) > 0 && inRh !== '' && Number(outTemp) > 0 && outRh !== ''
+  const complete = Number(outTemp) > 0 && outRh !== ''
 
   // The last pair logged against THIS unit, so two dehus never get confused.
   const mine = readings
     .filter((r) => r.equipment_placement_id === equipment.id)
     .sort((a, b) => new Date(b.taken_at).getTime() - new Date(a.taken_at).getTime())
-  const lastIntake = mine.find((r) => r.role === 'dehu_intake')
   const lastOutlet = mine.find((r) => r.role === 'dehu_outlet')
-
-  const lastVerdict =
-    lastIntake && lastOutlet
-      ? dehumidifierVerdict(
-          {
-            role: 'dehu_intake',
-            tempF: lastIntake.temp_f == null ? null : Number(lastIntake.temp_f),
-            rhPct: lastIntake.rh_pct == null ? null : Number(lastIntake.rh_pct),
-            takenAt: lastIntake.taken_at,
-          },
-          {
-            role: 'dehu_outlet',
-            tempF: lastOutlet.temp_f == null ? null : Number(lastOutlet.temp_f),
-            rhPct: lastOutlet.rh_pct == null ? null : Number(lastOutlet.rh_pct),
-            takenAt: lastOutlet.taken_at,
-          },
-        )
-      : null
 
   return (
     <Card className="border-sky-400/60 bg-card w-64 p-3 shadow-lg dark:border-sky-500/50">
@@ -119,27 +96,6 @@ export function EquipmentPinEditor({
 
       {dehu ? (
         <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-1">
-            <span className="text-muted-foreground w-12 text-xs">In</span>
-            <Input
-              className="h-9 flex-1 text-right"
-              type="number"
-              inputMode="decimal"
-              placeholder="°F"
-              aria-label="Intake temperature"
-              value={inTemp}
-              onChange={(e) => setInTemp(e.target.value)}
-            />
-            <Input
-              className="h-9 flex-1 text-right"
-              type="number"
-              inputMode="decimal"
-              placeholder="RH %"
-              aria-label="Intake relative humidity"
-              value={inRh}
-              onChange={(e) => setInRh(e.target.value)}
-            />
-          </div>
           <div className="flex items-center gap-1">
             <span className="text-muted-foreground w-12 text-xs">Out</span>
             <Input
@@ -162,9 +118,12 @@ export function EquipmentPinEditor({
             />
           </div>
 
-          {depression != null ? (
+          {outletGpp != null ? (
             <p className="text-muted-foreground text-xs tabular-nums">
-              {intakeGpp} → {outletGpp} GPP · pulling {depression}
+              {outletGpp} GPP out
+              {depression != null
+                ? ` · pulling ${depression} from ${roomAirGpp} in the room`
+                : ' · log the affected area to see the depression'}
             </p>
           ) : null}
 
@@ -173,23 +132,18 @@ export function EquipmentPinEditor({
             className={ACTION_BUTTON}
             disabled={busy || !complete}
             onClick={async () => {
-              await onLogPair({
-                intake: { temp_f: Number(inTemp), rh_pct: Number(inRh) },
-                outlet: { temp_f: Number(outTemp), rh_pct: Number(outRh) },
-              })
-              setInTemp('')
-              setInRh('')
+              await onLogOutlet({ temp_f: Number(outTemp), rh_pct: Number(outRh) })
               setOutTemp('')
               setOutRh('')
               onClose()
             }}
           >
-            Save readings
+            Save reading
           </Button>
 
-          {lastVerdict ? (
+          {lastOutlet ? (
             <p className="text-muted-foreground border-t pt-2 text-xs">
-              Last: {lastVerdict.headline}
+              Last out: {lastOutlet.temp_f}°F / {lastOutlet.rh_pct}%
             </p>
           ) : null}
         </div>

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  AIR_ROLES,
   grainsPerPound,
   dewPointF,
   dehumidifierVerdict,
@@ -45,13 +46,13 @@ describe('dewPointF', () => {
 describe('dehumidifierVerdict', () => {
   it('passes a unit pulling like an LGR', () => {
     // 80/60 in (92 GPP), 90/25 out (~48 GPP): about 44 GPP of depression.
-    const v = dehumidifierVerdict(at(80, 60, 'dehu_intake'), at(90, 25, 'dehu_outlet'))
+    const v = dehumidifierVerdict(at(80, 60, 'affected'), at(90, 25, 'dehu_outlet'))
     expect(v.status).toBe('good')
     expect(v.headline).toMatch(/Pulling/)
   })
 
   it('calls out a unit doing nothing on wet air', () => {
-    const v = dehumidifierVerdict(at(80, 60, 'dehu_intake'), at(80, 55, 'dehu_outlet'))
+    const v = dehumidifierVerdict(at(80, 60, 'affected'), at(80, 55, 'dehu_outlet'))
     expect(v.status).toBe('problem')
     expect(v.detail).toMatch(/filter|coils|running/i)
   })
@@ -60,13 +61,13 @@ describe('dehumidifierVerdict', () => {
     // The trap: a dehu fed 30 GPP air cannot pull 30 out of it. Flagging this
     // sends Charles to check a machine that is working fine on a job that is
     // nearly done.
-    const v = dehumidifierVerdict(at(70, 28, 'dehu_intake'), at(78, 18, 'dehu_outlet'))
+    const v = dehumidifierVerdict(at(70, 28, 'affected'), at(78, 18, 'dehu_outlet'))
     expect(v.status).toBe('good')
     expect(v.detail).toMatch(/air is dry|already down/i)
   })
 
   it('says so when a reading is missing rather than guessing', () => {
-    expect(dehumidifierVerdict(at(80, 60, 'dehu_intake'), at(null, null, 'dehu_outlet')).status).toBe(
+    expect(dehumidifierVerdict(at(80, 60, 'affected'), at(null, null, 'dehu_outlet')).status).toBe(
       'unknown',
     )
   })
@@ -140,23 +141,27 @@ describe('a reference reading from another day', () => {
   })
 })
 
-describe('telling one dehumidifier from another', () => {
-  it('is the whole reason readings carry a placement id', () => {
-    // Two units: one working hard on wet air, one idling on dry air. Pairing
-    // the newest intake with the newest outlet across them would report a
-    // depression that describes neither machine.
-    const unitAIntake = grainsPerPound(80, 62)!
-    const unitBOutlet = grainsPerPound(92, 16)!
-    const crossed = Math.round((unitAIntake - unitBOutlet) * 10) / 10
+describe('the room air is the intake', () => {
+  it('measures depression from the affected area, not a second reading', () => {
+    // Charles: "we don't need the intake, it's just gonna be whatever the room
+    // is". The trade computes depression exactly this way.
+    const v = dehumidifierVerdict(at(80, 60, 'affected'), at(90, 25, 'dehu_outlet'))
+    expect(v.status).toBe('good')
+    expect(v.headline).toMatch(/Pulling/)
+  })
 
-    const honest = dehumidifierVerdict(
-      at(80, 62, 'dehu_intake'),
-      at(88, 30, 'dehu_outlet'),
-    )
+  it('offers no verdict until both the room and the outlet are logged', () => {
+    expect(dehumidifierVerdict(at(80, 60, 'affected'), at(null, null, 'dehu_outlet')).status).toBe('unknown')
+    expect(dehumidifierVerdict(at(null, null, 'affected'), at(90, 25, 'dehu_outlet')).status).toBe('unknown')
+  })
 
-    // The crossed figure looks healthier than the unit actually is.
-    expect(crossed).toBeGreaterThan(
-      Number(honest.headline.replace(/[^\d.]/g, '')),
-    )
+  it('does not offer Dehu intake as something to log', () => {
+    expect(AIR_ROLES.map((r) => r.value)).not.toContain('dehu_intake')
+    expect(AIR_ROLES.map((r) => r.value)).toEqual([
+      'affected',
+      'unaffected',
+      'outside',
+      'dehu_outlet',
+    ])
   })
 })
