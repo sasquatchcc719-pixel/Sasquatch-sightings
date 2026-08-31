@@ -202,3 +202,67 @@ describe('the estimate', () => {
     expect(orphans).toHaveLength(0)
   })
 })
+
+describe('signing the estimate', () => {
+  it('freezes it, and the signature is recorded', async () => {
+    await supabase
+      .from('restoration_projects')
+      .update({
+        estimate_signed_at: new Date().toISOString(),
+        estimate_signed_name: 'Jill Andersen',
+        estimate_signature_url: 'https://example.test/signature.png',
+      })
+      .eq('id', projectId)
+
+    const { data: project } = await supabase
+      .from('restoration_projects')
+      .select('estimate_signed_at, estimate_signed_name, estimate_signature_url')
+      .eq('id', projectId)
+      .single()
+
+    expect(project!.estimate_signed_at).not.toBeNull()
+    expect(project!.estimate_signed_name).toBe('Jill Andersen')
+    expect(project!.estimate_signature_url).toContain('signature.png')
+  })
+
+  it('records when it was sent, without creating an invoice', async () => {
+    await supabase
+      .from('restoration_projects')
+      .update({ estimate_sent_at: new Date().toISOString() })
+      .eq('id', projectId)
+
+    const { data: project } = await supabase
+      .from('restoration_projects')
+      .select('estimate_sent_at, invoice_id')
+      .eq('id', projectId)
+      .single()
+
+    expect(project!.estimate_sent_at).not.toBeNull()
+    // Sending a quote is not billing: still no invoice on the project.
+    expect(project!.invoice_id).toBeNull()
+
+    const { data: invoices } = await supabase
+      .from('ops_invoices')
+      .select('id')
+      .eq('appointment_id', visitId)
+    expect(invoices).toHaveLength(0)
+  })
+
+  it('can be unsigned if it was captured by mistake', async () => {
+    await supabase
+      .from('restoration_projects')
+      .update({
+        estimate_signed_at: null,
+        estimate_signed_name: null,
+        estimate_signature_url: null,
+      })
+      .eq('id', projectId)
+
+    const { data: project } = await supabase
+      .from('restoration_projects')
+      .select('estimate_signed_at')
+      .eq('id', projectId)
+      .single()
+    expect(project!.estimate_signed_at).toBeNull()
+  })
+})

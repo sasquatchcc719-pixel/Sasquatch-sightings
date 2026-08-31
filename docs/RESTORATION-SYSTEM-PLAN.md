@@ -1545,12 +1545,28 @@ signature exist (`estimate_sent_at`, `estimate_signature_url`, `estimate_signed_
 **send and signature are not built yet** — this pass is the estimating tool itself, which
 is what Charles emphasised.
 
-### Still open from the original proposal
-1. Send to the customer, with phone/email prefilled.
-2. Signature capture — `signature-modal.tsx` already exists and should be reused.
-3. Whether this is a fixed estimate or a work authorisation, which changes the wording on
-   whatever gets signed.
-4. Whether the emergency service fee belongs on it.
+### Send and signature — now built
+**Send** — email and text, with the address and phone prefilled from the customer and
+editable, since the person standing there sometimes wants it somewhere else. The email
+carries the itemised scope; the text carries the number and points at the email, because
+a line-item list is unreadable as an SMS. Either channel works alone, and the response
+says what was sent and what was skipped and why ("no deliverable address on file")
+rather than failing silently.
+
+**Signature** — the existing `SignatureModal` from the invoice screen, so both look and
+behave the same. Signing freezes the estimate: adding lines is refused with a 409, and
+the screen says changes go on the work side. `DELETE` on the signature route unfreezes it
+for a signature captured by mistake, restricted to admin and owner.
+
+**Sending a quote is not billing.** No invoice, no payment link, nothing to QuickBooks —
+asserted by test.
+
+### Wording, and still open
+The email says the scope may change once materials are opened up and that we will talk
+before anything is added — closer to a work authorisation than a fixed price, which is how
+restoration scope actually behaves. **Charles has not confirmed** whether he wants a firm
+estimate instead, and whether the emergency service fee belongs on the document. Both are
+wording changes, not structural.
 
 4 integration tests: the estimate holds lines without touching the work or the calendar
 total; copying starts the work and the calendar total follows; the work can then diverge

@@ -11,6 +11,7 @@ import {
   CalendarDays,
   Thermometer,
   DollarSign,
+  Mail,
   Truck,
   X,
   AlertTriangle,
@@ -36,6 +37,7 @@ import { WallPlan, type PlanPin, type WallPlanTool } from '@/components/ops/wall
 import type { PlanNode, PlanWall, WallOpening } from '@/lib/ops/restoration-walls'
 import { CustomerContact } from '@/components/ops/customer-contact'
 import { LineCandidateRow } from '@/components/ops/line-candidate-row'
+import { SignatureModal } from '@/components/admin/ops/signature-modal'
 import { nextVisitAction, type VisitStatus } from '@/lib/ops/arrival'
 import { captureDateFor } from '@/lib/ops/exif-capture-date'
 import { StreetViewCard } from '@/components/ops/street-view-card'
@@ -93,10 +95,19 @@ type Detail = {
     loss_date: string | null
     loss_time: string | null
     estimate_signed_at: string | null
+    estimate_signed_name: string | null
+    estimate_signature_url: string | null
+    estimate_sent_at: string | null
     estimate_copied_at: string | null
     acknowledged_warnings: string[] | null
     invoice_id: string | null
-    ops_customers: { id: string; full_name: string; business_name: string | null; phone: string } | null
+    ops_customers: {
+      id: string
+      full_name: string
+      business_name: string | null
+      phone: string
+      email: string | null
+    } | null
     ops_service_addresses: {
       id: string; street_1: string; street_2: string | null
       city: string; state: string; zip_code: string; gate_code: string | null
@@ -265,6 +276,10 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
   const [estimateProposed, setEstimateProposed] = useState<ParsedLine[]>([])
   const [estimateUnmatched, setEstimateUnmatched] = useState<string[]>([])
   const [estimateQuery, setEstimateQuery] = useState('')
+  const [estimateEmail, setEstimateEmail] = useState('')
+  const [estimatePhone, setEstimatePhone] = useState('')
+  const [signatureOpen, setSignatureOpen] = useState(false)
+  const [sendResult, setSendResult] = useState<string | null>(null)
 
   const [planTool, setPlanTool] = useState<WallPlanTool>('wall')
   // Common sizes, so the usual case is one tap and anything else is one edit.
@@ -363,6 +378,15 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
     void load()
     void loadPlan()
   }, [load, loadPlan])
+
+  // Contact details come from the customer record, editable in case the person
+  // standing there wants it sent somewhere else.
+  useEffect(() => {
+    const customer = detail?.project.ops_customers
+    if (!customer) return
+    setEstimateEmail((current) => current || customer.email || '')
+    setEstimatePhone((current) => current || customer.phone || '')
+  }, [detail])
 
   const project = detail?.project
   const category = project?.water_category ?? 1
@@ -924,6 +948,130 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                   : 'Start the work from this estimate'}
               </Button>
             ) : null}
+
+            {detail.estimate_lines.length > 0 ? (
+              <div className="border-border/60 flex flex-col gap-2 border-t pt-3">
+                <Label className="text-sm">Send it to them</Label>
+                <div className="flex flex-wrap gap-2">
+                  <Input
+                    className="h-9 min-w-48 flex-1"
+                    type="email"
+                    aria-label="Send estimate to email"
+                    placeholder="email"
+                    value={estimateEmail}
+                    onChange={(e) => setEstimateEmail(e.target.value)}
+                  />
+                  <Input
+                    className="h-9 min-w-36 flex-1"
+                    type="tel"
+                    aria-label="Send estimate to phone"
+                    placeholder="phone"
+                    value={estimatePhone}
+                    onChange={(e) => setEstimatePhone(e.target.value)}
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    className={ACTION_BUTTON}
+                    disabled={busy === 'send-estimate'}
+                    onClick={async () => {
+                      setBusy('send-estimate')
+                      setSendResult(null)
+                      setError(null)
+                      try {
+                        const response = await fetch(
+                          `/api/admin/ops/restoration/projects/${projectId}/estimate/send`,
+                          {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              email: true,
+                              sms: true,
+                              to_email: estimateEmail || null,
+                              to_phone: estimatePhone || null,
+                            }),
+                          },
+                        )
+                        const result = await response.json()
+                        if (!response.ok) throw new Error(result.error || 'Could not send')
+                        setSendResult(
+                          [
+                            result.sent.length > 0
+                              ? `Sent by ${result.sent.join(' and ')}`
+                              : 'Nothing sent',
+                            ...(result.skipped ?? []),
+                          ].join(' · '),
+                        )
+                        await load()
+                      } catch (e) {
+                        setError(e instanceof Error ? e.message : 'Could not send')
+                      } finally {
+                        setBusy(null)
+                      }
+                    }}
+                  >
+                    {busy === 'send-estimate' ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Mail className="h-4 w-4" />
+                    )}
+                    Send estimate
+                  </Button>
+
+                  {detail.project.estimate_signed_at ? (
+                    <span className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400">
+                      <CheckCircle2 className="h-4 w-4" />
+                      Signed by {detail.project.estimate_signed_name}
+                    </span>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setSignatureOpen(true)}
+                    >
+                      Get signature
+                    </Button>
+                  )}
+                </div>
+
+                {detail.project.estimate_sent_at ? (
+                  <p className="text-muted-foreground text-xs">
+                    Last sent {new Date(detail.project.estimate_sent_at).toLocaleString()}
+                  </p>
+                ) : null}
+                {sendResult ? (
+                  <p className="text-muted-foreground text-xs">{sendResult}</p>
+                ) : null}
+                {detail.project.estimate_signed_at ? (
+                  <p className="text-muted-foreground text-xs">
+                    Signed estimates are locked. Changes go on the work below.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
+            <SignatureModal
+              isOpen={signatureOpen}
+              onClose={() => setSignatureOpen(false)}
+              totalAmount={estimateTotal}
+              customerName={
+                detail.project.ops_customers?.business_name ||
+                detail.project.ops_customers?.full_name ||
+                ''
+              }
+              onSave={async (signatureData, customerName) => {
+                await call(
+                  `/api/admin/ops/restoration/projects/${projectId}/estimate/signature`,
+                  {
+                    method: 'POST',
+                    body: JSON.stringify({ signatureData, customerName }),
+                  },
+                  'estimate-signature',
+                )
+                setSignatureOpen(false)
+              }}
+            />
           </div>
         ) : null}
       </Card>
