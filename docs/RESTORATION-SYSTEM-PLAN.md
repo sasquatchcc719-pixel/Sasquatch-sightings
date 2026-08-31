@@ -2476,3 +2476,32 @@ and reverting `dayKey` proves it: two of them fail immediately.
 
 The chain is now asserted whole: **Sunday's visit → stamped Sunday → Sunday's
 column → "8/30/2026" in the PDF**, all evaluated on a UTC clock.
+
+## The Visits card was already the visit picker
+
+Charles: *"you have THIS visits section right here where we can cycle through the
+different visits for the job which is a perfect place to edit."*
+
+He is right, and it is why the banner I drafted was refused: the control already
+existed. What it lacked was any indication of what selecting a visit *does* — the
+selected row now says "Readings and photos land on this day", which is the whole
+consequence and was previously invisible.
+
+### The visits were out of order
+
+They were ordered by `visit_sequence`, so his list read 8/29, 8/31, 8/30, 9/01.
+Monitors are dragged onto whatever slot fits, so **the third one queued is often
+the second one worked** — the sequence number records the order they were
+created, which is not a fact anybody needs. Ordered by date and time now.
+
+### There was no way to add a monitor
+
+Three monitors is the starting guess made on day one, and it was final. A closet
+that stalls, a subfloor that will not give it up, a customer who switched the
+equipment off over the weekend — any of them means a fourth visit, and the count
+could not change.
+
+"Add another monitor visit" puts one in the **tray**, not on the calendar,
+because a monitor gets fitted around cleaning work by hand — the same tray every
+other monitor is dragged out of. Its sequence number is taken from the highest of
+both the queue and the calendar, so numbers are never reused across the two.

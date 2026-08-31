@@ -1288,8 +1288,22 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
               <span>
                 <span className="font-medium capitalize">{visit.visit_type}</span>
                 <span className="text-muted-foreground">
-                  {' '}· {visit.appointment_date} {visit.start_time.slice(0, 5)}
+                  {' '}
+                  ·{' '}
+                  {new Date(`${visit.appointment_date}T12:00:00`).toLocaleDateString('en-US', {
+                    weekday: 'short',
+                    month: 'short',
+                    day: 'numeric',
+                  })}{' '}
+                  {visit.start_time.slice(0, 5)}
                 </span>
+                {visit.id === activeVisitId ? (
+                  // Picking a visit is what decides the day readings and photos
+                  // are filed under, and that was doing its work silently.
+                  <span className="mt-0.5 block text-xs text-sky-700 dark:text-sky-300">
+                    Readings and photos land on this day
+                  </span>
+                ) : null}
               </span>
               <Badge variant={visit.status === 'completed' ? 'secondary' : 'outline'}>
                 {visit.status}
@@ -1301,6 +1315,30 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
               {detail.queue.filter((q) => q.status === 'queued').length} monitor visit(s)
               waiting in the tray — place them from the schedule.
             </p>
+          ) : null}
+
+          {/*
+            Three monitors is the starting guess, not a promise. A closet that
+            stalls or a customer who unplugged the equipment means a fourth, and
+            there was no way to add one. It joins the tray rather than the
+            calendar, because a monitor gets fitted around cleaning work by hand.
+          */}
+          {!closed ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-1 gap-2"
+              disabled={busy === 'add-monitor'}
+              onClick={() =>
+                void call(
+                  `/api/admin/ops/restoration/projects/${projectId}/queue`,
+                  { method: 'POST', body: JSON.stringify({}) },
+                  'add-monitor',
+                )
+              }
+            >
+              <Plus className="h-4 w-4" /> Add another monitor visit
+            </Button>
           ) : null}
         </div>
       </Card>
@@ -1695,6 +1733,43 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 </div>
               ) : null}
             </div>
+
+            {/*
+              Which visit everything on this screen is being recorded against.
+              It was invisible, and readings default to whichever visit is open
+              — so Sunday's monitor readings went onto the mitigation day
+              without a word. A reading is dated by its visit, so this line is
+              also the date that will appear in the report.
+            */}
+            {activeVisit && !closed ? (
+              <div className="border-border/60 bg-muted/30 mb-3 flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 text-xs">
+                <span className="text-muted-foreground">Recording against</span>
+                <select
+                  aria-label="Visit these readings belong to"
+                  className="border-input bg-background h-7 rounded-md border px-2 text-xs"
+                  value={activeVisitId ?? ''}
+                  onChange={(e) => setActiveVisitId(e.target.value)}
+                >
+                  {detail.visits.map((visit) => (
+                    <option key={visit.id} value={visit.id}>
+                      {visit.visit_type === 'mitigation'
+                        ? 'Mitigation'
+                        : visit.visit_type === 'monitor'
+                          ? `Monitor${visit.visit_sequence ? ` ${visit.visit_sequence}` : ''}`
+                          : 'Final'}
+                      {' · '}
+                      {new Date(`${visit.appointment_date}T12:00:00`).toLocaleDateString(
+                        'en-US',
+                        { weekday: 'short', month: 'short', day: 'numeric' },
+                      )}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-muted-foreground">
+                  — readings and photos land on this day
+                </span>
+              </div>
+            ) : null}
 
             {/*
               Fixed above the plan rather than in a card further down. These

@@ -40,7 +40,12 @@ export async function GET(
          )`,
       )
       .eq('restoration_project_id', id)
-      .order('visit_sequence', { nullsFirst: false })
+      // Chronological, not by sequence number. Monitors are placed by dragging
+      // them onto whatever slot fits, so the third one queued is often the
+      // second one worked — and a list that reads 8/29, 8/31, 8/30 is a list
+      // nobody can pick the right visit out of.
+      .order('appointment_date')
+      .order('start_time')
 
     const visitIds = (visits ?? []).map((v) => v.id)
 

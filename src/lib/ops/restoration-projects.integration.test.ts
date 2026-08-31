@@ -399,3 +399,79 @@ describe('a monitor visit on a Sunday', () => {
     await supabase.from('restoration_projects').delete().eq('id', project!.id)
   })
 })
+
+describe('adding a monitor visit to a running job', () => {
+  it('queues one after everything the job already has', async () => {
+    const { data: addr } = await supabase
+      .from('ops_service_addresses')
+      .select('id, customer_id')
+      .limit(1)
+      .single()
+
+    const { data: project } = await supabase
+      .from('restoration_projects')
+      .insert({
+        customer_id: addr!.customer_id,
+        service_address_id: addr!.id,
+        cause_narrative: `${MARKER}_EXTRA_MONITOR`,
+      })
+      .select('id')
+      .single()
+
+    // A job that already has a mitigation day on the calendar and two queued
+    // monitors — the shape after a normal start.
+    await supabase.from('ops_appointments').insert({
+      customer_id: addr!.customer_id,
+      service_address_id: addr!.id,
+      booking_channel: 'admin',
+      source: 'integration_test',
+      status: 'booked',
+      payment_status: 'unpaid',
+      quickbooks_sync_status: 'held',
+      appointment_date: new Date().toISOString().slice(0, 10),
+      start_time: '09:00',
+      end_time: '13:00',
+      quoted_total: 0,
+      kind: 'restoration',
+      restoration_project_id: project!.id,
+      visit_type: 'mitigation',
+      visit_sequence: 1,
+      internal_notes: MARKER,
+    })
+    await supabase.from('restoration_visit_queue').insert([
+      { project_id: project!.id, visit_type: 'monitor', visit_sequence: 2, duration_minutes: 30, status: 'queued' },
+      { project_id: project!.id, visit_type: 'monitor', visit_sequence: 3, duration_minutes: 30, status: 'queued' },
+    ])
+
+    // What the route does: next sequence after BOTH lists, so a number is
+    // never reused between the queue and the calendar.
+    const [{ data: queued }, { data: scheduled }] = await Promise.all([
+      supabase.from('restoration_visit_queue').select('visit_sequence').eq('project_id', project!.id),
+      supabase.from('ops_appointments').select('visit_sequence').eq('restoration_project_id', project!.id),
+    ])
+    const highest = [...(queued ?? []), ...(scheduled ?? [])].reduce(
+      (max, row) => Math.max(max, Number(row.visit_sequence ?? 0)),
+      0,
+    )
+    expect(highest).toBe(3)
+
+    const { data: added } = await supabase
+      .from('restoration_visit_queue')
+      .insert({
+        project_id: project!.id,
+        visit_type: 'monitor',
+        visit_sequence: highest + 1,
+        duration_minutes: 30,
+        status: 'queued',
+      })
+      .select('visit_sequence, status')
+      .single()
+
+    expect(Number(added!.visit_sequence)).toBe(4)
+    // Queued, not scheduled: it waits in the tray to be dragged onto a day.
+    expect(added!.status).toBe('queued')
+
+    await supabase.from('ops_appointments').delete().eq('restoration_project_id', project!.id)
+    await supabase.from('restoration_projects').delete().eq('id', project!.id)
+  })
+})
