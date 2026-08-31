@@ -1002,6 +1002,33 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                         <span className="text-muted-foreground w-10 text-xs">{line.unit}</span>
                       </>
                     )}
+                    {/*
+                      The rate is editable because some of a water loss is
+                      bought rather than performed: hired demolition labor costs
+                      whatever that contractor charges. The catalog price is the
+                      starting number.
+                    */}
+                    <label className="flex items-center gap-1">
+                      <span className="text-muted-foreground text-xs">@</span>
+                      <Input
+                        className="h-8 w-20 text-right"
+                        type="number"
+                        min={0}
+                        step="any"
+                        aria-label="Rate"
+                        defaultValue={Number(line.unit_price)}
+                        onBlur={(e) => {
+                          const unitPrice = Number(e.target.value)
+                          if (unitPrice > 0 && unitPrice !== Number(line.unit_price)) {
+                            void call(
+                              `/api/admin/ops/restoration/estimate-lines/${line.id}`,
+                              { method: 'PATCH', body: JSON.stringify({ unit_price: unitPrice }) },
+                              `est-${line.id}`,
+                            )
+                          }
+                        }}
+                      />
+                    </label>
                     <span className="w-20 text-right font-medium">
                       {money(Number(line.line_total))}
                     </span>

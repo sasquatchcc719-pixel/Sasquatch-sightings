@@ -327,3 +327,45 @@ describe('equipment on the estimate', () => {
     expect(error).not.toBeNull()
   })
 })
+
+describe('a rate that is not on the price list', () => {
+  it('keeps a rate typed by hand, and reprices from it', async () => {
+    const { data: line } = await supabase
+      .from('restoration_estimate_lines')
+      .insert({
+        project_id: projectId,
+        restoration_catalog_code: 'LABOR',
+        name_snapshot: 'LABOR - Labor (per hour)',
+        quantity: 6,
+        unit_price: 125,
+        line_total: 0,
+        unit: 'HR',
+      })
+      .select('id, line_total')
+      .single()
+    expect(Number(line!.line_total)).toBeCloseTo(750, 2)
+
+    // The contractor charged 95 that week.
+    const { data: repriced } = await supabase
+      .from('restoration_estimate_lines')
+      .update({ unit_price: 95 })
+      .eq('id', line!.id)
+      .select('line_total')
+      .single()
+    expect(Number(repriced!.line_total)).toBeCloseTo(570, 2)
+  })
+
+  it('has a Labor item in the catalog at all, linked to QuickBooks', async () => {
+    const { data } = await supabase
+      .from('restoration_catalog_items')
+      .select('code, unit, unit_price, is_enabled, quickbooks_item_id')
+      .eq('code', 'LABOR')
+      .single()
+
+    expect(data!.is_enabled).toBe(true)
+    expect(data!.unit).toBe('HR')
+    expect(Number(data!.unit_price)).toBe(125)
+    // Without this it cannot reach an invoice, which is how it went missing.
+    expect(data!.quickbooks_item_id).toBe('72')
+  })
+})

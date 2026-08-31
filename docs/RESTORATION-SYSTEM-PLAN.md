@@ -1694,3 +1694,37 @@ Two guards, because either alone leaves a hole:
 Both are covered by tests that fail against the old code. **This is why looking
 at the data mattered more than reading the handler again**: the delete path was
 correct at every reading, and the stacked rows named the bug immediately.
+
+## Hired labor, and the one item that never made it across
+
+Charles, on the Jill job: *"I actually had to hire labor to do my demolition
+because my back was in bad shape... I know it exists in my system but I guess
+maybe it got disconnected. I think it's at $125 an hour but honestly that just
+depends on what the contractor charges me."*
+
+He was right on both counts. `service_catalog_items` — his own QuickBooks-linked
+list — holds **Labor, $125/hr, QuickBooks item 72**. Every other Restoration
+item in that list has a matching row in `restoration_catalog_items`. Labor was
+the only one that did not, so it was invisible to the estimate, the picker and
+voice entry. Added, enabled, and linked to QuickBooks item 72 so it can reach an
+invoice.
+
+### The rate is editable, because this one genuinely varies
+
+Hired labor costs whatever that contractor charges that week, so the catalog
+price is a starting number rather than a ceiling. The rate box on an estimate
+line is editable and the line reprices from it. This does not weaken the rule
+that matters: **nothing that guesses may choose a price** — the model still only
+identifies the kind of work. A rate typed by a person is not a guess.
+
+### Two prices that disagree with QuickBooks
+
+Found while checking the mapping, NOT changed — a price is Charles's call:
+
+| Item | Restoration catalog | QuickBooks |
+| --- | --- | --- |
+| `EQ` Equipment setup hourly | $70.69 | $92.65 |
+| `DRYW4` 4ft flood cut, per LF | $6.50 | $8.33 |
+
+The catalog numbers are the 2024 Xactimate list; the QuickBooks numbers are what
+he actually bills. Everything else in the two lists agrees to the cent.

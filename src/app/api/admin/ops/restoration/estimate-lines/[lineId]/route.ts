@@ -26,7 +26,13 @@ async function frozen(supabase: SupabaseClient, projectId: string) {
 }
 
 /**
- * Adjust a line. The price comes from the catalog, never the client.
+ * Adjust a line.
+ *
+ * The catalog sets the rate, and for Xactimate work that is the end of it. But
+ * some of what goes on a water loss is bought, not performed: hired demolition
+ * labor costs whatever the contractor charges that week. So a rate typed here
+ * is accepted and kept as the rate for that line — the catalog price is the
+ * starting number, not a ceiling.
  *
  * Equipment takes `units` and `days` — eight air movers for three days — and the
  * quantity follows from them. Everything else takes a quantity directly.
@@ -51,6 +57,10 @@ export async function PATCH(
       return NextResponse.json({ error: 'estimate_already_signed' }, { status: 409 })
     }
 
+    // A rate typed by hand sticks. Only Charles can reach this route, and
+    // some work is priced by whoever he hired, not by the price list.
+    const rate = positive(body.unit_price) ?? Number(line.unit_price)
+
     const isDaily = line.units != null || body.units != null
     let update: Record<string, number>
 
@@ -65,14 +75,15 @@ export async function PATCH(
         units,
         days,
         quantity,
-        line_total: round2(quantity * Number(line.unit_price)),
+        unit_price: rate,
+        line_total: round2(quantity * rate),
       }
     } else {
-      const quantity = positive(body.quantity)
-      if (quantity == null) {
+      const quantity = positive(body.quantity) ?? Number(line.quantity)
+      if (!(quantity > 0)) {
         return NextResponse.json({ error: 'quantity must be greater than zero' }, { status: 400 })
       }
-      update = { quantity, line_total: round2(quantity * Number(line.unit_price)) }
+      update = { quantity, unit_price: rate, line_total: round2(quantity * rate) }
     }
 
     const { data, error } = await supabase
