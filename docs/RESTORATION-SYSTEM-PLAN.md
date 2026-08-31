@@ -2174,3 +2174,18 @@ which machine they came from. With two dehus that computes a depression across
 two different units — a number describing neither, and one that reads healthier
 than the struggling unit actually is. It now says the readings are from
 different units and points at the pin, rather than inventing a figure.
+
+### Sunday, second pass
+
+Charles dropped a monitor onto the sliver and then could not open it: the bars I
+drew were decoration, not links, and 48px is not a tap target.
+
+The column is now 96px — still obviously not a day we sell, but wide enough to
+carry its date, its total, and a block you can read and press. The bars are
+links, and they resolve through the **same** `appointmentHref` the full-size
+blocks use, so a restoration monitor reached from the sliver lands on the
+project screen where the readings live rather than on a bare appointment page.
+
+Worth noting for next time: showing something without making it do anything is
+the same mistake twice in one feature — the sliver could not be dropped on, and
+then what was dropped could not be opened.

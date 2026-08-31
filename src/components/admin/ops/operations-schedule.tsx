@@ -593,6 +593,25 @@ function getAppointmentPlacement(
  * It is simply no longer a dead zone: it takes a drop like any other column,
  * and marks what is on it.
  */
+/**
+ * Where an appointment opens. Shared with the full-size blocks, because a visit
+ * reached from the Sunday sliver has to land on the same screen as one reached
+ * from Monday — a restoration monitor especially, since the readings are on the
+ * project, not the appointment.
+ */
+function appointmentHref(appointment: Appointment): string {
+  if (appointment.kind === 'restoration') {
+    return `/admin/operations/restoration/${appointment.restoration_project_id}`
+  }
+  if (appointment.kind === 'estimate') {
+    return `/admin/operations/estimates/${appointment.id}`
+  }
+  if (appointment.recurring_template_id) {
+    return `/admin/operations/recurring/visit/${appointment.id}`
+  }
+  return `/admin/operations/appointments/${appointment.id}`
+}
+
 /** The customer's name off an appointment, whichever shape the relation came back in. */
 function customerNameOf(appointment: Appointment): string {
   const customer = Array.isArray(appointment.ops_customers)
@@ -630,12 +649,16 @@ function SundaySliver({
       {appointments.map((appointment) => {
         const placement = getAppointmentPlacement(appointment)
         return (
-          <div
+          <Link
             key={appointment.id}
-            className="absolute right-0.5 left-0.5 rounded-sm bg-sky-500/80"
-            style={{ top: placement.top + 6, height: Math.max(6, placement.height / 2) }}
+            href={appointmentHref(appointment)}
+            className="absolute right-1 left-1 flex flex-col overflow-hidden rounded-md bg-sky-500/90 px-1 py-0.5 text-[9px] leading-tight text-white shadow-sm hover:bg-sky-600"
+            style={{ top: placement.top + 6, height: Math.max(28, placement.height) }}
             title={`${placement.startLabel} · ${customerNameOf(appointment)}`}
-          />
+          >
+            <span className="font-semibold">{placement.startLabel}</span>
+            <span className="truncate">{customerNameOf(appointment)}</span>
+          </Link>
         )
       })}
     </div>
@@ -3927,13 +3950,13 @@ export function OperationsSchedule() {
                           ? activeDayStaff
                             ? '72px 1fr'
                             : `72px repeat(${Math.max(staffList.length, 1)}, minmax(400px, 1fr))`
-                          : '72px 48px repeat(6, minmax(270px, 1fr))',
+                          : '72px 96px repeat(6, minmax(270px, 1fr))',
                       minWidth:
                         view === 'day'
                           ? activeDayStaff
                             ? undefined
                             : `${72 + Math.max(staffList.length, 1) * 400}px`
-                          : `${72 + 48 + 6 * 270}px`,
+                          : `${72 + 96 + 6 * 270}px`,
                     }}
                   >
                     <div className="border-r border-b border-slate-200 bg-slate-100 p-3" />
@@ -4027,14 +4050,25 @@ export function OperationsSchedule() {
                             0,
                           )
                           if (isSunday) {
+                            // Narrow, but it carries its date now — a visit on
+                            // a Sunday is real work and needs a day you can
+                            // read, not just a rotated label.
                             return (
                               <div
                                 key={dk}
-                                className="flex items-center justify-center border-r border-b border-slate-200 bg-slate-100"
+                                className="flex flex-col items-center justify-center gap-0.5 border-r border-b border-slate-200 bg-slate-100 p-1"
                               >
-                                <span className="text-[10px] font-medium tracking-widest text-slate-400 uppercase [writing-mode:vertical-rl]">
+                                <span className="text-[10px] font-medium tracking-widest text-slate-400 uppercase">
                                   Sun
                                 </span>
+                                <span className="text-xs font-semibold text-slate-500">
+                                  {date.toLocaleDateString('en-US', { day: 'numeric' })}
+                                </span>
+                                {dayTotal > 0 && (
+                                  <span className="text-[10px] font-semibold text-green-700">
+                                    ${dayTotal.toFixed(0)}
+                                  </span>
+                                )}
                               </div>
                             )
                           }
