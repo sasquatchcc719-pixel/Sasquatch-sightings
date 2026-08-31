@@ -2729,3 +2729,29 @@ the module rather than a mood I happened to be in.
 
 The expectation is also rounded to whole grains. "Good for about 21.2" dressed a
 straight-line estimate off a nameplate rating as a measurement.
+
+## A warning on a visit where nothing had been done
+
+Charles, opening today's monitor before leaving to work it: *"we haven't even
+done readings. Why are we getting warnings?"*
+
+The screen showed, in order: *No dehumidifier check*, *No affected-area reading*,
+and then in red, *Up 20.3 GPP — drying has stalled*.
+
+Two of the three cards correctly reported that nothing had been logged. The third
+warned about it anyway, because I had deliberately exempted the trend from the
+per-visit scoping — *"the trend is the one thing that SHOULD span every visit"* —
+and stopped thinking there. Spanning visits is right. Firing on a visit with
+nothing in it is not, and the contradiction was sitting on screen between two
+cards that got it right.
+
+Two rules now:
+
+- **A visit with no readings of its own gets no trend.** Nothing has happened;
+  there is nothing to say about it.
+- **The trend only looks backwards.** Readings after the day being viewed are
+  excluded, so opening Sunday does not describe Tuesday — which is also how a red
+  warning appeared on a day whose own readings did not exist yet.
+
+The correct half stays: once today has a reading, the trend compares it to every
+visit before it.

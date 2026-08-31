@@ -5,6 +5,7 @@ import { Loader2, Wind, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { readingsUpTo } from '@/lib/ops/restoration-visit-scope'
 import {
   AIR_ROLES,
   grainsPerPound,
@@ -45,6 +46,7 @@ const STATUS_CLASS: Record<Verdict['status'], string> = {
 export function AirReadingsCard({
   readings,
   activeVisitId,
+  activeVisitDate,
   visitLabel,
   busy,
   onLog,
@@ -54,6 +56,7 @@ export function AirReadingsCard({
   readings: AirReading[]
   /** The visit being viewed. Readings are shown and judged per visit. */
   activeVisitId: string | null
+  activeVisitDate: string | null
   visitLabel: string
   busy: boolean
   /** Resolve to false when the reading did not save, so the numbers are kept. */
@@ -123,15 +126,25 @@ export function AirReadingsCard({
       toReading(latestByRole.get('affected')),
       toReading(latestByRole.get('unaffected')),
     ),
-    // The trend is the one thing that SHOULD span every visit.
-    trendVerdict(
-      readings.map((r) => ({
-        role: r.role,
-        tempF: r.temp_f == null ? null : Number(r.temp_f),
-        rhPct: r.rh_pct == null ? null : Number(r.rh_pct),
-        takenAt: r.taken_at,
-      })),
-    ),
+    /**
+     * The trend spans visits — that is what a trend is — but only up to the day
+     * being viewed, and only once this visit has readings of its own.
+     *
+     * Without the second rule a visit with nothing logged showed a red warning
+     * about drying having stalled, directly beneath two cards correctly saying
+     * no readings had been taken. Nothing had happened yet; there was nothing
+     * to warn about.
+     */
+    mine.length > 0
+      ? trendVerdict(
+          readingsUpTo(readings, activeVisitDate).map((r) => ({
+              role: r.role,
+              tempF: r.temp_f == null ? null : Number(r.temp_f),
+              rhPct: r.rh_pct == null ? null : Number(r.rh_pct),
+              takenAt: r.taken_at,
+            })),
+        )
+      : null,
     // Only when it actually says something: outside is worth acting on when it
     // is markedly drier than the chamber, and silent otherwise.
     ventilationNote(

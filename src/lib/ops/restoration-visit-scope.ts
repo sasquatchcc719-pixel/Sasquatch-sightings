@@ -49,3 +49,19 @@ export function visitIsFuture(
   if (visit.status === 'completed') return false
   return visit.appointment_date > today
 }
+
+/**
+ * Readings up to and including a given day.
+ *
+ * A trend spans visits, but only backwards. Looking at Sunday should not fold
+ * in Tuesday's numbers — the screen would then describe a future that has not
+ * happened, and on a day with nothing logged it warned about it.
+ */
+export function readingsUpTo<T extends { taken_at: string }>(
+  readings: T[],
+  visitDate: string | null,
+): T[] {
+  if (!visitDate) return readings
+  const cutoff = new Date(`${visitDate}T23:59:59`).getTime()
+  return readings.filter((r) => new Date(r.taken_at).getTime() <= cutoff)
+}

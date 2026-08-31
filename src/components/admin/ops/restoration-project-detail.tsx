@@ -1827,6 +1827,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 <AirReadingsCard
                   readings={detail.air_readings}
                   activeVisitId={activeVisitId}
+                  activeVisitDate={activeVisitDate}
                   visitLabel={
                     activeVisit
                       ? `${activeVisit.visit_type === 'mitigation' ? 'Mitigation' : 'Monitor'} · ${new Date(
