@@ -20,6 +20,7 @@ export type AirReading = {
   id: string
   role: AirRole | null
   location: string
+  equipment_placement_id: string | null
   temp_f: number | null
   rh_pct: number | null
   taken_at: string
@@ -80,11 +81,25 @@ export function AirReadingsCard({
     takenAt: r?.taken_at ?? '',
   })
 
+  // Two dehumidifiers on one job have two intakes and two outlets. Pairing the
+  // newest of each would compute a depression across two different machines,
+  // which is a number that describes nothing — the per-unit reading lives on
+  // the pin instead, and this says so rather than inventing a figure.
+  const intake = latestByRole.get('dehu_intake')
+  const outlet = latestByRole.get('dehu_outlet')
+  const mismatchedUnits =
+    intake != null &&
+    outlet != null &&
+    intake.equipment_placement_id !== outlet.equipment_placement_id
+
   const verdicts: Verdict[] = [
-    dehumidifierVerdict(
-      toReading(latestByRole.get('dehu_intake')),
-      toReading(latestByRole.get('dehu_outlet')),
-    ),
+    mismatchedUnits
+      ? {
+          status: 'unknown' as const,
+          headline: 'Dehumidifier readings are from different units',
+          detail: 'Tap a dehumidifier on the plan to see how that one is doing.',
+        }
+      : dehumidifierVerdict(toReading(intake), toReading(outlet)),
     chamberVerdict(
       toReading(latestByRole.get('affected')),
       toReading(latestByRole.get('outside') ?? latestByRole.get('unaffected')),

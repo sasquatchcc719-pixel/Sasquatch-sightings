@@ -139,3 +139,24 @@ describe('a reference reading from another day', () => {
     expect(v.detail).not.toMatch(/different day/i)
   })
 })
+
+describe('telling one dehumidifier from another', () => {
+  it('is the whole reason readings carry a placement id', () => {
+    // Two units: one working hard on wet air, one idling on dry air. Pairing
+    // the newest intake with the newest outlet across them would report a
+    // depression that describes neither machine.
+    const unitAIntake = grainsPerPound(80, 62)!
+    const unitBOutlet = grainsPerPound(92, 16)!
+    const crossed = Math.round((unitAIntake - unitBOutlet) * 10) / 10
+
+    const honest = dehumidifierVerdict(
+      at(80, 62, 'dehu_intake'),
+      at(88, 30, 'dehu_outlet'),
+    )
+
+    // The crossed figure looks healthier than the unit actually is.
+    expect(crossed).toBeGreaterThan(
+      Number(honest.headline.replace(/[^\d.]/g, '')),
+    )
+  })
+})

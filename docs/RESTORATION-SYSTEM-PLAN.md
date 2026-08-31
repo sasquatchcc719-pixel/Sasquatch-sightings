@@ -2144,3 +2144,33 @@ day-of-week check, and the online-booking availability rules that exclude Sunday
 apply to customers booking themselves, not to Charles placing a monitor. A test
 now pins that, so a future business-hours guard cannot quietly break Sunday
 monitors.
+
+## Readings belong where the equipment is
+
+Charles: *"the map is a great place. If I click on the large dehumidifier, I
+should be able to enter in the readings... and as far as atmosphere goes, maybe
+we just need to have something right next to the map or above the map that just
+is permanently fixed there."*
+
+I had put the air readings in a card further down the page, which is wrong for
+the same reason the equipment button was wrong: it ignores where the person
+actually is. Charles is standing in front of the machine with a meter in his
+hand.
+
+**Tapping a dehumidifier on the plan opens its readings.** Intake and outlet, in
+and out, with the grain depression computed as he types and the last verdict for
+*that unit* underneath. Both halves save against that placement id, so two dehus
+on one job never get each other's numbers. Every other pin gets the one thing
+worth doing at it — pulling that unit, on the day it actually came out.
+
+**Atmosphere sits above the plan, permanently.** Affected, unaffected, outside:
+taken standing in the room, on every visit. A card further down the page is how
+readings stop being taken.
+
+### The failure this makes impossible
+
+The summary card paired the newest intake with the newest outlet regardless of
+which machine they came from. With two dehus that computes a depression across
+two different units — a number describing neither, and one that reads healthier
+than the struggling unit actually is. It now says the readings are from
+different units and points at the pin, rather than inventing a figure.

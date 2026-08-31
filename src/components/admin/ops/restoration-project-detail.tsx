@@ -49,6 +49,10 @@ import { captureDateFor } from '@/lib/ops/exif-capture-date'
 import { StreetViewCard } from '@/components/ops/street-view-card'
 import { DryingChart } from '@/components/ops/drying-chart'
 import { AirReadingsCard, type AirReading } from '@/components/ops/air-readings-card'
+import {
+  EquipmentPinEditor,
+  isDehumidifier,
+} from '@/components/ops/equipment-pin-editor'
 
 /**
  * The restoration project screen.
@@ -311,6 +315,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
   const [openingKind, setOpeningKind] = useState<'doorway' | 'window'>('doorway')
   const [openingWidth, setOpeningWidth] = useState(3)
   const [selectedOpeningId, setSelectedOpeningId] = useState<string | null>(null)
+  const [selectedEquipmentId, setSelectedEquipmentId] = useState<string | null>(null)
   const [placeCount, setPlaceCount] = useState('1')
   const [recordedAmount, setRecordedAmount] = useState('')
   const [recordedMethod, setRecordedMethod] = useState('square_other')
@@ -586,6 +591,11 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
    * comes out on the last monitor, so the monitor count is the answer — and it
    * is only ever a starting number, because the box is editable.
    */
+  const selectedEquipment = useMemo(
+    () => detail?.equipment.find((e) => e.id === selectedEquipmentId) ?? null,
+    [detail?.equipment, selectedEquipmentId],
+  )
+
   const quotedDryingDays = useMemo(
     () => dryingDaysFromVisits(detail?.visits ?? []),
     [detail?.visits],
@@ -1654,6 +1664,38 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
               ) : null}
             </div>
 
+            {/*
+              Fixed above the plan rather than in a card further down. These
+              readings are taken standing in the room with the meter, on every
+              visit — asking Charles to scroll somewhere else for them is how
+              they stop being taken.
+            */}
+            {!closed ? (
+              <div className="border-border/60 mb-3 rounded-lg border p-3">
+                <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold">
+                  <Wind className="h-4 w-4 text-sky-600 dark:text-sky-400" /> Air readings
+                </h3>
+                <AirReadingsCard
+                  readings={detail.air_readings}
+                  busy={busy === 'air-reading'}
+                  onLog={(reading) =>
+                    call(
+                      `/api/admin/ops/restoration/projects/${projectId}/readings`,
+                      {
+                        method: 'POST',
+                        body: JSON.stringify({
+                          kind: 'air',
+                          appointment_id: activeVisitId,
+                          ...reading,
+                        }),
+                      },
+                      'air-reading',
+                    )
+                  }
+                />
+              </div>
+            ) : null}
+
             {planTool === 'pin' &&
             detail.reading_points.some((p) => p.restoration_readings.length > 0) ? (
               // The colours have to say what they mean somewhere, or they are
@@ -1683,7 +1725,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
               pins={planPins}
               tool={planTool}
               armedPin={armedTool}
-              selectedPinId={selectedPointId}
+              selectedPinId={selectedPointId ?? selectedEquipmentId}
               pinEditor={
                 selectedPoint ? (
                   <MapPointEditor
@@ -1832,7 +1874,12 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 }
               }}
               onPinClick={(pin) => {
-                if (pin.kind !== 'reading') return
+                if (pin.kind === 'equipment') {
+                  setSelectedPointId(null)
+                  setSelectedEquipmentId((current) => (current === pin.id ? null : pin.id))
+                  return
+                }
+                setSelectedEquipmentId(null)
                 setSelectedPointId((current) => (current === pin.id ? null : pin.id))
               }}
             />
@@ -2643,148 +2690,6 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                     }
                   />
                 ))}
-            </div>
-          ) : null}
-        </Card>
-      ) : null}
-
-      {/* ── Atmospheric readings ───────────────────────────── */}
-      {!closed ? (
-        <Card className={SECTION_CARD}>
-          <h2 className={`${SECTION_TITLE} mb-1`}>
-            <Wind className={SECTION_ICON} /> Air readings
-          </h2>
-          <p className="text-muted-foreground mb-3 text-sm">
-            Temperature and humidity in the chamber, outside, and across the dehu.
-            Moisture meters say the material is wet; these say whether the equipment
-            is doing anything about it.
-          </p>
-          <AirReadingsCard
-            readings={detail.air_readings}
-            busy={busy === 'air-reading'}
-            onLog={(reading) =>
-              call(
-                `/api/admin/ops/restoration/projects/${projectId}/readings`,
-                {
-                  method: 'POST',
-                  body: JSON.stringify({
-                    kind: 'air',
-                    appointment_id: activeVisitId,
-                    ...reading,
-                  }),
-                },
-                'air-reading',
-              )
-            }
-          />
-        </Card>
-      ) : null}
-
-      {/* ── Photos ─────────────────────────────────────────── */}
-      {activeVisitId && !closed ? (
-        <Card className={SECTION_CARD}>
-          <h2 className={`${SECTION_TITLE} mb-1`}>
-            <Camera className={SECTION_ICON} /> Photos
-          </h2>
-          <p className="text-muted-foreground mb-3 text-sm">
-            Pick the phase once, then shoot as many as you need — they all land tagged.
-            Uploading a backlog sorts each photo onto the visit it was taken on.
-          </p>
-
-          <div className="mb-3 flex flex-wrap gap-1.5">
-            {PHOTO_PHASES.map((phase) => (
-              <button
-                key={phase.value}
-                type="button"
-                onClick={() => setPhotoPhase(phase.value)}
-                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-                  photoPhase === phase.value
-                    ? 'border-sky-600 bg-sky-600 text-white'
-                    : 'border-border/60 hover:bg-muted/60'
-                }`}
-              >
-                {phase.label}
-              </button>
-            ))}
-          </div>
-
-          <label className="border-border/60 hover:bg-muted/40 flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed px-4 py-6 text-sm">
-            {uploading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Camera className="h-4 w-4" />
-            )}
-            {uploading ? 'Uploading…' : 'Add photos'}
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              className="hidden"
-              disabled={uploading}
-              onChange={async (e) => {
-                const files = Array.from(e.target.files ?? [])
-                if (files.length === 0 || !activeVisitId) return
-                e.target.value = ''
-                setUploading(true)
-                setError(null)
-                try {
-                  for (const file of files) {
-                    const form = new FormData()
-                    form.append('image', file)
-                    form.append('label', 'general')
-                    form.append('restoration_phase', photoPhase)
-                    // EXIF DateTimeOriginal where the file carries it, falling
-                    // back to the filesystem timestamp. A backlog exported off a
-                    // phone often has the wrong file date but the right EXIF.
-                    const capturedAt = await captureDateFor(file)
-                    if (capturedAt) {
-                      form.append('captured_at', capturedAt.toISOString())
-                    }
-                    // Attach to the visit that happened on the day the photo was
-                    // taken, so uploading a backlog sorts itself onto the right
-                    // days instead of piling onto whichever visit is open.
-                    const targetVisitId = capturedAt
-                      ? (detail.visits.find(
-                          (v) => v.appointment_date === toDateKey(capturedAt),
-                        )?.id ?? activeVisitId)
-                      : activeVisitId
-                    const response = await fetch(
-                      `/api/admin/ops/appointments/${targetVisitId}/photos`,
-                      { method: 'POST', body: form },
-                    )
-                    if (!response.ok) {
-                      const result = await response.json().catch(() => ({}))
-                      throw new Error(result.error || 'Upload failed')
-                    }
-                  }
-                  await load()
-                } catch (uploadError) {
-                  setError(
-                    uploadError instanceof Error ? uploadError.message : 'Upload failed',
-                  )
-                } finally {
-                  setUploading(false)
-                }
-              }}
-            />
-          </label>
-
-          {detail.photos.length > 0 ? (
-            <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
-              {detail.photos.map((photo) => (
-                <figure key={photo.id} className="overflow-hidden rounded-md border">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={photo.public_url}
-                    alt={photo.restoration_phase ?? 'Job photo'}
-                    className="h-20 w-full object-cover"
-                  />
-                  <figcaption className="bg-muted/40 text-muted-foreground truncate px-1.5 py-1 text-[10px]">
-                    {PHOTO_PHASES.find((p) => p.value === photo.restoration_phase)?.label ??
-                      'Untagged'}
-                  </figcaption>
-                </figure>
-              ))}
             </div>
           ) : null}
         </Card>
