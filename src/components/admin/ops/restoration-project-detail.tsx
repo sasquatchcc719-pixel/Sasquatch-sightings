@@ -46,6 +46,7 @@ import {
 import { SignatureModal } from '@/components/admin/ops/signature-modal'
 import { nextVisitAction, type VisitStatus } from '@/lib/ops/arrival'
 import { captureDateFor } from '@/lib/ops/exif-capture-date'
+import { downscaleImage } from '@/lib/ops/downscale-image'
 import { StreetViewCard } from '@/components/ops/street-view-card'
 import { DryingChart } from '@/components/ops/drying-chart'
 import { AirReadingsCard, type AirReading } from '@/components/ops/air-readings-card'
@@ -337,6 +338,10 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
 
   const [photoPhase, setPhotoPhase] = useState<string>('affected_materials')
   const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<{
+    done: number
+    total: number
+  } | null>(null)
 
   const [pointLabel, setPointLabel] = useState('')
   const [pointMaterial, setPointMaterial] = useState('Drywall')
@@ -2830,7 +2835,11 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             ) : (
               <Camera className="h-4 w-4" />
             )}
-            {uploading ? 'Uploading…' : 'Add photos'}
+            {uploading
+              ? uploadProgress
+                ? `Uploading ${uploadProgress.done + 1} of ${uploadProgress.total}…`
+                : 'Uploading…'
+              : 'Add photos'}
             <input
               type="file"
               accept="image/*"
@@ -2843,16 +2852,24 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 e.target.value = ''
                 setUploading(true)
                 setError(null)
-                try {
-                  for (const file of files) {
+                setUploadProgress({ done: 0, total: files.length })
+                const failures: string[] = []
+
+                for (const [index, file] of files.entries()) {
+                  try {
+                    // EXIF DateTimeOriginal off the ORIGINAL file, before any
+                    // re-encode: a canvas drops EXIF, and that date is what
+                    // sorts a backlog onto the right day.
+                    const capturedAt = await captureDateFor(file)
+
+                    // A phone photo is megabytes the server only resizes away,
+                    // and a big enough one never arrives at all.
+                    const upload = await downscaleImage(file)
+
                     const form = new FormData()
-                    form.append('image', file)
+                    form.append('image', upload)
                     form.append('label', 'general')
                     form.append('restoration_phase', photoPhase)
-                    // EXIF DateTimeOriginal where the file carries it, falling
-                    // back to the filesystem timestamp. A backlog exported off a
-                    // phone often has the wrong file date but the right EXIF.
-                    const capturedAt = await captureDateFor(file)
                     if (capturedAt) {
                       form.append('captured_at', capturedAt.toISOString())
                     }
@@ -2870,16 +2887,26 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                     )
                     if (!response.ok) {
                       const result = await response.json().catch(() => ({}))
-                      throw new Error(result.error || 'Upload failed')
+                      throw new Error(result.error || `HTTP ${response.status}`)
                     }
+                  } catch (uploadError) {
+                    // One bad photo must not abandon the other nineteen.
+                    failures.push(
+                      `${file.name}: ${
+                        uploadError instanceof Error ? uploadError.message : 'failed'
+                      }`,
+                    )
                   }
-                  await load()
-                } catch (uploadError) {
+                  setUploadProgress({ done: index + 1, total: files.length })
+                }
+
+                await load()
+                setUploading(false)
+                setUploadProgress(null)
+                if (failures.length > 0) {
                   setError(
-                    uploadError instanceof Error ? uploadError.message : 'Upload failed',
+                    `${failures.length} of ${files.length} photos did not upload — ${failures[0]}`,
                   )
-                } finally {
-                  setUploading(false)
                 }
               }}
             />

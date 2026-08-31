@@ -6,6 +6,11 @@ import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { assertTechAppointmentAccess } from '@/lib/ops/tech-job-access'
 
+// Sharp decoding a large photo is not fast, and the default budget is not
+// generous. Clients downscale before sending, but a stray full-size original
+// should still finish rather than time out with nothing to show.
+export const maxDuration = 60
+
 type Params = { params: Promise<{ id: string }> }
 
 // Build a label badge SVG (e.g. "BEFORE" / "AFTER" / "GENERAL")

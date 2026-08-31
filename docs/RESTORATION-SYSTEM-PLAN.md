@@ -2384,3 +2384,40 @@ Both kinds are now editable in place and removable:
 **Refused once the project is closed.** At that point the readings back an
 invoice and a delivered report, and changing them is a correction to that
 document rather than a typo fix — the same line drawn for recorded payments.
+
+## Why the demolition photos would not upload
+
+Charles: *"I finally got some arrival pictures to upload, but I can't seem to
+get any of the demolition pictures to upload. It just spins for a little while
+and then eventually stops."*
+
+The Supabase edge log tells the story. Four arrival photos reached storage at
+18:03:06, :14, :19 and :25 — **six to eight seconds each**. After that, for the
+demolition batch, there are no storage writes at all. The requests never got far
+enough to save anything.
+
+A phone photo is 3–8 MB. Vercel caps a serverless request body at **4.5 MB** and
+the function at its duration limit, and this route hands every uploaded byte to
+Sharp to decode. Smaller photos from the same phone squeaked through in eight
+seconds; larger ones died — silently, because a body-limit rejection never
+reaches the route's own error handling.
+
+**The waste was the bug.** The route resizes everything to 1920px anyway, so
+those megabytes were carried across a job-site connection and decoded in full to
+produce a result identical to sending 400 KB.
+
+Photos are now shrunk in the browser before upload — longest edge 1920, JPEG at
+0.82, skipped under 600 KB and skipped entirely if the re-encode comes out
+larger. A format the browser cannot decode (some HEIC) uploads unchanged, since
+failing to shrink beats failing to upload.
+
+Two ordering details that matter:
+- **EXIF is read from the original file, before the re-encode.** A canvas drops
+  EXIF, and that capture date is what sorts a backlog onto the right day.
+- **One bad photo no longer abandons the batch.** The loop used to throw on the
+  first failure; nineteen good photos would go nowhere because the twentieth was
+  odd. Each is now tried on its own, the button counts "Uploading 7 of 20…", and
+  the end reports how many failed and why.
+
+`maxDuration = 60` on the route as well, so a stray full-size original finishes
+rather than timing out with nothing to show.
