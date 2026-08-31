@@ -92,6 +92,8 @@ type Detail = {
     cause_narrative: string | null
     loss_date: string | null
     loss_time: string | null
+    estimate_signed_at: string | null
+    estimate_copied_at: string | null
     acknowledged_warnings: string[] | null
     invoice_id: string | null
     ops_customers: { id: string; full_name: string; business_name: string | null; phone: string } | null
@@ -116,6 +118,14 @@ type Detail = {
     units: number; unit_days: number; line_total: number
   }>
   reading_points: ReadingPoint[]
+  estimate_lines: Array<{
+    id: string
+    name_snapshot: string
+    quantity: number
+    unit_price: number
+    line_total: number
+    unit: string | null
+  }>
   areas: Array<{
     id: string
     name: string
@@ -249,6 +259,12 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
   const [catalogQuery, setCatalogQuery] = useState('')
   const [catalogOpen, setCatalogOpen] = useState(false)
   const [openGroup, setOpenGroup] = useState<string | null>(null)
+
+  const [estimateOpen, setEstimateOpen] = useState(false)
+  const [estimateTranscript, setEstimateTranscript] = useState('')
+  const [estimateProposed, setEstimateProposed] = useState<ParsedLine[]>([])
+  const [estimateUnmatched, setEstimateUnmatched] = useState<string[]>([])
+  const [estimateQuery, setEstimateQuery] = useState('')
 
   const [planTool, setPlanTool] = useState<WallPlanTool>('wall')
   // Common sizes, so the usual case is one tap and anything else is one edit.
@@ -451,6 +467,17 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
     })
   }, [detail])
 
+  const estimateTotal = useMemo(
+    () =>
+      Math.round(
+        (detail?.estimate_lines ?? []).reduce(
+          (sum, l) => sum + Number(l.line_total),
+          0,
+        ) * 100,
+      ) / 100,
+    [detail],
+  )
+
   const catalogResults = catalog
   const groupedCatalog = useMemo(() => {
     const map = new Map<string, CatalogItem[]>()
@@ -495,6 +522,17 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
     if (unit === 'SF' && dryingPlan.totalAffectedSqft > 0) return dryingPlan.totalAffectedSqft
     if (unit === 'LF' && totalPerimeterFt > 0) return totalPerimeterFt
     return 1
+  }
+
+  async function addEstimateLines(
+    lines: Array<{ concept_code: string; quantity: number | null }>,
+  ) {
+    if (lines.length === 0) return
+    await call(
+      `/api/admin/ops/restoration/projects/${projectId}/estimate`,
+      { method: 'POST', body: JSON.stringify({ lines }) },
+      'add-estimate',
+    )
   }
 
   async function addFromCatalog(item: CatalogItem, quantity: number) {
@@ -635,6 +673,260 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
       ) : null}
 
       <StreetViewCard address={address} />
+
+      {/* ── Estimate ───────────────────────────────────────── */}
+      <Card className={SECTION_CARD}>
+        <button
+          type="button"
+          className="flex w-full items-center justify-between gap-3 text-left"
+          onClick={() => setEstimateOpen((open) => !open)}
+        >
+          <span>
+            <span className={SECTION_TITLE}>
+              <FileText className={SECTION_ICON} /> Estimate
+            </span>
+            <span className="text-muted-foreground mt-1 block text-sm">
+              {estimateTotal > 0
+                ? `${detail.estimate_lines.length} line${
+                    detail.estimate_lines.length === 1 ? '' : 's'
+                  } · ${money(estimateTotal)}`
+                : 'What it is going to cost — the first thing they ask.'}
+            </span>
+          </span>
+          <span className="text-muted-foreground text-xs">
+            {estimateOpen ? 'Hide' : estimateTotal > 0 ? 'Open' : 'Give estimate'}
+          </span>
+        </button>
+
+        {estimateOpen ? (
+          <div className="mt-4 flex flex-col gap-3">
+            <Label htmlFor="estimate-dictate" className="flex items-center gap-2">
+              <Mic className="h-4 w-4" /> Say what you expect to do
+            </Label>
+            <Textarea
+              id="estimate-dictate"
+              rows={2}
+              value={estimateTranscript}
+              onChange={(e) => setEstimateTranscript(e.target.value)}
+              placeholder="extract 400 square feet of carpet, remove pad, 4 foot flood cut 60 feet, dump fee, 3 monitors"
+            />
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                className={`${ACTION_BUTTON} gap-2`}
+                disabled={busy === 'estimate-parse' || !estimateTranscript.trim()}
+                onClick={async () => {
+                  setBusy('estimate-parse')
+                  setError(null)
+                  try {
+                    const response = await fetch('/api/admin/ops/restoration/parse', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        project_id: projectId,
+                        transcript: estimateTranscript,
+                      }),
+                    })
+                    const result = await response.json()
+                    if (!response.ok) throw new Error(result.error || 'Could not read that')
+                    setEstimateProposed(result.lines ?? [])
+                    setEstimateUnmatched(result.unmatched ?? [])
+                  } catch (e) {
+                    setError(e instanceof Error ? e.message : 'Could not read that')
+                  } finally {
+                    setBusy(null)
+                  }
+                }}
+              >
+                {busy === 'estimate-parse' ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Mic className="h-4 w-4" />
+                )}
+                Scan
+              </Button>
+              {estimateProposed.length > 0 ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={async () => {
+                    await addEstimateLines(
+                      estimateProposed.map((p) => ({
+                        concept_code: p.conceptCode,
+                        quantity: p.quantity ?? suggestedQuantity(p.unit),
+                      })),
+                    )
+                    setEstimateProposed([])
+                    setEstimateUnmatched([])
+                    setEstimateTranscript('')
+                  }}
+                >
+                  Add all {estimateProposed.length}
+                </Button>
+              ) : null}
+            </div>
+
+            {estimateProposed.length > 0 ? (
+              <div className="border-border/60 overflow-hidden rounded-md border">
+                <div className={`${PANEL_HEAD} flex items-center justify-between gap-2`}>
+                  <span>
+                    Priced for Category {category}
+                    {afterHours ? ', after hours' : ''}. Set a quantity and add.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEstimateProposed([])
+                      setEstimateUnmatched([])
+                    }}
+                  >
+                    Clear
+                  </button>
+                </div>
+                {estimateProposed.map((line, index) => (
+                  <LineCandidateRow
+                    key={`${line.code}-${index}`}
+                    code={line.code}
+                    label={line.label}
+                    unit={line.unit}
+                    unitPrice={line.unitPrice}
+                    defaultQuantity={line.quantity ?? suggestedQuantity(line.unit)}
+                    onAdd={async (quantity) => {
+                      await addEstimateLines([
+                        { concept_code: line.conceptCode, quantity },
+                      ])
+                      setEstimateProposed((current) =>
+                        current.filter((_, i) => i !== index),
+                      )
+                    }}
+                    onDismiss={() =>
+                      setEstimateProposed((current) =>
+                        current.filter((_, i) => i !== index),
+                      )
+                    }
+                  />
+                ))}
+                {estimateUnmatched.length > 0 ? (
+                  <p className="text-muted-foreground border-border/60 border-t px-3 py-2 text-xs">
+                    Couldn&apos;t match: {estimateUnmatched.join(', ')}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="estimate-search">Add by hand</Label>
+              <Input
+                id="estimate-search"
+                value={estimateQuery}
+                onChange={(e) => setEstimateQuery(e.target.value)}
+                placeholder="extraction, flood cut, pad…"
+              />
+              {estimateQuery.trim().length > 1 ? (
+                <div className="border-border/60 max-h-64 overflow-y-auto rounded-md border">
+                  {catalog
+                    .filter(
+                      (item) =>
+                        item.label
+                          .toLowerCase()
+                          .includes(estimateQuery.trim().toLowerCase()) ||
+                        item.code
+                          .toLowerCase()
+                          .includes(estimateQuery.trim().toLowerCase()),
+                    )
+                    .slice(0, 30)
+                    .map((item) => (
+                      <LineCandidateRow
+                        key={item.concept_code}
+                        code={item.code}
+                        label={item.label}
+                        unit={item.unit}
+                        unitPrice={item.unit_price}
+                        billable={item.billable}
+                        defaultQuantity={suggestedQuantity(item.unit)}
+                        onAdd={(quantity) =>
+                          addEstimateLines([
+                            { concept_code: item.concept_code, quantity },
+                          ])
+                        }
+                      />
+                    ))}
+                </div>
+              ) : null}
+            </div>
+
+            {detail.estimate_lines.length > 0 ? (
+              <div className="flex flex-col divide-y">
+                {detail.estimate_lines.map((line) => (
+                  <div key={line.id} className="flex items-center gap-2 py-2 text-sm">
+                    <span className="min-w-0 flex-1">{line.name_snapshot}</span>
+                    <Input
+                      className="h-8 w-20 text-right"
+                      type="number"
+                      min={0}
+                      step="any"
+                      defaultValue={Number(line.quantity)}
+                      onBlur={(e) => {
+                        const quantity = Number(e.target.value)
+                        if (quantity > 0 && quantity !== Number(line.quantity)) {
+                          void call(
+                            `/api/admin/ops/restoration/estimate-lines/${line.id}`,
+                            { method: 'PATCH', body: JSON.stringify({ quantity }) },
+                            `est-${line.id}`,
+                          )
+                        }
+                      }}
+                    />
+                    <span className="text-muted-foreground w-10 text-xs">{line.unit}</span>
+                    <span className="w-20 text-right font-medium">
+                      {money(Number(line.line_total))}
+                    </span>
+                    <button
+                      type="button"
+                      aria-label="Remove estimate line"
+                      onClick={() =>
+                        void call(
+                          `/api/admin/ops/restoration/estimate-lines/${line.id}`,
+                          { method: 'DELETE' },
+                          `est-del-${line.id}`,
+                        )
+                      }
+                    >
+                      <Trash2 className="text-muted-foreground h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between pt-2 text-base font-semibold">
+                  <span>Estimate total</span>
+                  <span className="text-sky-700 tabular-nums dark:text-sky-300">
+                    {money(estimateTotal)}
+                  </span>
+                </div>
+              </div>
+            ) : null}
+
+            {detail.estimate_lines.length > 0 && !closed ? (
+              <Button
+                variant="outline"
+                className="w-full gap-2"
+                disabled={busy === 'copy-estimate'}
+                onClick={() =>
+                  void call(
+                    `/api/admin/ops/restoration/projects/${projectId}/estimate`,
+                    { method: 'PUT', body: JSON.stringify({}) },
+                    'copy-estimate',
+                  )
+                }
+              >
+                <Plus className="h-4 w-4" />
+                {detail.project.estimate_copied_at
+                  ? 'Copy to the work again'
+                  : 'Start the work from this estimate'}
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+      </Card>
 
       {/* ── Visits ─────────────────────────────────────────── */}
       <Card className={SECTION_CARD}>

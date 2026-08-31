@@ -47,6 +47,7 @@ export async function GET(
       { data: queue },
       { data: equipment },
       { data: openings },
+      { data: estimateLines },
       { data: areas },
       { data: billing },
       { data: points },
@@ -77,6 +78,12 @@ export async function GET(
               .eq('project_id', id)
           ).data?.map((a) => a.id) ?? [],
         ),
+      supabase
+        .from('restoration_estimate_lines')
+        .select('id, name_snapshot, quantity, unit_price, line_total, unit, restoration_catalog_code')
+        .eq('project_id', id)
+        .order('sort_order')
+        .order('created_at'),
       supabase
         .from('restoration_areas')
         .select('id, name, floor_sqft, affected_sqft, wall_linear_ft, ceiling_height_ft, affected_wall_ceiling_sqft, insets_offsets, geometry, plan_x, plan_y, points')
@@ -138,6 +145,7 @@ export async function GET(
       queue: queue ?? [],
       equipment: equipment ?? [],
       areas: areas ?? [],
+      estimate_lines: estimateLines ?? [],
       openings: openings ?? [],
       equipment_billing: billing ?? [],
       reading_points: points ?? [],

@@ -1508,3 +1508,50 @@ line at a different rate.
 
 **Lesson for the catalog:** an item is only findable by the words on it. When Charles
 names something differently to the standard, both names belong in the description.
+
+
+---
+
+## The estimate phase
+
+Charles: "as soon as I get to a job, all they wanna know is how much." The system had no
+answer until the work had been built out.
+
+An **Estimate card** sits between the service address and the visits, collapsed by
+default, opening to the same voice-first tools as the work: dictate the scope, review the
+proposed lines with codes and prices, add them, correct quantities.
+
+### Estimate is a phase of the project, not a separate record
+Same customer, address and loss category, so nothing is re-entered and the two cannot
+drift. `restoration_estimate_lines` holds what was quoted; `ops_appointment_line_items`
+holds what was done.
+
+That separation is what makes **"Start the work from this estimate"** possible — one
+button copies the estimate onto the mitigation visit, and the handful of lines that
+changed get corrected there. It also means estimate-versus-actual is visible at close.
+
+Prices resolve through the same rules as the work: the caller sends concepts, the server
+resolves the variant from the loss context. A quote and the eventual bill price the same
+work identically.
+
+### Deliberate: the estimate does not touch money
+No invoice, no QuickBooks, no effect on `quoted_total` — that only follows the work lines.
+Invoicing stays held until the project closes. An estimate is not a bill.
+
+### Decided, worth confirming
+`estimate_signed_at` freezes the estimate: once a customer has signed a number, adding to
+it is refused (409) and revisions belong on the work side. Columns for sending and
+signature exist (`estimate_sent_at`, `estimate_signature_url`, `estimate_signed_name`) but
+**send and signature are not built yet** — this pass is the estimating tool itself, which
+is what Charles emphasised.
+
+### Still open from the original proposal
+1. Send to the customer, with phone/email prefilled.
+2. Signature capture — `signature-modal.tsx` already exists and should be reused.
+3. Whether this is a fixed estimate or a work authorisation, which changes the wording on
+   whatever gets signed.
+4. Whether the emergency service fee belongs on it.
+
+4 integration tests: the estimate holds lines without touching the work or the calendar
+total; copying starts the work and the calendar total follows; the work can then diverge
+while the estimate stays as the record of what was quoted; and it cascades with the project.
