@@ -3044,3 +3044,28 @@ we will — that's why we wanna keep it."*
 
 Open on a work day, collapsed on a monitor, and one tap either way. It was
 sitting open above the readings and the plan, which are used every single visit.
+
+### The note leaked between days, and never saved at all
+
+Charles: *"I made the note for today and I was gonna go back and correct the note
+that we had for yesterday's monitor and lo and behold the note carried over. I
+specifically said the notes are individual to the day."*
+
+He did, and the note card broke that rule twice over in its first hour.
+
+**It leaked.** The draft was loose component state, so it outlived the visit it
+was written for — opening yesterday's monitor showed today's text. A blur there
+would have written today's words onto yesterday's day. The note is now tagged
+with the visit it belongs to and simply cannot render against another one.
+
+**And nothing had saved.** Checking the database while looking into the leak: all
+four visits held `null`. The box wrote on blur, and a drafted note that Charles
+read and was happy with was never focused, so no blur ever fired. He wrote
+today's note, saw it on the screen, and the record kept nothing.
+
+There is an explicit **Save this note** now, which reads "Saved" when there is
+nothing outstanding — so the state of the thing is visible rather than assumed.
+
+The scoping is a pair of pure functions with tests, one of which asserts the
+exact failure: an edit belonging to Monday, rendered against Sunday, returns
+Sunday's saved note.

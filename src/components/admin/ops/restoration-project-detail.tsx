@@ -54,6 +54,7 @@ import { EquipmentPinEditor } from '@/components/ops/equipment-pin-editor'
 import { grainsPerPound } from '@/lib/ops/restoration-psychrometry'
 import { readingForVisit, visitIsFuture } from '@/lib/ops/restoration-visit-scope'
 import { positionForVisit } from '@/lib/ops/restoration-equipment-position'
+import { noteTextFor, noteIsDirty } from '@/lib/ops/restoration-note-scope'
 
 /**
  * The restoration project screen.
@@ -368,8 +369,21 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
   const [pointGoal, setPointGoal] = useState('')
 
   const [transcript, setTranscript] = useState('')
-  const [noteTranscript, setNoteTranscript] = useState('')
-  const [noteDraft, setNoteDraft] = useState<string | null>(null)
+  /**
+   * The note being edited, tagged with the visit it belongs to.
+   *
+   * Held as loose state it leaked: drafting today's note and then opening
+   * yesterday's showed today's text, because the draft outlived the visit it
+   * was written for. Carrying the id means a note can only ever be shown
+   * against the day it was written for.
+   */
+  const [noteEdit, setNoteEdit] = useState<{ visitId: string; text: string } | null>(
+    null,
+  )
+  const [noteTranscript, setNoteTranscript] = useState<{
+    visitId: string
+    text: string
+  } | null>(null)
   /** Null until Charles opens or closes the work card himself on this screen. */
   const [workOpenOverride, setWorkOpenOverride] = useState<boolean | null>(null)
   const [proposed, setProposed] = useState<ParsedLine[]>([])
@@ -2783,22 +2797,33 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             rows={3}
             className="mb-2"
             placeholder="Talk about the day — what you found, what you did, what still needs attention…"
-            value={noteTranscript}
-            onChange={(e) => setNoteTranscript(e.target.value)}
+            value={
+              noteTranscript?.visitId === activeVisit.id ? noteTranscript.text : ''
+            }
+            onChange={(e) =>
+              setNoteTranscript({ visitId: activeVisit.id, text: e.target.value })
+            }
           />
           <Button
             size="sm"
             className={`${ACTION_BUTTON} mb-3 gap-2`}
-            disabled={busy === 'note-draft' || !noteTranscript.trim()}
+            disabled={
+              busy === 'note-draft' ||
+              noteTranscript?.visitId !== activeVisit.id ||
+              !noteTranscript.text.trim()
+            }
             onClick={async () => {
               const result = await call(
                 `/api/admin/ops/restoration/visits/${activeVisit.id}/note-draft`,
-                { method: 'POST', body: JSON.stringify({ transcript: noteTranscript }) },
+                {
+                  method: 'POST',
+                  body: JSON.stringify({ transcript: noteTranscript?.text ?? '' }),
+                },
                 'note-draft',
               )
               if (result?.note) {
-                setNoteDraft(result.note)
-                setNoteTranscript('')
+                setNoteEdit({ visitId: activeVisit.id, text: result.note })
+                setNoteTranscript(null)
               }
             }}
           >
@@ -2815,20 +2840,37 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
           </Label>
           <Textarea
             id="visit-note"
-            key={`${activeVisit.id}-${noteDraft ?? ''}`}
             rows={4}
             placeholder="What you saw, what moved, what still needs attention…"
-            defaultValue={noteDraft ?? activeVisit.restoration_visit_note ?? ''}
-            onBlur={(e) => {
-              const note = e.target.value
-              if (note.trim() === (activeVisit.restoration_visit_note ?? '').trim()) return
-              void call(
+            value={noteTextFor(noteEdit, activeVisit)}
+            onChange={(e) =>
+              setNoteEdit({ visitId: activeVisit.id, text: e.target.value })
+            }
+          />
+          {/*
+            An explicit Save. A drafted note that was never touched afterwards
+            fired no blur and was never written — Charles wrote today's note,
+            saw it on screen, and the database kept nothing.
+          */}
+          <Button
+            size="sm"
+            variant="outline"
+            className="mt-2 gap-2"
+            disabled={busy === 'visit-note' || !noteIsDirty(noteEdit, activeVisit)}
+            onClick={async () => {
+              await call(
                 `/api/admin/ops/restoration/visits/${activeVisit.id}/note`,
-                { method: 'PUT', body: JSON.stringify({ note }) },
+                { method: 'PUT', body: JSON.stringify({ note: noteEdit?.text ?? '' }) },
                 'visit-note',
               )
+              setNoteEdit(null)
             }}
-          />
+          >
+            {busy === 'visit-note' ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : null}
+            {noteIsDirty(noteEdit, activeVisit) ? 'Save this note' : 'Saved'}
+          </Button>
           <p className="text-muted-foreground mt-1 text-xs">
             Editable, and yours — it goes into the final report in date order.
           </p>
