@@ -3222,11 +3222,15 @@ function MapPointEditor({
   const atGoal =
     point.dry_standard != null && latest != null && Number(latest.value) <= Number(point.dry_standard)
 
+  // Taking a reading is the whole reason the bubble opened, so saving one closes
+  // it. On a monitor day that is a dozen points in a row, and dismissing each
+  // one by hand afterwards is a dozen taps that say nothing.
   function submit() {
     const numeric = Number(value)
     if (!Number.isFinite(numeric) || value === '') return
     void onReading(numeric)
     setValue('')
+    if (!expanded) onClose()
   }
 
   return (

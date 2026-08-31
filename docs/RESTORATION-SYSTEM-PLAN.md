@@ -1920,3 +1920,45 @@ recorded twice quietly halves what the customer is billed, and a total alone
 cannot show that it happened. Each can be removed while the job is open; once
 the project closes the payment belongs to an invoice and to recorded revenue, so
 removal is refused — that is an invoice correction, not a typo fix.
+
+## Backlog from Charles, 2026-08-31 (captured verbatim in intent)
+
+Recorded here before any of it is built, because the failure mode he has named
+before is an idea dump where 80% never lands.
+
+1. **Reading bubble closes on save.** *Done* — taking a reading is why the bubble
+   opened, so saving one dismisses it. A monitor day is a dozen points in a row,
+   and a dozen taps on an X say nothing. It stays open if the point's settings
+   are expanded, since that is a different job.
+
+2. **Colour the bubble by how wet it is** — red / yellow / green against a scale
+   that depends on the material (framing behaves nothing like drywall).
+   **Needs reference material before it is built.** A colour scale invented from
+   nothing would put a green dot on wet framing. Two ways to source it: Charles's
+   S500 copy, or his own dry-standard practice. Not guessed.
+
+3. **A drying graph** — readings falling over the monitor days, for the customer
+   or the carrier. The data is already there: every reading is stored per point
+   with its timestamp, which is exactly a series per point.
+
+4. **Daily monitoring note** — a written note per monitor visit, carried into
+   the final report. Currently monitor visits hold readings and nothing said.
+
+5. **Job notes by voice** — the same shorthand tool as line entry, pointed at
+   narrative instead: speak about the job, get notes on where the loss came
+   from, what was affected, how it went. Same division of labour applies — the
+   model writes prose, never picks a price or a category.
+
+6. **Final PDF of the whole job** — the drying report exists but covers drying.
+   This is the complete package: cause, scope, what was done, readings and their
+   graph, photos by phase, the daily notes, and the numbers.
+
+7. **The AI description draws on the job's own metrics**, not just the dictation
+   — affected square footage, category and class, equipment days, how long it
+   took to reach dry standard. The facts are in the database; the dictation
+   supplies what only Charles saw.
+
+### Order this suggests
+(2) is blocked on reference material. (3) and (4) are small and feed (6).
+(5) and (7) are one feature, and (6) is the thing the customer and the carrier
+actually receive — so it wants the others first.
