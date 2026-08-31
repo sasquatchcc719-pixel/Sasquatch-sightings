@@ -144,3 +144,41 @@ describe('restoration readings', () => {
     expect(orphans).toHaveLength(0)
   })
 })
+
+describe('correcting a moisture reading', () => {
+  it('changes one reading without touching the rest of the point', async () => {
+    const { data: point } = await supabase
+      .from('restoration_reading_points')
+      .insert({ project_id: projectId, label: 'Correction test', material: 'Framing' })
+      .select('id')
+      .single()
+
+    const { data: readings } = await supabase
+      .from('restoration_readings')
+      .insert([
+        { reading_point_id: point!.id, value: 28 },
+        { reading_point_id: point!.id, value: 340 }, // meant 34
+      ])
+      .select('id, value')
+
+    const wrong = readings!.find((r) => Number(r.value) === 340)!
+    await supabase.from('restoration_readings').update({ value: 34 }).eq('id', wrong.id)
+
+    const { data: after } = await supabase
+      .from('restoration_readings')
+      .select('value')
+      .eq('reading_point_id', point!.id)
+      .order('value')
+    expect(after!.map((r) => Number(r.value))).toEqual([28, 34])
+
+    // Removing one leaves the other, which deleting the point would not.
+    await supabase.from('restoration_readings').delete().eq('id', wrong.id)
+    const { data: left } = await supabase
+      .from('restoration_readings')
+      .select('value')
+      .eq('reading_point_id', point!.id)
+    expect(left).toHaveLength(1)
+
+    await supabase.from('restoration_reading_points').delete().eq('id', point!.id)
+  })
+})

@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { Loader2, Wind } from 'lucide-react'
+import { Loader2, Wind, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -45,6 +45,8 @@ export function AirReadingsCard({
   readings,
   busy,
   onLog,
+  onEdit,
+  onRemove,
 }: {
   readings: AirReading[]
   busy: boolean
@@ -55,6 +57,11 @@ export function AirReadingsCard({
     temp_f: number
     rh_pct: number
   }) => Promise<boolean | void> | void
+  onEdit: (
+    readingId: string,
+    patch: { temp_f?: number; rh_pct?: number },
+  ) => void | Promise<unknown>
+  onRemove: (readingId: string) => void | Promise<unknown>
 }) {
   const [role, setRole] = useState<AirRole>('affected')
   const [location, setLocation] = useState('')
@@ -242,12 +249,53 @@ export function AirReadingsCard({
                       ? ` · ${reading.location}`
                       : ''}
                   </span>
-                  <span className="text-muted-foreground tabular-nums">
-                    {reading.temp_f}°F / {reading.rh_pct}%
-                  </span>
+                  {/* Editable in place: a wrong temp or RH gives a confident
+                      wrong verdict about a machine or a room. */}
+                  <input
+                    className="w-10 bg-transparent text-right tabular-nums outline-none"
+                    type="number"
+                    step="any"
+                    aria-label="Temperature"
+                    defaultValue={reading.temp_f ?? ''}
+                    onBlur={(e) => {
+                      const tempF = Number(e.target.value)
+                      if (Number.isFinite(tempF) && tempF !== Number(reading.temp_f)) {
+                        void onEdit(reading.id, { temp_f: tempF })
+                      }
+                    }}
+                  />
+                  <span className="text-muted-foreground">°F</span>
+                  <input
+                    className="w-10 bg-transparent text-right tabular-nums outline-none"
+                    type="number"
+                    step="any"
+                    min={0}
+                    max={100}
+                    aria-label="Relative humidity"
+                    defaultValue={reading.rh_pct ?? ''}
+                    onBlur={(e) => {
+                      const rhPct = Number(e.target.value)
+                      if (
+                        Number.isFinite(rhPct) &&
+                        rhPct >= 0 &&
+                        rhPct <= 100 &&
+                        rhPct !== Number(reading.rh_pct)
+                      ) {
+                        void onEdit(reading.id, { rh_pct: rhPct })
+                      }
+                    }}
+                  />
+                  <span className="text-muted-foreground">%</span>
                   <span className="w-16 text-right tabular-nums">
                     {gpp != null ? `${gpp} GPP` : ''}
                   </span>
+                  <button
+                    type="button"
+                    aria-label="Remove this reading"
+                    onClick={() => void onRemove(reading.id)}
+                  >
+                    <X className="text-muted-foreground h-3 w-3" />
+                  </button>
                 </div>
               )
             })}

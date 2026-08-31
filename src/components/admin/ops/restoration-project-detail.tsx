@@ -1705,6 +1705,20 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 <AirReadingsCard
                   readings={detail.air_readings}
                   busy={busy === 'air-reading'}
+                  onEdit={(readingId, patch) =>
+                    call(
+                      `/api/admin/ops/restoration/air-readings/${readingId}`,
+                      { method: 'PATCH', body: JSON.stringify(patch) },
+                      `air-${readingId}`,
+                    )
+                  }
+                  onRemove={(readingId) =>
+                    call(
+                      `/api/admin/ops/restoration/air-readings/${readingId}`,
+                      { method: 'DELETE' },
+                      `air-${readingId}`,
+                    )
+                  }
                   onLog={async (reading) => {
                     // `call` returns null when the request failed, and the card
                     // keeps the numbers rather than clearing them.
@@ -1825,6 +1839,20 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                           }),
                         },
                         `read-${selectedPoint.id}`,
+                      )
+                    }
+                    onEditReading={(readingId, value) =>
+                      call(
+                        `/api/admin/ops/restoration/readings/${readingId}`,
+                        { method: 'PATCH', body: JSON.stringify({ value }) },
+                        `rd-${readingId}`,
+                      )
+                    }
+                    onRemoveReading={(readingId) =>
+                      call(
+                        `/api/admin/ops/restoration/readings/${readingId}`,
+                        { method: 'DELETE' },
+                        `rd-${readingId}`,
                       )
                     }
                     onRemove={async () => {
@@ -3400,12 +3428,16 @@ function MapPointEditor({
   point,
   onSave,
   onReading,
+  onEditReading,
+  onRemoveReading,
   onRemove,
   onClose,
 }: {
   point: ReadingPoint
   onSave: (patch: Record<string, unknown>) => void | Promise<unknown>
   onReading: (value: number) => void | Promise<unknown>
+  onEditReading: (readingId: string, value: number) => void | Promise<unknown>
+  onRemoveReading: (readingId: string) => void | Promise<unknown>
   onRemove: () => void | Promise<unknown>
   onClose: () => void
 }) {
@@ -3459,9 +3491,49 @@ function MapPointEditor({
         </Button>
       </div>
 
-      <p className="text-muted-foreground mt-2 text-xs">
-        {history.length > 0 ? history.map((r) => `${r.value}%`).join(' → ') : 'no readings yet'}
-        {standard != null ? ` · dry at ${standard}%` : ''}
+      {/*
+        Every reading is editable and removable. They are typed one-handed in a
+        wet basement, and a 340 where 34 was meant rescales the drying chart,
+        drags the trend, and goes into the report an adjuster reads. Until now
+        the only remedy was deleting the point and losing its whole history.
+      */}
+      {history.length > 0 ? (
+        <div className="mt-2 flex flex-wrap items-center gap-1">
+          {history.map((reading) => (
+            <span
+              key={reading.id}
+              className="border-border/60 flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs"
+            >
+              <input
+                className="w-9 bg-transparent text-right tabular-nums outline-none"
+                type="number"
+                step="any"
+                min={0}
+                aria-label={`Reading taken ${new Date(reading.taken_at).toLocaleDateString()}`}
+                defaultValue={Number(reading.value)}
+                onBlur={(e) => {
+                  const value = Number(e.target.value)
+                  if (value >= 0 && value !== Number(reading.value)) {
+                    void onEditReading(reading.id, value)
+                  }
+                }}
+              />
+              <span className="text-muted-foreground">%</span>
+              <button
+                type="button"
+                aria-label="Remove this reading"
+                onClick={() => void onRemoveReading(reading.id)}
+              >
+                <X className="text-muted-foreground h-3 w-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="text-muted-foreground mt-2 text-xs">no readings yet</p>
+      )}
+      <p className="text-muted-foreground mt-1 text-xs">
+        {standard != null ? `dry at ${standard}%` : ''}
         {band !== 'unknown' ? ` · ${BAND_LABEL[band]}` : ''}
       </p>
 

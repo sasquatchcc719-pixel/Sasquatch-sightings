@@ -90,3 +90,35 @@ describe('air reading roles', () => {
     expect(error).not.toBeNull()
   })
 })
+
+describe('correcting a reading', () => {
+  it('can be edited and removed while the job is open', async () => {
+    const { data: reading } = await supabase
+      .from('restoration_air_readings')
+      .insert({
+        project_id: projectId,
+        role: 'affected',
+        location: 'Basement',
+        temp_f: 740, // the fat-fingered case this exists for
+        rh_pct: 44,
+      })
+      .select('id')
+      .single()
+
+    const { data: fixed } = await supabase
+      .from('restoration_air_readings')
+      .update({ temp_f: 74 })
+      .eq('id', reading!.id)
+      .select('temp_f')
+      .single()
+    expect(Number(fixed!.temp_f)).toBe(74)
+
+    await supabase.from('restoration_air_readings').delete().eq('id', reading!.id)
+    const { data: gone } = await supabase
+      .from('restoration_air_readings')
+      .select('id')
+      .eq('id', reading!.id)
+      .maybeSingle()
+    expect(gone).toBeNull()
+  })
+})

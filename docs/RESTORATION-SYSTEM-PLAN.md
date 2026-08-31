@@ -2358,3 +2358,29 @@ Worth being plain about: the dehumidifier verdict on his readings is not a bug.
 74°F/44% in the room is 54.9 GPP; 92°F/24% coming out is 53.6. That is 1.3 GPP
 of depression, and a working LGR on air that damp should be pulling 30 or more.
 Either those were test numbers, or that unit needs looking at.
+
+## Readings can be corrected
+
+Charles: *"I don't think we have the ability to edit or delete readings that we
+take."*
+
+Correct. Readings could be created, and a whole reading POINT could be deleted,
+but a single reading could not be touched. The only way to remove a mistyped
+number was to delete the point and lose every reading on it — its whole history,
+which is the one thing a monitor visit exists to build.
+
+That matters more here than in most places. These numbers are typed one-handed
+in a wet basement. A 340 where 34 was meant rescales the drying chart, drags the
+trend line, and prints in a report an adjuster reads. A wrong temperature or RH
+produces a **confident** wrong verdict about whether a machine is working.
+
+Both kinds are now editable in place and removable:
+
+- **Moisture readings** — on the pin, each reading is a small editable chip with
+  an ✕. Correcting one leaves the rest of the point's history intact.
+- **Air readings** — temp and RH are editable in the list, with the GPP
+  recomputing beside them, and an ✕ to remove.
+
+**Refused once the project is closed.** At that point the readings back an
+invoice and a delivered report, and changing them is a correction to that
+document rather than a typo fix — the same line drawn for recorded payments.
