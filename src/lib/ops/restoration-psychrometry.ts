@@ -14,6 +14,13 @@
  *   3. Is the chamber getting drier day over day, or has it stalled?
  */
 
+import {
+  DEHU_MODELS,
+  DEFAULT_DEHU_MODEL,
+  expectedDepression,
+  type DehuModel,
+} from '@/lib/ops/restoration-dehu-specs'
+
 export type AirRole =
   | 'affected'
   | 'unaffected'
@@ -90,21 +97,24 @@ export type Verdict = {
 /**
  * Is the dehumidifier working?
  *
- * Grain depression is the room air minus the air coming out of the unit —
- * the air going in is the room air, so that is the only intake there is.
- * Published guidance puts a healthy LGR at 30–50 GPP of depression, with
- * conventional units struggling to hold 20.
+ * Judged against **the machine**, not against a number from a magazine. A
+ * Phoenix 200 HT is rated 28.3 GPP of depression at AHAM, and less than that on
+ * drier air, so demanding "30 or more" asked it for something it cannot do —
+ * which is exactly what Charles was seeing.
  *
- * The important subtlety: **low depression on dry air is not a fault.** A dehu
- * fed 35 GPP air cannot pull 30 out of it, and flagging that would send Charles
- * to check a machine that is working perfectly on a job that is nearly finished.
- * So the complaint is only raised while the intake air is still wet.
+ * What remains worth interrupting him for is a unit doing almost nothing on air
+ * that still has water in it: a clogged filter, an iced coil, or a machine that
+ * is not running. Everything between that and its rating is a number to read,
+ * not a verdict to argue with.
  */
-export function dehumidifierVerdict(roomAir: Reading, outlet: Reading): Verdict {
-  const intake = roomAir
+export function dehumidifierVerdict(
+  roomAir: Reading,
+  outlet: Reading,
+  model: DehuModel = DEHU_MODELS[DEFAULT_DEHU_MODEL],
+): Verdict {
   const intakeGpp =
-    intake.tempF != null && intake.rhPct != null
-      ? grainsPerPound(intake.tempF, intake.rhPct)
+    roomAir.tempF != null && roomAir.rhPct != null
+      ? grainsPerPound(roomAir.tempF, roomAir.rhPct)
       : null
   const outletGpp =
     outlet.tempF != null && outlet.rhPct != null
@@ -121,39 +131,40 @@ export function dehumidifierVerdict(roomAir: Reading, outlet: Reading): Verdict 
   }
 
   const depression = Math.round((intakeGpp - outletGpp) * 10) / 10
+  const expected = expectedDepression(model, intakeGpp)
+  const share = expected > 0 ? depression / expected : 1
 
-  if (depression >= 30) {
+  const arithmetic = `Room ${intakeGpp} GPP, out ${outletGpp} GPP. A ${model.name} on air this wet is good for about ${expected}.`
+
+  if (share >= 0.85) {
     return {
       status: 'good',
       headline: `Pulling ${depression} GPP`,
-      detail: `Room ${intakeGpp} GPP, out ${outletGpp} GPP. Working as an LGR should.`,
+      detail: arithmetic,
     }
   }
 
-  if (depression >= 15) {
-    return {
-      status: intakeGpp > 60 ? 'watch' : 'good',
-      headline: `Pulling ${depression} GPP`,
-      detail:
-        intakeGpp > 60
-          ? `The room is still wet at ${intakeGpp} GPP; a healthy LGR should be pulling 30 or more from air this damp.`
-          : `Room ${intakeGpp} GPP, out ${outletGpp} GPP. Reasonable for air this dry.`,
-    }
-  }
-
-  // Low depression on already-dry air is the machine having little left to do.
-  if (intakeGpp <= 40) {
+  if (share >= 0.5) {
     return {
       status: 'good',
-      headline: `Little left to pull (${depression} GPP)`,
-      detail: `The room is already down to ${intakeGpp} GPP. Low depression here means the air is dry, not that the unit is failing.`,
+      headline: `Pulling ${depression} GPP`,
+      detail: `${arithmetic} Below its rating, which is normal as a room dries out.`,
+    }
+  }
+
+  // Little coming out of air that still holds water: worth walking over to.
+  if (intakeGpp >= 50) {
+    return {
+      status: 'problem',
+      headline: `Only ${depression} GPP of depression`,
+      detail: `${arithmetic} That is far short on air this wet — check the filter, the coils, and that it is actually running.`,
     }
   }
 
   return {
-    status: 'problem',
-    headline: `Only ${depression} GPP of depression`,
-    detail: `Intake is ${intakeGpp} GPP and the outlet is ${outletGpp} GPP. On air this wet the unit should be pulling far more — check the filter, the coils, and that it is actually running.`,
+    status: 'good',
+    headline: `Pulling ${depression} GPP`,
+    detail: `${arithmetic} Low depression on air this dry means there is little left to take.`,
   }
 }
 

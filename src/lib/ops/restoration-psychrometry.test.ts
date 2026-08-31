@@ -45,32 +45,39 @@ describe('dewPointF', () => {
 })
 
 describe('dehumidifierVerdict', () => {
-  it('passes a unit pulling like an LGR', () => {
-    // 80/60 in (92 GPP), 90/25 out (~48 GPP): about 44 GPP of depression.
-    const v = dehumidifierVerdict(at(80, 60, 'affected'), at(90, 25, 'dehu_outlet'))
+  it("calls Charles's own reading a working machine", () => {
+    // Room 74/55 = 68.8 GPP, outlet 96/17 = 42.8 GPP: 26 GPP of depression.
+    // The old banner flagged this amber against a magazine's "30 or more".
+    // His Phoenix 200 HT is good for about 21 on air that wet.
+    const v = dehumidifierVerdict(at(74, 55, 'affected'), at(96, 17, 'dehu_outlet'))
     expect(v.status).toBe('good')
-    expect(v.headline).toMatch(/Pulling/)
+    expect(v.detail).toMatch(/Phoenix 200 HT/)
   })
 
-  it('calls out a unit doing nothing on wet air', () => {
+  it('names the machine and what it is good for, so the number can be argued with', () => {
+    const v = dehumidifierVerdict(at(80, 60, 'affected'), at(90, 25, 'dehu_outlet'))
+    expect(v.detail).toMatch(/good for about/)
+  })
+
+  it('calls out a unit doing almost nothing on wet air', () => {
     const v = dehumidifierVerdict(at(80, 60, 'affected'), at(80, 55, 'dehu_outlet'))
     expect(v.status).toBe('problem')
     expect(v.detail).toMatch(/filter|coils|running/i)
   })
 
   it('does NOT complain when the air is already dry', () => {
-    // The trap: a dehu fed 30 GPP air cannot pull 30 out of it. Flagging this
-    // sends Charles to check a machine that is working fine on a job that is
-    // nearly done.
+    // A dehu fed 30 GPP air cannot pull 30 out of it. Flagging this sends
+    // Charles to check a machine that is working fine on a job nearly done.
     const v = dehumidifierVerdict(at(70, 28, 'affected'), at(78, 18, 'dehu_outlet'))
     expect(v.status).toBe('good')
-    expect(v.detail).toMatch(/air is dry|already down/i)
+    // Whatever it says, it must not send him to check a working machine.
+    expect(v.detail).not.toMatch(/filter|coils/i)
   })
 
   it('says so when a reading is missing rather than guessing', () => {
-    expect(dehumidifierVerdict(at(80, 60, 'affected'), at(null, null, 'dehu_outlet')).status).toBe(
-      'unknown',
-    )
+    expect(
+      dehumidifierVerdict(at(80, 60, 'affected'), at(null, null, 'dehu_outlet')).status,
+    ).toBe('unknown')
   })
 })
 

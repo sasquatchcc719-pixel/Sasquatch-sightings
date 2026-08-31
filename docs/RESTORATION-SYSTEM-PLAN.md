@@ -2659,3 +2659,48 @@ it was quietly setting a green target he had never hit.
 Only the wood family keeps a default now. Everything else reads grey and says
 "Set a dry standard — read an unaffected spot of the same material", which is
 both true and how the S500 says to arrive at one.
+
+## Judging the dehumidifier against the machine, not a magazine
+
+Charles: *"I really thought you would be able to find some actual real
+information about LGR dehumidifiers online. For instance the [dehu] that I use is
+a Phoenix 200 HT... there should actually be figures that you can find and then
+we would want to compare that to psychrometry."*
+
+He was right, and the answer was a search away.
+
+**Phoenix 200 HT** — 140 pints/day at AHAM (80°F, 60% RH), 335 CFM of process
+air ([owner's manual TS-302](https://usephoenix.com/wp-content/uploads/sites/3/2020/01/Phoenix-200-HT-Manual-TS-302.pdf),
+[spec sheet](https://usephoenix.com/wp-content/uploads/sites/3/2020/01/Phoenix_200_HT_Spec_Sheet.pdf);
+the sheet quotes 135 pints and lists Xactimate code `WTRDHM>>`, which is the line
+item already in the catalog).
+
+The water it removes has to come out of the air it moves, so those two numbers
+fix the grain depression it can produce:
+
+```
+140 pints/day x 1.0432 lb/pint / 24   = 6.09 lb of water per hour
+6.09 lb x 7000 grains/lb              = 42,600 grains per hour
+335 CFM x 60 min x 0.075 lb/ft3       = 1,508 lb of dry air per hour
+42,600 / 1,508                        = 28.3 GPP
+```
+
+**His machine, at its rated best, produces about 28 GPP — and the banner was
+demanding 30.** Worse, that rating is measured on 92 GPP intake air; his basement
+was at 68.8, where there is proportionally less water to take and about 21 GPP is
+what the unit is good for. His measured 26 GPP was the machine *outperforming*
+what the conditions allowed, and the software called it marginal.
+
+The verdict now compares the measured depression to what **that model** can do on
+**that air**, and says so in the banner — *"Room 68.8 GPP, out 42.8 GPP. A Phoenix
+200 HT on air this wet is good for about 21."* A number with its reasoning
+attached can be argued with; "a healthy LGR should be pulling 30" could not.
+
+One judgment is kept, because it is unambiguous: a unit producing under half of
+what it should on air still holding water is worth walking over to — filter,
+coils, or not running. Everything above that is reported, not argued.
+
+### The lesson
+Every air threshold in this module was mine except one, and that one came from
+equipment marketing copy. The fix was not better guesses, it was **the model
+number of the machine in his truck** — which he had to ask for twice.
