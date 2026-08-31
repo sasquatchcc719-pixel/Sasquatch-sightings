@@ -138,7 +138,7 @@ export async function enqueueReviewRequests(
 
   const { data: completed, error } = await supabase
     .from('ops_appointments')
-    .select('id, customer_id, completed_at')
+    .select('id, customer_id, completed_at, kind, visit_type, restoration_project_id')
     .eq('status', 'completed')
     .gte('completed_at', lookbackIso)
     .order('completed_at', { ascending: true })
@@ -183,6 +183,38 @@ export async function enqueueReviewRequests(
     if (!appt.customer_id) {
       await insertSkip('no customer on appointment')
       continue
+    }
+
+    // A water loss is one job made of several visits. Closing a monitor day
+    // marks that visit completed, and without this the customer got a "thanks
+    // for having us out, mind leaving a review?" text on day two of a flood,
+    // then again on day three. The ask belongs at the end of the loss, so only
+    // the visit that actually closed the project is eligible.
+    if (appt.kind === 'restoration' || appt.restoration_project_id) {
+      const projectId = appt.restoration_project_id as string | null
+      const { data: project } = projectId
+        ? await supabase
+            .from('restoration_projects')
+            .select('closed_at, invoice_id')
+            .eq('id', projectId)
+            .maybeSingle()
+        : { data: null }
+
+      if (!project?.closed_at || !project.invoice_id) {
+        await insertSkip('restoration visit, water loss still open')
+        continue
+      }
+
+      const { data: invoice } = await supabase
+        .from('ops_invoices')
+        .select('appointment_id')
+        .eq('id', project.invoice_id)
+        .maybeSingle()
+
+      if (invoice?.appointment_id !== appt.id) {
+        await insertSkip('restoration visit, not the one that closed the loss')
+        continue
+      }
     }
 
     const { data: customer } = await supabase

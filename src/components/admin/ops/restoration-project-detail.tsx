@@ -292,6 +292,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
   const [openingKind, setOpeningKind] = useState<'doorway' | 'window'>('doorway')
   const [openingWidth, setOpeningWidth] = useState(3)
   const [selectedOpeningId, setSelectedOpeningId] = useState<string | null>(null)
+  const [placeCount, setPlaceCount] = useState('1')
   const [planData, setPlanData] = useState<{
     nodes: PlanNode[]
     walls: PlanWall[]
@@ -1887,41 +1888,16 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 </div>
               </details>
 
-              <div className="mt-2 flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={busy === 'place-plan'}
-                  onClick={async () => {
-                    await call(
-                      `/api/admin/ops/restoration/projects/${projectId}/equipment`,
-                      {
-                        method: 'POST',
-                        body: JSON.stringify({
-                          catalog_code: 'DRY',
-                          count: dryingPlan.airMovers,
-                        }),
-                      },
-                      'place-plan',
-                    )
-                    if (dryingPlan.suggestedDehu) {
-                      await call(
-                        `/api/admin/ops/restoration/projects/${projectId}/equipment`,
-                        {
-                          method: 'POST',
-                          body: JSON.stringify({
-                            catalog_code: dryingPlan.suggestedDehu,
-                            count: dryingPlan.dehuCount,
-                          }),
-                        },
-                        'place-plan',
-                      )
-                    }
-                  }}
-                >
-                  Place this equipment
-                </Button>
-              </div>
+              {/*
+                This card suggests; it does not act. It used to carry a "Place
+                this equipment" button, which turned a calculation into eleven
+                billing records in one tap — with nothing on screen to say where
+                the number came from. The standard can recommend a count. Only
+                Charles puts equipment on the job.
+              */}
+              <p className="text-muted-foreground mt-2 text-xs">
+                A suggestion, not a placement — set what the job actually needs.
+              </p>
             </div>
           ) : null}
         </Card>
@@ -2196,20 +2172,38 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             </span>
           </div>
 
-          <div className="mb-3 flex flex-wrap gap-2">
+          {/*
+            How many, then add. Setting ten fans is one action rather than ten
+            taps on a phone in a wet basement — but it is still Charles's number
+            and Charles's tap, which is the part that matters.
+          */}
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <Input
+              className="h-8 w-16 text-right"
+              type="number"
+              min={1}
+              max={60}
+              step={1}
+              aria-label="How many to place"
+              value={placeCount}
+              onChange={(e) => setPlaceCount(e.target.value)}
+            />
             {EQUIPMENT_CODES.map((equipment) => (
               <Button
                 key={equipment.code}
                 size="sm"
                 variant="outline"
                 className="gap-1 border-sky-500/40 text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-950/40"
-                disabled={busy === `place-${equipment.code}`}
+                disabled={busy === `place-${equipment.code}` || !(Number(placeCount) > 0)}
                 onClick={() =>
                   void call(
                     `/api/admin/ops/restoration/projects/${projectId}/equipment`,
                     {
                       method: 'POST',
-                      body: JSON.stringify({ catalog_code: equipment.code, count: 1 }),
+                      body: JSON.stringify({
+                        catalog_code: equipment.code,
+                        count: Math.max(1, Math.floor(Number(placeCount) || 1)),
+                      }),
                     },
                     `place-${equipment.code}`,
                   )

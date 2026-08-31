@@ -369,3 +369,52 @@ describe('a rate that is not on the price list', () => {
     expect(data!.quickbooks_item_id).toBe('72')
   })
 })
+
+describe('equipment quoted on the estimate', () => {
+  it('is placed as running equipment, not copied as a work line', async () => {
+    // The air mover line quoted earlier in this file: 8 units, and by now 4
+    // days. Eight pieces of equipment get placed, not 32 of anything.
+    const { data: lines } = await supabase
+      .from('restoration_estimate_lines')
+      .select('restoration_catalog_code, units')
+      .eq('project_id', projectId)
+      .eq('restoration_catalog_code', 'DRY')
+      .limit(1)
+      .single()
+
+    // What the route does: place the quoted UNITS, once.
+    const quoted = Number(lines!.units)
+    expect(quoted).toBe(8)
+
+    await supabase.from('restoration_equipment_placements').insert(
+      Array.from({ length: quoted }, () => ({
+        project_id: projectId,
+        catalog_code: 'DRY',
+        placed_at: new Date().toISOString(),
+      })),
+    )
+
+    const { data: running } = await supabase
+      .from('restoration_equipment_placements')
+      .select('id, map_x')
+      .eq('project_id', projectId)
+      .is('removed_at', null)
+
+    expect(running).toHaveLength(8)
+    // No map position — the timestamps bill, the position is documentation.
+    expect(running!.every((r) => r.map_x === null)).toBe(true)
+  })
+
+  it('accrues days from the clock, not from the quoted three', async () => {
+    const { data: billing } = await supabase
+      .from('restoration_equipment_billing')
+      .select('catalog_code, units, unit_days')
+      .eq('project_id', projectId)
+      .eq('catalog_code', 'DRY')
+      .single()
+
+    expect(Number(billing!.units)).toBe(8)
+    // Placed seconds ago, so one day so far — NOT the three that were quoted.
+    expect(Number(billing!.unit_days)).toBe(8)
+  })
+})

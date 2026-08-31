@@ -126,7 +126,9 @@ export async function PUT(
 
     const { data: lines } = await supabase
       .from('restoration_estimate_lines')
-      .select('restoration_catalog_code, name_snapshot, quantity, unit_price, line_total, unit')
+      .select(
+        'restoration_catalog_code, name_snapshot, quantity, units, unit_price, line_total, unit',
+      )
       .eq('project_id', id)
       .order('sort_order')
 
@@ -134,20 +136,14 @@ export async function PUT(
       return NextResponse.json({ error: 'estimate_is_empty' }, { status: 400 })
     }
 
-    // Equipment does NOT come across. On the work side it is billed from what
-    // is actually placed on the map and when it came out, so copying the
-    // quoted days here would bill the same fans twice — once as a guess and
-    // once as the real thing. The quote says three days; the invoice says what
-    // it ran.
+    // Equipment never becomes a work line — on the work side it is billed from
+    // what is actually running and for how long, so a quoted "3 days" copied
+    // here would bill the same fans twice, once as a guess and once as the real
+    // thing. Instead the quoted units are PLACED: eight air movers quoted
+    // become eight air movers running, clock started now, no map position yet.
+    // The quote said three days; the invoice will say what they ran.
     const work = lines.filter((line) => !isDailyBilled(line.name_snapshot, line.unit))
-    const equipmentSkipped = lines.length - work.length
-
-    if (work.length === 0) {
-      return NextResponse.json(
-        { copied: 0, equipment_skipped: equipmentSkipped },
-        { status: 200 },
-      )
-    }
+    const equipment = lines.filter((line) => isDailyBilled(line.name_snapshot, line.unit))
 
     const targetVisitId = body.appointment_id ? String(body.appointment_id) : null
     const { data: visit } = targetVisitId
@@ -164,6 +160,49 @@ export async function PUT(
           .maybeSingle()
 
     if (!visit) return NextResponse.json({ error: 'visit_not_found' }, { status: 404 })
+
+    // Placing what was quoted, once. A second press must not double the fans,
+    // so anything already running for this project is left alone.
+    const { data: alreadyRunning } = await supabase
+      .from('restoration_equipment_placements')
+      .select('catalog_code')
+      .eq('project_id', id)
+      .is('removed_at', null)
+    const runningByCode = new Map<string, number>()
+    for (const row of alreadyRunning ?? []) {
+      const code = String(row.catalog_code)
+      runningByCode.set(code, (runningByCode.get(code) ?? 0) + 1)
+    }
+
+    const placedAt = new Date().toISOString()
+    let equipmentPlaced = 0
+    for (const line of equipment) {
+      const code = line.restoration_catalog_code
+      if (!code) continue
+      // Units quoted, not the unit-days: eight fans for three days is eight.
+      const quoted = Math.round(Number(line.units ?? line.quantity ?? 0))
+      const shortfall = quoted - (runningByCode.get(code) ?? 0)
+      if (shortfall <= 0) continue
+
+      const { error: placeError } = await supabase
+        .from('restoration_equipment_placements')
+        .insert(
+          Array.from({ length: Math.min(60, shortfall) }, () => ({
+            project_id: id,
+            catalog_code: code,
+            placed_at: placedAt,
+          })),
+        )
+      if (placeError) throw placeError
+      equipmentPlaced += Math.min(60, shortfall)
+    }
+
+    if (work.length === 0) {
+      return NextResponse.json(
+        { copied: 0, equipment_placed: equipmentPlaced },
+        { status: 200 },
+      )
+    }
 
     const { data: inserted, error } = await supabase
       .from('ops_appointment_line_items')
@@ -191,7 +230,7 @@ export async function PUT(
 
     return NextResponse.json({
       copied: inserted?.length ?? 0,
-      equipment_skipped: equipmentSkipped,
+      equipment_placed: equipmentPlaced,
       appointment_id: visit.id,
     })
   } catch (e) {

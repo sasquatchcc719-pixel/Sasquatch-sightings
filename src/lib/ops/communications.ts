@@ -12,6 +12,12 @@ export const OPS_TEMPLATE_KEYS = [
   'job_rescheduled_email',
   'day_before_residential_sms',
   'day_before_recovery_village_sms',
+  'day_before_restoration_sms',
+  'day_before_restoration_monitor_sms',
+  'on_my_way_restoration_sms',
+  'job_finished_restoration_sms',
+  'job_finished_restoration_monitor_sms',
+  'job_rescheduled_restoration_sms',
   'job_scheduled_email',
   'job_finished_email',
   'job_finished_email_urine',
@@ -132,10 +138,10 @@ const CUSTOMER_HIDDEN_LINE_ITEMS = new Set([
  * phone call. Restoration gets its own wording, and no dollar figure.
  */
 export function dayBeforeTemplateKey(
-  visit: { kind: string | null; visitType: string | null },
+  visit: LifecycleVisit,
   businessName: string | null,
 ): string {
-  if (visit.kind === 'restoration' || visit.visitType) {
+  if (isRestorationVisit(visit)) {
     return visit.visitType === 'monitor'
       ? 'day_before_restoration_monitor_sms'
       : 'day_before_restoration_sms'
@@ -271,10 +277,45 @@ export function hasUrineTreatmentLineItem(
   )
 }
 
+export type LifecycleVisit = { kind: string | null; visitType: string | null }
+
+export function isRestorationVisit(visit?: LifecycleVisit | null): boolean {
+  if (!visit) return false
+  return visit.kind === 'restoration' || Boolean(visit.visitType)
+}
+
+/**
+ * Which messages an event sends.
+ *
+ * The cleaning wording is wrong on a water loss in specific, expensive ways.
+ * On-my-way links a carpet cleaning explainer video. Job-finished says "hope
+ * you love the clean" and asks for a Google review — on a monitor day, three
+ * days into a flood, with the job not done. Rescheduled quotes an estimated
+ * total of $0.00, because a restoration visit never invoices on its own.
+ *
+ * Restoration therefore gets its own texts, and none of the cleaning emails:
+ * the care tips are about carpet dry times, and the review ask belongs at the
+ * end of the whole loss rather than after every visit.
+ */
 export function getOpsTemplateKeysForEvent(
   event: OpsLifecycleEvent,
   lineItems?: Array<{ name_snapshot: string | null }> | null,
+  visit?: LifecycleVisit | null,
 ): OpsTemplateKey[] {
+  if (isRestorationVisit(visit)) {
+    if (event === 'on_my_way') return ['on_my_way_restoration_sms']
+    if (event === 'job_rescheduled') return ['job_rescheduled_restoration_sms']
+    if (event === 'job_finished') {
+      return visit?.visitType === 'monitor'
+        ? ['job_finished_restoration_monitor_sms']
+        : ['job_finished_restoration_sms']
+    }
+    // Nothing on scheduling. Charles places monitor visits around other work
+    // and asked to keep start-of-job messaging for later; the day-before text
+    // covers the customer either way.
+    return []
+  }
+
   if (event === 'job_scheduled') {
     return ['job_scheduled_sms', 'job_scheduled_email']
   }
@@ -297,8 +338,10 @@ async function getTemplatesForEvent(
   supabase: ReturnType<typeof createAdminClient>,
   event: OpsLifecycleEvent,
   lineItems?: Array<{ name_snapshot: string | null }> | null,
+  visit?: LifecycleVisit | null,
 ): Promise<OpsTemplateRow[]> {
-  const keys = getOpsTemplateKeysForEvent(event, lineItems)
+  const keys = getOpsTemplateKeysForEvent(event, lineItems, visit)
+  if (keys.length === 0) return []
 
   // The urine variant REPLACES job_finished_email in the key list, so if that
   // template is disabled the customer would get no completion email at all.
@@ -762,6 +805,10 @@ export async function sendOpsLifecycleCommunications(params: {
     params.event === 'job_finished'
       ? await loadUrineDetectionItems(supabase, appointment)
       : appointment.ops_appointment_line_items,
+    {
+      kind: (appointment as { kind?: string | null }).kind ?? null,
+      visitType: (appointment as { visit_type?: string | null }).visit_type ?? null,
+    },
   )
   if (templates.length === 0) return { sent: [] }
 

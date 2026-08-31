@@ -1764,3 +1764,68 @@ wording.
 `on_my_way`, `job_finished` and `job_rescheduled` fire for restoration visits
 too, and have not been reviewed for wording. The skip is opt-in per request and
 nothing sets it for restoration.
+
+## The rest of the lifecycle texts, and a review ask mid-flood
+
+The day-before text was not the only cleaning message reaching water-loss
+customers. Reading the rest of them:
+
+- **on_my_way** linked a carpet cleaning explainer video (`youtu.be/...`) on the
+  way to a flood.
+- **job_finished** said *"hope you love the clean"* and asked for a Google
+  review — and because closing a monitor day marks that visit completed, it
+  fired **after every monitor visit**, three times during one loss, with the job
+  not done.
+- **job_rescheduled** quoted *"Estimated total: $0.00"* with an empty services
+  list, for the same reason as the day-before text.
+- **job_finished_email** sent carpet dry-time care tips to someone whose
+  basement is full of air movers.
+
+Restoration now has its own four texts and none of the cleaning emails. The
+routing lives in `getOpsTemplateKeysForEvent`, which takes the visit and is
+covered by tests asserting a monitor day never reaches
+`satisfaction_checkin_email`.
+
+Scheduling a restoration visit sends nothing. Charles fits monitor visits around
+other work and asked to keep start-of-job messaging for later; the day-before
+text covers the customer either way.
+
+### The review ask was worse than the text
+
+`enqueueReviewRequests` selects every completed appointment with no filter on
+kind, so each monitor day queued *"Thanks for having us out! If you have a
+minute for a Google review..."* — mid-flood, before the job was done. Given how
+fragile the Google profile already is, asking three times during one unfinished
+job is a real risk, not a cosmetic one.
+
+A water loss is now eligible for exactly one ask: the visit that actually closed
+the project and carries its invoice. Every other restoration visit records a
+skip with the reason, so it is visible rather than silent.
+
+## The drying plan suggests; it does not act
+
+Charles: *"we should not have a button that places the equipment but merely we
+should just have a little card that gives a suggestion."*
+
+He is right, and the principle is worth stating plainly: **the software may
+compute a number, but only Charles creates a billing record.** "Place this
+equipment" turned an S500 calculation into eleven accruing placements in one tap,
+with nothing on screen saying where the eleven came from. Better labelling would
+not have fixed that — the fault was a calculation with a side effect on the
+invoice.
+
+The card keeps the arithmetic and the citation and loses the button. The
+`+ Air mover` buttons gained a count box, so placing ten is one action rather
+than ten taps on a phone in a wet basement — still his number, still his tap.
+
+### Why the estimate may still place equipment
+
+Same shape, different provenance. The S500 count is the *software's* number. The
+estimate's eight fans is *Charles's* number — spoken aloud, on a document the
+customer may already have. Placing what he himself quoted is not a surprise.
+
+So "Start the work from this estimate" now places the quoted units rather than
+discarding them: eight air movers quoted become eight running, clock started, no
+map position. Pressing it twice does not double them — anything already running
+for that project counts against the quoted number. Days still come from the
+clock, never from the quoted three.
