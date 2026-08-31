@@ -10,7 +10,6 @@ import {
   Ruler,
   MapPin,
   CalendarDays,
-  Thermometer,
   DollarSign,
   Mail,
   Truck,
@@ -2731,7 +2730,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
       {/* ── Reading points (placed on day 1, tapped on every visit) ── */}
       {!closed ? (
         <Card className={SECTION_CARD}>
-          <h2 className={`${SECTION_TITLE} mb-1`}><Droplets className={SECTION_ICON} /> Moisture readings</h2>
+          <h2 className={`${SECTION_TITLE} mb-1`}><Droplets className={SECTION_ICON} /> Material moisture readings</h2>
           <p className="text-muted-foreground mb-3 text-sm">
             Points are placed once and re-read on every monitor visit, so you can see a
             spot trending down — or stalling.
@@ -2967,72 +2966,6 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
               </Button>
             </div>
           </div>
-        </Card>
-      ) : null}
-
-      {/* ── Air + dehumidifier readings ────────────────────── */}
-      {!closed && !isMitigation ? (
-        <Card className={SECTION_CARD}>
-          <h2 className={`${SECTION_TITLE} mb-1`}><Thermometer className={SECTION_ICON} /> Air readings</h2>
-          <p className="text-muted-foreground mb-3 text-sm">
-            The unaffected reference is what proves the affected area is drying rather
-            than the whole house being humid today.
-          </p>
-          <div className="flex flex-col gap-2">
-            {(['affected', 'reference', 'exterior'] as const).map((location) => (
-              <AirReadingRow
-                key={location}
-                location={location}
-                busy={busy === `air-${location}`}
-                onSubmit={(tempF, rhPct) =>
-                  void call(
-                    `/api/admin/ops/restoration/projects/${projectId}/readings`,
-                    {
-                      method: 'POST',
-                      body: JSON.stringify({
-                        kind: 'air',
-                        location,
-                        appointment_id: activeVisitId,
-                        temp_f: tempF,
-                        rh_pct: rhPct,
-                      }),
-                    },
-                    `air-${location}`,
-                  )
-                }
-              />
-            ))}
-          </div>
-
-          {runningEquipment.filter((e) => e.catalog_code.startsWith('DHM')).length > 0 ? (
-            <div className="border-border/60 mt-4 border-t pt-4">
-              <Label className="mb-2 block text-sm">Dehumidifier</Label>
-              {runningEquipment
-                .filter((e) => e.catalog_code.startsWith('DHM'))
-                .map((dehu) => (
-                  <DehuReadingRow
-                    key={dehu.id}
-                    code={dehu.catalog_code}
-                    busy={busy === `dehu-${dehu.id}`}
-                    onSubmit={(values) =>
-                      void call(
-                        `/api/admin/ops/restoration/projects/${projectId}/readings`,
-                        {
-                          method: 'POST',
-                          body: JSON.stringify({
-                            kind: 'dehu',
-                            equipment_placement_id: dehu.id,
-                            appointment_id: activeVisitId,
-                            ...values,
-                          }),
-                        },
-                        `dehu-${dehu.id}`,
-                      )
-                    }
-                  />
-                ))}
-            </div>
-          ) : null}
         </Card>
       ) : null}
 
@@ -3562,121 +3495,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
   )
 }
 
-/** One ambient reading: temperature and relative humidity at a location. */
-function AirReadingRow({
-  location,
-  busy,
-  onSubmit,
-}: {
-  location: 'affected' | 'reference' | 'exterior'
-  busy: boolean
-  onSubmit: (tempF: number | null, rhPct: number | null) => void
-}) {
-  const [tempF, setTempF] = useState('')
-  const [rhPct, setRhPct] = useState('')
 
-  const labels: Record<typeof location, string> = {
-    affected: 'Affected area',
-    reference: 'Unaffected reference',
-    exterior: 'Outside',
-  }
-
-  return (
-    <div className="flex items-center gap-2">
-      <span className="min-w-0 flex-1 text-sm">{labels[location]}</span>
-      <Input
-        className="h-9 w-20 text-right"
-        type="number"
-        step="any"
-        placeholder="°F"
-        aria-label={`${labels[location]} temperature`}
-        value={tempF}
-        onChange={(e) => setTempF(e.target.value)}
-      />
-      <Input
-        className="h-9 w-20 text-right"
-        type="number"
-        step="any"
-        placeholder="RH%"
-        aria-label={`${labels[location]} relative humidity`}
-        value={rhPct}
-        onChange={(e) => setRhPct(e.target.value)}
-      />
-      <Button
-        size="sm"
-        variant="secondary"
-        disabled={busy || (tempF === '' && rhPct === '')}
-        onClick={() => {
-          onSubmit(tempF === '' ? null : Number(tempF), rhPct === '' ? null : Number(rhPct))
-          setTempF('')
-          setRhPct('')
-        }}
-      >
-        Save
-      </Button>
-    </div>
-  )
-}
-
-/** Inlet and outlet at a running dehumidifier — the pair that shows it working. */
-function DehuReadingRow({
-  code,
-  busy,
-  onSubmit,
-}: {
-  code: string
-  busy: boolean
-  onSubmit: (values: {
-    inlet_temp_f: number | null
-    inlet_rh_pct: number | null
-    outlet_temp_f: number | null
-    outlet_rh_pct: number | null
-  }) => void
-}) {
-  const [values, setValues] = useState({ it: '', ir: '', ot: '', or: '' })
-  const num = (v: string) => (v === '' ? null : Number(v))
-
-  return (
-    <div className="mb-2 flex flex-wrap items-center gap-2">
-      <code className="text-xs">{code}</code>
-      {(
-        [
-          ['it', 'in °F'],
-          ['ir', 'in RH'],
-          ['ot', 'out °F'],
-          ['or', 'out RH'],
-        ] as const
-      ).map(([key, placeholder]) => (
-        <Input
-          key={key}
-          className="h-9 w-20 text-right"
-          type="number"
-          step="any"
-          placeholder={placeholder}
-          aria-label={`${code} ${placeholder}`}
-          value={values[key]}
-          onChange={(e) => setValues((c) => ({ ...c, [key]: e.target.value }))}
-        />
-      ))}
-      <Button
-        size="sm"
-        variant="secondary"
-        disabled={busy || Object.values(values).every((v) => v === '')}
-        onClick={() => {
-          onSubmit({
-            inlet_temp_f: num(values.it),
-            inlet_rh_pct: num(values.ir),
-            outlet_temp_f: num(values.ot),
-            outlet_rh_pct: num(values.or),
-          })
-          setValues({ it: '', ir: '', ot: '', or: '' })
-        }}
-      >
-        Save
-      </Button>
-    </div>
-  )
-}
 
 /**
  * Editing a moisture point where it actually is, on the plan.

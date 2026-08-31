@@ -2970,3 +2970,31 @@ last 48 hours — so an unrelated test failed once for reasons that had nothing 
 do with it. Its appointment now completes 45 days back, outside that window.
 Leaving it would have meant a suite that fails occasionally and teaches everyone
 to re-run rather than read.
+
+## The duplicate air card was real, and it was broken
+
+Charles: *"you left this duplicate air reading card."*
+
+Not a stale build — I was wrong about that. It was the **original** air readings
+card, written before `AirReadingsCard` existed, sitting further down the screen
+behind `!isMitigation` so it only appeared on monitor days. I had been editing
+the new one and never noticed the old one was still mounted.
+
+Worse than duplicated: **broken**. It posted the old shape —
+`location: 'affected' | 'reference' | 'exterior'` with no `role` — which the
+readings route now rejects outright. Anything typed into it failed. It also
+carried its own dehumidifier intake/outlet rows, the reading Charles had already
+told me was unnecessary because the intake is the room.
+
+Deleted, along with its two helper components and the `kind: 'dehu'` branch of
+the readings route, whose only caller it was. `restoration_dehu_readings` holds
+zero rows, so nothing was orphaned.
+
+The moisture card is now **Material moisture readings**, which distinguishes it
+from the air card at a glance — the two were both called "readings" on a screen
+that has both.
+
+### Why I missed it
+I searched for `AirReadingsCard` and found one usage, and stopped. The duplicate
+did not share a name, a component, or a data shape with the thing I was looking
+for. Searching for what I had built told me nothing about what was already there.

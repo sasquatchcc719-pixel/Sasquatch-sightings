@@ -63,25 +63,6 @@ export async function POST(
       return NextResponse.json({ reading: data })
     }
 
-    if (kind === 'dehu') {
-      const { data, error } = await supabase
-        .from('restoration_dehu_readings')
-        .insert({
-          equipment_placement_id: String(body.equipment_placement_id),
-          appointment_id: appointmentId,
-          inlet_temp_f: body.inlet_temp_f ?? null,
-          inlet_rh_pct: body.inlet_rh_pct ?? null,
-          outlet_temp_f: body.outlet_temp_f ?? null,
-          outlet_rh_pct: body.outlet_rh_pct ?? null,
-          taken_at: takenAt,
-          note: body.note ?? null,
-        })
-        .select('id, equipment_placement_id, taken_at')
-        .single()
-      if (error) throw error
-      return NextResponse.json({ reading: data })
-    }
-
     if (kind === 'air') {
       // The role is what makes the reading usable: outlet air from a dehu and
       // ambient air in the same room are the same two numbers, and only the
@@ -126,7 +107,7 @@ export async function POST(
       return NextResponse.json({ reading: data })
     }
 
-    return NextResponse.json({ error: 'kind must be material, dehu, or air' }, { status: 400 })
+    return NextResponse.json({ error: 'kind must be material or air' }, { status: 400 })
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Failed to record reading'
     return NextResponse.json({ error: message }, { status: message === 'Not authorized' ? 403 : 500 })
