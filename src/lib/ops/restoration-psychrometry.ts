@@ -148,20 +148,23 @@ export function dehumidifierVerdict(
   const depression = Math.round((intakeGpp - outletGpp) * 10) / 10
   const rated = ratedDepression(model)
 
-  // The one unambiguous case: the air is coming out no drier than it went in.
-  // No performance curve is needed to know that is not dehumidification.
+  // Not even the zero case is red. Charles: "any grain depression is good, it
+  // doesn't have to be a lot if there's not a lot there to begin with." And a
+  // reading of zero is not necessarily a fault either — an LGR in its defrost
+  // cycle blows air that is briefly not dry, so a red flag here would be one
+  // more false alarm on a machine doing its job.
   if (depression <= 0) {
     return {
-      status: 'problem',
-      headline: 'Nothing coming out of the air',
-      detail: `Room ${intakeGpp} GPP, out ${outletGpp} GPP — the outlet is not drier than the room.`,
+      status: 'unknown',
+      headline: 'No depression in this reading',
+      detail: `Room ${intakeGpp} GPP, out ${outletGpp} GPP. If the unit was in a defrost cycle, take it again in a few minutes.`,
     }
   }
 
   return {
     status: 'good',
     headline: `Pulling ${depression} GPP`,
-    detail: `Room ${intakeGpp} GPP, out ${outletGpp} GPP. A ${model.name} is rated ${Math.round(rated)} GPP at 80°F and 60% — it pulls less as the room dries out.`,
+    detail: `Room ${intakeGpp} GPP, out ${outletGpp} GPP. A ${model.name} is rated ${Math.round(rated)} GPP at 80°F and 60%, and pulls less as the room dries out.`,
   }
 }
 

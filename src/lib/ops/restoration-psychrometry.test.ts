@@ -61,17 +61,26 @@ describe('dehumidifierVerdict', () => {
     expect(v.detail).not.toMatch(/should be/i)
   })
 
-  it('flags only the case that needs no performance curve', () => {
-    // Outlet no drier than intake: nothing is being removed, whatever the
-    // conditions are.
-    const v = dehumidifierVerdict(at(74, 44, 'affected'), at(74, 44, 'dehu_outlet'))
-    expect(v.status).toBe('problem')
-    expect(v.headline).toMatch(/Nothing coming out of the air/)
+  it('raises no alarm anywhere, including at zero depression', () => {
+    // "Any grain depression is good. It doesn't have to be a lot if there's not
+    // a lot there to begin with." And zero is not proof of a fault either: an
+    // LGR in defrost briefly blows air that is not dry.
+    for (const [t, h] of [[74, 44], [74, 50], [92, 24], [78, 30]] as const) {
+      const v = dehumidifierVerdict(at(74, 44, 'affected'), at(t, h, 'dehu_outlet'))
+      expect(v.status).not.toBe('problem')
+    }
   })
 
-  it('treats a wetter outlet the same way', () => {
+  it('suggests re-reading rather than declaring a fault at zero', () => {
     const v = dehumidifierVerdict(at(74, 44, 'affected'), at(74, 50, 'dehu_outlet'))
-    expect(v.status).toBe('problem')
+    expect(v.detail).toMatch(/defrost/i)
+    expect(v.detail).not.toMatch(/filter|coils|not working/i)
+  })
+
+  it('calls any positive depression good, however small', () => {
+    const v = dehumidifierVerdict(at(74, 44, 'affected'), at(92, 24, 'dehu_outlet'))
+    expect(v.status).toBe('good')
+    expect(v.headline).toBe('Pulling 1.3 GPP')
   })
 
   it('says so when a reading is missing rather than guessing', () => {

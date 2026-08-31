@@ -2789,8 +2789,19 @@ came from, and the machine's rating as a fact rather than a target:
 > **Pulling 1.3 GPP** — Room 54.9 GPP, out 53.6 GPP. A Phoenix 200 HT is rated
 > 28 GPP at 80°F and 60% — it pulls less as the room dries out.
 
-One flag survives, because it needs no curve: **air coming out no drier than it
-went in**. Whatever the conditions, that is not dehumidification.
+And then Charles removed the last one too: *"any grain depression is good. It
+doesn't have to be a lot if there's not a lot there to begin with, so the red
+flag with all the warnings and shit is stupid."*
+
+Right again, and there is a specific reason beyond the principle: **an LGR in its
+defrost cycle briefly blows air that is not dry.** A red flag on zero depression
+would have been one more false alarm on a working machine — the fourth version of
+the same mistake.
+
+Zero now reads as a reading to repeat, not a fault to chase: *"No depression in
+this reading. Room 54.9 GPP, out 62.5 GPP. If the unit was in a defrost cycle,
+take it again in a few minutes."* Nothing about this dehumidifier is ever
+coloured red.
 
 ### The rule this leaves behind
 Where the tool has real data — psychrometrics, nameplate ratings, elapsed
