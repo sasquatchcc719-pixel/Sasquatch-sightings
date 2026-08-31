@@ -1445,3 +1445,31 @@ So starting a water loss should eventually send the customer something — presu
 confirmation that the job is opened and when the crew is coming. **Deliberately not built
 yet.** When it is, it needs its own template rather than reusing the carpet cleaning
 booking confirmation, since the situation and the tone are different.
+
+
+---
+
+## Doors and windows: place, move, resize, delete
+
+Charles: doors could only be placed, sometimes landed in the wrong spot, and could not be
+moved or deleted. There was no window tool at all.
+
+- **Door / Window** toggle. Windows draw thinner and cyan, doors thicker and amber, so a
+  plan reads at a glance. The schema already carried `window`, `opening` and `stairs` — only
+  the UI was missing.
+- **Single (3′) / Double (6′)** presets plus a free width field, so a double door is one
+  tap rather than two doors side by side.
+- **Placement centres on the tap** instead of starting there, so an opening lands where it
+  looked like it would. That alone fixes most of the "wrong spot" cases.
+- **Drag to move** — along its own wall, or onto a different wall entirely. It snaps to
+  whichever wall is nearest within 3 ft while dragging.
+- **Tap to select, then Delete selected.** Previously a tap deleted immediately, which is
+  unforgiving when the tap was meant to pick it up.
+
+`PATCH /openings/[id]` now accepts `wall_id` so an opening can change walls, not just
+slide along the one it was born on.
+
+### Still worth confirming with Charles
+Whether "shows up in the wrong area" meant the wrong **wall** or the right wall at the
+wrong **spot**. Centring on the tap and drag-to-move address the second; if it is
+picking the wrong wall, the `wallNear` tolerance needs tightening.

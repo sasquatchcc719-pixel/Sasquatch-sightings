@@ -62,7 +62,13 @@ type Props = {
   onMoveNode?: (nodeId: string, x: number, y: number) => void
   /** Drag a whole room: every corner of the loop moves together. */
   onMoveRoom?: (moves: Array<{ id: string; x: number; y: number }>) => void
+  /** What the Door tool places, and how wide. */
+  openingKind?: WallOpening['kind']
+  openingWidthFt?: number
+  selectedOpeningId?: string | null
   onPlaceDoor?: (wallId: string, offsetFt: number) => void
+  onMoveOpening?: (openingId: string, wallId: string, offsetFt: number) => void
+  onSelectOpening?: (openingId: string | null) => void
   onDeleteWall?: (wallId: string) => void
   onDeleteOpening?: (openingId: string) => void
   onDropPin?: (position: { xFt: number; yFt: number }) => void
@@ -84,7 +90,12 @@ export function WallPlan({
   onSetWallLength,
   onMoveNode,
   onMoveRoom,
+  openingKind = 'doorway',
+  openingWidthFt = 3,
+  selectedOpeningId,
   onPlaceDoor,
+  onMoveOpening,
+  onSelectOpening,
   onDeleteWall,
   onDeleteOpening,
   onDropPin,
@@ -99,6 +110,12 @@ export function WallPlan({
   // label sitting mid-room would otherwise block the exact spot you want to
   // start a wall from — which is usually the middle of a room.
   const labelsInteractive = tool === 'resize' || tool === 'corner'
+
+  const [openingDrag, setOpeningDrag] = useState<{
+    id: string
+    wallId: string
+    offsetFt: number
+  } | null>(null)
 
   const [roomDrag, setRoomDrag] = useState<{
     ids: string[]
@@ -249,7 +266,17 @@ export function WallPlan({
 
         if (tool === 'door' && onPlaceDoor) {
           const hit = wallNear(resolved, xFt, yFt)
-          if (hit) onPlaceDoor(hit.wall.id, hit.offsetFt)
+          if (hit) {
+            // Centre the opening on the tap rather than starting it there, so
+            // it lands where it looked like it would.
+            const centred = Math.max(
+              0,
+              Math.min(hit.wall.lengthFt - openingWidthFt, hit.offsetFt - openingWidthFt / 2),
+            )
+            onPlaceDoor(hit.wall.id, centred)
+          } else {
+            onSelectOpening?.(null)
+          }
           return
         }
         if (tool === 'pin' && armedPin && onDropPin) {
@@ -399,31 +426,73 @@ export function WallPlan({
       {/* Doors, always on their wall. */}
       {scale > 0
         ? openings.map((opening) => {
-            const wall = resolved.find((w) => w.id === opening.wallId)
+            const live =
+              openingDrag?.id === opening.id
+                ? { ...opening, wallId: openingDrag.wallId, offsetFt: openingDrag.offsetFt }
+                : opening
+            const wall = resolved.find((w) => w.id === live.wallId)
             if (!wall) return null
-            const pos = openingPosition(wall, opening)
+            const pos = openingPosition(wall, live)
             if (!pos) return null
             const screen = toScreen(pos.x, pos.y)
+            const isWindow = opening.kind === 'window'
+            const selected = selectedOpeningId === opening.id
             return (
               <button
                 key={opening.id}
                 type="button"
-                title={`${opening.kind} · ${opening.widthFt}′ — tap to remove`}
+                title={`${opening.kind} · ${opening.widthFt}′ — drag to move, tap to select`}
                 aria-label={`${opening.kind} on wall`}
-                className={`absolute h-2 rounded-sm bg-amber-500 ${
-                  tool === 'door' ? 'hover:bg-red-500' : 'pointer-events-none'
-                }`}
+                className={`absolute rounded-sm ${
+                  isWindow ? 'h-1.5 bg-cyan-400' : 'h-2.5 bg-amber-500'
+                } ${
+                  selected ? 'ring-2 ring-slate-900 dark:ring-white' : ''
+                } ${tool === 'door' ? 'cursor-grab active:cursor-grabbing' : 'pointer-events-none'}`}
                 style={{
                   left: screen.left,
                   top: screen.top,
-                  width: opening.widthFt * scale,
+                  width: Math.max(6, opening.widthFt * scale),
                   transform: `translateY(-50%) rotate(${pos.angleDeg}deg)`,
                   transformOrigin: '0 50%',
                 }}
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => {
+                onPointerDown={(event) => {
+                  if (tool !== 'door') return
                   event.stopPropagation()
-                  onDeleteOpening?.(opening.id)
+                  event.currentTarget.setPointerCapture(event.pointerId)
+                  setOpeningDrag({
+                    id: opening.id,
+                    wallId: opening.wallId,
+                    offsetFt: opening.offsetFt,
+                  })
+                }}
+                onPointerMove={(event) => {
+                  if (openingDrag?.id !== opening.id) return
+                  const rect = event.currentTarget.parentElement?.getBoundingClientRect()
+                  if (!rect) return
+                  const { xFt, yFt } = toPlan(event.clientX, event.clientY, rect)
+                  // Snap onto whichever wall is nearest, so a door can be moved
+                  // from one wall to another, not just slid along its own.
+                  const hit = wallNear(resolved, xFt, yFt, 3)
+                  if (hit) {
+                    setOpeningDrag({
+                      id: opening.id,
+                      wallId: hit.wall.id,
+                      offsetFt: hit.offsetFt,
+                    })
+                  }
+                }}
+                onPointerUp={(event) => {
+                  if (openingDrag?.id !== opening.id) return
+                  event.currentTarget.releasePointerCapture(event.pointerId)
+                  const moved =
+                    openingDrag.wallId !== opening.wallId ||
+                    Math.abs(openingDrag.offsetFt - opening.offsetFt) > 0.1
+                  if (moved) {
+                    onMoveOpening?.(opening.id, openingDrag.wallId, openingDrag.offsetFt)
+                  } else {
+                    onSelectOpening?.(selected ? null : opening.id)
+                  }
+                  setOpeningDrag(null)
                 }}
               />
             )

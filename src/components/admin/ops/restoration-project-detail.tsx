@@ -251,6 +251,10 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
   const [openGroup, setOpenGroup] = useState<string | null>(null)
 
   const [planTool, setPlanTool] = useState<WallPlanTool>('wall')
+  // Common sizes, so the usual case is one tap and anything else is one edit.
+  const [openingKind, setOpeningKind] = useState<'doorway' | 'window'>('doorway')
+  const [openingWidth, setOpeningWidth] = useState(3)
+  const [selectedOpeningId, setSelectedOpeningId] = useState<string | null>(null)
   const [planData, setPlanData] = useState<{
     nodes: PlanNode[]
     walls: PlanWall[]
@@ -932,6 +936,75 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 ) : null}
               </div>
 
+              {planTool === 'door' ? (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {(
+                    [
+                      ['doorway', 'Door'],
+                      ['window', 'Window'],
+                    ] as const
+                  ).map(([kind, label]) => (
+                    <button
+                      key={kind}
+                      type="button"
+                      onClick={() => setOpeningKind(kind)}
+                      className={`rounded-full border px-2.5 py-1 text-xs ${
+                        openingKind === kind
+                          ? kind === 'window'
+                            ? 'border-cyan-400 bg-cyan-500 text-white'
+                            : 'border-amber-400 bg-amber-500 text-white'
+                          : 'border-border/60 hover:bg-muted/60'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                  {([['Single', 3], ['Double', 6]] as const).map(([label, width]) => (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => setOpeningWidth(width)}
+                      className={`rounded-full border px-2.5 py-1 text-xs ${
+                        openingWidth === width
+                          ? 'border-sky-500 bg-sky-500/15 text-sky-700 dark:text-sky-300'
+                          : 'border-border/60 hover:bg-muted/60'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                  <label className="flex items-center gap-1">
+                    <Input
+                      className="h-7 w-16 text-right"
+                      type="number"
+                      step="any"
+                      min={0.5}
+                      aria-label="Opening width in feet"
+                      value={openingWidth}
+                      onChange={(e) => setOpeningWidth(Number(e.target.value) || 3)}
+                    />
+                    <span className="text-muted-foreground text-xs">ft</span>
+                  </label>
+                  {selectedOpeningId ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-destructive h-7 text-xs"
+                      onClick={async () => {
+                        await fetch(
+                          `/api/admin/ops/restoration/openings/${selectedOpeningId}`,
+                          { method: 'DELETE' },
+                        )
+                        setSelectedOpeningId(null)
+                        await loadPlan()
+                      }}
+                    >
+                      <Trash2 className="mr-1 h-3 w-3" /> Delete selected
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
+
               {planTool === 'pin' ? (
                 <div className="flex flex-wrap gap-1.5">
                   {armedTool ? (
@@ -1075,16 +1148,28 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 await fetch(`/api/admin/ops/restoration/walls/${wallId}`, { method: 'DELETE' })
                 await loadPlan()
               }}
+              openingKind={openingKind}
+              openingWidthFt={openingWidth}
+              selectedOpeningId={selectedOpeningId}
+              onSelectOpening={setSelectedOpeningId}
               onPlaceDoor={async (wallId, offsetFt) => {
                 await fetch(`/api/admin/ops/restoration/areas/none/openings`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
                     wall_id: wallId,
-                    kind: 'doorway',
+                    kind: openingKind,
                     offset_ft: offsetFt,
-                    width_ft: 3,
+                    width_ft: openingWidth,
                   }),
+                })
+                await loadPlan()
+              }}
+              onMoveOpening={async (openingId, wallId, offsetFt) => {
+                await fetch(`/api/admin/ops/restoration/openings/${openingId}`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ wall_id: wallId, offset_ft: offsetFt }),
                 })
                 await loadPlan()
               }}
@@ -1145,7 +1230,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                   : planTool === 'corner'
                     ? 'Drag a corner — every wall meeting there follows. Tap a measurement to delete that wall.'
                     : planTool === 'door'
-                      ? 'Tap a wall to put a door on it. Tap a door to remove it.'
+                      ? 'Tap a wall to place. Drag one to move it along a wall or onto another. Tap to select, then Delete selected.'
                       : 'Pick equipment or a reading point, then tap the plan.'}
             </p>
           </div>

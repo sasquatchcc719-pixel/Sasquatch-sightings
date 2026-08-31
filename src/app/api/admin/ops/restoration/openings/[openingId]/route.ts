@@ -13,7 +13,14 @@ export async function PATCH(
     const body = await request.json()
 
     const patch: Record<string, unknown> = {}
-    for (const field of ['kind', 'wall_index', 'offset_ft', 'width_ft', 'connects_area_id']) {
+    for (const field of [
+      'kind',
+      'wall_id',
+      'wall_index',
+      'offset_ft',
+      'width_ft',
+      'connects_area_id',
+    ]) {
       if (field in body) patch[field] = body[field]
     }
     if (Object.keys(patch).length === 0) {
@@ -24,7 +31,7 @@ export async function PATCH(
       .from('restoration_area_openings')
       .update(patch)
       .eq('id', openingId)
-      .select('id, area_id, kind, wall_index, offset_ft, width_ft, connects_area_id')
+      .select('id, area_id, wall_id, kind, offset_ft, width_ft, connects_area_id')
       .maybeSingle()
 
     if (error) throw error
