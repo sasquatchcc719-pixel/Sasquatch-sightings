@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  dayBeforeTemplateKey,
   formatCustomerServiceSummary,
   getOpsTemplateKeysForEvent,
 } from '@/lib/ops/communications'
@@ -82,5 +83,43 @@ describe('formatCustomerServiceSummary', () => {
         },
       ]),
     ).toBe('- 2 × Regular Size Room (100 to 200 Sqft) — $92.00')
+  })
+})
+
+describe('which day-before text a customer gets', () => {
+  it('sends a monitor visit its own wording, not the cleaning reminder', () => {
+    expect(
+      dayBeforeTemplateKey({ kind: 'restoration', visitType: 'monitor' }, null),
+    ).toBe('day_before_restoration_monitor_sms')
+  })
+
+  it('sends the mitigation day the restoration wording', () => {
+    expect(
+      dayBeforeTemplateKey({ kind: 'restoration', visitType: 'mitigation' }, null),
+    ).toBe('day_before_restoration_sms')
+  })
+
+  it('still recognises a restoration visit that lost its kind', () => {
+    expect(dayBeforeTemplateKey({ kind: null, visitType: 'monitor' }, null)).toBe(
+      'day_before_restoration_monitor_sms',
+    )
+  })
+
+  it('leaves ordinary cleaning appointments alone', () => {
+    expect(dayBeforeTemplateKey({ kind: 'cleaning', visitType: null }, null)).toBe(
+      'day_before_residential_sms',
+    )
+    expect(
+      dayBeforeTemplateKey({ kind: null, visitType: null }, 'Recovery Village'),
+    ).toBe('day_before_recovery_village_sms')
+  })
+
+  it('does not let a restoration visit fall through to Recovery Village', () => {
+    expect(
+      dayBeforeTemplateKey(
+        { kind: 'restoration', visitType: 'monitor' },
+        'Recovery Village',
+      ),
+    ).toBe('day_before_restoration_monitor_sms')
   })
 })

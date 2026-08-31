@@ -1728,3 +1728,39 @@ Found while checking the mapping, NOT changed — a price is Charles's call:
 
 The catalog numbers are the 2024 Xactimate list; the QuickBooks numbers are what
 he actually bills. Everything else in the two lists agrees to the cent.
+
+## The day-before text said "Estimated total: $0.00"
+
+Charles: *"it needs to sound like we're doing a monitor and not a carpet
+cleaning appointment which is super important."*
+
+Placing a monitor on the calendar sends the customer nothing — that part was
+already right; it fires one Telegram to Charles. The exposure was the next
+morning. `sendDayBeforeReminderSms` selects every appointment for tomorrow and
+filters on status alone, with nothing about `kind` or `visit_type`, so a monitor
+visit got the residential cleaning template:
+
+> Services:
+> **Estimated total: $0.00**
+
+Both wrong for the same reason: monitor visits carry no line items and never
+invoice on their own. Sent to someone mid-mitigation on a job that will bill for
+thousands, that text generates a phone call.
+
+Restoration now has its own two templates — one for a monitor visit, one for
+work — selected by `dayBeforeTemplateKey()`, which is a pure function precisely
+so the routing is testable without sending anything. Neither carries a dollar
+figure, and the monitor one says what the visit actually is:
+
+> We will be by tomorrow at 9:00 AM to check the drying equipment and take
+> moisture readings... about 30 minutes, and you do not need to be home as long
+> as we can reach the equipment.
+
+A restoration visit beats the Recovery Village branch, which is asserted — a
+water loss at a commercial client would otherwise get the commercial cleaning
+wording.
+
+### Still open on this front
+`on_my_way`, `job_finished` and `job_rescheduled` fire for restoration visits
+too, and have not been reviewed for wording. The skip is opt-in per request and
+nothing sets it for restoration.

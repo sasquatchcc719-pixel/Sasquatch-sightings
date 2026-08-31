@@ -122,6 +122,30 @@ const CUSTOMER_HIDDEN_LINE_ITEMS = new Set([
   'Minimum Dispatch Adjustment',
 ])
 
+/**
+ * Which day-before text a customer gets.
+ *
+ * A monitor visit is not a cleaning appointment. The residential template reads
+ * "Services:" followed by nothing and "Estimated total: $0.00", because monitor
+ * visits carry no line items and never invoice on their own — sent to someone
+ * mid-mitigation on a job that will bill for thousands, that text generates a
+ * phone call. Restoration gets its own wording, and no dollar figure.
+ */
+export function dayBeforeTemplateKey(
+  visit: { kind: string | null; visitType: string | null },
+  businessName: string | null,
+): string {
+  if (visit.kind === 'restoration' || visit.visitType) {
+    return visit.visitType === 'monitor'
+      ? 'day_before_restoration_monitor_sms'
+      : 'day_before_restoration_sms'
+  }
+  if ((businessName || '').trim() === 'Recovery Village') {
+    return 'day_before_recovery_village_sms'
+  }
+  return 'day_before_residential_sms'
+}
+
 const APPOINTMENT_SELECT = `
   id,
   customer_id,
@@ -132,6 +156,8 @@ const APPOINTMENT_SELECT = `
   status,
   quoted_total,
   assigned_staff_user_id,
+  kind,
+  visit_type,
   ops_customers!ops_appointments_customer_id_fkey (
     full_name,
     first_name,
@@ -1161,6 +1187,8 @@ export async function sendDayBeforeReminderSms(params?: {
     .in('template_key', [
       'day_before_residential_sms',
       'day_before_recovery_village_sms',
+      'day_before_restoration_sms',
+      'day_before_restoration_monitor_sms',
     ])
 
   if (templatesError) {
@@ -1193,11 +1221,13 @@ export async function sendDayBeforeReminderSms(params?: {
       continue
     }
 
-    const isRecoveryVillage =
-      (customer?.business_name || '').trim() === 'Recovery Village'
-    const templateKey = isRecoveryVillage
-      ? 'day_before_recovery_village_sms'
-      : 'day_before_residential_sms'
+    const templateKey = dayBeforeTemplateKey(
+      {
+        kind: (appointment as { kind?: string | null }).kind ?? null,
+        visitType: (appointment as { visit_type?: string | null }).visit_type ?? null,
+      },
+      customer?.business_name ?? null,
+    )
     const template = templateByKey.get(templateKey)
     if (!template?.is_enabled || !template.body_template?.trim()) {
       skippedTemplateDisabled++
