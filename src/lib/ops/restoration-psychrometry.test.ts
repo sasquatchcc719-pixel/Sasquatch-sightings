@@ -62,7 +62,9 @@ describe('dehumidifierVerdict', () => {
   it('calls out a unit doing almost nothing on wet air', () => {
     const v = dehumidifierVerdict(at(80, 60, 'affected'), at(80, 55, 'dehu_outlet'))
     expect(v.status).toBe('problem')
-    expect(v.detail).toMatch(/filter|coils|running/i)
+    expect(v.detail).toMatch(/filter|coils|breaker/i)
+    // Suggests a check; does not pronounce the unit dead.
+    expect(v.detail).not.toMatch(/not working|failing|useless/i)
   })
 
   it('does NOT complain when the air is already dry', () => {
@@ -125,13 +127,16 @@ describe('trendVerdict', () => {
     expect(v.status).toBe('good')
   })
 
-  it('calls a stall a stall', () => {
+  it('says plainly that the air is not drying, without blaming the gear', () => {
     const v = trendVerdict([
       at(78, 60, 'affected', '2026-08-29T09:00:00-06:00'),
       at(78, 62, 'affected', '2026-08-31T09:00:00-06:00'),
     ])
     expect(v.status).toBe('problem')
-    expect(v.detail).toMatch(/stalled/i)
+    expect(v.detail).toMatch(/not drying out/i)
+    // Charles's equipment is old and works. The reading is the finding; the
+    // machine is not the accused.
+    expect(v.detail).not.toMatch(/not working|broken|failing/i)
   })
 
   it('will not call a trend from one visit', () => {

@@ -2704,3 +2704,28 @@ coils, or not running. Everything above that is reported, not argued.
 Every air threshold in this module was mine except one, and that one came from
 equipment marketing copy. The fix was not better guesses, it was **the model
 number of the machine in his truck** — which he had to ask for twice.
+
+### Tone: the reading is the finding, not the machine
+
+Charles: *"be nice to my equipment, it's old but it does work, and your warnings
+made it sound like I had useless equipment."*
+
+Worth fixing, and not only for manners. *"That is far short"*, *"drying has
+stalled"*, *"the equipment is not working"* are conclusions about his kit dressed
+as observations — from software that, an hour earlier, was comparing his machine
+to a number it could not reach.
+
+The readings still say everything they said. The wording no longer pronounces:
+
+| Before | Now |
+| --- | --- |
+| That is far short on air this wet — check the filter, the coils, and that it is actually running. | Well under that usually means the filter or the coils want cleaning, or it has tripped a breaker — worth a look before the next visit. |
+| Drying has stalled: water is still coming from somewhere, or the equipment is not working. | The air is not drying out, which usually means water is still arriving or the chamber is open to somewhere damp. |
+| Below its rating | Under its rating, which is what happens as a room dries out |
+
+Tests assert the wording suggests a check without pronouncing the unit dead —
+`not.toMatch(/not working|failing|useless/i)` — so the tone is now a property of
+the module rather than a mood I happened to be in.
+
+The expectation is also rounded to whole grains. "Good for about 21.2" dressed a
+straight-line estimate off a nameplate rating as a measurement.

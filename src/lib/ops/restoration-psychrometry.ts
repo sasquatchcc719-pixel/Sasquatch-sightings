@@ -134,7 +134,9 @@ export function dehumidifierVerdict(
   const expected = expectedDepression(model, intakeGpp)
   const share = expected > 0 ? depression / expected : 1
 
-  const arithmetic = `Room ${intakeGpp} GPP, out ${outletGpp} GPP. A ${model.name} on air this wet is good for about ${expected}.`
+  // Rounded to whole grains: the expectation is a straight-line estimate off a
+  // rating, and a decimal point would dress it up as a measurement.
+  const arithmetic = `Room ${intakeGpp} GPP, out ${outletGpp} GPP. A ${model.name} on air this wet is good for about ${Math.round(expected)}.`
 
   if (share >= 0.85) {
     return {
@@ -148,7 +150,7 @@ export function dehumidifierVerdict(
     return {
       status: 'good',
       headline: `Pulling ${depression} GPP`,
-      detail: `${arithmetic} Below its rating, which is normal as a room dries out.`,
+      detail: `${arithmetic} Under its rating, which is what happens as a room dries out.`,
     }
   }
 
@@ -157,7 +159,7 @@ export function dehumidifierVerdict(
     return {
       status: 'problem',
       headline: `Only ${depression} GPP of depression`,
-      detail: `${arithmetic} That is far short on air this wet — check the filter, the coils, and that it is actually running.`,
+      detail: `${arithmetic} Well under that usually means the filter or the coils want cleaning, or it has tripped a breaker — worth a look before the next visit.`,
     }
   }
 
@@ -231,7 +233,7 @@ export function dryGoalVerdict(affected: Reading, unaffected: Reading): Verdict 
   return {
     status: 'problem',
     headline: `${over} GPP above the dry goal`,
-    detail: `Affected ${inside} GPP against ${goal} GPP unaffected. The chamber is still holding water the rest of the building is not.${stale}`,
+    detail: `Affected ${inside} GPP against ${goal} GPP unaffected. The chamber still holds water the rest of the building does not.${stale}`,
   }
 }
 
@@ -298,14 +300,14 @@ export function trendVerdict(readings: Reading[]): Verdict {
     return {
       status: 'watch',
       headline: `Down only ${change} GPP`,
-      detail: `${first} GPP to ${last} GPP. Slower than it should be — check equipment placement and whether the chamber is sealed.`,
+      detail: `${first} GPP to ${last} GPP. Slower than it might be — worth checking how the equipment is placed and whether the chamber is sealed.`,
     }
   }
 
   return {
     status: 'problem',
     headline: change === 0 ? 'No change in the air' : `Up ${Math.abs(change)} GPP`,
-    detail: `${first} GPP to ${last} GPP. Drying has stalled: water is still coming from somewhere, or the equipment is not working.`,
+    detail: `${first} GPP to ${last} GPP. The air is not drying out, which usually means water is still arriving or the chamber is open to somewhere damp.`,
   }
 }
 
