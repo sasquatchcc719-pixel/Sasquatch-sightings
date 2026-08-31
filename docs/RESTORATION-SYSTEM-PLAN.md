@@ -1897,3 +1897,26 @@ as a negative balance.
 The close card now shows the whole sum before the button is pressed — work and
 equipment, less the split, less the deposit, ending in "Customer owes" or
 "Refund to the customer".
+
+### Money taken before the app knew about it
+
+Charles: *"we collected 1000 bucks already by square for Jill so hopefully I can
+manually fix that."*
+
+He could, but only just. The manual entry existed — and it was gated to the
+mitigation day and to a project with nothing paid yet, and it hardcoded
+`method: 'other'` behind a button reading "Record cash or check instead". A
+deposit taken on Square, on day one, entered on day three, had nowhere to go and
+would have been filed as the wrong payment method for reconciliation.
+
+Recording a payment already taken is now its own control: amount, how it was
+paid, and Record. Square Tap to Pay above it is for **collecting now**; this is
+for money that changed hands elsewhere, including before the job existed here. It
+stays available for the whole job and allows more than one, because a customer
+can pay twice.
+
+Payments are also listed individually rather than summed. The same $1,000
+recorded twice quietly halves what the customer is billed, and a total alone
+cannot show that it happened. Each can be removed while the job is open; once
+the project closes the payment belongs to an invoice and to recorded revenue, so
+removal is refused — that is an invoice correction, not a typo fix.

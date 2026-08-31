@@ -303,6 +303,8 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
   const [openingWidth, setOpeningWidth] = useState(3)
   const [selectedOpeningId, setSelectedOpeningId] = useState<string | null>(null)
   const [placeCount, setPlaceCount] = useState('1')
+  const [recordedAmount, setRecordedAmount] = useState('')
+  const [recordedMethod, setRecordedMethod] = useState('square_other')
   const [planData, setPlanData] = useState<{
     nodes: PlanNode[]
     walls: PlanWall[]
@@ -2752,8 +2754,38 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
           </div>
           {detail.totals.paid_cents !== 0 ? (
             <>
+              {/*
+                Listed individually, not just summed. The same $1,000 recorded
+                twice halves what the customer is billed, and a total alone
+                cannot show that it happened.
+              */}
+              {detail.payments.map((payment) => (
+                <div key={payment.id} className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground text-xs">
+                    {payment.kind} · {payment.method.replace(/_/g, ' ')}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span>−{money(payment.amount_cents / 100)}</span>
+                    {!closed ? (
+                      <button
+                        type="button"
+                        aria-label="Remove this payment"
+                        onClick={() =>
+                          void call(
+                            `/api/admin/ops/restoration/payments/${payment.id}`,
+                            { method: 'DELETE' },
+                            `pay-${payment.id}`,
+                          )
+                        }
+                      >
+                        <Trash2 className="text-muted-foreground h-3.5 w-3.5" />
+                      </button>
+                    ) : null}
+                  </span>
+                </div>
+              ))}
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Deposit taken</span>
+                <span className="text-muted-foreground">Paid so far</span>
                 <span>−{money(detail.totals.paid_cents / 100)}</span>
               </div>
               <div className="flex justify-between text-base font-semibold">
@@ -2822,31 +2854,70 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 )}
               </Button>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-muted-foreground"
-              disabled={busy === 'deposit' || Number(depositAmount) <= 0}
-              onClick={() =>
-                void call(
-                  `/api/admin/ops/restoration/visits/${activeVisitId}/deposit`,
-                  {
-                    method: 'POST',
-                    body: JSON.stringify({
-                      amount_cents: Math.round(Number(depositAmount) * 100),
-                      method: 'other',
-                      kind: 'deposit',
-                    }),
-                  },
-                  'deposit',
-                )
-              }
-            >
-              Record cash or check instead
-            </Button>
             <p className="text-muted-foreground text-xs">
               Credited against the final invoice when the project closes.
             </p>
+          </div>
+        ) : null}
+
+        {/*
+          Money already taken, recorded rather than charged again. Square Tap to
+          Pay above is for collecting now; this is for a payment that happened
+          elsewhere — on the Square app, in cash, by check — including one taken
+          before this job existed in the system. It stays available for the whole
+          job, because gating it to the mitigation day meant a deposit taken on
+          day one could not be entered on day three, and it allows more than one,
+          because a customer can pay twice.
+        */}
+        {!closed ? (
+          <div className="mt-4 flex flex-col gap-2">
+            <Label htmlFor="recorded-amount">Record a payment already taken</Label>
+            <div className="flex flex-wrap gap-2">
+              <Input
+                id="recorded-amount"
+                className="w-28"
+                type="number"
+                min={0}
+                step="any"
+                placeholder="1000"
+                value={recordedAmount}
+                onChange={(e) => setRecordedAmount(e.target.value)}
+              />
+              <select
+                aria-label="How it was paid"
+                className="border-input bg-background h-9 rounded-md border px-2 text-sm"
+                value={recordedMethod}
+                onChange={(e) => setRecordedMethod(e.target.value)}
+              >
+                <option value="square_other">Square</option>
+                <option value="cash">Cash</option>
+                <option value="check">Check</option>
+                <option value="card_other">Card, elsewhere</option>
+                <option value="other">Other</option>
+              </select>
+              <Button
+                variant="outline"
+                disabled={busy === 'deposit' || !(Number(recordedAmount) > 0) || !activeVisitId}
+                onClick={async () => {
+                  await call(
+                    `/api/admin/ops/restoration/visits/${activeVisitId}/deposit`,
+                    {
+                      method: 'POST',
+                      body: JSON.stringify({
+                        amount_cents: Math.round(Number(recordedAmount) * 100),
+                        method: recordedMethod,
+                        kind: 'deposit',
+                        note: 'recorded by hand — taken outside the app',
+                      }),
+                    },
+                    'deposit',
+                  )
+                  setRecordedAmount('')
+                }}
+              >
+                Record
+              </Button>
+            </div>
           </div>
         ) : null}
 

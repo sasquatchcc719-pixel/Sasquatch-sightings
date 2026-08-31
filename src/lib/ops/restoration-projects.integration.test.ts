@@ -271,3 +271,73 @@ describe('restoration project lifecycle', () => {
     if (!result.ok) expect(result.error).toBe('project_already_closed')
   })
 })
+
+describe('a payment taken outside the app', () => {
+  it('can be recorded, listed and removed while the job is open', async () => {
+    const { data: addr } = await supabase
+      .from('ops_service_addresses')
+      .select('id, customer_id')
+      .limit(1)
+      .single()
+
+    const { data: project } = await supabase
+      .from('restoration_projects')
+      .insert({
+        customer_id: addr!.customer_id,
+        service_address_id: addr!.id,
+        cause_narrative: `${MARKER}_RECORDED_PAYMENT`,
+      })
+      .select('id')
+      .single()
+
+    const { data: visit } = await supabase
+      .from('ops_appointments')
+      .insert({
+        customer_id: addr!.customer_id,
+        service_address_id: addr!.id,
+        booking_channel: 'admin',
+        source: 'integration_test',
+        status: 'booked',
+        payment_status: 'unpaid',
+        quickbooks_sync_status: 'held',
+        appointment_date: new Date().toISOString().slice(0, 10),
+        start_time: '09:00',
+        end_time: '13:00',
+        quoted_total: 0,
+        kind: 'restoration',
+        restoration_project_id: project!.id,
+        visit_type: 'mitigation',
+        internal_notes: MARKER,
+      })
+      .select('id')
+      .single()
+
+    // $1,000 taken on Square before the job existed here.
+    const { data: payment } = await supabase
+      .from('ops_payments')
+      .insert({
+        appointment_id: visit!.id,
+        kind: 'deposit',
+        method: 'square_other',
+        amount_cents: 100000,
+        paid_at: new Date().toISOString(),
+        note: MARKER,
+      })
+      .select('id, invoice_id')
+      .single()
+
+    expect(payment!.invoice_id).toBeNull()
+
+    // Removable while it belongs to no invoice — the double-entry escape hatch.
+    await supabase.from('ops_payments').delete().eq('id', payment!.id)
+    const { data: gone } = await supabase
+      .from('ops_payments')
+      .select('id')
+      .eq('id', payment!.id)
+      .maybeSingle()
+    expect(gone).toBeNull()
+
+    await supabase.from('ops_appointments').delete().eq('id', visit!.id)
+    await supabase.from('restoration_projects').delete().eq('id', project!.id)
+  })
+})
