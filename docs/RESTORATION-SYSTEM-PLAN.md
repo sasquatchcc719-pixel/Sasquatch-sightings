@@ -1667,3 +1667,30 @@ could outlive its door, leaving a Delete button that deleted nothing.
 
 **Windows are the same code.** Kind only changes the colour and thickness, so
 the fix covers both — no separate window path exists to be broken.
+
+### The real reason: every tap was adding another door
+
+The selection fix above was necessary but not the cause. Charles, still: *"it
+still does not work."*
+
+The database had the answer. Five doorways on one wall at 6.34, 7.15, 7.32,
+7.93 and 8.22 feet, created seconds apart — a five-foot band of solid orange
+that looks exactly like one door.
+
+Doors are placed on the container's `click`. The opening element stopped
+`pointerdown` and `pointerup` from reaching it, but not `click`. So every tap on
+an existing door selected it **and dropped a second door on top of it**. Delete
+then worked perfectly and removed one of five, which on screen is no change at
+all. Worse, it compounded: each attempt to select one added another.
+
+Two guards, because either alone leaves a hole:
+
+- The opening stops `click` as well, so tapping a door never places one.
+- Placement checks for an opening already within a quarter-foot of the tap and
+  selects that one instead. Two openings in the same few inches cannot be told
+  apart on screen, so this is the only place the difference can be caught — and
+  it covers a tap that lands on the wall beside the door rather than on it.
+
+Both are covered by tests that fail against the old code. **This is why looking
+at the data mattered more than reading the handler again**: the delete path was
+correct at every reading, and the stacked rows named the bug immediately.

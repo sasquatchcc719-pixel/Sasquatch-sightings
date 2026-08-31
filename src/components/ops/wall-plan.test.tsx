@@ -78,8 +78,8 @@ describe('tapping a door', () => {
     renderPlan({ onSelectOpening, onMoveOpening })
 
     const door = screen.getByLabelText('doorway on wall')
-    pointer(door, 'pointerdown', 300, 40)
-    pointer(door, 'pointerup', 300, 40)
+    pointer(door, 'pointerdown', 300, 86)
+    pointer(door, 'pointerup', 300, 86)
 
     expect(onSelectOpening).toHaveBeenCalledWith('door1')
     expect(onMoveOpening).not.toHaveBeenCalled()
@@ -91,9 +91,9 @@ describe('tapping a door', () => {
     renderPlan({ onSelectOpening, onMoveOpening })
 
     const door = screen.getByLabelText('doorway on wall')
-    pointer(door, 'pointerdown', 300, 40)
-    pointer(door, 'pointermove', 302, 41)
-    pointer(door, 'pointerup', 302, 41)
+    pointer(door, 'pointerdown', 300, 86)
+    pointer(door, 'pointermove', 302, 87)
+    pointer(door, 'pointerup', 302, 87)
 
     expect(onSelectOpening).toHaveBeenCalledWith('door1')
     expect(onMoveOpening).not.toHaveBeenCalled()
@@ -107,9 +107,9 @@ describe('dragging a door', () => {
     renderPlan({ onSelectOpening, onMoveOpening })
 
     const door = screen.getByLabelText('doorway on wall')
-    pointer(door, 'pointerdown', 300, 40)
-    pointer(door, 'pointermove', 200, 40)
-    pointer(door, 'pointerup', 200, 40)
+    pointer(door, 'pointerdown', 300, 86)
+    pointer(door, 'pointermove', 200, 86)
+    pointer(door, 'pointerup', 200, 86)
 
     expect(onMoveOpening).toHaveBeenCalled()
     expect(onSelectOpening).not.toHaveBeenCalled()
@@ -128,5 +128,44 @@ describe('deleting a selected door', () => {
   it('offers nothing to delete when nothing is selected', () => {
     renderPlan({ onDeleteOpening: vi.fn() })
     expect(screen.queryByLabelText('Delete this doorway')).toBeNull()
+  })
+})
+
+describe('tapping where a door already is', () => {
+  it('does not drop a second door on top of the first', () => {
+    const onPlaceDoor = vi.fn()
+    const onSelectOpening = vi.fn()
+    renderPlan({ onPlaceDoor, onSelectOpening })
+
+    const door = screen.getByLabelText('doorway on wall')
+    pointer(door, 'pointerdown', 300, 86)
+    pointer(door, 'pointerup', 300, 86)
+    fireEvent.click(door, { clientX: 300, clientY: 86 })
+
+    expect(onPlaceDoor).not.toHaveBeenCalled()
+    expect(onSelectOpening).toHaveBeenCalledWith('door1')
+  })
+
+  it('selects the door already there when the tap lands on the wall', () => {
+    const onPlaceDoor = vi.fn()
+    const onSelectOpening = vi.fn()
+    const { container } = renderPlan({ onPlaceDoor, onSelectOpening })
+
+    // The wall runs along y = 0, and the door covers 8ft to 11ft of it.
+    const plan = container.firstElementChild as Element
+    fireEvent.click(plan, { clientX: 300, clientY: 86 })
+
+    expect(onPlaceDoor).not.toHaveBeenCalled()
+    expect(onSelectOpening).toHaveBeenCalledWith('door1')
+  })
+
+  it('still places a door on clear wall', () => {
+    const onPlaceDoor = vi.fn()
+    const { container } = renderPlan({ onPlaceDoor })
+
+    const plan = container.firstElementChild as Element
+    fireEvent.click(plan, { clientX: 120, clientY: 86 })
+
+    expect(onPlaceDoor).toHaveBeenCalled()
   })
 })

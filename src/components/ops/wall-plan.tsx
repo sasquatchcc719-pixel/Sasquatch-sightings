@@ -281,6 +281,20 @@ export function WallPlan({
         if (tool === 'door' && onPlaceDoor) {
           const hit = wallNear(resolved, xFt, yFt)
           if (hit) {
+            // A tap that lands on a door already there means that door, not a
+            // second one hidden underneath it. Two openings in the same few
+            // inches are indistinguishable on screen, so this is the only
+            // place the difference can be caught.
+            const existing = openings.find(
+              (o) =>
+                o.wallId === hit.wall.id &&
+                hit.offsetFt >= o.offsetFt - 0.25 &&
+                hit.offsetFt <= o.offsetFt + o.widthFt + 0.25,
+            )
+            if (existing) {
+              onSelectOpening?.(existing.id)
+              return
+            }
             // Centre the opening on the tap rather than starting it there, so
             // it lands where it looked like it would.
             const centred = Math.max(
@@ -528,6 +542,12 @@ export function WallPlan({
                       hit.offsetFt - openingDrag.grabFt,
                     ),
                   })
+                }}
+                onClick={(event) => {
+                  // The container places a door on click. Without this, every
+                  // tap on an existing door dropped another one on top of it,
+                  // and the pile made deleting look like it did nothing.
+                  event.stopPropagation()
                 }}
                 onPointerUp={(event) => {
                   if (openingDrag?.id !== opening.id) return
