@@ -1473,3 +1473,38 @@ slide along the one it was born on.
 Whether "shows up in the wrong area" meant the wrong **wall** or the right wall at the
 wrong **spot**. Centring on the tap and drag-to-move address the second; if it is
 picking the wrong wall, the `wallNear` tolerance needs tightening.
+
+
+---
+
+## The three missing everyday items
+
+Charles: "for some reason it's not finding dump fee, which is a big one. We pretty much
+use that one every time."
+
+Correct — it was not in the restoration catalog at all. These three belong to other
+Xactimate categories and so were never in the WTR file. They had been sitting in the
+legacy carpet-cleaning catalog with real prices and QuickBooks items, invisible to the
+restoration picker and to voice entry. Flagged as a gap back at the import and never
+closed.
+
+| Code | | Rate | QB |
+|---|---|---|---|
+| `HAULDEBRIS` | Haul debris / dump fee, per truck load | $195.00 EA | 69 |
+| `DAILYMON` | Daily monitoring (hourly charge) | $92.65 HR | 52 |
+| `CONTENTMANIP` | Content manipulation (hourly charge) | $73.37 HR | 53 |
+
+Prices and QuickBooks mappings are the ones already in use — nothing repriced. They carry
+`price_list = 'Sasquatch legacy'` to mark them as not from the WTR sheet.
+
+**The description carries the words Charles says as well as the formal name** — "Haul
+debris / dump fee" — because voice entry matches on the description. Naming it only
+"Haul Debris, per truck load" is why "dump fee" found nothing.
+
+Verified against the live model: "dump fee emergency service fee 3 monitors" now returns
+`HAULDEBRIS`, `ESRVD`, and `DAILYMON` at quantity 3, with nothing unmatched. Previously
+"3 monitors" was matched to `EQA` (equipment setup and monitoring), which is a different
+line at a different rate.
+
+**Lesson for the catalog:** an item is only findable by the words on it. When Charles
+names something differently to the standard, both names belong in the description.
