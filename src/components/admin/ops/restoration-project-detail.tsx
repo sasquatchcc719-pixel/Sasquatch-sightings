@@ -2694,6 +2694,15 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             <span>{money(detail.totals.equipment)}</span>
           </div>
           {/*
+            What the job came to before any concession. Without it the deductible
+            split appears to come off a number that is never shown, and there is
+            no line to check the work and equipment add up to.
+          */}
+          <div className="flex justify-between border-t pt-2 font-medium">
+            <span>Subtotal</span>
+            <span className="tabular-nums">{money(detail.totals.gross_subtotal)}</span>
+          </div>
+          {/*
             Splitting the deductible is routine on an insurance job: they owe
             $1,000, and we discount $500 of our own work so they are not out of
             pocket for all of it. Half is the usual starting number and never a
