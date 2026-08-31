@@ -1869,3 +1869,31 @@ Three decisions worth keeping:
 
 The Money card renames its bottom row to "Customer owes" once a credit is set,
 so the number on screen is the one the customer will be asked for.
+
+### The deposit, and what the customer actually owes
+
+Charles: *"if we collect $1000 upfront for deposit that needs to be subtracted
+from the final total at the end of the job hopefully that's been thought about."*
+
+It was — `closeRestorationProject` already attached any deposit taken during
+mitigation to the project invoice and reported a balance. Two gaps showed up
+once the deductible split landed on top of it:
+
+- The invoice stayed `payment_status: 'unpaid'` no matter what had been
+  collected. A job already covered by its own deposit would have gone out asking
+  for the full amount a second time.
+- A $1,000 deposit plus a $500 credit can exceed a small loss. That is money
+  owed **back**, and it appeared only as a negative balance nobody was told
+  about.
+
+The order matters and is now in one pure function, `settleProjectInvoice`:
+**discount first, deposit second.** The split is a discount off our own work, so
+it changes the bill; the deposit is money already received against that bill.
+Reversing them gives the same total by luck and the wrong `discount_amount` to
+QuickBooks. The invoice is marked `paid` when the deposit covers it, `partial`
+when it does not, and a refund is stated as a positive number rather than left
+as a negative balance.
+
+The close card now shows the whole sum before the button is pressed — work and
+equipment, less the split, less the deposit, ending in "Customer owes" or
+"Refund to the customer".

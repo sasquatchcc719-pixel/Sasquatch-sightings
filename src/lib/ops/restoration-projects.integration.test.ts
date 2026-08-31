@@ -208,6 +208,10 @@ describe('restoration project lifecycle', () => {
     expect(result.subtotal).toBeCloseTo(1658, 2)
     expect(result.depositCents).toBe(100000)
     expect(result.balanceCents).toBe(65800)
+    // The deposit is credited on the invoice itself, so a job already part
+    // paid never goes out asking for the full amount again.
+    expect(result.paymentStatus).toBe('partial')
+    expect(result.refundDueCents).toBe(0)
 
     // Exactly one invoice for the whole loss, on the closing visit.
     const { data: invoices } = await supabase

@@ -84,6 +84,47 @@ export function buildProjectInvoiceLines(input: {
   return { lines, subtotal }
 }
 
+/**
+ * What the customer actually owes at the close.
+ *
+ * Three numbers land on one invoice and their order matters. The deposit was
+ * taken on day one against a total nobody knew yet; the deductible split is a
+ * discount off our own work; and the bill is what is left. Pure, because this
+ * is the arithmetic that decides what a customer is asked for.
+ */
+export function settleProjectInvoice(input: {
+  subtotal: number
+  creditRequested: number
+  depositCents: number
+}): {
+  discount: number
+  total: number
+  balanceCents: number
+  refundDueCents: number
+  paymentStatus: 'unpaid' | 'partial' | 'paid'
+} {
+  // Never credit more than the job is worth: a negative invoice total is
+  // something QuickBooks will accept and nobody wants to explain.
+  const discount = Math.min(
+    input.subtotal,
+    Math.max(0, Number(input.creditRequested) || 0),
+  )
+  const total = round2(input.subtotal - discount)
+  const balanceCents = Math.round(total * 100) - input.depositCents
+
+  return {
+    discount,
+    total,
+    balanceCents,
+    // A $1,000 deposit plus a $500 credit can exceed a small loss. That is
+    // money owed BACK, and it has to be visible at the close rather than
+    // discovered later as a negative balance nobody acted on.
+    refundDueCents: balanceCents < 0 ? -balanceCents : 0,
+    paymentStatus:
+      input.depositCents <= 0 ? 'unpaid' : balanceCents <= 0 ? 'paid' : 'partial',
+  }
+}
+
 export type CloseProjectResult =
   | { ok: false; error: string }
   | {
@@ -93,6 +134,9 @@ export type CloseProjectResult =
       total: number
       depositCents: number
       balanceCents: number
+      /** Deposit and deductible credit exceeded the bill: money owed back. */
+      refundDueCents: number
+      paymentStatus: 'unpaid' | 'partial' | 'paid'
       cancelledQueued: number
       cancelledAppointments: number
     }
@@ -183,13 +227,6 @@ export async function closeRestorationProject(
     })),
   })
 
-  // Never more than the job: a credit larger than the bill would invoice a
-  // negative total, which QuickBooks will take and nobody wants to explain.
-  const deductibleCredit = Math.min(
-    subtotal,
-    Math.max(0, Number(project.deductible_credit ?? 0) || 0),
-  )
-
   const lineIdByDescription = new Map(
     (apptLines ?? []).map((l) => [`${l.name_snapshot}|${l.line_total}`, String(l.id)]),
   )
@@ -206,8 +243,14 @@ export async function closeRestorationProject(
       // they are not out of pocket for all of it. It rides the invoice's own
       // discount field, which QuickBooks already understands, rather than a
       // negative line item that would need its own QuickBooks item.
-      discount_amount: deductibleCredit,
-      total: round2(subtotal - deductibleCredit),
+      discount_amount: Math.min(
+        subtotal,
+        Math.max(0, Number(project.deductible_credit ?? 0) || 0),
+      ),
+      total: round2(
+        subtotal -
+          Math.min(subtotal, Math.max(0, Number(project.deductible_credit ?? 0) || 0)),
+      ),
       sync_status: getQuickBooksSyncStatus(),
     })
     .select('id, total')
@@ -260,8 +303,22 @@ export async function closeRestorationProject(
     depositCents = (already ?? []).reduce((s, p) => s + Number(p.amount_cents), 0)
   }
 
-  const totalCents = Math.round(Number(invoice.total) * 100)
-  const balanceCents = totalCents - depositCents
+  // Left at 'unpaid', a job already covered by its own deposit would go out
+  // asking for the full amount a second time.
+  const settlement = settleProjectInvoice({
+    subtotal,
+    creditRequested: Number(project.deductible_credit ?? 0) || 0,
+    depositCents,
+  })
+  const { balanceCents, refundDueCents, paymentStatus } = settlement
+
+  await supabase
+    .from('ops_invoices')
+    .update({
+      payment_status: paymentStatus,
+      ...(paymentStatus === 'paid' ? { status: 'paid' } : {}),
+    })
+    .eq('id', invoice.id)
 
   await supabase.from('ops_invoice_status_events').insert({
     invoice_id: invoice.id,
@@ -327,6 +384,8 @@ export async function closeRestorationProject(
     total: Number(invoice.total),
     depositCents,
     balanceCents,
+    refundDueCents,
+    paymentStatus,
     cancelledQueued: cancelledQueue?.length ?? 0,
     cancelledAppointments: staleVisitIds.length,
   }

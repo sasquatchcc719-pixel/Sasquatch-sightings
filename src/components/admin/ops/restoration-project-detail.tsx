@@ -2757,9 +2757,17 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 <span>−{money(detail.totals.paid_cents / 100)}</span>
               </div>
               <div className="flex justify-between text-base font-semibold">
-                <span>Balance</span>
-                <span className="text-sky-700 tabular-nums dark:text-sky-300">
-                  {money(detail.totals.balance_cents / 100)}
+                <span>
+                  {detail.totals.balance_cents < 0 ? 'Refund due' : 'Balance'}
+                </span>
+                <span
+                  className={
+                    detail.totals.balance_cents < 0
+                      ? 'tabular-nums text-amber-600 dark:text-amber-400'
+                      : 'text-sky-700 tabular-nums dark:text-sky-300'
+                  }
+                >
+                  {money(Math.abs(detail.totals.balance_cents) / 100)}
                 </span>
               </div>
             </>
@@ -2911,6 +2919,49 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             Closing pulls all remaining equipment, cancels the monitor visits you no
             longer need, and builds the single invoice for the whole loss.
           </p>
+
+          {/*
+            What the invoice will say, before it says it. The deposit was taken
+            on day one against a total nobody knew yet, so seeing the deposit and
+            the deductible credit land is the difference between confidence and
+            opening the invoice afterwards to check.
+          */}
+          <div className="border-border/60 mb-3 flex flex-col gap-1 rounded-md border p-3 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Work and equipment</span>
+              <span className="tabular-nums">{money(detail.totals.gross_subtotal)}</span>
+            </div>
+            {detail.totals.deductible_credit > 0 ? (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Deductible split</span>
+                <span className="tabular-nums">
+                  −{money(detail.totals.deductible_credit)}
+                </span>
+              </div>
+            ) : null}
+            {detail.totals.paid_cents > 0 ? (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Deposit already taken</span>
+                <span className="tabular-nums">
+                  −{money(detail.totals.paid_cents / 100)}
+                </span>
+              </div>
+            ) : null}
+            <div className="mt-1 flex justify-between border-t pt-2 font-semibold">
+              <span>
+                {detail.totals.balance_cents < 0 ? 'Refund to the customer' : 'Customer owes'}
+              </span>
+              <span
+                className={
+                  detail.totals.balance_cents < 0
+                    ? 'tabular-nums text-amber-600 dark:text-amber-400'
+                    : 'text-sky-700 tabular-nums dark:text-sky-300'
+                }
+              >
+                {money(Math.abs(detail.totals.balance_cents) / 100)}
+              </span>
+            </div>
+          </div>
           <Button
             className="w-full gap-2"
             disabled={busy === 'close'}
