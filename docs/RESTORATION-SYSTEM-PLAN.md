@@ -1412,3 +1412,36 @@ The tray header is now just "Unscheduled", since it holds both kinds.
 
 3 integration tests cover the round trip: parked keeps its invoice and line items, it is
 listed as parked, and rescheduling restores it with the same invoice rather than a second.
+
+
+---
+
+## What reaches the customer, and what does not
+
+Checked line by line, because Charles asked before running a real loss on a real
+customer.
+
+**Starting a water loss sends the customer nothing.** No SMS, no email — there is no
+customer communication anywhere in the project-creation route. The only thing that fires
+is the `appointment_booked_trigger` on the new appointment row, which posts to the
+booked-webhook and sends **Charles** a Telegram. Nothing leaves for the customer.
+
+Silent too: rooms, walls, line items, equipment, photos, readings, areas, the deposit.
+
+**Two actions do text the customer:**
+- **On My Way** — `sendOpsLifecycleCommunications({ event: 'on_my_way' })`.
+- **Finish visit** (status → completed) — the job-finished message **and**
+  `enrollCustomerInDrip`, which starts a marketing sequence. Worth knowing before using a
+  real customer to test.
+
+`skip_customer_communications: true` in the appointment PATCH body suppresses both. The
+flag exists in the API but is not wired to any control.
+
+### Wanted later, not built
+Charles: *"When we hit start mitigation I do want messages sent, but we'll save that for
+later."*
+
+So starting a water loss should eventually send the customer something — presumably a
+confirmation that the job is opened and when the crew is coming. **Deliberately not built
+yet.** When it is, it needs its own template rather than reusing the carpet cleaning
+booking confirmation, since the situation and the tone are different.
