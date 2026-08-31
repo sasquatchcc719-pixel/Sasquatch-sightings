@@ -2809,3 +2809,40 @@ equipment days — it should compute and show. Where the answer needs a judgment
 Charles has and the software does not, it should present the numbers and get out
 of the way. Three rounds of moving a made-up threshold was three rounds of not
 learning that.
+
+## Equipment moves, and the plan remembers each day
+
+Charles: *"the location of the air movers can change throughout the drying
+process. It's very typical that I move them, so the location of each air mover
+needs to be independent on that specific day."*
+
+A placement carried a single `map_x`/`map_y`, so moving a fan overwrote where it
+had been. That erased the record of the work: two fans coming off the wall and
+turning into a stalled closet on Monday is a decision, and the drying log could
+not show it had been made.
+
+`restoration_equipment_positions` records a position per (unit, visit). Moving a
+fan writes against the visit being viewed, so Sunday's layout survives Monday's
+rearranging. Moving the same fan twice in one day corrects that day rather than
+adding a second entry — a unique constraint on the pair enforces it.
+
+Equipment pins are now draggable at all, which they were not; they could be
+dropped and never repositioned. Same tap-versus-drag rule as the doors, decided
+by finger travel rather than computed distance.
+
+### This is the opposite of the readings rule, deliberately
+
+A reading not taken on a visit **does not exist** and shows blank. A fan not
+moved on a visit **is still exactly where it was**, so an unmoved visit inherits
+the last position before it. Carrying a value forward was wrong for readings and
+is right here, and the difference is not a matter of taste: one is a measurement
+that was never made, the other is an object that did not go anywhere.
+
+## The dehumidifier is a box
+
+Charles: *"make the dehumidifier larger and square just to kind of represent the
+fact that it's a box."*
+
+Air movers stay dots. A dehu is drawn as a square roughly double the size, which
+is about its real footprint — a 200 HT is 20″ wide and 23″ deep — so the plan
+reads the way the room does.

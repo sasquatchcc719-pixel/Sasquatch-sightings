@@ -40,6 +40,11 @@ export type PlanPin = {
   label: string
   /** Two letters on an equipment pin, so a dehu reads differently to a fan. */
   glyph?: string
+  /**
+   * A dehumidifier is a box on the floor, not a point. Drawn square and larger
+   * so the plan reads like the room does — you can see what is standing where.
+   */
+  shape?: 'dot' | 'box'
   xFt: number | null
   yFt: number | null
   value?: number | null
@@ -77,6 +82,8 @@ type Props = {
   onDeleteOpening?: (openingId: string) => void
   onDropPin?: (position: { xFt: number; yFt: number }) => void
   onPinClick?: (pin: PlanPin) => void
+  /** Drag an equipment pin to a new spot. Readings stay put; gear moves. */
+  onMovePin?: (pinId: string, xFt: number, yFt: number) => void
 }
 
 const PADDING_FT = 4
@@ -104,6 +111,7 @@ export function WallPlan({
   onDeleteOpening,
   onDropPin,
   onPinClick,
+  onMovePin,
 }: Props) {
   const [width, setWidth] = useState(0)
   const [draft, setDraft] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
@@ -128,6 +136,20 @@ export function WallPlan({
     wallId: string
     offsetFt: number
     grabFt: number
+    downX: number
+    downY: number
+    moved: boolean
+  } | null>(null)
+
+  /**
+   * An equipment pin being dragged. Same tap-versus-drag rule as the doors:
+   * decided by how far the finger travelled, not by how far the computed
+   * position moved.
+   */
+  const [pinDrag, setPinDrag] = useState<{
+    id: string
+    xFt: number
+    yFt: number
     downX: number
     downY: number
     moved: boolean
@@ -665,25 +687,77 @@ export function WallPlan({
         ? pins
             .filter((pin) => pin.xFt != null && pin.yFt != null && !pin.removed)
             .map((pin) => {
-              const screen = toScreen(pin.xFt ?? 0, pin.yFt ?? 0)
+              const live =
+                pinDrag?.id === pin.id ? { xFt: pinDrag.xFt, yFt: pinDrag.yFt } : pin
+              const screen = toScreen(live.xFt ?? 0, live.yFt ?? 0)
+              const draggable = pin.kind === 'equipment' && Boolean(onMovePin)
               return (
                 <button
                   key={pin.id}
                   type="button"
-                  title={pin.label}
+                  title={draggable ? `${pin.label} — drag to move it` : pin.label}
                   aria-label={pin.label}
-                  onPointerDown={(event) => event.stopPropagation()}
+                  onPointerDown={(event) => {
+                    event.stopPropagation()
+                    if (!draggable) return
+                    try {
+                      event.currentTarget.setPointerCapture(event.pointerId)
+                    } catch {
+                      // Capture is a nicety; it must never abandon the tap.
+                    }
+                    setPinDrag({
+                      id: pin.id,
+                      xFt: pin.xFt ?? 0,
+                      yFt: pin.yFt ?? 0,
+                      downX: event.clientX,
+                      downY: event.clientY,
+                      moved: false,
+                    })
+                  }}
+                  onPointerMove={(event) => {
+                    if (pinDrag?.id !== pin.id) return
+                    const travel = Math.hypot(
+                      event.clientX - pinDrag.downX,
+                      event.clientY - pinDrag.downY,
+                    )
+                    if (!pinDrag.moved && travel < TAP_SLOP_PX) return
+                    const rect = event.currentTarget.parentElement?.getBoundingClientRect()
+                    if (!rect) return
+                    const { xFt, yFt } = toPlan(event.clientX, event.clientY, rect)
+                    setPinDrag({ ...pinDrag, moved: true, xFt, yFt })
+                  }}
+                  onPointerUp={(event) => {
+                    if (pinDrag?.id !== pin.id) return
+                    try {
+                      event.currentTarget.releasePointerCapture(event.pointerId)
+                    } catch {
+                      // Already released.
+                    }
+                    if (pinDrag.moved) {
+                      onMovePin?.(
+                        pin.id,
+                        Math.round(pinDrag.xFt * 100) / 100,
+                        Math.round(pinDrag.yFt * 100) / 100,
+                      )
+                    }
+                    setPinDrag(null)
+                  }}
                   onClick={(event) => {
                     event.stopPropagation()
+                    if (pinDrag?.moved) return
                     onPinClick?.(pin)
                   }}
-                  className={`absolute flex h-6 min-w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 px-1 text-[10px] font-bold text-white shadow ${
+                  className={`absolute flex -translate-x-1/2 -translate-y-1/2 items-center justify-center border-2 font-bold text-white shadow ${
+                    pin.shape === 'box'
+                      ? 'h-12 w-12 rounded-md text-xs'
+                      : 'h-6 min-w-6 rounded-full px-1 text-[10px]'
+                  } ${
                     selectedPinId === pin.id
                       ? 'border-slate-900 ring-2 ring-slate-900/40'
                       : 'border-white'
                   } ${
                     pin.kind === 'equipment'
-                      ? 'bg-sky-600'
+                      ? `bg-sky-600 ${draggable ? 'cursor-grab active:cursor-grabbing' : ''}`
                       : BAND_PIN_CLASS[pin.band ?? 'unknown']
                   }`}
                   style={{ left: screen.left, top: screen.top }}

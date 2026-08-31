@@ -475,3 +475,111 @@ describe('adding a monitor visit to a running job', () => {
     await supabase.from('restoration_projects').delete().eq('id', project!.id)
   })
 })
+
+describe('equipment that gets moved between visits', () => {
+  it('keeps each day\'s layout instead of overwriting it', async () => {
+    const { data: addr } = await supabase
+      .from('ops_service_addresses')
+      .select('id, customer_id')
+      .limit(1)
+      .single()
+
+    const { data: project } = await supabase
+      .from('restoration_projects')
+      .insert({
+        customer_id: addr!.customer_id,
+        service_address_id: addr!.id,
+        cause_narrative: `${MARKER}_MOVES`,
+      })
+      .select('id')
+      .single()
+
+    const visit = async (date: string, type: string, seq: number) => {
+      const { data } = await supabase
+        .from('ops_appointments')
+        .insert({
+          customer_id: addr!.customer_id,
+          service_address_id: addr!.id,
+          booking_channel: 'admin',
+          source: 'integration_test',
+          status: 'booked',
+          payment_status: 'unpaid',
+          quickbooks_sync_status: 'held',
+          appointment_date: date,
+          start_time: '09:00',
+          end_time: '10:00',
+          quoted_total: 0,
+          kind: 'restoration',
+          restoration_project_id: project!.id,
+          visit_type: type,
+          visit_sequence: seq,
+          internal_notes: MARKER,
+        })
+        .select('id')
+        .single()
+      return data!.id as string
+    }
+
+    const day1 = await visit('2026-08-29', 'mitigation', 1)
+    const day2 = await visit('2026-08-30', 'monitor', 2)
+
+    const { data: fan } = await supabase
+      .from('restoration_equipment_placements')
+      .insert({
+        project_id: project!.id,
+        catalog_code: 'DRY',
+        placed_at: '2026-08-29T09:00:00-06:00',
+        map_x: 4,
+        map_y: 4,
+      })
+      .select('id')
+      .single()
+
+    // Moved into the closet on day two.
+    await supabase.from('restoration_equipment_positions').insert({
+      placement_id: fan!.id,
+      appointment_id: day2,
+      map_x: 14,
+      map_y: 2,
+      moved_at: '2026-08-30T09:30:00-06:00',
+    })
+
+    // Day one still shows where it was first set down.
+    const { data: positions } = await supabase
+      .from('restoration_equipment_positions')
+      .select('appointment_id, map_x, map_y')
+      .eq('placement_id', fan!.id)
+    expect(positions).toHaveLength(1)
+    expect(positions![0].appointment_id).toBe(day2)
+
+    const { data: placement } = await supabase
+      .from('restoration_equipment_placements')
+      .select('map_x, map_y')
+      .eq('id', fan!.id)
+      .single()
+    // The original placement is untouched — day one is not rewritten.
+    expect(Number(placement!.map_x)).toBe(4)
+
+    // Moving it again on the same visit corrects that day rather than adding.
+    await supabase.from('restoration_equipment_positions').upsert(
+      {
+        placement_id: fan!.id,
+        appointment_id: day2,
+        map_x: 15,
+        map_y: 3,
+        moved_at: new Date().toISOString(),
+      },
+      { onConflict: 'placement_id,appointment_id' },
+    )
+    const { data: after } = await supabase
+      .from('restoration_equipment_positions')
+      .select('map_x')
+      .eq('placement_id', fan!.id)
+    expect(after).toHaveLength(1)
+    expect(Number(after![0].map_x)).toBe(15)
+
+    void day1
+    await supabase.from('ops_appointments').delete().eq('restoration_project_id', project!.id)
+    await supabase.from('restoration_projects').delete().eq('id', project!.id)
+  })
+})

@@ -53,6 +53,7 @@ import { AirReadingsCard, type AirReading } from '@/components/ops/air-readings-
 import { EquipmentPinEditor } from '@/components/ops/equipment-pin-editor'
 import { grainsPerPound } from '@/lib/ops/restoration-psychrometry'
 import { readingForVisit, visitIsFuture } from '@/lib/ops/restoration-visit-scope'
+import { positionForVisit } from '@/lib/ops/restoration-equipment-position'
 
 /**
  * The restoration project screen.
@@ -143,6 +144,13 @@ type Detail = {
     area_id: string | null
     map_x: number | null
     map_y: number | null
+  }>
+  equipment_positions: Array<{
+    placement_id: string
+    appointment_id: string
+    map_x: number | null
+    map_y: number | null
+    moved_at: string
   }>
   equipment_billing: Array<{
     catalog_code: string; description: string; unit_price: number
@@ -512,13 +520,22 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
   const planPins = useMemo<PlanPin[]>(() => {
     const pins: PlanPin[] = []
     for (const placement of detail?.equipment ?? []) {
+      // Where this unit stood on the visit being viewed. Unlike a reading, a
+      // fan nobody moved is still where it was, so an unmoved visit inherits
+      // the last position before it.
+      const at = positionForVisit(placement, detail?.equipment_positions ?? [], {
+        id: activeVisitId,
+        appointment_date: activeVisitDate,
+      })
       pins.push({
         id: placement.id,
         kind: 'equipment',
         label: placement.catalog_code,
         glyph: equipmentGlyph(placement.catalog_code),
-        xFt: placement.map_x,
-        yFt: placement.map_y,
+        // Dehus are boxes on the floor; air movers are points.
+        shape: placement.catalog_code.startsWith('DHM') ? 'box' : 'dot',
+        xFt: at.x,
+        yFt: at.y,
         removed: Boolean(placement.removed_at),
       })
     }
@@ -547,7 +564,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
       })
     }
     return pins
-  }, [detail, activeVisitId])
+  }, [detail, activeVisitId, activeVisitDate])
 
   const selectedPoint = useMemo(
     () => detail?.reading_points.find((p) => p.id === selectedPointId) ?? null,
@@ -2116,6 +2133,22 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                     'place-pin',
                   )
                 }
+              }}
+              onMovePin={(pinId, xFt, yFt) => {
+                // The move belongs to the visit being viewed, so moving a fan
+                // on Monday leaves Sunday's layout exactly as it was.
+                void call(
+                  `/api/admin/ops/restoration/equipment/${pinId}`,
+                  {
+                    method: 'PUT',
+                    body: JSON.stringify({
+                      appointment_id: activeVisitId,
+                      map_x: xFt,
+                      map_y: yFt,
+                    }),
+                  },
+                  `move-${pinId}`,
+                )
               }}
               onPinClick={(pin) => {
                 if (pin.kind === 'equipment') {

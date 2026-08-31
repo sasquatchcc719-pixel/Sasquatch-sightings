@@ -61,6 +61,7 @@ export async function GET(
       { data: categoryEvents },
       { data: payments },
       { data: photos },
+      { data: positions },
     ] = await Promise.all([
       supabase
         .from('restoration_visit_queue')
@@ -69,7 +70,9 @@ export async function GET(
         .order('visit_sequence'),
       supabase
         .from('restoration_equipment_placements')
-        .select('id, catalog_code, label, placed_at, removed_at, area_id, map_x, map_y')
+        .select(
+          'id, catalog_code, label, placed_at, removed_at, area_id, map_x, map_y',
+        )
         .eq('project_id', id)
         .order('placed_at'),
       supabase
@@ -132,6 +135,18 @@ export async function GET(
             .in('appointment_id', visitIds)
             .order('created_at')
         : Promise.resolve({ data: [] as unknown[] }),
+      supabase
+        .from('restoration_equipment_positions')
+        .select('placement_id, appointment_id, map_x, map_y, moved_at')
+        .in(
+          'placement_id',
+          (
+            await supabase
+              .from('restoration_equipment_placements')
+              .select('id')
+              .eq('project_id', id)
+          ).data?.map((e) => e.id) ?? [],
+        ),
     ])
 
     const lineTotal = (visits ?? []).reduce((sum, visit) => {
@@ -156,6 +171,7 @@ export async function GET(
       estimate_lines: estimateLines ?? [],
       openings: openings ?? [],
       equipment_billing: billing ?? [],
+      equipment_positions: positions ?? [],
       reading_points: points ?? [],
       air_readings: air ?? [],
       category_events: categoryEvents ?? [],
