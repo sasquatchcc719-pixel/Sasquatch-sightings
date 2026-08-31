@@ -238,3 +238,73 @@ describe('review request pipeline against the real DB', () => {
     expect(result.sent).toBe(0)
   })
 })
+
+describe('we never ask for a review on a flood', () => {
+  const supabase = createAdminClient()
+  const MARKER = 'REVIEW_FLOOD_TEST'
+  let projectId = ''
+  let appointmentId = ''
+
+  beforeAll(async () => {
+    const { data: addr } = await supabase
+      .from('ops_service_addresses')
+      .select('id, customer_id')
+      .limit(1)
+      .single()
+
+    const { data: project } = await supabase
+      .from('restoration_projects')
+      .insert({
+        customer_id: addr!.customer_id,
+        service_address_id: addr!.id,
+        cause_narrative: MARKER,
+      })
+      .select('id')
+      .single()
+    projectId = project!.id
+
+    const { data: visit } = await supabase
+      .from('ops_appointments')
+      .insert({
+        customer_id: addr!.customer_id,
+        service_address_id: addr!.id,
+        booking_channel: 'admin',
+        // Keeps the booked webhook quiet — no fake Telegram alert.
+        source: 'integration_test',
+        status: 'completed',
+        completed_at: new Date().toISOString(),
+        payment_status: 'unpaid',
+        quickbooks_sync_status: 'held',
+        appointment_date: new Date().toISOString().slice(0, 10),
+        start_time: '09:00',
+        end_time: '10:00',
+        quoted_total: 0,
+        kind: 'restoration',
+        restoration_project_id: projectId,
+        visit_type: 'monitor',
+        internal_notes: MARKER,
+      })
+      .select('id')
+      .single()
+    appointmentId = visit!.id
+  })
+
+  afterAll(async () => {
+    await supabase.from('review_requests').delete().eq('appointment_id', appointmentId)
+    await supabase.from('ops_appointments').delete().eq('internal_notes', MARKER)
+    await supabase.from('restoration_projects').delete().eq('id', projectId)
+  })
+
+  it('skips a completed monitor visit, with the reason on the record', async () => {
+    await enqueueReviewRequests(supabase)
+
+    const { data: row } = await supabase
+      .from('review_requests')
+      .select('status, skip_reason')
+      .eq('appointment_id', appointmentId)
+      .maybeSingle()
+
+    expect(row?.status).toBe('skipped')
+    expect(row?.skip_reason).toMatch(/flood/i)
+  })
+})

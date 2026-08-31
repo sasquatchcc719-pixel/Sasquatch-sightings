@@ -185,36 +185,15 @@ export async function enqueueReviewRequests(
       continue
     }
 
-    // A water loss is one job made of several visits. Closing a monitor day
-    // marks that visit completed, and without this the customer got a "thanks
-    // for having us out, mind leaving a review?" text on day two of a flood,
-    // then again on day three. The ask belongs at the end of the loss, so only
-    // the visit that actually closed the project is eligible.
+    // We never ask for a review on a water loss. A flood is the worst day of
+    // someone's year, not a service they are delighted by, and asking turns a
+    // fine job into an awkward one. It is also why flood companies carry poor
+    // ratings as a class — the ask lands wrong no matter how good the work was.
+    // Charles's call, and it applies to every restoration visit including the
+    // one that closes the job.
     if (appt.kind === 'restoration' || appt.restoration_project_id) {
-      const projectId = appt.restoration_project_id as string | null
-      const { data: project } = projectId
-        ? await supabase
-            .from('restoration_projects')
-            .select('closed_at, invoice_id')
-            .eq('id', projectId)
-            .maybeSingle()
-        : { data: null }
-
-      if (!project?.closed_at || !project.invoice_id) {
-        await insertSkip('restoration visit, water loss still open')
-        continue
-      }
-
-      const { data: invoice } = await supabase
-        .from('ops_invoices')
-        .select('appointment_id')
-        .eq('id', project.invoice_id)
-        .maybeSingle()
-
-      if (invoice?.appointment_id !== appt.id) {
-        await insertSkip('restoration visit, not the one that closed the loss')
-        continue
-      }
+      await insertSkip('restoration job - we do not ask for reviews on floods')
+      continue
     }
 
     const { data: customer } = await supabase

@@ -1798,9 +1798,23 @@ minute for a Google review..."* — mid-flood, before the job was done. Given ho
 fragile the Google profile already is, asking three times during one unfinished
 job is a real risk, not a cosmetic one.
 
-A water loss is now eligible for exactly one ask: the visit that actually closed
-the project and carries its invoice. Every other restoration visit records a
-skip with the reason, so it is visible rather than silent.
+My first fix allowed one ask, on the visit that closed the loss. Charles
+overruled it, and he is right:
+
+> *"I don't wanna ask for reviews on floods whatsoever. It's a very sensitive
+> thing for people. They're not exactly looking to get out five star reviews
+> which is why pretty much all flood companies have terrible Google reviews."*
+
+A flood is the worst day of someone's year, not a service they are delighted by.
+The ask lands wrong however good the work was — which is why flood companies
+carry poor ratings as a class. **No restoration visit is ever eligible**,
+including the one that closes the job. Each records a skip with the reason, so
+it is visible rather than silent, and a test asserts it.
+
+The four templates that mention a review — `job_finished_sms`,
+`job_finished_email`, `job_finished_email_urine`, `satisfaction_checkin_email` —
+are all cleaning-only keys, already unreachable from a restoration visit. That
+is the complete set; nothing else in the codebase links the review page.
 
 ## The drying plan suggests; it does not act
 
