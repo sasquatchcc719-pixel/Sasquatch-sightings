@@ -2886,3 +2886,35 @@ existing rows were rewritten through it.
 A test writes a reading with a deliberately wrong stamp — a date two weeks out —
 and asserts the database corrects it anyway. **An invariant the application
 merely intends is not an invariant.**
+
+## Two things a real monitor visit turned up
+
+### The visit you clicked is the visit you get
+
+Charles: *"I click on today's monitor which is on the 31st but when I opened it
+up, it's showing the mitigation visit as default."*
+
+The calendar linked to the project and nothing more, and the screen picked the
+first visit that was not completed — the mitigation day, which stays open until
+the job closes. So arriving on today's monitor put every reading and photo on the
+wrong day unless he noticed and changed it, which is the same fault that put
+Sunday's readings on Saturday.
+
+The visit is part of the address now: `?visit=<id>`, from both places the
+calendar links. Failing that, today's visit; failing that, the first still open.
+
+### A monitor visit had no way to be closed
+
+Charles: *"the status is stuck on my way when we're finished with it... we don't
+really have a button to close it."*
+
+The chain is on my way → start work → finish visit. That is three taps to record
+half an hour of readings, so in practice the visit sits on "on my way" and the
+schedule stops telling the truth about what has been done.
+
+One button now closes it from wherever it is stuck. It writes nothing but the
+status and the completion time: **no invoice**, because a restoration visit never
+bills on its own, and **no customer message** — the finished-visit wording exists
+and can be switched on, but texting someone because a status changed is not a
+default worth having. Closing a visit is also not closing the job; the project
+stays active, which a test asserts.

@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import {
   Droplets, Loader2, Mic, Phone, Plus, Trash2, Wind, CheckCircle2, MessageSquare,
@@ -357,6 +358,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
     total: number
   } | null>(null)
 
+  /** ?visit=<id> — which visit the calendar sent us to. */
+  const requestedVisitId = useSearchParams().get('visit')
+
   const [pointLabel, setPointLabel] = useState('')
   const [pointMaterial, setPointMaterial] = useState('Drywall')
   const [pointGoal, setPointGoal] = useState('')
@@ -376,15 +380,27 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
       setDetail(result)
       setActiveVisitId((current) => {
         if (current && result.visits.some((v: Visit) => v.id === current)) return current
+
+        // The visit that was clicked to get here. Arriving from the calendar on
+        // today's monitor and landing on the mitigation day means readings and
+        // photos file to the wrong day unless you notice and change it.
+        const asked = requestedVisitId
+        if (asked && result.visits.some((v: Visit) => v.id === asked)) return asked
+
+        // Otherwise today's visit, then the first still open.
+        const today = toDateKey(new Date())
+        const todays = result.visits.find(
+          (v: Visit) => v.appointment_date === today && v.status !== 'completed',
+        )
         const open = result.visits.find((v: Visit) => v.status !== 'completed')
-        return (open ?? result.visits[0])?.id ?? null
+        return (todays ?? open ?? result.visits[0])?.id ?? null
       })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load')
     } finally {
       setLoading(false)
     }
-  }, [projectId])
+  }, [projectId, requestedVisitId])
 
   const loadPlan = useCallback(async () => {
     try {
@@ -1434,6 +1450,41 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             <p className="text-muted-foreground mt-2 text-xs">
               On My Way texts the customer that you are heading over.
             </p>
+          ) : null}
+
+          {/*
+            A monitor visit is thirty minutes of readings. Walking it through
+            on-my-way, start work, finish visit is three taps to record that
+            nothing happened worth three taps — and leaving it on "on my way"
+            afterwards is what actually occurs. One button closes it from
+            wherever it got stuck.
+
+            Deliberately silent: `skip_customer_communications` suppresses the
+            finished-visit text. The wording for it exists and can be switched
+            on, but sending a customer a message is not something to do by
+            default because a status changed.
+          */}
+          {activeVisit.status !== 'completed' && activeVisit.status !== 'cancelled' ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3 w-full gap-2"
+              disabled={busy === 'close-visit'}
+              onClick={() =>
+                void call(
+                  `/api/admin/ops/restoration/visits/${activeVisit.id}/close`,
+                  { method: 'POST', body: JSON.stringify({}) },
+                  'close-visit',
+                )
+              }
+            >
+              {busy === 'close-visit' ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <CheckCircle2 className="h-4 w-4" />
+              )}
+              Close this visit
+            </Button>
           ) : null}
         </Card>
       ) : null}

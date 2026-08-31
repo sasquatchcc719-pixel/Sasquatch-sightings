@@ -601,7 +601,9 @@ function getAppointmentPlacement(
  */
 function appointmentHref(appointment: Appointment): string {
   if (appointment.kind === 'restoration') {
-    return `/admin/operations/restoration/${appointment.restoration_project_id}`
+    // The visit is part of the address. Opening today's monitor and landing on
+    // the mitigation day files readings and photos to the wrong date.
+    return `/admin/operations/restoration/${appointment.restoration_project_id}?visit=${appointment.id}`
   }
   if (appointment.kind === 'estimate') {
     return `/admin/operations/estimates/${appointment.id}`
@@ -2423,7 +2425,7 @@ export function OperationsSchedule() {
       const isEstimate = appointment.kind === 'estimate'
       const isRestoration = appointment.kind === 'restoration'
       const href = isRestoration
-        ? `/admin/operations/restoration/${appointment.restoration_project_id}`
+        ? `/admin/operations/restoration/${appointment.restoration_project_id}?visit=${appointment.id}`
         : isEstimate
         ? `/admin/operations/estimates/${appointment.id}`
         : invoice?.id

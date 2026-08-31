@@ -583,3 +583,77 @@ describe('equipment that gets moved between visits', () => {
     await supabase.from('restoration_projects').delete().eq('id', project!.id)
   })
 })
+
+describe('closing a monitor visit', () => {
+  it('completes it without an invoice or a message', async () => {
+    const { data: addr } = await supabase
+      .from('ops_service_addresses')
+      .select('id, customer_id')
+      .limit(1)
+      .single()
+
+    const { data: project } = await supabase
+      .from('restoration_projects')
+      .insert({
+        customer_id: addr!.customer_id,
+        service_address_id: addr!.id,
+        cause_narrative: `${MARKER}_CLOSE_VISIT`,
+      })
+      .select('id')
+      .single()
+
+    const { data: visit } = await supabase
+      .from('ops_appointments')
+      .insert({
+        customer_id: addr!.customer_id,
+        service_address_id: addr!.id,
+        booking_channel: 'admin',
+        source: 'integration_test',
+        // Where a monitor visit actually gets stuck.
+        status: 'on_my_way',
+        payment_status: 'unpaid',
+        quickbooks_sync_status: 'held',
+        appointment_date: new Date().toISOString().slice(0, 10),
+        start_time: '14:00',
+        end_time: '15:00',
+        quoted_total: 0,
+        kind: 'restoration',
+        restoration_project_id: project!.id,
+        visit_type: 'monitor',
+        internal_notes: MARKER,
+      })
+      .select('id')
+      .single()
+
+    // What the route does: straight to completed from wherever it was.
+    const now = new Date().toISOString()
+    const { data: closed } = await supabase
+      .from('ops_appointments')
+      .update({ status: 'completed', completed_at: now })
+      .eq('id', visit!.id)
+      .select('status, completed_at')
+      .single()
+
+    expect(closed!.status).toBe('completed')
+    expect(closed!.completed_at).not.toBeNull()
+
+    // Still no invoice: a restoration visit never bills on its own.
+    const { data: invoices } = await supabase
+      .from('ops_invoices')
+      .select('id')
+      .eq('appointment_id', visit!.id)
+    expect(invoices).toHaveLength(0)
+
+    // And the project is still running — closing a visit is not closing a job.
+    const { data: after } = await supabase
+      .from('restoration_projects')
+      .select('status, invoice_id')
+      .eq('id', project!.id)
+      .single()
+    expect(after!.status).toBe('active')
+    expect(after!.invoice_id).toBeNull()
+
+    await supabase.from('ops_appointments').delete().eq('id', visit!.id)
+    await supabase.from('restoration_projects').delete().eq('id', project!.id)
+  })
+})
