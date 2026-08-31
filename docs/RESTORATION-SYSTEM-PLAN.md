@@ -3069,3 +3069,56 @@ nothing outstanding — so the state of the thing is visible rather than assumed
 The scoping is a pair of pure functions with tests, one of which asserts the
 exact failure: an edit belonging to Monday, rendered against Sunday, returns
 Sunday's saved note.
+
+## Audit: the equipment arithmetic
+
+Charles pulled two fans, watched the running count drop to six while the money
+stayed at eight, and asked for an audit. Here is one.
+
+### The numbers, checked against the database
+
+| | |
+| --- | --- |
+| DRY placements ever | 8 |
+| still running | 6 |
+| pulled (31 Aug 21:05, after 5.5 h) | 2 |
+| unit-days billed | 8 |
+| total | 8 × $24.50 = **$196.00** |
+
+**The arithmetic is right.** Two fans ran for five and a half hours today; that is
+a day's rental each and a trip to collect them. Six more are still running on
+their first day. Eight unit-days is what the job owes for today, and pulling a
+fan stops its clock rather than undoing what it already earned.
+
+### What was actually broken
+
+Two things, both in the display, and together they made a correct total look
+like a bug.
+
+**The row lied.** It rendered `{units} × {unit_days / units}d`, an average that
+describes no actual fan. It happened to read "8 × 1d" here because every fan had
+one day. Tomorrow, with six on two days and two on one, it would have read
+"8 × 1.75d" — a fan that does not exist.
+
+**Nothing said a pulled unit keeps its days.** The running count and the money
+sat side by side disagreeing, with no explanation, which is exactly the reading
+Charles took from it.
+
+### What replaced it
+
+The line now states **unit-days** — the thing actually being billed — and opens
+into the per-unit ledger behind it: when each was set down, whether it is still
+running or when it was pulled, how many hours, how many days. Eight rows that sum
+to the total on the line.
+
+Underneath, when anything has been pulled: *"a unit still bills for the days it
+ran, so pulling one stops the clock rather than undoing the charge."*
+
+The ledger is a pure function with tests, including the exact case here — pulling
+two units leaves `unitDays` unchanged and drops `running`.
+
+### On "are we calculating as we go"
+Yes, and that part was never in doubt: the total is computed from placement and
+removal timestamps every time the screen loads, so it climbs on its own and is
+correct at any moment, including the close. What was missing was any way to look
+at it and agree.

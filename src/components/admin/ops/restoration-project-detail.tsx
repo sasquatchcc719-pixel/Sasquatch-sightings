@@ -55,6 +55,7 @@ import { grainsPerPound } from '@/lib/ops/restoration-psychrometry'
 import { readingForVisit, visitIsFuture } from '@/lib/ops/restoration-visit-scope'
 import { positionForVisit } from '@/lib/ops/restoration-equipment-position'
 import { noteTextFor, noteIsDirty } from '@/lib/ops/restoration-note-scope'
+import { equipmentLedger } from '@/lib/ops/restoration-equipment-ledger'
 
 /**
  * The restoration project screen.
@@ -550,6 +551,12 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
     const visit = detail?.visits.find((v) => v.id === activeVisitId) ?? null
     return visit?.visit_type !== 'monitor'
   }, [workOpenOverride, detail?.visits, activeVisitId])
+
+  /** The per-unit arithmetic behind each equipment line, so it can be checked. */
+  const ledger = useMemo(
+    () => equipmentLedger(detail?.equipment ?? [], new Date()),
+    [detail?.equipment],
+  )
 
   /** True when the visit being viewed has not been worked yet. */
   const activeVisitNotYet = useMemo(() => {
@@ -2632,21 +2639,67 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             ))}
           </div>
 
+          {/*
+            The old row read "{units} x {unit_days / units}d", an average that
+            describes no actual fan — six running two days and two pulled after
+            one showed as "8 x 1.75d". And it sat beside a running count that
+            disagreed with it, which is how Charles concluded the arithmetic was
+            broken when it was the label.
+          */}
           {detail.equipment_billing.length > 0 ? (
             <div className="flex flex-col divide-y text-sm">
-              {detail.equipment_billing.map((row) => (
-                <div key={row.catalog_code} className="flex items-center gap-2 py-2">
-                  <span className="min-w-0 flex-1">
-                    <code className="text-xs">{row.catalog_code}</code> {row.description}
-                  </span>
-                  <span className="text-muted-foreground whitespace-nowrap text-xs">
-                    {row.units} × {row.unit_days / Math.max(1, row.units)}d
-                  </span>
-                  <span className="w-20 text-right font-medium">
-                    {money(Number(row.line_total))}
-                  </span>
-                </div>
-              ))}
+              {detail.equipment_billing.map((row) => {
+                const line = ledger.find((l) => l.code === row.catalog_code)
+                return (
+                  <div key={row.catalog_code} className="py-2">
+                    <div className="flex items-center gap-2">
+                      <span className="min-w-0 flex-1">
+                        <code className="text-xs">{row.catalog_code}</code>{' '}
+                        {row.description}
+                      </span>
+                      <span className="text-muted-foreground whitespace-nowrap text-xs tabular-nums">
+                        {row.unit_days} unit-day{row.unit_days === 1 ? '' : 's'}
+                      </span>
+                      <span className="w-20 text-right font-medium">
+                        {money(Number(row.line_total))}
+                      </span>
+                    </div>
+                    {line ? (
+                      <details className="mt-1">
+                        <summary className="text-muted-foreground cursor-pointer text-xs">
+                          {line.running} running
+                          {line.pulled > 0 ? `, ${line.pulled} pulled` : ''} — how this
+                          adds up
+                        </summary>
+                        <div className="text-muted-foreground mt-1 flex flex-col gap-0.5 pl-2 text-xs">
+                          {line.units.map((unit, index) => (
+                            <span key={unit.id} className="tabular-nums">
+                              #{index + 1} ·{' '}
+                              {new Date(unit.placedAt).toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                              })}
+                              {unit.removedAt
+                                ? ` → pulled ${new Date(unit.removedAt).toLocaleDateString(
+                                    'en-US',
+                                    { month: 'short', day: 'numeric' },
+                                  )} after ${unit.hours}h`
+                                : ` → running, ${unit.hours}h so far`}{' '}
+                              · {unit.days} day{unit.days === 1 ? '' : 's'}
+                            </span>
+                          ))}
+                          {line.pulled > 0 ? (
+                            <span className="mt-1">
+                              A unit still bills for the days it ran, so pulling one
+                              stops the clock rather than undoing the charge.
+                            </span>
+                          ) : null}
+                        </div>
+                      </details>
+                    ) : null}
+                  </div>
+                )
+              })}
             </div>
           ) : null}
 
