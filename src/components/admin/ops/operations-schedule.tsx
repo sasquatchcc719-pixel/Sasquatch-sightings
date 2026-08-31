@@ -34,12 +34,16 @@ type ScheduleView = 'week' | 'day' | 'month'
 
 type QueuedVisit = {
   id: string
+  /** 'restoration' for a queued monitor visit, 'appointment' for a parked job. */
+  source: 'restoration' | 'appointment'
   projectId: string
   label: string
   /** Street and city — two losses for the same customer look identical without it. */
   place: string
   visitType: string
   sequence: number | null
+  /** Minutes, so a parked job keeps the length it was booked for. */
+  durationMinutes?: number
 }
 
 type StaffMember = {
@@ -101,6 +105,7 @@ type Appointment = {
   estimate_status?: string | null
   visit_type?: 'mitigation' | 'monitor' | 'final' | null
   restoration_project_id?: string | null
+  parked_at?: string | null
   is_subcontracted?: boolean | null
   subcontractor_name?: string | null
   ops_appointment_line_items: Array<{
@@ -948,6 +953,7 @@ export function OperationsSchedule() {
             : project.ops_service_addresses
           rows.push({
             id: queued.id,
+            source: 'restoration',
             projectId: project.id,
             label: customer?.business_name || customer?.full_name || 'Water loss',
             place: address
@@ -958,6 +964,40 @@ export function OperationsSchedule() {
           })
         }
       }
+      // Parked jobs — cancelled off the schedule but not given up on.
+      try {
+        const parkedResponse = await fetch(
+          '/api/admin/ops/schedule/parked',
+          { cache: 'no-store' },
+        )
+        if (parkedResponse.ok) {
+          const parked = await parkedResponse.json()
+          for (const job of parked.appointments ?? []) {
+            const customer = Array.isArray(job.ops_customers)
+              ? job.ops_customers[0]
+              : job.ops_customers
+            const address = Array.isArray(job.ops_service_addresses)
+              ? job.ops_service_addresses[0]
+              : job.ops_service_addresses
+            rows.push({
+              id: job.id,
+              source: 'appointment',
+              projectId: 'parked',
+              label:
+                customer?.business_name || customer?.full_name || 'Job',
+              place: address
+                ? [address.street_1, address.city].filter(Boolean).join(', ')
+                : '',
+              visitType: 'needs a date',
+              sequence: null,
+              durationMinutes: job.duration_minutes ?? 120,
+            })
+          }
+        }
+      } catch {
+        // The tray is additive; a failure here must not break the calendar.
+      }
+
       // Group by loss first, then visit order, so one job's visits sit together.
       rows.sort(
         (a, b) =>
@@ -1002,7 +1042,11 @@ export function OperationsSchedule() {
         )
       }
       setData({
-        appointments: scheduleResult.appointments || [],
+        // Parked jobs live in the tray, not on the grid — showing them in both
+        // places would make it look like the job is still scheduled.
+        appointments: (scheduleResult.appointments || []).filter(
+          (appointment: Appointment) => !appointment.parked_at,
+        ),
         events: scheduleResult.events || [],
       })
       setStaffList(scheduleResult.staff || [])
@@ -1037,18 +1081,38 @@ export function OperationsSchedule() {
       staffId: string | null,
     ) => {
       try {
-        const response = await fetch(
-          `/api/admin/ops/restoration/queue/${queueId}/schedule`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              appointment_date: dateKey,
-              start_time: `${String(hour).padStart(2, '0')}:00`,
-              assigned_staff_user_id: staffId,
-            }),
-          },
-        )
+        const card = queuedVisits.find((v) => v.id === queueId)
+        const startTime = `${String(hour).padStart(2, '0')}:00`
+
+        // A parked job goes back through the appointment endpoint so it keeps
+        // its invoice and line items; a queued monitor visit gets created fresh.
+        const response =
+          card?.source === 'appointment'
+            ? await fetch(`/api/admin/ops/appointments/${queueId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  appointment_date: dateKey,
+                  start_time: startTime,
+                  end_time: minutesToDbTime(
+                    hour * 60 + (card.durationMinutes ?? 120),
+                  ),
+                  status: 'booked',
+                  assigned_staff_user_id: staffId,
+                }),
+              })
+            : await fetch(
+                `/api/admin/ops/restoration/queue/${queueId}/schedule`,
+                {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    appointment_date: dateKey,
+                    start_time: startTime,
+                    assigned_staff_user_id: staffId,
+                  }),
+                },
+              )
         if (!response.ok) {
           const result = await response.json().catch(() => ({}))
           setError(result.error || 'Could not place that visit')
@@ -1061,7 +1125,7 @@ export function OperationsSchedule() {
         return false
       }
     },
-    [loadQueuedVisits, loadSchedule],
+    [loadQueuedVisits, loadSchedule, queuedVisits],
   )
 
   const placeArmedVisit = useCallback(
@@ -2791,7 +2855,7 @@ export function OperationsSchedule() {
           <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50/70 p-3">
             <div className="mb-2 flex items-center justify-between gap-2">
               <p className="text-xs font-semibold tracking-wide text-sky-900 uppercase">
-                Unscheduled monitor visits
+                Unscheduled
                 {(() => {
                   const losses = new Set(queuedVisits.map((v) => v.projectId)).size
                   return losses > 1 ? ` · ${losses} losses` : ''

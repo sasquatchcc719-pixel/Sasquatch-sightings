@@ -491,6 +491,10 @@ export async function PATCH(
         end_time: nextEndDb,
         status: nextStatus,
         payment_status: nextPaymentStatus,
+        // Giving a parked job a date puts it back on the schedule.
+        ...(body.appointment_date || nextStatus === 'booked'
+          ? { parked_at: null }
+          : {}),
         internal_notes:
           body.internal_notes !== undefined
             ? String(body.internal_notes || '').trim() || null
@@ -801,6 +805,22 @@ export async function PATCH(
           returned_to_tray: true,
         })
       }
+    }
+
+    // Cancelling a normal job parks it: off the calendar, into the tray, with
+    // everything else about it intact until a new slot is chosen. Explicitly
+    // passing park: false keeps the old behaviour of a plain cancelled block.
+    const shouldPark =
+      current.status !== nextStatus &&
+      nextStatus === 'cancelled' &&
+      !isRestorationVisit &&
+      body.park !== false
+
+    if (shouldPark) {
+      await supabase
+        .from('ops_appointments')
+        .update({ parked_at: nowIso, updated_at: nowIso })
+        .eq('id', id)
     }
 
     if (

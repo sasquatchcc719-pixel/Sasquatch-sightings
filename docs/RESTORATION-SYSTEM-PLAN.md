@@ -1385,3 +1385,30 @@ Restricted to `admin` and `owner`, unlike the rest of the restoration routes whi
 
 3 integration tests: visits and queued visits both disappear; rooms, equipment and
 reading points go too; a second loss is untouched.
+
+
+---
+
+## Cancel means park, for every job
+
+> "Cancel means we're not deleting the job, but we don't want her on the schedule. It
+> just has to sit somewhere else until we figure out where to put it."
+
+`ops_appointments.parked_at`. Cancelling any job now sets it: the block leaves the
+calendar and the job appears in the tray alongside queued monitor visits. Everything else
+about it survives — customer, address, line items, quoted total, and its invoice.
+Giving it a new date clears the park and puts it back, keeping the **same** invoice
+rather than creating a second one.
+
+- `GET /api/admin/ops/schedule/parked` lists them, carrying the duration they were booked
+  for so replacing a four-hour job does not silently shrink it to a default.
+- The tray places each kind through its own endpoint: a parked job goes back through the
+  appointment PATCH so it keeps its invoice; a queued monitor visit is created fresh.
+- The grid filters parked jobs out, or the job would appear both scheduled and unscheduled.
+- `park: false` in the PATCH body still gives a plain cancelled block, for a genuine
+  cancellation that should not sit in the tray.
+
+The tray header is now just "Unscheduled", since it holds both kinds.
+
+3 integration tests cover the round trip: parked keeps its invoice and line items, it is
+listed as parked, and rescheduling restores it with the same invoice rather than a second.
