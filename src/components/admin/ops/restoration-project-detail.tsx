@@ -368,6 +368,10 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
   const [pointGoal, setPointGoal] = useState('')
 
   const [transcript, setTranscript] = useState('')
+  const [noteTranscript, setNoteTranscript] = useState('')
+  const [noteDraft, setNoteDraft] = useState<string | null>(null)
+  /** Null until Charles opens or closes the work card himself on this screen. */
+  const [workOpenOverride, setWorkOpenOverride] = useState<boolean | null>(null)
   const [proposed, setProposed] = useState<ParsedLine[]>([])
   const [unmatched, setUnmatched] = useState<string[]>([])
 
@@ -522,6 +526,16 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
     }, 0)
     return highest + 1
   }, [detail?.reading_points])
+
+  /**
+   * The work card is open on a work day and collapsed on a monitor, until
+   * Charles says otherwise on this screen. Most monitors add no work at all.
+   */
+  const workOpen = useMemo(() => {
+    if (workOpenOverride != null) return workOpenOverride
+    const visit = detail?.visits.find((v) => v.id === activeVisitId) ?? null
+    return visit?.visit_type !== 'monitor'
+  }, [workOpenOverride, detail?.visits, activeVisitId])
 
   /** True when the visit being viewed has not been worked yet. */
   const activeVisitNotYet = useMemo(() => {
@@ -2276,20 +2290,38 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
       {/* ── Work on this visit ─────────────────────────────── */}
       {activeVisit && !closed ? (
         <Card className={SECTION_CARD}>
-          <div className="mb-3 flex items-center justify-between">
+          {/*
+            Collapsed on a monitor visit. Most monitors add no work at all —
+            they are readings and a look around — so this card sat open taking
+            half the screen above the things that ARE used every visit. It stays
+            available, because occasionally a monitor turns into demolition.
+          */}
+          <button
+            type="button"
+            className="mb-3 flex w-full items-center justify-between text-left"
+            onClick={() => setWorkOpenOverride(!workOpen)}
+          >
             <h2 className={SECTION_TITLE}>
               <Mic className={SECTION_ICON} /> Work ·{' '}
               <span className="capitalize">{activeVisit.visit_type}</span>
             </h2>
-            <span className="text-muted-foreground text-sm">
-              {money(
-                activeVisit.ops_appointment_line_items.reduce(
-                  (s, l) => s + Number(l.line_total),
-                  0,
-                ),
-              )}
+            <span className="flex items-center gap-2">
+              <span className="text-muted-foreground text-sm">
+                {money(
+                  activeVisit.ops_appointment_line_items.reduce(
+                    (s, l) => s + Number(l.line_total),
+                    0,
+                  ),
+                )}
+              </span>
+              <span className="text-muted-foreground text-xs">
+                {workOpen ? 'Hide' : 'Add work'}
+              </span>
             </span>
-          </div>
+          </button>
+
+          {workOpen ? (
+          <>
 
           <div className="mb-4 flex flex-col gap-2">
             <Label htmlFor="dictate" className="flex items-center gap-2">
@@ -2527,6 +2559,8 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
               <p className="text-muted-foreground py-2 text-sm">Nothing added yet.</p>
             ) : null}
           </div>
+          </>
+          ) : null}
         </Card>
       ) : null}
 
@@ -2727,6 +2761,80 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
         </Card>
       ) : null}
 
+      {/* ── The day's note ─────────────────────────────────── */}
+      {activeVisit && !closed ? (
+        <Card className={SECTION_CARD}>
+          <h2 className={`${SECTION_TITLE} mb-1`}>
+            <Mic className={SECTION_ICON} /> Today&apos;s note
+          </h2>
+          <p className="text-muted-foreground mb-3 text-sm">
+            Every day of a loss needs its own note — it is what a carrier reads to
+            understand why the job took five days. Talk; it gets tidied.
+          </p>
+
+          {/*
+            Dictate, then clean up. The model is given the day's real figures —
+            the readings taken, the equipment running — so it can refer to them,
+            and told it may use nothing else. It drafts into the box below rather
+            than saving: a note that goes to an adjuster gets read by Charles
+            first.
+          */}
+          <Textarea
+            rows={3}
+            className="mb-2"
+            placeholder="Talk about the day — what you found, what you did, what still needs attention…"
+            value={noteTranscript}
+            onChange={(e) => setNoteTranscript(e.target.value)}
+          />
+          <Button
+            size="sm"
+            className={`${ACTION_BUTTON} mb-3 gap-2`}
+            disabled={busy === 'note-draft' || !noteTranscript.trim()}
+            onClick={async () => {
+              const result = await call(
+                `/api/admin/ops/restoration/visits/${activeVisit.id}/note-draft`,
+                { method: 'POST', body: JSON.stringify({ transcript: noteTranscript }) },
+                'note-draft',
+              )
+              if (result?.note) {
+                setNoteDraft(result.note)
+                setNoteTranscript('')
+              }
+            }}
+          >
+            {busy === 'note-draft' ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Mic className="h-4 w-4" />
+            )}
+            Write it up
+          </Button>
+
+          <Label htmlFor="visit-note" className="mb-1 block">
+            The note for {activeVisit.visit_type === 'monitor' ? 'this monitor' : 'this day'}
+          </Label>
+          <Textarea
+            id="visit-note"
+            key={`${activeVisit.id}-${noteDraft ?? ''}`}
+            rows={4}
+            placeholder="What you saw, what moved, what still needs attention…"
+            defaultValue={noteDraft ?? activeVisit.restoration_visit_note ?? ''}
+            onBlur={(e) => {
+              const note = e.target.value
+              if (note.trim() === (activeVisit.restoration_visit_note ?? '').trim()) return
+              void call(
+                `/api/admin/ops/restoration/visits/${activeVisit.id}/note`,
+                { method: 'PUT', body: JSON.stringify({ note }) },
+                'visit-note',
+              )
+            }}
+          />
+          <p className="text-muted-foreground mt-1 text-xs">
+            Editable, and yours — it goes into the final report in date order.
+          </p>
+        </Card>
+      ) : null}
+
       {/* ── Reading points (placed on day 1, tapped on every visit) ── */}
       {!closed ? (
         <Card className={SECTION_CARD}>
@@ -2742,33 +2850,6 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             and the customer moved a fan — which is how a carrier understands
             why a job took five days rather than three.
           */}
-          {activeVisit ? (
-            <div className="mb-4 flex flex-col gap-1">
-              <Label htmlFor="visit-note">
-                Today&apos;s note
-                {activeVisit.visit_type === 'monitor' ? ' (monitor visit)' : ''}
-              </Label>
-              <Textarea
-                id="visit-note"
-                rows={3}
-                placeholder="What you saw, what moved, what still needs attention…"
-                defaultValue={activeVisit.restoration_visit_note ?? ''}
-                onBlur={(e) => {
-                  const note = e.target.value
-                  if (note.trim() === (activeVisit.restoration_visit_note ?? '').trim()) return
-                  void call(
-                    `/api/admin/ops/restoration/visits/${activeVisit.id}/note`,
-                    { method: 'PUT', body: JSON.stringify({ note }) },
-                    'visit-note',
-                  )
-                }}
-              />
-              <p className="text-muted-foreground text-xs">
-                Goes into the final report, in date order.
-              </p>
-            </div>
-          ) : null}
-
           {/*
             The chart is the one artefact that shows a carrier the job was
             worked rather than merely billed: points falling toward their

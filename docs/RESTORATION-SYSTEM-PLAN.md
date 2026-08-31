@@ -2998,3 +2998,49 @@ that has both.
 I searched for `AirReadingsCard` and found one usage, and stopped. The duplicate
 did not share a name, a component, or a data shape with the thing I was looking
 for. Searching for what I had built told me nothing about what was already there.
+
+## The day's note, dictated
+
+Charles: *"pretty much every day on a job needs unique notes that we enter in for
+our report at the end of the job. We want to use voice text to talk into the
+system and then we wanna have an AI that kind of translates our rambling into a
+usable note."*
+
+Backlog item five, and the last big one. The plain textarea existed; nobody types
+a paragraph on a phone in a wet basement, so it stayed empty.
+
+**Talk, then "Write it up."** The model gets the day's real figures — the
+readings actually taken on that visit, the equipment actually running, the area
+and its square footage — and is told it may use those and what was said, and
+nothing else. Rambling in:
+
+> *"uh the closet is still not moving, still around thirty, I moved two of the
+> fans into it, customer said the dehu was noisy but it's fine, back tomorrow"*
+
+Note out:
+
+> Basement framing readings were 25% and 30%, and the closet was still around 30%
+> and not moving. Two air movers were moved into the closet, with 8 air movers
+> and 1 dehumidifier running. The customer said the dehumidifier was noisy, but
+> it was fine, and the area needed to be checked again tomorrow.
+
+Three rules in the prompt, each for a reason:
+
+- **Facts are supplied, not recalled.** Everything above the line comes from the
+  database; everything below it is Charles talking. The model joins them, it does
+  not source them.
+- **Never say anything is dry, or the job is finished, unless he said so.** That
+  is his call and it has consequences.
+- **Equipment in words.** The first draft wrote "8 DRY and 1 DHM>>" — catalog
+  codes on a document read by a homeowner and an adjuster.
+
+It **drafts into the box** rather than saving. A model writing straight into a
+document a carrier reads is a model nobody checked.
+
+## The work card collapses on monitor visits
+
+Charles: *"most of the time we're not really adding additional work. Occasionally
+we will — that's why we wanna keep it."*
+
+Open on a work day, collapsed on a monitor, and one tap either way. It was
+sitting open above the readings and the plan, which are used every single visit.
