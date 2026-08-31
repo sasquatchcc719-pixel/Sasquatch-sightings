@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { AIR_ROLES } from '@/lib/ops/restoration-psychrometry'
+import { readingTimestamp } from '@/lib/ops/restoration-reading-time'
 import { defaultDryStandard } from '@/lib/ops/restoration-moisture'
 
 /**
@@ -22,6 +23,25 @@ export async function POST(
     const appointmentId = body.appointment_id ? String(body.appointment_id) : null
     const kind = String(body.kind ?? '')
 
+    /**
+     * A reading is dated by the VISIT it belongs to, not by the moment it was
+     * typed. Readings get entered in the truck afterwards, or the next morning,
+     * or on Monday for Sunday's monitor — and `now()` puts Sunday's numbers on
+     * Monday, where they collapse two visits into one column of the drying
+     * chart and print the wrong date in a report an adjuster reads.
+     *
+     * Clamped to now, so a reading entered against a visit still in the future
+     * cannot be stamped ahead of today.
+     */
+    const { data: visit } = appointmentId
+      ? await supabase
+          .from('ops_appointments')
+          .select('appointment_date, start_time')
+          .eq('id', appointmentId)
+          .maybeSingle()
+      : { data: null }
+    const takenAt = readingTimestamp(visit, new Date())
+
     if (kind === 'material') {
       const value = Number(body.value)
       if (!Number.isFinite(value)) {
@@ -33,6 +53,7 @@ export async function POST(
           reading_point_id: String(body.reading_point_id),
           appointment_id: appointmentId,
           value,
+          taken_at: takenAt,
           note: body.note ?? null,
           recorded_by_user_id: access.id,
         })
@@ -52,6 +73,7 @@ export async function POST(
           inlet_rh_pct: body.inlet_rh_pct ?? null,
           outlet_temp_f: body.outlet_temp_f ?? null,
           outlet_rh_pct: body.outlet_rh_pct ?? null,
+          taken_at: takenAt,
           note: body.note ?? null,
         })
         .select('id, equipment_placement_id, taken_at')
@@ -95,6 +117,7 @@ export async function POST(
           location: String(body.location ?? '').trim() || role,
           temp_f: tempF,
           rh_pct: rhPct,
+          taken_at: takenAt,
           note: body.note ?? null,
         })
         .select('id, role, location, temp_f, rh_pct, taken_at')

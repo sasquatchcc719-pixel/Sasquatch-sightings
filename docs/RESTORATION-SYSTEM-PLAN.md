@@ -2421,3 +2421,33 @@ Two ordering details that matter:
 
 `maxDuration = 60` on the route as well, so a stray full-size original finishes
 rather than timing out with nothing to show.
+
+## A reading is dated by its visit, not by when it was typed
+
+Charles, generating a report on Monday for Sunday's monitor: *"it says 8/31
+which is today not yesterday... which means it's not gonna report correctly
+regardless."*
+
+`taken_at` defaulted to `now()`. Readings get entered in the truck afterwards, or
+the next morning, or on Monday for Sunday's monitor — so the stamp recorded when
+Charles reached a keyboard, not when he held the meter.
+
+That is not cosmetic. The drying chart plots by day: Sunday's readings landing on
+Monday collapse two visits into one column and flatten the trend between them.
+And the date prints in a document an adjuster reads.
+
+`readingTimestamp` now takes the date from the visit the reading belongs to, at
+that visit's start time so a day sorts before the next one, and **clamped to
+now** — a visit still in the future cannot have produced a reading, and a chart
+running into next week reads as a bug.
+
+### The other half, still open
+Jill's eight existing readings are stamped 8/31 *and* attached to the **8/29
+mitigation visit**, when Charles meant the **8/30 Sunday monitor**. The date fix
+does not move them: readings follow whichever visit is selected further up the
+page, and that selection is invisible from where the work happens. Which is how
+Sunday's readings went onto Saturday's visit without a word.
+
+A visit picker beside the readings was drafted and rejected. **The design is
+Charles's call**; the underlying fault — that the target visit is chosen far from
+where readings are entered, and never shown — is real and unaddressed.
