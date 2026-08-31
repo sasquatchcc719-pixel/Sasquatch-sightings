@@ -48,11 +48,63 @@ export async function POST(
       .single()
 
     if (error) throw error
+
+    // Draw it straight away. "Measure once" means the room appears on the plan
+    // when it is measured — not after finding a separate button.
+    if (derivedSqft != null && data?.id) {
+      await drawRectangleForArea(supabase, id, data.id, lengthFt, widthFt)
+    }
+
     return NextResponse.json({ area: data })
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Failed to add area'
     return NextResponse.json({ error: message }, { status: message === 'Not authorized' ? 403 : 500 })
   }
+}
+
+/**
+ * Lay a measured room out as four walls, placed clear of anything already on the
+ * plan so rooms start separate and get dragged together.
+ */
+async function drawRectangleForArea(
+  supabase: ReturnType<typeof createAdminClient>,
+  projectId: string,
+  areaId: string,
+  lengthFt: number,
+  widthFt: number,
+) {
+  const { data: existing } = await supabase
+    .from('restoration_plan_nodes')
+    .select('x')
+    .eq('project_id', projectId)
+
+  const startX =
+    existing && existing.length > 0
+      ? Math.max(...existing.map((n) => Number(n.x))) + 3
+      : 0
+
+  const corners = [
+    { x: startX, y: 0 },
+    { x: startX + lengthFt, y: 0 },
+    { x: startX + lengthFt, y: widthFt },
+    { x: startX, y: widthFt },
+  ]
+
+  const { data: nodes } = await supabase
+    .from('restoration_plan_nodes')
+    .insert(corners.map((c) => ({ project_id: projectId, x: c.x, y: c.y })))
+    .select('id')
+
+  if (!nodes || nodes.length !== 4) return
+
+  await supabase.from('restoration_plan_walls').insert(
+    nodes.map((node, index) => ({
+      project_id: projectId,
+      area_id: areaId,
+      start_node_id: node.id,
+      end_node_id: nodes[(index + 1) % nodes.length].id,
+    })),
+  )
 }
 
 export async function GET(

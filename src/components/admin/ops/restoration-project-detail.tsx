@@ -781,13 +781,14 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                   <button
                     type="button"
                     aria-label={`Remove ${area.name}`}
-                    onClick={() =>
-                      void call(
+                    onClick={async () => {
+                      await call(
                         `/api/admin/ops/restoration/areas/${area.id}`,
                         { method: 'DELETE' },
                         `del-area-${area.id}`,
                       )
-                    }
+                      await loadPlan()
+                    }}
                   >
                     <Trash2 className="text-muted-foreground h-4 w-4" />
                   </button>
@@ -844,6 +845,8 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                   },
                   'add-area',
                 )
+                // The room is drawn as it is created, so pull the plan too.
+                await loadPlan()
                 setAreaName('')
                 setAreaLength('')
                 setAreaWidth('')
@@ -905,9 +908,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                       setBusy(null)
                     }}
                   >
-                    {planData.walls.length === 0
-                      ? 'Draw my measured rooms'
-                      : 'Redraw measured rooms'}
+                    Redraw measured rooms
                   </Button>
                 ) : null}
                 {planData.walls.length > 0 ? (

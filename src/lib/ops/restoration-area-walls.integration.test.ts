@@ -133,3 +133,78 @@ describe('deleting a room', () => {
     expect(nodesBefore).toHaveLength(2)
   })
 })
+
+describe('a measured room draws itself', () => {
+  it('creates four walls and four corners, clear of what is already there', async () => {
+    // Mirrors the areas route: a room with length and width is drawn on create.
+    const { data: first } = await supabase
+      .from('restoration_areas')
+      .insert({
+        project_id: projectId,
+        name: 'Rec room',
+        geometry: { length_ft: 29, width_ft: 17 },
+        affected_sqft: 493,
+      })
+      .select('id')
+      .single()
+
+    async function draw(areaId: string, lengthFt: number, widthFt: number) {
+      const { data: existing } = await supabase
+        .from('restoration_plan_nodes')
+        .select('x')
+        .eq('project_id', projectId)
+      const startX =
+        existing && existing.length > 0
+          ? Math.max(...existing.map((n) => Number(n.x))) + 3
+          : 0
+      const corners = [
+        { x: startX, y: 0 },
+        { x: startX + lengthFt, y: 0 },
+        { x: startX + lengthFt, y: widthFt },
+        { x: startX, y: widthFt },
+      ]
+      const { data: nodes } = await supabase
+        .from('restoration_plan_nodes')
+        .insert(corners.map((c) => ({ project_id: projectId, x: c.x, y: c.y })))
+        .select('id')
+      await supabase.from('restoration_plan_walls').insert(
+        nodes!.map((node, index) => ({
+          project_id: projectId,
+          area_id: areaId,
+          start_node_id: node.id,
+          end_node_id: nodes![(index + 1) % nodes!.length].id,
+        })),
+      )
+      return startX
+    }
+
+    await draw(first!.id, 29, 17)
+
+    const { data: walls } = await supabase
+      .from('restoration_plan_walls')
+      .select('id')
+      .eq('area_id', first!.id)
+    expect(walls).toHaveLength(4)
+
+    // A second room starts clear of the first rather than on top of it.
+    const { data: second } = await supabase
+      .from('restoration_areas')
+      .insert({
+        project_id: projectId,
+        name: 'Hall',
+        geometry: { length_ft: 10, width_ft: 4 },
+      })
+      .select('id')
+      .single()
+    const secondStart = await draw(second!.id, 10, 4)
+    expect(secondStart).toBeGreaterThanOrEqual(29 + 3)
+
+    // Deleting the first room leaves the second standing.
+    await supabase.from('restoration_areas').delete().eq('id', first!.id)
+    const { data: remaining } = await supabase
+      .from('restoration_plan_walls')
+      .select('id')
+      .eq('area_id', second!.id)
+    expect(remaining).toHaveLength(4)
+  })
+})
