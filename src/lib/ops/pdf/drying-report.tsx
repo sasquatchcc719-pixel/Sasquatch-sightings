@@ -17,6 +17,14 @@ import {
   dayLabel,
 } from '@/lib/ops/restoration-drying-series'
 import { moistureBand, BAND_LABEL } from '@/lib/ops/restoration-moisture'
+import {
+  AIR_ROLES,
+  grainsPerPound,
+  dehumidifierVerdict,
+  chamberVerdict,
+  trendVerdict,
+  type AirRole,
+} from '@/lib/ops/restoration-psychrometry'
 
 /**
  * The drying report: the document that makes a water loss defensible.
@@ -60,6 +68,7 @@ export type DryingReportData = {
     readings: Array<{ value: number; takenAt: string }>
   }>
   airReadings: Array<{
+    role: string | null
     location: string
     tempF: number | null
     rhPct: number | null
@@ -195,6 +204,59 @@ function DryingTrend({ data }: { data: DryingReportData }) {
           <Text style={{ fontSize: 7, color: '#059669' }}>- - dry standard</Text>
         ) : null}
       </View>
+    </View>
+  )
+}
+
+/**
+ * What the atmospheric readings add up to.
+ *
+ * The table is evidence; this is the argument. An adjuster asking why a job ran
+ * five days wants to read that the chamber was drier than outside and the
+ * dehumidifier was pulling 38 grains — not to derive it from a column of
+ * temperatures.
+ */
+function AtmosphericFindings({ data }: { data: DryingReportData }) {
+  const latest = new Map<string, DryingReportData['airReadings'][number]>()
+  for (const reading of [...data.airReadings].sort(
+    (a, b) => new Date(a.takenAt).getTime() - new Date(b.takenAt).getTime(),
+  )) {
+    if (reading.role) latest.set(reading.role, reading)
+  }
+
+  const shape = (r?: DryingReportData['airReadings'][number]) => ({
+    role: (r?.role ?? null) as AirRole | null,
+    tempF: r?.tempF ?? null,
+    rhPct: r?.rhPct ?? null,
+    takenAt: r?.takenAt ?? '',
+  })
+
+  const findings = [
+    dehumidifierVerdict(shape(latest.get('dehu_intake')), shape(latest.get('dehu_outlet'))),
+    chamberVerdict(
+      shape(latest.get('affected')),
+      shape(latest.get('outside') ?? latest.get('unaffected')),
+    ),
+    trendVerdict(
+      data.airReadings.map((r) => ({
+        role: (r.role ?? null) as AirRole | null,
+        tempF: r.tempF,
+        rhPct: r.rhPct,
+        takenAt: r.takenAt,
+      })),
+    ),
+  ].filter((f) => f.status !== 'unknown')
+
+  if (findings.length === 0) return null
+
+  return (
+    <View style={{ marginTop: 8 }}>
+      {findings.map((finding, index) => (
+        <View key={index} style={{ marginBottom: 3 }}>
+          <Text style={{ fontFamily: 'Helvetica-Bold' }}>{finding.headline}</Text>
+          <Text style={{ color: '#4b5f68' }}>{finding.detail}</Text>
+        </View>
+      ))}
     </View>
   )
 }
@@ -493,24 +555,38 @@ export function DryingReportPDF({ data }: { data: DryingReportData }) {
             <Text style={styles.h2}>Atmospheric readings</Text>
             <View style={styles.tableHead}>
               <Text style={styles.cell}>Location</Text>
-              <Text style={{ width: 80, textAlign: 'right' }}>Temp °F</Text>
-              <Text style={{ width: 80, textAlign: 'right' }}>RH %</Text>
-              <Text style={{ width: 80, textAlign: 'right' }}>Taken</Text>
+              <Text style={{ width: 60, textAlign: 'right' }}>Temp °F</Text>
+              <Text style={{ width: 50, textAlign: 'right' }}>RH %</Text>
+              <Text style={{ width: 60, textAlign: 'right' }}>GPP</Text>
+              <Text style={{ width: 70, textAlign: 'right' }}>Taken</Text>
             </View>
-            {data.airReadings.map((reading, index) => (
-              <View key={index} style={styles.row}>
-                <Text style={styles.cell}>
-                  {reading.location === 'reference'
-                    ? 'Unaffected reference'
-                    : reading.location === 'exterior'
-                      ? 'Exterior'
-                      : 'Affected area'}
-                </Text>
-                <Text style={{ width: 80, textAlign: 'right' }}>{reading.tempF ?? '—'}</Text>
-                <Text style={{ width: 80, textAlign: 'right' }}>{reading.rhPct ?? '—'}</Text>
-                <Text style={{ width: 80, textAlign: 'right' }}>{day(reading.takenAt)}</Text>
-              </View>
-            ))}
+            {data.airReadings.map((reading, index) => {
+              // Grains per pound is the number that makes these readings mean
+              // something — RH alone says nothing without the temperature
+              // beside it, and an adjuster reading this should not have to
+              // reach for a psychrometric chart.
+              const gpp =
+                reading.tempF != null && reading.rhPct != null
+                  ? grainsPerPound(reading.tempF, reading.rhPct)
+                  : null
+              const roleLabel =
+                AIR_ROLES.find((r) => r.value === reading.role)?.label ?? reading.location
+              return (
+                <View key={index} style={styles.row}>
+                  <Text style={styles.cell}>
+                    {roleLabel}
+                    {reading.location && reading.location !== reading.role
+                      ? ` · ${reading.location}`
+                      : ''}
+                  </Text>
+                  <Text style={{ width: 60, textAlign: 'right' }}>{reading.tempF ?? '—'}</Text>
+                  <Text style={{ width: 50, textAlign: 'right' }}>{reading.rhPct ?? '—'}</Text>
+                  <Text style={{ width: 60, textAlign: 'right' }}>{gpp ?? '—'}</Text>
+                  <Text style={{ width: 70, textAlign: 'right' }}>{day(reading.takenAt)}</Text>
+                </View>
+              )
+            })}
+            <AtmosphericFindings data={data} />
           </View>
         ) : null}
 

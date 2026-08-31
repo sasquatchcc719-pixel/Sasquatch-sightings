@@ -68,8 +68,11 @@ const BASE: DryingReportData = {
     },
   ],
   airReadings: [
-    { location: 'affected', tempF: 78, rhPct: 62, takenAt: '2026-08-31T10:00:00Z' },
-    { location: 'reference', tempF: 71, rhPct: 44, takenAt: '2026-08-31T10:00:00Z' },
+    { role: 'affected', location: 'Basement', tempF: 78, rhPct: 62, takenAt: '2026-08-29T10:00:00Z' },
+    { role: 'outside', location: 'Outside', tempF: 71, rhPct: 44, takenAt: '2026-08-29T10:00:00Z' },
+    { role: 'dehu_intake', location: 'Dehu by stairs', tempF: 78, rhPct: 62, takenAt: '2026-08-31T10:00:00Z' },
+    { role: 'dehu_outlet', location: 'Dehu by stairs', tempF: 92, rhPct: 22, takenAt: '2026-08-31T10:00:00Z' },
+    { role: 'affected', location: 'Basement', tempF: 76, rhPct: 38, takenAt: '2026-08-31T10:05:00Z' },
   ],
   photos: [],
   totals: { work: 1028, equipment: 630, subtotal: 1658, paid: 1000, balance: 658 },

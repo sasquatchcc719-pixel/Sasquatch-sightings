@@ -48,6 +48,7 @@ import { nextVisitAction, type VisitStatus } from '@/lib/ops/arrival'
 import { captureDateFor } from '@/lib/ops/exif-capture-date'
 import { StreetViewCard } from '@/components/ops/street-view-card'
 import { DryingChart } from '@/components/ops/drying-chart'
+import { AirReadingsCard, type AirReading } from '@/components/ops/air-readings-card'
 
 /**
  * The restoration project screen.
@@ -139,6 +140,7 @@ type Detail = {
     units: number; unit_days: number; line_total: number
   }>
   reading_points: ReadingPoint[]
+  air_readings: AirReading[]
   estimate_lines: Array<{
     id: string
     name_snapshot: string
@@ -2643,6 +2645,38 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 ))}
             </div>
           ) : null}
+        </Card>
+      ) : null}
+
+      {/* ── Atmospheric readings ───────────────────────────── */}
+      {!closed ? (
+        <Card className={SECTION_CARD}>
+          <h2 className={`${SECTION_TITLE} mb-1`}>
+            <Wind className={SECTION_ICON} /> Air readings
+          </h2>
+          <p className="text-muted-foreground mb-3 text-sm">
+            Temperature and humidity in the chamber, outside, and across the dehu.
+            Moisture meters say the material is wet; these say whether the equipment
+            is doing anything about it.
+          </p>
+          <AirReadingsCard
+            readings={detail.air_readings}
+            busy={busy === 'air-reading'}
+            onLog={(reading) =>
+              call(
+                `/api/admin/ops/restoration/projects/${projectId}/readings`,
+                {
+                  method: 'POST',
+                  body: JSON.stringify({
+                    kind: 'air',
+                    appointment_id: activeVisitId,
+                    ...reading,
+                  }),
+                },
+                'air-reading',
+              )
+            }
+          />
         </Card>
       ) : null}
 

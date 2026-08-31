@@ -2065,3 +2065,56 @@ was wrong and the carrier only ever sees the PDF. Both now use `moistureBand`.
 Tests assert the document is larger with a chart than without, and larger with
 notes than without — a rendered PDF is opaque, so size against a known-identical
 document is the honest proxy for "it drew something".
+
+## Atmospheric readings — the half that was missing
+
+Charles: *"it just dawned on me that I don't think we have atmosphere reading
+logging whatsoever."*
+
+He was right. The table and the API existed; **there was no way to enter one**,
+so every job so far has been drying blind. Moisture meters say the material is
+wet. Psychrometry says whether the equipment is doing anything about it, and it
+is the half that goes missing when a job stalls for four days and nobody can say
+why.
+
+### Roles, not free text
+
+`location` was free text, and "Basement" and "Dehu 1 out" are both locations. A
+`role` column now says which: affected, unaffected, outside, dehu intake, dehu
+outlet. The label stays for the human; the role is what makes arithmetic
+possible. A placement id ties an intake/outlet pair to a specific unit, so two
+dehus on one job are judged separately rather than averaged into one meaningless
+figure.
+
+### Grains per pound, computed the way the meter does
+
+`grainsPerPound` is Magnus-Tetens saturation vapour pressure, then the humidity
+ratio, then grains — checked against the chart at 70°F/50% (54.4), 80°F/60%
+(92), and 40°F/30% (10.8).
+
+**Standard sea-level pressure is used deliberately.** Monument is at 7,000 feet
+and the honest number would differ, but field thermo-hygrometers compute GPP at
+standard pressure, and a figure here that disagreed with the meter in Charles's
+hand would be worse than useless.
+
+### Three questions, which are the three a monitor visit exists to ask
+
+1. **Is the dehumidifier pulling water?** Grain depression across it. Published
+   guidance puts a healthy LGR at 30–50 GPP, with conventional units struggling
+   to hold 20. **The subtlety that matters: low depression on dry air is not a
+   fault.** A dehu fed 35 GPP air cannot pull 30 out of it, and flagging that
+   would send Charles to check a machine working perfectly on a job nearly done.
+   The complaint is only raised while the intake air is still wet.
+2. **Is the chamber drier than the air outside it?** If not, the equipment is
+   losing to the building — or the cheap answer applies and you ventilate
+   instead of renting another day.
+3. **Has it dried since the last visit?** A stall means water is still arriving
+   or the equipment is not working, and it is the thing nobody notices until the
+   fourth day.
+
+### Found by rendering the report and reading it
+
+The chamber comparison paired Tuesday's outside reading with Thursday's chamber
+air, and said so nowhere. Outside air changes overnight, and this document goes
+in a claim file — the verdict now states when the reference reading came from a
+different day.

@@ -68,7 +68,7 @@ export async function GET(
         .is('retired_at', null),
       supabase
         .from('restoration_air_readings')
-        .select('location, temp_f, rh_pct, taken_at')
+        .select('role, location, temp_f, rh_pct, taken_at')
         .eq('project_id', id)
         .order('taken_at'),
       supabase
@@ -160,6 +160,7 @@ export async function GET(
           .sort((a, b) => new Date(a.takenAt).getTime() - new Date(b.takenAt).getTime()),
       })),
       airReadings: (air ?? []).map((r) => ({
+        role: (r as { role?: string | null }).role ?? null,
         location: String(r.location),
         tempF: r.temp_f != null ? Number(r.temp_f) : null,
         rhPct: r.rh_pct != null ? Number(r.rh_pct) : null,

@@ -106,7 +106,7 @@ export async function GET(
         .is('retired_at', null),
       supabase
         .from('restoration_air_readings')
-        .select('id, location, temp_f, rh_pct, taken_at, appointment_id')
+        .select('id, role, location, temp_f, rh_pct, taken_at, appointment_id, equipment_placement_id')
         .eq('project_id', id)
         .order('taken_at'),
       supabase

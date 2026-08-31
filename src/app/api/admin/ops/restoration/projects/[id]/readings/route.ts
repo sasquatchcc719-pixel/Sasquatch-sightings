@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
+import { AIR_ROLES } from '@/lib/ops/restoration-psychrometry'
 import { defaultDryStandard } from '@/lib/ops/restoration-moisture'
 
 /**
@@ -60,24 +61,43 @@ export async function POST(
     }
 
     if (kind === 'air') {
-      const location = String(body.location ?? '')
-      if (!['affected', 'reference', 'exterior'].includes(location)) {
+      // The role is what makes the reading usable: outlet air from a dehu and
+      // ambient air in the same room are the same two numbers, and only the
+      // role says which is which.
+      const role = String(body.role ?? '')
+      if (!AIR_ROLES.some((r) => r.value === role)) {
         return NextResponse.json(
-          { error: 'location must be affected, reference, or exterior' },
+          { error: `role must be one of ${AIR_ROLES.map((r) => r.value).join(', ')}` },
           { status: 400 },
         )
       }
+
+      const tempF = body.temp_f == null ? null : Number(body.temp_f)
+      const rhPct = body.rh_pct == null ? null : Number(body.rh_pct)
+      if (tempF == null || rhPct == null || !Number.isFinite(tempF) || !Number.isFinite(rhPct)) {
+        return NextResponse.json(
+          { error: 'temperature and relative humidity are both required' },
+          { status: 400 },
+        )
+      }
+      if (rhPct < 0 || rhPct > 100) {
+        return NextResponse.json({ error: 'relative humidity must be 0-100' }, { status: 400 })
+      }
+
       const { data, error } = await supabase
         .from('restoration_air_readings')
         .insert({
           project_id: id,
           appointment_id: appointmentId,
-          location,
-          temp_f: body.temp_f ?? null,
-          rh_pct: body.rh_pct ?? null,
+          role,
+          equipment_placement_id: body.equipment_placement_id ?? null,
+          // Kept for the human reading the report: "Basement", "Dehu by stairs".
+          location: String(body.location ?? '').trim() || role,
+          temp_f: tempF,
+          rh_pct: rhPct,
           note: body.note ?? null,
         })
-        .select('id, location, temp_f, rh_pct, taken_at')
+        .select('id, role, location, temp_f, rh_pct, taken_at')
         .single()
       if (error) throw error
       return NextResponse.json({ reading: data })
