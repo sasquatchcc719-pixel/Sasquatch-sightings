@@ -1317,27 +1317,26 @@ landed as "Reading point · Drywall" and had to be renamed one at a time afterwa
 
 ---
 
-## Air movers: Charles has standard air movers, not axial fans
+## Air movers: `DRY`, $24.50/day — settled
 
 > "I don't have any axial fans. I just have regular air movers."
 
-The quick button and the drying plan now use **`DRY` — "Air mover (per 24 hour period)",
-$24.50/day**, mapped to QuickBooks item **51**, which in his books is named **"Floor
-fan"**.
+**An air mover is `DRY` — "Air mover (per 24 hour period)" — at $24.50/day**, QuickBooks
+item 51. Confirmed by Charles directly. `DRY+` ($28.18) and `DRY++` ($35.00) are
+axial-fan codes; Charles has no axial fans. They stay in the catalog but nothing suggests
+them.
 
-`DRY+` ($28.18) and `DRY++` ($35.00) are both axial-fan codes. They stay in the catalog
-and can still be added by hand, but nothing suggests them any more.
+The QuickBooks item named "Axial Fan air mover" is just what things got called years ago.
+**The name carries no meaning — do not infer pricing from QuickBooks item names.**
 
-### Open question for Charles — a $10.50/fan/day difference
-His QuickBooks has an item literally named **"Axial Fan air mover" at $35.00** (item 70),
-which is Xactimate `DRY++`. If the fans on the truck are standard air movers, the correct
-rate is `DRY` at **$24.50** and that $35 item describes equipment he does not own.
+### How this went wrong, so it does not repeat
+Charles said he has no axial fans. That was changed to `DRY` correctly. He then explained
+the QuickBooks naming was legacy, which was **read as a defence of the $35 rate** and the
+change was reverted — inventing a `display_name` column and a naming-override feature
+along the way, none of which was asked for. Both were undone and the column dropped.
 
-That is **$10.50 per fan per day** — on six fans for three days, $189 on one job.
-
-Not something to decide on his behalf. He should confirm whether the QuickBooks item is
-misnamed, mispriced, or covers something else, and whether it should be renamed or
-retired. Nothing has been changed in QuickBooks.
+**The rule: an observation is not a feature request, and a billing rate is never changed
+on an inference. Ask.**
 
 ---
 
