@@ -705,10 +705,31 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
         <CustomerContact phone={customer?.phone} className="min-w-64" />
       </div>
 
+      {/*
+        Pinned to the bottom of the screen rather than the top of the page.
+        This screen is several thousand pixels long and the work happens far
+        down it — an error banner at the top is one Charles scrolled past
+        without seeing, while a reading he had just taken quietly failed to
+        save. A message about something that just went wrong has to appear
+        where the thing that went wrong is.
+      */}
       {error ? (
-        <Card className="border-destructive/30 bg-destructive/10 text-destructive p-4 text-sm">
-          {error}
-        </Card>
+        <div
+          role="alert"
+          className="fixed inset-x-3 bottom-3 z-50 mx-auto max-w-lg sm:inset-x-6"
+        >
+          <div className="border-destructive/40 bg-destructive text-destructive-foreground flex items-start gap-3 rounded-lg border px-4 py-3 text-sm shadow-lg">
+            <span className="min-w-0 flex-1">{error}</span>
+            <button
+              type="button"
+              aria-label="Dismiss"
+              className="shrink-0 opacity-80 hover:opacity-100"
+              onClick={() => setError(null)}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
       ) : null}
 
       {lossWarnings.map((warning) => (

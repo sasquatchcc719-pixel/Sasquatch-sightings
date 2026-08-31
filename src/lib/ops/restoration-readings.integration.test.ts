@@ -87,18 +87,24 @@ describe('restoration readings', () => {
     expect(Number(readings!.at(-1)!.value)).toBeLessThan(Number(point!.dry_standard))
   })
 
-  it('keeps ambient readings off the map and constrained to known locations', async () => {
+  it('keeps ambient readings off the map, and lets the label be a place', async () => {
+    // This test used to assert that 'basement' was REJECTED — back when
+    // `location` carried the meaning and had to be one of three values. `role`
+    // carries it now, and that old constraint went on rejecting every reading
+    // whose role was not literally 'affected'. The test was defending the bug
+    // that cost Charles eleven readings in a customer's basement.
     const { error: ok } = await supabase.from('restoration_air_readings').insert([
-      { project_id: projectId, location: 'affected', temp_f: 78, rh_pct: 62 },
-      { project_id: projectId, location: 'reference', temp_f: 71, rh_pct: 44 },
-      { project_id: projectId, location: 'exterior', temp_f: 66, rh_pct: 38 },
+      { project_id: projectId, role: 'affected', location: 'Basement', temp_f: 78, rh_pct: 62 },
+      { project_id: projectId, role: 'unaffected', location: 'Upstairs hall', temp_f: 71, rh_pct: 44 },
+      { project_id: projectId, role: 'outside', location: 'Front porch', temp_f: 66, rh_pct: 38 },
     ])
     expect(ok).toBeNull()
 
-    const { error: rejected } = await supabase
+    // A label may be anything a person would write, but not nothing.
+    const { error: blank } = await supabase
       .from('restoration_air_readings')
-      .insert({ project_id: projectId, location: 'basement', temp_f: 70 })
-    expect(rejected).not.toBeNull()
+      .insert({ project_id: projectId, role: 'outside', location: '  ', temp_f: 70 })
+    expect(blank).not.toBeNull()
 
     const { data: air } = await supabase
       .from('restoration_air_readings')

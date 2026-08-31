@@ -2236,3 +2236,38 @@ vanish with no sign at all.
 The boxes now clear only on success. A failure keeps the numbers, in place, and
 says the reading did not save. I still do not know why that particular request
 failed; what I can fix is that it failed silently.
+
+### What the error actually said
+
+Charles eventually scrolled up and found it. The Postgres logs name it exactly:
+
+```
+new row for relation "restoration_air_readings"
+violates check constraint "restoration_air_readings_location_check"
+```
+
+Eleven times, between 17:07 and 17:38.
+
+`location` used to BE the meaning — a check constraint pinned it to `affected`,
+`reference`, `exterior`. When `role` took that job over, `location` became a
+human label ("Front porch", "Dehu by stairs") and **the old constraint stayed**.
+So every reading whose role was not literally `affected` was refused by the
+database. The only reason a single reading survived is that `affected` happens
+to appear in both lists.
+
+The constraint is gone; a label may now be anything except blank, since a blank
+one is unidentifiable in a report. An integration test walks every role the
+screen offers and writes it to the real table, so a dropdown can never again
+offer something the database refuses.
+
+**A test was defending the bug.** `restoration-readings.integration.test.ts`
+asserted that `location: 'basement'` must be REJECTED — correct when it was
+written, and by the time it mattered it was pinning down the exact behaviour
+that lost eleven field readings. Updated, with the history in a comment.
+
+### And the error was invisible
+
+The banner rendered at the top of a page several thousand pixels long, while the
+work happens far down it. It is now pinned to the bottom of the screen with a
+dismiss button. A message about something that just went wrong has to appear
+where the thing that went wrong is.
