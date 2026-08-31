@@ -1029,14 +1029,16 @@ export function OperationsSchedule() {
     }
   }, [anchorDate, view])
 
-  const placeArmedVisit = useCallback(
-    async (dateKey: string, hour: number, staffId: string | null) => {
-      if (!armedVisit) return
-      const visit = armedVisit
-      setArmedVisit(null)
+  const placeQueuedVisit = useCallback(
+    async (
+      queueId: string,
+      dateKey: string,
+      hour: number,
+      staffId: string | null,
+    ) => {
       try {
         const response = await fetch(
-          `/api/admin/ops/restoration/queue/${visit.id}/schedule`,
+          `/api/admin/ops/restoration/queue/${queueId}/schedule`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1050,16 +1052,27 @@ export function OperationsSchedule() {
         if (!response.ok) {
           const result = await response.json().catch(() => ({}))
           setError(result.error || 'Could not place that visit')
-          setArmedVisit(visit)
-          return
+          return false
         }
         await Promise.all([loadSchedule(), loadQueuedVisits()])
+        return true
       } catch {
         setError('Could not place that visit')
-        setArmedVisit(visit)
+        return false
       }
     },
-    [armedVisit, loadQueuedVisits, loadSchedule],
+    [loadQueuedVisits, loadSchedule],
+  )
+
+  const placeArmedVisit = useCallback(
+    async (dateKey: string, hour: number, staffId: string | null) => {
+      if (!armedVisit) return
+      const visit = armedVisit
+      setArmedVisit(null)
+      const placed = await placeQueuedVisit(visit.id, dateKey, hour, staffId)
+      if (!placed) setArmedVisit(visit)
+    },
+    [armedVisit, placeQueuedVisit],
   )
 
   /** An armed tray card claims the tap; otherwise the normal create menu opens. */
@@ -1851,6 +1864,23 @@ export function OperationsSchedule() {
     staffId?: string | null,
   ) => {
     e.preventDefault()
+
+    // A queued monitor visit dragged out of the tray: place it rather than move
+    // an existing appointment.
+    const queuedVisitId = e.dataTransfer.getData('queuedVisitId')
+    if (queuedVisitId) {
+      const rect = e.currentTarget.getBoundingClientRect()
+      const rawY = e.clientY - rect.top
+      const snapped = snapToMinutes(GRID_START_MINUTES + rawY / PX_PER_MINUTE)
+      await placeQueuedVisit(
+        queuedVisitId,
+        dateKey,
+        Math.floor(snapped / 60),
+        staffId ?? null,
+      )
+      return
+    }
+
     const appointmentId = e.dataTransfer.getData('appointmentId')
     if (!appointmentId) return
 
@@ -2777,6 +2807,11 @@ export function OperationsSchedule() {
                 </button>
               ) : null}
             </div>
+            {!armedVisit ? (
+              <p className="mb-2 text-xs text-sky-900/70">
+                Drag one onto the calendar, or tap it and then tap a slot.
+              </p>
+            ) : null}
             {armedVisit ? (
               <p className="mb-2 rounded-lg bg-sky-600 px-3 py-2 text-sm font-semibold text-white">
                 Placing: {armedVisit.label}
@@ -2789,6 +2824,17 @@ export function OperationsSchedule() {
                 <button
                   key={visit.id}
                   type="button"
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData('queuedVisitId', visit.id)
+                    e.dataTransfer.effectAllowed = 'move'
+                    // A tray card is grabbed at its own top-left, not partway
+                    // down an existing block, so clear the carried offset or
+                    // the drop preview sits an hour off.
+                    draggingYOffsetRef.current = 0
+                    // Clear any armed card so a drag and a tap cannot both fire.
+                    setArmedVisit(null)
+                  }}
                   onClick={() =>
                     setArmedVisit((current) =>
                       current?.id === visit.id ? null : visit,

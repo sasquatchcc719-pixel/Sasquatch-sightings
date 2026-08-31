@@ -228,7 +228,7 @@ const MATERIALS = [
  * about what is sitting in the room.
  */
 const EQUIPMENT_CODES = [
-  { code: 'DRY++', label: 'Air mover', glyph: 'AM' },
+  { code: 'DRY', label: 'Air mover', glyph: 'AM' },
   { code: 'DHM>>', label: 'Large dehu', glyph: 'LG' },
   { code: 'DHM>', label: 'Small dehu', glyph: 'SM' },
   { code: 'NAFAN', label: 'Air scrubber', glyph: 'AS' },
@@ -1245,7 +1245,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                       {
                         method: 'POST',
                         body: JSON.stringify({
-                          catalog_code: 'DRY++',
+                          catalog_code: 'DRY',
                           count: dryingPlan.airMovers,
                         }),
                       },

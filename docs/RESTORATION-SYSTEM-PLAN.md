@@ -1313,3 +1313,44 @@ dots said nothing about what was actually sitting in the room.
 **Reading points pick their material before placing**, from a dropdown next to the button,
 and are named after it (`Drywall 1`, `Drywall 2`, `Subfloor 1`). They previously all
 landed as "Reading point · Drywall" and had to be renamed one at a time afterwards.
+
+
+---
+
+## Air movers: Charles has standard air movers, not axial fans
+
+> "I don't have any axial fans. I just have regular air movers."
+
+The quick button and the drying plan now use **`DRY` — "Air mover (per 24 hour period)",
+$24.50/day**, mapped to QuickBooks item **51**, which in his books is named **"Floor
+fan"**.
+
+`DRY+` ($28.18) and `DRY++` ($35.00) are both axial-fan codes. They stay in the catalog
+and can still be added by hand, but nothing suggests them any more.
+
+### Open question for Charles — a $10.50/fan/day difference
+His QuickBooks has an item literally named **"Axial Fan air mover" at $35.00** (item 70),
+which is Xactimate `DRY++`. If the fans on the truck are standard air movers, the correct
+rate is `DRY` at **$24.50** and that $35 item describes equipment he does not own.
+
+That is **$10.50 per fan per day** — on six fans for three days, $189 on one job.
+
+Not something to decide on his behalf. He should confirm whether the QuickBooks item is
+misnamed, mispriced, or covers something else, and whether it should be renamed or
+retired. Nothing has been changed in QuickBooks.
+
+---
+
+## The tray never actually supported dragging
+
+Charles: "I finally tried dragging the monitors and they don't move off of the top header
+onto the schedule."
+
+Correct — it was **tap-to-arm, tap-to-place only**. The plan always said drag on desktop
+and tap on mobile, and only the tap half was built.
+
+Tray cards are now `draggable` and carry a `queuedVisitId` on the drag. `handleDrop`
+checks for that first and places the visit, falling through to the existing
+move-an-appointment path otherwise, so both behaviours share one placement function.
+The carried Y-offset is reset on drag start, or the drop preview sits an hour off. Both
+paths still work; the tray now says which is available.

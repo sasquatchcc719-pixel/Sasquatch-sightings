@@ -80,8 +80,12 @@ export type DryingSuggestion = {
 }
 
 /**
- * AHAM ratings for the two units Charles runs, taken as the LOW end of each
- * Xactimate band. Erring low means the plan never under-sizes.
+ * AHAM ratings for the two dehumidifiers Charles runs, taken as the LOW end of
+ * each Xactimate band. Erring low means the plan never under-sizes.
+ *
+ * Air movers are `DRY` — the standard air mover at $24.50/day. Charles does not
+ * own axial fans, so `DRY+` and `DRY++` are not used by the plan even though
+ * they remain in the catalog.
  */
 const SMALL_DEHU_AHAM = 70 // DHM>  (70-109 ppd band)
 const LARGE_DEHU_AHAM = 110 // DHM>> (110-159 ppd band)
