@@ -1962,3 +1962,58 @@ before is an idea dump where 80% never lands.
 (2) is blocked on reference material. (3) and (4) are small and feed (6).
 (5) and (7) are one feature, and (6) is the thing the customer and the carrier
 actually receive — so it wants the others first.
+
+## Colouring a reading by how wet it is
+
+Charles gave the anchor rather than the standard: *"the wood framing at this
+place the baseline was 10%... anything below like 12 would be green, and then
+something between 12 and 25 would be yellow, and then above 25 would be red."*
+
+Those numbers are not really about wood. They are about **distance from the dry
+standard** — which is how the S500 frames it too: judge a reading against what
+unaffected material of the same kind reads in the same building, not against an
+absolute number. A 15% reading is fine on framing that reads 14% upstairs and
+alarming on drywall that reads 8%.
+
+So the bands are offsets:
+
+| Band | Reading | Charles's framing example (standard 10) |
+| --- | --- | --- |
+| Green — at dry standard | ≤ standard + 2 | under 12 |
+| Amber — still drying | ≤ standard + 15 | 12 to 25 |
+| Red — wet | above that | over 25 |
+
+which reproduces his numbers exactly and still works for a material that dries
+out at a different figure.
+
+### Defaults, and where they stop
+
+Wood and gypsum default to a 10% standard, editable per point. Published guidance
+puts normal drywall around 5–12% with 17%+ counted as elevated, and 2x framing
+around 10–15%; the S500 puts softwood framing near 9.2% WME at 70°F/50% RH. His
+10 sits inside all of that.
+
+**Concrete and tile have no default on purpose.** They are measured on a
+different scale entirely — in-slab RH rather than %MC — so a number invented for
+them would colour a pin confidently and wrongly. Those pins stay grey and say
+"no dry standard set" until somebody enters one, which is true and useful where
+a green dot would be a lie.
+
+A legend sits under the plan, because a colour with no key is decoration on a
+document that goes to a carrier.
+
+## A live-model test that cried wolf
+
+While verifying the above, the line-entry integration test failed twice in a
+row, on a different assertion each time, with no relevant change: it asks a real
+language model to hear a spoken transcript and then asserts exact Xactimate
+codes. What the model hears varies; occasionally "removing carpet" lands
+somewhere other than `FCC`. The failure reads like a pricing bug and is not one.
+
+Pricing is deterministic, so it is now asserted deterministically — against the
+**real** catalog, with no model involved
+(`restoration-catalog.integration.test.ts`, including the case where
+contamination and after-hours combine and the category correctly survives). The
+live test now asserts the property it genuinely owns: whatever the model heard
+came back on the right rate for the loss, and a clean loss never returns a
+Category 3 code.

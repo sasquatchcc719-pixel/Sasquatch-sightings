@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { BAND_PIN_CLASS, type MoistureBand } from '@/lib/ops/restoration-moisture'
 import {
   draftLengthFt,
   endPointForLength,
@@ -42,7 +43,8 @@ export type PlanPin = {
   xFt: number | null
   yFt: number | null
   value?: number | null
-  atGoal?: boolean
+  /** Where the latest reading sits against this point's dry standard. */
+  band?: MoistureBand
   removed?: boolean
 }
 
@@ -682,9 +684,7 @@ export function WallPlan({
                   } ${
                     pin.kind === 'equipment'
                       ? 'bg-sky-600'
-                      : pin.atGoal
-                        ? 'bg-emerald-600'
-                        : 'bg-amber-600'
+                      : BAND_PIN_CLASS[pin.band ?? 'unknown']
                   }`}
                   style={{ left: screen.left, top: screen.top }}
                 >

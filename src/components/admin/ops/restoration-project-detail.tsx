@@ -38,6 +38,11 @@ import type { PlanNode, PlanWall, WallOpening } from '@/lib/ops/restoration-wall
 import { CustomerContact } from '@/components/ops/customer-contact'
 import { LineCandidateRow } from '@/components/ops/line-candidate-row'
 import { dryingDaysFromVisits } from '@/lib/ops/restoration-daily-billing'
+import {
+  moistureBand,
+  defaultDryStandard,
+  BAND_LABEL,
+} from '@/lib/ops/restoration-moisture'
 import { SignatureModal } from '@/components/admin/ops/signature-modal'
 import { nextVisitAction, type VisitStatus } from '@/lib/ops/arrival'
 import { captureDateFor } from '@/lib/ops/exif-capture-date'
@@ -490,10 +495,13 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
         xFt: point.map_x,
         yFt: point.map_y,
         value: latest ? Number(latest.value) : null,
-        atGoal:
-          point.dry_standard != null &&
-          latest != null &&
-          Number(latest.value) <= Number(point.dry_standard),
+        // Green / amber / red against this point's own dry standard, falling
+        // back to the material's usual one so a pin is coloured from the first
+        // reading rather than staying grey until somebody fills in a number.
+        band: moistureBand(
+          latest ? Number(latest.value) : null,
+          point.dry_standard ?? defaultDryStandard(point.material),
+        ),
       })
     }
     return pins
@@ -1641,6 +1649,28 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 </div>
               ) : null}
             </div>
+
+            {planTool === 'pin' &&
+            detail.reading_points.some((p) => p.restoration_readings.length > 0) ? (
+              // The colours have to say what they mean somewhere, or they are
+              // just decoration on a document that goes to a carrier.
+              <div className="text-muted-foreground mb-2 flex flex-wrap items-center gap-3 text-xs">
+                <span className="flex items-center gap-1">
+                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-600" /> at dry
+                  standard
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="h-2.5 w-2.5 rounded-full bg-amber-500" /> still drying
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="h-2.5 w-2.5 rounded-full bg-red-600" /> wet
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="h-2.5 w-2.5 rounded-full bg-slate-500" /> no standard
+                  set
+                </span>
+              </div>
+            ) : null}
 
             <WallPlan
               nodes={planData.nodes}
@@ -3219,8 +3249,8 @@ function MapPointEditor({
     (a, b) => new Date(a.taken_at).getTime() - new Date(b.taken_at).getTime(),
   )
   const latest = history[history.length - 1]
-  const atGoal =
-    point.dry_standard != null && latest != null && Number(latest.value) <= Number(point.dry_standard)
+  const standard = point.dry_standard ?? defaultDryStandard(point.material)
+  const band = moistureBand(latest ? Number(latest.value) : null, standard)
 
   // Taking a reading is the whole reason the bubble opened, so saving one closes
   // it. On a monitor day that is a dozen points in a row, and dismissing each
@@ -3264,8 +3294,8 @@ function MapPointEditor({
 
       <p className="text-muted-foreground mt-2 text-xs">
         {history.length > 0 ? history.map((r) => `${r.value}%`).join(' → ') : 'no readings yet'}
-        {point.dry_standard != null ? ` · goal ${point.dry_standard}%` : ''}
-        {atGoal ? ' · dry' : ''}
+        {standard != null ? ` · dry at ${standard}%` : ''}
+        {band !== 'unknown' ? ` · ${BAND_LABEL[band]}` : ''}
       </p>
 
       {expanded ? (

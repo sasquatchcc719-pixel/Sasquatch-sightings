@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
+import { defaultDryStandard } from '@/lib/ops/restoration-moisture'
 
 /**
  * Monitor-day readings. Three kinds, deliberately separate:
@@ -112,7 +113,10 @@ export async function PUT(
         material: body.material ?? null,
         map_x: body.map_x ?? null,
         map_y: body.map_y ?? null,
-        dry_standard: body.dry_standard ?? null,
+        // Without a standard the pin has no colour, so the material's usual
+        // number is filled in and stays editable. On a real job it should be a
+        // meter reading from unaffected material of the same kind.
+        dry_standard: body.dry_standard ?? defaultDryStandard(body.material),
       })
       .select('id, label, material, dry_standard, map_x, map_y')
       .single()
