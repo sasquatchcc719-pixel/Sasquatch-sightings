@@ -182,3 +182,60 @@ describe('correcting a moisture reading', () => {
     await supabase.from('restoration_reading_points').delete().eq('id', point!.id)
   })
 })
+
+describe('points number themselves', () => {
+  it('gives an unnamed point the next number', async () => {
+    const { data: project } = await supabase
+      .from('restoration_projects')
+      .select('customer_id, service_address_id')
+      .eq('id', projectId)
+      .single()
+
+    const { data: scratch } = await supabase
+      .from('restoration_projects')
+      .insert({ ...project!, cause_narrative: `${MARKER}_NUMBERING` })
+      .select('id')
+      .single()
+
+    // What the route does when no label is given.
+    const nextLabel = async () => {
+      const { data: existing } = await supabase
+        .from('restoration_reading_points')
+        .select('label')
+        .eq('project_id', scratch!.id)
+      const highest = (existing ?? []).reduce((max, row) => {
+        const n = Number(String(row.label ?? '').trim())
+        return Number.isInteger(n) && n > max ? n : max
+      }, 0)
+      return String(highest + 1)
+    }
+
+    for (let i = 0; i < 3; i++) {
+      await supabase
+        .from('restoration_reading_points')
+        .insert({ project_id: scratch!.id, label: await nextLabel(), material: 'Framing' })
+    }
+
+    const { data: points } = await supabase
+      .from('restoration_reading_points')
+      .select('label')
+      .eq('project_id', scratch!.id)
+    expect(points!.map((p) => p.label).sort()).toEqual(['1', '2', '3'])
+
+    // Deleting the middle one must not make the next point a second 3.
+    await supabase
+      .from('restoration_reading_points')
+      .delete()
+      .eq('project_id', scratch!.id)
+      .eq('label', '2')
+    expect(await nextLabel()).toBe('4')
+
+    // A name given by hand is kept, and does not disturb the numbering.
+    await supabase
+      .from('restoration_reading_points')
+      .insert({ project_id: scratch!.id, label: 'Closet, base', material: 'Framing' })
+    expect(await nextLabel()).toBe('4')
+
+    await supabase.from('restoration_projects').delete().eq('id', scratch!.id)
+  })
+})

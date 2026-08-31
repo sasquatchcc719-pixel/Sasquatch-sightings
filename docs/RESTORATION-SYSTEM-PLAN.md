@@ -2593,3 +2593,22 @@ duplicate the daily notes section. That would have been motion, not improvement.
 His labels are likewise **his**: "Drywall 1" with the material set to Framing is
 almost certainly probing framing behind a drywall wall, which is ordinary. The
 defect that naming exposed was mine, not his.
+
+## Points number themselves
+
+Charles: *"the labels should just be like 123456 by default and if we decide we
+wanna name them, we can."*
+
+Right, and it removes the cause rather than the symptom. Naming every probe costs
+a decision per point on a job with a dozen of them, and the names people reach
+for under that pressure repeat — which is exactly how this job ended up with two
+"Drywall 1"s and two "Drywall 2"s, and how the chart came to drop a line.
+
+A point with no label given takes the next number. Typing a name still works and
+is kept; it is simply no longer required, and the Add button no longer refuses
+until something is typed.
+
+**Numbered from the highest existing number, not the count.** Deleting point 3 of
+5 would otherwise make the next one a second 5 — the same duplicate-label problem
+arriving by a different road. A hand-typed name is skipped by that arithmetic, so
+naming a point never disturbs the sequence.

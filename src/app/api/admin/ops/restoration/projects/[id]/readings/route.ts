@@ -144,8 +144,31 @@ export async function PUT(
     const supabase = createAdminClient()
     const body = await request.json()
 
-    const label = String(body.label ?? '').trim()
-    if (!label) return NextResponse.json({ error: 'label is required' }, { status: 400 })
+    /**
+     * Points are numbered, not named.
+     *
+     * Naming every probe costs a decision per point on a job with a dozen of
+     * them, and the names people reach for under that pressure repeat — this
+     * job has two "Drywall 1"s and two "Drywall 2"s. A number is unambiguous,
+     * costs nothing to assign, and can be replaced with a real name later for
+     * the few points that earn one.
+     *
+     * Numbered from the highest existing number rather than the count, so
+     * deleting point 3 of 5 does not make the next one a second 5.
+     */
+    let label = String(body.label ?? '').trim()
+    if (!label) {
+      const { data: existing } = await supabase
+        .from('restoration_reading_points')
+        .select('label')
+        .eq('project_id', id)
+
+      const highest = (existing ?? []).reduce((max, row) => {
+        const asNumber = Number(String(row.label ?? '').trim())
+        return Number.isInteger(asNumber) && asNumber > max ? asNumber : max
+      }, 0)
+      label = String(highest + 1)
+    }
 
     const { data, error } = await supabase
       .from('restoration_reading_points')

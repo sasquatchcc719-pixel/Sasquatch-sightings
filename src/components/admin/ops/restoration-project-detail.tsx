@@ -488,6 +488,15 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
       ),
     [detail, airflowDensity],
   )
+  /** What the next unnamed point will be called, matching the server's rule. */
+  const nextPointNumber = useMemo(() => {
+    const highest = (detail?.reading_points ?? []).reduce((max, point) => {
+      const asNumber = Number(String(point.label ?? '').trim())
+      return Number.isInteger(asNumber) && asNumber > max ? asNumber : max
+    }, 0)
+    return highest + 1
+  }, [detail?.reading_points])
+
   /** True when the visit being viewed has not been worked yet. */
   const activeVisitNotYet = useMemo(() => {
     const visit = detail?.visits.find((v) => v.id === activeVisitId) ?? null
@@ -2800,7 +2809,8 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             })}
             {detail.reading_points.length === 0 ? (
               <p className="text-muted-foreground py-2 text-sm">
-                No points yet. Add one for each material you are drying.
+                No points yet. Add one for each material you are drying — they
+                number themselves.
               </p>
             ) : null}
           </div>
@@ -2808,11 +2818,12 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
           <div className="border-border/60 mt-4 border-t pt-4">
             <Label className="mb-2 block text-sm">Add a point</Label>
             <div className="flex flex-wrap gap-2">
+              {/* Blank means the next number. A name is optional, and rare. */}
               <Input
                 className="h-9 min-w-40 flex-1"
                 value={pointLabel}
                 onChange={(e) => setPointLabel(e.target.value)}
-                placeholder="North wall, base"
+                placeholder={`${nextPointNumber} — or type a name`}
               />
               <select
                 className="border-input bg-background h-9 rounded-md border px-2 text-sm"
@@ -2838,7 +2849,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
               <Button
                 size="sm"
                 className={ACTION_BUTTON}
-                disabled={busy === 'add-point' || !pointLabel.trim()}
+                disabled={busy === 'add-point'}
                 onClick={async () => {
                   await call(
                     `/api/admin/ops/restoration/projects/${projectId}/readings`,
