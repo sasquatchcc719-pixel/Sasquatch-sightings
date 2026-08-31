@@ -35,17 +35,20 @@ describe('moistureBand', () => {
 })
 
 describe('defaultDryStandard', () => {
-  it('starts wood and gypsum at the baseline Charles uses', () => {
+  it('starts the wood family at the baseline Charles gave', () => {
     expect(defaultDryStandard('Framing')).toBe(10)
-    expect(defaultDryStandard('Drywall')).toBe(10)
+    expect(defaultDryStandard('Subfloor')).toBe(10)
+    expect(defaultDryStandard('Hardwood')).toBe(10)
   })
 
-  it('refuses to invent one for concrete or tile', () => {
-    // Measured as in-slab RH, not %MC — a number here would colour a pin
-    // confidently and wrongly.
-    expect(defaultDryStandard('Concrete')).toBeNull()
-    expect(defaultDryStandard('Tile')).toBeNull()
-    expect(DEFAULT_DRY_STANDARD.Concrete).toBeUndefined()
+  it('invents nothing for materials that do not read like wood', () => {
+    // Charles's 10 was applied to all of these and set a green target he had
+    // never hit. Gypsum and concrete are read on relative or reference scales
+    // that differ by meter, so a number here is not cautious — it is meaningless.
+    for (const material of ['Drywall', 'Plaster', 'Insulation', 'Concrete', 'Tile']) {
+      expect(defaultDryStandard(material)).toBeNull()
+      expect(DEFAULT_DRY_STANDARD[material]).toBeUndefined()
+    }
   })
 
   it('has no opinion when the material is unset', () => {

@@ -17,16 +17,8 @@ import {
   dayLabel,
   SHOP_TIME_ZONE,
 } from '@/lib/ops/restoration-drying-series'
-import { moistureBand, BAND_LABEL } from '@/lib/ops/restoration-moisture'
-import {
-  AIR_ROLES,
-  grainsPerPound,
-  dehumidifierVerdict,
-  dryGoalVerdict,
-  ventilationNote,
-  trendVerdict,
-  type AirRole,
-} from '@/lib/ops/restoration-psychrometry'
+import { moistureBand } from '@/lib/ops/restoration-moisture'
+import { AIR_ROLES, grainsPerPound } from '@/lib/ops/restoration-psychrometry'
 
 /**
  * The drying report: the document that makes a water loss defensible.
@@ -207,59 +199,6 @@ function DryingTrend({ data }: { data: DryingReportData }) {
           <Text style={{ fontSize: 7, color: '#059669' }}>- - dry standard</Text>
         ) : null}
       </View>
-    </View>
-  )
-}
-
-/**
- * What the atmospheric readings add up to.
- *
- * The table is evidence; this is the argument. An adjuster asking why a job ran
- * five days wants to read that the chamber was drier than outside and the
- * dehumidifier was pulling 38 grains — not to derive it from a column of
- * temperatures.
- */
-function AtmosphericFindings({ data }: { data: DryingReportData }) {
-  const latest = new Map<string, DryingReportData['airReadings'][number]>()
-  for (const reading of [...data.airReadings].sort(
-    (a, b) => new Date(a.takenAt).getTime() - new Date(b.takenAt).getTime(),
-  )) {
-    if (reading.role) latest.set(reading.role, reading)
-  }
-
-  const shape = (r?: DryingReportData['airReadings'][number]) => ({
-    role: (r?.role ?? null) as AirRole | null,
-    tempF: r?.tempF ?? null,
-    rhPct: r?.rhPct ?? null,
-    takenAt: r?.takenAt ?? '',
-  })
-
-  const findings = [
-    // The room air IS the dehu intake, and the dry goal is the unaffected air
-    // in the same building — never outside, which swings with the weather.
-    dehumidifierVerdict(shape(latest.get('affected')), shape(latest.get('dehu_outlet'))),
-    dryGoalVerdict(shape(latest.get('affected')), shape(latest.get('unaffected'))),
-    trendVerdict(
-      data.airReadings.map((r) => ({
-        role: (r.role ?? null) as AirRole | null,
-        tempF: r.tempF,
-        rhPct: r.rhPct,
-        takenAt: r.takenAt,
-      })),
-    ),
-    ventilationNote(shape(latest.get('affected')), shape(latest.get('outside'))),
-  ].filter((f): f is NonNullable<typeof f> => f != null && f.status !== 'unknown')
-
-  if (findings.length === 0) return null
-
-  return (
-    <View style={{ marginTop: 8 }}>
-      {findings.map((finding, index) => (
-        <View key={index} style={{ marginBottom: 3 }}>
-          <Text style={{ fontFamily: 'Helvetica-Bold' }}>{finding.headline}</Text>
-          <Text style={{ color: '#4b5f68' }}>{finding.detail}</Text>
-        </View>
-      ))}
     </View>
   )
 }
@@ -513,7 +452,13 @@ export function DryingReportPDF({ data }: { data: DryingReportData }) {
               // standard of 10 shows green in the office and unreached in the
               // claim file — one of them wrong, and the carrier only sees this
               // one.
-              const band = moistureBand(last?.value ?? null, point.dryStandard)
+              // Deliberately no verdict here. The dry standard and the readings
+              // are facts; whether a point is "wet" is a conclusion, and this
+              // document is read by a customer and an adjuster.
+              const reached =
+                point.dryStandard != null &&
+                last != null &&
+                moistureBand(last.value, point.dryStandard) === 'dry'
               return (
                 <View key={index} style={{ marginBottom: 6 }}>
                   <View style={styles.row}>
@@ -523,7 +468,7 @@ export function DryingReportPDF({ data }: { data: DryingReportData }) {
                     </Text>
                     <Text style={styles.muted}>
                       {point.dryStandard != null ? `Dry standard ${point.dryStandard}%` : ''}
-                      {band !== 'unknown' ? ` · ${BAND_LABEL[band]}` : ''}
+                      {reached ? ' · reached' : ''}
                     </Text>
                   </View>
                   <Text style={styles.muted}>
@@ -598,7 +543,6 @@ export function DryingReportPDF({ data }: { data: DryingReportData }) {
                 </View>
               )
             })}
-            <AtmosphericFindings data={data} />
           </View>
         ) : null}
 

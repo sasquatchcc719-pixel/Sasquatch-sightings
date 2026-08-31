@@ -3716,8 +3716,15 @@ function MapPointEditor({
         <p className="text-muted-foreground mt-2 text-xs">no readings yet</p>
       )}
       <p className="text-muted-foreground mt-1 text-xs">
-        {standard != null ? `dry at ${standard}%` : ''}
-        {band !== 'unknown' ? ` · ${BAND_LABEL[band]}` : ''}
+        {standard != null ? (
+          <>
+            dry at {standard}%{band !== 'unknown' ? ` · ${BAND_LABEL[band]}` : ''}
+          </>
+        ) : (
+          // No invented number for this material. Say what is missing and why,
+          // rather than colouring the pin against a figure nobody chose.
+          <>Set a dry standard — read an unaffected spot of the same material.</>
+        )}
       </p>
 
       {expanded ? (

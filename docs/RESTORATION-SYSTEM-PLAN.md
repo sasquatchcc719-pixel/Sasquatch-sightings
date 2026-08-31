@@ -2612,3 +2612,50 @@ until something is typed.
 5 would otherwise make the next one a second 5 — the same duplicate-label problem
 arriving by a different road. A hand-typed name is skipped by that arithmetic, so
 naming a point never disturbs the sequence.
+
+## Two rules I broke on the same document
+
+### Internal warnings were printing on the customer's PDF
+
+Charles: *"you're not putting all these warnings on my PDF are you?"*
+
+I was. The atmospheric findings block put *"check the filter, the coils, and that
+it is actually running"* and *"Drying has stalled: water is still coming from
+somewhere, or the equipment is not working"* into a claim file.
+
+This is the rule he gave weeks ago about Category 3 warnings, restated: internal
+guidance is for us. **Readings are facts; diagnoses are not.** A document that
+tells an adjuster our equipment might be broken is a document that invites the
+claim to be questioned — and it says it in our own words.
+
+The block is gone. The atmospheric table keeps temperature, RH and GPP, and the
+reader draws the conclusion. The material rows lost their "wet"/"still drying"
+verdict too, for the same reason; "reached" against a stated dry standard is a
+fact and stays.
+
+Asserted against the report's **source**, with comments stripped, not against the
+rendered bytes — a PDF compresses its text streams, so a byte scan would pass
+while the words were on the page. That is the worst possible outcome for a test
+whose whole job is to keep them off it.
+
+### The dry standards were mine, not his
+
+Charles: *"where are you getting these thresholds... I'm having to dial in
+numbers that I don't think I've ever achieved in order to meet your green
+level."*
+
+Split the provenance and the fault is obvious:
+
+- **The bands are his.** Green within 2 of the standard, amber within 15, red
+  beyond — that is his framing example generalized.
+- **The 10% standard was his too — for wood.** I then applied it to *every*
+  material in the list, gypsum and insulation included.
+
+Wood is read in true percent moisture content, so 10 means the same on any meter.
+Drywall and concrete are read on relative or reference scales that differ by
+meter, so a number invented for them is not conservative — it is meaningless, and
+it was quietly setting a green target he had never hit.
+
+Only the wood family keeps a default now. Everything else reads grey and says
+"Set a dry standard — read an unaffected spot of the same material", which is
+both true and how the S500 says to arrive at one.

@@ -33,21 +33,34 @@ export const DRYING_WITHIN = 15
 /**
  * Where a material normally reads when it is dry.
  *
- * Only a starting number — the point's own standard is editable, and on a real
- * job it should come from a meter reading on unaffected material of the same
- * kind. Concrete and tile are deliberately absent: they are measured on a
- * different scale entirely (in-slab RH rather than %MC), and a number invented
- * for them would colour a pin confidently and wrongly.
+ * **Only the wood family has a number here, and it is Charles's**, given for
+ * framing on this job: *"the baseline was 10% which I think is pretty common."*
+ * Wood is also the one material a moisture meter reads in true percent moisture
+ * content, so a 10 means the same thing on any meter he owns.
+ *
+ * Drywall, plaster, insulation, concrete and tile are deliberately absent. I had
+ * put 10 against every one of them — Charles's wood number applied to materials
+ * that do not read like wood — and he found it out the honest way:
+ *
+ *   > *"these goals seem to be far above what I've experienced in the past. I'm
+ *   > having to dial in numbers that I don't think I've ever achieved in order
+ *   > to meet your green level."*
+ *
+ * He is right. Gypsum and concrete are read on relative or reference scales that
+ * differ by meter, so a number invented for them is not conservative or generous
+ * — it is meaningless, and it was quietly setting a target he could not hit.
+ *
+ * A point with no standard reads grey and says so, which is true. The standard
+ * belongs to the job anyway: the S500 sets it from unaffected material of the
+ * same kind in the same building, which is a reading to take, not a constant to
+ * look up.
  */
 export const DEFAULT_DRY_STANDARD: Record<string, number> = {
-  Drywall: 10,
-  Plaster: 10,
   Framing: 10,
   Subfloor: 10,
   Hardwood: 10,
   Trim: 10,
   Cabinet: 10,
-  Insulation: 10,
 }
 
 export function defaultDryStandard(material: string | null | undefined): number | null {

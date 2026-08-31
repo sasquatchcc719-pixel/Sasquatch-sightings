@@ -4,6 +4,7 @@
  * worse than no report, because it fails at the moment it is being handed over.
  */
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'fs'
 import { renderToBuffer } from '@react-pdf/renderer'
 import { DryingReportPDF, type DryingReportData } from './drying-report'
 
@@ -134,5 +135,63 @@ describe('the drying trend', () => {
       <DryingReportPDF data={{ ...BASE, visits: BASE.visits.map((v) => ({ ...v, note: null })) }} />,
     )
     expect(buffer.length).toBeGreaterThan(withoutNotes.length)
+  }, 30_000)
+})
+
+describe('what never reaches the customer', () => {
+  /**
+   * Charles's standing rule, first given about Category 3 warnings: internal
+   * guidance is for us, not for a document a customer or an adjuster reads —
+   * "I don't want you writing all over a fucking customer's invoice."
+   *
+   * The atmospheric verdicts broke it. The report was printing "check the
+   * filter, the coils, and that it is actually running" and "Drying has
+   * stalled" into a claim file. Readings are facts; diagnoses are not.
+   *
+   * Asserted against the SOURCE rather than the rendered bytes, because a PDF
+   * compresses its text streams — a byte scan would pass while the words were
+   * on the page, which is the worst possible outcome for a test like this.
+   */
+  const source = readFileSync(new URL('./drying-report.tsx', import.meta.url), 'utf8')
+
+  /**
+   * Comments removed: they explain the rule and naturally quote the words it
+   * forbids. Only what could actually be rendered is examined.
+   */
+  const rendered = source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1')
+
+  it('does not reach for a verdict helper at all', () => {
+    for (const helper of [
+      'dehumidifierVerdict',
+      'dryGoalVerdict',
+      'trendVerdict',
+      'ventilationNote',
+      'BAND_LABEL',
+    ]) {
+      expect(rendered).not.toContain(helper)
+    }
+  })
+
+  it('carries no diagnostic wording of its own', () => {
+    for (const phrase of ['coils', 'stalled', 'not keeping up', 'not working']) {
+      expect(rendered.toLowerCase()).not.toContain(phrase)
+    }
+  })
+
+  it('still prints the readings themselves', async () => {
+    // The table is the evidence; the reader draws the conclusion.
+    const wet: DryingReportData = {
+      ...BASE,
+      airReadings: [
+        { role: 'affected', location: 'Basement', tempF: 80, rhPct: 70, takenAt: '2026-08-31T09:00:00-06:00' },
+      ],
+    }
+    const withAir = await renderToBuffer(<DryingReportPDF data={wet} />)
+    const withoutAir = await renderToBuffer(
+      <DryingReportPDF data={{ ...wet, airReadings: [] }} />,
+    )
+    expect(withAir.length).toBeGreaterThan(withoutAir.length)
   }, 30_000)
 })
