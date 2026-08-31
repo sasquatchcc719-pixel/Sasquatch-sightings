@@ -2309,3 +2309,52 @@ and each photo attached to the visit that happened on the day it was taken.
 The dehu pin editor, imported and never rendered. This card, deleted wholesale.
 Both passed the build and the tests. The only thing that catches either is
 opening the screen and looking at it, and I have not been doing that.
+
+## Rethinking the psychrometry around what the trade actually uses
+
+Charles: *"outside literally means the air outside, which honestly is a metric
+that almost nobody really uses, but we always record it anyway. You don't need
+the intake air for the dehumidifier. You only need the affected room — that's the
+intake — and then the air coming out."*
+
+Two things were wrong, and the second was the bad one.
+
+### Outside was the yardstick, and it should never have been
+
+The chamber comparison read `outside ?? unaffected` — outside **preferred**, with
+the unaffected reading as an afterthought. Exactly backwards. The S500 sets a dry
+standard from unaffected air in the same building; outside swings with the
+weather and has no bearing on what a basement should read.
+
+On his own readings it produced this:
+
+> **Chamber is drier than the reference air.** Affected 54.9 GPP against 57.9
+> GPP. *The equipment is winning.*
+
+Green, confident, and meaningless — the chamber had simply beaten a humid
+evening. Now:
+
+> **No dry goal to compare against.** Log an unaffected area — a dry room in the
+> same building. That is the number the chamber has to reach; outside air is not
+> it.
+
+**Not knowing, and saying so, beats a green box that is measuring the weather.**
+
+Outside is still recorded, and now informs the one decision it genuinely
+does: `ventilationNote` speaks up only when outside is 10+ GPP drier than the
+chamber, because then opening the building beats another day of rental. On his
+readings outside was *wetter*, so it stays silent.
+
+### The intake was already gone; the wording was not
+
+`dehu_intake` had been removed, but the verdict still said "Intake is 54.9 GPP",
+which reads as a reading he never took. It now says "The room is 54.9 GPP and the
+air coming out is 53.6" — the same arithmetic, described the way the work is
+done.
+
+### What his numbers actually say
+
+Worth being plain about: the dehumidifier verdict on his readings is not a bug.
+74°F/44% in the room is 54.9 GPP; 92°F/24% coming out is 53.6. That is 1.3 GPP
+of depression, and a working LGR on air that damp should be pulling 30 or more.
+Either those were test numbers, or that unit needs looking at.

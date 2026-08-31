@@ -21,7 +21,8 @@ import {
   AIR_ROLES,
   grainsPerPound,
   dehumidifierVerdict,
-  chamberVerdict,
+  dryGoalVerdict,
+  ventilationNote,
   trendVerdict,
   type AirRole,
 } from '@/lib/ops/restoration-psychrometry'
@@ -232,11 +233,10 @@ function AtmosphericFindings({ data }: { data: DryingReportData }) {
   })
 
   const findings = [
-    dehumidifierVerdict(shape(latest.get('dehu_intake')), shape(latest.get('dehu_outlet'))),
-    chamberVerdict(
-      shape(latest.get('affected')),
-      shape(latest.get('outside') ?? latest.get('unaffected')),
-    ),
+    // The room air IS the dehu intake, and the dry goal is the unaffected air
+    // in the same building — never outside, which swings with the weather.
+    dehumidifierVerdict(shape(latest.get('affected')), shape(latest.get('dehu_outlet'))),
+    dryGoalVerdict(shape(latest.get('affected')), shape(latest.get('unaffected'))),
     trendVerdict(
       data.airReadings.map((r) => ({
         role: (r.role ?? null) as AirRole | null,
@@ -245,7 +245,8 @@ function AtmosphericFindings({ data }: { data: DryingReportData }) {
         takenAt: r.takenAt,
       })),
     ),
-  ].filter((f) => f.status !== 'unknown')
+    ventilationNote(shape(latest.get('affected')), shape(latest.get('outside'))),
+  ].filter((f): f is NonNullable<typeof f> => f != null && f.status !== 'unknown')
 
   if (findings.length === 0) return null
 

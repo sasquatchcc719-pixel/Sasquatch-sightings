@@ -10,7 +10,8 @@ import {
   grainsPerPound,
   dewPointF,
   dehumidifierVerdict,
-  chamberVerdict,
+  dryGoalVerdict,
+  ventilationNote,
   trendVerdict,
   type AirRole,
   type Verdict,
@@ -91,9 +92,10 @@ export function AirReadingsCard({
       toReading(latestByRole.get('affected')),
       toReading(latestByRole.get('dehu_outlet')),
     ),
-    chamberVerdict(
+    // The goal is the unaffected air in the same building, never outside.
+    dryGoalVerdict(
       toReading(latestByRole.get('affected')),
-      toReading(latestByRole.get('outside') ?? latestByRole.get('unaffected')),
+      toReading(latestByRole.get('unaffected')),
     ),
     trendVerdict(
       readings.map((r) => ({
@@ -103,7 +105,13 @@ export function AirReadingsCard({
         takenAt: r.taken_at,
       })),
     ),
-  ]
+    // Only when it actually says something: outside is worth acting on when it
+    // is markedly drier than the chamber, and silent otherwise.
+    ventilationNote(
+      toReading(latestByRole.get('affected')),
+      toReading(latestByRole.get('outside')),
+    ),
+  ].filter((v): v is Verdict => v != null)
 
   const canLog = Number(tempF) > 0 && rhPct !== '' && Number(rhPct) >= 0 && Number(rhPct) <= 100
 

@@ -126,7 +126,7 @@ export function dehumidifierVerdict(roomAir: Reading, outlet: Reading): Verdict 
     return {
       status: 'good',
       headline: `Pulling ${depression} GPP`,
-      detail: `Intake ${intakeGpp} GPP, outlet ${outletGpp} GPP. Working as an LGR should.`,
+      detail: `Room ${intakeGpp} GPP, out ${outletGpp} GPP. Working as an LGR should.`,
     }
   }
 
@@ -136,8 +136,8 @@ export function dehumidifierVerdict(roomAir: Reading, outlet: Reading): Verdict 
       headline: `Pulling ${depression} GPP`,
       detail:
         intakeGpp > 60
-          ? `Intake is still wet at ${intakeGpp} GPP; a healthy LGR should be pulling 30 or more from air this damp.`
-          : `Intake ${intakeGpp} GPP, outlet ${outletGpp} GPP. Reasonable for air this dry.`,
+          ? `The room is still wet at ${intakeGpp} GPP; a healthy LGR should be pulling 30 or more from air this damp.`
+          : `Room ${intakeGpp} GPP, out ${outletGpp} GPP. Reasonable for air this dry.`,
     }
   }
 
@@ -146,7 +146,7 @@ export function dehumidifierVerdict(roomAir: Reading, outlet: Reading): Verdict 
     return {
       status: 'good',
       headline: `Little left to pull (${depression} GPP)`,
-      detail: `Intake is already down to ${intakeGpp} GPP. Low depression here means the air is dry, not that the unit is failing.`,
+      detail: `The room is already down to ${intakeGpp} GPP. Low depression here means the air is dry, not that the unit is failing.`,
     }
   }
 
@@ -158,74 +158,98 @@ export function dehumidifierVerdict(roomAir: Reading, outlet: Reading): Verdict 
 }
 
 /**
- * Is the chamber drier than what is outside it?
+ * Are we at the dry goal?
  *
- * If the affected air holds more water than the outside air, the dehumidifiers
- * are losing to the building — or the cheaper answer applies and you can
- * ventilate instead of renting equipment for another day.
+ * The goal is the **unaffected air in the same building** — that is what the
+ * S500 means by a dry standard, and it is the only comparison that says the
+ * chamber has caught up with the rest of the house.
+ *
+ * Outside is deliberately NOT the yardstick. Charles: *"outside literally means
+ * the air outside, which honestly is a metric that almost nobody really uses,
+ * but we always record it anyway."* It swings with the weather, it has no
+ * bearing on what a basement should read, and using it as the goal produced
+ * confident nonsense — a chamber can be "drier than outside" on a humid day and
+ * still be soaking. It is recorded for the file, and used for exactly one real
+ * decision: whether opening the building would beat renting equipment.
  */
-export function chamberVerdict(affected: Reading, reference: Reading): Verdict {
+export function dryGoalVerdict(affected: Reading, unaffected: Reading): Verdict {
+  const inside =
+    affected.tempF != null && affected.rhPct != null
+      ? grainsPerPound(affected.tempF, affected.rhPct)
+      : null
+  const goal =
+    unaffected.tempF != null && unaffected.rhPct != null
+      ? grainsPerPound(unaffected.tempF, unaffected.rhPct)
+      : null
+
+  if (inside == null) {
+    return {
+      status: 'unknown',
+      headline: 'No affected-area reading',
+      detail: 'Log the air in the drying chamber.',
+    }
+  }
+  if (goal == null) {
+    return {
+      status: 'unknown',
+      headline: 'No dry goal to compare against',
+      detail:
+        'Log an unaffected area — a dry room in the same building. That is the number the chamber has to reach; outside air is not it.',
+    }
+  }
+
+  const over = Math.round((inside - goal) * 10) / 10
+  const stale = sameDay(affected.takenAt, unaffected.takenAt)
+    ? ''
+    : ' Unaffected reading is from a different day.'
+
+  if (over <= 0) {
+    return {
+      status: 'good',
+      headline: 'Chamber has reached the dry goal',
+      detail: `Affected ${inside} GPP against ${goal} GPP unaffected. The air is where it needs to be — materials decide the rest.${stale}`,
+    }
+  }
+  if (over <= 5) {
+    return {
+      status: 'watch',
+      headline: `${over} GPP above the dry goal`,
+      detail: `Affected ${inside} GPP against ${goal} GPP unaffected. Close.${stale}`,
+    }
+  }
+  return {
+    status: 'problem',
+    headline: `${over} GPP above the dry goal`,
+    detail: `Affected ${inside} GPP against ${goal} GPP unaffected. The chamber is still holding water the rest of the building is not.${stale}`,
+  }
+}
+
+/**
+ * The one decision outside air actually informs.
+ *
+ * If the air outside holds less water than the chamber, opening the building
+ * moves more water than another day of rental does. Worth saying; not worth
+ * treating as the goal.
+ */
+export function ventilationNote(affected: Reading, outside: Reading): Verdict | null {
   const inside =
     affected.tempF != null && affected.rhPct != null
       ? grainsPerPound(affected.tempF, affected.rhPct)
       : null
   const out =
-    reference.tempF != null && reference.rhPct != null
-      ? grainsPerPound(reference.tempF, reference.rhPct)
+    outside.tempF != null && outside.rhPct != null
+      ? grainsPerPound(outside.tempF, outside.rhPct)
       : null
-
-  if (inside == null || out == null) {
-    return {
-      status: 'unknown',
-      headline: 'No chamber comparison',
-      detail: 'Log the affected area and one outside or unaffected reading.',
-    }
-  }
+  if (inside == null || out == null) return null
 
   const difference = Math.round((inside - out) * 10) / 10
-
-  // Outside air changes day to day. Comparing today's chamber against a
-  // reference taken on Tuesday is still worth saying, but the reader has to
-  // know that is what happened — this appears in a claim file.
-  const stale =
-    sameDay(affected.takenAt, reference.takenAt)
-      ? ''
-      : ' Reference reading is from a different day.'
-
-  if (difference <= 0) {
-    return {
-      status: 'good',
-      headline: 'Chamber is drier than the reference air',
-      detail: `Affected ${inside} GPP against ${out} GPP. The equipment is winning.${stale}`,
-    }
-  }
-
-  if (difference <= 10) {
-    return {
-      status: 'watch',
-      headline: `Chamber is ${difference} GPP wetter`,
-      detail: `Affected ${inside} GPP against ${out} GPP. Closing, but not there yet.${stale}`,
-    }
-  }
+  if (difference < 10) return null
 
   return {
-    status: 'problem',
-    headline: `Chamber is ${difference} GPP wetter than the reference air`,
-    detail: `Affected ${inside} GPP against ${out} GPP. Either the equipment is not keeping up, or the chamber is open to somewhere wet.${stale}`,
+    status: 'watch',
+    headline: `Outside air is ${difference} GPP drier`,
+    detail: `Chamber ${inside} GPP against ${out} GPP outside. Opening up would move water faster than the equipment is — worth considering if the weather holds.`,
   }
-}
-
-/** Same local calendar day, so a morning and an afternoon reading pair up. */
-function sameDay(a: string, b: string): boolean {
-  if (!a || !b) return false
-  const da = new Date(a)
-  const db = new Date(b)
-  if (Number.isNaN(da.getTime()) || Number.isNaN(db.getTime())) return false
-  return (
-    da.getFullYear() === db.getFullYear() &&
-    da.getMonth() === db.getMonth() &&
-    da.getDate() === db.getDate()
-  )
 }
 
 /** Has the affected air actually dried out since the last visit? */
@@ -272,4 +296,17 @@ export function trendVerdict(readings: Reading[]): Verdict {
     headline: change === 0 ? 'No change in the air' : `Up ${Math.abs(change)} GPP`,
     detail: `${first} GPP to ${last} GPP. Drying has stalled: water is still coming from somewhere, or the equipment is not working.`,
   }
+}
+
+/** Same local calendar day, so a morning and an afternoon reading pair up. */
+function sameDay(a: string, b: string): boolean {
+  if (!a || !b) return false
+  const da = new Date(a)
+  const db = new Date(b)
+  if (Number.isNaN(da.getTime()) || Number.isNaN(db.getTime())) return false
+  return (
+    da.getFullYear() === db.getFullYear() &&
+    da.getMonth() === db.getMonth() &&
+    da.getDate() === db.getDate()
+  )
 }

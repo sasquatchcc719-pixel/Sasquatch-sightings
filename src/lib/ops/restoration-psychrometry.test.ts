@@ -4,7 +4,8 @@ import {
   grainsPerPound,
   dewPointF,
   dehumidifierVerdict,
-  chamberVerdict,
+  dryGoalVerdict,
+  ventilationNote,
   trendVerdict,
 } from './restoration-psychrometry'
 
@@ -73,18 +74,38 @@ describe('dehumidifierVerdict', () => {
   })
 })
 
-describe('chamberVerdict', () => {
-  it('is happy when the chamber holds less water than outside', () => {
-    const v = chamberVerdict(at(75, 35, 'affected'), at(70, 60, 'outside'))
+describe('dryGoalVerdict', () => {
+  it('measures the chamber against unaffected air in the same building', () => {
+    const v = dryGoalVerdict(at(75, 35, 'affected'), at(72, 40, 'unaffected'))
     expect(v.status).toBe('good')
   })
 
-  it('flags a chamber wetter than the air outside it', () => {
-    // Which is also the cheap answer: open a window instead of renting another
-    // day of equipment.
-    const v = chamberVerdict(at(80, 70, 'affected'), at(60, 40, 'outside'))
+  it('asks for an unaffected reading rather than falling back to outside', () => {
+    // Outside swings with the weather. "Drier than outside" on a humid day is
+    // confident nonsense about a basement that is still soaking.
+    const v = dryGoalVerdict(at(80, 70, 'affected'), at(null, null, 'unaffected'))
+    expect(v.status).toBe('unknown')
+    expect(v.detail).toMatch(/unaffected/i)
+    expect(v.detail).toMatch(/outside air is not it/i)
+  })
+
+  it('says how far above the goal the chamber still is', () => {
+    const v = dryGoalVerdict(at(80, 70, 'affected'), at(70, 40, 'unaffected'))
     expect(v.status).toBe('problem')
-    expect(v.headline).toMatch(/wetter/)
+    expect(v.headline).toMatch(/above the dry goal/)
+  })
+})
+
+describe('ventilationNote', () => {
+  it('speaks up when opening the building would beat the equipment', () => {
+    const note = ventilationNote(at(80, 70, 'affected'), at(50, 40, 'outside'))
+    expect(note).not.toBeNull()
+    expect(note!.headline).toMatch(/drier/)
+  })
+
+  it('stays quiet when outside is no help, which is most days', () => {
+    expect(ventilationNote(at(75, 40, 'affected'), at(72, 45, 'outside'))).toBeNull()
+    expect(ventilationNote(at(75, 40, 'affected'), at(null, null, 'outside'))).toBeNull()
   })
 })
 
@@ -125,17 +146,17 @@ describe('a reference reading from another day', () => {
   it('is used, but the report says it was', () => {
     // Outside air changes overnight; a claim file should not imply the two
     // numbers were taken side by side when they were two days apart.
-    const v = chamberVerdict(
+    const v = dryGoalVerdict(
       at(77, 38, 'affected', '2026-08-31T09:00:00-06:00'),
-      at(72, 40, 'outside', '2026-08-29T09:00:00-06:00'),
+      at(72, 40, 'unaffected', '2026-08-29T09:00:00-06:00'),
     )
     expect(v.detail).toMatch(/different day/i)
   })
 
   it('says nothing extra when they were taken together', () => {
-    const v = chamberVerdict(
+    const v = dryGoalVerdict(
       at(77, 38, 'affected', '2026-08-31T09:00:00-06:00'),
-      at(72, 40, 'outside', '2026-08-31T09:05:00-06:00'),
+      at(72, 40, 'unaffected', '2026-08-31T09:05:00-06:00'),
     )
     expect(v.detail).not.toMatch(/different day/i)
   })
