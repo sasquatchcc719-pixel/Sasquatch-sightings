@@ -175,6 +175,23 @@ export async function PUT(
     }
 
     const placedAt = new Date().toISOString()
+
+    // Seeded equipment goes in on DAY ONE of the job, like everything else.
+    // This path predated that rule and dated units to the moment the button was
+    // pressed — which, since estimates are often copied a day or two in, billed
+    // fans from the wrong day. Same default as the equipment route: the
+    // project's first visit, falling back to today for a job with no visits.
+    const { data: firstVisit } = await supabase
+      .from('ops_appointments')
+      .select('appointment_date')
+      .eq('restoration_project_id', id)
+      .order('appointment_date')
+      .limit(1)
+      .maybeSingle()
+    const placedOn =
+      firstVisit?.appointment_date ??
+      new Date().toLocaleDateString('en-CA', { timeZone: 'America/Denver' })
+
     let equipmentPlaced = 0
     for (const line of equipment) {
       const code = line.restoration_catalog_code
@@ -191,6 +208,7 @@ export async function PUT(
             project_id: id,
             catalog_code: code,
             placed_at: placedAt,
+            placed_on: placedOn,
           })),
         )
       if (placeError) throw placeError

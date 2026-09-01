@@ -670,3 +670,118 @@ describe('closing a monitor visit', () => {
     await supabase.from('restoration_projects').delete().eq('id', project!.id)
   })
 })
+
+describe("Charles's own arithmetic, end to end", () => {
+  /**
+   * "I put eight fans in a building for three days, that's 24. I took two out
+   * so that's gonna be 22 fans and 3 dehu 24-hour periods."
+   *
+   * This runs that exact job through the real database — the placement trigger,
+   * the billing view, and the real close — and demands his numbers to the cent.
+   * No mocks: if any link of the chain drifts, this fails.
+   */
+  it('bills 22 fan-days and 3 dehu-days at close', async () => {
+    const { data: addr } = await supabase
+      .from('ops_service_addresses')
+      .select('id, customer_id')
+      .limit(1)
+      .single()
+
+    const { data: project } = await supabase
+      .from('restoration_projects')
+      .insert({
+        customer_id: addr!.customer_id,
+        service_address_id: addr!.id,
+        cause_narrative: `${MARKER}_CHARLES_MATH`,
+      })
+      .select('id')
+      .single()
+
+    const day = (offset: number) => {
+      const d = new Date()
+      d.setDate(d.getDate() + offset)
+      return d.toLocaleDateString('en-CA', { timeZone: 'America/Denver' })
+    }
+    const dayOne = day(-3)
+
+    const { data: monitor } = await supabase
+      .from('ops_appointments')
+      .insert({
+        customer_id: addr!.customer_id,
+        service_address_id: addr!.id,
+        booking_channel: 'admin',
+        source: 'integration_test',
+        status: 'booked',
+        payment_status: 'unpaid',
+        quickbooks_sync_status: 'held',
+        appointment_date: day(0),
+        start_time: '09:00',
+        end_time: '10:00',
+        quoted_total: 0,
+        kind: 'restoration',
+        restoration_project_id: project!.id,
+        visit_type: 'monitor',
+        internal_notes: MARKER,
+      })
+      .select('id')
+      .single()
+
+    // Eight fans and a dehu on day one; two fans pulled after two nights.
+    // The insert error is asserted, because an unchecked insert here produced
+    // an empty invoice and a green-looking test on the first attempt.
+    const placedAt = `${dayOne}T15:00:00Z`
+    const { error: placeError } = await supabase
+      .from('restoration_equipment_placements')
+      .insert([
+        ...Array.from({ length: 6 }, () => ({
+          project_id: project!.id,
+          catalog_code: 'DRY',
+          placed_at: placedAt,
+          placed_on: dayOne,
+        })),
+        ...Array.from({ length: 2 }, () => ({
+          project_id: project!.id,
+          catalog_code: 'DRY',
+          placed_at: placedAt,
+          placed_on: dayOne,
+          removed_at: new Date().toISOString(),
+          removed_on: day(-1),
+        })),
+        {
+          project_id: project!.id,
+          catalog_code: 'DHM>>',
+          placed_at: placedAt,
+          placed_on: dayOne,
+        },
+      ])
+    expect(placeError, placeError?.message).toBeNull()
+
+    const result = await closeRestorationProject(supabase, {
+      projectId: project!.id,
+      closingAppointmentId: monitor!.id,
+      userId: '00000000-0000-0000-0000-000000000000',
+      dryStandardNotes: 'all points at or below dry standard',
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const { data: lines } = await supabase
+      .from('ops_invoice_line_items')
+      .select('description, quantity, unit_price, line_total')
+      .eq('invoice_id', result.invoiceId)
+
+    const fans = lines!.find((l) => l.description.includes('Air mover'))!
+    const dehu = lines!.find((l) => l.description.includes('Dehumidifier'))!
+
+    // 6 fans x 3 days + 2 fans x 2 days = 22, at $24.50.
+    expect(Number(fans.quantity)).toBe(22)
+    expect(Number(fans.line_total)).toBeCloseTo(539.0, 2)
+    // 1 dehu x 3 days at $105.46.
+    expect(Number(dehu.quantity)).toBe(3)
+    expect(Number(dehu.line_total)).toBeCloseTo(316.38, 2)
+    expect(result.subtotal).toBeCloseTo(855.38, 2)
+
+    await supabase.from('ops_appointments').delete().eq('restoration_project_id', project!.id)
+    await supabase.from('restoration_projects').delete().eq('id', project!.id)
+  })
+})

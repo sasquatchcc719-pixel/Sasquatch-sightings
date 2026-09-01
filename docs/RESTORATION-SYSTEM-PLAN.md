@@ -3367,3 +3367,38 @@ number. With the projection, Jill's subtotal is now $4,752.46.
 The line also shows price × multiplier = total again ("$24.50 × 22d — $539.00"),
 which is how Charles reads an equipment line and what the unit-days-only wording
 had dropped.
+
+## Audit of the equipment billing, end to end
+
+Charles: *"can you just check over the work that has been done up at this point?
+I just don't trust it."*
+
+Distrust earned is answered with proof, not reassurance. The audit ran his exact
+job through the real database — the placement trigger, the billing view, and the
+real `closeRestorationProject` — and demanded his numbers to the cent:
+
+> 8 fans on day one, 2 pulled after two nights, closed on day three →
+> **22 fan-days at $539.00, 3 dehu-days at $316.38, subtotal $855.38.**
+
+It passes, with no mocks, so any future drift in any link of that chain fails a
+named test: *"Charles's own arithmetic, end to end."*
+
+### What the audit found
+
+1. **Estimate seeding still dated equipment to the typing moment.** The path
+   predated the day-one rule. Seeded units now go in on the project's first
+   visit, same as directly-placed ones.
+2. **The audit's own first attempt lied.** The scenario test inserted equipment
+   without `placed_at` (NOT NULL), never checked the insert error, and the close
+   quietly produced a $0 invoice — a hollow pass one unchecked line away from
+   being reported as proof. The insert is now asserted, and the debris (one $0
+   invoice, one test project) was cleaned out of the live database.
+
+### Confirmed sound, by existing tests re-run against the new model
+- Close bills **actual** days: the older close test (6 fans × 3 days = 18) still
+  passes untouched, so the planned-days projection never leaks into an invoice.
+- Estimate equipment is never copied as work lines (no double billing).
+- Deposit and deductible settle in the right order.
+- The SQL view and the screen ledger implement the same rule; the end-to-end
+  test pins the SQL side and the unit tests pin the TS side with the same
+  numbers.
