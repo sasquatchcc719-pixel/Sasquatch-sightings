@@ -281,3 +281,16 @@ describe('drying report visit order', () => {
     ])
   })
 })
+
+describe('correcting the source of loss', () => {
+  it('flows a correction through to the report immediately', async () => {
+    const { error } = await supabase
+      .from('restoration_projects')
+      .update({ source_of_loss: 'water_heater' })
+      .eq('id', projectId)
+    expect(error).toBeNull()
+
+    const built = await buildDryingReportData(supabase, projectId, false)
+    expect(built!.data.loss.source).toBe('water_heater')
+  })
+})

@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { LOSS_SOURCES as SOURCES } from '@/lib/ops/restoration-loss-sources'
 
 /**
  * Start a water loss.
@@ -35,26 +36,6 @@ type CustomerSearchResult = {
   ops_service_addresses: CustomerAddress[]
 }
 
-/**
- * Selecting a source pre-selects the category, because remembering that
- * groundwater is Category 3 at 2 a.m. is exactly the thing that gets missed.
- * Every one stays overridable.
- */
-const SOURCES: Array<{ value: string; label: string; category: 1 | 2 | 3 }> = [
-  { value: 'supply_line', label: 'Supply line', category: 1 },
-  { value: 'water_heater', label: 'Water heater', category: 1 },
-  { value: 'toilet_supply', label: 'Toilet supply line', category: 1 },
-  { value: 'sprinkler', label: 'Fire sprinkler', category: 1 },
-  { value: 'hvac_condensate', label: 'HVAC condensate', category: 2 },
-  { value: 'dishwasher', label: 'Dishwasher', category: 2 },
-  { value: 'washing_machine', label: 'Washing machine', category: 2 },
-  { value: 'toilet_overflow', label: 'Toilet overflow (no solids)', category: 2 },
-  { value: 'roof', label: 'Roof / rain intrusion', category: 2 },
-  { value: 'sewage_backup', label: 'Sewage backup', category: 3 },
-  { value: 'exterior_groundwater', label: 'Exterior / groundwater', category: 3 },
-  { value: 'other', label: 'Other', category: 1 },
-]
-
 const CATEGORY_HELP: Record<number, string> = {
   1: 'Clean water from a sanitary source.',
   2: 'Grey water — appliance discharge, or Cat 1 left past about 48 hours.',
@@ -72,7 +53,9 @@ export function RestorationNewWorkspace() {
   const searchParams = useSearchParams()
 
   const [customerQuery, setCustomerQuery] = useState('')
-  const [customerResults, setCustomerResults] = useState<CustomerSearchResult[]>([])
+  const [customerResults, setCustomerResults] = useState<
+    CustomerSearchResult[]
+  >([])
   const [searching, setSearching] = useState(false)
   const [customer, setCustomer] = useState<CustomerSearchResult | null>(null)
   const [addressId, setAddressId] = useState('')
@@ -98,7 +81,9 @@ export function RestorationNewWorkspace() {
   const [appointmentDate, setAppointmentDate] = useState(
     searchParams.get('date') || new Date().toISOString().slice(0, 10),
   )
-  const [startTime, setStartTime] = useState(searchParams.get('time') || '09:00')
+  const [startTime, setStartTime] = useState(
+    searchParams.get('time') || '09:00',
+  )
   const [durationMinutes, setDurationMinutes] = useState(240)
   const [monitorVisits, setMonitorVisits] = useState(3)
 
@@ -119,7 +104,8 @@ export function RestorationNewWorkspace() {
           { cache: 'no-store' },
         )
         const result = await response.json()
-        if (!cancelled && response.ok) setCustomerResults(result.customers || [])
+        if (!cancelled && response.ok)
+          setCustomerResults(result.customers || [])
       } catch {
         // A failed lookup should not block the form; the field stays usable.
       } finally {
@@ -135,7 +121,8 @@ export function RestorationNewWorkspace() {
   const emergencyFee = afterHours ? 295.92 : 197.29
 
   const selectedAddress = useMemo(
-    () => customer?.ops_service_addresses.find((a) => a.id === addressId) ?? null,
+    () =>
+      customer?.ops_service_addresses.find((a) => a.id === addressId) ?? null,
     [customer, addressId],
   )
 
@@ -195,7 +182,8 @@ export function RestorationNewWorkspace() {
         }),
       })
       const result = await response.json()
-      if (!response.ok) throw new Error(result.error || 'Failed to start the project')
+      if (!response.ok)
+        throw new Error(result.error || 'Failed to start the project')
       router.push(`/admin/operations/restoration/${result.project_id}`)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to start the project')
@@ -210,7 +198,8 @@ export function RestorationNewWorkspace() {
         <div>
           <h1 className="text-2xl font-semibold">Start a water loss</h1>
           <p className="text-muted-foreground text-sm">
-            No estimate over the phone — only the emergency service fee. Pricing happens on site.
+            No estimate over the phone — only the emergency service fee. Pricing
+            happens on site.
           </p>
         </div>
       </div>
@@ -314,14 +303,16 @@ export function RestorationNewWorkspace() {
               </div>
             </div>
             <p className="text-muted-foreground text-xs">
-              If this number is already on file the existing customer is reused, so a
-              repeat caller does not become a duplicate.
+              If this number is already on file the existing customer is reused,
+              so a repeat caller does not become a duplicate.
             </p>
           </div>
         ) : customer ? (
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="font-medium">{customer.business_name || customer.full_name}</p>
+              <p className="font-medium">
+                {customer.business_name || customer.full_name}
+              </p>
               <p className="text-muted-foreground text-sm">{customer.phone}</p>
             </div>
             <Button
@@ -365,14 +356,19 @@ export function RestorationNewWorkspace() {
                   <span className="font-medium">
                     {result.business_name || result.full_name}
                   </span>
-                  <span className="text-muted-foreground"> · {result.phone}</span>
+                  <span className="text-muted-foreground">
+                    {' '}
+                    · {result.phone}
+                  </span>
                 </button>
               ))}
             </div>
           </div>
         )}
 
-        {!isNewCustomer && customer && customer.ops_service_addresses.length > 0 ? (
+        {!isNewCustomer &&
+        customer &&
+        customer.ops_service_addresses.length > 0 ? (
           <div className="mt-4 flex flex-col gap-2">
             <Label htmlFor="loss-address">Service address</Label>
             <select
@@ -439,7 +435,9 @@ export function RestorationNewWorkspace() {
               </Button>
             ))}
           </div>
-          <p className="text-muted-foreground text-xs">{CATEGORY_HELP[waterCategory]}</p>
+          <p className="text-muted-foreground text-xs">
+            {CATEGORY_HELP[waterCategory]}
+          </p>
         </div>
 
         <div className="mt-4 flex flex-wrap gap-4">
@@ -463,7 +461,9 @@ export function RestorationNewWorkspace() {
 
         <p className="text-muted-foreground mt-3 text-sm">
           Emergency service fee:{' '}
-          <span className="text-foreground font-semibold">${emergencyFee.toFixed(2)}</span>{' '}
+          <span className="text-foreground font-semibold">
+            ${emergencyFee.toFixed(2)}
+          </span>{' '}
           ({afterHours ? 'after hours' : 'business hours'})
         </p>
 
@@ -509,7 +509,9 @@ export function RestorationNewWorkspace() {
               max={12}
               value={durationMinutes / 60}
               onChange={(e) =>
-                setDurationMinutes(Math.max(60, Number(e.target.value) * 60 || 240))
+                setDurationMinutes(
+                  Math.max(60, Number(e.target.value) * 60 || 240),
+                )
               }
             />
           </div>
@@ -523,11 +525,13 @@ export function RestorationNewWorkspace() {
             min={0}
             max={6}
             value={monitorVisits}
-            onChange={(e) => setMonitorVisits(Math.max(0, Math.min(6, Number(e.target.value))))}
+            onChange={(e) =>
+              setMonitorVisits(Math.max(0, Math.min(6, Number(e.target.value))))
+            }
           />
           <p className="text-muted-foreground text-xs">
-            These are not put on the calendar. They wait in the tray so you can fit them
-            around cleaning jobs.
+            These are not put on the calendar. They wait in the tray so you can
+            fit them around cleaning jobs.
           </p>
         </div>
       </Card>
@@ -550,7 +554,11 @@ export function RestorationNewWorkspace() {
           onClick={() => void handleCreate()}
           className="gap-2"
         >
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Droplets className="h-4 w-4" />}
+          {saving ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Droplets className="h-4 w-4" />
+          )}
           Start mitigation
         </Button>
         {selectedAddress ? (

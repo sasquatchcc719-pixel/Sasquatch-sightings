@@ -76,6 +76,7 @@ import {
   visitIsFuture,
 } from '@/lib/ops/restoration-visit-scope'
 import { positionForVisit } from '@/lib/ops/restoration-equipment-position'
+import { LOSS_SOURCES } from '@/lib/ops/restoration-loss-sources'
 import { noteTextFor, noteIsDirty } from '@/lib/ops/restoration-note-scope'
 import {
   equipmentLedger,
@@ -957,6 +958,30 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             <Badge variant={closed ? 'secondary' : 'default'}>
               {closed ? 'Closed' : 'Active'}
             </Badge>
+            <select
+              aria-label="Source of loss"
+              className="border-input bg-background h-7 rounded-md border px-2 text-xs"
+              value={project.source_of_loss ?? ''}
+              onChange={(e) =>
+                void call(
+                  `/api/admin/ops/restoration/projects/${projectId}`,
+                  {
+                    method: 'PATCH',
+                    body: JSON.stringify({ source_of_loss: e.target.value }),
+                  },
+                  'source-of-loss',
+                )
+              }
+            >
+              <option value="" disabled>
+                Source of loss
+              </option>
+              {LOSS_SOURCES.map((source) => (
+                <option key={source.value} value={source.value}>
+                  {source.label}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
         <CustomerContact phone={customer?.phone} className="min-w-64" />
