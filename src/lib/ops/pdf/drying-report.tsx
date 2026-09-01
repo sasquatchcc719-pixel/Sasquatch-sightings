@@ -7,6 +7,7 @@ import {
   Svg,
   Line,
   Path,
+  Rect,
   Circle,
   Text as SvgText,
   Text,
@@ -78,6 +79,24 @@ export type DryingReportData = {
     takenAt: string
   }>
   photos: Array<{ url: string; phase: string | null }>
+  floorPlan: {
+    walls: Array<{ x1: number; y1: number; x2: number; y2: number }>
+    openings: Array<{
+      x: number
+      y: number
+      angleDeg: number
+      kind: string
+      widthFt: number
+    }>
+    equipment: Array<{
+      x: number
+      y: number
+      glyph: string
+      shape: 'dot' | 'box'
+      removed: boolean
+    }>
+    readingPoints: Array<{ x: number; y: number; label: string }>
+  } | null
   totals: {
     work: number
     equipment: number
@@ -242,6 +261,121 @@ function DryingTrend({ data }: { data: DryingReportData }) {
             - - dry standard
           </Text>
         ) : null}
+      </View>
+    </View>
+  )
+}
+
+/**
+ * The loss map: walls, doors, equipment where it currently sits, and the
+ * moisture points being monitored — drawn from the same wall-graph model the
+ * on-screen plan uses, scaled to fit the page rather than the plan's own pan
+ * and zoom.
+ */
+function FloorPlanMap({ data }: { data: DryingReportData }) {
+  const plan = data.floorPlan
+  if (!plan || plan.walls.length === 0) return null
+
+  const W = 500
+  const H = 300
+  const PAD = 20
+
+  const xs = plan.walls.flatMap((w) => [w.x1, w.x2])
+  const ys = plan.walls.flatMap((w) => [w.y1, w.y2])
+  const minX = Math.min(...xs)
+  const maxX = Math.max(...xs)
+  const minY = Math.min(...ys)
+  const maxY = Math.max(...ys)
+  const spanX = Math.max(1, maxX - minX)
+  const spanY = Math.max(1, maxY - minY)
+  const scale = Math.min((W - PAD * 2) / spanX, (H - PAD * 2) / spanY)
+  const offsetX = PAD + (W - PAD * 2 - spanX * scale) / 2
+  const offsetY = PAD + (H - PAD * 2 - spanY * scale) / 2
+  const x = (v: number) => offsetX + (v - minX) * scale
+  const y = (v: number) => offsetY + (v - minY) * scale
+
+  return (
+    <View style={{ marginTop: 8 }}>
+      <Svg width={W} height={H}>
+        {plan.walls.map((w, i) => (
+          <Line
+            key={`w${i}`}
+            x1={x(w.x1)}
+            y1={y(w.y1)}
+            x2={x(w.x2)}
+            y2={y(w.y2)}
+            strokeWidth={2}
+            stroke="#16242b"
+          />
+        ))}
+        {plan.openings.map((o, i) => {
+          // A short tick perpendicular to the wall marks where it's cut.
+          const rad = (o.angleDeg * Math.PI) / 180
+          const perpX = Math.sin(rad) * 6
+          const perpY = -Math.cos(rad) * 6
+          const cx = x(o.x)
+          const cy = y(o.y)
+          return (
+            <Line
+              key={`o${i}`}
+              x1={cx - perpX}
+              y1={cy - perpY}
+              x2={cx + perpX}
+              y2={cy + perpY}
+              strokeWidth={2}
+              stroke="#f8fafc"
+            />
+          )
+        })}
+        {plan.equipment.map((e, i) =>
+          e.shape === 'box' ? (
+            <Rect
+              key={`e${i}`}
+              x={x(e.x) - 6}
+              y={y(e.y) - 6}
+              width={12}
+              height={12}
+              rx={2}
+              fill={e.removed ? '#cbd5e1' : '#0284c7'}
+            />
+          ) : (
+            <Circle
+              key={`e${i}`}
+              cx={x(e.x)}
+              cy={y(e.y)}
+              r={6}
+              fill={e.removed ? '#cbd5e1' : '#0284c7'}
+            />
+          ),
+        )}
+        {plan.equipment.map((e, i) => (
+          <SvgText
+            key={`eg${i}`}
+            x={x(e.x)}
+            y={y(e.y) + 2.5}
+            textAnchor="middle"
+            style={{ fontSize: 6, fill: '#ffffff' }}
+          >
+            {e.glyph}
+          </SvgText>
+        ))}
+        {plan.readingPoints.map((p, i) => (
+          <Circle key={`r${i}`} cx={x(p.x)} cy={y(p.y)} r={4} fill="#059669" />
+        ))}
+      </Svg>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 4 }}>
+        <Text style={{ fontSize: 7, marginRight: 10, color: '#0284c7' }}>
+          ● air mover / scrubber
+        </Text>
+        <Text style={{ fontSize: 7, marginRight: 10, color: '#0284c7' }}>
+          ■ dehumidifier
+        </Text>
+        <Text style={{ fontSize: 7, marginRight: 10, color: '#94a3b8' }}>
+          grey = pulled
+        </Text>
+        <Text style={{ fontSize: 7, color: '#059669' }}>
+          ● moisture reading point
+        </Text>
       </View>
     </View>
   )
@@ -581,6 +715,13 @@ export function DryingReportPDF({ data }: { data: DryingReportData }) {
           )}
           <DryingTrend data={data} />
         </View>
+
+        {data.floorPlan && data.floorPlan.walls.length > 0 ? (
+          <View style={styles.section} break>
+            <Text style={styles.h2}>Loss map</Text>
+            <FloorPlanMap data={data} />
+          </View>
+        ) : null}
 
         {/*
           What was observed, day by day. The readings show the numbers moving;

@@ -1,10 +1,32 @@
 import { SupabaseClient } from '@supabase/supabase-js'
 import type { DryingReportData } from '@/lib/ops/pdf/drying-report'
+import {
+  resolveWalls,
+  openingPosition,
+  type PlanNode,
+  type PlanWall,
+  type WallOpening,
+} from '@/lib/ops/restoration-walls'
 
 const VISIT_LABELS: Record<string, string> = {
   mitigation: 'Mitigation',
   monitor: 'Monitoring visit',
   final: 'Final visit',
+}
+
+/**
+ * Same glyphs as the on-screen map pins (restoration-project-detail.tsx),
+ * duplicated rather than imported — that file is a large client component,
+ * and this one renders on the server.
+ */
+const EQUIPMENT_GLYPHS: Record<string, string> = {
+  DRY: 'AM',
+  'DHM>>': 'LG',
+  'DHM>': 'SM',
+  NAFAN: 'AS',
+}
+function equipmentGlyph(code: string): string {
+  return EQUIPMENT_GLYPHS[code] ?? '?'
 }
 
 export type RestorationProjectCustomer = {
@@ -66,6 +88,9 @@ export async function buildDryingReportData(
     { data: categoryEvents },
     { data: payments },
     { data: photos },
+    { data: nodes },
+    { data: walls },
+    { data: placements },
   ] = await Promise.all([
     supabase
       .from('restoration_equipment_billing')
@@ -74,7 +99,7 @@ export async function buildDryingReportData(
     supabase
       .from('restoration_reading_points')
       .select(
-        'label, material, dry_standard, restoration_readings ( value, taken_at )',
+        'label, material, dry_standard, map_x, map_y, restoration_readings ( value, taken_at )',
       )
       .eq('project_id', projectId)
       .is('retired_at', null),
@@ -106,7 +131,52 @@ export async function buildDryingReportData(
             restoration_phase: string | null
           }>,
         }),
+    supabase
+      .from('restoration_plan_nodes')
+      .select('id, x, y')
+      .eq('project_id', projectId),
+    supabase
+      .from('restoration_plan_walls')
+      .select(
+        'id, start_node_id, end_node_id, thickness_in, is_partial_height, label',
+      )
+      .eq('project_id', projectId),
+    supabase
+      .from('restoration_equipment_placements')
+      .select('id, catalog_code, map_x, map_y, removed_at')
+      .eq('project_id', projectId),
   ])
+
+  const wallIds = (walls ?? []).map((w) => w.id)
+  const { data: openings } = wallIds.length
+    ? await supabase
+        .from('restoration_area_openings')
+        .select('id, wall_id, kind, offset_ft, width_ft')
+        .in('wall_id', wallIds)
+    : {
+        data: [] as Array<{
+          id: string
+          wall_id: string
+          kind: 'doorway' | 'opening' | 'window' | 'stairs'
+          offset_ft: number
+          width_ft: number
+        }>,
+      }
+
+  const placementIds = (placements ?? []).map((p) => p.id)
+  const { data: positions } = placementIds.length
+    ? await supabase
+        .from('restoration_equipment_positions')
+        .select('placement_id, map_x, map_y, moved_at')
+        .in('placement_id', placementIds)
+    : {
+        data: [] as Array<{
+          placement_id: string
+          map_x: number | null
+          map_y: number | null
+          moved_at: string
+        }>,
+      }
 
   const work = (visits ?? []).reduce((sum, visit) => {
     const lines = (visit.ops_appointment_line_items ?? []) as Array<{
@@ -133,6 +203,98 @@ export async function buildDryingReportData(
     Math.min(grossSubtotal, Number(project.deductible_credit ?? 0) || 0),
   )
   const netSubtotal = Math.round((grossSubtotal - deductibleCredit) * 100) / 100
+
+  const planNodes: PlanNode[] = (nodes ?? []).map((n) => ({
+    id: n.id,
+    x: Number(n.x),
+    y: Number(n.y),
+  }))
+  const planWalls: PlanWall[] = (walls ?? []).map((w) => ({
+    id: w.id,
+    startNodeId: w.start_node_id,
+    endNodeId: w.end_node_id,
+    thicknessIn: w.thickness_in ?? undefined,
+    isPartialHeight: w.is_partial_height ?? undefined,
+    label: w.label,
+  }))
+  const resolvedWalls = resolveWalls(planNodes, planWalls)
+  const wallOpenings: WallOpening[] = (openings ?? []).map((o) => ({
+    id: o.id,
+    wallId: o.wall_id,
+    kind: o.kind,
+    offsetFt: Number(o.offset_ft),
+    widthFt: Number(o.width_ft),
+  }))
+  const wallById = new Map(resolvedWalls.map((w) => [w.id, w]))
+
+  // A unit sits wherever it was moved to most recently; a fan that was never
+  // moved sits where it was first set down.
+  const latestMoveByPlacement = new Map<
+    string,
+    { x: number | null; y: number | null; movedAt: string }
+  >()
+  for (const move of positions ?? []) {
+    const movedAt = String(move.moved_at)
+    const existing = latestMoveByPlacement.get(move.placement_id)
+    if (!existing || movedAt > existing.movedAt) {
+      latestMoveByPlacement.set(move.placement_id, {
+        x: move.map_x,
+        y: move.map_y,
+        movedAt,
+      })
+    }
+  }
+
+  const floorPlan =
+    planNodes.length > 0
+      ? {
+          walls: resolvedWalls.map((w) => ({
+            x1: w.start.x,
+            y1: w.start.y,
+            x2: w.end.x,
+            y2: w.end.y,
+          })),
+          openings: wallOpenings
+            .map((o) => {
+              const wall = wallById.get(o.wallId)
+              if (!wall) return null
+              const pos = openingPosition(wall, o)
+              if (!pos) return null
+              return {
+                x: pos.x,
+                y: pos.y,
+                angleDeg: pos.angleDeg,
+                kind: o.kind,
+                widthFt: o.widthFt,
+              }
+            })
+            .filter((o): o is NonNullable<typeof o> => o !== null),
+          equipment: (placements ?? [])
+            .map((p) => {
+              const latest = latestMoveByPlacement.get(p.id)
+              const x = latest?.x ?? p.map_x
+              const y = latest?.y ?? p.map_y
+              if (x == null || y == null) return null
+              return {
+                x: Number(x),
+                y: Number(y),
+                glyph: equipmentGlyph(p.catalog_code),
+                shape: p.catalog_code.startsWith('DHM')
+                  ? ('box' as const)
+                  : ('dot' as const),
+                removed: Boolean(p.removed_at),
+              }
+            })
+            .filter((e): e is NonNullable<typeof e> => e !== null),
+          readingPoints: (points ?? [])
+            .filter((p) => p.map_x != null && p.map_y != null)
+            .map((p) => ({
+              x: Number(p.map_x),
+              y: Number(p.map_y),
+              label: String(p.label),
+            })),
+        }
+      : null
 
   const data: DryingReportData = {
     company: {
@@ -220,6 +382,7 @@ export async function buildDryingReportData(
         restoration_phase: string | null
       }>
     ).map((p) => ({ url: p.public_url, phase: p.restoration_phase })),
+    floorPlan,
     totals: {
       work: Math.round(work * 100) / 100,
       equipment: Math.round(equipmentTotal * 100) / 100,

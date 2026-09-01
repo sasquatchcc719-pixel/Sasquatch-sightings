@@ -125,6 +125,20 @@ const BASE: DryingReportData = {
     },
   ],
   photos: [],
+  floorPlan: {
+    walls: [
+      { x1: 0, y1: 0, x2: 12, y2: 0 },
+      { x1: 12, y1: 0, x2: 12, y2: 10 },
+      { x1: 12, y1: 10, x2: 0, y2: 10 },
+      { x1: 0, y1: 10, x2: 0, y2: 0 },
+    ],
+    openings: [{ x: 6, y: 0, angleDeg: 0, kind: 'doorway', widthFt: 3 }],
+    equipment: [
+      { x: 3, y: 3, glyph: 'AM', shape: 'dot', removed: false },
+      { x: 9, y: 7, glyph: 'LG', shape: 'box', removed: false },
+    ],
+    readingPoints: [{ x: 2, y: 8, label: 'North wall, base' }],
+  },
   totals: {
     work: 1028,
     equipment: 630,

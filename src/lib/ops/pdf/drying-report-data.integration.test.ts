@@ -119,3 +119,112 @@ describe('drying report totals', () => {
     expect(built!.data.totals.balance * 100).toBe(balance?.balanceCents)
   })
 })
+
+describe('drying report floor plan', () => {
+  const nodeIds: string[] = []
+  const wallIds: string[] = []
+  const openingIds: string[] = []
+  const placementIds: string[] = []
+
+  afterAll(async () => {
+    await supabase
+      .from('restoration_area_openings')
+      .delete()
+      .in('id', openingIds)
+    await supabase
+      .from('restoration_equipment_positions')
+      .delete()
+      .in('placement_id', placementIds)
+    await supabase
+      .from('restoration_equipment_placements')
+      .delete()
+      .in('id', placementIds)
+    await supabase.from('restoration_plan_walls').delete().in('id', wallIds)
+    await supabase.from('restoration_plan_nodes').delete().in('id', nodeIds)
+  })
+
+  it('resolves walls, an opening, and equipment at its most recent position', async () => {
+    // A 10x8 rectangle room, corners at (0,0) (10,0) (10,8) (0,8).
+    const { data: nodes } = await supabase
+      .from('restoration_plan_nodes')
+      .insert(
+        [
+          { x: 0, y: 0 },
+          { x: 10, y: 0 },
+          { x: 10, y: 8 },
+          { x: 0, y: 8 },
+        ].map((n) => ({ ...n, project_id: projectId })),
+      )
+      .select('id, x, y')
+    nodeIds.push(...nodes!.map((n) => n.id))
+
+    const [a, b, c, d] = nodes!
+    const { data: walls } = await supabase
+      .from('restoration_plan_walls')
+      .insert(
+        [
+          { start_node_id: a.id, end_node_id: b.id },
+          { start_node_id: b.id, end_node_id: c.id },
+          { start_node_id: c.id, end_node_id: d.id },
+          { start_node_id: d.id, end_node_id: a.id },
+        ].map((w) => ({ ...w, project_id: projectId })),
+      )
+      .select('id')
+    wallIds.push(...walls!.map((w) => w.id))
+
+    const { data: opening } = await supabase
+      .from('restoration_area_openings')
+      .insert({
+        wall_id: walls![0].id,
+        kind: 'doorway',
+        offset_ft: 3,
+        width_ft: 3,
+      })
+      .select('id')
+      .single()
+    openingIds.push(opening!.id)
+
+    // Placed at (1,1), then moved to (5,5) — the report should show it at (5,5).
+    const { data: placement } = await supabase
+      .from('restoration_equipment_placements')
+      .insert({
+        project_id: projectId,
+        catalog_code: 'DHM>>',
+        map_x: 1,
+        map_y: 1,
+        placed_at: new Date(Date.now() - 2 * 86_400_000).toISOString(),
+      })
+      .select('id')
+      .single()
+    placementIds.push(placement!.id)
+
+    await supabase.from('restoration_equipment_positions').insert({
+      placement_id: placement!.id,
+      appointment_id: visitId,
+      map_x: 5,
+      map_y: 5,
+      moved_at: new Date().toISOString(),
+    })
+
+    const built = await buildDryingReportData(supabase, projectId, false)
+    const plan = built!.data.floorPlan
+
+    expect(plan).not.toBeNull()
+    expect(plan!.walls).toHaveLength(4)
+    // Every wall is either 10ft or 8ft, matching the rectangle drawn.
+    for (const w of plan!.walls) {
+      const length = Math.hypot(w.x2 - w.x1, w.y2 - w.y1)
+      expect([8, 10]).toContain(length)
+    }
+
+    expect(plan!.openings).toHaveLength(1)
+    expect(plan!.openings[0].x).toBeCloseTo(3)
+    expect(plan!.openings[0].y).toBeCloseTo(0)
+
+    expect(plan!.equipment).toHaveLength(1)
+    expect(plan!.equipment[0].shape).toBe('box')
+    expect(plan!.equipment[0].glyph).toBe('LG')
+    expect(plan!.equipment[0].x).toBe(5)
+    expect(plan!.equipment[0].y).toBe(5)
+  })
+})
