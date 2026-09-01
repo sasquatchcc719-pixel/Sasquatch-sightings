@@ -34,7 +34,11 @@ export type DryingReportData = {
   address: string
   loss: {
     category: number | null
-    categoryHistory: Array<{ category: number; effectiveAt: string; reason: string | null }>
+    categoryHistory: Array<{
+      category: number
+      effectiveAt: string
+      reason: string | null
+    }>
     source: string | null
     lossDate: string | null
     narrative: string | null
@@ -46,7 +50,12 @@ export type DryingReportData = {
     label: string
     date: string
     note: string | null
-    lines: Array<{ description: string; quantity: number; unit: string | null; total: number }>
+    lines: Array<{
+      description: string
+      quantity: number
+      unit: string | null
+      total: number
+    }>
   }>
   equipment: Array<{
     code: string
@@ -69,7 +78,15 @@ export type DryingReportData = {
     takenAt: string
   }>
   photos: Array<{ url: string; phase: string | null }>
-  totals: { work: number; equipment: number; subtotal: number; paid: number; balance: number }
+  totals: {
+    work: number
+    equipment: number
+    grossSubtotal: number
+    deductibleCredit: number
+    subtotal: number
+    paid: number
+    balance: number
+  }
   includePhotos: boolean
 }
 
@@ -97,7 +114,10 @@ function DryingTrend({ data }: { data: DryingReportData }) {
       label: p.label,
       material: p.material,
       dry_standard: p.dryStandard,
-      restoration_readings: p.readings.map((r) => ({ value: r.value, taken_at: r.takenAt })),
+      restoration_readings: p.readings.map((r) => ({
+        value: r.value,
+        taken_at: r.takenAt,
+      })),
     })),
   )
   if (!chart.plottable) return null
@@ -109,15 +129,25 @@ function DryingTrend({ data }: { data: DryingReportData }) {
   const plotH = H - PAD.top - PAD.bottom
   const span = Math.max(1, chart.maxValue - chart.minValue)
   const x = (i: number) =>
-    PAD.left + (chart.days.length === 1 ? plotW / 2 : (i / (chart.days.length - 1)) * plotW)
-  const y = (v: number) => PAD.top + plotH - ((v - chart.minValue) / span) * plotH
+    PAD.left +
+    (chart.days.length === 1
+      ? plotW / 2
+      : (i / (chart.days.length - 1)) * plotW)
+  const y = (v: number) =>
+    PAD.top + plotH - ((v - chart.minValue) / span) * plotH
 
   const standards = [
     ...new Set(
-      chart.series.map((s) => s.dryStandard).filter((v): v is number => v != null),
+      chart.series
+        .map((s) => s.dryStandard)
+        .filter((v): v is number => v != null),
     ),
   ]
-  const ticks = [chart.minValue, Math.round((chart.minValue + chart.maxValue) / 2), chart.maxValue]
+  const ticks = [
+    chart.minValue,
+    Math.round((chart.minValue + chart.maxValue) / 2),
+    chart.maxValue,
+  ]
 
   return (
     <View style={{ marginTop: 8 }}>
@@ -132,7 +162,12 @@ function DryingTrend({ data }: { data: DryingReportData }) {
               strokeWidth={0.5}
               stroke="#cbd5e1"
             />
-            <SvgText x={PAD.left - 4} y={y(tick) + 3} textAnchor="end" style={{ fontSize: 7, fill: '#64748b' }}>
+            <SvgText
+              x={PAD.left - 4}
+              y={y(tick) + 3}
+              textAnchor="end"
+              style={{ fontSize: 7, fill: '#64748b' }}
+            >
               {`${tick}%`}
             </SvgText>
           </React.Fragment>
@@ -167,7 +202,10 @@ function DryingTrend({ data }: { data: DryingReportData }) {
           <React.Fragment key={series.id}>
             <Path
               d={series.points
-                .map((p, n) => `${n === 0 ? 'M' : 'L'} ${x(p.dayIndex).toFixed(1)} ${y(p.value).toFixed(1)}`)
+                .map(
+                  (p, n) =>
+                    `${n === 0 ? 'M' : 'L'} ${x(p.dayIndex).toFixed(1)} ${y(p.value).toFixed(1)}`,
+                )
                 .join(' ')}
               stroke={CHART_COLORS[i % CHART_COLORS.length]}
               strokeWidth={1.5}
@@ -190,13 +228,19 @@ function DryingTrend({ data }: { data: DryingReportData }) {
         {chart.series.map((series, i) => (
           <Text
             key={series.id}
-            style={{ fontSize: 7, marginRight: 10, color: CHART_COLORS[i % CHART_COLORS.length] }}
+            style={{
+              fontSize: 7,
+              marginRight: 10,
+              color: CHART_COLORS[i % CHART_COLORS.length],
+            }}
           >
             {`— ${series.label}`}
           </Text>
         ))}
         {standards.length > 0 ? (
-          <Text style={{ fontSize: 7, color: '#059669' }}>- - dry standard</Text>
+          <Text style={{ fontSize: 7, color: '#059669' }}>
+            - - dry standard
+          </Text>
         ) : null}
       </View>
     </View>
@@ -205,7 +249,12 @@ function DryingTrend({ data }: { data: DryingReportData }) {
 
 const styles = StyleSheet.create({
   page: { padding: 36, fontSize: 9, fontFamily: 'Helvetica', color: '#16242b' },
-  header: { borderBottomWidth: 2, borderBottomColor: '#0e6577', paddingBottom: 8, marginBottom: 14 },
+  header: {
+    borderBottomWidth: 2,
+    borderBottomColor: '#0e6577',
+    paddingBottom: 8,
+    marginBottom: 14,
+  },
   title: { fontSize: 18, fontFamily: 'Helvetica-Bold', color: '#0e6577' },
   sub: { fontSize: 9, color: '#5c757f', marginTop: 2 },
   section: { marginTop: 14 },
@@ -217,7 +266,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#cfdde2',
   },
-  row: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 },
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 3,
+  },
   cell: { flexGrow: 1 },
   muted: { color: '#5c757f' },
   right: { textAlign: 'right' },
@@ -250,8 +303,21 @@ const styles = StyleSheet.create({
     fontFamily: 'Helvetica-Bold',
   },
   photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  photo: { width: 118, height: 88, objectFit: 'cover', marginRight: 6, marginBottom: 6 },
-  footer: { position: 'absolute', bottom: 20, left: 36, right: 36, fontSize: 7, color: '#8aa0a9' },
+  photo: {
+    width: 118,
+    height: 88,
+    objectFit: 'cover',
+    marginRight: 6,
+    marginBottom: 6,
+  },
+  footer: {
+    position: 'absolute',
+    bottom: 20,
+    left: 36,
+    right: 36,
+    fontSize: 7,
+    color: '#8aa0a9',
+  },
 })
 
 const money = (n: number) =>
@@ -275,9 +341,13 @@ const day = (value: string) => {
   const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
   if (dateOnly) {
     const [, y, m, d] = dateOnly
-    return new Date(Number(y), Number(m) - 1, Number(d)).toLocaleDateString('en-US')
+    return new Date(Number(y), Number(m) - 1, Number(d)).toLocaleDateString(
+      'en-US',
+    )
   }
-  return new Date(value).toLocaleDateString('en-US', { timeZone: SHOP_TIME_ZONE })
+  return new Date(value).toLocaleDateString('en-US', {
+    timeZone: SHOP_TIME_ZONE,
+  })
 }
 
 export function DryingReportPDF({ data }: { data: DryingReportData }) {
@@ -313,7 +383,9 @@ export function DryingReportPDF({ data }: { data: DryingReportData }) {
           <View style={{ width: 170 }}>
             <View style={styles.kv}>
               <Text style={styles.kvKey}>Category</Text>
-              <Text style={cat === 3 ? styles.badge : undefined}>Category {cat}</Text>
+              <Text style={cat === 3 ? styles.badge : undefined}>
+                Category {cat}
+              </Text>
             </View>
             {data.loss.source ? (
               <View style={styles.kv}>
@@ -356,8 +428,9 @@ export function DryingReportPDF({ data }: { data: DryingReportData }) {
               </View>
             ))}
             <Text style={[styles.muted, { marginTop: 3 }]}>
-              Per IICRC S500, category is assessed at the time work is performed; a
-              Category 1 loss degrades with dwell time and contamination.
+              Per IICRC S500, category is assessed at the time work is
+              performed; a Category 1 loss degrades with dwell time and
+              contamination.
             </Text>
           </View>
         ) : null}
@@ -378,7 +451,9 @@ export function DryingReportPDF({ data }: { data: DryingReportData }) {
                     <Text style={{ width: 70, textAlign: 'right' }}>
                       {line.quantity} {line.unit ?? ''}
                     </Text>
-                    <Text style={{ width: 60, textAlign: 'right' }}>{money(line.total)}</Text>
+                    <Text style={{ width: 60, textAlign: 'right' }}>
+                      {money(line.total)}
+                    </Text>
                   </View>
                 ))
               )}
@@ -398,9 +473,15 @@ export function DryingReportPDF({ data }: { data: DryingReportData }) {
             {data.equipment.map((item) => (
               <View key={item.code} style={styles.row}>
                 <Text style={styles.cell}>{item.description}</Text>
-                <Text style={{ width: 45, textAlign: 'right' }}>{item.units}</Text>
-                <Text style={{ width: 60, textAlign: 'right' }}>{item.unitDays}</Text>
-                <Text style={{ width: 60, textAlign: 'right' }}>{money(item.total)}</Text>
+                <Text style={{ width: 45, textAlign: 'right' }}>
+                  {item.units}
+                </Text>
+                <Text style={{ width: 60, textAlign: 'right' }}>
+                  {item.unitDays}
+                </Text>
+                <Text style={{ width: 60, textAlign: 'right' }}>
+                  {money(item.total)}
+                </Text>
               </View>
             ))}
           </View>
@@ -415,16 +496,28 @@ export function DryingReportPDF({ data }: { data: DryingReportData }) {
             <Text style={styles.cell}>Equipment</Text>
             <Text style={styles.right}>{money(data.totals.equipment)}</Text>
           </View>
+          {data.totals.deductibleCredit > 0 ? (
+            <View style={styles.row}>
+              <Text style={styles.cell}>Deductible split</Text>
+              <Text style={styles.right}>
+                -{money(data.totals.deductibleCredit)}
+              </Text>
+            </View>
+          ) : null}
           {data.totals.paid > 0 ? (
             <View style={styles.row}>
-              <Text style={styles.cell}>Deposit received</Text>
+              <Text style={styles.cell}>Paid to date</Text>
               <Text style={styles.right}>-{money(data.totals.paid)}</Text>
             </View>
           ) : null}
           <View style={styles.totalRow}>
             <Text>{data.totals.paid > 0 ? 'Balance due' : 'Total'}</Text>
             <Text>
-              {money(data.totals.paid > 0 ? data.totals.balance : data.totals.subtotal)}
+              {money(
+                data.totals.paid > 0
+                  ? data.totals.balance
+                  : data.totals.subtotal,
+              )}
             </Text>
           </View>
         </View>
@@ -443,7 +536,9 @@ export function DryingReportPDF({ data }: { data: DryingReportData }) {
         <View style={styles.section}>
           <Text style={styles.h2}>Material moisture readings</Text>
           {data.readingPoints.length === 0 ? (
-            <Text style={styles.muted}>No monitoring points were recorded.</Text>
+            <Text style={styles.muted}>
+              No monitoring points were recorded.
+            </Text>
           ) : (
             data.readingPoints.map((point, index) => {
               const last = point.readings[point.readings.length - 1]
@@ -467,7 +562,9 @@ export function DryingReportPDF({ data }: { data: DryingReportData }) {
                       {point.material ? ` · ${point.material}` : ''}
                     </Text>
                     <Text style={styles.muted}>
-                      {point.dryStandard != null ? `Dry standard ${point.dryStandard}%` : ''}
+                      {point.dryStandard != null
+                        ? `Dry standard ${point.dryStandard}%`
+                        : ''}
                       {reached ? ' · reached' : ''}
                     </Text>
                   </View>
@@ -527,7 +624,8 @@ export function DryingReportPDF({ data }: { data: DryingReportData }) {
                   ? grainsPerPound(reading.tempF, reading.rhPct)
                   : null
               const roleLabel =
-                AIR_ROLES.find((r) => r.value === reading.role)?.label ?? reading.location
+                AIR_ROLES.find((r) => r.value === reading.role)?.label ??
+                reading.location
               return (
                 <View key={index} style={styles.row}>
                   <Text style={styles.cell}>
@@ -536,10 +634,18 @@ export function DryingReportPDF({ data }: { data: DryingReportData }) {
                       ? ` · ${reading.location}`
                       : ''}
                   </Text>
-                  <Text style={{ width: 60, textAlign: 'right' }}>{reading.tempF ?? '—'}</Text>
-                  <Text style={{ width: 50, textAlign: 'right' }}>{reading.rhPct ?? '—'}</Text>
-                  <Text style={{ width: 60, textAlign: 'right' }}>{gpp ?? '—'}</Text>
-                  <Text style={{ width: 70, textAlign: 'right' }}>{day(reading.takenAt)}</Text>
+                  <Text style={{ width: 60, textAlign: 'right' }}>
+                    {reading.tempF ?? '—'}
+                  </Text>
+                  <Text style={{ width: 50, textAlign: 'right' }}>
+                    {reading.rhPct ?? '—'}
+                  </Text>
+                  <Text style={{ width: 60, textAlign: 'right' }}>
+                    {gpp ?? '—'}
+                  </Text>
+                  <Text style={{ width: 70, textAlign: 'right' }}>
+                    {day(reading.takenAt)}
+                  </Text>
                 </View>
               )
             })}

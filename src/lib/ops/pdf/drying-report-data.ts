@@ -124,6 +124,16 @@ export async function buildDryingReportData(
       0,
     ) / 100
 
+  // Same clamping as getRestorationBalanceCents and the project detail route
+  // — the split can never exceed what's actually owed, and must stay in sync
+  // with both or the report and the screen quote different balances.
+  const grossSubtotal = Math.round((work + equipmentTotal) * 100) / 100
+  const deductibleCredit = Math.max(
+    0,
+    Math.min(grossSubtotal, Number(project.deductible_credit ?? 0) || 0),
+  )
+  const netSubtotal = Math.round((grossSubtotal - deductibleCredit) * 100) / 100
+
   const data: DryingReportData = {
     company: {
       // Canonical public NAP — must stay identical everywhere it appears.
@@ -213,9 +223,11 @@ export async function buildDryingReportData(
     totals: {
       work: Math.round(work * 100) / 100,
       equipment: Math.round(equipmentTotal * 100) / 100,
-      subtotal: Math.round((work + equipmentTotal) * 100) / 100,
+      grossSubtotal,
+      deductibleCredit,
+      subtotal: netSubtotal,
       paid,
-      balance: Math.round((work + equipmentTotal - paid) * 100) / 100,
+      balance: Math.round((netSubtotal - paid) * 100) / 100,
     },
     includePhotos,
   }

@@ -20,12 +20,21 @@ const BASE: DryingReportData = {
   loss: {
     category: 3,
     categoryHistory: [
-      { category: 1, effectiveAt: '2026-08-26T08:00:00Z', reason: 'clean at time of loss' },
-      { category: 3, effectiveAt: '2026-08-30T09:00:00Z', reason: 'contaminated, 4 day dwell' },
+      {
+        category: 1,
+        effectiveAt: '2026-08-26T08:00:00Z',
+        reason: 'clean at time of loss',
+      },
+      {
+        category: 3,
+        effectiveAt: '2026-08-30T09:00:00Z',
+        reason: 'contaminated, 4 day dwell',
+      },
     ],
     source: 'exterior_groundwater',
     lossDate: '2026-08-26',
-    narrative: 'Water entered through a basement window and sat roughly four days.',
+    narrative:
+      'Water entered through a basement window and sat roughly four days.',
     afterHours: false,
     carrier: null,
     claimNumber: null,
@@ -34,10 +43,20 @@ const BASE: DryingReportData = {
     {
       label: 'Mitigation',
       date: '2026-08-30',
-    note: null,
+      note: null,
       lines: [
-        { description: 'EXTS - Water extraction, Cat 3', quantity: 400, unit: 'SF', total: 588 },
-        { description: 'FCCS - Tear out carpet, Cat 3', quantity: 400, unit: 'SF', total: 440 },
+        {
+          description: 'EXTS - Water extraction, Cat 3',
+          quantity: 400,
+          unit: 'SF',
+          total: 588,
+        },
+        {
+          description: 'FCCS - Tear out carpet, Cat 3',
+          quantity: 400,
+          unit: 'SF',
+          total: 440,
+        },
       ],
     },
     {
@@ -69,14 +88,52 @@ const BASE: DryingReportData = {
     },
   ],
   airReadings: [
-    { role: 'affected', location: 'Basement', tempF: 78, rhPct: 62, takenAt: '2026-08-29T10:00:00Z' },
-    { role: 'outside', location: 'Outside', tempF: 71, rhPct: 44, takenAt: '2026-08-29T10:00:00Z' },
-    { role: 'dehu_intake', location: 'Dehu by stairs', tempF: 78, rhPct: 62, takenAt: '2026-08-31T10:00:00Z' },
-    { role: 'dehu_outlet', location: 'Dehu by stairs', tempF: 92, rhPct: 22, takenAt: '2026-08-31T10:00:00Z' },
-    { role: 'affected', location: 'Basement', tempF: 76, rhPct: 38, takenAt: '2026-08-31T10:05:00Z' },
+    {
+      role: 'affected',
+      location: 'Basement',
+      tempF: 78,
+      rhPct: 62,
+      takenAt: '2026-08-29T10:00:00Z',
+    },
+    {
+      role: 'outside',
+      location: 'Outside',
+      tempF: 71,
+      rhPct: 44,
+      takenAt: '2026-08-29T10:00:00Z',
+    },
+    {
+      role: 'dehu_intake',
+      location: 'Dehu by stairs',
+      tempF: 78,
+      rhPct: 62,
+      takenAt: '2026-08-31T10:00:00Z',
+    },
+    {
+      role: 'dehu_outlet',
+      location: 'Dehu by stairs',
+      tempF: 92,
+      rhPct: 22,
+      takenAt: '2026-08-31T10:00:00Z',
+    },
+    {
+      role: 'affected',
+      location: 'Basement',
+      tempF: 76,
+      rhPct: 38,
+      takenAt: '2026-08-31T10:05:00Z',
+    },
   ],
   photos: [],
-  totals: { work: 1028, equipment: 630, subtotal: 1658, paid: 1000, balance: 658 },
+  totals: {
+    work: 1028,
+    equipment: 630,
+    grossSubtotal: 1658,
+    deductibleCredit: 0,
+    subtotal: 1658,
+    paid: 1000,
+    balance: 658,
+  },
   includePhotos: false,
 }
 
@@ -94,12 +151,26 @@ describe('drying report', () => {
   it('renders a job with nothing recorded yet', async () => {
     const buffer = await render({
       ...BASE,
-      loss: { ...BASE.loss, categoryHistory: [], narrative: null, source: null, lossDate: null },
+      loss: {
+        ...BASE.loss,
+        categoryHistory: [],
+        narrative: null,
+        source: null,
+        lossDate: null,
+      },
       visits: [],
       equipment: [],
       readingPoints: [],
       airReadings: [],
-      totals: { work: 0, equipment: 0, subtotal: 0, paid: 0, balance: 0 },
+      totals: {
+        work: 0,
+        equipment: 0,
+        grossSubtotal: 0,
+        deductibleCredit: 0,
+        subtotal: 0,
+        paid: 0,
+        balance: 0,
+      },
     })
     expect(buffer.subarray(0, 5).toString()).toBe('%PDF-')
   }, 30_000)
@@ -132,7 +203,12 @@ describe('the drying trend', () => {
   it('carries the daily notes into the document', async () => {
     const buffer = await renderToBuffer(<DryingReportPDF data={BASE} />)
     const withoutNotes = await renderToBuffer(
-      <DryingReportPDF data={{ ...BASE, visits: BASE.visits.map((v) => ({ ...v, note: null })) }} />,
+      <DryingReportPDF
+        data={{
+          ...BASE,
+          visits: BASE.visits.map((v) => ({ ...v, note: null })),
+        }}
+      />,
     )
     expect(buffer.length).toBeGreaterThan(withoutNotes.length)
   }, 30_000)
@@ -152,7 +228,10 @@ describe('what never reaches the customer', () => {
    * compresses its text streams — a byte scan would pass while the words were
    * on the page, which is the worst possible outcome for a test like this.
    */
-  const source = readFileSync(new URL('./drying-report.tsx', import.meta.url), 'utf8')
+  const source = readFileSync(
+    new URL('./drying-report.tsx', import.meta.url),
+    'utf8',
+  )
 
   /**
    * Comments removed: they explain the rule and naturally quote the words it
@@ -175,7 +254,12 @@ describe('what never reaches the customer', () => {
   })
 
   it('carries no diagnostic wording of its own', () => {
-    for (const phrase of ['coils', 'stalled', 'not keeping up', 'not working']) {
+    for (const phrase of [
+      'coils',
+      'stalled',
+      'not keeping up',
+      'not working',
+    ]) {
       expect(rendered.toLowerCase()).not.toContain(phrase)
     }
   })
@@ -185,7 +269,13 @@ describe('what never reaches the customer', () => {
     const wet: DryingReportData = {
       ...BASE,
       airReadings: [
-        { role: 'affected', location: 'Basement', tempF: 80, rhPct: 70, takenAt: '2026-08-31T09:00:00-06:00' },
+        {
+          role: 'affected',
+          location: 'Basement',
+          tempF: 80,
+          rhPct: 70,
+          takenAt: '2026-08-31T09:00:00-06:00',
+        },
       ],
     }
     const withAir = await renderToBuffer(<DryingReportPDF data={wet} />)
