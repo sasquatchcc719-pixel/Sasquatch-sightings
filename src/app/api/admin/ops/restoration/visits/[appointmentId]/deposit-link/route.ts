@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
-import { buildSquarePosUrl, detectMobilePlatform } from '@/lib/payments/square-pos'
+import {
+  buildSquarePosUrl,
+  detectMobilePlatform,
+} from '@/lib/payments/square-pos'
 
 /**
  * Deep link into Square Point of Sale to take the mitigation-day deposit.
@@ -23,8 +26,13 @@ export async function POST(
 
     const amountCents = Math.round(Number(body.amount_cents))
     if (!Number.isFinite(amountCents) || amountCents <= 0) {
-      return NextResponse.json({ error: 'amount_cents must be positive' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'amount_cents must be positive' },
+        { status: 400 },
+      )
     }
+
+    const kind = body.kind === 'payment' ? 'payment' : 'deposit'
 
     const applicationId = process.env.SQUARE_APPLICATION_ID
     if (!applicationId) {
@@ -40,7 +48,10 @@ export async function POST(
       .eq('id', appointmentId)
       .maybeSingle()
     if (!appointment?.restoration_project_id) {
-      return NextResponse.json({ error: 'not_a_restoration_visit' }, { status: 409 })
+      return NextResponse.json(
+        { error: 'not_a_restoration_visit' },
+        { status: 409 },
+      )
     }
 
     const origin = request.nextUrl.origin
@@ -56,14 +67,26 @@ export async function POST(
       amountCents,
       applicationId,
       callbackUrl: `${origin}/api/admin/ops/restoration/deposit-return`,
-      note: 'Water mitigation deposit',
+      note:
+        kind === 'payment'
+          ? 'Water mitigation final payment'
+          : 'Water mitigation deposit',
       // Round-tripped by Square untouched, so the return handler knows what to record.
-      state: JSON.stringify({ a: appointmentId, c: amountCents, r: returnTo }),
+      state: JSON.stringify({
+        a: appointmentId,
+        c: amountCents,
+        r: returnTo,
+        k: kind,
+      }),
     })
 
     return NextResponse.json({ url })
   } catch (e) {
-    const message = e instanceof Error ? e.message : 'Failed to build payment link'
-    return NextResponse.json({ error: message }, { status: message === 'Not authorized' ? 403 : 500 })
+    const message =
+      e instanceof Error ? e.message : 'Failed to build payment link'
+    return NextResponse.json(
+      { error: message },
+      { status: message === 'Not authorized' ? 403 : 500 },
+    )
   }
 }

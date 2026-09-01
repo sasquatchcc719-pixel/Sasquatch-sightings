@@ -6,6 +6,7 @@ import {
   squarePaymentPushIdempotencyKey,
   verifySquareWebhookSignature,
 } from '@/lib/payments/square-webhook'
+import { handleRestorationFinalPayment } from '@/lib/payments/restoration-webhook'
 import { sendOneSignalToExternalIds } from '@/lib/onesignal'
 import { sendTelegramNotification } from '@/lib/telegram'
 import { createAdminClient } from '@/supabase/server'
@@ -159,6 +160,15 @@ export async function POST(request: NextRequest) {
 
     if (invoiceError) throw invoiceError
     if (!data) {
+      const restoration = await handleRestorationFinalPayment(supabase, payment)
+      if (restoration.outcome !== 'unmatched') {
+        return NextResponse.json({
+          ok: true,
+          ...(restoration.outcome === 'recorded'
+            ? { restoration_project_id: restoration.projectId }
+            : { ignored: restoration.outcome }),
+        })
+      }
       // The Square account also emits events for POS and Dashboard payments.
       // Only links created by Sightings have a stored order correlation.
       return NextResponse.json({ ok: true, ignored: 'unmatched_order' })

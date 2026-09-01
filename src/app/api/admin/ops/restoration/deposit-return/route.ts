@@ -15,12 +15,19 @@ export async function GET(request: NextRequest) {
   let appointmentId = ''
   let amountCents = 0
   let returnPath = ''
+  let kind: 'deposit' | 'payment' = 'deposit'
   if (result?.state) {
     try {
-      const parsed = JSON.parse(result.state) as { a?: string; c?: number; r?: string }
+      const parsed = JSON.parse(result.state) as {
+        a?: string
+        c?: number
+        r?: string
+        k?: string
+      }
       if (typeof parsed.a === 'string') appointmentId = parsed.a
       if (typeof parsed.c === 'number') amountCents = parsed.c
       if (typeof parsed.r === 'string') returnPath = parsed.r
+      if (parsed.k === 'payment') kind = 'payment'
     } catch {
       // A malformed state means we cannot safely record anything.
     }
@@ -33,7 +40,8 @@ export async function GET(request: NextRequest) {
   const destination = new URL(safeReturn, request.nextUrl.origin)
 
   if (!result || result.status === 'error') {
-    const canceled = result?.status === 'error' && /cancel/i.test(result.errorCode || '')
+    const canceled =
+      result?.status === 'error' && /cancel/i.test(result.errorCode || '')
     destination.searchParams.set('deposit', canceled ? 'canceled' : 'error')
     return NextResponse.redirect(destination)
   }
@@ -50,12 +58,15 @@ export async function GET(request: NextRequest) {
     // square_payment_id makes a repeat a no-op rather than a double credit.
     const { error } = await supabase.from('ops_payments').insert({
       appointment_id: appointmentId,
-      kind: 'deposit',
+      kind,
       method: 'square_tap',
       amount_cents: amountCents,
       square_payment_id: result.transactionId,
       paid_at: new Date().toISOString(),
-      note: 'Water mitigation deposit (Square POS)',
+      note:
+        kind === 'payment'
+          ? 'Water mitigation final payment (Square POS)'
+          : 'Water mitigation deposit (Square POS)',
     })
 
     if (error && !String(error.message).includes('duplicate key')) throw error

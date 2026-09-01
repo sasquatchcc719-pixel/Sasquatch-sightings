@@ -3402,3 +3402,71 @@ named test: *"Charles's own arithmetic, end to end."*
 - The SQL view and the screen ledger implement the same rule; the end-to-end
   test pins the SQL side and the unit tests pin the TS side with the same
   numbers.
+
+## Collecting the final payment
+
+Charles: *"we need to add payment collections at the bottom of this invoice
+tool for water mitigation. We do have a deposit charging system, but we don't
+have anything for final payment. I would like both options. Pay in person and
+also texting the pay link... or just report a check is fine too — no cash
+option, no Venmo."*
+
+The obvious move — reuse the carpet invoice's Tap to Pay and payment-link
+routes — turned out to be unsafe. Both of them always charge `invoice.total`
+in full:
+
+- `getChargeableInvoice` (used by the tech Tap to Pay route) returns the
+  invoice's stored total, not total-minus-payments.
+- `/api/admin/ops/invoices/[id]/send` does the same for texted Square links.
+
+Neither ever double-charges a carpet job, because a carpet job almost never
+has a prior partial payment. A restoration job routinely does — the mitigation
+deposit. Reusing either route as-is for a final payment would have billed the
+customer for the deposit a second time.
+
+The Square webhook has the same assumption baked in from the other direction:
+it only marks a payment "covered" when the amount received is at least
+`invoice.total`, so a link generated for the balance due (less than the total)
+would have been silently rejected as `amount_mismatch` — the customer's card
+would be charged, and the payment would vanish, matched by nothing.
+
+**What actually shipped, instead of bending that machinery:**
+
+- `getRestorationBalanceCents` (`lib/ops/restoration-balance.ts`) is the one
+  place that computes what a project still owes — line items plus equipment
+  billing, less the deductible credit, less every `ops_payments` row already
+  recorded. Every new payment route calls it server-side; none ever trusts an
+  amount the client sends. It mirrors the totals block in the project detail
+  route exactly, by design — a comment on each side says so, because nothing
+  enforces it but code review.
+- **Tap to Pay** generalizes the existing deposit-link / deposit-return pair
+  with a `kind: 'deposit' | 'payment'` carried through Square's state
+  round-trip, rather than a parallel set of routes. A final payment posts with
+  `kind: 'payment'`.
+- **Text a pay link** is new (`projects/[id]/final-payment-link`). It creates
+  a Square-hosted checkout page for the live balance and texts it — but it
+  cannot reuse the carpet webhook path, since that path insists on the full
+  invoice total. Instead, the link's id/order/amount are tracked on
+  `restoration_projects` (`final_payment_link_*` columns), not `ops_invoices`,
+  and the Square webhook (`api/webhooks/square/route.ts`, delegating to
+  `lib/payments/restoration-webhook.ts`) has an independent branch: it matches
+  on `final_payment_link_order_id`, checks the payment against the *link's own
+  amount* (the balance), and writes the `ops_payments` row directly — the
+  carpet branch never even sees it, since it only matches `ops_invoices`. A
+  unique index on `square_payment_id` makes a retried webhook delivery a
+  no-op, same as the deposit path.
+- **Record a check** reuses the existing manual-payment route, which already
+  accepted `kind` and `method: 'check'` — the UI just needed to stop hiding
+  the block once the project closes and default the amount to the live
+  balance.
+- The final-payment block on the Money card offers exactly three ways to pay:
+  Tap to Pay, text a link, record a check. No cash button, no Venmo — cash
+  still exists for the separate "payment already taken" flow used during an
+  active job, but the collection UI built for closing one out does not offer
+  it.
+
+Proven end to end against the real database in
+`restoration-final-payment.integration.test.ts`, without calling Square: a
+deposit shrinks the balance, a webhook payment for less than the balance is
+rejected, a webhook payment covering the balance zeroes it, and a retried
+webhook event does not double-credit.

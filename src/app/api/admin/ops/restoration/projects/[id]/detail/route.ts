@@ -26,7 +26,8 @@ export async function GET(
       .eq('id', id)
       .maybeSingle()
 
-    if (!project) return NextResponse.json({ error: 'project_not_found' }, { status: 404 })
+    if (!project)
+      return NextResponse.json({ error: 'project_not_found' }, { status: 404 })
 
     const { data: visits } = await supabase
       .from('ops_appointments')
@@ -65,7 +66,9 @@ export async function GET(
     ] = await Promise.all([
       supabase
         .from('restoration_visit_queue')
-        .select('id, visit_type, visit_sequence, duration_minutes, status, scheduled_appointment_id')
+        .select(
+          'id, visit_type, visit_sequence, duration_minutes, status, scheduled_appointment_id',
+        )
         .eq('project_id', id)
         .order('visit_sequence'),
       supabase
@@ -77,7 +80,9 @@ export async function GET(
         .order('placed_at'),
       supabase
         .from('restoration_area_openings')
-        .select('id, area_id, kind, wall_index, offset_ft, width_ft, connects_area_id')
+        .select(
+          'id, area_id, kind, wall_index, offset_ft, width_ft, connects_area_id',
+        )
         .in(
           'area_id',
           (
@@ -97,13 +102,17 @@ export async function GET(
         .order('created_at'),
       supabase
         .from('restoration_areas')
-        .select('id, name, floor_sqft, affected_sqft, wall_linear_ft, ceiling_height_ft, affected_wall_ceiling_sqft, insets_offsets, geometry, plan_x, plan_y, points')
+        .select(
+          'id, name, floor_sqft, affected_sqft, wall_linear_ft, ceiling_height_ft, affected_wall_ceiling_sqft, insets_offsets, geometry, plan_x, plan_y, points',
+        )
         .eq('project_id', id)
         .order('sort_order')
         .order('created_at'),
       supabase
         .from('restoration_equipment_billing')
-        .select('catalog_code, description, unit_price, units, unit_days, line_total')
+        .select(
+          'catalog_code, description, unit_price, units, unit_days, line_total',
+        )
         .eq('project_id', id),
       supabase
         .from('restoration_reading_points')
@@ -114,7 +123,9 @@ export async function GET(
         .is('retired_at', null),
       supabase
         .from('restoration_air_readings')
-        .select('id, role, location, temp_f, rh_pct, taken_at, appointment_id, equipment_placement_id')
+        .select(
+          'id, role, location, temp_f, rh_pct, taken_at, appointment_id, equipment_placement_id',
+        )
         .eq('project_id', id)
         .order('taken_at'),
       supabase
@@ -125,13 +136,17 @@ export async function GET(
       visitIds.length
         ? supabase
             .from('ops_payments')
-            .select('id, kind, method, amount_cents, paid_at, invoice_id, appointment_id')
+            .select(
+              'id, kind, method, amount_cents, paid_at, invoice_id, appointment_id',
+            )
             .in('appointment_id', visitIds)
         : Promise.resolve({ data: [] as unknown[] }),
       visitIds.length
         ? supabase
             .from('ops_job_photos')
-            .select('id, public_url, label, restoration_phase, restoration_area_id, appointment_id, created_at')
+            .select(
+              'id, public_url, label, restoration_phase, restoration_area_id, appointment_id, created_at',
+            )
             .in('appointment_id', visitIds)
             .order('created_at')
         : Promise.resolve({ data: [] as unknown[] }),
@@ -152,17 +167,18 @@ export async function GET(
     ])
 
     const lineTotal = (visits ?? []).reduce((sum, visit) => {
-      const lines = (visit.ops_appointment_line_items ?? []) as Array<{ line_total: number }>
+      const lines = (visit.ops_appointment_line_items ?? []) as Array<{
+        line_total: number
+      }>
       return sum + lines.reduce((s, l) => s + Number(l.line_total), 0)
     }, 0)
     const equipmentTotal = (billing ?? []).reduce(
       (sum, b) => sum + Number((b as { line_total: number }).line_total),
       0,
     )
-    const paidCents = ((payments ?? []) as Array<{ amount_cents: number }>).reduce(
-      (sum, p) => sum + Number(p.amount_cents),
-      0,
-    )
+    const paidCents = (
+      (payments ?? []) as Array<{ amount_cents: number }>
+    ).reduce((sum, p) => sum + Number(p.amount_cents), 0)
 
     return NextResponse.json({
       project,
@@ -186,7 +202,8 @@ export async function GET(
           map_y: row.map_y,
           moved_at: row.moved_at,
           visit_date:
-            (visit as { appointment_date?: string } | null)?.appointment_date ?? null,
+            (visit as { appointment_date?: string } | null)?.appointment_date ??
+            null,
         }
       }),
       reading_points: points ?? [],
@@ -195,6 +212,10 @@ export async function GET(
       payments: payments ?? [],
       photos: photos ?? [],
       totals: (() => {
+        // Kept in lockstep with getRestorationBalanceCents (restoration-balance.ts),
+        // which payment routes use to charge the true balance instead of this
+        // response — the two formulas must never diverge.
+        //
         // Splitting the deductible is a discount off our own work, so it comes
         // off the bottom line and out of what the customer still owes — not
         // off any one line item, which is not where the concession lives.
@@ -217,6 +238,9 @@ export async function GET(
     })
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Failed to load project'
-    return NextResponse.json({ error: message }, { status: message === 'Not authorized' ? 403 : 500 })
+    return NextResponse.json(
+      { error: message },
+      { status: message === 'Not authorized' ? 403 : 500 },
+    )
   }
 }

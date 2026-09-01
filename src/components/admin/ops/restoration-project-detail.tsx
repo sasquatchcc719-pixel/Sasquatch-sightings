@@ -4,7 +4,15 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import {
-  Droplets, Loader2, Mic, Phone, Plus, Trash2, Wind, CheckCircle2, MessageSquare,
+  Droplets,
+  Loader2,
+  Mic,
+  Phone,
+  Plus,
+  Trash2,
+  Wind,
+  CheckCircle2,
+  MessageSquare,
   Camera,
   FileText,
   Ruler,
@@ -33,8 +41,16 @@ import {
   type LossClass,
 } from '@/lib/ops/restoration-drying-plan'
 import { GROUP_ORDER } from '@/lib/ops/restoration-catalog-groups'
-import { WallPlan, type PlanPin, type WallPlanTool } from '@/components/ops/wall-plan'
-import type { PlanNode, PlanWall, WallOpening } from '@/lib/ops/restoration-walls'
+import {
+  WallPlan,
+  type PlanPin,
+  type WallPlanTool,
+} from '@/components/ops/wall-plan'
+import type {
+  PlanNode,
+  PlanWall,
+  WallOpening,
+} from '@/lib/ops/restoration-walls'
 import { CustomerContact } from '@/components/ops/customer-contact'
 import { LineCandidateRow } from '@/components/ops/line-candidate-row'
 import { dryingDaysFromVisits } from '@/lib/ops/restoration-daily-billing'
@@ -49,10 +65,16 @@ import { captureDateFor } from '@/lib/ops/exif-capture-date'
 import { downscaleImage } from '@/lib/ops/downscale-image'
 import { StreetViewCard } from '@/components/ops/street-view-card'
 import { DryingChart } from '@/components/ops/drying-chart'
-import { AirReadingsCard, type AirReading } from '@/components/ops/air-readings-card'
+import {
+  AirReadingsCard,
+  type AirReading,
+} from '@/components/ops/air-readings-card'
 import { EquipmentPinEditor } from '@/components/ops/equipment-pin-editor'
 import { grainsPerPound } from '@/lib/ops/restoration-psychrometry'
-import { readingForVisit, visitIsFuture } from '@/lib/ops/restoration-visit-scope'
+import {
+  readingForVisit,
+  visitIsFuture,
+} from '@/lib/ops/restoration-visit-scope'
 import { positionForVisit } from '@/lib/ops/restoration-equipment-position'
 import { noteTextFor, noteIsDirty } from '@/lib/ops/restoration-note-scope'
 import {
@@ -137,12 +159,22 @@ type Detail = {
       email: string | null
     } | null
     ops_service_addresses: {
-      id: string; street_1: string; street_2: string | null
-      city: string; state: string; zip_code: string; gate_code: string | null
+      id: string
+      street_1: string
+      street_2: string | null
+      city: string
+      state: string
+      zip_code: string
+      gate_code: string | null
     } | null
   }
   visits: Visit[]
-  queue: Array<{ id: string; visit_type: string; visit_sequence: number | null; status: string }>
+  queue: Array<{
+    id: string
+    visit_type: string
+    visit_sequence: number | null
+    status: string
+  }>
   equipment: Array<{
     id: string
     catalog_code: string
@@ -163,8 +195,12 @@ type Detail = {
     moved_at: string
   }>
   equipment_billing: Array<{
-    catalog_code: string; description: string; unit_price: number
-    units: number; unit_days: number; line_total: number
+    catalog_code: string
+    description: string
+    unit_price: number
+    units: number
+    unit_days: number
+    line_total: number
   }>
   reading_points: ReadingPoint[]
   air_readings: AirReading[]
@@ -199,7 +235,12 @@ type Detail = {
     offset_ft: number
     width_ft: number
   }>
-  payments: Array<{ id: string; kind: string; method: string; amount_cents: number }>
+  payments: Array<{
+    id: string
+    kind: string
+    method: string
+    amount_cents: number
+  }>
   photos: Array<{
     id: string
     public_url: string
@@ -338,10 +379,16 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
   // trying to reach a reading point on a phone.
   const [planTool, setPlanTool] = useState<WallPlanTool>('move')
   // Common sizes, so the usual case is one tap and anything else is one edit.
-  const [openingKind, setOpeningKind] = useState<'doorway' | 'window'>('doorway')
+  const [openingKind, setOpeningKind] = useState<'doorway' | 'window'>(
+    'doorway',
+  )
   const [openingWidth, setOpeningWidth] = useState(3)
-  const [selectedOpeningId, setSelectedOpeningId] = useState<string | null>(null)
-  const [selectedEquipmentId, setSelectedEquipmentId] = useState<string | null>(null)
+  const [selectedOpeningId, setSelectedOpeningId] = useState<string | null>(
+    null,
+  )
+  const [selectedEquipmentId, setSelectedEquipmentId] = useState<string | null>(
+    null,
+  )
   const [placeCount, setPlaceCount] = useState('1')
   const [recordedAmount, setRecordedAmount] = useState('')
   const [recordedMethod, setRecordedMethod] = useState('square_other')
@@ -352,9 +399,11 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
   }>({ nodes: [], walls: [], openings: [] })
   const [airflowDensity, setAirflowDensity] = useState<AirflowDensity>('normal')
   const [selectedPointId, setSelectedPointId] = useState<string | null>(null)
-  const [armedTool, setArmedTool] = useState<
-    { kind: 'equipment' | 'reading'; label: string; code?: string } | null
-  >(null)
+  const [armedTool, setArmedTool] = useState<{
+    kind: 'equipment' | 'reading'
+    label: string
+    code?: string
+  } | null>(null)
 
   const [areaName, setAreaName] = useState('')
   const [areaLength, setAreaLength] = useState('')
@@ -362,6 +411,8 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
   const [areaHeight, setAreaHeight] = useState('8')
 
   const [depositAmount, setDepositAmount] = useState('1000')
+  const [finalPaymentAmount, setFinalPaymentAmount] = useState('')
+  const [checkAmount, setCheckAmount] = useState('')
 
   const [photoPhase, setPhotoPhase] = useState<string>('affected_materials')
   const [uploading, setUploading] = useState(false)
@@ -386,9 +437,10 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
    * was written for. Carrying the id means a note can only ever be shown
    * against the day it was written for.
    */
-  const [noteEdit, setNoteEdit] = useState<{ visitId: string; text: string } | null>(
-    null,
-  )
+  const [noteEdit, setNoteEdit] = useState<{
+    visitId: string
+    text: string
+  } | null>(null)
   const [noteTranscript, setNoteTranscript] = useState<{
     visitId: string
     text: string
@@ -408,18 +460,21 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
       if (!response.ok) throw new Error(result.error || 'Failed to load')
       setDetail(result)
       setActiveVisitId((current) => {
-        if (current && result.visits.some((v: Visit) => v.id === current)) return current
+        if (current && result.visits.some((v: Visit) => v.id === current))
+          return current
 
         // The visit that was clicked to get here. Arriving from the calendar on
         // today's monitor and landing on the mitigation day means readings and
         // photos file to the wrong day unless you notice and change it.
         const asked = requestedVisitId
-        if (asked && result.visits.some((v: Visit) => v.id === asked)) return asked
+        if (asked && result.visits.some((v: Visit) => v.id === asked))
+          return asked
 
         // Otherwise today's visit, then the first still open.
         const today = toDateKey(new Date())
         const todays = result.visits.find(
-          (v: Visit) => v.appointment_date === today && v.status !== 'completed',
+          (v: Visit) =>
+            v.appointment_date === today && v.status !== 'completed',
         )
         const open = result.visits.find((v: Visit) => v.status !== 'completed')
         return (todays ?? open ?? result.visits[0])?.id ?? null
@@ -440,13 +495,21 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
       if (!response.ok) return
       const result = await response.json()
       setPlanData({
-        nodes: (result.nodes ?? []).map((n: { id: string; x: string; y: string }) => ({
-          id: n.id,
-          x: Number(n.x),
-          y: Number(n.y),
-        })),
+        nodes: (result.nodes ?? []).map(
+          (n: { id: string; x: string; y: string }) => ({
+            id: n.id,
+            x: Number(n.x),
+            y: Number(n.y),
+          }),
+        ),
         walls: (result.walls ?? []).map(
-          (w: { id: string; start_node_id: string; end_node_id: string; is_partial_height: boolean; label: string | null }) => ({
+          (w: {
+            id: string
+            start_node_id: string
+            end_node_id: string
+            is_partial_height: boolean
+            label: string | null
+          }) => ({
             id: w.id,
             startNodeId: w.start_node_id,
             endNodeId: w.end_node_id,
@@ -455,7 +518,13 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
           }),
         ),
         openings: (result.openings ?? []).map(
-          (o: { id: string; wall_id: string; kind: string; offset_ft: string; width_ft: string }) => ({
+          (o: {
+            id: string
+            wall_id: string
+            kind: string
+            offset_ft: string
+            width_ft: string
+          }) => ({
             id: o.id,
             wallId: o.wall_id,
             kind: o.kind as WallOpening['kind'],
@@ -505,9 +574,12 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
     })
     let cancelled = false
     const timer = setTimeout(async () => {
-      const response = await fetch(`/api/admin/ops/restoration/catalog?${params}`, {
-        cache: 'no-store',
-      })
+      const response = await fetch(
+        `/api/admin/ops/restoration/catalog?${params}`,
+        {
+          cache: 'no-store',
+        },
+      )
       const result = await response.json()
       if (!cancelled && response.ok) setCatalog(result.items ?? [])
     }, 200)
@@ -522,6 +594,20 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
     [detail, activeVisitId],
   )
   const isMitigation = activeVisit?.visit_type === 'mitigation'
+
+  const balanceDueDollars = useMemo(() => {
+    const cents = detail?.totals.balance_cents ?? 0
+    return cents > 0 ? (cents / 100).toFixed(2) : ''
+  }, [detail?.totals.balance_cents])
+
+  // Final-payment fields default to the live balance, so "collect what's
+  // owed" is a single tap — but only while the customer hasn't edited them,
+  // since a balance that drops mid-typing shouldn't clobber a partial amount.
+  useEffect(() => {
+    if (!balanceDueDollars) return
+    setFinalPaymentAmount((prev) => (prev ? prev : balanceDueDollars))
+    setCheckAmount((prev) => (prev ? prev : balanceDueDollars))
+  }, [balanceDueDollars])
 
   const dryingPlan = useMemo(
     () =>
@@ -568,7 +654,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
 
   /** The day being viewed, which scopes every reading on the screen. */
   const activeVisitDate = useMemo(
-    () => detail?.visits.find((v) => v.id === activeVisitId)?.appointment_date ?? null,
+    () =>
+      detail?.visits.find((v) => v.id === activeVisitId)?.appointment_date ??
+      null,
     [detail?.visits, activeVisitId],
   )
 
@@ -592,7 +680,11 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
   )
   /** The same units, grouped by the days they share, so a batch edits at once. */
   const batches = useMemo(
-    () => ledgerBatches(placementsAsOf(detail?.equipment ?? [], ledgerMoment), ledgerMoment),
+    () =>
+      ledgerBatches(
+        placementsAsOf(detail?.equipment ?? [], ledgerMoment),
+        ledgerMoment,
+      ),
     [detail?.equipment, ledgerMoment],
   )
 
@@ -615,10 +707,14 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
       // Where this unit stood on the visit being viewed. Unlike a reading, a
       // fan nobody moved is still where it was, so an unmoved visit inherits
       // the last position before it.
-      const at = positionForVisit(placement, detail?.equipment_positions ?? [], {
-        id: activeVisitId,
-        appointment_date: activeVisitDate,
-      })
+      const at = positionForVisit(
+        placement,
+        detail?.equipment_positions ?? [],
+        {
+          id: activeVisitId,
+          appointment_date: activeVisitDate,
+        },
+      )
       pins.push({
         id: placement.id,
         kind: 'equipment',
@@ -633,7 +729,8 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
     }
     for (const point of detail?.reading_points ?? []) {
       const history = [...point.restoration_readings].sort(
-        (a, b) => new Date(a.taken_at).getTime() - new Date(b.taken_at).getTime(),
+        (a, b) =>
+          new Date(a.taken_at).getTime() - new Date(b.taken_at).getTime(),
       )
       // What was read ON this visit. Nothing is carried forward: a day nobody
       // worked has no readings, and showing the previous day's numbers on it
@@ -703,7 +800,10 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
   const totalPerimeterFt = useMemo(
     () =>
       Math.round(
-        (detail?.areas ?? []).reduce((sum, a) => sum + Number(a.wall_linear_ft ?? 0), 0) * 100,
+        (detail?.areas ?? []).reduce(
+          (sum, a) => sum + Number(a.wall_linear_ft ?? 0),
+          0,
+        ) * 100,
       ) / 100,
     [detail],
   )
@@ -736,9 +836,16 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
   /** The most recent affected-area reading — the air a dehu is actually fed. */
   const latestAffectedGpp = useMemo(() => {
     const latest = (detail?.air_readings ?? [])
-      .filter((r) => r.role === 'affected' && r.temp_f != null && r.rh_pct != null)
-      .sort((a, b) => new Date(b.taken_at).getTime() - new Date(a.taken_at).getTime())[0]
-    return latest ? grainsPerPound(Number(latest.temp_f), Number(latest.rh_pct)) : null
+      .filter(
+        (r) => r.role === 'affected' && r.temp_f != null && r.rh_pct != null,
+      )
+      .sort(
+        (a, b) =>
+          new Date(b.taken_at).getTime() - new Date(a.taken_at).getTime(),
+      )[0]
+    return latest
+      ? grainsPerPound(Number(latest.temp_f), Number(latest.rh_pct))
+      : null
   }, [detail?.air_readings])
 
   const selectedEquipment = useMemo(
@@ -753,7 +860,8 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
 
   /** Pre-fill from what was measured: area for SF work, perimeter for LF work. */
   function suggestedQuantity(unit: string): number {
-    if (unit === 'SF' && dryingPlan.totalAffectedSqft > 0) return dryingPlan.totalAffectedSqft
+    if (unit === 'SF' && dryingPlan.totalAffectedSqft > 0)
+      return dryingPlan.totalAffectedSqft
     if (unit === 'LF' && totalPerimeterFt > 0) return totalPerimeterFt
     return 1
   }
@@ -776,11 +884,16 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
 
   async function addFromCatalog(item: CatalogItem, quantity: number) {
     await addLines([
-      { concept_code: item.concept_code, quantity: quantity > 0 ? quantity : 1 },
+      {
+        concept_code: item.concept_code,
+        quantity: quantity > 0 ? quantity : 1,
+      },
     ])
   }
 
-  async function addLines(lines: Array<{ concept_code: string; quantity: number | null }>) {
+  async function addLines(
+    lines: Array<{ concept_code: string; quantity: number | null }>,
+  ) {
     if (!activeVisitId || lines.length === 0) return
     await call(
       `/api/admin/ops/restoration/visits/${activeVisitId}/line-items`,
@@ -891,7 +1004,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
           </p>
           <p className="mt-1">{warning.detail}</p>
           <div className="mt-2 flex items-center justify-between gap-2">
-            <p className="text-xs opacity-70">{warning.source} · internal only</p>
+            <p className="text-xs opacity-70">
+              {warning.source} · internal only
+            </p>
             <Button
               size="sm"
               variant="ghost"
@@ -917,7 +1032,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
 
       {address ? (
         <Card className={SECTION_CARD}>
-          <h2 className={`${SECTION_TITLE} mb-2`}><MapPin className={SECTION_ICON} /> Service address</h2>
+          <h2 className={`${SECTION_TITLE} mb-2`}>
+            <MapPin className={SECTION_ICON} /> Service address
+          </h2>
           <p className="text-sm">
             {address.street_1}
             {address.street_2 ? `, ${address.street_2}` : ''}
@@ -926,7 +1043,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             {address.city}, {address.state} {address.zip_code}
           </p>
           {address.gate_code ? (
-            <p className="text-muted-foreground mb-3 text-xs">Gate: {address.gate_code}</p>
+            <p className="text-muted-foreground mb-3 text-xs">
+              Gate: {address.gate_code}
+            </p>
           ) : null}
           <DirectionsButtons address={address} />
         </Card>
@@ -954,13 +1073,20 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             </span>
           </span>
           <span className="text-muted-foreground text-xs">
-            {estimateOpen ? 'Hide' : estimateTotal > 0 ? 'Open' : 'Give estimate'}
+            {estimateOpen
+              ? 'Hide'
+              : estimateTotal > 0
+                ? 'Open'
+                : 'Give estimate'}
           </span>
         </button>
 
         {estimateOpen ? (
           <div className="mt-4 flex flex-col gap-3">
-            <Label htmlFor="estimate-dictate" className="flex items-center gap-2">
+            <Label
+              htmlFor="estimate-dictate"
+              className="flex items-center gap-2"
+            >
               <Mic className="h-4 w-4" /> Say what you expect to do
             </Label>
             <Textarea
@@ -974,25 +1100,33 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
               <Button
                 size="sm"
                 className={`${ACTION_BUTTON} gap-2`}
-                disabled={busy === 'estimate-parse' || !estimateTranscript.trim()}
+                disabled={
+                  busy === 'estimate-parse' || !estimateTranscript.trim()
+                }
                 onClick={async () => {
                   setBusy('estimate-parse')
                   setError(null)
                   try {
-                    const response = await fetch('/api/admin/ops/restoration/parse', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        project_id: projectId,
-                        transcript: estimateTranscript,
-                      }),
-                    })
+                    const response = await fetch(
+                      '/api/admin/ops/restoration/parse',
+                      {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          project_id: projectId,
+                          transcript: estimateTranscript,
+                        }),
+                      },
+                    )
                     const result = await response.json()
-                    if (!response.ok) throw new Error(result.error || 'Could not read that')
+                    if (!response.ok)
+                      throw new Error(result.error || 'Could not read that')
                     setEstimateProposed(result.lines ?? [])
                     setEstimateUnmatched(result.unmatched ?? [])
                   } catch (e) {
-                    setError(e instanceof Error ? e.message : 'Could not read that')
+                    setError(
+                      e instanceof Error ? e.message : 'Could not read that',
+                    )
                   } finally {
                     setBusy(null)
                   }
@@ -1043,7 +1177,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
 
             {estimateProposed.length > 0 ? (
               <div className="border-border/60 overflow-hidden rounded-md border">
-                <div className={`${PANEL_HEAD} flex items-center justify-between gap-2`}>
+                <div
+                  className={`${PANEL_HEAD} flex items-center justify-between gap-2`}
+                >
                   <span>
                     Priced for Category {category}
                     {afterHours ? ', after hours' : ''}. Set a quantity and add.
@@ -1068,7 +1204,8 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                     daily={line.daily}
                     defaultDays={line.days ?? quotedDryingDays}
                     defaultQuantity={
-                      line.quantity ?? (line.daily ? 1 : suggestedQuantity(line.unit))
+                      line.quantity ??
+                      (line.daily ? 1 : suggestedQuantity(line.unit))
                     }
                     onAdd={async (quantity, parts) => {
                       await addEstimateLines([
@@ -1124,10 +1261,16 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                         billable={item.billable}
                         daily={item.daily}
                         defaultDays={quotedDryingDays}
-                        defaultQuantity={item.daily ? 1 : suggestedQuantity(item.unit)}
+                        defaultQuantity={
+                          item.daily ? 1 : suggestedQuantity(item.unit)
+                        }
                         onAdd={(quantity, parts) =>
                           addEstimateLines([
-                            { concept_code: item.concept_code, quantity, ...parts },
+                            {
+                              concept_code: item.concept_code,
+                              quantity,
+                              ...parts,
+                            },
                           ])
                         }
                       />
@@ -1139,7 +1282,10 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             {detail.estimate_lines.length > 0 ? (
               <div className="flex flex-col divide-y">
                 {detail.estimate_lines.map((line) => (
-                  <div key={line.id} className="flex items-center gap-2 py-2 text-sm">
+                  <div
+                    key={line.id}
+                    className="flex items-center gap-2 py-2 text-sm"
+                  >
                     <span className="min-w-0 flex-1">{line.name_snapshot}</span>
                     {line.units != null ? (
                       // Equipment keeps the two numbers it was quoted with, so a
@@ -1158,7 +1304,10 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                             if (units > 0 && units !== Number(line.units)) {
                               void call(
                                 `/api/admin/ops/restoration/estimate-lines/${line.id}`,
-                                { method: 'PATCH', body: JSON.stringify({ units }) },
+                                {
+                                  method: 'PATCH',
+                                  body: JSON.stringify({ units }),
+                                },
                                 `est-${line.id}`,
                               )
                             }
@@ -1177,13 +1326,18 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                             if (days > 0 && days !== Number(line.days ?? 1)) {
                               void call(
                                 `/api/admin/ops/restoration/estimate-lines/${line.id}`,
-                                { method: 'PATCH', body: JSON.stringify({ days }) },
+                                {
+                                  method: 'PATCH',
+                                  body: JSON.stringify({ days }),
+                                },
                                 `est-${line.id}`,
                               )
                             }
                           }}
                         />
-                        <span className="text-muted-foreground w-10 text-xs">days</span>
+                        <span className="text-muted-foreground w-10 text-xs">
+                          days
+                        </span>
                       </>
                     ) : (
                       <>
@@ -1196,16 +1350,24 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                           defaultValue={Number(line.quantity)}
                           onBlur={(e) => {
                             const quantity = Number(e.target.value)
-                            if (quantity > 0 && quantity !== Number(line.quantity)) {
+                            if (
+                              quantity > 0 &&
+                              quantity !== Number(line.quantity)
+                            ) {
                               void call(
                                 `/api/admin/ops/restoration/estimate-lines/${line.id}`,
-                                { method: 'PATCH', body: JSON.stringify({ quantity }) },
+                                {
+                                  method: 'PATCH',
+                                  body: JSON.stringify({ quantity }),
+                                },
                                 `est-${line.id}`,
                               )
                             }
                           }}
                         />
-                        <span className="text-muted-foreground w-10 text-xs">{line.unit}</span>
+                        <span className="text-muted-foreground w-10 text-xs">
+                          {line.unit}
+                        </span>
                       </>
                     )}
                     {/*
@@ -1225,10 +1387,16 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                         defaultValue={Number(line.unit_price)}
                         onBlur={(e) => {
                           const unitPrice = Number(e.target.value)
-                          if (unitPrice > 0 && unitPrice !== Number(line.unit_price)) {
+                          if (
+                            unitPrice > 0 &&
+                            unitPrice !== Number(line.unit_price)
+                          ) {
                             void call(
                               `/api/admin/ops/restoration/estimate-lines/${line.id}`,
-                              { method: 'PATCH', body: JSON.stringify({ unit_price: unitPrice }) },
+                              {
+                                method: 'PATCH',
+                                body: JSON.stringify({ unit_price: unitPrice }),
+                              },
                               `est-${line.id}`,
                             )
                           }
@@ -1327,7 +1495,8 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                           },
                         )
                         const result = await response.json()
-                        if (!response.ok) throw new Error(result.error || 'Could not send')
+                        if (!response.ok)
+                          throw new Error(result.error || 'Could not send')
                         setSendResult(
                           [
                             result.sent.length > 0
@@ -1338,7 +1507,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                         )
                         await load()
                       } catch (e) {
-                        setError(e instanceof Error ? e.message : 'Could not send')
+                        setError(
+                          e instanceof Error ? e.message : 'Could not send',
+                        )
                       } finally {
                         setBusy(null)
                       }
@@ -1370,7 +1541,8 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
 
                 {detail.project.estimate_sent_at ? (
                   <p className="text-muted-foreground text-xs">
-                    Last sent {new Date(detail.project.estimate_sent_at).toLocaleString()}
+                    Last sent{' '}
+                    {new Date(detail.project.estimate_sent_at).toLocaleString()}
                   </p>
                 ) : null}
                 {sendResult ? (
@@ -1411,7 +1583,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
 
       {/* ── Visits ─────────────────────────────────────────── */}
       <Card className={SECTION_CARD}>
-        <h2 className={`${SECTION_TITLE} mb-3`}><CalendarDays className={SECTION_ICON} /> Visits</h2>
+        <h2 className={`${SECTION_TITLE} mb-3`}>
+          <CalendarDays className={SECTION_ICON} /> Visits
+        </h2>
         <div className="flex flex-col gap-2">
           {detail.visits.map((visit) => (
             <button
@@ -1425,11 +1599,15 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
               }`}
             >
               <span>
-                <span className="font-medium capitalize">{visit.visit_type}</span>
+                <span className="font-medium capitalize">
+                  {visit.visit_type}
+                </span>
                 <span className="text-muted-foreground">
                   {' '}
                   ·{' '}
-                  {new Date(`${visit.appointment_date}T12:00:00`).toLocaleDateString('en-US', {
+                  {new Date(
+                    `${visit.appointment_date}T12:00:00`,
+                  ).toLocaleDateString('en-US', {
                     weekday: 'short',
                     month: 'short',
                     day: 'numeric',
@@ -1444,15 +1622,17 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                   </span>
                 ) : null}
               </span>
-              <Badge variant={visit.status === 'completed' ? 'secondary' : 'outline'}>
+              <Badge
+                variant={visit.status === 'completed' ? 'secondary' : 'outline'}
+              >
                 {visit.status}
               </Badge>
             </button>
           ))}
           {detail.queue.filter((q) => q.status === 'queued').length > 0 ? (
             <p className="text-muted-foreground mt-1 text-xs">
-              {detail.queue.filter((q) => q.status === 'queued').length} monitor visit(s)
-              waiting in the tray — place them from the schedule.
+              {detail.queue.filter((q) => q.status === 'queued').length} monitor
+              visit(s) waiting in the tray — place them from the schedule.
             </p>
           ) : null}
 
@@ -1488,10 +1668,14 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             <div>
               <h2 className={SECTION_TITLE}>
                 <Truck className={SECTION_ICON} />
-                <span className="capitalize">{activeVisit.visit_type}</span> visit
+                <span className="capitalize">
+                  {activeVisit.visit_type}
+                </span>{' '}
+                visit
               </h2>
               <p className="text-muted-foreground mt-1 text-sm">
-                {activeVisit.appointment_date} at {activeVisit.start_time.slice(0, 5)} ·{' '}
+                {activeVisit.appointment_date} at{' '}
+                {activeVisit.start_time.slice(0, 5)} ·{' '}
                 {activeVisit.status.replace(/_/g, ' ')}
               </p>
             </div>
@@ -1522,7 +1706,8 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
               )
             })()}
           </div>
-          {activeVisit.status === 'booked' || activeVisit.status === 'confirmed' ? (
+          {activeVisit.status === 'booked' ||
+          activeVisit.status === 'confirmed' ? (
             <p className="text-muted-foreground mt-2 text-xs">
               On My Way texts the customer that you are heading over.
             </p>
@@ -1540,7 +1725,8 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             actually has. Said on the button, because a control that sends a
             message should say so before it is pressed.
           */}
-          {activeVisit.status !== 'completed' && activeVisit.status !== 'cancelled' ? (
+          {activeVisit.status !== 'completed' &&
+          activeVisit.status !== 'cancelled' ? (
             <Button
               variant="outline"
               size="sm"
@@ -1562,7 +1748,8 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
               Close this visit
             </Button>
           ) : null}
-          {activeVisit.status !== 'completed' && activeVisit.status !== 'cancelled' ? (
+          {activeVisit.status !== 'completed' &&
+          activeVisit.status !== 'cancelled' ? (
             <p className="text-muted-foreground mt-1 text-center text-xs">
               Texts the customer that the visit is done and the equipment keeps
               running.
@@ -1578,14 +1765,17 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             <Ruler className={SECTION_ICON} /> Affected areas
           </h2>
           <p className="text-muted-foreground mb-3 text-sm">
-            Measure once. Square footage fills the line items, and the volume sizes the
-            drying equipment.
+            Measure once. Square footage fills the line items, and the volume
+            sizes the drying equipment.
           </p>
 
           {detail.areas.length > 0 ? (
             <div className="mb-3 flex flex-col divide-y">
               {detail.areas.map((area) => (
-                <div key={area.id} className="flex flex-wrap items-center gap-2 py-2 text-sm">
+                <div
+                  key={area.id}
+                  className="flex flex-wrap items-center gap-2 py-2 text-sm"
+                >
                   <Input
                     className="h-9 min-w-32 flex-1"
                     aria-label="Room name"
@@ -1606,7 +1796,11 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                       ['affected_sqft', 'SF', area.affected_sqft],
                       ['wall_linear_ft', 'LF', area.wall_linear_ft],
                       ['ceiling_height_ft', 'ceil', area.ceiling_height_ft],
-                      ['affected_wall_ceiling_sqft', 'wall SF', area.affected_wall_ceiling_sqft],
+                      [
+                        'affected_wall_ceiling_sqft',
+                        'wall SF',
+                        area.affected_wall_ceiling_sqft,
+                      ],
                       ['insets_offsets', 'insets', area.insets_offsets],
                     ] as const
                   ).map(([field, label, value]) => (
@@ -1618,7 +1812,10 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                         aria-label={`${area.name} ${label}`}
                         defaultValue={value ?? ''}
                         onBlur={(e) => {
-                          const next = e.target.value === '' ? null : Number(e.target.value)
+                          const next =
+                            e.target.value === ''
+                              ? null
+                              : Number(e.target.value)
                           if (next !== (value ?? null)) {
                             void call(
                               `/api/admin/ops/restoration/areas/${area.id}`,
@@ -1631,7 +1828,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                           }
                         }}
                       />
-                      <span className="text-muted-foreground text-xs">{label}</span>
+                      <span className="text-muted-foreground text-xs">
+                        {label}
+                      </span>
                     </label>
                   ))}
                   <button
@@ -1651,15 +1850,18 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 </div>
               ))}
               <p className="text-muted-foreground py-2 text-xs">
-                Every figure here is editable — measured area, wall perimeter, ceiling
-                height, wet wall/ceiling above 2 ft, and insets over 18 inches.
+                Every figure here is editable — measured area, wall perimeter,
+                ceiling height, wet wall/ceiling above 2 ft, and insets over 18
+                inches.
               </p>
             </div>
           ) : null}
 
           <div className="flex flex-wrap items-end gap-2">
             <div className="min-w-32 flex-1">
-              <Label htmlFor="area-name" className="text-xs">Room</Label>
+              <Label htmlFor="area-name" className="text-xs">
+                Room
+              </Label>
               <Input
                 id="area-name"
                 className="h-9"
@@ -1669,24 +1871,53 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
               />
             </div>
             <div className="w-20">
-              <Label htmlFor="area-len" className="text-xs">Length</Label>
-              <Input id="area-len" className="h-9" type="number" step="any"
-                value={areaLength} onChange={(e) => setAreaLength(e.target.value)} />
+              <Label htmlFor="area-len" className="text-xs">
+                Length
+              </Label>
+              <Input
+                id="area-len"
+                className="h-9"
+                type="number"
+                step="any"
+                value={areaLength}
+                onChange={(e) => setAreaLength(e.target.value)}
+              />
             </div>
             <div className="w-20">
-              <Label htmlFor="area-wid" className="text-xs">Width</Label>
-              <Input id="area-wid" className="h-9" type="number" step="any"
-                value={areaWidth} onChange={(e) => setAreaWidth(e.target.value)} />
+              <Label htmlFor="area-wid" className="text-xs">
+                Width
+              </Label>
+              <Input
+                id="area-wid"
+                className="h-9"
+                type="number"
+                step="any"
+                value={areaWidth}
+                onChange={(e) => setAreaWidth(e.target.value)}
+              />
             </div>
             <div className="w-20">
-              <Label htmlFor="area-hgt" className="text-xs">Ceiling</Label>
-              <Input id="area-hgt" className="h-9" type="number" step="any"
-                value={areaHeight} onChange={(e) => setAreaHeight(e.target.value)} />
+              <Label htmlFor="area-hgt" className="text-xs">
+                Ceiling
+              </Label>
+              <Input
+                id="area-hgt"
+                className="h-9"
+                type="number"
+                step="any"
+                value={areaHeight}
+                onChange={(e) => setAreaHeight(e.target.value)}
+              />
             </div>
             <Button
               size="sm"
               variant="secondary"
-              disabled={busy === 'add-area' || !areaName.trim() || !areaLength || !areaWidth}
+              disabled={
+                busy === 'add-area' ||
+                !areaName.trim() ||
+                !areaLength ||
+                !areaWidth
+              }
               onClick={async () => {
                 await call(
                   `/api/admin/ops/restoration/projects/${projectId}/areas`,
@@ -1812,7 +2043,12 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                       {label}
                     </button>
                   ))}
-                  {([['Single', 3], ['Double', 6]] as const).map(([label, width]) => (
+                  {(
+                    [
+                      ['Single', 3],
+                      ['Double', 6],
+                    ] as const
+                  ).map(([label, width]) => (
                     <button
                       key={label}
                       type="button"
@@ -1834,7 +2070,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                       min={0.5}
                       aria-label="Opening width in feet"
                       value={openingWidth}
-                      onChange={(e) => setOpeningWidth(Number(e.target.value) || 3)}
+                      onChange={(e) =>
+                        setOpeningWidth(Number(e.target.value) || 3)
+                      }
                     />
                     <span className="text-muted-foreground text-xs">ft</span>
                   </label>
@@ -1903,7 +2141,10 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                           type="button"
                           className="rounded-full border border-amber-400 px-2.5 py-1 text-xs text-amber-700 hover:bg-amber-50 dark:text-amber-300 dark:hover:bg-amber-950/40"
                           onClick={() =>
-                            setArmedTool({ kind: 'reading', label: `${pointMaterial} point` })
+                            setArmedTool({
+                              kind: 'reading',
+                              label: `${pointMaterial} point`,
+                            })
                           }
                         >
                           + Reading point
@@ -1939,10 +2180,13 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                           ? `Monitor${visit.visit_sequence ? ` ${visit.visit_sequence}` : ''}`
                           : 'Final'}
                       {' · '}
-                      {new Date(`${visit.appointment_date}T12:00:00`).toLocaleDateString(
-                        'en-US',
-                        { weekday: 'short', month: 'short', day: 'numeric' },
-                      )}
+                      {new Date(
+                        `${visit.appointment_date}T12:00:00`,
+                      ).toLocaleDateString('en-US', {
+                        weekday: 'short',
+                        month: 'short',
+                        day: 'numeric',
+                      })}
                     </option>
                   ))}
                 </select>
@@ -1965,23 +2209,26 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             ) : null}
 
             {planTool === 'pin' &&
-            detail.reading_points.some((p) => p.restoration_readings.length > 0) ? (
+            detail.reading_points.some(
+              (p) => p.restoration_readings.length > 0,
+            ) ? (
               // The colours have to say what they mean somewhere, or they are
               // just decoration on a document that goes to a carrier.
               <div className="text-muted-foreground mb-2 flex flex-wrap items-center gap-3 text-xs">
                 <span className="flex items-center gap-1">
-                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-600" /> at dry
-                  standard
+                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-600" />{' '}
+                  at dry standard
                 </span>
                 <span className="flex items-center gap-1">
-                  <span className="h-2.5 w-2.5 rounded-full bg-amber-500" /> still drying
+                  <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />{' '}
+                  still drying
                 </span>
                 <span className="flex items-center gap-1">
                   <span className="h-2.5 w-2.5 rounded-full bg-red-600" /> wet
                 </span>
                 <span className="flex items-center gap-1">
-                  <span className="h-2.5 w-2.5 rounded-full bg-slate-500" /> no standard
-                  set
+                  <span className="h-2.5 w-2.5 rounded-full bg-slate-500" /> no
+                  standard set
                 </span>
               </div>
             ) : null}
@@ -2000,8 +2247,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                     key={selectedEquipment.id}
                     equipment={selectedEquipment}
                     label={
-                      EQUIPMENT_CODES.find((e) => e.code === selectedEquipment.catalog_code)
-                        ?.label ?? selectedEquipment.catalog_code
+                      EQUIPMENT_CODES.find(
+                        (e) => e.code === selectedEquipment.catalog_code,
+                      )?.label ?? selectedEquipment.catalog_code
                     }
                     readings={detail.air_readings}
                     busy={busy === 'dehu-outlet'}
@@ -2050,7 +2298,10 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                       activeVisit
                         ? `${activeVisit.visit_type === 'mitigation' ? 'Mitigation' : 'Monitor'} · ${new Date(
                             `${activeVisit.appointment_date}T12:00:00`,
-                          ).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+                          ).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                          })}`
                         : 'No visit selected'
                     }
                     onClose={() => setSelectedPointId(null)}
@@ -2102,11 +2353,14 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 ) : null
               }
               onDrawWall={async (segment) => {
-                await fetch(`/api/admin/ops/restoration/projects/${projectId}/walls`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify(segment),
-                })
+                await fetch(
+                  `/api/admin/ops/restoration/projects/${projectId}/walls`,
+                  {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(segment),
+                  },
+                )
                 await loadPlan()
               }}
               onMoveRoom={async (moves) => {
@@ -2121,11 +2375,14 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 await loadPlan()
               }}
               onSetWallLength={async (_wallId, endNodeId, x, y) => {
-                await fetch(`/api/admin/ops/restoration/plan-nodes/${endNodeId}`, {
-                  method: 'PATCH',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ x, y }),
-                })
+                await fetch(
+                  `/api/admin/ops/restoration/plan-nodes/${endNodeId}`,
+                  {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ x, y }),
+                  },
+                )
                 await loadPlan()
               }}
               onMoveNode={async (nodeId, x, y) => {
@@ -2137,7 +2394,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 await loadPlan()
               }}
               onDeleteWall={async (wallId) => {
-                await fetch(`/api/admin/ops/restoration/walls/${wallId}`, { method: 'DELETE' })
+                await fetch(`/api/admin/ops/restoration/walls/${wallId}`, {
+                  method: 'DELETE',
+                })
                 await loadPlan()
               }}
               openingKind={openingKind}
@@ -2158,17 +2417,26 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 await loadPlan()
               }}
               onMoveOpening={async (openingId, wallId, offsetFt) => {
-                await fetch(`/api/admin/ops/restoration/openings/${openingId}`, {
-                  method: 'PATCH',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ wall_id: wallId, offset_ft: offsetFt }),
-                })
+                await fetch(
+                  `/api/admin/ops/restoration/openings/${openingId}`,
+                  {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      wall_id: wallId,
+                      offset_ft: offsetFt,
+                    }),
+                  },
+                )
                 await loadPlan()
               }}
               onDeleteOpening={async (openingId) => {
-                await fetch(`/api/admin/ops/restoration/openings/${openingId}`, {
-                  method: 'DELETE',
-                })
+                await fetch(
+                  `/api/admin/ops/restoration/openings/${openingId}`,
+                  {
+                    method: 'DELETE',
+                  },
+                )
                 await loadPlan()
               }}
               onDropPin={async ({ xFt, yFt }) => {
@@ -2228,25 +2496,29 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
               onPinClick={(pin) => {
                 if (pin.kind === 'equipment') {
                   setSelectedPointId(null)
-                  setSelectedEquipmentId((current) => (current === pin.id ? null : pin.id))
+                  setSelectedEquipmentId((current) =>
+                    current === pin.id ? null : pin.id,
+                  )
                   return
                 }
                 setSelectedEquipmentId(null)
-                setSelectedPointId((current) => (current === pin.id ? null : pin.id))
+                setSelectedPointId((current) =>
+                  current === pin.id ? null : pin.id,
+                )
               }}
             />
             <p className="text-muted-foreground mt-1 text-xs">
               {planTool === 'move'
                 ? 'Drag to move the plan, pinch to zoom in on a point. Tap a wall to select it, then × to delete it.'
                 : planTool === 'wall'
-                ? 'Drag anywhere to draw a wall — ends snap to nearby corners so rooms close. A wall that closes nothing is a pony wall. Measurements are out of the way while you draw.'
-                : planTool === 'resize'
-                  ? 'Drag inside a room to move the whole thing. Tap any measurement to type an exact length.'
-                  : planTool === 'corner'
-                    ? 'Drag a corner — every wall meeting there follows. Tap a measurement to delete that wall.'
-                    : planTool === 'door'
-                      ? 'Tap a wall to place. Drag one to move it along a wall or onto another. Tap to select, then Delete selected.'
-                      : 'Pick equipment or a reading point, then tap the plan.'}
+                  ? 'Drag anywhere to draw a wall — ends snap to nearby corners so rooms close. A wall that closes nothing is a pony wall. Measurements are out of the way while you draw.'
+                  : planTool === 'resize'
+                    ? 'Drag inside a room to move the whole thing. Tap any measurement to type an exact length.'
+                    : planTool === 'corner'
+                      ? 'Drag a corner — every wall meeting there follows. Tap a measurement to delete that wall.'
+                      : planTool === 'door'
+                        ? 'Tap a wall to place. Drag one to move it along a wall or onto another. Tap to select, then Delete selected.'
+                        : 'Pick equipment or a reading point, then tap the plan.'}
             </p>
           </div>
 
@@ -2270,7 +2542,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                         `/api/admin/ops/restoration/projects/${projectId}`,
                         {
                           method: 'PATCH',
-                          body: JSON.stringify({ loss_class: Number(e.target.value) }),
+                          body: JSON.stringify({
+                            loss_class: Number(e.target.value),
+                          }),
                         },
                         'class',
                       )
@@ -2286,7 +2560,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                     aria-label="Build-out density"
                     className="border-input bg-background h-8 rounded-md border px-2 text-sm"
                     value={airflowDensity}
-                    onChange={(e) => setAirflowDensity(e.target.value as AirflowDensity)}
+                    onChange={(e) =>
+                      setAirflowDensity(e.target.value as AirflowDensity)
+                    }
                   >
                     <option value="open">Open</option>
                     <option value="normal">Normal</option>
@@ -2315,22 +2591,28 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                   {dryingPlan.perArea.map((area) => (
                     <span key={area.name}>
                       <strong>{area.name}</strong>: {area.perRoom} for the room
-                      {area.forFloor > 0 ? ` + ${area.forFloor} for wet floor` : ''}
+                      {area.forFloor > 0
+                        ? ` + ${area.forFloor} for wet floor`
+                        : ''}
                       {area.forWallCeiling > 0
                         ? ` + ${area.forWallCeiling} for wall/ceiling`
                         : ''}
-                      {area.forInsets > 0 ? ` + ${area.forInsets} for insets` : ''} ={' '}
-                      {area.total}
+                      {area.forInsets > 0
+                        ? ` + ${area.forInsets} for insets`
+                        : ''}{' '}
+                      = {area.total}
                     </span>
                   ))}
                   <span>
-                    Dehumidification: {dryingPlan.totalCubicFt.toLocaleString()} cu ft ÷{' '}
-                    {dryingPlan.dehuFactor ?? '—'} (LGR, Class {project.loss_class ?? 2}) ={' '}
+                    Dehumidification: {dryingPlan.totalCubicFt.toLocaleString()}{' '}
+                    cu ft ÷ {dryingPlan.dehuFactor ?? '—'} (LGR, Class{' '}
+                    {project.loss_class ?? 2}) ={' '}
                     {dryingPlan.dehumidifierPintsPerDay ?? '—'} PPD
                   </span>
                   <span className="mt-1">
-                    ANSI/IICRC S500-2021 §12.5.3 and the IICRC dehumidification factor
-                    chart. An initial recommendation — readings decide when it is dry.
+                    ANSI/IICRC S500-2021 §12.5.3 and the IICRC dehumidification
+                    factor chart. An initial recommendation — readings decide
+                    when it is dry.
                   </span>
                 </div>
               </details>
@@ -2384,245 +2666,277 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
           </button>
 
           {workOpen ? (
-          <>
-
-          <div className="mb-4 flex flex-col gap-2">
-            <Label htmlFor="dictate" className="flex items-center gap-2">
-              <Mic className="h-4 w-4" /> Say what you did
-            </Label>
-            <Textarea
-              id="dictate"
-              rows={2}
-              value={transcript}
-              onChange={(e) => setTranscript(e.target.value)}
-              placeholder="remove carpet, 4 foot flood cut, remove pad, spray antimicrobial"
-            />
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                className={`${ACTION_BUTTON} gap-2`}
-                disabled={busy === 'parse' || !transcript.trim()}
-                onClick={() => void runParse()}
-              >
-                {busy === 'parse' ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Mic className="h-4 w-4" />
-                )}
-                Scan
-              </Button>
-              {proposed.length > 0 ? (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={busy === 'add-lines'}
-                  onClick={async () => {
-                    await addLines(
-                      proposed.map((p) => ({
-                        concept_code: p.conceptCode,
-                        quantity: p.quantity ?? suggestedQuantity(p.unit),
-                      })),
-                    )
-                    setProposed([])
-                    setUnmatched([])
-                    setTranscript('')
-                  }}
-                >
-                  Add all {proposed.length}
-                </Button>
-              ) : null}
-            </div>
-
-            {proposed.length > 0 ? (
-              <div className="border-border/60 mt-1 overflow-hidden rounded-md border">
-                <div className={`${PANEL_HEAD} flex items-center justify-between gap-2`}>
-                  <p className="text-xs">
-                    Priced for Category {category}
-                    {afterHours ? ', after hours' : ''}. Set a quantity and add.
-                  </p>
+            <>
+              <div className="mb-4 flex flex-col gap-2">
+                <Label htmlFor="dictate" className="flex items-center gap-2">
+                  <Mic className="h-4 w-4" /> Say what you did
+                </Label>
+                <Textarea
+                  id="dictate"
+                  rows={2}
+                  value={transcript}
+                  onChange={(e) => setTranscript(e.target.value)}
+                  placeholder="remove carpet, 4 foot flood cut, remove pad, spray antimicrobial"
+                />
+                <div className="flex gap-2">
                   <Button
                     size="sm"
-                    variant="ghost"
-                    className="h-7 text-xs"
-                    onClick={() => {
-                      setProposed([])
-                      setUnmatched([])
-                    }}
+                    className={`${ACTION_BUTTON} gap-2`}
+                    disabled={busy === 'parse' || !transcript.trim()}
+                    onClick={() => void runParse()}
                   >
-                    Clear
+                    {busy === 'parse' ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Mic className="h-4 w-4" />
+                    )}
+                    Scan
                   </Button>
+                  {proposed.length > 0 ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy === 'add-lines'}
+                      onClick={async () => {
+                        await addLines(
+                          proposed.map((p) => ({
+                            concept_code: p.conceptCode,
+                            quantity: p.quantity ?? suggestedQuantity(p.unit),
+                          })),
+                        )
+                        setProposed([])
+                        setUnmatched([])
+                        setTranscript('')
+                      }}
+                    >
+                      Add all {proposed.length}
+                    </Button>
+                  ) : null}
                 </div>
-                {proposed.map((line, index) => (
-                  <LineCandidateRow
-                    key={`${line.code}-${index}`}
-                    code={line.code}
-                    label={line.label}
-                    unit={line.unit}
-                    unitPrice={line.unitPrice}
-                    // Use a spoken quantity when there was one, otherwise fall
-                    // back to what the room measured out at.
-                    defaultQuantity={line.quantity ?? suggestedQuantity(line.unit)}
-                    onAdd={async (quantity) => {
-                      await addLines([
-                        { concept_code: line.conceptCode, quantity },
-                      ])
-                      setProposed((current) => current.filter((_, i) => i !== index))
-                    }}
-                    onDismiss={() =>
-                      setProposed((current) => current.filter((_, i) => i !== index))
-                    }
-                  />
+
+                {proposed.length > 0 ? (
+                  <div className="border-border/60 mt-1 overflow-hidden rounded-md border">
+                    <div
+                      className={`${PANEL_HEAD} flex items-center justify-between gap-2`}
+                    >
+                      <p className="text-xs">
+                        Priced for Category {category}
+                        {afterHours ? ', after hours' : ''}. Set a quantity and
+                        add.
+                      </p>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 text-xs"
+                        onClick={() => {
+                          setProposed([])
+                          setUnmatched([])
+                        }}
+                      >
+                        Clear
+                      </Button>
+                    </div>
+                    {proposed.map((line, index) => (
+                      <LineCandidateRow
+                        key={`${line.code}-${index}`}
+                        code={line.code}
+                        label={line.label}
+                        unit={line.unit}
+                        unitPrice={line.unitPrice}
+                        // Use a spoken quantity when there was one, otherwise fall
+                        // back to what the room measured out at.
+                        defaultQuantity={
+                          line.quantity ?? suggestedQuantity(line.unit)
+                        }
+                        onAdd={async (quantity) => {
+                          await addLines([
+                            { concept_code: line.conceptCode, quantity },
+                          ])
+                          setProposed((current) =>
+                            current.filter((_, i) => i !== index),
+                          )
+                        }}
+                        onDismiss={() =>
+                          setProposed((current) =>
+                            current.filter((_, i) => i !== index),
+                          )
+                        }
+                      />
+                    ))}
+                    {unmatched.length > 0 ? (
+                      <p className="text-muted-foreground border-border/60 border-t px-3 py-2 text-xs">
+                        Couldn&apos;t match: {unmatched.join(', ')}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="mb-3 flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="catalog-search">Add by hand</Label>
+                  <button
+                    type="button"
+                    className="text-muted-foreground text-xs underline"
+                    onClick={() => setCatalogOpen((open) => !open)}
+                  >
+                    {catalogOpen ? 'Hide list' : 'Browse all items'}
+                  </button>
+                </div>
+                <Input
+                  id="catalog-search"
+                  value={catalogQuery}
+                  onChange={(e) => {
+                    setCatalogQuery(e.target.value)
+                    if (e.target.value.trim()) setCatalogOpen(true)
+                  }}
+                  placeholder="extraction, flood cut, pad…"
+                />
+
+                {catalogOpen ? (
+                  <div className="border-border/60 max-h-80 overflow-hidden overflow-y-auto rounded-md border">
+                    <div className={`${PANEL_HEAD} sticky top-0`}>
+                      {catalogQuery.trim()
+                        ? `Matching "${catalogQuery.trim()}" · priced for Category ${category}${afterHours ? ', after hours' : ''}`
+                        : `Priced for Category ${category}${afterHours ? ', after hours' : ''}. Pick a group.`}
+                    </div>
+                    {catalogQuery.trim().length > 0 ? (
+                      // Searching: a flat list is what you want, not folded groups.
+                      catalogResults.length > 0 ? (
+                        catalogResults
+                          .slice(0, 60)
+                          .map((item) => (
+                            <LineCandidateRow
+                              key={item.concept_code}
+                              code={item.code}
+                              label={item.label}
+                              unit={item.unit}
+                              unitPrice={item.unit_price}
+                              billable={item.billable}
+                              defaultQuantity={suggestedQuantity(item.unit)}
+                              onAdd={(quantity) =>
+                                addFromCatalog(item, quantity)
+                              }
+                            />
+                          ))
+                      ) : (
+                        <p className="text-muted-foreground px-3 py-2 text-sm">
+                          No match.
+                        </p>
+                      )
+                    ) : (
+                      GROUP_ORDER.filter((group) =>
+                        groupedCatalog.has(group),
+                      ).map((group) => {
+                        const items = groupedCatalog.get(group) ?? []
+                        const open = openGroup === group
+                        return (
+                          <div
+                            key={group}
+                            className="border-border/60 border-b last:border-b-0"
+                          >
+                            <button
+                              type="button"
+                              className="hover:bg-muted/50 flex w-full items-center justify-between px-3 py-2.5 text-left text-sm font-medium"
+                              onClick={() => setOpenGroup(open ? null : group)}
+                            >
+                              <span className="flex items-center gap-2">
+                                <span
+                                  className={`text-muted-foreground text-xs transition-transform ${open ? 'rotate-90' : ''}`}
+                                  aria-hidden
+                                >
+                                  ▸
+                                </span>
+                                {group}
+                              </span>
+                              <span className="text-muted-foreground text-xs tabular-nums">
+                                {items.length}
+                              </span>
+                            </button>
+                            {open
+                              ? items.map((item) => (
+                                  <LineCandidateRow
+                                    key={item.concept_code}
+                                    code={item.code}
+                                    label={item.label}
+                                    unit={item.unit}
+                                    unitPrice={item.unit_price}
+                                    billable={item.billable}
+                                    defaultQuantity={suggestedQuantity(
+                                      item.unit,
+                                    )}
+                                    onAdd={(quantity) =>
+                                      addFromCatalog(item, quantity)
+                                    }
+                                  />
+                                ))
+                              : null}
+                          </div>
+                        )
+                      })
+                    )}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="flex flex-col divide-y">
+                {activeVisit.ops_appointment_line_items.map((line) => (
+                  <div
+                    key={line.id}
+                    className="flex items-center gap-2 py-2 text-sm"
+                  >
+                    <span className="min-w-0 flex-1">{line.name_snapshot}</span>
+                    <Input
+                      className="h-8 w-20 text-right"
+                      type="number"
+                      min={0}
+                      step="any"
+                      defaultValue={Number(line.quantity)}
+                      onBlur={(e) => {
+                        const quantity = Number(e.target.value)
+                        if (
+                          quantity > 0 &&
+                          quantity !== Number(line.quantity)
+                        ) {
+                          void call(
+                            `/api/admin/ops/restoration/line-items/${line.id}`,
+                            {
+                              method: 'PATCH',
+                              body: JSON.stringify({ quantity }),
+                            },
+                            `qty-${line.id}`,
+                          )
+                        }
+                      }}
+                    />
+                    <span className="text-muted-foreground w-10 text-xs">
+                      {line.pricing_unit_snapshot}
+                    </span>
+                    <span className="w-20 text-right font-medium">
+                      {money(Number(line.line_total))}
+                    </span>
+                    <button
+                      type="button"
+                      aria-label="Remove line"
+                      onClick={() =>
+                        void call(
+                          `/api/admin/ops/restoration/line-items/${line.id}`,
+                          { method: 'DELETE' },
+                          `del-${line.id}`,
+                        )
+                      }
+                    >
+                      <Trash2 className="text-muted-foreground h-4 w-4" />
+                    </button>
+                  </div>
                 ))}
-                {unmatched.length > 0 ? (
-                  <p className="text-muted-foreground border-border/60 border-t px-3 py-2 text-xs">
-                    Couldn&apos;t match: {unmatched.join(', ')}
+                {activeVisit.ops_appointment_line_items.length === 0 ? (
+                  <p className="text-muted-foreground py-2 text-sm">
+                    Nothing added yet.
                   </p>
                 ) : null}
               </div>
-            ) : null}
-          </div>
-
-          <div className="mb-3 flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="catalog-search">Add by hand</Label>
-              <button
-                type="button"
-                className="text-muted-foreground text-xs underline"
-                onClick={() => setCatalogOpen((open) => !open)}
-              >
-                {catalogOpen ? 'Hide list' : 'Browse all items'}
-              </button>
-            </div>
-            <Input
-              id="catalog-search"
-              value={catalogQuery}
-              onChange={(e) => {
-                setCatalogQuery(e.target.value)
-                if (e.target.value.trim()) setCatalogOpen(true)
-              }}
-              placeholder="extraction, flood cut, pad…"
-            />
-
-            {catalogOpen ? (
-              <div className="border-border/60 max-h-80 overflow-hidden overflow-y-auto rounded-md border">
-                <div className={`${PANEL_HEAD} sticky top-0`}>
-                  {catalogQuery.trim()
-                    ? `Matching "${catalogQuery.trim()}" · priced for Category ${category}${afterHours ? ', after hours' : ''}`
-                    : `Priced for Category ${category}${afterHours ? ', after hours' : ''}. Pick a group.`}
-                </div>
-                {catalogQuery.trim().length > 0 ? (
-                  // Searching: a flat list is what you want, not folded groups.
-                  catalogResults.length > 0 ? (
-                    catalogResults
-                      .slice(0, 60)
-                      .map((item) => (
-                        <LineCandidateRow
-                          key={item.concept_code}
-                          code={item.code}
-                          label={item.label}
-                          unit={item.unit}
-                          unitPrice={item.unit_price}
-                          billable={item.billable}
-                          defaultQuantity={suggestedQuantity(item.unit)}
-                          onAdd={(quantity) => addFromCatalog(item, quantity)}
-                        />
-                      ))
-                  ) : (
-                    <p className="text-muted-foreground px-3 py-2 text-sm">No match.</p>
-                  )
-                ) : (
-                  GROUP_ORDER.filter((group) => groupedCatalog.has(group)).map((group) => {
-                    const items = groupedCatalog.get(group) ?? []
-                    const open = openGroup === group
-                    return (
-                      <div key={group} className="border-border/60 border-b last:border-b-0">
-                        <button
-                          type="button"
-                          className="hover:bg-muted/50 flex w-full items-center justify-between px-3 py-2.5 text-left text-sm font-medium"
-                          onClick={() => setOpenGroup(open ? null : group)}
-                        >
-                          <span className="flex items-center gap-2">
-                            <span
-                              className={`text-muted-foreground text-xs transition-transform ${open ? 'rotate-90' : ''}`}
-                              aria-hidden
-                            >
-                              ▸
-                            </span>
-                            {group}
-                          </span>
-                          <span className="text-muted-foreground text-xs tabular-nums">
-                            {items.length}
-                          </span>
-                        </button>
-                        {open
-                          ? items.map((item) => (
-                              <LineCandidateRow
-                                key={item.concept_code}
-                                code={item.code}
-                                label={item.label}
-                                unit={item.unit}
-                                unitPrice={item.unit_price}
-                                billable={item.billable}
-                                defaultQuantity={suggestedQuantity(item.unit)}
-                                onAdd={(quantity) => addFromCatalog(item, quantity)}
-                              />
-                            ))
-                          : null}
-                      </div>
-                    )
-                  })
-                )}
-              </div>
-            ) : null}
-          </div>
-
-          <div className="flex flex-col divide-y">
-            {activeVisit.ops_appointment_line_items.map((line) => (
-              <div key={line.id} className="flex items-center gap-2 py-2 text-sm">
-                <span className="min-w-0 flex-1">{line.name_snapshot}</span>
-                <Input
-                  className="h-8 w-20 text-right"
-                  type="number"
-                  min={0}
-                  step="any"
-                  defaultValue={Number(line.quantity)}
-                  onBlur={(e) => {
-                    const quantity = Number(e.target.value)
-                    if (quantity > 0 && quantity !== Number(line.quantity)) {
-                      void call(
-                        `/api/admin/ops/restoration/line-items/${line.id}`,
-                        { method: 'PATCH', body: JSON.stringify({ quantity }) },
-                        `qty-${line.id}`,
-                      )
-                    }
-                  }}
-                />
-                <span className="text-muted-foreground w-10 text-xs">
-                  {line.pricing_unit_snapshot}
-                </span>
-                <span className="w-20 text-right font-medium">
-                  {money(Number(line.line_total))}
-                </span>
-                <button
-                  type="button"
-                  aria-label="Remove line"
-                  onClick={() =>
-                    void call(
-                      `/api/admin/ops/restoration/line-items/${line.id}`,
-                      { method: 'DELETE' },
-                      `del-${line.id}`,
-                    )
-                  }
-                >
-                  <Trash2 className="text-muted-foreground h-4 w-4" />
-                </button>
-              </div>
-            ))}
-            {activeVisit.ops_appointment_line_items.length === 0 ? (
-              <p className="text-muted-foreground py-2 text-sm">Nothing added yet.</p>
-            ) : null}
-          </div>
-          </>
+            </>
           ) : null}
         </Card>
       ) : null}
@@ -2642,10 +2956,13 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 // then, not what it costs today.
                 <span className="block text-xs">
                   as of{' '}
-                  {new Date(`${activeVisitDate}T12:00:00`).toLocaleDateString('en-US', {
-                    month: 'short',
-                    day: 'numeric',
-                  })}
+                  {new Date(`${activeVisitDate}T12:00:00`).toLocaleDateString(
+                    'en-US',
+                    {
+                      month: 'short',
+                      day: 'numeric',
+                    },
+                  )}
                 </span>
               ) : null}
             </span>
@@ -2673,7 +2990,10 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 size="sm"
                 variant="outline"
                 className="gap-1 border-sky-500/40 text-sky-700 hover:bg-sky-50 dark:text-sky-300 dark:hover:bg-sky-950/40"
-                disabled={busy === `place-${equipment.code}` || !(Number(placeCount) > 0)}
+                disabled={
+                  busy === `place-${equipment.code}` ||
+                  !(Number(placeCount) > 0)
+                }
                 onClick={() =>
                   void call(
                     `/api/admin/ops/restoration/projects/${projectId}/equipment`,
@@ -2714,7 +3034,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                         <code className="text-xs">{row.catalog_code}</code>{' '}
                         {row.description}
                       </span>
-                      <span className="text-muted-foreground whitespace-nowrap text-xs tabular-nums">
+                      <span className="text-muted-foreground text-xs whitespace-nowrap tabular-nums">
                         {money(Number(row.unit_price))} × {line?.unitDays ?? 0}d
                       </span>
                       <span className="w-20 text-right font-medium">
@@ -2725,8 +3045,8 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                       <details className="mt-1">
                         <summary className="text-muted-foreground cursor-pointer text-xs">
                           {line.running} running
-                          {line.pulled > 0 ? `, ${line.pulled} pulled` : ''} — set the
-                          days these ran
+                          {line.pulled > 0 ? `, ${line.pulled} pulled` : ''} —
+                          set the days these ran
                         </summary>
                         <div className="mt-2 flex flex-col gap-2">
                           {/*
@@ -2743,15 +3063,22 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                                 key={`${batch.placedOn}-${batch.removedOn ?? 'on'}`}
                                 className="border-border/60 flex flex-wrap items-center gap-2 rounded-md border p-2 text-xs"
                               >
-                                <span className="tabular-nums">×{batch.units}</span>
+                                <span className="tabular-nums">
+                                  ×{batch.units}
+                                </span>
                                 <label className="flex items-center gap-1">
-                                  <span className="text-muted-foreground">in</span>
+                                  <span className="text-muted-foreground">
+                                    in
+                                  </span>
                                   <Input
                                     className="h-7 w-32 text-xs"
                                     type="date"
                                     defaultValue={batch.placedOn}
                                     onBlur={(e) => {
-                                      if (!e.target.value || e.target.value === batch.placedOn)
+                                      if (
+                                        !e.target.value ||
+                                        e.target.value === batch.placedOn
+                                      )
                                         return
                                       void call(
                                         `/api/admin/ops/restoration/projects/${projectId}/equipment/days`,
@@ -2768,7 +3095,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                                   />
                                 </label>
                                 <label className="flex items-center gap-1">
-                                  <span className="text-muted-foreground">out</span>
+                                  <span className="text-muted-foreground">
+                                    out
+                                  </span>
                                   <Input
                                     className="h-7 w-32 text-xs"
                                     type="date"
@@ -2791,16 +3120,17 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                                   />
                                 </label>
                                 <span className="text-muted-foreground tabular-nums">
-                                  {batch.days} day{batch.days === 1 ? '' : 's'} each ={' '}
-                                  {batch.unitDays} unit-day
+                                  {batch.days} day{batch.days === 1 ? '' : 's'}{' '}
+                                  each = {batch.unitDays} unit-day
                                   {batch.unitDays === 1 ? '' : 's'}
                                 </span>
                               </div>
                             ))}
                           {line.pulled > 0 ? (
                             <span className="text-muted-foreground text-xs">
-                              A unit still bills for the days it ran, so pulling one
-                              stops the clock rather than undoing the charge.
+                              A unit still bills for the days it ran, so pulling
+                              one stops the clock rather than undoing the
+                              charge.
                             </span>
                           ) : null}
                         </div>
@@ -2819,12 +3149,15 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
               </Label>
               <div className="flex flex-col gap-1.5">
                 {Object.entries(
-                  runningEquipment.reduce<Record<string, string[]>>((groups, placement) => {
-                    const list = groups[placement.catalog_code]
-                    if (list) list.push(placement.id)
-                    else groups[placement.catalog_code] = [placement.id]
-                    return groups
-                  }, {}),
+                  runningEquipment.reduce<Record<string, string[]>>(
+                    (groups, placement) => {
+                      const list = groups[placement.catalog_code]
+                      if (list) list.push(placement.id)
+                      else groups[placement.catalog_code] = [placement.id]
+                      return groups
+                    },
+                    {},
+                  ),
                 ).map(([code, ids]) => (
                   <div key={code} className="flex items-center gap-2 text-sm">
                     <span className="min-w-0 flex-1">
@@ -2847,7 +3180,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                             method: 'PATCH',
                             // Pulled on the day being worked, which is the day
                             // that stops the clock.
-                            body: JSON.stringify({ appointment_id: activeVisitId }),
+                            body: JSON.stringify({
+                              appointment_id: activeVisitId,
+                            }),
                           },
                           `pull-${code}`,
                         )
@@ -2862,11 +3197,16 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                       disabled={busy === `pull-all-${code}`}
                       onClick={async () => {
                         for (const id of ids) {
-                          await fetch(`/api/admin/ops/restoration/equipment/${id}`, {
-                            method: 'PATCH',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ appointment_id: activeVisitId }),
-                          })
+                          await fetch(
+                            `/api/admin/ops/restoration/equipment/${id}`,
+                            {
+                              method: 'PATCH',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                appointment_id: activeVisitId,
+                              }),
+                            },
+                          )
                         }
                         await load()
                       }}
@@ -2888,57 +3228,58 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             <Wind className={SECTION_ICON} /> Air readings
           </h2>
           <p className="text-muted-foreground mb-3 text-sm">
-            Temperature and humidity in the chamber, outside, and out of the dehu.
-            Moisture meters say the material is wet; these say what the air is doing.
+            Temperature and humidity in the chamber, outside, and out of the
+            dehu. Moisture meters say the material is wet; these say what the
+            air is doing.
           </p>
           <AirReadingsCard
-                  readings={detail.air_readings}
-                  activeVisitId={activeVisitId}
-                  activeVisitDate={activeVisitDate}
-                  visitLabel={
-                    activeVisit
-                      ? `${activeVisit.visit_type === 'mitigation' ? 'Mitigation' : 'Monitor'} · ${new Date(
-                          `${activeVisit.appointment_date}T12:00:00`,
-                        ).toLocaleDateString('en-US', {
-                          weekday: 'short',
-                          month: 'short',
-                          day: 'numeric',
-                        })}`
-                      : 'No visit selected'
-                  }
-                  busy={busy === 'air-reading'}
-                  onEdit={(readingId, patch) =>
-                    call(
-                      `/api/admin/ops/restoration/air-readings/${readingId}`,
-                      { method: 'PATCH', body: JSON.stringify(patch) },
-                      `air-${readingId}`,
-                    )
-                  }
-                  onRemove={(readingId) =>
-                    call(
-                      `/api/admin/ops/restoration/air-readings/${readingId}`,
-                      { method: 'DELETE' },
-                      `air-${readingId}`,
-                    )
-                  }
-                  onLog={async (reading) => {
-                    // `call` returns null when the request failed, and the card
-                    // keeps the numbers rather than clearing them.
-                    const result = await call(
-                      `/api/admin/ops/restoration/projects/${projectId}/readings`,
-                      {
-                        method: 'POST',
-                        body: JSON.stringify({
-                          kind: 'air',
-                          appointment_id: activeVisitId,
-                          ...reading,
-                        }),
-                      },
-                      'air-reading',
-                    )
-                    return result != null
-                  }}
-                />
+            readings={detail.air_readings}
+            activeVisitId={activeVisitId}
+            activeVisitDate={activeVisitDate}
+            visitLabel={
+              activeVisit
+                ? `${activeVisit.visit_type === 'mitigation' ? 'Mitigation' : 'Monitor'} · ${new Date(
+                    `${activeVisit.appointment_date}T12:00:00`,
+                  ).toLocaleDateString('en-US', {
+                    weekday: 'short',
+                    month: 'short',
+                    day: 'numeric',
+                  })}`
+                : 'No visit selected'
+            }
+            busy={busy === 'air-reading'}
+            onEdit={(readingId, patch) =>
+              call(
+                `/api/admin/ops/restoration/air-readings/${readingId}`,
+                { method: 'PATCH', body: JSON.stringify(patch) },
+                `air-${readingId}`,
+              )
+            }
+            onRemove={(readingId) =>
+              call(
+                `/api/admin/ops/restoration/air-readings/${readingId}`,
+                { method: 'DELETE' },
+                `air-${readingId}`,
+              )
+            }
+            onLog={async (reading) => {
+              // `call` returns null when the request failed, and the card
+              // keeps the numbers rather than clearing them.
+              const result = await call(
+                `/api/admin/ops/restoration/projects/${projectId}/readings`,
+                {
+                  method: 'POST',
+                  body: JSON.stringify({
+                    kind: 'air',
+                    appointment_id: activeVisitId,
+                    ...reading,
+                  }),
+                },
+                'air-reading',
+              )
+              return result != null
+            }}
+          />
         </Card>
       ) : null}
 
@@ -2949,8 +3290,8 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             <Mic className={SECTION_ICON} /> Today&apos;s note
           </h2>
           <p className="text-muted-foreground mb-3 text-sm">
-            Every day of a loss needs its own note — it is what a carrier reads to
-            understand why the job took five days. Talk; it gets tidied.
+            Every day of a loss needs its own note — it is what a carrier reads
+            to understand why the job took five days. Talk; it gets tidied.
           </p>
 
           {/*
@@ -2965,10 +3306,15 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             className="mb-2"
             placeholder="Talk about the day — what you found, what you did, what still needs attention…"
             value={
-              noteTranscript?.visitId === activeVisit.id ? noteTranscript.text : ''
+              noteTranscript?.visitId === activeVisit.id
+                ? noteTranscript.text
+                : ''
             }
             onChange={(e) =>
-              setNoteTranscript({ visitId: activeVisit.id, text: e.target.value })
+              setNoteTranscript({
+                visitId: activeVisit.id,
+                text: e.target.value,
+              })
             }
           />
           <Button
@@ -2984,7 +3330,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 `/api/admin/ops/restoration/visits/${activeVisit.id}/note-draft`,
                 {
                   method: 'POST',
-                  body: JSON.stringify({ transcript: noteTranscript?.text ?? '' }),
+                  body: JSON.stringify({
+                    transcript: noteTranscript?.text ?? '',
+                  }),
                 },
                 'note-draft',
               )
@@ -3003,7 +3351,8 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
           </Button>
 
           <Label htmlFor="visit-note" className="mb-1 block">
-            The note for {activeVisit.visit_type === 'monitor' ? 'this monitor' : 'this day'}
+            The note for{' '}
+            {activeVisit.visit_type === 'monitor' ? 'this monitor' : 'this day'}
           </Label>
           <Textarea
             id="visit-note"
@@ -3023,11 +3372,16 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             size="sm"
             variant="outline"
             className="mt-2 gap-2"
-            disabled={busy === 'visit-note' || !noteIsDirty(noteEdit, activeVisit)}
+            disabled={
+              busy === 'visit-note' || !noteIsDirty(noteEdit, activeVisit)
+            }
             onClick={async () => {
               await call(
                 `/api/admin/ops/restoration/visits/${activeVisit.id}/note`,
-                { method: 'PUT', body: JSON.stringify({ note: noteEdit?.text ?? '' }) },
+                {
+                  method: 'PUT',
+                  body: JSON.stringify({ note: noteEdit?.text ?? '' }),
+                },
                 'visit-note',
               )
               setNoteEdit(null)
@@ -3047,10 +3401,12 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
       {/* ── Reading points (placed on day 1, tapped on every visit) ── */}
       {!closed ? (
         <Card className={SECTION_CARD}>
-          <h2 className={`${SECTION_TITLE} mb-1`}><Droplets className={SECTION_ICON} /> Material moisture readings</h2>
+          <h2 className={`${SECTION_TITLE} mb-1`}>
+            <Droplets className={SECTION_ICON} /> Material moisture readings
+          </h2>
           <p className="text-muted-foreground mb-3 text-sm">
-            Points are placed once and re-read on every monitor visit, so you can see a
-            spot trending down — or stalling.
+            Points are placed once and re-read on every monitor visit, so you
+            can see a spot trending down — or stalling.
           </p>
 
           {/*
@@ -3071,7 +3427,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
           <div className="flex flex-col divide-y">
             {detail.reading_points.map((point) => {
               const history = [...point.restoration_readings].sort(
-                (a, b) => new Date(a.taken_at).getTime() - new Date(b.taken_at).getTime(),
+                (a, b) =>
+                  new Date(a.taken_at).getTime() -
+                  new Date(b.taken_at).getTime(),
               )
               const latest = history[history.length - 1]
               const atGoal =
@@ -3084,7 +3442,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                   key={point.id}
                   id={`reading-point-${point.id}`}
                   className={`flex flex-col gap-2 rounded-md py-3 transition-colors ${
-                    selectedPointId === point.id ? 'bg-sky-50 dark:bg-sky-950/40' : ''
+                    selectedPointId === point.id
+                      ? 'bg-sky-50 dark:bg-sky-950/40'
+                      : ''
                   }`}
                 >
                   <div className="flex flex-wrap items-center gap-2">
@@ -3097,7 +3457,10 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                         if (label && label !== point.label) {
                           void call(
                             `/api/admin/ops/restoration/reading-points/${point.id}`,
-                            { method: 'PATCH', body: JSON.stringify({ label }) },
+                            {
+                              method: 'PATCH',
+                              body: JSON.stringify({ label }),
+                            },
                             `pt-${point.id}`,
                           )
                         }
@@ -3112,7 +3475,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                           `/api/admin/ops/restoration/reading-points/${point.id}`,
                           {
                             method: 'PATCH',
-                            body: JSON.stringify({ material: e.target.value || null }),
+                            body: JSON.stringify({
+                              material: e.target.value || null,
+                            }),
                           },
                           `pt-${point.id}`,
                         )
@@ -3136,7 +3501,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                           `/api/admin/ops/restoration/reading-points/${point.id}`,
                           {
                             method: 'PATCH',
-                            body: JSON.stringify({ dry_standard: e.target.value }),
+                            body: JSON.stringify({
+                              dry_standard: e.target.value,
+                            }),
                           },
                           `pt-${point.id}`,
                         )
@@ -3152,7 +3519,8 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                         if (e.key !== 'Enter') return
                         const input = e.target as HTMLInputElement
                         const value = Number(input.value)
-                        if (!Number.isFinite(value) || input.value === '') return
+                        if (!Number.isFinite(value) || input.value === '')
+                          return
                         input.value = ''
                         void call(
                           `/api/admin/ops/restoration/projects/${projectId}/readings`,
@@ -3215,13 +3583,18 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 value={pointMaterial}
                 onChange={(e) => setPointMaterial(e.target.value)}
               >
-                {['Drywall', 'Subfloor', 'Framing', 'Hardwood', 'Concrete', 'Insulation'].map(
-                  (material) => (
-                    <option key={material} value={material}>
-                      {material}
-                    </option>
-                  ),
-                )}
+                {[
+                  'Drywall',
+                  'Subfloor',
+                  'Framing',
+                  'Hardwood',
+                  'Concrete',
+                  'Insulation',
+                ].map((material) => (
+                  <option key={material} value={material}>
+                    {material}
+                  </option>
+                ))}
               </select>
               <Input
                 className="h-9 w-24"
@@ -3243,7 +3616,8 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                       body: JSON.stringify({
                         label: pointLabel.trim(),
                         material: pointMaterial,
-                        dry_standard: pointGoal === '' ? null : Number(pointGoal),
+                        dry_standard:
+                          pointGoal === '' ? null : Number(pointGoal),
                       }),
                     },
                     'add-point',
@@ -3266,8 +3640,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             <Camera className={SECTION_ICON} /> Photos
           </h2>
           <p className="text-muted-foreground mb-3 text-sm">
-            Pick the phase once, then shoot as many as you need — they all land tagged.
-            Uploading a backlog sorts each photo onto the visit it was taken on.
+            Pick the phase once, then shoot as many as you need — they all land
+            tagged. Uploading a backlog sorts each photo onto the visit it was
+            taken on.
           </p>
 
           <div className="mb-3 flex flex-wrap gap-1.5">
@@ -3351,7 +3726,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                     // One bad photo must not abandon the other nineteen.
                     failures.push(
                       `${file.name}: ${
-                        uploadError instanceof Error ? uploadError.message : 'failed'
+                        uploadError instanceof Error
+                          ? uploadError.message
+                          : 'failed'
                       }`,
                     )
                   }
@@ -3373,7 +3750,10 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
           {detail.photos.length > 0 ? (
             <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
               {detail.photos.map((photo) => (
-                <figure key={photo.id} className="overflow-hidden rounded-md border">
+                <figure
+                  key={photo.id}
+                  className="overflow-hidden rounded-md border"
+                >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={photo.public_url}
@@ -3381,8 +3761,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                     className="h-20 w-full object-cover"
                   />
                   <figcaption className="bg-muted/40 text-muted-foreground truncate px-1.5 py-1 text-[10px]">
-                    {PHOTO_PHASES.find((p) => p.value === photo.restoration_phase)?.label ??
-                      'Untagged'}
+                    {PHOTO_PHASES.find(
+                      (p) => p.value === photo.restoration_phase,
+                    )?.label ?? 'Untagged'}
                   </figcaption>
                 </figure>
               ))}
@@ -3393,7 +3774,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
 
       {/* ── Money ──────────────────────────────────────────── */}
       <Card className={SECTION_CARD}>
-        <h2 className={`${SECTION_TITLE} mb-3`}><DollarSign className={SECTION_ICON} /> Money</h2>
+        <h2 className={`${SECTION_TITLE} mb-3`}>
+          <DollarSign className={SECTION_ICON} /> Money
+        </h2>
         <div className="flex flex-col gap-1 text-sm">
           <div className="flex justify-between">
             <span className="text-muted-foreground">Work</span>
@@ -3415,7 +3798,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
           */}
           <div className="flex justify-between border-t pt-2 font-medium">
             <span>Subtotal</span>
-            <span className="tabular-nums">{money(detail.totals.gross_subtotal)}</span>
+            <span className="tabular-nums">
+              {money(detail.totals.gross_subtotal)}
+            </span>
           </div>
           {/*
             Splitting the deductible is routine on an insurance job: they owe
@@ -3456,7 +3841,10 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                   const raw = e.target.value.trim()
                   const credit = raw === '' ? null : Number(raw)
                   if (credit != null && !(credit >= 0)) return
-                  if (credit === Number(detail.project.deductible_credit ?? NaN)) return
+                  if (
+                    credit === Number(detail.project.deductible_credit ?? NaN)
+                  )
+                    return
                   void call(
                     `/api/admin/ops/restoration/projects/${projectId}`,
                     {
@@ -3471,7 +3859,11 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
           </div>
 
           <div className="mt-1 flex justify-between border-t pt-2 text-base font-semibold">
-            <span>{detail.totals.deductible_credit > 0 ? 'Customer owes' : 'Running total'}</span>
+            <span>
+              {detail.totals.deductible_credit > 0
+                ? 'Customer owes'
+                : 'Running total'}
+            </span>
             <span className="text-sky-700 tabular-nums dark:text-sky-300">
               {money(detail.totals.subtotal)}
             </span>
@@ -3484,7 +3876,10 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 cannot show that it happened.
               */}
               {detail.payments.map((payment) => (
-                <div key={payment.id} className="flex items-center justify-between gap-2">
+                <div
+                  key={payment.id}
+                  className="flex items-center justify-between gap-2"
+                >
                   <span className="text-muted-foreground text-xs">
                     {payment.kind} · {payment.method.replace(/_/g, ' ')}
                   </span>
@@ -3519,7 +3914,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 <span
                   className={
                     detail.totals.balance_cents < 0
-                      ? 'tabular-nums text-amber-600 dark:text-amber-400'
+                      ? 'text-amber-600 tabular-nums dark:text-amber-400'
                       : 'text-sky-700 tabular-nums dark:text-sky-300'
                   }
                 >
@@ -3529,6 +3924,120 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             </>
           ) : null}
         </div>
+
+        {detail.totals.balance_cents > 0 ? (
+          <div className="mt-4 flex flex-col gap-3 border-t pt-4">
+            <Label>Collect final payment</Label>
+            <div className="flex gap-2">
+              <Input
+                aria-label="Final payment amount"
+                className="w-28"
+                type="number"
+                min={1}
+                step="any"
+                value={finalPaymentAmount}
+                onChange={(e) => setFinalPaymentAmount(e.target.value)}
+              />
+              <Button
+                className="flex-1"
+                disabled={
+                  busy === 'final-payment-tap' ||
+                  !(Number(finalPaymentAmount) > 0) ||
+                  !activeVisitId
+                }
+                onClick={async () => {
+                  setBusy('final-payment-tap')
+                  setError(null)
+                  try {
+                    const response = await fetch(
+                      `/api/admin/ops/restoration/visits/${activeVisitId}/deposit-link`,
+                      {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          amount_cents: Math.round(
+                            Number(finalPaymentAmount) * 100,
+                          ),
+                          kind: 'payment',
+                          returnTo: `/admin/operations/restoration/${projectId}`,
+                        }),
+                      },
+                    )
+                    const result = await response.json()
+                    if (!response.ok)
+                      throw new Error(result.error || 'Square is unavailable')
+                    window.location.href = result.url
+                  } catch (e) {
+                    setError(
+                      e instanceof Error ? e.message : 'Square is unavailable',
+                    )
+                    setBusy(null)
+                  }
+                }}
+              >
+                {busy === 'final-payment-tap' ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  'Tap to Pay'
+                )}
+              </Button>
+            </div>
+            <Button
+              variant="outline"
+              disabled={busy === 'final-payment-link'}
+              onClick={() =>
+                call(
+                  `/api/admin/ops/restoration/projects/${projectId}/final-payment-link`,
+                  { method: 'POST' },
+                  'final-payment-link',
+                )
+              }
+            >
+              {busy === 'final-payment-link' ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                'Text pay link'
+              )}
+            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                aria-label="Check amount"
+                className="w-28"
+                type="number"
+                min={0}
+                step="any"
+                value={checkAmount}
+                onChange={(e) => setCheckAmount(e.target.value)}
+              />
+              <Button
+                variant="outline"
+                disabled={
+                  busy === 'final-payment-check' ||
+                  !(Number(checkAmount) > 0) ||
+                  !activeVisitId
+                }
+                onClick={async () => {
+                  await call(
+                    `/api/admin/ops/restoration/visits/${activeVisitId}/deposit`,
+                    {
+                      method: 'POST',
+                      body: JSON.stringify({
+                        amount_cents: Math.round(Number(checkAmount) * 100),
+                        method: 'check',
+                        kind: 'payment',
+                        note: 'Check received',
+                      }),
+                    },
+                    'final-payment-check',
+                  )
+                  setCheckAmount('')
+                }}
+              >
+                Record a check
+              </Button>
+            </div>
+          </div>
+        ) : null}
 
         {isMitigation && !closed && detail.totals.paid_cents === 0 ? (
           <div className="mt-4 flex flex-col gap-2">
@@ -3562,11 +4071,14 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                       },
                     )
                     const result = await response.json()
-                    if (!response.ok) throw new Error(result.error || 'Square is unavailable')
+                    if (!response.ok)
+                      throw new Error(result.error || 'Square is unavailable')
                     // Hands off to the Square app; it returns to this page.
                     window.location.href = result.url
                   } catch (e) {
-                    setError(e instanceof Error ? e.message : 'Square is unavailable')
+                    setError(
+                      e instanceof Error ? e.message : 'Square is unavailable',
+                    )
                     setBusy(null)
                   }
                 }}
@@ -3595,7 +4107,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
         */}
         {!closed ? (
           <div className="mt-4 flex flex-col gap-2">
-            <Label htmlFor="recorded-amount">Record a payment already taken</Label>
+            <Label htmlFor="recorded-amount">
+              Record a payment already taken
+            </Label>
             <div className="flex flex-wrap gap-2">
               <Input
                 id="recorded-amount"
@@ -3621,7 +4135,11 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
               </select>
               <Button
                 variant="outline"
-                disabled={busy === 'deposit' || !(Number(recordedAmount) > 0) || !activeVisitId}
+                disabled={
+                  busy === 'deposit' ||
+                  !(Number(recordedAmount) > 0) ||
+                  !activeVisitId
+                }
                 onClick={async () => {
                   await call(
                     `/api/admin/ops/restoration/visits/${activeVisitId}/deposit`,
@@ -3652,7 +4170,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             disabled={busy === 'delete-project'}
             onClick={async () => {
               const visits = detail.visits.length
-              const queued = detail.queue.filter((q) => q.status === 'queued').length
+              const queued = detail.queue.filter(
+                (q) => q.status === 'queued',
+              ).length
               if (
                 !window.confirm(
                   `Delete this water loss?\n\nThis removes ${visits} scheduled visit${
@@ -3711,8 +4231,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
         <Card className={SECTION_CARD}>
           <h2 className="mb-1 text-lg font-semibold">Dry standard reached?</h2>
           <p className="text-muted-foreground mb-3 text-sm">
-            Closing pulls all remaining equipment, cancels the monitor visits you no
-            longer need, and builds the single invoice for the whole loss.
+            Closing pulls all remaining equipment, cancels the monitor visits
+            you no longer need, and builds the single invoice for the whole
+            loss.
           </p>
 
           {/*
@@ -3724,7 +4245,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
           <div className="border-border/60 mb-3 flex flex-col gap-1 rounded-md border p-3 text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Work and equipment</span>
-              <span className="tabular-nums">{money(detail.totals.gross_subtotal)}</span>
+              <span className="tabular-nums">
+                {money(detail.totals.gross_subtotal)}
+              </span>
             </div>
             {detail.totals.deductible_credit > 0 ? (
               <div className="flex justify-between">
@@ -3736,7 +4259,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             ) : null}
             {detail.totals.paid_cents > 0 ? (
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Deposit already taken</span>
+                <span className="text-muted-foreground">
+                  Deposit already taken
+                </span>
                 <span className="tabular-nums">
                   −{money(detail.totals.paid_cents / 100)}
                 </span>
@@ -3744,12 +4269,14 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             ) : null}
             <div className="mt-1 flex justify-between border-t pt-2 font-semibold">
               <span>
-                {detail.totals.balance_cents < 0 ? 'Refund to the customer' : 'Customer owes'}
+                {detail.totals.balance_cents < 0
+                  ? 'Refund to the customer'
+                  : 'Customer owes'}
               </span>
               <span
                 className={
                   detail.totals.balance_cents < 0
-                    ? 'tabular-nums text-amber-600 dark:text-amber-400'
+                    ? 'text-amber-600 tabular-nums dark:text-amber-400'
                     : 'text-sky-700 tabular-nums dark:text-sky-300'
                 }
               >
@@ -3765,7 +4292,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                 `/api/admin/ops/restoration/projects/${projectId}/close`,
                 {
                   method: 'POST',
-                  body: JSON.stringify({ closing_appointment_id: activeVisitId }),
+                  body: JSON.stringify({
+                    closing_appointment_id: activeVisitId,
+                  }),
                 },
                 'close',
               )
@@ -3789,8 +4318,6 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
     </div>
   )
 }
-
-
 
 /**
  * Editing a moisture point where it actually is, on the plan.
@@ -3851,7 +4378,7 @@ function MapPointEditor({
   }
 
   return (
-    <Card className="border-sky-400/60 bg-card p-3 shadow-lg dark:border-sky-500/50">
+    <Card className="bg-card border-sky-400/60 p-3 shadow-lg dark:border-sky-500/50">
       <div className="mb-2 flex items-start justify-between gap-2">
         <span className="min-w-0 text-sm font-medium">{point.label}</span>
         <button type="button" aria-label="Close" onClick={onClose}>
@@ -3928,12 +4455,15 @@ function MapPointEditor({
       <p className="text-muted-foreground mt-1 text-xs">
         {standard != null ? (
           <>
-            dry at {standard}%{band !== 'unknown' ? ` · ${BAND_LABEL[band]}` : ''}
+            dry at {standard}%
+            {band !== 'unknown' ? ` · ${BAND_LABEL[band]}` : ''}
           </>
         ) : (
           // No invented number for this material. Say what is missing and why,
           // rather than colouring the pin against a figure nobody chose.
-          <>Set a dry standard — read an unaffected spot of the same material.</>
+          <>
+            Set a dry standard — read an unaffected spot of the same material.
+          </>
         )}
       </p>
 
@@ -3953,7 +4483,9 @@ function MapPointEditor({
               className="border-input bg-background h-9 flex-1 rounded-md border px-2 text-sm"
               aria-label="Material"
               value={point.material ?? ''}
-              onChange={(e) => void onSave({ material: e.target.value || null })}
+              onChange={(e) =>
+                void onSave({ material: e.target.value || null })
+              }
             >
               {MATERIALS.map((material) => (
                 <option key={material} value={material}>
