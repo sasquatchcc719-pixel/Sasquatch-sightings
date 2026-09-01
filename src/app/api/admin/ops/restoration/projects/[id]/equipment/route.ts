@@ -54,8 +54,29 @@ export async function POST(
           .maybeSingle()
       : { data: null }
 
+    /**
+     * Failing an explicit day and a visit, equipment goes in on **day one of
+     * the job** — not today.
+     *
+     * Charles: *"just have the default when we put the equipment on the invoice
+     * ... it just calculates it across the entire thing from day one."* That is
+     * how the work goes: the gear is set on the mitigation day and runs until
+     * it is pulled. Defaulting to today dated eight fans to the afternoon they
+     * were typed in and billed one day for a job that had been drying since
+     * Saturday.
+     */
+    const { data: firstVisit } = await supabase
+      .from('ops_appointments')
+      .select('appointment_date')
+      .eq('restoration_project_id', id)
+      .order('appointment_date')
+      .limit(1)
+      .maybeSingle()
+
     const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Denver' })
-    const placedOn = String(body.placed_on ?? visit?.appointment_date ?? today)
+    const placedOn = String(
+      body.placed_on ?? visit?.appointment_date ?? firstVisit?.appointment_date ?? today,
+    )
     const placedAt = body.placed_at ? String(body.placed_at) : new Date().toISOString()
     const { data, error } = await supabase
       .from('restoration_equipment_placements')

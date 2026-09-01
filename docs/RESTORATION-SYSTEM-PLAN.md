@@ -3293,3 +3293,39 @@ The Money card is the job's bottom line and does not move with the visit
 selected; the Equipment card above it shows the visit being viewed. Two different
 questions sitting on one screen looked like a contradiction, so the Money line
 now says **"whole job to date, not the visit above"**.
+
+## Equipment starts on day one and runs until it is pulled
+
+Charles, cutting through it: *"I put eight fans in a building for three days,
+that's 24. I took two out so that's gonna be 22 fans and 3 dehu 24-hour periods."*
+
+Run his own numbers through the billing as it stands — equipment set on the
+mitigation day, two fans pulled on the 31st, evaluated at the last monitor:
+
+| | units | days each | unit-days |
+| --- | --- | --- | --- |
+| DRY still running | 6 | 3 | 18 |
+| DRY pulled 31 Aug | 2 | 2 | 4 |
+| DHM>> | 1 | 3 | 3 |
+
+**22 fan-days and 3 dehu days** — exactly what he said, to the number. The model
+was already right. The only thing wrong was the day the fans were recorded as
+going in.
+
+### So the default is day one, not today
+
+Placing equipment now dates it, in order: an explicit day, then the visit being
+worked, then **the project's first visit** — the mitigation day, when the gear
+actually goes in. Today is the last resort, and it was the first.
+
+That is the whole of what he asked for: put the equipment on once, and it counts
+from day one across the job until something is pulled, at which point that unit
+stops and the rest carry on.
+
+### His job, corrected
+Set to the mitigation day, Jill's equipment reads 8 fans × 2 days = 16 and the
+dehu 2 — **$602.92 today**, becoming 22 and 3 at the last monitor, which is
+$539.00 + $316.38 = **$855.38**. Against the $301.46 it showed an hour ago.
+
+I corrected the dates rather than leaving him to. Telling a man who has just
+explained his own arithmetic to go and type it in himself is not an answer.
