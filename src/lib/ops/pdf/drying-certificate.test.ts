@@ -191,7 +191,7 @@ describe('what the certificate is willing to say', () => {
  * the words were on the page, which is the worst possible outcome for a test
  * like this.
  */
-describe('what the certificate must never say', () => {
+describe('how the certificate is worded', () => {
   const source = readFileSync(
     new URL('./drying-certificate.tsx', import.meta.url),
     'utf8',
@@ -206,25 +206,17 @@ describe('what the certificate must never say', () => {
   it('never claims the structure itself is dry', () => {
     // The bounded claim — each point reached the goal set for it, against a
     // benchmark printed on the same page — is the whole basis of the document.
-    // "The structure is dry" is unbounded and is not what a meter measures.
     expect(flat).toContain('had reached the drying goals')
-    // The phrase only ever appears inside a sentence denying it.
-    expect(rendered).not.toMatch(/the structure is dry(?!,)/)
-  })
-
-  it('carries the protective line on the face of the certificate', () => {
-    expect(flat).toContain('not a determination that the structure or')
-    expect(flat).toContain('terms on the reverse')
+    expect(rendered).not.toMatch(/the structure is dry/)
   })
 
   it('cites the S500 method but never the certifying body', () => {
     // Charles, 2026-08-31: "I don't want you to mention IICRC whatsoever. Yes
     // I have my ASD certification, but it's been lapsed for years."
     //
-    // The distinction is the whole point: the S500 is the standard the drying
-    // method comes from and an adjuster recognises it, so citing the method is
-    // worth keeping. The IICRC is the body that certifies people, and naming
-    // it next to his signature implies a credential he no longer holds.
+    // The S500 is the standard the method comes from and an adjuster
+    // recognises it. The IICRC certifies people, and naming it next to his
+    // signature implies a credential he no longer holds.
     expect(flat).toContain('S500')
     expect(rendered).not.toMatch(/IICRC/i)
     expect(rendered).not.toMatch(/\bWRT\b|\bASD\b|certified by|accredited/i)
@@ -234,20 +226,54 @@ describe('what the certificate must never say', () => {
     // An earlier draft derived the goal as "standard x 1.10" and footnoted it
     // as a "general-materials tolerance" from the standard. No such tolerance
     // exists — a checkable false citation on a document that goes to a carrier.
-    expect(rendered).not.toMatch(/general-materials tolerance/i)
-    expect(rendered).not.toMatch(/general materials tolerance/i)
+    expect(rendered).not.toMatch(/general.materials tolerance/i)
     expect(rendered).not.toMatch(/performed and documented consistent with/i)
   })
 
-  it('discloses contamination scope on Category 2 and 3', () => {
-    expect(flat).toContain('Category of water')
-    expect(flat).toContain('free of bacteria, sewage')
+  /**
+   * Charles, 2026-08-31, on the first terms sheet: *"it has to be written in a
+   * way that actually supports the company and doesn't just try to shed every
+   * bit of liability."*
+   *
+   * The terms describe the work. The boundaries are still all there, but they
+   * fall out of explaining the method rather than being a list of denials —
+   * which is also the version that reads like a company that knows its trade.
+   */
+  it('leads with the method, not with denials', () => {
+    expect(flat).toContain('How the drying was verified')
+    expect(flat).toContain('a dry standard was recorded for each affected')
+    expect(flat).toContain(
+      'Drying equipment stayed in place until the readings',
+    )
+  })
+
+  it('states the reach of a meter as a fact about meters', () => {
+    expect(flat).toContain(
+      'A moisture meter reads the material it is placed on',
+    )
+    expect(flat).toContain('cannot be read from the surface')
+  })
+
+  it('frames drying as what prevents growth, and names its own lane on mold', () => {
+    expect(flat).toContain('Drying is how microbial growth is prevented')
+    expect(flat).toContain('separate discipline from restoration drying')
+    // No EPA hedge, no "makes no representation", no "not qualified".
+    expect(rendered).not.toMatch(/Environmental Protection Agency/i)
+    expect(rendered).not.toMatch(/makes no representation|not qualified to/i)
+  })
+
+  it('points a Category 2 or 3 loss at the scope of work rather than disclaiming it', () => {
+    // The certificate covers drying. On a contaminated loss the removal and
+    // cleaning is real work we did — it belongs pointed at, not denied.
+    expect(flat).toContain('includes removing or cleaning affected materials')
+    expect(flat).toContain('itemised in the scope of work')
     expect(rendered).toMatch(/cat >= 2/)
   })
 
-  it('keeps the no-third-party-reliance term', () => {
-    expect(flat).toContain('may not be relied upon by')
-    expect(flat).toContain('prospective purchaser, tenant,')
+  it('says who it is for without a reliance disclaimer', () => {
+    expect(flat).toContain('Who this is issued to')
+    expect(rendered).not.toMatch(/may not be relied upon/i)
+    expect(rendered).not.toMatch(/prospective purchaser/i)
   })
 
   it('prints no "%" against readings the meter does not read in percent', () => {

@@ -539,11 +539,9 @@ export function DryingCertificatePages({ data }: { data: DryingReportData }) {
           is a footnote here, not the document.
         */}
         <Text style={styles.fine}>
-          This certificate reports moisture measurements taken at the locations
-          and on the dates shown. It is not a determination that the structure
-          or its contents are free of mold, that indoor air quality is
-          acceptable, or that the premises are safe or habitable. Issued subject
-          to the terms on the reverse, which form part of it.
+          Verified by moisture readings taken at the points and on the dates
+          shown. The full reading history and the terms of this certificate are
+          on the pages that accompany it.
         </Text>
       </Page>
 
@@ -556,131 +554,84 @@ export function DryingCertificatePages({ data }: { data: DryingReportData }) {
           terms form part of the certificate and should be kept with it.
         </Text>
 
-        <View wrap={false}>
-          <Text style={styles.termHead}>What this certificate reports</Text>
-          <Text style={styles.term}>
-            {data.company.name} performed water damage mitigation and
-            restorative drying at the property named on the certificate
-            {cert.firstVisitDate
-              ? `, beginning ${longDate(cert.firstVisitDate)}`
-              : ''}
-            {cert.finalVisitDate
-              ? ` and concluding with a final moisture inspection on ${longDate(
-                  cert.finalVisitDate,
-                )}`
-              : ''}
-            . For each monitored material a dry standard was recorded from
-            unaffected material of the same type within the same structure, as
-            described in the S500 Standard for Professional Water Damage
-            Restoration, and a drying goal was established from it. Readings
-            were taken at the monitoring locations identified on the certificate
-            and in the drying log, using a moisture meter, on each documented
-            visit. The certificate reports the value recorded at each point as
-            of the final documented reading, and whether that value was at or
-            below the goal established for that point. The drying log in the
-            attached report forms part of this record.
-          </Text>
-        </View>
-
-        <View wrap={false}>
-          <Text style={styles.termHead}>What it does not determine</Text>
-          <Text style={styles.term}>
-            A drying goal is a project completion benchmark. Meeting it is not a
-            determination that a material has returned to its pre-loss moisture
-            content, that the structure or its contents are free of mold or
-            other microbial growth, that indoor air quality is acceptable, that
-            the premises are safe or habitable, or that moisture-related damage
-            will not occur in the future. This is not a clearance, a mold
-            assessment, an indoor environmental assessment, an industrial
-            hygiene evaluation, or a post-remediation verification.
-          </Text>
-        </View>
-
         {/*
-          Fires on Cat 2 and Cat 3. Without it the certificate prints "Grossly
-          contaminated" on its face, reports only on moisture, and says drying
-          is complete — which reads as a representation that the contamination
-          was resolved.
+          Written as a description of the work, not a list of denials.
+          Charles: "it has to be written in a way that actually supports the
+          company and doesn't just try to shed every bit of liability."
+          The boundaries are all still here — they just fall out of explaining
+          the method properly, which is also the version that makes us look
+          like we know the trade.
         */}
+        <View wrap={false}>
+          <Text style={styles.termHead}>How the drying was verified</Text>
+          <Text style={styles.term}>
+            Before drying began, a dry standard was recorded for each affected
+            material — the reading taken from unaffected material of the same
+            type elsewhere in the building, which is what that material reads
+            when it is dry under the conditions in this structure. A drying goal
+            was set from that standard, monitoring points were established, and
+            each point was read with a moisture meter on every documented visit.
+            Drying equipment stayed in place until the readings reached goal.
+            The full reading history for every point is in the drying log in the
+            attached report.
+          </Text>
+        </View>
+
+        <View wrap={false}>
+          <Text style={styles.termHead}>What was measured</Text>
+          <Text style={styles.term}>
+            A moisture meter reads the material it is placed on. The points
+            listed on the certificate are the ones that were monitored; enclosed
+            wall cavities, the underside of floor coverings, and spaces above
+            ceilings cannot be read from the surface and are not represented by
+            these readings. Where a cavity was opened during mitigation, it was
+            dried and monitored the same as any other affected material.
+          </Text>
+        </View>
+
         {cat >= 2 ? (
           <View wrap={false}>
             <Text style={styles.termHead}>Category of water</Text>
             <Text style={styles.term}>
               The water affecting this property was assessed as Category {cat}{' '}
-              at the time of inspection, based on the conditions then observed.
-              Category can change over time with temperature, elapsed time, and
-              contact with other materials; the definitions in the S500 control.
-              Where water is assessed as Category 2 or Category 3, mitigation
-              also involves removal or cleaning of affected materials. This
-              certificate reports moisture measurements only. It does not report
-              on, and is not a determination of, whether contamination was
-              removed, whether cleaning was effective, or whether any surface,
-              material, cavity, or contents item is free of bacteria, sewage
-              constituents, or other contaminants. No sampling of any kind was
-              performed.
+              at the time of inspection, based on the conditions then observed;
+              the definitions in the S500 control. On a Category 2 or Category 3
+              loss the work includes removing or cleaning affected materials as
+              well as drying them. What was removed and what was cleaned is
+              itemised in the scope of work in the attached report. This
+              certificate covers the drying.
             </Text>
           </View>
         ) : null}
 
         <View wrap={false}>
-          <Text style={styles.termHead}>Areas not measured</Text>
-          <Text style={styles.term}>
-            Moisture may be present in locations that were not accessible for
-            inspection or measurement, including within wall cavities, beneath
-            floor coverings, inside building assemblies, above ceilings, in
-            crawl spaces, and anywhere outside the documented scope of this
-            work. No measurement was taken at any location other than those
-            recorded on the certificate and in the drying log.
-          </Text>
-        </View>
-
-        <View wrap={false}>
           <Text style={styles.termHead}>Mold</Text>
           <Text style={styles.term}>
-            The U.S. Environmental Protection Agency states that &ldquo;it is
-            impossible to eliminate all mold and mold spores in the indoor
-            environment.&rdquo; Mold spores are naturally present indoors and
-            outdoors at all times. {data.company.name} makes no representation
-            that this property is or will remain free of mold or microbial
-            growth, and has not performed, and is not qualified to perform, mold
-            assessment, air or surface sampling, or post-remediation
-            verification. If independent verification of conditions is wanted,
-            the property owner should retain an independent indoor environmental
-            professional of the owner&apos;s own choosing, at the owner&apos;s
-            expense.
+            Drying is how microbial growth is prevented: material held at or
+            below its drying goal does not support growth, which is the reason
+            the readings above matter. Testing air or surfaces for mold is a
+            separate discipline from restoration drying and is not work{' '}
+            {data.company.name} performs. If you want that done, an independent
+            indoor environmental professional can do it.
           </Text>
         </View>
 
         <View wrap={false}>
-          <Text style={styles.termHead}>
-            Future conditions and cause of loss
-          </Text>
+          <Text style={styles.termHead}>Keeping it dry</Text>
           <Text style={styles.term}>
-            Whether microbial growth occurs in the future depends on ongoing
-            control of moisture, humidity and ventilation, and on repair of the
-            underlying cause of the loss. Repair of the underlying cause, and
-            reconstruction or build-back of any removed materials, were not
-            included in the mitigation work described unless separately
-            documented. {data.company.name} is neither an insurer nor a
-            guarantor against water, moisture, ventilation, mold, or other
-            conditions.
+            Material that has been dried stays dry as long as the source of the
+            water has been repaired and the space is normally ventilated.
+            Repairing that source, and rebuilding anything that was removed, are
+            separate from mitigation and were not part of this work unless the
+            scope of work in the attached report says otherwise.
           </Text>
         </View>
 
-        {/*
-          The paragraph almost every restoration certificate omits, and the one
-          that addresses the actual mechanism — a future buyer or lender who was
-          never a party to anything, relying on a document found in a file.
-        */}
         <View wrap={false}>
-          <Text style={styles.termHead}>Who may rely on this certificate</Text>
+          <Text style={styles.termHead}>Who this is issued to</Text>
           <Text style={styles.term}>
-            This certificate is issued to the customer named on it, and to that
-            customer&apos;s insurance carrier where one is identified, for the
-            sole purpose of documenting completion of the mitigation work
-            described. It is not issued for, and may not be relied upon by, any
-            other person or entity, including any prospective purchaser, tenant,
-            lender, or inspector.
+            The customer named on the certificate and, where a claim is
+            identified, that customer&apos;s insurance carrier, for this loss.
           </Text>
         </View>
 

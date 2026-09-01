@@ -3558,3 +3558,67 @@ both:
 No credential is claimed anywhere either — no certification numbers, no
 "certified". A test asserts the certificate cites `S500`, matches no `/IICRC/i`,
 and matches no `/\bWRT\b|\bASD\b|certified by|accredited/i`.
+
+
+### The limitations are one sentence, not a waiver
+
+Charles, on reading the first terms sheet: *"What the fuck did you get this line
+from? Is this like some sort of requirement?"*
+
+No, and it is worth writing down why. The research is unambiguous: **there is no
+IICRC-published certificate form and the S500 does not mandate a certificate at
+all** — what it asks for is verification and documentation, which the
+certificate memorialises. The carrier-network drying certificate this document
+was modelled against carries no limitation paragraph whatsoever. Across the real
+templates surveyed, a limitations line ranked 52nd of 56 observed fields, and
+where it appears it is one sentence: not a mold clearance, not a warranty
+against hidden moisture, valid as of the inspection date.
+
+The draft had six stacked negations, written by an adversarial reviewer rather
+than drawn from practice, and it read like a waiver on a document whose whole
+job is to feel like the work is finished. It is now the industry one-liner, on
+the face and in the terms.
+
+The terms that remain each earn their place — contamination scope on a Cat 2/3,
+areas not measured, the EPA mold line, and no third-party reliance. Those are
+observed in real forms and they answer questions a customer or adjuster actually
+asks.
+
+
+### The terms describe the work; they do not shed liability
+
+Charles, on the first terms sheet: *"What the fuck did you get this line from?
+Is this like some sort of requirement?"* and then, when I offered to delete the
+whole page: *"there could be terms of the certificate, but it has to be written
+in a way that actually supports the company and doesn't just try to shed every
+bit of liability."*
+
+He is right on both counts, and the second is the useful instruction.
+
+First, the facts: **there is no published certificate form and the S500 does not
+mandate a certificate at all** — what it asks for is verification and
+documentation, which a certificate memorialises. The carrier-network drying
+certificate this was modelled against carries no limitation paragraph
+whatsoever, and across the real templates surveyed a limitations line ranked
+52nd of 56 observed fields. Nothing on that page was required.
+
+Second, the rewrite. The draft was six stacked negations written by an
+adversarial reviewer — *not a determination that the structure is dry, that the
+contents are free of mold, that the premises are safe or habitable…* — on a
+document whose entire job is to feel like the work is finished. Every boundary
+it drew is still on the page, but each one now falls out of describing the
+method:
+
+| Was | Is |
+|---|---|
+| "not a determination that the structure is dry" | **How the drying was verified** — dry standard off unaffected material, goal set from it, read every visit, equipment stayed until goal |
+| "moisture may be present in locations that were not accessible" | **What was measured** — a moisture meter reads the material it is placed on; cavities cannot be read from the surface |
+| "not a determination of whether contamination was removed" | **Category of water** — on a Cat 2/3 the work includes removal and cleaning, itemised in the scope of work; this certificate covers the drying |
+| "makes no representation that this property is free of mold", plus an EPA quote | **Mold** — drying is how growth is prevented; testing air or surfaces is a separate discipline we do not perform |
+| "neither an insurer nor a guarantor" | **Keeping it dry** — material stays dry as long as the source is repaired and the space is ventilated |
+| "may not be relied upon by any prospective purchaser, tenant, lender" | **Who this is issued to** — the customer and, where there is a claim, their carrier |
+
+Same information, half the length, and it reads like a company that knows its
+trade rather than one bracing for a lawsuit. The EPA quotation and the
+no-third-party-reliance paragraph are gone entirely; they bought nothing a
+customer or an adjuster wanted, and they set exactly the tone Charles rejected.
