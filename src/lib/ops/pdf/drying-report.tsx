@@ -585,8 +585,8 @@ export function DryingReportPDF({ data }: { data: DryingReportData }) {
               </View>
             ))}
             <Text style={[styles.muted, { marginTop: 3 }]}>
-              Category is assessed at the time work is performed; a Category 1
-              loss degrades with dwell time and contamination.
+              Per the S500, category is assessed at the time work is performed;
+              a Category 1 loss degrades with dwell time and contamination.
             </Text>
           </View>
         ) : null}

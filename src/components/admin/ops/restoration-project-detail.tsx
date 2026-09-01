@@ -2635,8 +2635,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                     {dryingPlan.dehumidifierPintsPerDay ?? '—'} PPD
                   </span>
                   <span className="mt-1">
-                    Standard dehumidification factor chart. An initial
-                    recommendation — readings decide when it is dry.
+                    S500-2021 §12.5.3 and the standard dehumidification factor
+                    chart. An initial recommendation — readings decide when it
+                    is dry.
                   </span>
                 </div>
               </details>

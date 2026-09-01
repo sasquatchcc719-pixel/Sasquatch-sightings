@@ -3505,7 +3505,8 @@ adversarial reviewers. Two findings were load-bearing:
    a multiplier is meaningless on the relative scales gypsum and concrete are
    read on. It also contradicted the shipped app. That is exactly the kind of
    checkable false statement that discredits every true statement next to it.
-   The document now cites no standard at all — see below.
+   The S500 is now cited for one thing only: the dry-standard method, which is
+   the one thing the data actually demonstrates.
 2. **Silence on contamination.** On a Cat 2/3 loss the certificate prints
    "Grossly contaminated" on its face and then reports only on moisture. A
    conditional term now fires at `category >= 2` saying the certificate does
@@ -3536,19 +3537,24 @@ which is how every real warranty and certificate handles it.
 - The certificate renders only when at least one point has both a dry standard
   and a reading. Nothing measurable means nothing to put a name to.
 
-### No standards body is named, anywhere
+### The S500 is cited; the IICRC is not
 
 Charles, 2026-08-31: *"I don't want you to mention IICRC whatsoever. Yes I have
 my ASD certification, but it's been lapsed for years."*
 
-Every reference to IICRC, the S500 and ANSI came out of the certificate, the
-report body, and the on-screen dehumidification note. A document that leans on
-a body he is not currently certified by invites the one question he cannot
-answer, and the drying method needs no citation to stand up: the dry standard
-is read off unaffected material of the same type in the same building, and the
-goal is that standard plus two. Both are stated plainly on the page.
+The distinction is the whole point, and the first pass got it wrong by stripping
+both:
 
-No credential is claimed either — no certification numbers, no "certified"
-anywhere. A test asserts the certificate source matches neither
-`/IICRC|S500|ANSI/i` nor `/\bWRT\b|\bASD\b|certified by|accredited/i`, so this
-cannot drift back in.
+- **The S500** is the standard the drying method comes from. An adjuster
+  recognises it, and it is what makes "dry standard" and "drying goal" read as
+  trade practice rather than numbers we invented. It stays, cited by name
+  without the `ANSI/IICRC` prefix — "the S500 Standard for Professional Water
+  Damage Restoration".
+- **The IICRC** is the body that certifies people. Naming it a few inches from
+  Charles's signature implies a credential he does not currently hold, and
+  invites the one question he cannot answer. It is gone from the certificate,
+  the report body, and the on-screen dehumidification note.
+
+No credential is claimed anywhere either — no certification numbers, no
+"certified". A test asserts the certificate cites `S500`, matches no `/IICRC/i`,
+and matches no `/\bWRT\b|\bASD\b|certified by|accredited/i`.

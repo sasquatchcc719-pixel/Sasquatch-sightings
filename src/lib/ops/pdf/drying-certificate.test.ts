@@ -217,12 +217,16 @@ describe('what the certificate must never say', () => {
     expect(flat).toContain('terms on the reverse')
   })
 
-  it('names no standards body and claims no credential', () => {
-    // Charles, 2026-08-31: "I don't want you to mention IICRC whatsoever."
-    // His ASD lapsed years ago, and a certificate leaning on a body he is not
-    // currently certified by invites the one question he cannot answer. The
-    // drying method stands on its own plain description instead.
-    expect(rendered).not.toMatch(/IICRC|S500|ANSI/i)
+  it('cites the S500 method but never the certifying body', () => {
+    // Charles, 2026-08-31: "I don't want you to mention IICRC whatsoever. Yes
+    // I have my ASD certification, but it's been lapsed for years."
+    //
+    // The distinction is the whole point: the S500 is the standard the drying
+    // method comes from and an adjuster recognises it, so citing the method is
+    // worth keeping. The IICRC is the body that certifies people, and naming
+    // it next to his signature implies a credential he no longer holds.
+    expect(flat).toContain('S500')
+    expect(rendered).not.toMatch(/IICRC/i)
     expect(rendered).not.toMatch(/\bWRT\b|\bASD\b|certified by|accredited/i)
   })
 

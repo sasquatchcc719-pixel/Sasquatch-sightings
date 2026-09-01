@@ -570,14 +570,15 @@ export function DryingCertificatePages({ data }: { data: DryingReportData }) {
                 )}`
               : ''}
             . For each monitored material a dry standard was recorded from
-            unaffected material of the same type within the same structure, and
-            a drying goal was established from it. Readings were taken at the
-            monitoring locations identified on the certificate and in the drying
-            log, using a moisture meter, on each documented visit. The
-            certificate reports the value recorded at each point as of the final
-            documented reading, and whether that value was at or below the goal
-            established for that point. The drying log in the attached report
-            forms part of this record.
+            unaffected material of the same type within the same structure, as
+            described in the S500 Standard for Professional Water Damage
+            Restoration, and a drying goal was established from it. Readings
+            were taken at the monitoring locations identified on the certificate
+            and in the drying log, using a moisture meter, on each documented
+            visit. The certificate reports the value recorded at each point as
+            of the final documented reading, and whether that value was at or
+            below the goal established for that point. The drying log in the
+            attached report forms part of this record.
           </Text>
         </View>
 
@@ -608,14 +609,15 @@ export function DryingCertificatePages({ data }: { data: DryingReportData }) {
               The water affecting this property was assessed as Category {cat}{' '}
               at the time of inspection, based on the conditions then observed.
               Category can change over time with temperature, elapsed time, and
-              contact with other materials. Where water is assessed as Category
-              2 or Category 3, mitigation also involves removal or cleaning of
-              affected materials. This certificate reports moisture measurements
-              only. It does not report on, and is not a determination of,
-              whether contamination was removed, whether cleaning was effective,
-              or whether any surface, material, cavity, or contents item is free
-              of bacteria, sewage constituents, or other contaminants. No
-              sampling of any kind was performed.
+              contact with other materials; the definitions in the S500 control.
+              Where water is assessed as Category 2 or Category 3, mitigation
+              also involves removal or cleaning of affected materials. This
+              certificate reports moisture measurements only. It does not report
+              on, and is not a determination of, whether contamination was
+              removed, whether cleaning was effective, or whether any surface,
+              material, cavity, or contents item is free of bacteria, sewage
+              constituents, or other contaminants. No sampling of any kind was
+              performed.
             </Text>
           </View>
         ) : null}
