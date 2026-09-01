@@ -3,7 +3,7 @@ import { createAdminClient } from '@/supabase/server'
 import { validateAgentRequest, checkRateLimit } from '@/lib/agent-auth'
 import { createAiStyleBooking } from '@/lib/ops/create-ai-style-booking'
 import { checkServiceArea } from '@/lib/service-area'
-import { getStaffPrioritizedSlots } from '@/lib/ops/staff-availability'
+import { findStaffForRequestedSlot } from '@/lib/ops/staff-availability'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -128,25 +128,24 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Find available tech via priority routing and validate the slot
+    // Find the tech who is free for this exact slot and validate it. Must scan
+    // every open tech, because GET /api/agent/availability offers the union of
+    // all techs' openings — checking only the highest-priority tech rejected
+    // times it had just advertised.
     const normalizedStart =
       startTime.length === 5 ? `${startTime}:00` : startTime
     const [startHour, startMin] = normalizedStart.split(':').map(Number)
     const minStartMinutes = startHour * 60 + startMin
 
-    const staffResult = await getStaffPrioritizedSlots({
+    const staffResult = await findStaffForRequestedSlot({
       supabase,
       date: appointmentDate,
       requiredMinutes: 120, // default minimum window; exact duration computed inside createAiStyleBooking
+      requestedStartTime: normalizedStart,
       minStartMinutes,
-      maxResults: 8,
     })
 
-    const slotIsAvailable =
-      staffResult !== null &&
-      staffResult.slots.some((slot) => slot.start_time === normalizedStart)
-
-    if (!slotIsAvailable) {
+    if (!staffResult) {
       return NextResponse.json(
         {
           error: `The ${startTime} slot on ${appointmentDate} is not available. Please call GET /api/agent/availability?date=${appointmentDate} to see open times.`,
@@ -155,7 +154,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const assignedStaffUserId = staffResult?.staffUserId ?? null
+    const assignedStaffUserId = staffResult.staffUserId
 
     // AI agent bookings go direct (confirmed immediately) unless the key explicitly
     // overrides to request mode. Service-area approval is no longer forced.

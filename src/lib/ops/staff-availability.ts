@@ -183,3 +183,71 @@ export async function getUnionedSlots(params: {
 
   return union.slice(0, params.maxResults || 8)
 }
+
+/**
+ * Validation scans a tech's whole day instead of the short list the booking UI
+ * renders. getAvailableSlots truncates to maxResults *after* sorting by time,
+ * so a small cap silently drops late-day openings that were genuinely offered.
+ */
+const SLOT_VALIDATION_MAX_RESULTS = 48
+
+function normalizeStartTime(value: string): string {
+  const [hours, minutes] = String(value).split(':').map(Number)
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return ''
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`
+}
+
+/**
+ * Pick the tech whose openings include one exact start time.
+ *
+ * Deliberately scans every tech rather than trusting priority order: the tech
+ * ranked first may be busy at precisely the time the customer chose while a
+ * later one is free for it. Priority still decides ties, since staffSlots
+ * arrives in priority order and the first match wins.
+ */
+export function selectStaffForStartTime(
+  staffSlots: StaffSlotResult[],
+  requestedStartTime: string,
+): StaffSlotResult | null {
+  const requestedStart = normalizeStartTime(requestedStartTime)
+  if (!requestedStart) return null
+
+  return (
+    staffSlots.find((result) =>
+      result.slots.some((slot) => slot.start_time === requestedStart),
+    ) ?? null
+  )
+}
+
+/**
+ * The tech who can actually take one specific requested start time, or null if
+ * nobody is free for it.
+ *
+ * Openings are published as the UNION of every open tech's slots
+ * (getUnionedSlots), so a time is offered whenever ANY tech is free for it. A
+ * booking has to be validated on those same terms: check every open tech for
+ * one whose openings include the requested start, and assign that tech.
+ *
+ * getStaffPrioritizedSlots must never be used for this. It returns the FIRST
+ * tech who has any opening at all, so a time that only a lower-priority tech is
+ * free for gets rejected as "no longer available" even though the customer was
+ * correctly offered it — and the rejection gets more common as the top-priority
+ * tech's day fills up.
+ */
+export async function findStaffForRequestedSlot(params: {
+  supabase: SupabaseClient
+  date: string
+  requiredMinutes: number
+  requestedStartTime: string
+  minStartMinutes?: number
+}): Promise<StaffSlotResult | null> {
+  const staffSlots = await getAllStaffSlots({
+    supabase: params.supabase,
+    date: params.date,
+    requiredMinutes: params.requiredMinutes,
+    minStartMinutes: params.minStartMinutes,
+    maxResults: SLOT_VALIDATION_MAX_RESULTS,
+  })
+
+  return selectStaffForStartTime(staffSlots, params.requestedStartTime)
+}

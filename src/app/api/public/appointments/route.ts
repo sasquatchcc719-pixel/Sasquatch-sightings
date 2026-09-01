@@ -11,7 +11,7 @@ import {
   calculateAppointmentDurationFromTotal,
   timeToMinutes,
 } from '@/lib/ops/availability'
-import { getStaffPrioritizedSlots } from '@/lib/ops/staff-availability'
+import { findStaffForRequestedSlot } from '@/lib/ops/staff-availability'
 import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
 import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
 import { ensureCustomerQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
@@ -450,19 +450,19 @@ export async function POST(request: NextRequest) {
 
     const requestedStart = `${String(sh).padStart(2, '0')}:${String(sm).padStart(2, '0')}:00`
 
-    const staffResult = await getStaffPrioritizedSlots({
+    // Validate against EVERY open tech, the same way /api/public/availability
+    // publishes openings (getUnionedSlots). Checking only the highest-priority
+    // tech rejected times that a lower-priority tech was free for — times the
+    // widget had correctly offered — with "no longer available".
+    const staffResult = await findStaffForRequestedSlot({
       supabase,
       date: appointmentDate,
       requiredMinutes: buffered,
+      requestedStartTime: requestedStart,
       minStartMinutes,
-      maxResults: 8,
     })
 
-    const slotIsStillAvailable =
-      staffResult !== null &&
-      staffResult.slots.some((slot) => slot.start_time === requestedStart)
-
-    if (!slotIsStillAvailable) {
+    if (!staffResult) {
       return NextResponse.json(
         {
           error:
@@ -472,7 +472,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const assignedStaffUserId = staffResult?.staffUserId ?? null
+    const assignedStaffUserId = staffResult.staffUserId
     let technicianSchedule = 'Unassigned'
     if (assignedStaffUserId) {
       const { data: staffUser, error: staffError } = await supabase
