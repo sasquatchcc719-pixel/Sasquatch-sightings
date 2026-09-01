@@ -9,7 +9,9 @@ const positions = [
     appointment_id: 'monitor-mon',
     map_x: 12,
     map_y: 3,
-    moved_at: '2026-08-31T09:00:00-06:00',
+    visit_date: '2026-08-31',
+    // Entered days later. The move still belongs to the 31st.
+    moved_at: '2026-09-04T22:00:00-06:00',
   },
 ]
 
@@ -63,5 +65,24 @@ describe('movesOnVisit', () => {
     expect(movesOnVisit(positions, 'monitor-mon')).toBe(1)
     expect(movesOnVisit(positions, 'monitor-tue')).toBe(0)
     expect(movesOnVisit(positions, null)).toBe(0)
+  })
+})
+
+describe('a move entered after the fact', () => {
+  it('belongs to the day it was made, not the day it was typed', () => {
+    // The same fault that broke readings and equipment billing: this row was
+    // written on the 4th for a move made on the 31st.
+    const onTheDay = positionForVisit(fan, positions, {
+      id: 'monitor-mon',
+      appointment_date: '2026-08-31',
+    })
+    expect(onTheDay).toMatchObject({ x: 12, y: 3, movedOnThisVisit: true })
+
+    // And the day before it still shows the original spot.
+    const dayBefore = positionForVisit(fan, positions, {
+      id: 'monitor-sun',
+      appointment_date: '2026-08-30',
+    })
+    expect(dayBefore).toMatchObject({ x: 4, y: 4 })
   })
 })

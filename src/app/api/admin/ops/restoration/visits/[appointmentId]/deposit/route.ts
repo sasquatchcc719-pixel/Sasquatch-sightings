@@ -32,7 +32,7 @@ export async function POST(
 
     const { data: appointment } = await supabase
       .from('ops_appointments')
-      .select('id, restoration_project_id')
+      .select('id, restoration_project_id, appointment_date')
       .eq('id', appointmentId)
       .maybeSingle()
     if (!appointment?.restoration_project_id) {
@@ -48,7 +48,19 @@ export async function POST(
         amount_cents: amountCents,
         square_payment_id: body.square_payment_id ?? null,
         square_order_id: body.square_order_id ?? null,
-        paid_at: body.paid_at ?? new Date().toISOString(),
+        /**
+         * The day the money changed hands, which is the visit's day — not the
+         * moment it was typed. Recording Saturday's Square payment on Monday
+         * dated it Monday, and revenue is reported by date.
+         *
+         * A caller may still pass an explicit `paid_at` for money taken on no
+         * visit at all.
+         */
+        paid_at:
+          body.paid_at ??
+          (appointment.appointment_date
+            ? new Date(`${appointment.appointment_date}T12:00:00`).toISOString()
+            : new Date().toISOString()),
         recorded_by_user_id: access.id,
         note: body.note ?? null,
       })

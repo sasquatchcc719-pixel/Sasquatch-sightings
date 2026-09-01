@@ -3194,3 +3194,56 @@ system.
 All nine units are set down on 31 Aug and none pulled to a later day, so the
 current figures are unchanged — 6 fans running and 2 pulled, one day each. The
 difference will show tomorrow, and on every job entered after the fact.
+
+## Audit: every date in the system
+
+Charles: *"now that we've discovered the same problem across many different parts
+of the system, is there anything else that you left out?"*
+
+A fair question after finding the same fault three times. Every timestamp and
+date column in the restoration tables, checked against how it is written:
+
+| Column | Written as | Verdict |
+| --- | --- | --- |
+| `restoration_readings.taken_at` | visit's date, trigger-enforced | fixed earlier |
+| `restoration_air_readings.taken_at` | visit's date, trigger-enforced | fixed earlier |
+| `restoration_equipment_placements.placed_on` / `removed_on` | visit's date | fixed earlier |
+| **`restoration_equipment_positions.moved_at`** | **`now()`** | **same fault — fixed here** |
+| **`ops_payments.paid_at`** | **`now()`** | **same fault — fixed here** |
+| `ops_job_photos.captured_at` | EXIF from the file | correct |
+| `restoration_projects.closed_at`, `estimate_sent_at`, `estimate_signed_at`, `first_response_at` | `now()` | correct — these ARE moments |
+| `restoration_reading_points.retired_at` | `now()` | correct, same reason |
+| `restoration_projects.loss_date` | entered by hand | correct |
+| `restoration_category_events.effective_at` | `now()` | see below |
+
+### Equipment positions
+
+`positionForVisit` filtered and sorted by `moved_at`, so a Saturday move entered
+on Monday sorted as Monday — the plan would have drawn it on the wrong days, and
+the whole point of per-visit positions is showing which day the gear moved. Moves
+now carry the visit's date and are ordered by it.
+
+### Recorded payments
+
+`paid_at` defaulted to the moment of typing, so recording Saturday's Square
+payment on Monday dated it Monday. Revenue is reported by date, so that is
+misstated income, not just a display quirk. It now takes the visit's day, with an
+explicit `paid_at` still accepted for money taken on no visit at all.
+
+### Left alone, deliberately
+
+**`effective_at` on a category change** is a `now()` and stays one. Upgrading a
+loss from Category 2 to 3 is a judgment made at a moment, not a fact about a day,
+and the report prints it as "when this was reassessed". If it ever needs
+backdating, that wants a date the user picks, not a rule.
+
+**`restoration_dehu_readings`** is dead — its only writer was the duplicate card,
+and it holds no rows. Left in place rather than dropped; there is no cost to an
+empty table and dropping one is not a thing to do casually.
+
+### The pattern worth remembering
+A timestamp is right when it records **an event the system itself performed** —
+closing a project, sending an estimate. It is wrong whenever it stands in for
+**something that happened in the field**, because that is entered afterwards. The
+question to ask of any new date column is simply: *did the software do this, or
+is somebody telling the software about it?*

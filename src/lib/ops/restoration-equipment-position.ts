@@ -17,6 +17,14 @@ export type EquipmentPosition = {
   appointment_id: string
   map_x: number | null
   map_y: number | null
+  /**
+   * The DAY of the visit this move was made on — not when the row was written.
+   *
+   * Ordering by the write time had the same fault that broke readings and
+   * equipment billing: a Saturday move entered on Monday sorts as Monday, so
+   * the plan would show it on the wrong days.
+   */
+  visit_date: string | null
   moved_at: string
 }
 
@@ -46,10 +54,9 @@ export function positionForVisit(
   }
 
   if (visit.appointment_date) {
-    const cutoff = new Date(`${visit.appointment_date}T23:59:59`).getTime()
     const earlier = mine
-      .filter((p) => new Date(p.moved_at).getTime() <= cutoff)
-      .sort((a, b) => new Date(b.moved_at).getTime() - new Date(a.moved_at).getTime())[0]
+      .filter((p) => (p.visit_date ?? '') !== '' && p.visit_date! <= visit.appointment_date!)
+      .sort((a, b) => (b.visit_date ?? '').localeCompare(a.visit_date ?? ''))[0]
     if (earlier) {
       return { x: earlier.map_x, y: earlier.map_y, movedOnThisVisit: false }
     }

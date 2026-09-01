@@ -158,6 +158,7 @@ type Detail = {
     appointment_id: string
     map_x: number | null
     map_y: number | null
+    visit_date: string | null
     moved_at: string
   }>
   equipment_billing: Array<{

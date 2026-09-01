@@ -137,7 +137,9 @@ export async function GET(
         : Promise.resolve({ data: [] as unknown[] }),
       supabase
         .from('restoration_equipment_positions')
-        .select('placement_id, appointment_id, map_x, map_y, moved_at')
+        .select(
+          'placement_id, appointment_id, map_x, map_y, moved_at, ops_appointments(appointment_date)',
+        )
         .in(
           'placement_id',
           (
@@ -171,7 +173,22 @@ export async function GET(
       estimate_lines: estimateLines ?? [],
       openings: openings ?? [],
       equipment_billing: billing ?? [],
-      equipment_positions: positions ?? [],
+      // The visit's DAY travels with each move, so the plan can order them by
+      // when the move was made rather than when the row was written.
+      equipment_positions: (positions ?? []).map((row) => {
+        const visit = Array.isArray(row.ops_appointments)
+          ? row.ops_appointments[0]
+          : row.ops_appointments
+        return {
+          placement_id: row.placement_id,
+          appointment_id: row.appointment_id,
+          map_x: row.map_x,
+          map_y: row.map_y,
+          moved_at: row.moved_at,
+          visit_date:
+            (visit as { appointment_date?: string } | null)?.appointment_date ?? null,
+        }
+      }),
       reading_points: points ?? [],
       air_readings: air ?? [],
       category_events: categoryEvents ?? [],
