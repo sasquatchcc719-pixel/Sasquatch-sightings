@@ -40,6 +40,22 @@ export async function POST(
       return NextResponse.json({ error: 'project_not_active' }, { status: 409 })
     }
 
+    /**
+     * The DAY it was set down, taken from the visit being worked — not from the
+     * clock. Equipment is entered after the fact as often as not, and billing
+     * from the moment of typing charged one day for fans that had been running
+     * since Saturday.
+     */
+    const { data: visit } = body.appointment_id
+      ? await supabase
+          .from('ops_appointments')
+          .select('appointment_date')
+          .eq('id', String(body.appointment_id))
+          .maybeSingle()
+      : { data: null }
+
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Denver' })
+    const placedOn = String(body.placed_on ?? visit?.appointment_date ?? today)
     const placedAt = body.placed_at ? String(body.placed_at) : new Date().toISOString()
     const { data, error } = await supabase
       .from('restoration_equipment_placements')
@@ -52,9 +68,10 @@ export async function POST(
           map_x: body.map_x ?? null,
           map_y: body.map_y ?? null,
           placed_at: placedAt,
+          placed_on: placedOn,
         })),
       )
-      .select('id, catalog_code, placed_at, removed_at')
+      .select('id, catalog_code, placed_at, placed_on, removed_at, removed_on')
 
     if (error) throw error
     return NextResponse.json({ placed: data ?? [] })

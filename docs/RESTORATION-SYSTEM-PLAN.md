@@ -3150,3 +3150,47 @@ day" is the property, not any particular number.
 
 The Money card still shows the job's running total to now. That one is the bottom
 line, and it should not change because of which visit is selected.
+
+## Equipment bills by calendar days, not by elapsed clock time
+
+Charles: *"that's fucking stupid considering we're backfilling data isn't it? It
+should just be daily 24 hour periods that have to do with the calendar days that
+they sit on. Your entire logic that you're currently using is wrong."*
+
+He is right, and it is the **same fault already fixed for readings and not
+carried across**. Readings were dated by the moment they were typed until that
+was corrected to the visit's date; equipment was still billing from elapsed hours
+since `placed_at`, which is also the moment somebody reached a keyboard.
+
+The consequence: he set eight fans on the mitigation day and entered them two
+days later, and the job billed **one day** of rental for equipment that had been
+running since Saturday. No amount of tuning the hours formula fixes that, because
+the timestamp is not a fact about the fan.
+
+### What it does now
+
+`placed_on` and `removed_on` are **dates**, taken from the visit being worked.
+Billing counts nights on the job:
+
+```
+days = max(1, removed_on - placed_on)
+```
+
+Set Saturday, pulled Tuesday: **three days** — which is exactly what his own
+estimate said for eight fans, and the first time the two numbers have agreed.
+Set down and collected the same afternoon is one, because that is still a day's
+rental and a trip.
+
+Placing equipment sends the visit; so does pulling it. Enter Saturday's fans on
+Monday and they bill from Saturday. The old timestamps are kept and still
+recorded, but nothing bills from them.
+
+A database trigger fills the days from the timestamps when a caller does not
+supply them — a NOT NULL column every caller must remember is a column that will
+one day be forgotten, and this has been the recurring shape of every bug in this
+system.
+
+### Jill's job, after the change
+All nine units are set down on 31 Aug and none pulled to a later day, so the
+current figures are unchanged — 6 fans running and 2 pulled, one day each. The
+difference will show tomorrow, and on every job entered after the fact.

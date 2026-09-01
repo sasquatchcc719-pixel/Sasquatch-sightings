@@ -147,6 +147,8 @@ type Detail = {
     catalog_code: string
     placed_at: string
     removed_at: string | null
+    placed_on: string
+    removed_on: string | null
     area_id: string | null
     map_x: number | null
     map_y: number | null
@@ -575,7 +577,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
    * total.
    */
   const ledgerMoment = useMemo(
-    () => ledgerAsOf(activeVisitDate, new Date()),
+    () => ledgerAsOf(activeVisitDate, toDateKey(new Date())),
     [activeVisitDate],
   )
   const ledger = useMemo(
@@ -2003,7 +2005,10 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                         {
                           method: 'PATCH',
                           headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ removed_at: new Date().toISOString() }),
+                          body: JSON.stringify({
+                            removed_at: new Date().toISOString(),
+                            appointment_id: activeVisitId,
+                          }),
                         },
                       )
                       await load()
@@ -2669,6 +2674,9 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                       body: JSON.stringify({
                         catalog_code: equipment.code,
                         count: Math.max(1, Math.floor(Number(placeCount) || 1)),
+                        // Set down on the day being worked, not the day it was
+                        // typed — equipment gets entered after the fact.
+                        appointment_id: activeVisitId,
                       }),
                     },
                     `place-${equipment.code}`,
@@ -2717,16 +2725,18 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                           {line.units.map((unit, index) => (
                             <span key={unit.id} className="tabular-nums">
                               #{index + 1} ·{' '}
-                              {new Date(unit.placedAt).toLocaleDateString('en-US', {
-                                month: 'short',
-                                day: 'numeric',
-                              })}
-                              {unit.removedAt
-                                ? ` → pulled ${new Date(unit.removedAt).toLocaleDateString(
-                                    'en-US',
-                                    { month: 'short', day: 'numeric' },
-                                  )} after ${unit.hours}h`
-                                : ` → running, ${unit.hours}h so far`}{' '}
+                              {new Date(`${unit.placedOn}T12:00:00`).toLocaleDateString(
+                                'en-US',
+                                { month: 'short', day: 'numeric' },
+                              )}
+                              {unit.removedOn
+                                ? ` → pulled ${new Date(
+                                    `${unit.removedOn}T12:00:00`,
+                                  ).toLocaleDateString('en-US', {
+                                    month: 'short',
+                                    day: 'numeric',
+                                  })}`
+                                : ' → still running'}{' '}
                               · {unit.days} day{unit.days === 1 ? '' : 's'}
                             </span>
                           ))}
@@ -2776,7 +2786,12 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                       onClick={() =>
                         void call(
                           `/api/admin/ops/restoration/equipment/${ids[ids.length - 1]}`,
-                          { method: 'PATCH', body: JSON.stringify({}) },
+                          {
+                            method: 'PATCH',
+                            // Pulled on the day being worked, which is the day
+                            // that stops the clock.
+                            body: JSON.stringify({ appointment_id: activeVisitId }),
+                          },
                           `pull-${code}`,
                         )
                       }
@@ -2793,7 +2808,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                           await fetch(`/api/admin/ops/restoration/equipment/${id}`, {
                             method: 'PATCH',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({}),
+                            body: JSON.stringify({ appointment_id: activeVisitId }),
                           })
                         }
                         await load()

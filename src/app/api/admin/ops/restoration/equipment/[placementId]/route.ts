@@ -78,11 +78,33 @@ export async function PATCH(
           ? String(body.removed_at)
           : new Date().toISOString()
 
+    /**
+     * The DAY it came out, from the visit it was pulled on. Billing counts the
+     * days a unit sat on the job, so what matters is which day that was, not
+     * what time the row was written.
+     */
+    const { data: pullVisit } = body.appointment_id
+      ? await supabase
+          .from('ops_appointments')
+          .select('appointment_date')
+          .eq('id', String(body.appointment_id))
+          .maybeSingle()
+      : { data: null }
+
+    const removedOn =
+      removedAt === null
+        ? null
+        : String(
+            body.removed_on ??
+              pullVisit?.appointment_date ??
+              new Date().toLocaleDateString('en-CA', { timeZone: 'America/Denver' }),
+          )
+
     const { data, error } = await supabase
       .from('restoration_equipment_placements')
-      .update({ removed_at: removedAt })
+      .update({ removed_at: removedAt, removed_on: removedOn })
       .eq('id', placementId)
-      .select('id, catalog_code, placed_at, removed_at')
+      .select('id, catalog_code, placed_at, placed_on, removed_at, removed_on')
       .maybeSingle()
 
     if (error) throw error

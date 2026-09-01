@@ -405,7 +405,7 @@ describe('equipment quoted on the estimate', () => {
     expect(running!.every((r) => r.map_x === null)).toBe(true)
   })
 
-  it('accrues days from the clock, not from the quoted three', async () => {
+  it('accrues days from the calendar, not from the quoted three', async () => {
     const { data: billing } = await supabase
       .from('restoration_equipment_billing')
       .select('catalog_code, units, unit_days')
@@ -414,7 +414,7 @@ describe('equipment quoted on the estimate', () => {
       .single()
 
     expect(Number(billing!.units)).toBe(8)
-    // Placed seconds ago, so one day so far — NOT the three that were quoted.
+    // Set down today, so one day each so far — NOT the three that were quoted.
     expect(Number(billing!.unit_days)).toBe(8)
   })
 })

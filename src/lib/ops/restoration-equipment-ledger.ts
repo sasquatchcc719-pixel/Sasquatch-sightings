@@ -17,15 +17,15 @@
 export type Placement = {
   id: string
   catalog_code: string
-  placed_at: string
-  removed_at: string | null
+  /** The DAY it was set down. Not when the row was typed. */
+  placed_on: string
+  removed_on: string | null
 }
 
 export type UnitLine = {
   id: string
-  placedAt: string
-  removedAt: string | null
-  hours: number
+  placedOn: string
+  removedOn: string | null
   days: number
 }
 
@@ -38,22 +38,30 @@ export type LedgerLine = {
 }
 
 /**
- * Days a single unit has accrued.
+ * Days a single unit has accrued, counted on the calendar.
  *
- * Billed in 24-hour periods from when it was set down, with a one-hour grace so
- * a job that runs three days and ten minutes is not charged four. Never less
- * than one: equipment set down and pulled the same afternoon still cost a day's
- * rental and a trip.
+ * Nights on the job: set down Saturday and pulled Tuesday is three days, which
+ * is how the work is quoted and how the trade bills it. Never fewer than one —
+ * equipment set down and collected the same afternoon still cost a day's rental
+ * and a trip.
+ *
+ * Deliberately NOT elapsed hours. The data is routinely entered after the fact,
+ * so a timestamp records when Charles reached a keyboard, and billing from it
+ * charged one day for fans that had been running since Saturday.
  */
-export function unitDays(placedAt: string, removedAt: string | null, now: Date): number {
-  const start = new Date(placedAt).getTime()
-  const end = removedAt ? new Date(removedAt).getTime() : now.getTime()
+export function unitDays(
+  placedOn: string,
+  removedOn: string | null,
+  today: string,
+): number {
+  const start = Date.parse(`${placedOn}T12:00:00Z`)
+  const end = Date.parse(`${removedOn ?? today}T12:00:00Z`)
   if (!Number.isFinite(start) || !Number.isFinite(end)) return 1
-  const hours = (end - start) / 3_600_000
-  return Math.max(1, Math.ceil((hours - 1) / 24))
+  const days = Math.round((end - start) / 86_400_000)
+  return Math.max(1, days)
 }
 
-export function equipmentLedger(placements: Placement[], now: Date): LedgerLine[] {
+export function equipmentLedger(placements: Placement[], today: string): LedgerLine[] {
   const byCode = new Map<string, LedgerLine>()
 
   for (const placement of placements) {
@@ -61,20 +69,16 @@ export function equipmentLedger(placements: Placement[], now: Date): LedgerLine[
       byCode.get(placement.catalog_code) ??
       { code: placement.catalog_code, running: 0, pulled: 0, unitDays: 0, units: [] }
 
-    const days = unitDays(placement.placed_at, placement.removed_at, now)
-    const end = placement.removed_at ? new Date(placement.removed_at) : now
-    const hours =
-      (end.getTime() - new Date(placement.placed_at).getTime()) / 3_600_000
+    const days = unitDays(placement.placed_on, placement.removed_on, today)
 
     line.units.push({
       id: placement.id,
-      placedAt: placement.placed_at,
-      removedAt: placement.removed_at,
-      hours: Math.round(hours * 10) / 10,
+      placedOn: placement.placed_on,
+      removedOn: placement.removed_on,
       days,
     })
     line.unitDays += days
-    if (placement.removed_at) line.pulled += 1
+    if (placement.removed_on) line.pulled += 1
     else line.running += 1
 
     byCode.set(placement.catalog_code, line)
@@ -82,31 +86,23 @@ export function equipmentLedger(placements: Placement[], now: Date): LedgerLine[
 
   return [...byCode.values()].map((line) => ({
     ...line,
-    units: line.units.sort(
-      (a, b) => new Date(a.placedAt).getTime() - new Date(b.placedAt).getTime(),
-    ),
+    units: line.units.sort((a, b) => a.placedOn.localeCompare(b.placedOn)),
   }))
 }
 
 /**
- * The moment to compute a ledger against, for the visit being viewed.
+ * The day to compute a ledger against, for the visit being viewed.
  *
- * Equipment accrues continuously, so "what does this job owe" and "what did it
- * owe on Monday" are different questions and the screen was only ever answering
- * the first. Looking back at Monday showed Wednesday's total, which hides the
- * daily climb that is the whole shape of a drying job.
- *
- * End of the visit's day, never later than now — a visit in the future has
- * accrued nothing yet.
+ * Looking back at Monday should show what the job owed on Monday, not today's
+ * total — otherwise the daily climb, which is the shape of a drying job, is
+ * invisible. Never later than today: a visit in the future has accrued nothing.
  */
-export function ledgerAsOf(visitDate: string | null, now: Date): Date {
-  if (!visitDate) return now
-  const endOfDay = new Date(`${visitDate}T23:59:59`)
-  if (Number.isNaN(endOfDay.getTime())) return now
-  return endOfDay > now ? now : endOfDay
+export function ledgerAsOf(visitDate: string | null, today: string): string {
+  if (!visitDate) return today
+  return visitDate > today ? today : visitDate
 }
 
-/** Units that had actually been placed by that moment. */
-export function placementsAsOf(placements: Placement[], asOf: Date): Placement[] {
-  return placements.filter((p) => new Date(p.placed_at).getTime() <= asOf.getTime())
+/** Units that had actually been set down by that day. */
+export function placementsAsOf(placements: Placement[], asOf: string): Placement[] {
+  return placements.filter((p) => p.placed_on <= asOf)
 }
