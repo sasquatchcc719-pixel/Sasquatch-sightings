@@ -200,41 +200,50 @@ describe('what the certificate must never say', () => {
   const rendered = source
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/(^|[^:])\/\/.*$/gm, '$1')
+  /** Line breaks in JSX are not meaning — collapse them before matching. */
+  const flat = rendered.replace(/\s+/g, ' ')
 
   it('never claims the structure itself is dry', () => {
     // The bounded claim — each point reached the goal set for it, against a
     // benchmark printed on the same page — is the whole basis of the document.
     // "The structure is dry" is unbounded and is not what a meter measures.
-    expect(rendered).toContain('had reached\n              the drying goals')
+    expect(flat).toContain('had reached the drying goals')
     // The phrase only ever appears inside a sentence denying it.
     expect(rendered).not.toMatch(/the structure is dry(?!,)/)
   })
 
   it('carries the protective line on the face of the certificate', () => {
-    expect(rendered).toContain('not a determination that the structure or')
-    expect(rendered).toContain('terms\n          on the reverse')
+    expect(flat).toContain('not a determination that the structure or')
+    expect(flat).toContain('terms on the reverse')
   })
 
-  it('does not attribute the drying-goal tolerance to the S500', () => {
-    // An earlier draft footnoted "standard x 1.10" as an S500 "general-materials
-    // tolerance". No such tolerance exists — a checkable false citation on a
-    // document that goes to a carrier. S500 is cited only for the dry-standard
-    // method, which is the one thing the data actually demonstrates.
+  it('names no standards body and claims no credential', () => {
+    // Charles, 2026-08-31: "I don't want you to mention IICRC whatsoever."
+    // His ASD lapsed years ago, and a certificate leaning on a body he is not
+    // currently certified by invites the one question he cannot answer. The
+    // drying method stands on its own plain description instead.
+    expect(rendered).not.toMatch(/IICRC|S500|ANSI/i)
+    expect(rendered).not.toMatch(/\bWRT\b|\bASD\b|certified by|accredited/i)
+  })
+
+  it('does not invent a tolerance and attribute it to a standard', () => {
+    // An earlier draft derived the goal as "standard x 1.10" and footnoted it
+    // as a "general-materials tolerance" from the standard. No such tolerance
+    // exists — a checkable false citation on a document that goes to a carrier.
     expect(rendered).not.toMatch(/general-materials tolerance/i)
-    expect(rendered).not.toMatch(/\* 1\.10|\u00d7 1\.10/)
+    expect(rendered).not.toMatch(/general materials tolerance/i)
     expect(rendered).not.toMatch(/performed and documented consistent with/i)
-    expect(rendered).toContain('as\n            described in ANSI/IICRC S500')
   })
 
   it('discloses contamination scope on Category 2 and 3', () => {
-    expect(rendered).toContain('Category of water')
-    expect(rendered).toContain('free of bacteria, sewage')
+    expect(flat).toContain('Category of water')
+    expect(flat).toContain('free of bacteria, sewage')
     expect(rendered).toMatch(/cat >= 2/)
   })
 
   it('keeps the no-third-party-reliance term', () => {
-    expect(rendered).toContain('may not be relied upon by')
-    expect(rendered).toContain('prospective purchaser, tenant,')
+    expect(flat).toContain('may not be relied upon by')
+    expect(flat).toContain('prospective purchaser, tenant,')
   })
 
   it('prints no "%" against readings the meter does not read in percent', () => {

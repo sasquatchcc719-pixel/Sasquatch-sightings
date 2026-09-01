@@ -585,9 +585,8 @@ export function DryingReportPDF({ data }: { data: DryingReportData }) {
               </View>
             ))}
             <Text style={[styles.muted, { marginTop: 3 }]}>
-              Per IICRC S500, category is assessed at the time work is
-              performed; a Category 1 loss degrades with dwell time and
-              contamination.
+              Category is assessed at the time work is performed; a Category 1
+              loss degrades with dwell time and contamination.
             </Text>
           </View>
         ) : null}

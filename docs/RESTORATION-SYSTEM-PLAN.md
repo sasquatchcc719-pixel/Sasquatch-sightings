@@ -3505,8 +3505,7 @@ adversarial reviewers. Two findings were load-bearing:
    a multiplier is meaningless on the relative scales gypsum and concrete are
    read on. It also contradicted the shipped app. That is exactly the kind of
    checkable false statement that discredits every true statement next to it.
-   S500 is now cited for one thing only: the dry-standard method, which is the
-   one thing the data actually demonstrates.
+   The document now cites no standard at all — see below.
 2. **Silence on contamination.** On a Cat 2/3 loss the certificate prints
    "Grossly contaminated" on its face and then reports only on moisture. A
    conditional term now fires at `category >= 2` saying the certificate does
@@ -3536,3 +3535,20 @@ which is how every real warranty and certificate handles it.
   label printed straight through the column beside it.
 - The certificate renders only when at least one point has both a dry standard
   and a reading. Nothing measurable means nothing to put a name to.
+
+### No standards body is named, anywhere
+
+Charles, 2026-08-31: *"I don't want you to mention IICRC whatsoever. Yes I have
+my ASD certification, but it's been lapsed for years."*
+
+Every reference to IICRC, the S500 and ANSI came out of the certificate, the
+report body, and the on-screen dehumidification note. A document that leans on
+a body he is not currently certified by invites the one question he cannot
+answer, and the drying method needs no citation to stand up: the dry standard
+is read off unaffected material of the same type in the same building, and the
+goal is that standard plus two. Both are stated plainly on the page.
+
+No credential is claimed either — no certification numbers, no "certified"
+anywhere. A test asserts the certificate source matches neither
+`/IICRC|S500|ANSI/i` nor `/\bWRT\b|\bASD\b|certified by|accredited/i`, so this
+cannot drift back in.
