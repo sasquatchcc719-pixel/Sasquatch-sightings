@@ -228,3 +228,56 @@ describe('drying report floor plan', () => {
     expect(plan!.equipment[0].y).toBe(5)
   })
 })
+
+describe('drying report visit order', () => {
+  const visitIds: string[] = []
+
+  afterAll(async () => {
+    await supabase.from('ops_appointments').delete().in('id', visitIds)
+  })
+
+  it('orders the daily monitoring notes by calendar date, not queue sequence', async () => {
+    // Queued out of calendar order: sequence 1 lands on the 29th, sequence 3
+    // on the 30th, sequence 2 on the 31st — exactly what dragging a monitor
+    // onto whatever slot fits produces.
+    const rows = [
+      { date: '2026-08-29', sequence: 1, note: 'day one' },
+      { date: '2026-08-31', sequence: 2, note: 'day three' },
+      { date: '2026-08-30', sequence: 3, note: 'day two' },
+    ]
+    const { data: inserted } = await supabase
+      .from('ops_appointments')
+      .insert(
+        rows.map((r) => ({
+          customer_id: customerId,
+          service_address_id: addressId,
+          booking_channel: 'admin',
+          source: 'integration_test',
+          status: 'completed',
+          payment_status: 'unpaid',
+          quickbooks_sync_status: 'held',
+          appointment_date: r.date,
+          start_time: '09:00',
+          end_time: '13:00',
+          quoted_total: 0,
+          kind: 'restoration',
+          restoration_project_id: projectId,
+          visit_type: 'monitor',
+          visit_sequence: r.sequence,
+          restoration_visit_note: r.note,
+          internal_notes: MARKER,
+        })),
+      )
+      .select('id')
+    visitIds.push(...inserted!.map((v) => v.id))
+
+    const built = await buildDryingReportData(supabase, projectId, false)
+    const notedVisits = built!.data.visits.filter((v) => v.note)
+
+    expect(notedVisits.map((v) => v.date)).toEqual([
+      '2026-08-29',
+      '2026-08-30',
+      '2026-08-31',
+    ])
+  })
+})

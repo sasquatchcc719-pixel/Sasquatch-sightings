@@ -73,11 +73,15 @@ export async function buildDryingReportData(
   const { data: visits } = await supabase
     .from('ops_appointments')
     .select(
-      `id, appointment_date, visit_type, visit_sequence, restoration_visit_note,
+      `id, appointment_date, start_time, visit_type, visit_sequence, restoration_visit_note,
        ops_appointment_line_items ( name_snapshot, quantity, line_total, pricing_unit_snapshot )`,
     )
     .eq('restoration_project_id', projectId)
-    .order('visit_sequence', { nullsFirst: false })
+    // Chronological, not by sequence number — monitors are queued by dragging
+    // onto whatever slot fits, so the third one queued is often the second one
+    // worked. Same fix as the project detail route.
+    .order('appointment_date')
+    .order('start_time')
 
   const visitIds = (visits ?? []).map((v) => v.id)
 
