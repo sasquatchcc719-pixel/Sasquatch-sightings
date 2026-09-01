@@ -109,6 +109,11 @@ export type DryingReportData = {
   includePhotos: boolean
 }
 
+// Same URL already used for the logo in ops emails (communications.ts,
+// drip-campaign.ts) — kept as a fixed production URL rather than derived from
+// a request origin, since react-pdf fetches it directly during rendering.
+const LOGO_URL = 'https://sightings.sasquatchcarpet.com/sasquatch-logo.png'
+
 const CHART_COLORS = [
   '#0284c7',
   '#059669',
@@ -389,6 +394,12 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     marginBottom: 14,
   },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  logo: { width: 110, height: 47 },
   title: { fontSize: 18, fontFamily: 'Helvetica-Bold', color: '#0e6577' },
   sub: { fontSize: 9, color: '#5c757f', marginTop: 2 },
   section: { marginTop: 14 },
@@ -491,10 +502,16 @@ export function DryingReportPDF({ data }: { data: DryingReportData }) {
     <Document>
       <Page size="LETTER" style={styles.page}>
         <View style={styles.header}>
-          <Text style={styles.title}>Water Mitigation Report</Text>
-          <Text style={styles.sub}>
-            {data.company.name} · {data.company.phone} · {data.company.web}
-          </Text>
+          <View style={styles.headerRow}>
+            <View>
+              <Text style={styles.title}>Water Mitigation Report</Text>
+              <Text style={styles.sub}>
+                {data.company.name} · {data.company.phone} · {data.company.web}
+              </Text>
+            </View>
+            {/* eslint-disable-next-line jsx-a11y/alt-text -- react-pdf's Image is not an HTML img */}
+            <Image src={LOGO_URL} style={styles.logo} />
+          </View>
         </View>
 
         <View style={styles.row}>
