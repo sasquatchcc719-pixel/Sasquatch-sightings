@@ -2715,8 +2715,7 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                         {row.description}
                       </span>
                       <span className="text-muted-foreground whitespace-nowrap text-xs tabular-nums">
-                        {line?.unitDays ?? 0} unit-day
-                        {(line?.unitDays ?? 0) === 1 ? '' : 's'}
+                        {money(Number(row.unit_price))} × {line?.unitDays ?? 0}d
                       </span>
                       <span className="w-20 text-right font-medium">
                         {money((line?.unitDays ?? 0) * Number(row.unit_price))}

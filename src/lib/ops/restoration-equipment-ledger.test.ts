@@ -20,15 +20,28 @@ describe('unitDays', () => {
     expect(unitDays('2026-08-31', '2026-08-31', TODAY)).toBe(1)
   })
 
-  it('keeps counting while a unit is still running', () => {
-    expect(unitDays('2026-08-29', null, TODAY)).toBe(2)
+  it('assumes the planned three days for a unit still running', () => {
+    // "Default equipment to three days on day one" — the same default the
+    // estimate quotes, so day one already agrees with the quote.
+    expect(unitDays('2026-08-29', null, '2026-08-29')).toBe(3)
+    expect(unitDays('2026-08-29', null, TODAY)).toBe(3)
     expect(unitDays('2026-08-29', null, '2026-09-01')).toBe(3)
   })
 
+  it('keeps counting past the plan once the job outruns it', () => {
+    expect(unitDays('2026-08-29', null, '2026-09-03')).toBe(5)
+  })
+
+  it('bills a pulled unit only for the days it actually ran', () => {
+    // Pulled after two nights: two days, not the planned three. "If we pull
+    // equipment, it needs to calculate the final total."
+    expect(unitDays('2026-08-29', '2026-08-31', TODAY)).toBe(2)
+  })
+
   it('does not care what time of day anything was entered', () => {
-    // The whole point: Charles enters Saturday's equipment on Monday, and it
-    // still bills from Saturday.
-    expect(unitDays('2026-08-29', null, TODAY)).toBe(2)
+    // Charles enters Saturday's equipment on Monday; it still bills from
+    // Saturday.
+    expect(unitDays('2026-08-29', '2026-09-01', '2026-09-05')).toBe(3)
   })
 })
 
@@ -49,12 +62,14 @@ describe('equipmentLedger', () => {
     { id: 'dehu', catalog_code: 'DHM>>', placed_on: '2026-08-29', removed_on: null },
   ]
 
-  it('separates what is running from what has been billed', () => {
+  it("produces exactly Charles's arithmetic for his own job", () => {
+    // "I put eight fans in a building for three days, that's 24. I took two
+    // out so that's gonna be 22." Six still running at the planned three days
+    // each, two pulled after two nights.
     const [fans] = equipmentLedger(placements, TODAY).filter((l) => l.code === 'DRY')
     expect(fans.running).toBe(6)
     expect(fans.pulled).toBe(2)
-    // Six running two days, two pulled after two days: sixteen.
-    expect(fans.unitDays).toBe(16)
+    expect(fans.unitDays).toBe(22)
   })
 
   it('keeps billing a pulled unit for the days it ran', () => {
@@ -83,20 +98,19 @@ describe('what the equipment had cost on a given day', () => {
   ]
   const today = '2026-09-02'
 
-  it('climbs day by day, which is the shape of a drying job', () => {
+  it('opens at the plan and holds it until the job outruns it', () => {
     const days = ['2026-08-29', '2026-08-30', '2026-08-31', '2026-09-01'].map((day) => {
       const asOf = ledgerAsOf(day, today)
       const [line] = equipmentLedger(placementsAsOf(placements, asOf), asOf)
       return line?.unitDays ?? 0
     })
-    // 29th: one fan, one day. 30th: still one fan, still one day (a fan set
-    // yesterday has done one night). 31st: first fan two days plus the second
-    // fan's first. 1st: three plus one.
-    expect(days).toEqual([1, 1, 3, 4])
+    // 29th: one fan at the planned three days. 30th: unchanged. 31st: the
+    // second fan joins at its own planned three. 1st: still within plan. The
+    // total never dips, and only climbs once actual days pass the plan.
+    expect(days).toEqual([3, 3, 6, 6])
     for (let i = 1; i < days.length; i++) {
       expect(days[i]).toBeGreaterThanOrEqual(days[i - 1])
     }
-    expect(days[days.length - 1]).toBeGreaterThan(days[0])
   })
 
   it('counts nothing on a day before the equipment was set down', () => {

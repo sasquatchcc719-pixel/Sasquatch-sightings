@@ -38,12 +38,25 @@ export type LedgerLine = {
 }
 
 /**
- * Days a single unit has accrued, counted on the calendar.
+ * A running unit is assumed in for the planned three days — the same default
+ * the estimate quotes and the monitor schedule starts from.
  *
- * Nights on the job: set down Saturday and pulled Tuesday is three days, which
- * is how the work is quoted and how the trade bills it. Never fewer than one —
- * equipment set down and collected the same afternoon still cost a day's rental
- * and a trip.
+ * Charles: *"default equipment to three days on day one... but if we pull
+ * equipment, it needs to calculate the final total."* So day one already reads
+ * eight fans x 3 = 24, agreeing with the estimate, instead of a total that
+ * creeps up and matches nothing until the job is over.
+ */
+export const PLANNED_EQUIPMENT_DAYS = 3
+
+/**
+ * Days a single unit bills, counted on the calendar.
+ *
+ * - **Pulled**: the nights it actually sat there, and only those — set Saturday,
+ *   pulled Tuesday, is three; same-day is one, because that still cost a day's
+ *   rental and a trip.
+ * - **Still running**: at least the planned three days, more once the job
+ *   outruns the plan. At close every unit is pulled, so an invoice always bills
+ *   actual days.
  *
  * Deliberately NOT elapsed hours. The data is routinely entered after the fact,
  * so a timestamp records when Charles reached a keyboard, and billing from it
@@ -53,12 +66,14 @@ export function unitDays(
   placedOn: string,
   removedOn: string | null,
   today: string,
+  plannedDays: number = PLANNED_EQUIPMENT_DAYS,
 ): number {
   const start = Date.parse(`${placedOn}T12:00:00Z`)
   const end = Date.parse(`${removedOn ?? today}T12:00:00Z`)
   if (!Number.isFinite(start) || !Number.isFinite(end)) return 1
   const days = Math.round((end - start) / 86_400_000)
-  return Math.max(1, days)
+  if (removedOn) return Math.max(1, days)
+  return Math.max(1, days, plannedDays)
 }
 
 export function equipmentLedger(placements: Placement[], today: string): LedgerLine[] {

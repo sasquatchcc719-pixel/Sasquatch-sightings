@@ -71,7 +71,7 @@ export async function GET(
       supabase
         .from('restoration_equipment_placements')
         .select(
-          'id, catalog_code, label, placed_at, removed_at, area_id, map_x, map_y',
+          'id, catalog_code, label, placed_at, removed_at, placed_on, removed_on, area_id, map_x, map_y',
         )
         .eq('project_id', id)
         .order('placed_at'),

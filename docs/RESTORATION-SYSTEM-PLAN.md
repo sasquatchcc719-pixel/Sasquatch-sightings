@@ -3329,3 +3329,41 @@ $539.00 + $316.38 = **$855.38**. Against the $301.46 it showed an hour ago.
 
 I corrected the dates rather than leaving him to. Telling a man who has just
 explained his own arithmetic to go and type it in himself is not an answer.
+
+## Equipment defaults to the planned three days from day one
+
+Charles, after a day of the accrue-as-you-go model fighting him: *"I want to
+default equipment to three days on day one — that way we can make the equipment
+calculation really easy to understand as we move forward — but if we pull
+equipment, it needs to calculate the final total."*
+
+His arithmetic is the spec: *"eight fans in a building for three days, that's
+24. I took two out so that's gonna be 22 fans and 3 dehu 24-hour periods."*
+
+The rule, everywhere at once (SQL view and screen ledger):
+
+- **Still running** → at least the planned 3 days, more once the job outruns
+  the plan. Day one already reads 8 × 3 = 24, agreeing with the estimate,
+  instead of a total that creeps upward and matches nothing until the end.
+- **Pulled** → the days it actually sat there, and only those. Two fans pulled
+  after two nights are 2 each: 18 + 4 = **22 fan-days**, plus the dehu's 3.
+- **At close** every unit is pulled, so the invoice always bills actual days —
+  a job that dries early bills less than the plan, one that drags bills more.
+
+Three days is the same default the estimate quotes and the monitor schedule
+starts from, so quote, schedule and running total finally share one number.
+
+### The two bugs found alongside it
+
+**The $0.00 equipment card** — the previous change made the ledger filter on
+`placed_on`, but the detail API was never updated to send that field. The ledger
+compared `undefined` to a date, dropped every unit, and showed $0.00 above a
+line correctly saying six were running. One select-list fix.
+
+**The "$4,500" was never rounded.** Work $3,897.08 + equipment $602.92 =
+$4,500.00 to the cent — real arithmetic that happened to land on a round
+number. With the projection, Jill's subtotal is now $4,752.46.
+
+The line also shows price × multiplier = total again ("$24.50 × 22d — $539.00"),
+which is how Charles reads an equipment line and what the unit-days-only wording
+had dropped.
