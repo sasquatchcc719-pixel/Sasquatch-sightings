@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   unitDays,
   equipmentLedger,
+  ledgerBatches,
   ledgerAsOf,
   placementsAsOf,
 } from './restoration-equipment-ledger'
@@ -104,5 +105,50 @@ describe('what the equipment had cost on a given day', () => {
 
   it('never runs a future visit past today', () => {
     expect(ledgerAsOf('2026-12-01', today)).toBe(today)
+  })
+})
+
+describe('ledgerBatches', () => {
+  const placements = [
+    ...Array.from({ length: 6 }, (_, i) => ({
+      id: `a${i}`,
+      catalog_code: 'DRY',
+      placed_on: '2026-08-29',
+      removed_on: null,
+    })),
+    ...Array.from({ length: 2 }, (_, i) => ({
+      id: `b${i}`,
+      catalog_code: 'DRY',
+      placed_on: '2026-08-29',
+      removed_on: '2026-08-31',
+    })),
+    { id: 'c', catalog_code: 'DHM>>', placed_on: '2026-08-29', removed_on: null },
+  ]
+
+  it('groups units that went in and came out together', () => {
+    const batches = ledgerBatches(placements, '2026-09-01')
+    expect(batches).toHaveLength(3)
+    const stillRunning = batches.find(
+      (b) => b.code === 'DRY' && b.removedOn === null,
+    )!
+    expect(stillRunning.units).toBe(6)
+    expect(stillRunning.ids).toHaveLength(6)
+  })
+
+  it('carries the ids so one edit fixes the whole batch', () => {
+    // Correcting eight fans one at a time is not something anybody does twice.
+    const batches = ledgerBatches(placements, '2026-09-01')
+    const total = batches.reduce((n, b) => n + b.ids.length, 0)
+    expect(total).toBe(placements.length)
+  })
+
+  it('prices each batch by the days it actually ran', () => {
+    const batches = ledgerBatches(placements, '2026-09-01')
+    const running = batches.find((b) => b.code === 'DRY' && !b.removedOn)!
+    const pulled = batches.find((b) => b.code === 'DRY' && b.removedOn)!
+    expect(running.days).toBe(3)
+    expect(running.unitDays).toBe(18)
+    expect(pulled.days).toBe(2)
+    expect(pulled.unitDays).toBe(4)
   })
 })

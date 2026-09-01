@@ -3247,3 +3247,49 @@ closing a project, sending an estimate. It is wrong whenever it stands in for
 **something that happened in the field**, because that is entered afterwards. The
 question to ask of any new date column is simply: *did the software do this, or
 is somebody telling the software about it?*
+
+## The equipment total was right about the data, and the data was wrong
+
+Charles, comparing the mitigation day and the last day: *"equipment is a hell of
+a lot more than $300 for this job."*
+
+It is. The arithmetic was correct and the input was not:
+
+```
+DHM>>  placed_on 2026-08-31  ×1
+DRY    placed_on 2026-08-31  ×6  still running
+DRY    placed_on 2026-08-31  ×2  pulled 2026-08-31
+```
+
+Every unit dated **31 August** — the day he typed them in, not the day they were
+set down. One day each, nine unit-days, $301.46.
+
+That is my doing twice over. The migration that introduced calendar-day billing
+backfilled `placed_on` from `placed_at`, which was the typing moment — I fixed
+the rule going forward and left the existing rows carrying the old, wrong fact.
+The same half-fix as the readings: correct the logic, forget the data.
+
+### Equipment days are editable
+
+Guessing which day those fans went in is not mine to do, so the ledger now opens
+into the batches that went in together, each with an **in** and **out** date:
+
+```
+×6   in [2026-08-31]  out [        ]   1 day each = 6 unit-days
+×2   in [2026-08-31]  out [2026-08-31] 1 day each = 2 unit-days
+```
+
+Change the in-date on the first row and all six correct at once, because
+correcting eight fans one at a time is not something anybody does twice. Clearing
+an out-date puts a unit back on the job.
+
+Setting them to the mitigation day gives 8 fans × 3 days plus the dehu — about
+$904, which is what the estimate quoted, and the first time those two figures
+would agree.
+
+### And the Money card says which total it is
+
+The Money card is the job's bottom line and does not move with the visit
+selected; the Equipment card above it shows the visit being viewed. Two different
+questions sitting on one screen looked like a contradiction, so the Money line
+now says **"whole job to date, not the visit above"**.

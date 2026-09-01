@@ -106,3 +106,49 @@ export function ledgerAsOf(visitDate: string | null, today: string): string {
 export function placementsAsOf(placements: Placement[], asOf: string): Placement[] {
   return placements.filter((p) => p.placed_on <= asOf)
 }
+
+export type LedgerBatch = {
+  code: string
+  placedOn: string
+  removedOn: string | null
+  units: number
+  days: number
+  unitDays: number
+  ids: string[]
+}
+
+/**
+ * Units that went in together and came out together.
+ *
+ * Equipment is placed in batches — eight fans at once — and the day they went in
+ * is the thing most often wrong, because it was typed days later. Grouping lets
+ * one correction fix the batch; correcting eight fans one at a time is not
+ * something anybody does twice.
+ */
+export function ledgerBatches(placements: Placement[], today: string): LedgerBatch[] {
+  const batches = new Map<string, LedgerBatch>()
+
+  for (const placement of placements) {
+    const key = `${placement.catalog_code}|${placement.placed_on}|${placement.removed_on ?? ''}`
+    const days = unitDays(placement.placed_on, placement.removed_on, today)
+    const batch =
+      batches.get(key) ??
+      {
+        code: placement.catalog_code,
+        placedOn: placement.placed_on,
+        removedOn: placement.removed_on,
+        units: 0,
+        days,
+        unitDays: 0,
+        ids: [],
+      }
+    batch.units += 1
+    batch.unitDays += days
+    batch.ids.push(placement.id)
+    batches.set(key, batch)
+  }
+
+  return [...batches.values()].sort(
+    (a, b) => a.code.localeCompare(b.code) || a.placedOn.localeCompare(b.placedOn),
+  )
+}

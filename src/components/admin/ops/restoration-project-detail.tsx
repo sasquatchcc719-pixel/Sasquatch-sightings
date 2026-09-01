@@ -57,6 +57,7 @@ import { positionForVisit } from '@/lib/ops/restoration-equipment-position'
 import { noteTextFor, noteIsDirty } from '@/lib/ops/restoration-note-scope'
 import {
   equipmentLedger,
+  ledgerBatches,
   ledgerAsOf,
   placementsAsOf,
 } from '@/lib/ops/restoration-equipment-ledger'
@@ -589,6 +590,12 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
       ),
     [detail?.equipment, ledgerMoment],
   )
+  /** The same units, grouped by the days they share, so a batch edits at once. */
+  const batches = useMemo(
+    () => ledgerBatches(placementsAsOf(detail?.equipment ?? [], ledgerMoment), ledgerMoment),
+    [detail?.equipment, ledgerMoment],
+  )
+
   const ledgerTotal = useMemo(() => {
     const priceByCode = new Map(
       (detail?.equipment_billing ?? []).map((row) => [
@@ -2719,30 +2726,80 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
                       <details className="mt-1">
                         <summary className="text-muted-foreground cursor-pointer text-xs">
                           {line.running} running
-                          {line.pulled > 0 ? `, ${line.pulled} pulled` : ''} — how this
-                          adds up
+                          {line.pulled > 0 ? `, ${line.pulled} pulled` : ''} — set the
+                          days these ran
                         </summary>
-                        <div className="text-muted-foreground mt-1 flex flex-col gap-0.5 pl-2 text-xs">
-                          {line.units.map((unit, index) => (
-                            <span key={unit.id} className="tabular-nums">
-                              #{index + 1} ·{' '}
-                              {new Date(`${unit.placedOn}T12:00:00`).toLocaleDateString(
-                                'en-US',
-                                { month: 'short', day: 'numeric' },
-                              )}
-                              {unit.removedOn
-                                ? ` → pulled ${new Date(
-                                    `${unit.removedOn}T12:00:00`,
-                                  ).toLocaleDateString('en-US', {
-                                    month: 'short',
-                                    day: 'numeric',
-                                  })}`
-                                : ' → still running'}{' '}
-                              · {unit.days} day{unit.days === 1 ? '' : 's'}
-                            </span>
-                          ))}
+                        <div className="mt-2 flex flex-col gap-2">
+                          {/*
+                            The day equipment went in is what bills, and it is
+                            the thing most often wrong: eight fans set on
+                            Saturday, typed in on Monday. Editable, in batches,
+                            because correcting eight fans one at a time is not
+                            something anybody does twice.
+                          */}
+                          {batches
+                            .filter((batch) => batch.code === row.catalog_code)
+                            .map((batch) => (
+                              <div
+                                key={`${batch.placedOn}-${batch.removedOn ?? 'on'}`}
+                                className="border-border/60 flex flex-wrap items-center gap-2 rounded-md border p-2 text-xs"
+                              >
+                                <span className="tabular-nums">×{batch.units}</span>
+                                <label className="flex items-center gap-1">
+                                  <span className="text-muted-foreground">in</span>
+                                  <Input
+                                    className="h-7 w-32 text-xs"
+                                    type="date"
+                                    defaultValue={batch.placedOn}
+                                    onBlur={(e) => {
+                                      if (!e.target.value || e.target.value === batch.placedOn)
+                                        return
+                                      void call(
+                                        `/api/admin/ops/restoration/projects/${projectId}/equipment/days`,
+                                        {
+                                          method: 'PATCH',
+                                          body: JSON.stringify({
+                                            ids: batch.ids,
+                                            placed_on: e.target.value,
+                                          }),
+                                        },
+                                        `days-${batch.ids[0]}`,
+                                      )
+                                    }}
+                                  />
+                                </label>
+                                <label className="flex items-center gap-1">
+                                  <span className="text-muted-foreground">out</span>
+                                  <Input
+                                    className="h-7 w-32 text-xs"
+                                    type="date"
+                                    defaultValue={batch.removedOn ?? ''}
+                                    onBlur={(e) => {
+                                      const value = e.target.value || null
+                                      if (value === batch.removedOn) return
+                                      void call(
+                                        `/api/admin/ops/restoration/projects/${projectId}/equipment/days`,
+                                        {
+                                          method: 'PATCH',
+                                          body: JSON.stringify({
+                                            ids: batch.ids,
+                                            removed_on: value,
+                                          }),
+                                        },
+                                        `days-${batch.ids[0]}`,
+                                      )
+                                    }}
+                                  />
+                                </label>
+                                <span className="text-muted-foreground tabular-nums">
+                                  {batch.days} day{batch.days === 1 ? '' : 's'} each ={' '}
+                                  {batch.unitDays} unit-day
+                                  {batch.unitDays === 1 ? '' : 's'}
+                                </span>
+                              </div>
+                            ))}
                           {line.pulled > 0 ? (
-                            <span className="mt-1">
+                            <span className="text-muted-foreground text-xs">
                               A unit still bills for the days it ran, so pulling one
                               stops the clock rather than undoing the charge.
                             </span>
@@ -3344,7 +3401,12 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
             <span>{money(detail.totals.work)}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Equipment</span>
+            <span className="text-muted-foreground">
+              Equipment{' '}
+              <span className="text-xs">
+                — whole job to date, not the visit above
+              </span>
+            </span>
             <span>{money(detail.totals.equipment)}</span>
           </div>
           {/*
