@@ -411,7 +411,13 @@ export async function POST(request: NextRequest) {
 
     // --- Calculate end time based on dollar amount ---
     // Simple tier system: $0-300 = 2hr, $301-600 = 3hr, $601+ = 4hr
-    const appointmentDuration = calculateAppointmentDurationFromTotal(subtotal)
+    // Sized on services only. The travel fee is money, not work, and adding it
+    // pushed jobs near a tier edge into a longer window than the widget asked
+    // /api/public/availability for — so the time the customer picked could come
+    // back "no longer available". createAiStyleBooking sizes the same way.
+    const serviceSubtotal = subtotal - serviceAreaCheck.travelCharge
+    const appointmentDuration =
+      calculateAppointmentDurationFromTotal(serviceSubtotal)
     const buffered = applyAppointmentBuffer(appointmentDuration)
     const [sh, sm] = startTime.split(':').map(Number)
     if (!Number.isFinite(sh) || !Number.isFinite(sm)) {

@@ -193,3 +193,33 @@ describe('after-hours admin bookings', () => {
     expect(addMinutesToTimeWithinDay('19:00:00', 180)).toBe('22:00:00')
   })
 })
+
+describe('appointment sizing excludes fees', () => {
+  // The booking widget sizes the job from the service subtotal to ask
+  // /api/public/availability for openings. If the server sizes the same job
+  // differently it can compute a longer window than the one the customer was
+  // offered, and reject the time they picked as "no longer available".
+  const TRAVEL_CHARGE = 40
+
+  it('keeps a travel-charge job in the same tier as the widget', () => {
+    const serviceSubtotal = 270 // widget asks for a 2-hour window
+    const invoiceSubtotal = serviceSubtotal + TRAVEL_CHARGE
+
+    expect(calculateAppointmentDurationFromTotal(serviceSubtotal)).toBe(120)
+    // Sizing on the invoice subtotal silently upgrades it to 3 hours.
+    expect(calculateAppointmentDurationFromTotal(invoiceSubtotal)).toBe(180)
+    // The server must back the fee out before applying the tiers.
+    expect(
+      calculateAppointmentDurationFromTotal(invoiceSubtotal - TRAVEL_CHARGE),
+    ).toBe(120)
+  })
+
+  it('agrees with the widget across both tier boundaries', () => {
+    for (const serviceSubtotal of [180, 261, 300, 301, 560, 600, 601, 900]) {
+      const invoiceSubtotal = serviceSubtotal + TRAVEL_CHARGE
+      expect(
+        calculateAppointmentDurationFromTotal(invoiceSubtotal - TRAVEL_CHARGE),
+      ).toBe(calculateAppointmentDurationFromTotal(serviceSubtotal))
+    }
+  })
+})
