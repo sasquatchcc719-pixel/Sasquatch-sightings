@@ -4217,6 +4217,26 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
           </a>
         </Button>
 
+        <Button
+          variant="outline"
+          className="mt-2 w-full gap-2"
+          disabled={busy === 'email-report'}
+          onClick={() =>
+            call(
+              `/api/admin/ops/restoration/projects/${projectId}/report/email`,
+              { method: 'POST' },
+              'email-report',
+            )
+          }
+        >
+          {busy === 'email-report' ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Mail className="h-4 w-4" />
+          )}
+          Email report to customer
+        </Button>
+
         {project.invoice_id ? (
           <Button asChild variant="outline" className="mt-2 w-full">
             <Link href={`/admin/operations/invoices/${project.invoice_id}`}>
