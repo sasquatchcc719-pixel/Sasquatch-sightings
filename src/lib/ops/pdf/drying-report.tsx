@@ -20,6 +20,8 @@ import {
 } from '@/lib/ops/restoration-drying-series'
 import { moistureBand } from '@/lib/ops/restoration-moisture'
 import { AIR_ROLES, grainsPerPound } from '@/lib/ops/restoration-psychrometry'
+import { DryingCertificatePages } from '@/lib/ops/pdf/drying-certificate'
+import { lossSourceLabel } from '@/lib/ops/restoration-loss-sources'
 
 /**
  * The drying report: the document that makes a water loss defensible.
@@ -49,6 +51,8 @@ export type DryingReportData = {
   }
   visits: Array<{
     label: string
+    /** Raw `ops_appointments.visit_type`: mitigation | monitor | final. */
+    type: string | null
     date: string
     note: string | null
     lines: Array<{
@@ -58,6 +62,8 @@ export type DryingReportData = {
       total: number
     }>
   }>
+  /** When the project was closed out. Dates the certificate; null while open. */
+  closedAt: string | null
   equipment: Array<{
     code: string
     description: string
@@ -541,7 +547,7 @@ export function DryingReportPDF({ data }: { data: DryingReportData }) {
             {data.loss.source ? (
               <View style={styles.kv}>
                 <Text style={styles.kvKey}>Source</Text>
-                <Text>{data.loss.source.replace(/_/g, ' ')}</Text>
+                <Text>{lossSourceLabel(data.loss.source)}</Text>
               </View>
             ) : null}
             {data.loss.carrier ? (
@@ -827,6 +833,12 @@ export function DryingReportPDF({ data }: { data: DryingReportData }) {
           {data.company.name} · Water mitigation report · Page 2
         </Text>
       </Page>
+
+      {/*
+        Renders itself only when there are monitored points with a dry standard
+        and a reading to attest to — see buildDryingCertificate.
+      */}
+      <DryingCertificatePages data={data} />
     </Document>
   )
 }

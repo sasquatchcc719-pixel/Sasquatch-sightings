@@ -329,8 +329,12 @@ export async function buildDryingReportData(
       carrier: project.carrier,
       claimNumber: project.claim_number,
     },
+    closedAt: project.closed_at ?? null,
     visits: (visits ?? []).map((visit) => ({
       label: VISIT_LABELS[String(visit.visit_type)] ?? 'Visit',
+      // The raw value, so downstream logic matches on 'monitor'/'final' rather
+      // than string-matching a display label that could be reworded.
+      type: visit.visit_type ?? null,
       date: String(visit.appointment_date),
       note:
         (visit as { restoration_visit_note?: string | null })

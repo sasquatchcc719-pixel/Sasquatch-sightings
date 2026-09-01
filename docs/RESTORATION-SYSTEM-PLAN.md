@@ -3470,3 +3470,69 @@ Proven end to end against the real database in
 deposit shrinks the balance, a webhook payment for less than the balance is
 rejected, a webhook payment covering the balance zeroes it, and a retried
 webhook event does not double-credit.
+
+## Certificate of drying
+
+Charles: *"we would have a certificate of dry — certified that a structure has
+reached dry standard... make it look really official with our logo on."*
+
+Appended to the drying report: one framed, sealed, signed page, plus a terms
+sheet behind it the way a warranty carries its terms.
+
+### What it is allowed to say
+
+The certificate states that **each monitored point reached the drying goal set
+for it** — not that the structure is dry. That is not lawyer-hedging, it is
+what a moisture meter measures. "The structure is dry" is unbounded and
+disprovable by any single reading anywhere, forever; "point 3 read 11.9 against
+a goal of 12" is bounded, and the benchmark is printed in the table directly
+below the sentence. When a point misses, the same sentence says so and names
+it — there is no version of the document that hides a failing point.
+
+The drying goal is `dryStandard + DRY_WITHIN`, **imported from
+`restoration-moisture.ts`**, so the office screen and the claim file cannot
+disagree about the same reading.
+
+### What the research changed
+
+The content was researched against real carrier-network certificate templates,
+the S500, and restoration-liability case guidance, then attacked by three
+adversarial reviewers. Two findings were load-bearing:
+
+1. **A fabricated citation.** The draft calculated the goal as
+   `dryStandard × 1.10` and footnoted it as "the general-materials tolerance
+   described in ANSI/IICRC S500". No such tolerance exists in the standard, and
+   a multiplier is meaningless on the relative scales gypsum and concrete are
+   read on. It also contradicted the shipped app. That is exactly the kind of
+   checkable false statement that discredits every true statement next to it.
+   S500 is now cited for one thing only: the dry-standard method, which is the
+   one thing the data actually demonstrates.
+2. **Silence on contamination.** On a Cat 2/3 loss the certificate prints
+   "Grossly contaminated" on its face and then reports only on moisture. A
+   conditional term now fires at `category >= 2` saying the certificate does
+   not determine whether contamination was removed.
+
+Also: no "%" appears against any reading, because a meter reads true moisture
+content on wood and a relative scale on gypsum — a "%" on a drywall row states
+a measurement that was never taken.
+
+### First draft was wrong, and how
+
+The first build followed the legal review to its conclusion and produced three
+pages where the disclaimers were the document and the certificate was a header.
+Charles: *"This is not a fucking certificate. This is like a disclaimer."* He
+was right — the protections were all still available at a fraction of the
+space. The face now carries one quiet line and the terms live on the reverse,
+which is how every real warranty and certificate handles it.
+
+### Constraints the layout has to hold
+
+- **One page, always.** The frame is drawn absolutely on page one, so content
+  spilling to page two would leave an unframed orphan. The readings table is
+  capped at 7 rows with the remainder disclosed; verified against a 15-point
+  job.
+- Point labels and materials are clipped in JS. `textOverflow: 'ellipsis'`
+  keeps the line to one row but still lets it run past the column, so a long
+  label printed straight through the column beside it.
+- The certificate renders only when at least one point has both a dry standard
+  and a reading. Nothing measurable means nothing to put a name to.

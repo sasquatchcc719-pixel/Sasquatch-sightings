@@ -39,9 +39,11 @@ const BASE: DryingReportData = {
     carrier: null,
     claimNumber: null,
   },
+  closedAt: '2026-09-01T18:00:00Z',
   visits: [
     {
       label: 'Mitigation',
+      type: 'mitigation',
       date: '2026-08-30',
       note: null,
       lines: [
@@ -61,6 +63,7 @@ const BASE: DryingReportData = {
     },
     {
       label: 'Monitoring visit',
+      type: 'monitor',
       date: '2026-08-31',
       note: 'North wall down to 14%. Closet still reading high; moved one air mover into it.',
       lines: [],
