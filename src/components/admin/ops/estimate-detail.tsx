@@ -7,6 +7,7 @@ import {
   CalendarClock,
   CalendarCheck,
   CheckCircle2,
+  Copy,
   Loader2,
   Mail,
   MapPin,
@@ -542,6 +543,33 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
 
   const handleDeleteLine = useCallback((id: string) => {
     setLineItems((prev) => prev.filter((line) => line.id !== id))
+  }, [])
+
+  /**
+   * Copy a line, measurements and all, directly below the original.
+   *
+   * Commercial walkthroughs repeat the same service across several spaces, and
+   * going back to the catalog picker for each one is the slow part on a phone.
+   * The copy lands next to its source rather than at the bottom so the list does
+   * not jump. Segments get fresh clientIds — reusing them would collide the two
+   * rows' React keys and make the measurement fields edit each other.
+   */
+  const handleDuplicateLine = useCallback((id: string) => {
+    setLineItems((prev) => {
+      const idx = prev.findIndex((line) => line.id === id)
+      if (idx === -1) return prev
+      const source = prev[idx]
+      const copy: LineItem = {
+        ...source,
+        id: makeRowKey(),
+        area_segments: source.area_segments.map((seg) => ({
+          ...seg,
+          clientId: makeRowKey(),
+        })),
+        _isNew: true,
+      }
+      return [...prev.slice(0, idx + 1), copy, ...prev.slice(idx + 1)]
+    })
   }, [])
 
   // ── Save ────────────────────────────────────────────────────────────────
@@ -1204,15 +1232,26 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
                     Line {idx + 1}
                     {line.service_catalog_item_id ? ' · catalog' : ' · custom'}
                   </p>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 gap-1 text-rose-600 hover:text-rose-700"
-                    onClick={() => handleDeleteLine(line.id)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    Remove
-                  </Button>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 gap-1"
+                      onClick={() => handleDuplicateLine(line.id)}
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                      Duplicate
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 gap-1 text-rose-600 hover:text-rose-700"
+                      onClick={() => handleDeleteLine(line.id)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Remove
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="mt-3 space-y-3">
