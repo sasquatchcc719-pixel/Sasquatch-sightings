@@ -91,7 +91,14 @@ export async function GET(request: NextRequest) {
     const { data: batchInvoices } = await supabase
       .from('ops_batch_invoices')
       .select(
-        'id, customer_id, status, sync_status, quickbooks_invoice_id, total',
+        `id, customer_id, status, sync_status, quickbooks_invoice_id, total,
+         ops_batch_invoice_entries (
+           appointment_id, subtotal, line_items_snapshot,
+           ops_appointments (
+             appointment_date, status, recurring_template_id,
+             batch_billing_customer_id
+           )
+         )`,
       )
       .in('customer_id', customerIds)
       .gte('month', monthStart)
@@ -126,6 +133,9 @@ export async function GET(request: NextRequest) {
           ? (rawCustomer[0] ?? null)
           : (rawCustomer ?? null)
 
+        const existingInvoice =
+          invoices.find((bi) => bi.customer_id === customerId) || null
+
         // All appointments for this customer: recurring template matches + batch_billing one-offs
         const customerAppts = allAppts.filter(
           (a) =>
@@ -133,56 +143,109 @@ export async function GET(request: NextRequest) {
             a.batch_billing_customer_id === customerId,
         )
 
-        const visits = customerAppts.map((appt) => {
-          const lines = Array.isArray(appt.ops_appointment_line_items)
-            ? appt.ops_appointment_line_items
+        // Once an invoice exists, show its frozen entries instead of rebuilding
+        // the list from appointments inside the selected month. A legitimate
+        // prior-period correction can belong to this invoice while retaining
+        // its original service date.
+        const invoiceEntries = existingInvoice
+          ? Array.isArray(existingInvoice.ops_batch_invoice_entries)
+            ? existingInvoice.ops_batch_invoice_entries
             : []
+          : []
 
-          // Build a human-readable description from line item notes/names
-          const description = lines
-            .map(
-              (l: { notes?: string | null; name_snapshot: string }) =>
-                l.notes || l.name_snapshot,
-            )
-            .join(', ')
+        const visits = (
+          invoiceEntries.length > 0
+            ? invoiceEntries.map((entry) => {
+                const appointment = Array.isArray(entry.ops_appointments)
+                  ? entry.ops_appointments[0]
+                  : entry.ops_appointments
+                const lines = Array.isArray(entry.line_items_snapshot)
+                  ? (entry.line_items_snapshot as Array<{
+                      name_snapshot: string
+                      notes?: string | null
+                      quantity: number
+                      unit_price: number
+                      duration_minutes?: number
+                      line_total: number
+                    }>)
+                  : []
 
-          return {
-            appointmentId: appt.id,
-            date: appt.appointment_date,
-            status: appt.status,
-            total: appt.quoted_total || 0,
-            templateLabel: appt.recurring_template_id
-              ? templateLabelMap.get(appt.recurring_template_id) || ''
-              : 'One-off',
-            description,
-            isAdHoc: !appt.recurring_template_id,
-            lineItems: lines.map(
-              (l: {
-                id: string
-                name_snapshot: string
-                quantity: number
-                unit_price: number
-                duration_minutes: number
-                line_total: number
-                notes: string | null
-              }) => ({
-                id: l.id,
-                name_snapshot: l.name_snapshot,
-                quantity: l.quantity,
-                unit_price: l.unit_price,
-                duration_minutes: l.duration_minutes,
-                line_total: l.line_total,
-                notes: l.notes,
-              }),
-            ),
-          }
-        })
+                return {
+                  appointmentId: entry.appointment_id,
+                  date: appointment?.appointment_date || monthStart,
+                  status: appointment?.status || 'completed',
+                  total: Number(entry.subtotal || 0),
+                  templateLabel:
+                    appointment?.appointment_date < monthStart ||
+                    appointment?.appointment_date >= nextMonth
+                      ? 'Prior-period correction'
+                      : appointment?.recurring_template_id
+                        ? templateLabelMap.get(
+                            appointment.recurring_template_id,
+                          ) || ''
+                        : 'One-off',
+                  description: lines
+                    .map((line) => line.notes || line.name_snapshot)
+                    .join(', '),
+                  isAdHoc: !appointment?.recurring_template_id,
+                  lineItems: lines.map((line) => ({
+                    name_snapshot: line.name_snapshot,
+                    quantity: line.quantity,
+                    unit_price: line.unit_price,
+                    duration_minutes: line.duration_minutes || 0,
+                    line_total: line.line_total,
+                    notes: line.notes || null,
+                  })),
+                }
+              })
+            : customerAppts.map((appt) => {
+                const lines = Array.isArray(appt.ops_appointment_line_items)
+                  ? appt.ops_appointment_line_items
+                  : []
+
+                // Build a human-readable description from line item notes/names
+                const description = lines
+                  .map(
+                    (l: { notes?: string | null; name_snapshot: string }) =>
+                      l.notes || l.name_snapshot,
+                  )
+                  .join(', ')
+
+                return {
+                  appointmentId: appt.id,
+                  date: appt.appointment_date,
+                  status: appt.status,
+                  total: appt.quoted_total || 0,
+                  templateLabel: appt.recurring_template_id
+                    ? templateLabelMap.get(appt.recurring_template_id) || ''
+                    : 'One-off',
+                  description,
+                  isAdHoc: !appt.recurring_template_id,
+                  lineItems: lines.map(
+                    (l: {
+                      id: string
+                      name_snapshot: string
+                      quantity: number
+                      unit_price: number
+                      duration_minutes: number
+                      line_total: number
+                      notes: string | null
+                    }) => ({
+                      id: l.id,
+                      name_snapshot: l.name_snapshot,
+                      quantity: l.quantity,
+                      unit_price: l.unit_price,
+                      duration_minutes: l.duration_minutes,
+                      line_total: l.line_total,
+                      notes: l.notes,
+                    }),
+                  ),
+                }
+              })
+        ).sort((a, b) => a.date.localeCompare(b.date))
 
         const completedVisits = visits.filter((v) => v.status === 'completed')
         const runningTotal = completedVisits.reduce((s, v) => s + v.total, 0)
-
-        const existingInvoice =
-          invoices.find((bi) => bi.customer_id === customerId) || null
 
         // Extract addresses from the customer object
         const addresses = customer?.ops_service_addresses
