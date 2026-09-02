@@ -50,6 +50,10 @@ export const SERVICE_CITIES: readonly ServiceCity[] = [
       '80907',
       '80917',
       '80922',
+      // East side / Cimarron Hills. Already inside the service area
+      // (service-area.ts) but missing from these buttons, so a job there
+      // could not be scheduled without hand-typing the zip.
+      '80915',
     ],
   },
   { city: 'Larkspur', state: 'CO', zip: '80118' },
@@ -70,9 +74,7 @@ export function zipOptionsForCity(
   const key = (city ?? '').trim().toLowerCase()
   if (!key) return []
 
-  const match = SERVICE_CITIES.find(
-    (entry) => entry.city.toLowerCase() === key,
-  )
+  const match = SERVICE_CITIES.find((entry) => entry.city.toLowerCase() === key)
   return match?.zips ?? []
 }
 
