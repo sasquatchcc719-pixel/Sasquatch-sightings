@@ -3,6 +3,11 @@ import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { Resend } from 'resend'
 import { buildEmailHtml } from '@/lib/ops/communications'
+import { isAreaUnit, isLinearUnit } from '@/lib/ops/estimates'
+import {
+  buildEstimateDecisionUrl,
+  createEstimateDecisionToken,
+} from '@/lib/ops/estimate-decision-token'
 import { isBlacklisted } from '@/lib/blacklist'
 
 type EmailType = 'booking_confirmation' | 'quote'
@@ -56,6 +61,18 @@ function formatCurrency(n: number): string {
   return `$${n.toFixed(2)}`
 }
 
+/**
+ * Where the customer-facing accept link points. Must resolve to sightings.*,
+ * not www — app routes 404 on the marketing domain.
+ */
+function publicSiteOrigin(request: NextRequest): string {
+  return (
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.SITE_URL ||
+    request.nextUrl.origin
+  ).replace(/\/+$/, '')
+}
+
 function buildQuoteBody(params: {
   firstName: string
   fullName: string
@@ -75,14 +92,18 @@ function buildQuoteBody(params: {
 
   const lineDescriptions = lineItems
     .map((item) => {
-      const qtyLabel =
-        item.unit === 'per_sqft'
-          ? `${item.qty ?? 0} sqft`
-          : item.unit === 'per_linear_foot'
-            ? `${item.qty ?? 0} linear ft`
-            : item.qty && item.qty !== 1
-              ? `×${item.qty}`
-              : null
+      // Use the same unit helpers the estimate editor uses. Matching the unit
+      // strings by hand here meant 'per_sq_ft' and 'per_linear_ft' — almost
+      // every measured item in the catalog — fell through to the multiplier
+      // branch, so a commercial quote read "×2600 × $0.35" instead of
+      // "2600 sqft × $0.35".
+      const qtyLabel = isAreaUnit(item.unit)
+        ? `${item.qty ?? 0} sqft`
+        : isLinearUnit(item.unit)
+          ? `${item.qty ?? 0} linear ft`
+          : item.qty && item.qty !== 1
+            ? `×${item.qty}`
+            : null
       const pricePart = qtyLabel
         ? `${qtyLabel} × ${formatCurrency(item.unitPrice)} = ${formatCurrency(item.lineTotal)}`
         : formatCurrency(item.lineTotal)
@@ -95,7 +116,7 @@ function buildQuoteBody(params: {
     `Thank you for letting us visit your property at ${address}. Based on what we measured and assessed during our walk-through, here is your personalized estimate from Sasquatch Carpet Cleaning:`,
     `${lineDescriptions}\n\nEstimated Total: ${formatCurrency(total)}`,
     `This estimate reflects our standard pricing for the areas and services listed above. All of our work is backed by our satisfaction guarantee — if it's not right, we'll make it right.`,
-    `When you're ready to schedule the cleaning, just reply to this email or text us at (719) 249-8791. We'll get you on the calendar right away.`,
+    `When you're ready to schedule the cleaning, tap the button below to accept this estimate and we'll get you on the calendar right away. You can also just reply to this email or text us at (719) 249-8791.`,
     `We look forward to making your carpets look and feel like new again. Thank you for considering Sasquatch Carpet Cleaning — we don't take that trust lightly.`,
     `Warm regards,\nThe Sasquatch Carpet Cleaning Team`,
   ].join('\n\n')
@@ -229,7 +250,18 @@ export async function POST(
       })
     }
 
-    const html = buildEmailHtml(bodyText, emailType)
+    const html = buildEmailHtml(bodyText, emailType, {
+      cta:
+        emailType === 'quote'
+          ? {
+              label: 'Accept this estimate',
+              url: buildEstimateDecisionUrl(
+                publicSiteOrigin(request),
+                createEstimateDecisionToken({ estimateId: id }),
+              ),
+            }
+          : null,
+    })
 
     const { data: sent, error: sendError } = await resend.emails.send({
       from: fromEmail,

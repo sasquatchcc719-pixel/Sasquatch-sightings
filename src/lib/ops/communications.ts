@@ -700,6 +700,12 @@ export function buildEmailHtml(
   templateKey: string,
   options?: {
     technician?: TechnicianEmailProfile | null
+    /**
+     * Optional call-to-action button under the body — used by the quote email
+     * so "Accept this estimate" is a real button rather than a bare signed-token
+     * URL, which is long enough to look like a phishing link.
+     */
+    cta?: { label: string; url: string } | null
   },
 ): string {
   // Normalize literal \n sequences (stored in some templates) to real newlines
@@ -717,6 +723,14 @@ export function buildEmailHtml(
     templateKey,
     options?.technician,
   )
+
+  // Table-wrapped and inline-styled: Outlook ignores display/padding on a bare
+  // anchor, which would collapse the button down to plain underlined text.
+  const ctaBlock = options?.cta
+    ? `<table cellpadding="0" cellspacing="0" style="margin:8px 0 24px 0;"><tr><td style="background:${accentColor};border-radius:6px;">
+              <a href="${options.cta.url.replace(/"/g, '%22')}" style="display:inline-block;padding:14px 28px;color:#ffffff;font-size:16px;font-weight:700;text-decoration:none;">${escapeHtml(options.cta.label)}</a>
+            </td></tr></table>`
+    : ''
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -743,6 +757,7 @@ export function buildEmailHtml(
           <td style="padding:32px;color:#333333;font-size:15px;">
             ${technicianCard}
             ${paragraphs}
+            ${ctaBlock}
           </td>
         </tr>
 
