@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import {
+  leadSourceUpdatePayload,
+  normalizeLeadSourceForWrite,
+} from '@/lib/server/lead-sources'
+import {
   computeAreaQuantity,
   parseAreaSegmentsInput,
   quantityFromSegments,
@@ -208,6 +212,40 @@ export async function PATCH(
     }
     if (body.status !== undefined) {
       scheduleUpdate.status = String(body.status)
+    }
+    // "How did you hear about us?" — same engine as service jobs, so the
+    // estimate carries attribution into the converted job and the reports.
+    if (body.lead_source_key !== undefined || body.lead_source !== undefined) {
+      const rawKey = body.lead_source_key ? String(body.lead_source_key) : ''
+      const rawLegacy = body.lead_source ? String(body.lead_source) : ''
+      if (!rawKey && !rawLegacy) {
+        Object.assign(scheduleUpdate, {
+          lead_source: null,
+          lead_source_key: null,
+          lead_source_detail: null,
+          original_lead_source: null,
+        })
+      } else {
+        const normalized = await normalizeLeadSourceForWrite({
+          supabase,
+          sourceKey: rawKey || null,
+          legacyValue: rawLegacy || null,
+          detail:
+            body.lead_source_detail !== undefined
+              ? String(body.lead_source_detail || '') || null
+              : null,
+          requireActive: true,
+          requirePublic: false,
+          allowMissingDetail: true,
+        })
+        if (!normalized.ok) {
+          return NextResponse.json({ error: normalized.error }, { status: 400 })
+        }
+        Object.assign(
+          scheduleUpdate,
+          leadSourceUpdatePayload(normalized.source),
+        )
+      }
     }
 
     // --- Line items ---

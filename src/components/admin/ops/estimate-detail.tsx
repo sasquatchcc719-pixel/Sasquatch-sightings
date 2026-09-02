@@ -27,6 +27,11 @@ import { Card } from '@/components/ui/card'
 import { DirectionsButtons } from '@/components/ops/directions-buttons'
 import { StreetViewCard } from '@/components/ops/street-view-card'
 import type { ServiceAddressLike } from '@/lib/ops/address-links'
+import {
+  CANONICAL_LEAD_SOURCE_OPTIONS,
+  getPublicLeadSourceOptions,
+  type PublicLeadSourceOption,
+} from '@/lib/lead-sources'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
@@ -102,6 +107,8 @@ type EstimateDetail = {
   end_time: string
   status: string
   estimate_status: string | null
+  lead_source_key: string | null
+  lead_source_detail: string | null
   converted_appointment_id: string | null
   quoted_total: number | null
   internal_notes: string | null
@@ -314,6 +321,11 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
   const [contactBusiness, setContactBusiness] = useState('')
   const [contactPhone, setContactPhone] = useState('')
   const [contactEmail, setContactEmail] = useState('')
+  const [leadSource, setLeadSource] = useState('')
+  const [leadSourceDetail, setLeadSourceDetail] = useState('')
+  const [leadSourceOptions, setLeadSourceOptions] = useState<
+    PublicLeadSourceOption[]
+  >(() => getPublicLeadSourceOptions(CANONICAL_LEAD_SOURCE_OPTIONS))
   const [addrStreet1, setAddrStreet1] = useState('')
   const [addrStreet2, setAddrStreet2] = useState('')
   const [addrCity, setAddrCity] = useState('')
@@ -381,6 +393,8 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
         setContactPhone(cust.phone || '')
         setContactEmail(cust.email || '')
       }
+      setLeadSource(data.estimate.lead_source_key || '')
+      setLeadSourceDetail(data.estimate.lead_source_detail || '')
       const addr = Array.isArray(data.estimate.ops_service_addresses)
         ? data.estimate.ops_service_addresses[0]
         : data.estimate.ops_service_addresses
@@ -614,6 +628,23 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
     })
   }, [])
 
+  useEffect(() => {
+    fetch('/api/public/lead-sources', { cache: 'no-store' })
+      .then((res) =>
+        res.ok ? res.json() : Promise.reject(new Error('failed')),
+      )
+      .then((data) => {
+        if (Array.isArray(data.options) && data.options.length > 0) {
+          setLeadSourceOptions(data.options)
+        }
+      })
+      .catch(() => {
+        setLeadSourceOptions(
+          getPublicLeadSourceOptions(CANONICAL_LEAD_SOURCE_OPTIONS),
+        )
+      })
+  }, [])
+
   // ── Save ────────────────────────────────────────────────────────────────
 
   const handleSave = useCallback(async () => {
@@ -625,6 +656,8 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
         start_time: scheduleStart,
         end_time: scheduleEnd || undefined,
         internal_notes: internalNotes,
+        lead_source_key: leadSource || null,
+        lead_source_detail: leadSourceDetail || null,
         customer: {
           first_name: contactFirstName || null,
           last_name: contactLastName || null,
@@ -697,6 +730,8 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
     contactBusiness,
     contactPhone,
     contactEmail,
+    leadSource,
+    leadSourceDetail,
     addrStreet1,
     addrStreet2,
     addrCity,
@@ -877,6 +912,22 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
     [contactFirstName, contactLastName].filter(Boolean).join(' ') ||
     'New Estimate'
   const visitMinutes = Math.round(totalMeasureMinutes) || 30
+  const selectedLeadSource = leadSourceOptions.find(
+    (option) => option.key === leadSource,
+  )
+  const leadSourceMissing =
+    !leadSource ||
+    (selectedLeadSource?.requires_detail === true && !leadSourceDetail.trim())
+  const isPlaceholderName =
+    !contactBusiness.trim() &&
+    contactFirstName.trim().toLowerCase() === 'new' &&
+    contactLastName.trim().toLowerCase() === 'estimate'
+  const readyToSend = !leadSourceMissing && !isPlaceholderName
+  const notReadyReason = isPlaceholderName
+    ? 'Enter the customer or business name first.'
+    : leadSourceMissing
+      ? 'Pick how they heard about us first.'
+      : null
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-4 md:p-6">
@@ -1004,7 +1055,48 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
               placeholder="customer@example.com"
             />
           </div>
+          <div>
+            <Label htmlFor="estimate-lead-source" className="text-xs">
+              How did they hear about us? *
+            </Label>
+            <select
+              id="estimate-lead-source"
+              className={`border-input bg-background focus-visible:ring-ring mt-1 h-9 w-full rounded-md border px-2 text-sm shadow-sm focus-visible:ring-1 focus-visible:outline-none ${
+                leadSource ? '' : 'border-amber-400/70'
+              }`}
+              value={leadSource}
+              onChange={(e) => {
+                setLeadSource(e.target.value)
+                setLeadSourceDetail('')
+              }}
+            >
+              <option value="">— Select source —</option>
+              {leadSourceOptions.map((option) => (
+                <option key={option.key} value={option.value}>
+                  {option.customer_label}
+                </option>
+              ))}
+            </select>
+          </div>
+          {selectedLeadSource?.requires_detail ? (
+            <div>
+              <Label htmlFor="estimate-lead-source-detail" className="text-xs">
+                {selectedLeadSource.detail_label || 'Lead source detail'} *
+              </Label>
+              <Input
+                id="estimate-lead-source-detail"
+                value={leadSourceDetail}
+                onChange={(e) => setLeadSourceDetail(e.target.value)}
+              />
+            </div>
+          ) : null}
         </div>
+        {isPlaceholderName ? (
+          <p className="rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-200">
+            This estimate still has the placeholder name. Replace it with the
+            customer or business name before scheduling or sending anything.
+          </p>
+        ) : null}
 
         {/* Quick action buttons when contact info exists */}
         {contactPhone ? (
@@ -1169,7 +1261,7 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
           <div className="border-border/60 border-t border-dashed pt-4">
             <Button
               className="h-12 w-full gap-2 bg-gradient-to-r from-emerald-600 to-emerald-500 text-base font-bold text-white shadow-md hover:from-emerald-500 hover:to-emerald-400"
-              disabled={scheduleEmailSending || !contactEmail}
+              disabled={scheduleEmailSending || !contactEmail || !readyToSend}
               onClick={() => void handleSendEmail('booking_confirmation')}
             >
               {scheduleEmailSending ? (
@@ -1185,7 +1277,11 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
                   ? 'Confirmation sent!'
                   : 'Schedule Estimate'}
             </Button>
-            {!contactEmail ? (
+            {notReadyReason ? (
+              <p className="mt-1.5 text-center text-xs text-amber-600">
+                {notReadyReason}
+              </p>
+            ) : !contactEmail ? (
               <p className="mt-1.5 text-center text-xs text-amber-600">
                 Add a customer email above to send the booking confirmation.
               </p>
@@ -1612,7 +1708,8 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
             {lineItems.length > 0 && contactEmail ? (
               <Button
                 className="gap-2 bg-sky-600 font-semibold text-white hover:bg-sky-500"
-                disabled={quoteEmailSending}
+                disabled={quoteEmailSending || !readyToSend}
+                title={notReadyReason ?? undefined}
                 onClick={() => void handleSendEmail('quote')}
               >
                 {quoteEmailSending ? (
@@ -1671,7 +1768,8 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
             <div className="ml-auto flex flex-wrap items-center gap-2">
               <Button
                 className="gap-2 bg-amber-400 font-bold text-slate-950 shadow-md hover:bg-amber-300"
-                disabled={lineItems.length === 0}
+                disabled={lineItems.length === 0 || !readyToSend}
+                title={notReadyReason ?? undefined}
                 onClick={() => {
                   setConvertError(null)
                   setShowConvertDialog(true)
