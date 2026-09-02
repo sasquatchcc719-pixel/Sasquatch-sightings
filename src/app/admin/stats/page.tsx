@@ -231,6 +231,7 @@ type YearSummary = {
   invoicesThroughToday: number
   avgTicket: number
   medianTicket: number
+  medianTicketThroughToday: number
   ytdGrowthPct: number | null
   isCurrentYear: boolean
 }
@@ -1796,9 +1797,10 @@ export default function StatsPage() {
                         {y.isCurrentYear ? '—' : formatCurrency(y.fullYear)}
                       </span>
                       <span className="text-muted-foreground w-32 shrink-0 text-right text-xs">
-                        {y.invoices} jobs ·{' '}
+                        {/* Same window as the dollars beside it. */}
+                        {y.invoicesThroughToday} jobs ·{' '}
                         <span className="font-medium">
-                          {formatCurrency(y.medianTicket)}
+                          {formatCurrency(y.medianTicketThroughToday)}
                         </span>{' '}
                         typical
                       </span>
