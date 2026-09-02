@@ -17,7 +17,12 @@ type PayrollSnapshot = {
   break_minutes?: number | string | null
 }
 
-type ShiftEvent = 'clock_in' | 'clock_out' | 'break_start' | 'break_end'
+type ShiftEvent =
+  | 'clock_in'
+  | 'clock_out'
+  | 'break_start'
+  | 'break_end'
+  | 'undo_clock_out'
 
 export async function notifyDavidShiftEvent(params: {
   staff: StaffUserData | null
@@ -69,6 +74,8 @@ function eventLabel(event: ShiftEvent): string {
       return 'started break'
     case 'break_end':
       return 'ended break'
+    case 'undo_clock_out':
+      return 'undid a clock out (back on the clock)'
   }
 }
 
@@ -81,6 +88,7 @@ function eventTime(event: ShiftEvent, shift: ShiftSnapshot): string | null {
     case 'break_start':
       return shift.break_started_at ?? null
     case 'break_end':
+    case 'undo_clock_out':
       return new Date().toISOString()
   }
 }

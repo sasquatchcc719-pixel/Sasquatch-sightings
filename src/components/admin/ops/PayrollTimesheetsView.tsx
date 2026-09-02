@@ -133,6 +133,105 @@ async function fetchEntries(
   return res.json()
 }
 
+type ClockEvent = {
+  id: string
+  staffUserId: string
+  entryId: string | null
+  action: string
+  result: 'ok' | 'rejected' | 'error'
+  message: string | null
+  clientSentAt: string | null
+  userAgent: string | null
+  ip: string | null
+  createdAt: string
+}
+
+async function fetchClockEvents(
+  startDate: string,
+  endDate: string,
+  staffUserId: string,
+): Promise<ClockEvent[]> {
+  const params = new URLSearchParams({ startDate, endDate })
+  if (staffUserId) params.set('staffUserId', staffUserId)
+  const res = await fetch(
+    `/api/admin/ops/payroll/time-clock-events?${params.toString()}`,
+  )
+  if (!res.ok) throw new Error('Failed to load clock log')
+  const data = await res.json()
+  return data.events || []
+}
+
+const CLOCK_ACTION_LABELS: Record<string, string> = {
+  clock_in: 'Clock in',
+  clock_out: 'Clock out',
+  undo_clock_out: 'Undo clock out',
+  start_break: 'Start break',
+  end_break: 'End break',
+}
+
+function describeDevice(userAgent: string | null): string {
+  if (!userAgent) return ''
+  if (/iPhone/i.test(userAgent)) return 'iPhone'
+  if (/iPad/i.test(userAgent)) return 'iPad'
+  if (/Android/i.test(userAgent)) return 'Android'
+  if (/Macintosh/i.test(userAgent)) return 'Mac'
+  if (/Windows/i.test(userAgent)) return 'Windows'
+  return 'Other device'
+}
+
+function ClockLog({ events }: { events: ClockEvent[] }) {
+  const [open, setOpen] = useState(false)
+  if (events.length === 0) return null
+  const rejected = events.filter((event) => event.result !== 'ok').length
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="text-xs font-medium text-slate-400 underline-offset-2 hover:text-white hover:underline"
+      >
+        {open ? 'Hide clock log' : 'Clock log'} ({events.length}
+        {rejected > 0 ? `, ${rejected} rejected` : ''})
+      </button>
+      {open && (
+        <ul className="mt-2 space-y-1 rounded-lg border border-white/5 bg-slate-950/40 p-2 text-xs">
+          {events.map((event) => (
+            <li key={event.id} className="flex flex-wrap gap-x-2 gap-y-0.5">
+              <span className="font-mono text-slate-400">
+                {fmtTime(event.createdAt)}
+              </span>
+              <span
+                className={
+                  event.result === 'ok'
+                    ? 'text-slate-200'
+                    : event.result === 'rejected'
+                      ? 'text-amber-300'
+                      : 'text-red-300'
+                }
+              >
+                {CLOCK_ACTION_LABELS[event.action] || event.action}
+                {event.result === 'rejected'
+                  ? ' — rejected'
+                  : event.result === 'error'
+                    ? ' — failed'
+                    : ''}
+              </span>
+              {event.message && (
+                <span className="text-slate-500">{event.message}</span>
+              )}
+              {event.userAgent && (
+                <span className="text-slate-600">
+                  {describeDevice(event.userAgent)}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 type PremiumRow = {
   appointmentId: string
   workDate: string
@@ -306,6 +405,34 @@ export function PayrollTimesheetsView() {
       ),
     refetchInterval: 60_000,
   })
+
+  const clockEventsQuery = useQuery({
+    queryKey: [
+      'payroll-clock-events',
+      viewMode,
+      date,
+      payPeriod.startDate,
+      payPeriod.endDate,
+      staffFilter,
+    ],
+    queryFn: () =>
+      fetchClockEvents(
+        viewMode === 'period' ? payPeriod.startDate : date,
+        viewMode === 'period' ? payPeriod.endDate : date,
+        staffFilter,
+      ),
+  })
+
+  const clockEventsByEntry = useMemo(() => {
+    const map = new Map<string, ClockEvent[]>()
+    for (const event of clockEventsQuery.data ?? []) {
+      const key = event.entryId ?? `unmatched:${event.staffUserId}`
+      const list = map.get(key) ?? []
+      list.push(event)
+      map.set(key, list)
+    }
+    return map
+  }, [clockEventsQuery.data])
 
   const premiumsQuery = useQuery({
     queryKey: [
@@ -1116,6 +1243,39 @@ export function PayrollTimesheetsView() {
             </div>
           )}
 
+        {(() => {
+          const unmatched = [...clockEventsByEntry.entries()]
+            .filter(([key]) => key.startsWith('unmatched:'))
+            .flatMap(([, list]) => list)
+          if (unmatched.length === 0) return null
+          const staffName = (staffUserId: string) =>
+            staffQuery.data?.find((row) => row.id === staffUserId)
+              ?.display_name ?? 'Unknown'
+          return (
+            <div className="border-b border-amber-400/20 bg-amber-500/5 px-4 py-3">
+              <p className="text-sm font-semibold text-amber-200">
+                Clock attempts that did not create or change an entry
+              </p>
+              <ul className="mt-1 space-y-0.5 text-xs text-slate-300">
+                {unmatched.map((event) => (
+                  <li key={event.id}>
+                    <span className="font-mono text-slate-400">
+                      {viewMode === 'period'
+                        ? `${mountainDateKey(event.createdAt)} `
+                        : ''}
+                      {fmtTime(event.createdAt)}
+                    </span>{' '}
+                    {staffName(event.staffUserId)} ·{' '}
+                    {CLOCK_ACTION_LABELS[event.action] || event.action} ·{' '}
+                    {event.result}
+                    {event.message ? ` · ${event.message}` : ''}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )
+        })()}
+
         {entries.length > 0 && (
           <div className="divide-y divide-white/5">
             {entries.map((entry) => (
@@ -1160,6 +1320,7 @@ export function PayrollTimesheetsView() {
                         Clock In/Out entry
                       </p>
                     )}
+                    <ClockLog events={clockEventsByEntry.get(entry.id) ?? []} />
                   </div>
 
                   <div className="flex items-center gap-3">
