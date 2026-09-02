@@ -6,11 +6,13 @@
  * carry the decision, so a mail scanner following links cannot accept a bid.
  */
 import { NextRequest, NextResponse } from 'next/server'
+import { Resend } from 'resend'
 import { createAdminClient } from '@/supabase/server'
 import {
   EstimateTokenError,
   verifyEstimateDecisionToken,
 } from '@/lib/ops/estimate-decision-token'
+import { buildEmailHtml } from '@/lib/ops/communications'
 import { sendAdminAlert } from '@/lib/telegram'
 
 type Decision = 'accepted' | 'declined'
@@ -25,6 +27,57 @@ const DECIDABLE_STATUSES = new Set(['draft', 'sent', 'accepted', 'declined'])
 
 function money(n: number): string {
   return `$${Number(n || 0).toFixed(2)}`
+}
+
+/**
+ * Email Charles when a customer decides. Telegram is the fast ping; this is the
+ * copy that stays in his inbox and survives a phone reinstall.
+ *
+ * Same OWNER_ALERT_EMAIL / OPS_EMAIL_FROM convention the voicemail alert uses.
+ */
+async function sendOwnerEmail(params: {
+  headline: string
+  who: string
+  facts: string[]
+  decision: Decision
+  adminLink: string
+}): Promise<void> {
+  const { headline, who, facts, decision, adminLink } = params
+
+  const resendKey = process.env.RESEND_API_KEY
+  const toEmail = process.env.OWNER_ALERT_EMAIL || 'sasquatchcc719@gmail.com'
+  if (!resendKey) {
+    console.warn('[estimates/decision] RESEND_API_KEY not set — no owner email')
+    return
+  }
+
+  const bodyText = [
+    `${who} just ${decision === 'accepted' ? 'accepted' : 'declined'} their estimate.`,
+    facts.map((f) => `- ${f}`).join('\n'),
+    decision === 'accepted'
+      ? `Convert it to a job to get it on the calendar.`
+      : `The estimate is marked declined. Nothing else to do unless you want to follow up.`,
+  ].join('\n\n')
+
+  const resend = new Resend(resendKey)
+  const { error } = await resend.emails.send({
+    from:
+      process.env.OPS_EMAIL_FROM ||
+      process.env.OPS_FROM_EMAIL ||
+      'Sasquatch Carpet Cleaning <noreply@sasquatchcarpet.com>',
+    to: toEmail,
+    subject: `${headline} — ${who}`,
+    html: buildEmailHtml(bodyText, 'owner_alert', {
+      cta: {
+        label: decision === 'accepted' ? 'Open the estimate' : 'View the estimate',
+        url: adminLink,
+      },
+    }),
+  })
+
+  if (error) {
+    throw new Error(error.message || 'Resend rejected the owner alert')
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -118,28 +171,41 @@ export async function POST(request: NextRequest) {
       ? `${addr.street_1}, ${addr.city}, ${addr.state} ${addr.zip_code}`
       : 'address on file'
 
+    const headline =
+      decision === 'accepted' ? '✅ Estimate ACCEPTED' : '❌ Estimate declined'
+    const adminLink = `https://sightings.sasquatchcarpet.com/admin/operations/estimates/${estimateId}`
+    const facts = [
+      where,
+      `Quoted: ${money(Number(estimate.quoted_total ?? 0))}`,
+      customer?.phone ? `Phone: ${customer.phone}` : null,
+      customer?.email ? `Email: ${customer.email}` : null,
+    ].filter((line): line is string => line !== null)
+
     // Charles works alone and needs to know immediately — an accepted bid is a
-    // job to schedule. Never let a notification failure roll back the decision.
-    try {
-      await sendAdminAlert(
-        decision === 'accepted' ? '✅ Estimate ACCEPTED' : '❌ Estimate declined',
+    // job to schedule. Telegram and email go out independently: neither one
+    // failing may sink the other, and neither may roll back the decision the
+    // customer already made.
+    await Promise.allSettled([
+      sendAdminAlert(
+        headline,
         [
           `*${who}*`,
-          where,
-          `Quoted: ${money(Number(estimate.quoted_total ?? 0))}`,
-          customer?.phone ? `Phone: ${customer.phone}` : null,
+          ...facts,
           '',
           decision === 'accepted'
             ? 'Convert it to a job to get it on the calendar:'
             : 'Estimate marked declined.',
-          `https://sightings.sasquatchcarpet.com/admin/operations/estimates/${estimateId}`,
-        ]
-          .filter((l) => l !== null)
-          .join('\n'),
-      )
-    } catch (alertError) {
-      console.error('[estimates/decision] Telegram alert failed:', alertError)
-    }
+          adminLink,
+        ].join('\n'),
+      ).catch((alertError) => {
+        console.error('[estimates/decision] Telegram alert failed:', alertError)
+      }),
+      sendOwnerEmail({ headline, who, facts, decision, adminLink }).catch(
+        (mailError) => {
+          console.error('[estimates/decision] Owner email failed:', mailError)
+        },
+      ),
+    ])
 
     return NextResponse.json({ success: true, decision })
   } catch (error) {
