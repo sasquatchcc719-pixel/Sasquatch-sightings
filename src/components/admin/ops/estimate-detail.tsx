@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import {
   ArrowRight,
   CalendarClock,
+  CalendarDays,
+  Clock3,
   CalendarCheck,
   CheckCircle2,
   Copy,
@@ -22,6 +24,9 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { DirectionsButtons } from '@/components/ops/directions-buttons'
+import { StreetViewCard } from '@/components/ops/street-view-card'
+import type { ServiceAddressLike } from '@/lib/ops/address-links'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
@@ -225,6 +230,43 @@ function toNumber(
   if (value === null || value === undefined || value === '') return fallback
   const n = Number(value)
   return Number.isFinite(n) ? n : fallback
+}
+
+type SectionTone = 'emerald' | 'sky' | 'amber' | 'violet'
+
+const SECTION_TONE: Record<SectionTone, string> = {
+  emerald: 'bg-emerald-500/15 text-emerald-600 ring-emerald-500/30',
+  sky: 'bg-sky-500/15 text-sky-600 ring-sky-500/30',
+  amber: 'bg-amber-500/15 text-amber-600 ring-amber-500/30',
+  violet: 'bg-violet-500/15 text-violet-600 ring-violet-500/30',
+}
+
+function SectionTitle({
+  icon,
+  tone,
+  title,
+  subtitle,
+}: {
+  icon: React.ReactNode
+  tone: SectionTone
+  title: string
+  subtitle?: React.ReactNode
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <span
+        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ring-1 ${SECTION_TONE[tone]}`}
+      >
+        {icon}
+      </span>
+      <div className="min-w-0">
+        <h2 className="text-base font-semibold">{title}</h2>
+        {subtitle ? (
+          <p className="text-muted-foreground text-xs">{subtitle}</p>
+        ) : null}
+      </div>
+    </div>
+  )
 }
 
 const STATUS_BADGE: Record<string, { label: string; className: string }> = {
@@ -820,50 +862,83 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
   const statusKey = estimate.estimate_status || 'draft'
   const badge = STATUS_BADGE[statusKey] || STATUS_BADGE.draft
   const isConverted = !!estimate.converted_appointment_id
-  const mapsHref =
+  const serviceAddress: ServiceAddressLike | null =
     addrStreet1 && addrCity
-      ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${addrStreet1}, ${addrCity}, ${addrState} ${addrZip}`)}`
+      ? {
+          street_1: addrStreet1,
+          street_2: addrStreet2,
+          city: addrCity,
+          state: addrState,
+          zip_code: addrZip,
+        }
       : null
-  const appleMapsHref =
-    addrStreet1 && addrCity
-      ? `https://maps.apple.com/?daddr=${encodeURIComponent(`${addrStreet1}, ${addrCity}, ${addrState} ${addrZip}`)}&dirflg=d`
-      : null
+  const displayName =
+    contactBusiness ||
+    [contactFirstName, contactLastName].filter(Boolean).join(' ') ||
+    'New Estimate'
+  const visitMinutes = Math.round(totalMeasureMinutes) || 30
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-4 md:p-6">
       {/* ── Header ──────────────────────────────────────────────────── */}
-      <Card className="p-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-muted-foreground text-xs font-medium tracking-[0.2em] uppercase">
-              Estimate · {formatDate(estimate.appointment_date)}
-            </p>
-            <h1 className="mt-1 text-3xl font-bold">
-              {contactBusiness ||
-                [contactFirstName, contactLastName].filter(Boolean).join(' ') ||
-                'New Estimate'}
+      <Card className="relative overflow-hidden border-emerald-500/30 bg-gradient-to-br from-emerald-950 via-slate-900 to-slate-950 p-6 text-white shadow-lg">
+        <div className="pointer-events-none absolute -top-24 -right-24 h-72 w-72 rounded-full bg-emerald-500/25 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-24 -left-20 h-64 w-64 rounded-full bg-amber-400/15 blur-3xl" />
+        <div className="relative flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-400/20 text-emerald-200 ring-1 ring-emerald-300/40">
+                <Ruler className="h-4 w-4" />
+              </span>
+              <p className="text-xs font-semibold tracking-[0.25em] text-emerald-200/90 uppercase">
+                Estimate
+              </p>
+              <Badge
+                className={`${badge.className} ml-1 shadow-sm ring-1 ring-white/40`}
+              >
+                {badge.label}
+              </Badge>
+            </div>
+            <h1 className="mt-3 text-3xl font-black tracking-tight text-white sm:text-4xl">
+              {displayName}
             </h1>
-            <p className="text-muted-foreground mt-1 text-sm">
-              Measuring visit · {estimate.start_time.slice(0, 5)}–
-              {estimate.end_time.slice(0, 5)} ·{' '}
-              {Math.round(totalMeasureMinutes) || 30} min
-            </p>
+            <div className="mt-4 flex flex-wrap gap-2 text-sm">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 font-medium text-white ring-1 ring-white/15">
+                <CalendarDays className="h-4 w-4 text-emerald-300" />
+                {formatDate(estimate.appointment_date)}
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 font-medium text-white ring-1 ring-white/15">
+                <Clock3 className="h-4 w-4 text-sky-300" />
+                {estimate.start_time.slice(0, 5)}–
+                {estimate.end_time.slice(0, 5)}
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 font-medium text-white ring-1 ring-white/15">
+                <CalendarClock className="h-4 w-4 text-amber-300" />
+                {visitMinutes} min measuring visit
+              </span>
+            </div>
           </div>
-          <div className="flex flex-col items-end gap-2">
-            <Badge className={badge.className}>{badge.label}</Badge>
-            <p className="text-2xl font-bold tabular-nums">
+          <div className="flex shrink-0 flex-col items-start sm:items-end">
+            <p className="text-xs font-semibold tracking-[0.2em] text-amber-200/80 uppercase">
+              Est. job total
+            </p>
+            <p className="mt-1 text-4xl font-black text-amber-300 tabular-nums drop-shadow-sm">
               ${subtotal.toFixed(2)}
             </p>
-            <p className="text-muted-foreground text-xs">Est. job total</p>
+            <p className="mt-1 text-xs text-white/60">
+              {lineItems.length === 0
+                ? 'No line items yet'
+                : `${lineItems.length} line item${lineItems.length === 1 ? '' : 's'}`}
+            </p>
           </div>
         </div>
 
         {isConverted ? (
-          <div className="mt-5 rounded-md border border-violet-200 bg-violet-50 p-3 text-sm text-violet-900">
+          <div className="relative mt-5 rounded-xl border border-violet-300/40 bg-violet-500/15 p-3 text-sm text-violet-100">
             <p className="font-semibold">Converted to a service appointment.</p>
             <Button
               variant="link"
-              className="h-auto p-0 text-violet-700"
+              className="h-auto p-0 text-violet-200"
               onClick={() =>
                 router.push(
                   `/admin/operations/appointments/${estimate.converted_appointment_id}`,
@@ -876,12 +951,17 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
         ) : null}
       </Card>
 
+      {/* ── Street View ──────────────────────────────────────────── */}
+      <StreetViewCard address={serviceAddress} />
+
       {/* ── Contact Information ───────────────────────────────────── */}
       <Card className="space-y-4 p-6">
-        <div className="flex items-center gap-2">
-          <User className="text-muted-foreground h-4 w-4" />
-          <h2 className="text-base font-semibold">Contact information</h2>
-        </div>
+        <SectionTitle
+          icon={<User className="h-4 w-4" />}
+          tone="emerald"
+          title="Contact information"
+          subtitle="Who we're measuring for and how to reach them"
+        />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <Label className="text-xs">First name</Label>
@@ -929,20 +1009,33 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
         {/* Quick action buttons when contact info exists */}
         {contactPhone ? (
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" className="gap-2" asChild>
+            <Button
+              size="sm"
+              className="gap-2 bg-emerald-600 font-semibold text-white hover:bg-emerald-500"
+              asChild
+            >
               <a href={`tel:${contactPhone}`}>
                 <Phone className="h-4 w-4" />
                 Call
               </a>
             </Button>
-            <Button size="sm" variant="outline" className="gap-2" asChild>
+            <Button
+              size="sm"
+              className="gap-2 bg-sky-600 font-semibold text-white hover:bg-sky-500"
+              asChild
+            >
               <a href={`sms:${contactPhone}`}>
                 <MessageSquare className="h-4 w-4" />
                 Text
               </a>
             </Button>
             {contactEmail ? (
-              <Button size="sm" variant="outline" className="gap-2" asChild>
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-2 border-amber-400/60 font-semibold text-amber-700 hover:bg-amber-50 hover:text-amber-800 dark:text-amber-300 dark:hover:bg-amber-500/10"
+                asChild
+              >
                 <a href={`mailto:${contactEmail}`}>
                   <Mail className="h-4 w-4" />
                   Email
@@ -955,10 +1048,12 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
 
       {/* ── Service Address ───────────────────────────────────────── */}
       <Card className="space-y-4 p-6">
-        <div className="flex items-center gap-2">
-          <MapPin className="text-muted-foreground h-4 w-4" />
-          <h2 className="text-base font-semibold">Service address</h2>
-        </div>
+        <SectionTitle
+          icon={<MapPin className="h-4 w-4" />}
+          tone="sky"
+          title="Service address"
+          subtitle="Where the measuring visit happens"
+        />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <Label className="text-xs">Street</Label>
@@ -1010,42 +1105,17 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
             />
           </div>
         </div>
-        {mapsHref ? (
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              size="default"
-              className="w-full gap-2 bg-green-600 font-bold tracking-widest text-white uppercase hover:bg-green-500"
-              asChild
-            >
-              <a href={mapsHref} target="_blank" rel="noopener noreferrer">
-                <MapPin className="h-4 w-4" />
-                Google Maps
-              </a>
-            </Button>
-            <Button
-              size="default"
-              className="w-full gap-2 bg-sky-600 font-bold tracking-widest text-white uppercase hover:bg-sky-500"
-              asChild
-            >
-              <a
-                href={appleMapsHref!}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <MapPin className="h-4 w-4" />
-                Apple Maps
-              </a>
-            </Button>
-          </div>
-        ) : null}
+        {serviceAddress ? <DirectionsButtons address={serviceAddress} /> : null}
       </Card>
 
       {/* ── Schedule ────────────────────────────────────────────────── */}
       <Card className="space-y-4 p-6">
-        <div className="flex items-center gap-2">
-          <CalendarClock className="text-muted-foreground h-4 w-4" />
-          <h2 className="text-base font-semibold">Measuring visit</h2>
-        </div>
+        <SectionTitle
+          icon={<CalendarClock className="h-4 w-4" />}
+          tone="amber"
+          title="Measuring visit"
+          subtitle="When we swing by with the tape measure"
+        />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div>
             <Label htmlFor="estimate-date" className="text-xs">
@@ -1098,7 +1168,7 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
         {!isConverted ? (
           <div className="border-border/60 border-t border-dashed pt-4">
             <Button
-              className="w-full gap-2 bg-sky-600 text-white hover:bg-sky-700"
+              className="h-12 w-full gap-2 bg-gradient-to-r from-emerald-600 to-emerald-500 text-base font-bold text-white shadow-md hover:from-emerald-500 hover:to-emerald-400"
               disabled={scheduleEmailSending || !contactEmail}
               onClick={() => void handleSendEmail('booking_confirmation')}
             >
@@ -1132,17 +1202,18 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
       {/* ── Line items ──────────────────────────────────────────────── */}
       <Card className="p-4 md:p-6">
         <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-          <div className="flex items-center gap-2">
-            <Ruler className="text-muted-foreground h-4 w-4" />
-            <div>
-              <h2 className="text-base font-semibold">Line items</h2>
-              <p className="text-muted-foreground text-xs">
+          <SectionTitle
+            icon={<Ruler className="h-4 w-4" />}
+            tone="violet"
+            title="Line items"
+            subtitle={
+              <>
                 Pick a category, tap a service to add a line, then use{' '}
                 <span className="font-medium">+ Add L×W</span> to stack floor
                 areas on that line. Totals add automatically.
-              </p>
-            </div>
-          </div>
+              </>
+            }
+          />
           <Button
             size="sm"
             variant="outline"
@@ -1525,11 +1596,11 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
       </Card>
 
       {/* ── Action bar ──────────────────────────────────────────────── */}
-      <Card className="flex flex-wrap items-center gap-2 p-4">
+      <Card className="flex flex-wrap items-center gap-2 border-t-4 border-t-emerald-500 p-4 shadow-md">
         <Button
           onClick={() => void handleSave()}
           disabled={saving}
-          className="gap-2"
+          className="gap-2 bg-emerald-600 font-semibold text-white hover:bg-emerald-500"
         >
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
           {saving ? 'Saving…' : 'Save changes'}
@@ -1540,8 +1611,7 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
             {/* Send Quote — appears when there are line items and a customer email */}
             {lineItems.length > 0 && contactEmail ? (
               <Button
-                variant="outline"
-                className="gap-2 border-sky-300 text-sky-700 hover:bg-sky-50 hover:text-sky-800"
+                className="gap-2 bg-sky-600 font-semibold text-white hover:bg-sky-500"
                 disabled={quoteEmailSending}
                 onClick={() => void handleSendEmail('quote')}
               >
@@ -1563,6 +1633,7 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
             {statusKey !== 'sent' ? (
               <Button
                 variant="outline"
+                className="border-sky-400/60 text-sky-700 hover:bg-sky-50 hover:text-sky-800 dark:text-sky-300 dark:hover:bg-sky-500/10"
                 disabled={actionLoading !== null}
                 onClick={() => void handleStatusChange('sent')}
               >
@@ -1575,6 +1646,7 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
             {statusKey !== 'accepted' ? (
               <Button
                 variant="outline"
+                className="border-emerald-400/60 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-500/10"
                 disabled={actionLoading !== null}
                 onClick={() => void handleStatusChange('accepted')}
               >
@@ -1598,7 +1670,7 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
 
             <div className="ml-auto flex flex-wrap items-center gap-2">
               <Button
-                className="gap-2 bg-emerald-600 text-white hover:bg-emerald-700"
+                className="gap-2 bg-amber-400 font-bold text-slate-950 shadow-md hover:bg-amber-300"
                 disabled={lineItems.length === 0}
                 onClick={() => {
                   setConvertError(null)
