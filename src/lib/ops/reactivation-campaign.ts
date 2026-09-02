@@ -184,7 +184,19 @@ function unsubscribeUrl(customerId: string): string {
   return `${UNSUB_BASE}?cid=${customerId}&token=${token}`
 }
 
-function buildReactivationEmailHtml(body: string, customerId: string): string {
+/**
+ * The real reactivation email, wrapper and all.
+ *
+ * Exported so the admin preview renders exactly what the customer receives.
+ * It used to render these through the generic ops wrapper instead, which has
+ * no BOOK ONLINE button — so the preview showed "Use the button below to book
+ * online" with no button under it, and looked like 834 sent emails had been
+ * dead ends. They were not; only the preview was wrong.
+ */
+export function buildReactivationEmailHtml(
+  body: string,
+  customerId: string,
+): string {
   const paragraphs = body
     .replace(/\\n/g, '\n')
     .split(/\n{2,}/)

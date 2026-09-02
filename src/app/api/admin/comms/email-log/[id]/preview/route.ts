@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { buildEmailHtml } from '@/lib/ops/communications'
+import { buildReactivationEmailHtml } from '@/lib/ops/reactivation-campaign'
 
 export async function GET(
   request: NextRequest,
@@ -17,15 +18,17 @@ export async function GET(
     if (source === 'reactivation') {
       const { data, error } = await supabase
         .from('reactivation_email_log')
-        .select('body_text, template_key, subject')
+        .select('body_text, template_key, subject, customer_id')
         .eq('id', id)
         .single()
       if (error || !data) {
         return new NextResponse('Email log entry not found', { status: 404 })
       }
-      const html = buildEmailHtml(
+      // The same builder the sender uses, so the preview cannot drift from
+      // what actually goes out.
+      const html = buildReactivationEmailHtml(
         data.body_text || `(body not stored)\n\nSubject: ${data.subject || ''}`,
-        data.template_key || 'reactivation',
+        data.customer_id || '',
       )
       return new NextResponse(html, {
         headers: { 'Content-Type': 'text/html; charset=utf-8' },
