@@ -187,12 +187,35 @@ export async function enrollCustomerInDrip(
   const { data: appt } = await supabase
     .from('ops_appointments')
     .select(
-      'id, customer_id, appointment_date, completed_at, status, recurring_template_id, ops_customers!ops_appointments_customer_id_fkey(email, email_opt_out)',
+      'id, customer_id, appointment_date, completed_at, status, recurring_template_id, kind, visit_type, restoration_project_id, ops_customers!ops_appointments_customer_id_fkey(email, email_opt_out)',
     )
     .eq('id', appointmentId)
     .single()
 
   if (!appt || appt.status !== 'completed' || appt.recurring_template_id) return
+
+  /**
+   * Never drip a flood customer.
+   *
+   * The post-job drip is carpet marketing — "how are the floors looking?",
+   * then an upholstery offer. Charles: "we probably don't wanna send Carpet
+   * cleaning marketing emails to flood victims." A water loss is the worst
+   * week of someone's year, not a purchase to follow up on. It is the same
+   * rule that already keeps review requests off restoration jobs.
+   *
+   * The guard lives here rather than at the five call sites because it was
+   * missing from exactly one of them: the appointments route computes
+   * isRestorationVisit and applies it three times, but not on the line that
+   * enrols the drip. Jill Benns was booked for a carpet email four days after
+   * her basement flooded.
+   */
+  if (
+    appt.kind === 'restoration' ||
+    appt.visit_type ||
+    appt.restoration_project_id
+  ) {
+    return
+  }
 
   const customer = Array.isArray(appt.ops_customers)
     ? appt.ops_customers[0]
