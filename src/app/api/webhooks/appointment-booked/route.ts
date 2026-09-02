@@ -109,7 +109,8 @@ export async function POST(request: NextRequest) {
           ops_customers!ops_appointments_customer_id_fkey (
             full_name,
             phone,
-            email
+            email,
+            suppress_booking_alerts
           ),
           ops_service_addresses (
             street_1,
@@ -228,6 +229,17 @@ export async function POST(request: NextRequest) {
 
     if (appointment.internal_notes) {
       message += `\n\n📝 ${htmlEscape(appointment.internal_notes)}`
+    }
+
+    // Contract accounts generate a booked appointment a rolling year ahead.
+    // Each one used to fire this alert, which reads like a fresh win and never
+    // is — the work was agreed months ago. Cancellations and reminders for
+    // these customers still come through; only this one is silenced.
+    if (customer?.suppress_booking_alerts) {
+      console.log(
+        `[appointment-booked] Skipped alert for ${customerName} (suppress_booking_alerts)`,
+      )
+      return NextResponse.json({ success: true, skipped: 'suppressed' })
     }
 
     // Send Telegram notification
