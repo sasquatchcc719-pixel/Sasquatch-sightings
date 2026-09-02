@@ -58,6 +58,7 @@ export async function loadUtilizationSupplementRows(
       quoted_total,
       on_my_way_at,
       completed_at,
+      restoration_project_id,
       ops_appointment_line_items (
         line_total
       ),
@@ -74,6 +75,41 @@ export async function loadUtilizationSupplementRows(
 
   if (error) throw error
 
+  /**
+   * A water loss invoices once, at the close, and that one invoice already
+   * contains every visit's line items — so its mitigation day and monitors
+   * are covered by the project invoice even though they carry no invoice of
+   * their own.
+   *
+   * Without this they are emitted as supplement rows: the mitigation day's
+   * $3,897 of demolition counted a second time on top of the project invoice
+   * that already contains it, and its hours counted on top of the summed
+   * hours the close now records. Nearly double the revenue on a real job.
+   */
+  const projectIds = [
+    ...new Set(
+      (completedAppts || [])
+        .map(
+          (a) =>
+            (a as { restoration_project_id?: string | null })
+              .restoration_project_id,
+        )
+        .filter((v): v is string => Boolean(v)),
+    ),
+  ]
+  const coveredProjects = new Set<string>()
+  if (projectIds.length > 0) {
+    const { data: projects } = await supabase
+      .from('restoration_projects')
+      .select('id, invoice_id')
+      .in('id', projectIds)
+    for (const p of projects || []) {
+      if (p.invoice_id && coveredInvoices.has(p.invoice_id)) {
+        coveredProjects.add(p.id)
+      }
+    }
+  }
+
   const rows: SupplementRow[] = []
 
   for (const appt of completedAppts || []) {
@@ -83,6 +119,9 @@ export async function loadUtilizationSupplementRows(
     if (!appt.appointment_date) continue
     if (inv?.id && coveredInvoices.has(inv.id)) continue
     if (!inv?.id && coveredAppointments.has(appt.id)) continue
+    const projectId = (appt as { restoration_project_id?: string | null })
+      .restoration_project_id
+    if (projectId && coveredProjects.has(projectId)) continue
 
     const appointmentLineItems = Array.isArray(appt.ops_appointment_line_items)
       ? appt.ops_appointment_line_items

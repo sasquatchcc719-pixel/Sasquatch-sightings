@@ -121,7 +121,11 @@ export function settleProjectInvoice(input: {
     // discovered later as a negative balance nobody acted on.
     refundDueCents: balanceCents < 0 ? -balanceCents : 0,
     paymentStatus:
-      input.depositCents <= 0 ? 'unpaid' : balanceCents <= 0 ? 'paid' : 'partial',
+      input.depositCents <= 0
+        ? 'unpaid'
+        : balanceCents <= 0
+          ? 'paid'
+          : 'partial',
   }
 }
 
@@ -173,7 +177,7 @@ export async function closeRestorationProject(
 
   const { data: visits } = await supabase
     .from('ops_appointments')
-    .select('id, status, visit_type')
+    .select('id, status, visit_type, appointment_date, end_time')
     .eq('restoration_project_id', projectId)
 
   const visitList = visits ?? []
@@ -189,7 +193,9 @@ export async function closeRestorationProject(
 
   const { data: apptLines } = await supabase
     .from('ops_appointment_line_items')
-    .select('id, appointment_id, name_snapshot, quantity, unit_price, line_total')
+    .select(
+      'id, appointment_id, name_snapshot, quantity, unit_price, line_total',
+    )
     .in('appointment_id', visitIds)
 
   // Stop equipment accrual at the close, then read the billing view.
@@ -206,7 +212,9 @@ export async function closeRestorationProject(
 
   const { data: equipment } = await supabase
     .from('restoration_equipment_billing')
-    .select('catalog_code, description, unit_price, units, unit_days, line_total')
+    .select(
+      'catalog_code, description, unit_price, units, unit_days, line_total',
+    )
     .eq('project_id', projectId)
 
   const { lines, subtotal } = buildProjectInvoiceLines({
@@ -228,7 +236,10 @@ export async function closeRestorationProject(
   })
 
   const lineIdByDescription = new Map(
-    (apptLines ?? []).map((l) => [`${l.name_snapshot}|${l.line_total}`, String(l.id)]),
+    (apptLines ?? []).map((l) => [
+      `${l.name_snapshot}|${l.line_total}`,
+      String(l.id),
+    ]),
   )
 
   const { data: invoice, error: invoiceError } = await supabase
@@ -249,7 +260,10 @@ export async function closeRestorationProject(
       ),
       total: round2(
         subtotal -
-          Math.min(subtotal, Math.max(0, Number(project.deductible_credit ?? 0) || 0)),
+          Math.min(
+            subtotal,
+            Math.max(0, Number(project.deductible_credit ?? 0) || 0),
+          ),
       ),
       sync_status: getQuickBooksSyncStatus(),
     })
@@ -257,7 +271,10 @@ export async function closeRestorationProject(
     .single()
 
   if (invoiceError || !invoice) {
-    return { ok: false, error: invoiceError?.message ?? 'invoice_insert_failed' }
+    return {
+      ok: false,
+      error: invoiceError?.message ?? 'invoice_insert_failed',
+    }
   }
 
   if (lines.length > 0) {
@@ -300,7 +317,10 @@ export async function closeRestorationProject(
       .from('ops_payments')
       .select('amount_cents')
       .eq('invoice_id', invoice.id)
-    depositCents = (already ?? []).reduce((s, p) => s + Number(p.amount_cents), 0)
+    depositCents = (already ?? []).reduce(
+      (s, p) => s + Number(p.amount_cents),
+      0,
+    )
   }
 
   // Left at 'unpaid', a job already covered by its own deposit would go out
@@ -340,7 +360,23 @@ export async function closeRestorationProject(
     .eq('status', 'queued')
     .select('id')
 
-  const staleVisitIds = visitList
+  /**
+   * A visit nobody tapped "finish" on is not the same as a visit that never
+   * happened, and the close used to cancel both.
+   *
+   * Charles worked a six-hour mitigation day and two monitors on the Benns
+   * loss and never tapped finish on any of them — nobody does, in the middle
+   * of a flood. The close cancelled all three, billed their line items
+   * anyway, and left the whole $4,052.46 crediting the one tech who was
+   * there for the two-hour equipment pickup. His words: "it looks like DAVID
+   * made us like $500 an hour lol which all I did was pick up equipment."
+   *
+   * So evidence decides, not the status flag. A visit that produced readings,
+   * line items or photos was worked — mark it completed and dated to its own
+   * day. Only a visit with nothing on it gets cancelled.
+   */
+  let cancelledVisitCount = 0
+  const openVisitIds = visitList
     .filter(
       (v) =>
         v.id !== closingAppointmentId &&
@@ -349,11 +385,63 @@ export async function closeRestorationProject(
     )
     .map((v) => v.id)
 
-  if (staleVisitIds.length > 0) {
-    await supabase
-      .from('ops_appointments')
-      .update({ status: 'cancelled', updated_at: nowIso })
-      .in('id', staleVisitIds)
+  if (openVisitIds.length > 0) {
+    const [{ data: readingRows }, { data: lineRows }, { data: photoRows }] =
+      await Promise.all([
+        supabase
+          .from('restoration_readings')
+          .select('appointment_id')
+          .in('appointment_id', openVisitIds),
+        supabase
+          .from('ops_appointment_line_items')
+          .select('appointment_id')
+          .in('appointment_id', openVisitIds),
+        supabase
+          .from('ops_job_photos')
+          .select('appointment_id')
+          .in('appointment_id', openVisitIds),
+      ])
+
+    const worked = new Set<string>()
+    for (const rows of [readingRows, lineRows, photoRows]) {
+      for (const row of rows ?? []) {
+        const id = (row as { appointment_id?: string | null }).appointment_id
+        if (id) worked.add(id)
+      }
+    }
+
+    const workedIds = openVisitIds.filter((id) => worked.has(id))
+    const emptyIds = openVisitIds.filter((id) => !worked.has(id))
+
+    // Dated to the visit's own day, not to the moment of the close — the same
+    // rule every other date in this system follows, because the work is
+    // routinely entered after the fact.
+    for (const id of workedIds) {
+      const visit = visitList.find((v) => v.id === id)
+      const endedAt =
+        visit?.appointment_date && visit?.end_time
+          ? new Date(
+              `${visit.appointment_date}T${visit.end_time}`,
+            ).toISOString()
+          : nowIso
+      await supabase
+        .from('ops_appointments')
+        .update({
+          status: 'completed',
+          completed_at: endedAt,
+          updated_at: nowIso,
+        })
+        .eq('id', id)
+        .is('completed_at', null)
+    }
+
+    if (emptyIds.length > 0) {
+      await supabase
+        .from('ops_appointments')
+        .update({ status: 'cancelled', updated_at: nowIso })
+        .in('id', emptyIds)
+      cancelledVisitCount = emptyIds.length
+    }
   }
 
   await supabase
@@ -387,7 +475,7 @@ export async function closeRestorationProject(
     refundDueCents,
     paymentStatus,
     cancelledQueued: cancelledQueue?.length ?? 0,
-    cancelledAppointments: staleVisitIds.length,
+    cancelledAppointments: cancelledVisitCount,
   }
 }
 
@@ -409,12 +497,15 @@ export async function scheduleQueuedVisit(
 ): Promise<{ ok: true; appointmentId: string } | { ok: false; error: string }> {
   const { data: queued } = await supabase
     .from('restoration_visit_queue')
-    .select('id, project_id, visit_type, visit_sequence, duration_minutes, status')
+    .select(
+      'id, project_id, visit_type, visit_sequence, duration_minutes, status',
+    )
     .eq('id', params.queueId)
     .maybeSingle()
 
   if (!queued) return { ok: false, error: 'queued_visit_not_found' }
-  if (queued.status !== 'queued') return { ok: false, error: 'queued_visit_not_open' }
+  if (queued.status !== 'queued')
+    return { ok: false, error: 'queued_visit_not_open' }
 
   const { data: project } = await supabase
     .from('restoration_projects')
@@ -423,7 +514,8 @@ export async function scheduleQueuedVisit(
     .maybeSingle()
 
   if (!project) return { ok: false, error: 'project_not_found' }
-  if (project.status !== 'active') return { ok: false, error: 'project_not_active' }
+  if (project.status !== 'active')
+    return { ok: false, error: 'project_not_active' }
 
   const endTime = addMinutes(params.startTime, Number(queued.duration_minutes))
 

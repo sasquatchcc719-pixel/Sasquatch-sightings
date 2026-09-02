@@ -19,6 +19,16 @@ export async function recordRevenueFromOpsInvoice(
     invoiceId: string
     userId: string
     driveMinutes?: number | null
+    /**
+     * Hours to record instead of the invoice appointment's own.
+     *
+     * For a water loss the invoice covers every visit on the project, so the
+     * closing visit's own hours understate the job badly. See
+     * restorationLaborHours — and note it is paired with a coverage branch in
+     * loadUtilizationSupplementRows, without which these hours are counted
+     * twice.
+     */
+    hoursWorkedOverride?: number | null
   },
 ): Promise<RecordRevenueFromOpsInvoiceResult> {
   const { invoiceId, userId } = params
@@ -95,14 +105,18 @@ export async function recordRevenueFromOpsInvoice(
     ),
   })
 
-  const hoursWorked = utilizationHoursFromAppointment({
-    on_my_way_at: (appointment as { on_my_way_at?: string | null })
-      .on_my_way_at,
-    completed_at: (appointment as { completed_at?: string | null })
-      .completed_at,
-    start_time: appointment.start_time,
-    end_time: appointment.end_time,
-  })
+  const override = params.hoursWorkedOverride
+  const hoursWorked =
+    override != null && Number.isFinite(override) && override > 0
+      ? Math.round(override * 100) / 100
+      : utilizationHoursFromAppointment({
+          on_my_way_at: (appointment as { on_my_way_at?: string | null })
+            .on_my_way_at,
+          completed_at: (appointment as { completed_at?: string | null })
+            .completed_at,
+          start_time: appointment.start_time,
+          end_time: appointment.end_time,
+        })
 
   const description = lineItemNames.filter(Boolean).join(', ') || 'Ops job'
 

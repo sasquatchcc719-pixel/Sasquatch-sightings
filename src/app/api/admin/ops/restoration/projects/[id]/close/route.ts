@@ -4,6 +4,7 @@ import { createAdminClient } from '@/supabase/server'
 import { closeRestorationProject } from '@/lib/ops/restoration-projects'
 import { ensureInvoiceQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
 import { recordRevenueFromOpsInvoice } from '@/lib/ops/revenue-from-invoice'
+import { restorationLaborHours } from '@/lib/ops/restoration-labor-hours'
 
 /**
  * "Dry standard reached — pull equipment and close."
@@ -50,15 +51,27 @@ export async function POST(
 
     // Hand off to the normal invoice paths. Neither failure should undo a close
     // that already succeeded, so both are reported rather than thrown.
+    /**
+     * The whole loss, not just the visit it was closed from.
+     *
+     * Runs after closeRestorationProject on purpose: the close is what marks
+     * worked-but-unfinished visits completed and drops the genuinely empty
+     * ones, so this sees the settled picture. It is also why the close must
+     * never cancel a visit that produced work — a cancelled visit bills its
+     * line items and contributes no hours, which is how a six-hour mitigation
+     * day disappeared from stats.
+     */
     const revenue = await recordRevenueFromOpsInvoice(supabase, {
       invoiceId: result.invoiceId,
       userId: access.id,
+      hoursWorkedOverride: await restorationLaborHours(supabase, id),
     })
     const qb = await ensureInvoiceQuickBooksSyncJob(supabase, result.invoiceId)
 
     return NextResponse.json({
       ...result,
-      revenue_recorded: revenue.ok && !('skipped' in revenue && revenue.skipped),
+      revenue_recorded:
+        revenue.ok && !('skipped' in revenue && revenue.skipped),
       quickbooks: qb,
     })
   } catch (e) {
