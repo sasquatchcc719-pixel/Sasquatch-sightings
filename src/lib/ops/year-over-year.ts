@@ -47,6 +47,18 @@ export type YearOverYear = {
   /** Current YTD as a percent of last year's entire total. */
   pctOfPriorFullYear: number | null
   asOfLabel: string
+  /**
+   * The newest transaction actually present, and how many days of the
+   * requested window are therefore missing.
+   *
+   * qb_historical_transactions is a one-time import that nothing refreshes.
+   * It stopped on 2026-07-14 and the card went on claiming "through September
+   * 1" for seven weeks, hiding roughly $64,000 of completed work. Charles:
+   * "I would've just assumed that it needed to be re-updated." He had no way
+   * to know — so the card now says how old the data is.
+   */
+  dataThroughLabel: string | null
+  staleDays: number
 }
 
 const round0 = (n: number) => Math.round(n)
@@ -143,6 +155,29 @@ export function summarizeYearOverYear(
   const priorYtd = priorEntry?.throughToday ?? 0
   const priorFullYear = priorEntry?.fullYear ?? 0
 
+  const newestTxn = rows.reduce<string>(
+    (max, r) => (r.txn_date && r.txn_date > max ? r.txn_date : max),
+    '',
+  )
+  const dataThroughLabel = newestTxn
+    ? new Date(`${newestTxn}T12:00:00Z`).toLocaleDateString('en-US', {
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+        timeZone: 'UTC',
+      })
+    : null
+  const staleDays = newestTxn
+    ? Math.max(
+        0,
+        Math.round(
+          (Date.parse(`${today}T12:00:00Z`) -
+            Date.parse(`${newestTxn}T12:00:00Z`)) /
+            86_400_000,
+        ),
+      )
+    : 0
+
   const asOfLabel = new Date(`${today}T12:00:00Z`).toLocaleDateString('en-US', {
     month: 'long',
     day: 'numeric',
@@ -159,6 +194,8 @@ export function summarizeYearOverYear(
     pctOfPriorFullYear:
       priorFullYear > 0 ? round1((ytd / priorFullYear) * 100) : null,
     asOfLabel,
+    dataThroughLabel,
+    staleDays,
   }
 }
 

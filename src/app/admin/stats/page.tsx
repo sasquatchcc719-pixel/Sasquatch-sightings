@@ -23,6 +23,7 @@ import {
   HardHat,
   ChevronDown,
   Mail,
+  AlertTriangle,
 } from 'lucide-react'
 import {
   CartesianGrid,
@@ -243,6 +244,9 @@ type YearOverYear = {
   priorFullYear: number
   pctOfPriorFullYear: number | null
   asOfLabel: string
+  // How far the QuickBooks import actually reaches — see year-over-year.ts.
+  dataThroughLabel: string | null
+  staleDays: number
 }
 
 type LeadSourceRevenue = {
@@ -1630,8 +1634,31 @@ export default function StatsPage() {
             Every year compared at the{' '}
             <strong>same point on the calendar</strong> (through{' '}
             {history.asOfLabel}), so a partial year isn&apos;t judged against
-            finished ones. From your QuickBooks invoice history.
+            finished ones. From a one-time import of your QuickBooks invoice
+            history — nothing refreshes it automatically.
           </p>
+
+          {/*
+            The card used to promise "through September 1" while the underlying
+            import had stopped on July 14, hiding about $64,000 of completed
+            work for seven weeks. Charles: "I would've just assumed that it
+            needed to be re-updated." Now it says so itself.
+          */}
+          {history.dataThroughLabel && history.staleDays > 7 ? (
+            <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+              <p className="text-amber-200">
+                <strong>
+                  These figures stop at {history.dataThroughLabel}
+                </strong>{' '}
+                — {history.staleDays} days ago. Work since then is missing from
+                this section, so the current year, the growth percentage and the
+                comparison against last year are all understated. The{' '}
+                <strong>Calendar Value</strong> figures below come from the live
+                schedule and are current.
+              </p>
+            </div>
+          ) : null}
 
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
             <Card className="card-interactive animate-slide-up border-border/60 bg-card/80 p-4 backdrop-blur">
