@@ -227,6 +227,23 @@ function centsMatch(left: number | null, right: number): boolean {
   return Math.round(left * 100) === Math.round(right * 100)
 }
 
+/**
+ * Pull the QuickBooks TxnId out of a "Duplicate Document Number" fault.
+ *
+ * Only adopts the id when the fault names the DocNumber we actually sent, so
+ * an unrelated collision still fails loudly.
+ */
+export function adoptDuplicateInvoiceId(
+  bodyText: string,
+  docNumber: number | string,
+): string | null {
+  const doc = String(docNumber).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const m = new RegExp(`DocNumber=${doc}\\b[^]*?TxnId=(\\d+)`, 'i').exec(
+    bodyText,
+  )
+  return m?.[1] ?? null
+}
+
 function isSameQBInvoice(
   existing: QBInvoiceMatch,
   customerId: string,
@@ -470,6 +487,32 @@ export async function createQBInvoice(params: {
         )
       ) {
         return existing.id
+      }
+    }
+
+    /**
+     * Last resort on a duplicate: take the id QuickBooks just told us.
+     *
+     * createQBInvoice writes to QuickBooks and only then does the caller
+     * store quickbooks_invoice_id. A worker killed between those two
+     * statements leaves the invoice in QuickBooks and no record of it here,
+     * so the next run tries to create it again and QBO refuses the DocNumber.
+     * The check above handles that, but only when customer, date and total
+     * all match exactly — any drift and a real, already-synced invoice is
+     * reported as a hard failure forever, which is how #18453 blocked the
+     * whole queue and #18696 landed in QuickBooks while reading "failed".
+     *
+     * The error body names the transaction outright:
+     *   "DocNumber=18696 is assigned to TxnType=Invoice with TxnId=6575"
+     * Adopt it, but only when the DocNumber it names is the one we sent.
+     */
+    if (docNumber) {
+      const claim = adoptDuplicateInvoiceId(bodyText, docNumber)
+      if (claim) {
+        console.warn(
+          `[QB] Adopting existing invoice ${claim} for DocNumber ${docNumber} — created by an earlier run that died before recording it`,
+        )
+        return claim
       }
     }
 
