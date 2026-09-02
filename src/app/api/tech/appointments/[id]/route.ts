@@ -9,6 +9,7 @@ import { createAdminClient } from '@/supabase/server'
 import { suppressPostJobReviewRequest } from '@/lib/ops/review-requests'
 import { enrollCustomerInDrip } from '@/lib/ops/drip-campaign'
 import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
+import { promoteInvoiceOnJobCompletion } from '@/lib/ops/invoice-on-completion'
 
 export async function GET(
   _request: NextRequest,
@@ -166,6 +167,25 @@ export async function PATCH(
 
     if (body.status === 'completed' && current.status !== 'completed') {
       await enrollCustomerInDrip(id)
+
+      /**
+       * Bill the job. The admin route has always done this; the tech portal
+       * did not, so a job finished on a phone left its invoice in draft
+       * forever — never sent, never in QuickBooks. Recovery Village's 8 July
+       * job went unbilled for two months that way.
+       *
+       * Never fatal: the tech has finished the job either way, and failing
+       * their request over a billing step would be worse than a late invoice.
+       */
+      try {
+        await promoteInvoiceOnJobCompletion(supabase, {
+          appointmentId: id,
+          userId: access.id,
+          note: 'Job completed from tech portal',
+        })
+      } catch (e) {
+        console.error('[tech/appointments/:id] invoice promotion failed', e)
+      }
     }
 
     const statusChanged =

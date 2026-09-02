@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { promoteInvoiceOnJobCompletion } from '@/lib/ops/invoice-on-completion'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import {
@@ -683,7 +684,10 @@ export async function PATCH(
     // from whichever monitor day reaches dry standard (see restoration_projects).
     const isRestorationVisit =
       (current as { kind?: string | null }).kind === 'restoration' ||
-      Boolean((current as { restoration_project_id?: string | null }).restoration_project_id)
+      Boolean(
+        (current as { restoration_project_id?: string | null })
+          .restoration_project_id,
+      )
 
     let isBatchMonthlyRecurring = false
     if (effRecurringTid && current.status !== nextStatus) {
@@ -833,163 +837,14 @@ export async function PATCH(
         await sendAppointmentCancellationNotifications(supabase, id)
     }
 
-    if (
-      nextStatus === 'completed' &&
-      !isBatchMonthlyRecurring &&
-      !isRestorationVisit
-    ) {
-      const { data: inv } = await supabase
-        .from('ops_invoices')
-        .select('id, status')
-        .eq('appointment_id', id)
-        .maybeSingle()
-
-      if (inv?.status === 'draft') {
-        await supabase
-          .from('ops_invoices')
-          .update({
-            status: 'ready',
-            sync_status: getQuickBooksSyncStatus(),
-            updated_at: nowIso,
-          })
-          .eq('id', inv.id)
-        await supabase.from('ops_invoice_status_events').insert({
-          invoice_id: inv.id,
-          from_status: 'draft',
-          to_status: 'ready',
-          changed_by: access.id,
-          notes: 'Job completed from operations',
-        })
-      }
-
-      if (inv?.id) {
-        await ensureInvoiceQuickBooksSyncJob(supabase, inv.id)
-      }
-
-      void syncAppointmentToQuickBooks(id).catch((qbErr) =>
-        console.error('[ops/appointments/:id][PATCH] QB sync:', qbErr),
-      )
-    }
-
-    // Auto-record revenue stats whenever a job is closed. Idempotent.
-    // Restoration visits are excluded: their revenue is recorded once at project
-    // close, so that a four-day loss does not book revenue four times.
-    if (
-      nextStatus === 'completed' &&
-      current.status !== 'completed' &&
-      !isRestorationVisit
-    ) {
-      const { data: invForStats } = await supabase
-        .from('ops_invoices')
-        .select('id')
-        .eq('appointment_id', id)
-        .maybeSingle()
-
-      if (invForStats?.id) {
-        // Standard invoiced job — use the invoice-based recorder (handles
-        // line item totals, wall-clock hours, etc.)
-        const statsResult = await recordRevenueFromOpsInvoice(supabase, {
-          invoiceId: invForStats.id,
-          userId: access.id,
-        })
-        if (!statsResult.ok) {
-          console.error(
-            '[ops/appointments/:id][PATCH] auto-record-stats:',
-            statsResult.error,
-          )
-        }
-      } else {
-        // No invoice (e.g. batch_monthly recurring like Recovery Village) —
-        // record directly from appointment line items. Skip if already exists.
-        try {
-          const { data: existingEntry } = await supabase
-            .from('revenue_entries')
-            .select('id')
-            .eq('ops_appointment_id', id)
-            .maybeSingle()
-          if (!existingEntry?.id) {
-            const { data: apptForStats } = await supabase
-              .from('ops_appointments')
-              .select(
-                `
-                appointment_date,
-                quoted_total,
-                on_my_way_at,
-                completed_at,
-                start_time,
-                end_time,
-                ops_appointment_line_items ( name_snapshot, line_total )
-              `,
-              )
-              .eq('id', id)
-              .single()
-
-            if (!apptForStats)
-              throw new Error('Appointment not found for stats')
-
-            const lineItems = Array.isArray(
-              apptForStats.ops_appointment_line_items,
-            )
-              ? apptForStats.ops_appointment_line_items
-              : apptForStats.ops_appointment_line_items
-                ? [apptForStats.ops_appointment_line_items]
-                : []
-
-            const invoiceAmount =
-              lineItems.reduce(
-                (sum: number, li: { line_total: number }) =>
-                  sum + Number(li.line_total || 0),
-                0,
-              ) || Number(apptForStats.quoted_total || 0)
-
-            let hoursWorked = 0
-            const omwAt = apptForStats.on_my_way_at as string | null
-            const doneAt = apptForStats.completed_at as string | null
-            if (omwAt && doneAt) {
-              const wallMs =
-                new Date(doneAt).getTime() - new Date(omwAt).getTime()
-              const wallHrs = wallMs / (1000 * 60 * 60)
-              // Only trust wall-clock if it's at least 15 minutes
-              if (wallHrs >= 0.25) hoursWorked = wallHrs
-            }
-            if (
-              hoursWorked === 0 &&
-              apptForStats.start_time &&
-              apptForStats.end_time
-            ) {
-              const [sh, sm] = String(apptForStats.start_time)
-                .split(':')
-                .map(Number)
-              const [eh, em] = String(apptForStats.end_time)
-                .split(':')
-                .map(Number)
-              hoursWorked = Math.max(0, (eh * 60 + em - (sh * 60 + sm)) / 60)
-            }
-
-            const description =
-              lineItems
-                .map((li: { name_snapshot: string }) => li.name_snapshot)
-                .filter(Boolean)
-                .join(', ') || 'Ops job'
-
-            await supabase.from('revenue_entries').insert({
-              user_id: access.id,
-              entry_date:
-                apptForStats.appointment_date ||
-                new Date().toISOString().split('T')[0],
-              description,
-              invoice_amount: invoiceAmount,
-              hours_worked: hoursWorked,
-              ops_appointment_id: id,
-            })
-          }
-        } catch (statsErr) {
-          console.error(
-            '[ops/appointments/:id][PATCH] auto-record-stats (no-invoice):',
-            statsErr,
-          )
-        }
-      }
+    // Shared with the tech portal — see promoteInvoiceOnJobCompletion. The two
+    // routes had separate copies and only this one billed the job.
+    if (nextStatus === 'completed') {
+      await promoteInvoiceOnJobCompletion(supabase, {
+        appointmentId: id,
+        userId: access.id,
+        note: 'Job completed from operations',
+      })
     }
 
     return NextResponse.json({
