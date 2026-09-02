@@ -19,6 +19,9 @@ function formatDate(value: string): string {
     weekday: 'short',
     month: 'short',
     day: 'numeric',
+    // Always show the year. Recurring templates generate a rolling year ahead,
+    // so "Thu, Sep 2" with no year reads as this week when it is next year.
+    year: 'numeric',
   })
 }
 

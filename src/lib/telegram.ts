@@ -143,6 +143,9 @@ export async function sendBookingNotification(params: {
     weekday: 'short',
     month: 'short',
     day: 'numeric',
+    // Always show the year — a recurring job generated a year out is
+    // indistinguishable from one this week without it.
+    year: 'numeric',
   })
 
   const servicesList = services.join('\n• ')
