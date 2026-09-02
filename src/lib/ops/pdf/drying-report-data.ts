@@ -30,6 +30,7 @@ function equipmentGlyph(code: string): string {
 }
 
 export type RestorationProjectCustomer = {
+  id: string
   full_name: string | null
   business_name: string | null
   phone: string | null
@@ -53,7 +54,7 @@ export async function buildDryingReportData(
     .from('restoration_projects')
     .select(
       `*,
-       ops_customers!restoration_projects_customer_id_fkey ( full_name, business_name, phone, email, email_opt_out ),
+       ops_customers!restoration_projects_customer_id_fkey ( id, full_name, business_name, phone, email, email_opt_out ),
        ops_service_addresses ( street_1, street_2, city, state, zip_code )`,
     )
     .eq('id', projectId)

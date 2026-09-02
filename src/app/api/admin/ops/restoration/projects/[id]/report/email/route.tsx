@@ -60,6 +60,22 @@ export async function POST(
       )
     }
 
+    const subject = 'Your drying report from Sasquatch Carpet Cleaning'
+    /**
+     * Every send is logged, success or failure.
+     *
+     * The first version of this route logged nothing, and when Charles asked
+     * whether a real customer had been sent her report there was no way to
+     * answer — the carpet invoice send writes ops_email_log, this did not.
+     */
+    const logRow = {
+      customer_id: customer?.id ?? null,
+      template_key: 'restoration_drying_report',
+      to_email: customerEmail,
+      subject,
+      body_text: `Drying report for ${data.address || 'the property'}.`,
+    }
+
     const resend = new Resend(resendKey)
     const fromEmail =
       process.env.OPS_EMAIL_FROM ||
@@ -71,7 +87,7 @@ export async function POST(
     const { data: resendData, error: resendError } = await resend.emails.send({
       from: fromEmail,
       to: customerEmail,
-      subject: `Your drying report from Sasquatch Carpet Cleaning`,
+      subject,
       html: `
         <p>Hi ${data.customer.name},</p>
         <p>Attached is the drying report for your water mitigation project at ${data.address || 'your property'}.</p>
@@ -90,8 +106,15 @@ export async function POST(
         typeof (resendError as { message: unknown }).message === 'string'
           ? (resendError as { message: string }).message
           : 'Email provider rejected the message.'
+      await supabase
+        .from('ops_email_log')
+        .insert({ ...logRow, status: 'failed', error_message: msg })
       return NextResponse.json({ error: msg }, { status: 502 })
     }
+
+    await supabase
+      .from('ops_email_log')
+      .insert({ ...logRow, resend_id: resendData?.id || null, status: 'sent' })
 
     return NextResponse.json({
       ok: true,
