@@ -27,7 +27,6 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { getCalendarPopupPosition } from '@/lib/ops/calendar-popup-position'
 import { appointmentDisplayRevenue } from '@/lib/ops/utilization-metrics'
 
 type ScheduleView = 'week' | 'day' | 'month'
@@ -658,7 +657,10 @@ function SundaySliver({
             key={appointment.id}
             href={appointmentHref(appointment)}
             className="absolute right-1 left-1 flex flex-col overflow-hidden rounded-md bg-sky-500/90 px-1 py-0.5 text-[9px] leading-tight text-white shadow-sm hover:bg-sky-600"
-            style={{ top: placement.top + 6, height: Math.max(28, placement.height) }}
+            style={{
+              top: placement.top + 6,
+              height: Math.max(28, placement.height),
+            }}
             title={`${placement.startLabel} · ${customerNameOf(appointment)}`}
             onClick={(event) => event.stopPropagation()}
           >
@@ -823,6 +825,20 @@ function getOffHourSegmentsForGrid(
   return segments
 }
 
+function formatPendingNotifyWhen(dateKey: string, time: string): string {
+  const [y, m, d] = dateKey.split('-').map(Number)
+  const [hh, mm] = time.split(':').map(Number)
+  const date = new Date(y, m - 1, d, hh, mm)
+  if (!Number.isFinite(date.getTime())) return `${dateKey} ${time}`
+  return new Intl.DateTimeFormat('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date)
+}
+
 export function OperationsSchedule() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -909,6 +925,8 @@ export function OperationsSchedule() {
   } | null>(null)
   const [pendingNotify, setPendingNotify] = useState<{
     appointmentId: string
+    newDateKey: string
+    newTime: string
     customerName: string
     x: number
     y: number
@@ -1054,7 +1072,8 @@ export function OperationsSchedule() {
             id: queued.id,
             source: 'restoration',
             projectId: project.id,
-            label: customer?.business_name || customer?.full_name || 'Water loss',
+            label:
+              customer?.business_name || customer?.full_name || 'Water loss',
             place: address
               ? [address.street_1, address.city].filter(Boolean).join(', ')
               : '',
@@ -1065,10 +1084,9 @@ export function OperationsSchedule() {
       }
       // Parked jobs — cancelled off the schedule but not given up on.
       try {
-        const parkedResponse = await fetch(
-          '/api/admin/ops/schedule/parked',
-          { cache: 'no-store' },
-        )
+        const parkedResponse = await fetch('/api/admin/ops/schedule/parked', {
+          cache: 'no-store',
+        })
         if (parkedResponse.ok) {
           const parked = await parkedResponse.json()
           for (const job of parked.appointments ?? []) {
@@ -1082,8 +1100,7 @@ export function OperationsSchedule() {
               id: job.id,
               source: 'appointment',
               projectId: 'parked',
-              label:
-                customer?.business_name || customer?.full_name || 'Job',
+              label: customer?.business_name || customer?.full_name || 'Job',
               place: address
                 ? [address.street_1, address.city].filter(Boolean).join(', ')
                 : '',
@@ -1100,7 +1117,8 @@ export function OperationsSchedule() {
       // Group by loss first, then visit order, so one job's visits sit together.
       rows.sort(
         (a, b) =>
-          a.projectId.localeCompare(b.projectId) || (a.sequence ?? 0) - (b.sequence ?? 0),
+          a.projectId.localeCompare(b.projectId) ||
+          (a.sequence ?? 0) - (b.sequence ?? 0),
       )
       setQueuedVisits(rows)
     } catch {
@@ -1996,26 +2014,29 @@ export function OperationsSchedule() {
           }),
         },
       )
+      const result = await response.json().catch(() => ({}))
       if (!response.ok) {
-        const result = await response.json()
         setError(result.error || 'Failed to reschedule job')
         return
       }
       await loadSchedule()
 
-      // Find the appointment that was moved to show customer name in popup
-      const moved = data.appointments.find((a) => a.id === appointmentId)
-      if (moved) {
-        const customer = unwrapRelation(moved.ops_customers)
-        const customerName =
-          customer?.business_name || customer?.full_name || 'Customer'
-        setPendingNotify({
-          appointmentId,
-          customerName,
-          x: clientX,
-          y: clientY,
-        })
-      }
+      // Ask about notifying the customer no matter where the card came from.
+      // Prefer the row the server just saved; fall back to what we had loaded.
+      const moved =
+        data.appointments.find((a) => a.id === appointmentId) ??
+        (result.appointment as Appointment | undefined)
+      const customer = moved ? unwrapRelation(moved.ops_customers) : null
+      const customerName =
+        customer?.business_name || customer?.full_name || 'Customer'
+      setPendingNotify({
+        appointmentId,
+        customerName,
+        newDateKey: dateKey,
+        newTime,
+        x: clientX,
+        y: clientY,
+      })
     } catch {
       setError('Failed to reschedule job')
     }
@@ -2427,26 +2448,26 @@ export function OperationsSchedule() {
       const href = isRestoration
         ? `/admin/operations/restoration/${appointment.restoration_project_id}?visit=${appointment.id}`
         : isEstimate
-        ? `/admin/operations/estimates/${appointment.id}`
-        : invoice?.id
-          ? `/admin/operations/invoices/${invoice.id}`
-          : appointment.recurring_template_id
-            ? `/admin/operations/recurring/visit/${appointment.id}`
-            : `/admin/operations/appointments/${appointment.id}`
+          ? `/admin/operations/estimates/${appointment.id}`
+          : invoice?.id
+            ? `/admin/operations/invoices/${invoice.id}`
+            : appointment.recurring_template_id
+              ? `/admin/operations/recurring/visit/${appointment.id}`
+              : `/admin/operations/appointments/${appointment.id}`
       const isDragging = draggingAppointment?.id === appointment.id
       const oc = overlapCols.get(appointment.id) ?? { col: 0, totalCols: 1 }
       const blockTone = isRestoration
         ? getRestorationTone(appointment)
         : isEstimate
-        ? getEstimateTone(appointment)
-        : appointment.status === 'completed' ||
-            appointment.status === 'cancelled'
-          ? getStatusTone(appointment.status)
-          : appointment.recurring_template_id
-            ? (getRecurringTone(
-                recurringFreqMap[appointment.recurring_template_id],
-              ) ?? getStatusTone(appointment.status))
-            : getStatusTone(appointment.status)
+          ? getEstimateTone(appointment)
+          : appointment.status === 'completed' ||
+              appointment.status === 'cancelled'
+            ? getStatusTone(appointment.status)
+            : appointment.recurring_template_id
+              ? (getRecurringTone(
+                  recurringFreqMap[appointment.recurring_template_id],
+                ) ?? getStatusTone(appointment.status))
+              : getStatusTone(appointment.status)
       const isPointerDraggingThis =
         pointerDragging && draggingAppointment?.id === appointment.id
       const effectiveStaffId =
@@ -2671,38 +2692,28 @@ export function OperationsSchedule() {
     })
   }
 
-  const notifyPopupPosition =
-    pendingNotify && typeof window !== 'undefined'
-      ? getCalendarPopupPosition({
-          x: pendingNotify.x,
-          y: pendingNotify.y,
-          viewportWidth: window.innerWidth,
-          viewportHeight: window.innerHeight,
-        })
-      : null
-
   return (
     <div className="space-y-6">
-      {/* Notify customer popup — anchored near the drop point */}
-      {pendingNotify && notifyPopupPosition && typeof document !== 'undefined'
+      {/* Notify customer prompt — pinned to the bottom of the viewport so it
+          is always on screen no matter where the card was dropped or how the
+          calendar is scrolled. Stays until answered. */}
+      {pendingNotify && typeof document !== 'undefined'
         ? createPortal(
-            <div
-              className={`pointer-events-none fixed z-[240] ${
-                notifyPopupPosition.placeAbove ? '-translate-y-full' : ''
-              }`}
-              style={{
-                left: notifyPopupPosition.left,
-                top: notifyPopupPosition.top,
-                width: notifyPopupPosition.width,
-              }}
-            >
-              <Card className="border-border/60 bg-card/95 pointer-events-auto flex flex-col items-stretch gap-3 rounded-2xl border p-4 shadow-xl backdrop-blur sm:flex-row sm:items-center sm:gap-4">
+            <div className="pointer-events-none fixed inset-x-0 bottom-4 z-[240] flex justify-center px-3 sm:bottom-6">
+              <Card className="border-primary/40 bg-card/95 pointer-events-auto flex w-full max-w-lg flex-col items-stretch gap-3 rounded-2xl border-2 p-4 shadow-2xl backdrop-blur sm:flex-row sm:items-center sm:gap-4">
                 <p className="min-w-0 flex-1 text-sm font-medium">
-                  Notify{' '}
+                  Text and email{' '}
                   <span className="font-semibold">
                     {pendingNotify.customerName}
                   </span>{' '}
-                  of the new time?
+                  the new time,{' '}
+                  <span className="font-semibold">
+                    {formatPendingNotifyWhen(
+                      pendingNotify.newDateKey,
+                      pendingNotify.newTime,
+                    )}
+                  </span>
+                  ?
                 </p>
                 <div className="flex shrink-0 justify-end gap-2">
                   <Button
@@ -2713,7 +2724,7 @@ export function OperationsSchedule() {
                       )
                     }
                   >
-                    Yes
+                    Send
                   </Button>
                   <Button
                     size="sm"
@@ -2931,7 +2942,11 @@ export function OperationsSchedule() {
               Book Job
             </Link>
           </Button>
-          <Button asChild variant="outline" className="h-11 gap-2 rounded-xl px-4 font-semibold">
+          <Button
+            asChild
+            variant="outline"
+            className="h-11 gap-2 rounded-xl px-4 font-semibold"
+          >
             <Link href="/admin/operations/restoration/new">
               <Droplets className="h-5 w-5 text-sky-600" />
               Water Loss
@@ -2956,7 +2971,8 @@ export function OperationsSchedule() {
               <p className="text-xs font-semibold tracking-wide text-sky-900 uppercase">
                 Unscheduled
                 {(() => {
-                  const losses = new Set(queuedVisits.map((v) => v.projectId)).size
+                  const losses = new Set(queuedVisits.map((v) => v.projectId))
+                    .size
                   return losses > 1 ? ` · ${losses} losses` : ''
                 })()}
               </p>
@@ -2978,8 +2994,10 @@ export function OperationsSchedule() {
             {armedVisit ? (
               <p className="mb-2 rounded-lg bg-sky-600 px-3 py-2 text-sm font-semibold text-white">
                 Placing: {armedVisit.label}
-                {armedVisit.place ? ` (${armedVisit.place})` : ''} · {armedVisit.visitType}
-                {armedVisit.sequence ? ` ${armedVisit.sequence}` : ''} — tap a slot
+                {armedVisit.place ? ` (${armedVisit.place})` : ''} ·{' '}
+                {armedVisit.visitType}
+                {armedVisit.sequence ? ` ${armedVisit.sequence}` : ''} — tap a
+                slot
               </p>
             ) : null}
             <div className="flex flex-wrap gap-2">
@@ -3011,7 +3029,9 @@ export function OperationsSchedule() {
                 >
                   <span className="font-medium">{visit.label}</span>
                   {visit.place ? (
-                    <span className="block text-xs opacity-70">{visit.place}</span>
+                    <span className="block text-xs opacity-70">
+                      {visit.place}
+                    </span>
                   ) : null}
                   <span className="block text-xs opacity-80">
                     {visit.visitType}
@@ -3763,7 +3783,8 @@ export function OperationsSchedule() {
                   <Truck className="h-3.5 w-3.5 shrink-0" />
                 )}
                 <span>
-                  {dateLabel} · {appointment.subcontractor_name || 'Subcontractor'}
+                  {dateLabel} ·{' '}
+                  {appointment.subcontractor_name || 'Subcontractor'}
                   {customer?.business_name || customer?.full_name
                     ? ` · ${customer.business_name || customer.full_name}`
                     : ''}
@@ -4080,7 +4101,9 @@ export function OperationsSchedule() {
                                   Sun
                                 </span>
                                 <span className="text-xs font-semibold text-slate-500">
-                                  {date.toLocaleDateString('en-US', { day: 'numeric' })}
+                                  {date.toLocaleDateString('en-US', {
+                                    day: 'numeric',
+                                  })}
                                 </span>
                                 {dayTotal > 0 && (
                                   <span className="text-[10px] font-semibold text-green-700">
@@ -4387,10 +4410,16 @@ export function OperationsSchedule() {
                                   key={dateKey}
                                   dateKey={dateKey}
                                   onOpen={() => setSundayOpen(true)}
-                                  appointments={gridAppointmentsByDate.get(dateKey) || []}
-                                  onDragOver={(e) => handleDragOver(e, dateKey, null)}
+                                  appointments={
+                                    gridAppointmentsByDate.get(dateKey) || []
+                                  }
+                                  onDragOver={(e) =>
+                                    handleDragOver(e, dateKey, null)
+                                  }
                                   onDragLeave={() => setDragPreview(null)}
-                                  onDrop={(e) => void handleDrop(e, dateKey, null)}
+                                  onDrop={(e) =>
+                                    void handleDrop(e, dateKey, null)
+                                  }
                                 />
                               )
                             }
@@ -4469,7 +4498,12 @@ export function OperationsSchedule() {
                                           className="focus-visible:ring-ring relative z-0 block w-full border-b border-slate-200 text-left transition hover:bg-emerald-50/60 focus-visible:ring-2 focus-visible:outline-none"
                                           style={{ height: HOUR_HEIGHT }}
                                           onClick={(e) => {
-                                            handleCellTap(dateKey, hour, e, staff.id)
+                                            handleCellTap(
+                                              dateKey,
+                                              hour,
+                                              e,
+                                              staff.id,
+                                            )
                                           }}
                                           title={`Create at ${String(hour).padStart(2, '0')}:00`}
                                           aria-label={`Create on ${dateKey} at ${String(hour).padStart(2, '0')}:00`}
@@ -4629,10 +4663,16 @@ export function OperationsSchedule() {
                                   key={dateKey}
                                   dateKey={dateKey}
                                   onOpen={() => setSundayOpen(true)}
-                                  appointments={appointmentsByDate.get(dateKey) || []}
-                                  onDragOver={(e) => handleDragOver(e, dateKey, null)}
+                                  appointments={
+                                    appointmentsByDate.get(dateKey) || []
+                                  }
+                                  onDragOver={(e) =>
+                                    handleDragOver(e, dateKey, null)
+                                  }
                                   onDragLeave={() => setDragPreview(null)}
-                                  onDrop={(e) => void handleDrop(e, dateKey, null)}
+                                  onDrop={(e) =>
+                                    void handleDrop(e, dateKey, null)
+                                  }
                                 />
                               )
                             }
