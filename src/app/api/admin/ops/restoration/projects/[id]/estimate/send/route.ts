@@ -4,13 +4,18 @@ import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { isDeliverableCustomerEmail } from '@/lib/ops/email'
 import { sendCustomerSMS } from '@/lib/twilio'
+import { opsEmailBcc } from '@/lib/ops/email-bcc'
 
 const money = (n: number) =>
   `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 const escapeHtml = (value: string) =>
-  value.replace(/[&<>"']/g, (c) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c,
+  value.replace(
+    /[&<>"']/g,
+    (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[
+        c
+      ] ?? c,
   )
 
 /**
@@ -46,7 +51,8 @@ export async function POST(
       .eq('id', id)
       .maybeSingle()
 
-    if (!project) return NextResponse.json({ error: 'project_not_found' }, { status: 404 })
+    if (!project)
+      return NextResponse.json({ error: 'project_not_found' }, { status: 404 })
 
     const customer = Array.isArray(project.ops_customers)
       ? project.ops_customers[0]
@@ -57,7 +63,9 @@ export async function POST(
 
     const { data: lines } = await supabase
       .from('restoration_estimate_lines')
-      .select('name_snapshot, quantity, units, days, unit_price, line_total, unit')
+      .select(
+        'name_snapshot, quantity, units, days, unit_price, line_total, unit',
+      )
       .eq('project_id', id)
       .order('created_at')
 
@@ -83,8 +91,12 @@ export async function POST(
       : ''
     const name = customer?.business_name || customer?.full_name || 'there'
 
-    const toEmail = body.to_email ? String(body.to_email).trim() : customer?.email
-    const toPhone = body.to_phone ? String(body.to_phone).trim() : customer?.phone
+    const toEmail = body.to_email
+      ? String(body.to_email).trim()
+      : customer?.email
+    const toPhone = body.to_phone
+      ? String(body.to_phone).trim()
+      : customer?.phone
 
     const sent: string[] = []
     const skipped: string[] = []
@@ -111,6 +123,8 @@ export async function POST(
             process.env.OPS_EMAIL_FROM ||
             'Sasquatch Carpet Cleaning <onboarding@resend.dev>',
           to: toEmail,
+          // A copy for the shop, same as the carpet estimate already gets.
+          bcc: opsEmailBcc(),
           subject: `Your water mitigation estimate — ${money(total)}`,
           html: `<div style="font-family:system-ui,Arial,sans-serif;max-width:640px;color:#16242b">
             <h2 style="color:#0e6577;margin:0 0 4px">Water Mitigation Estimate</h2>
@@ -161,7 +175,11 @@ export async function POST(
 
     return NextResponse.json({ sent, skipped, total })
   } catch (e) {
-    const message = e instanceof Error ? e.message : 'Failed to send the estimate'
-    return NextResponse.json({ error: message }, { status: message === 'Not authorized' ? 403 : 500 })
+    const message =
+      e instanceof Error ? e.message : 'Failed to send the estimate'
+    return NextResponse.json(
+      { error: message },
+      { status: message === 'Not authorized' ? 403 : 500 },
+    )
   }
 }

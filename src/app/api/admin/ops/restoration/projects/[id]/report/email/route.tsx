@@ -5,6 +5,7 @@ import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { DryingReportPDF } from '@/lib/ops/pdf/drying-report'
 import { buildDryingReportData } from '@/lib/ops/pdf/drying-report-data'
+import { opsEmailBcc } from '@/lib/ops/email-bcc'
 
 /** Emails the same drying report PDF the "Drying report (PDF)" button downloads. */
 export async function POST(
@@ -87,6 +88,8 @@ export async function POST(
     const { data: resendData, error: resendError } = await resend.emails.send({
       from: fromEmail,
       to: customerEmail,
+      // Charles gets his own copy, so he can confirm what the customer got.
+      bcc: opsEmailBcc(),
       subject,
       html: `
         <p>Hi ${data.customer.name},</p>
