@@ -282,6 +282,8 @@ export async function loadTechPerformance(
         quoted_total,
         on_my_way_at,
         completed_at,
+        kind,
+        visit_type,
         ops_invoices (
           total,
           ops_invoice_line_items ( line_total )
@@ -316,13 +318,39 @@ export async function loadTechPerformance(
           : inv?.ops_invoice_line_items
             ? [inv.ops_invoice_line_items]
             : []
+        /**
+         * A water loss invoices once, at the close, and that invoice hangs off
+         * whichever visit it was closed from. Crediting the assigned tech with
+         * the whole invoice therefore hands an entire flood to whoever
+         * happened to be on the last trip.
+         *
+         * That is exactly what happened on the Benns loss: David was assigned
+         * the two-hour equipment pickup and the report credited him the full
+         * $4,052.46. Charles: "He doesn't deserve any credit for it for
+         * revenue whatsoever. I know he picked up the equipment, but that's
+         * literally all he did."
+         *
+         * The money follows the mitigation day, where the work is. Monitors
+         * and the final pickup still count their hours — the trip happened —
+         * but carry no revenue of their own.
+         */
+        const isRestoration =
+          (a as { kind?: string | null }).kind === 'restoration' ||
+          Boolean((a as { visit_type?: string | null }).visit_type)
+        const isMitigation =
+          (a as { visit_type?: string | null }).visit_type === 'mitigation'
+        const revenue =
+          isRestoration && !isMitigation
+            ? 0
+            : effectiveInvoiceAmount({
+                invoiceTotal: Number(inv?.total || 0),
+                invoiceLineItems: lineItems,
+                quotedTotal: Number(a.quoted_total || 0),
+              })
+
         return {
           appointment_date: String(a.appointment_date),
-          revenue: effectiveInvoiceAmount({
-            invoiceTotal: Number(inv?.total || 0),
-            invoiceLineItems: lineItems,
-            quotedTotal: Number(a.quoted_total || 0),
-          }),
+          revenue,
           hours: utilizationHoursFromAppointment(a),
         }
       })
