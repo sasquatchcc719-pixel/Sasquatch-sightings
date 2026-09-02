@@ -507,6 +507,17 @@ export async function POST(request: NextRequest) {
         message: null,
         meta,
       })
+      void notifyDavidShiftEvent({
+        staff: access.staff,
+        event: 'break_start',
+        shift: {
+          id: activeEntry.id,
+          started_at: activeEntry.started_at,
+          break_started_at: now.toISOString(),
+        },
+      }).catch((notifyError) =>
+        console.error('[tech/time-clock] notify failed', notifyError),
+      )
       return NextResponse.json({
         entry: serializeEntry(data as TimesheetEntry),
         recentClockOut: null,
@@ -549,6 +560,17 @@ export async function POST(request: NextRequest) {
         message: `Break total ${breakMinutes}m`,
         meta,
       })
+      void notifyDavidShiftEvent({
+        staff: access.staff,
+        event: 'break_end',
+        shift: {
+          id: activeEntry.id,
+          started_at: activeEntry.started_at,
+          break_minutes: breakMinutes,
+        },
+      }).catch((notifyError) =>
+        console.error('[tech/time-clock] notify failed', notifyError),
+      )
       return NextResponse.json({
         entry: serializeEntry(data as TimesheetEntry),
         recentClockOut: null,
