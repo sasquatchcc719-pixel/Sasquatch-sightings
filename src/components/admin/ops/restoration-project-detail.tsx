@@ -353,7 +353,18 @@ export function equipmentGlyph(code: string): string {
   return EQUIPMENT_CODES.find((e) => e.code === code)?.glyph ?? '◈'
 }
 
-export function RestorationProjectDetail({ projectId }: { projectId: string }) {
+export function RestorationProjectDetail({
+  projectId,
+  visitId,
+}: {
+  projectId: string
+  /**
+   * Which visit to open on. The admin screen passes this in the URL; the tech
+   * portal renders the component directly for the visit the tech tapped, so it
+   * has no query string to put it in.
+   */
+  visitId?: string
+}) {
   const [detail, setDetail] = useState<Detail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -423,7 +434,8 @@ export function RestorationProjectDetail({ projectId }: { projectId: string }) {
   } | null>(null)
 
   /** ?visit=<id> — which visit the calendar sent us to. */
-  const requestedVisitId = useSearchParams().get('visit')
+  const searchVisitId = useSearchParams().get('visit')
+  const requestedVisitId = visitId ?? searchVisitId
 
   const [pointLabel, setPointLabel] = useState('')
   const [pointMaterial, setPointMaterial] = useState('Drywall')

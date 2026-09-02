@@ -44,6 +44,17 @@ export type TechAppointment = {
   status: string
   paymentStatus: string | null
   recurringTemplateId: string | null
+  /**
+   * Set when this appointment is a visit on a water loss.
+   *
+   * The tech portal had no idea restoration existed, so a flood visit fell
+   * through to the carpet invoice screen. David Gonzalez opened the Benns
+   * job, got a bare line-item table, and could not take a single reading —
+   * Charles: "he got this bullshit with nothing in it and he can't even take
+   * readings."
+   */
+  restorationProjectId: string | null
+  visitType: string | null
   customerName: string
   customerPhone: string | null
   customerEmail: string | null
@@ -109,6 +120,8 @@ const TECH_APPOINTMENT_SELECT = `
   internal_notes,
   assigned_staff_user_id,
   recurring_template_id,
+  restoration_project_id,
+  visit_type,
   ops_customers!ops_appointments_customer_id_fkey (
     full_name,
     first_name,
@@ -388,6 +401,10 @@ export function mapTechAppointment(
     recurringTemplateId: row.recurring_template_id
       ? String(row.recurring_template_id)
       : null,
+    restorationProjectId: row.restoration_project_id
+      ? String(row.restoration_project_id)
+      : null,
+    visitType: row.visit_type ? String(row.visit_type) : null,
     customerName:
       customer?.full_name?.trim() ||
       fallbackName ||
