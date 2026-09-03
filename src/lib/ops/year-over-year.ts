@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { effectiveInvoiceAmount } from '@/lib/ops/utilization-metrics'
 
 /**
  * The day the ops schedule became the source of truth for revenue.
@@ -290,7 +291,7 @@ export async function loadYearOverYear(
   // its value before its monthly invoice is raised.
   const { data: opsRows } = await supabase
     .from('ops_appointments')
-    .select('appointment_date, quoted_total, ops_invoices ( total )')
+    .select('appointment_date, kind, quoted_total, ops_invoices ( total )')
     .eq('status', 'completed')
     .gte('appointment_date', OPS_REVENUE_CUTOVER)
     .limit(20000)
@@ -299,9 +300,13 @@ export async function loadYearOverYear(
     const inv = Array.isArray(row.ops_invoices)
       ? row.ops_invoices[0]
       : row.ops_invoices
-    const total =
-      Number((inv as { total?: number | string | null } | null)?.total ?? 0) ||
-      Number(row.quoted_total ?? 0)
+    const total = effectiveInvoiceAmount({
+      invoiceTotal: Number(
+        (inv as { total?: number | string | null } | null)?.total ?? 0,
+      ),
+      quotedTotal: Number(row.quoted_total ?? 0),
+      kind: row.kind ? String(row.kind) : null,
+    })
     if (!row.appointment_date || total === 0) return []
     return [{ txn_date: String(row.appointment_date), total }]
   })

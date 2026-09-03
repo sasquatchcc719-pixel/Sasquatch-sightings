@@ -49,6 +49,7 @@ export type CalendarPipelineResponse = {
 /** Pull the effective invoice amount off an appointment's joined invoice/lines. */
 function apptAmount(appt: unknown): number {
   const a = appt as {
+    kind?: string | null
     quoted_total?: number
     ops_invoices?: unknown
   }
@@ -65,6 +66,7 @@ function apptAmount(appt: unknown): number {
     invoiceTotal: Number((inv as { total?: number })?.total || 0),
     invoiceLineItems: lineItems,
     quotedTotal: Number(a.quoted_total ?? 0),
+    kind: a.kind,
   })
 }
 
@@ -83,6 +85,7 @@ export async function GET() {
     const apptSelect = `
       appointment_date,
       status,
+      kind,
       quoted_total,
       ops_invoices (
         total,

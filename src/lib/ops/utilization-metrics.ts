@@ -44,11 +44,17 @@ type LineRow = { line_total?: number | null }
  *      an invoice exists; this is what the customer was charged.
  *   2. Invoice line item sum — only if invoice total is 0/missing.
  *   3. Quote total — only if neither invoice nor lines exist (pre-invoice jobs).
+ *
+ * Restoration is special: a water loss bills once on the closing visit.
+ * Mitigation/monitor `quoted_total` values are calendar estimates for the
+ * project, not separate invoices. Falling back to them double-counts the
+ * job (Benns: ~$3.9k quote on mitigation + ~$4k closing invoice = ~$7.9k).
  */
 export function effectiveInvoiceAmount(params: {
   invoiceTotal: number
   invoiceLineItems?: LineRow[] | null
   quotedTotal?: number | null
+  kind?: string | null
 }): number {
   const inv = Number(params.invoiceTotal || 0)
   if (inv > 0) return inv
@@ -59,11 +65,14 @@ export function effectiveInvoiceAmount(params: {
   )
   if (lineSum > 0) return lineSum
 
+  if (params.kind === 'restoration') return 0
+
   return Math.max(Number(params.quotedTotal || 0), 0)
 }
 
 /** Calendar / dashboard: same priority as stats/utilization. */
 export function appointmentDisplayRevenue(appt: {
+  kind?: string | null
   quoted_total?: number | null
   ops_invoices?:
     | {
@@ -90,5 +99,6 @@ export function appointmentDisplayRevenue(appt: {
     invoiceTotal: Number(inv?.total || 0),
     invoiceLineItems,
     quotedTotal: appt.quoted_total,
+    kind: appt.kind,
   })
 }

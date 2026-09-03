@@ -301,6 +301,7 @@ export async function loadAttributionRows(
         invoiceTotal: Number(inv?.total || 0),
         invoiceLineItems: lineItems,
         quotedTotal: Number(a.quoted_total || 0),
+        kind: a.kind ? String(a.kind) : null,
       }),
     }
   })

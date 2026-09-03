@@ -278,6 +278,7 @@ export async function loadBusinessHealth(
       customer_id,
       appointment_date,
       status,
+      kind,
       quoted_total,
       recurring_template_id,
       ops_customers!ops_appointments_customer_id_fkey ( full_name, first_name, last_name, business_name ),
@@ -328,6 +329,7 @@ export async function loadBusinessHealth(
       invoiceTotal: Number(inv?.total || 0),
       invoiceLineItems: lineItems,
       quotedTotal: Number(a.quoted_total || 0),
+      kind: a.kind ? String(a.kind) : null,
     })
 
     const cust = Array.isArray(a.ops_customers)
@@ -534,7 +536,7 @@ export async function loadCustomerValueIndex(
     supabase
       .from('ops_appointments')
       .select(
-        'customer_id, appointment_date, quoted_total, ops_invoices ( total )',
+        'customer_id, appointment_date, kind, quoted_total, ops_invoices ( total )',
       )
       .eq('status', 'completed'),
     supabase
@@ -598,7 +600,11 @@ export async function loadCustomerValueIndex(
     applyVisit(
       String(a.customer_id),
       String(a.appointment_date),
-      Number(inv?.total || 0) || Number(a.quoted_total || 0),
+      effectiveInvoiceAmount({
+        invoiceTotal: Number(inv?.total || 0),
+        quotedTotal: Number(a.quoted_total || 0),
+        kind: a.kind ? String(a.kind) : null,
+      }),
     )
   }
 
