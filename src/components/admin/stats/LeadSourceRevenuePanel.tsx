@@ -174,8 +174,14 @@ export function LeadSourceRevenuePanel({
                   <div className="w-20 shrink-0 text-right text-sm font-semibold">
                     {money(s.total_revenue)}
                   </div>
-                  <div className="text-muted-foreground w-28 shrink-0 text-right text-xs">
-                    {s.booking_count} jobs · {money(s.avg_ticket)} avg
+                  <div className="text-muted-foreground w-36 shrink-0 text-right text-xs">
+                    {s.completed_count} completed
+                    {s.booking_count > s.completed_count
+                      ? ` · ${s.booking_count - s.completed_count} open`
+                      : ''}
+                    <span className="mt-0.5 block">
+                      {money(s.avg_ticket)} avg
+                    </span>
                   </div>
                 </button>
 
@@ -199,8 +205,8 @@ export function LeadSourceRevenuePanel({
                         <div className="space-y-1">
                           <p className="text-muted-foreground mb-2 text-xs">
                             {details.customers.length} customers ·{' '}
-                            {details.completed_count} completed ·{' '}
-                            {moneyExact(details.total_revenue)}
+                            {details.job_count} jobs · {details.completed_count}{' '}
+                            completed · {moneyExact(details.total_revenue)}
                           </p>
                           {details.customers.map((customer) => {
                             const customerKey =
@@ -209,6 +215,8 @@ export function LeadSourceRevenuePanel({
                               openCustomers[
                                 `${s.lead_source_key}:${customerKey}`
                               ] ?? false
+                            const openJobs =
+                              customer.job_count - customer.completed_count
                             return (
                               <div key={customerKey}>
                                 <button
@@ -230,8 +238,8 @@ export function LeadSourceRevenuePanel({
                                     {customer.customer_name}
                                   </span>
                                   <span className="text-muted-foreground shrink-0 text-xs">
-                                    {customer.job_count} job
-                                    {customer.job_count === 1 ? '' : 's'}
+                                    {customer.completed_count} completed
+                                    {openJobs > 0 ? ` · ${openJobs} open` : ''}
                                   </span>
                                   <span className="w-20 shrink-0 text-right text-sm font-semibold">
                                     {moneyExact(customer.total_revenue)}
