@@ -16,6 +16,7 @@ import { getTechAppointmentForAccess } from '@/lib/tech/appointments'
 import { createAdminClient } from '@/supabase/server'
 import { sendTelegramNotification } from '@/lib/telegram'
 import { unitsForLine } from '@/lib/fiber/gate'
+import { pairInvoiceLines } from '@/lib/ops/invoice-line-pairing'
 
 export async function POST(
   request: NextRequest,
@@ -236,18 +237,24 @@ async function recalculateInvoice(
   // Mirror exclusion state onto the invoice lines so the customer-facing and
   // QuickBooks paths can filter them out. Splitting a multi-unit line creates
   // an appointment line with no invoice line yet, so insert those.
+  //
+  // Matching on appointment_line_item_id ALONE is not enough. The booking
+  // widget writes the invoice lines and the appointment lines as two separate
+  // unlinked sets, so on a widget-booked job every invoice line has a null
+  // link. Those lines used to be invisible here, so every appointment line
+  // looked missing and got inserted a second time — which is how Shane
+  // Pruitt's $544 job briefly showed a little over $1,000 on the schedule.
+  // Adopt an unlinked line that describes the same work instead of
+  // duplicating it, and record the link so it only has to happen once.
   const { data: existingInvoiceLines } = await supabase
     .from('ops_invoice_line_items')
-    .select('appointment_line_item_id')
+    .select('id, appointment_line_item_id, description')
     .eq('invoice_id', invoice.id)
-  const mirrored = new Set(
-    (existingInvoiceLines ?? [])
-      .map((row) => row.appointment_line_item_id)
-      .filter(Boolean)
-      .map(String),
-  )
 
-  for (const line of lines ?? []) {
+  const appointmentLines = lines ?? []
+  const pairings = pairInvoiceLines(appointmentLines, existingInvoiceLines ?? [])
+
+  for (const [index, line] of appointmentLines.entries()) {
     const payload = {
       quantity: Number(line.quantity || 1),
       unit_price: Number(line.unit_price || 0),
@@ -256,11 +263,15 @@ async function recalculateInvoice(
       excluded_reason: line.excluded_reason ?? null,
       excluded_original_total: line.excluded_original_total ?? null,
     }
-    if (mirrored.has(String(line.id))) {
+    const { invoiceLineId } = pairings[index]
+
+    if (invoiceLineId) {
       await supabase
         .from('ops_invoice_line_items')
-        .update(payload)
-        .eq('appointment_line_item_id', line.id)
+        // Writing the link back means the next recalc matches outright
+        // instead of having to recognise the description again.
+        .update({ ...payload, appointment_line_item_id: line.id })
+        .eq('id', invoiceLineId)
     } else {
       await supabase.from('ops_invoice_line_items').insert({
         invoice_id: invoice.id,

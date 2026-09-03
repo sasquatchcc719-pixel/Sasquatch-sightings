@@ -468,6 +468,11 @@ export async function PATCH(
               .from('ops_appointment_line_items')
               .update({
                 name_snapshot: description,
+                // Without the quantity the appointment row kept the old count
+                // beside the new line_total — "1 room" charged at the price of
+                // two — and anything that recomputed from quantity silently
+                // moved the job total.
+                quantity,
                 unit_price: unitPrice,
                 line_total: lineTotal,
               })
