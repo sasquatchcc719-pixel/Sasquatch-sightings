@@ -165,7 +165,7 @@ export async function GET(request: NextRequest) {
     const { data: appts, error: apptError } = await supabase
       .from('ops_appointments')
       .select(
-        'id, appointment_date, completed_at, quoted_total, lead_source_key, assigned_staff_user_id, ops_customers ( business_name, is_commercial )',
+        'id, appointment_date, completed_at, quoted_total, lead_source_key, assigned_staff_user_id, ops_customers!ops_appointments_customer_id_fkey ( business_name, is_commercial )',
       )
       .gte('appointment_date', sinceKey)
       .not('completed_at', 'is', null)

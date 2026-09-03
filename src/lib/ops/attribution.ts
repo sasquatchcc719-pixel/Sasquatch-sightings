@@ -257,7 +257,10 @@ export async function loadAttributionRows(
       `
       id, customer_id, appointment_date, status, kind,
       lead_source, lead_source_key, quoted_total,
-      ops_customers ( business_name, is_commercial ),
+      ops_customers!ops_appointments_customer_id_fkey (
+        business_name,
+        is_commercial
+      ),
       ops_invoices ( total, ops_invoice_line_items ( line_total ) )
     `,
     )
