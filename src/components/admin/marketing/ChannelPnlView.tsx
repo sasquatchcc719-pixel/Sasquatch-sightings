@@ -56,7 +56,8 @@ const CHANNEL_LABELS: Record<string, string> = {
   vehicle_wrap: 'Vehicle wrap',
   door_hanger: 'Door hanger',
   chatgpt: 'ChatGPT',
-  other: 'Commercial / other',
+  commercial: 'Commercial',
+  other: 'Other',
   unknown: 'Unknown',
 }
 

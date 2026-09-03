@@ -28,9 +28,9 @@ export const maxDuration = 60
 // Jobs longer than this are forgot-to-close records, not real work.
 const MAX_JOB_HOURS = 12
 
-// Commercial/recurring work behaves nothing like residential and distorts every
+// Commercial work behaves nothing like residential and distorts every
 // per-job average, so it is reported on its own line rather than mixed in.
-const COMMERCIAL_SOURCES = new Set(['other'])
+const COMMERCIAL_CHANNEL = 'commercial'
 
 type ChannelRow = {
   channel: string
@@ -165,7 +165,7 @@ export async function GET(request: NextRequest) {
     const { data: appts, error: apptError } = await supabase
       .from('ops_appointments')
       .select(
-        'id, appointment_date, completed_at, quoted_total, lead_source_key, assigned_staff_user_id',
+        'id, appointment_date, completed_at, quoted_total, lead_source_key, assigned_staff_user_id, ops_customers ( business_name, is_commercial )',
       )
       .gte('appointment_date', sinceKey)
       .not('completed_at', 'is', null)
@@ -180,7 +180,21 @@ export async function GET(request: NextRequest) {
       // $0 rows are recurring placeholders, not jobs — they drag every average down.
       if (revenue <= 0) continue
 
-      const channel = (a.lead_source_key as string) || 'unknown'
+      const customer = Array.isArray(a.ops_customers)
+        ? a.ops_customers[0]
+        : a.ops_customers
+      const businessName = String(
+        (customer as { business_name?: string | null } | null)?.business_name ||
+          '',
+      ).trim()
+      const isCommercial =
+        Boolean(
+          (customer as { is_commercial?: boolean | null } | null)
+            ?.is_commercial,
+        ) || businessName.length > 0
+      const channel = isCommercial
+        ? COMMERCIAL_CHANNEL
+        : (a.lead_source_key as string) || 'unknown'
       const row =
         byChannel.get(channel) ||
         ({
@@ -196,7 +210,7 @@ export async function GET(request: NextRequest) {
           kept: 0,
           marginPct: null,
           costPerJob: null,
-          isCommercial: COMMERCIAL_SOURCES.has(channel),
+          isCommercial,
         } as ChannelRow)
 
       row.jobs += 1

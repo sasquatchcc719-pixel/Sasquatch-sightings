@@ -77,6 +77,7 @@ type CustomerRow = {
   first_name: string | null
   last_name: string | null
   business_name: string | null
+  is_commercial?: boolean | null
   email: string | null
   phone: string
   notes: string | null
@@ -99,6 +100,7 @@ type CustomerEditState = {
   phone: string
   email: string
   notes: string
+  is_commercial: boolean
   email_opt_out: boolean
   addresses: Array<{
     id: string
@@ -253,6 +255,9 @@ export function CustomersDirectory() {
       phone: customer.phone || '',
       email: customer.email || '',
       notes: customer.notes || '',
+      is_commercial:
+        Boolean(customer.is_commercial) ||
+        Boolean(String(customer.business_name || '').trim()),
       email_opt_out: customer.email_opt_out ?? false,
       addresses: (customer.ops_service_addresses || []).map((a) => ({
         id: a.id,
@@ -290,6 +295,7 @@ export function CustomersDirectory() {
             phone: editForm.phone,
             email: editForm.email || null,
             notes: editForm.notes || null,
+            is_commercial: editForm.is_commercial,
             email_opt_out: editForm.email_opt_out,
           },
           addresses: editForm.addresses.map((a) => ({
@@ -461,13 +467,54 @@ export function CustomersDirectory() {
                       <Label className="text-xs">Business Name</Label>
                       <Input
                         value={editForm.business_name}
-                        onChange={(e) =>
+                        onChange={(e) => {
+                          const value = e.target.value
                           setEditForm((f) =>
-                            f ? { ...f, business_name: e.target.value } : f,
+                            f
+                              ? {
+                                  ...f,
+                                  business_name: value,
+                                  is_commercial: value.trim()
+                                    ? true
+                                    : f.is_commercial,
+                                }
+                              : f,
                           )
-                        }
+                        }}
                         className="h-9"
                       />
+                    </div>
+                    <div className="flex items-center justify-between rounded-xl border border-sky-500/30 bg-sky-500/10 px-4 py-3">
+                      <div>
+                        <p className="text-sm font-medium text-sky-100">
+                          Commercial account
+                        </p>
+                        <p className="mt-0.5 text-xs text-sky-100/60">
+                          Revenue reports under Commercial, not a marketing lead
+                          source.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={editForm.is_commercial}
+                        onClick={() =>
+                          setEditForm((f) =>
+                            f ? { ...f, is_commercial: !f.is_commercial } : f,
+                          )
+                        }
+                        className={`relative ml-4 inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none ${
+                          editForm.is_commercial ? 'bg-sky-500' : 'bg-white/20'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition-transform ${
+                            editForm.is_commercial
+                              ? 'translate-x-5'
+                              : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
@@ -908,7 +955,9 @@ export function CustomersDirectory() {
                                       {projectId ? (
                                         <span className="rounded-full bg-sky-500/15 px-2 py-0.5 text-xs font-medium text-sky-600 dark:text-sky-300">
                                           Water loss
-                                          {job.visit_type ? ` · ${job.visit_type}` : ''}
+                                          {job.visit_type
+                                            ? ` · ${job.visit_type}`
+                                            : ''}
                                         </span>
                                       ) : null}
                                       {href ? (
@@ -998,7 +1047,8 @@ export function CustomersDirectory() {
                                   // until it closes, so open the project.
                                   const jobHref = invoiceId
                                     ? `/admin/operations/invoices/${invoiceId}`
-                                    : job.kind === 'restoration' && job.restoration_project_id
+                                    : job.kind === 'restoration' &&
+                                        job.restoration_project_id
                                       ? `/admin/operations/restoration/${job.restoration_project_id}`
                                       : null
                                   const address = formatJobAddress(
@@ -1056,7 +1106,9 @@ export function CustomersDirectory() {
                                               className="h-7 w-full justify-start px-2 text-xs"
                                             >
                                               <Link href={jobHref}>
-                                                {invoiceId ? 'Open invoice' : 'Open water loss'}
+                                                {invoiceId
+                                                  ? 'Open invoice'
+                                                  : 'Open water loss'}
                                                 <ExternalLink className="ml-auto h-3 w-3" />
                                               </Link>
                                             </Button>

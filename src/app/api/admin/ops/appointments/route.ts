@@ -222,6 +222,12 @@ export async function POST(request: NextRequest) {
       : null
 
     const applyCustomerUpdate = async (id: string) => {
+      const isCommercial =
+        typeof body.is_commercial === 'boolean'
+          ? body.is_commercial
+          : typeof body.customer?.is_commercial === 'boolean'
+            ? Boolean(body.customer.is_commercial)
+            : Boolean(businessName)
       const { error: updateCustomerError } = await supabase
         .from('ops_customers')
         .update({
@@ -229,6 +235,7 @@ export async function POST(request: NextRequest) {
           first_name: firstName,
           last_name: lastName,
           business_name: businessName,
+          is_commercial: isCommercial,
           email,
           phone,
           notes: body.customer?.notes ? String(body.customer.notes) : null,
@@ -273,6 +280,12 @@ export async function POST(request: NextRequest) {
         customerId = existingCustomer.id
         await applyCustomerUpdate(customerId)
       } else {
+        const isCommercial =
+          typeof body.is_commercial === 'boolean'
+            ? body.is_commercial
+            : typeof body.customer?.is_commercial === 'boolean'
+              ? Boolean(body.customer.is_commercial)
+              : Boolean(businessName)
         const { data: customer, error: customerError } = await supabase
           .from('ops_customers')
           .insert({
@@ -280,6 +293,7 @@ export async function POST(request: NextRequest) {
             first_name: firstName,
             last_name: lastName,
             business_name: businessName,
+            is_commercial: isCommercial,
             email,
             phone,
             notes: body.customer?.notes ? String(body.customer.notes) : null,

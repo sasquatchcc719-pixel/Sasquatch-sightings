@@ -35,6 +35,14 @@ export async function PATCH(
           [c.first_name, c.last_name].filter(Boolean).join(' ') || 'Customer'
       }
       if (c.business_name !== undefined) updates.business_name = c.business_name
+      if (c.is_commercial !== undefined)
+        updates.is_commercial = Boolean(c.is_commercial)
+      else if (
+        c.business_name !== undefined &&
+        String(c.business_name || '').trim()
+      ) {
+        updates.is_commercial = true
+      }
       if (c.email !== undefined) updates.email = c.email || null
       if (c.phone !== undefined) updates.phone = c.phone
       if (c.notes !== undefined) updates.notes = c.notes || null

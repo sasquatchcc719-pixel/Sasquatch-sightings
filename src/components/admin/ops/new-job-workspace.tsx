@@ -53,6 +53,7 @@ type CustomerSearchResult = {
   first_name: string | null
   last_name: string | null
   business_name: string | null
+  is_commercial?: boolean | null
   email: string | null
   phone: string
   notes: string | null
@@ -309,6 +310,7 @@ export function NewJobWorkspace() {
   const [discount, setDiscount] = useState('0')
   const [leadSource, setLeadSource] = useState('')
   const [leadSourceDetail, setLeadSourceDetail] = useState('')
+  const [isCommercial, setIsCommercial] = useState(false)
   const [leadSourceOptions, setLeadSourceOptions] = useState<
     PublicLeadSourceOption[]
   >(() => getPublicLeadSourceOptions(CANONICAL_LEAD_SOURCE_OPTIONS))
@@ -747,6 +749,10 @@ export function NewJobWorkspace() {
       phone: customer.phone || '',
       notes: customer.notes || '',
     })
+    setIsCommercial(
+      Boolean(customer.is_commercial) ||
+        Boolean(String(customer.business_name || '').trim()),
+    )
     if (customer.ops_service_addresses?.length > 0) {
       const firstAddress = customer.ops_service_addresses[0]
       setAddressSelection(firstAddress.id)
@@ -954,6 +960,7 @@ export function NewJobWorkspace() {
         discount_amount: Math.max(0, Number(discount || 0)),
         lead_source_key: leadSource.trim() || null,
         lead_source_detail: leadSourceDetail.trim() || null,
+        is_commercial: isCommercial,
         line_items: lineItems.map((item) => ({
           service_catalog_item_id: item.service_catalog_item_id || null,
           name_snapshot: item.name_snapshot,
@@ -1617,6 +1624,37 @@ export function NewJobWorkspace() {
                   ))}
                 </select>
               </div>
+              <div className="flex items-end">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={isCommercial}
+                  onClick={() => setIsCommercial((v) => !v)}
+                  className={`flex w-full items-center justify-between gap-3 rounded-md border px-3 py-2 text-left text-sm transition-colors ${
+                    isCommercial
+                      ? 'border-amber-500/40 bg-amber-500/10 text-amber-100'
+                      : 'border-input bg-background'
+                  }`}
+                >
+                  <span>
+                    <span className="font-medium">Commercial account</span>
+                    <span className="text-muted-foreground mt-0.5 block text-xs">
+                      Not a marketing lead — rolls into Commercial revenue
+                    </span>
+                  </span>
+                  <span
+                    className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors ${
+                      isCommercial ? 'bg-amber-500' : 'bg-muted'
+                    }`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${
+                        isCommercial ? 'translate-x-5' : 'translate-x-0'
+                      }`}
+                    />
+                  </span>
+                </button>
+              </div>
               {selectedLeadSource?.requires_detail ? (
                 <div>
                   <Label htmlFor="lead-source-detail">
@@ -1694,12 +1732,14 @@ export function NewJobWorkspace() {
                   <Input
                     id="business-name"
                     value={customerForm.business_name}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const value = event.target.value
                       setCustomerForm((current) => ({
                         ...current,
-                        business_name: event.target.value,
+                        business_name: value,
                       }))
-                    }
+                      if (value.trim()) setIsCommercial(true)
+                    }}
                   />
                 </div>
                 <div>

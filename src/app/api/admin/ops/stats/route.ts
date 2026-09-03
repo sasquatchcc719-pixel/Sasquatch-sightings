@@ -2,8 +2,11 @@ import { NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { effectiveInvoiceAmount } from '@/lib/ops/utilization-metrics'
-import { loadAttributionRows, resolveAttribution } from '@/lib/ops/attribution'
-import { CANONICAL_LEAD_SOURCE_OPTIONS } from '@/lib/lead-sources'
+import {
+  loadAttributionRows,
+  resolveAttribution,
+  labelForAttributionKey,
+} from '@/lib/ops/attribution'
 
 function getWeekBounds(): { weekStart: string; weekEnd: string } {
   const now = new Date()
@@ -101,11 +104,7 @@ export async function GET() {
       for (const row of attributionRows) {
         if (!weekIds.has(row.id)) continue
         const key = resolved.get(row.id)?.key ?? 'unattributed'
-        const label =
-          key === 'unattributed'
-            ? 'Unattributed'
-            : (CANONICAL_LEAD_SOURCE_OPTIONS.find((o) => o.source_key === key)
-                ?.customer_label ?? key)
+        const label = labelForAttributionKey(key)
         leadSourceCounts[label] = (leadSourceCounts[label] ?? 0) + 1
       }
     } catch {

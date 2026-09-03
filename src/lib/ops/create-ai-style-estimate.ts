@@ -199,7 +199,10 @@ export async function createAiStyleEstimate(
       phone,
       updated_at: new Date().toISOString(),
     }
-    if (businessName) update.business_name = businessName
+    if (businessName) {
+      update.business_name = businessName
+      update.is_commercial = true
+    }
     await supabase.from('ops_customers').update(update).eq('id', customerId)
   } else {
     const { data: newCustomer, error: insertErr } = await supabase
@@ -209,6 +212,7 @@ export async function createAiStyleEstimate(
         first_name: firstName,
         last_name: lastName,
         business_name: businessName,
+        is_commercial: Boolean(businessName),
         email,
         phone,
       })

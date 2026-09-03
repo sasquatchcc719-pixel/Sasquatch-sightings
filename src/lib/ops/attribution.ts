@@ -17,12 +17,17 @@ import { effectiveInvoiceAmount } from '@/lib/ops/utilization-metrics'
  *  - "Repeat customer" jobs and recurring/NULL jobs inherit the customer's
  *    earliest real source, so Nextdoor gets credit for the lifetime of a
  *    customer it won — not just their first ticket.
+ *  - Customers with a business_name are Commercial: not a marketing channel,
+ *    reported in their own bucket so Recovery Village etc. stop inflating
+ *    Other / Unattributed.
  *  - When no job in the customer's history has a real source, the revenue is
  *    reported as "Unattributed" rather than silently dropped, so the share
  *    of money we genuinely can't explain stays visible.
  */
 
 export const UNATTRIBUTED_KEY = 'unattributed'
+/** Customers with a business_name — not a marketing channel. */
+export const COMMERCIAL_KEY = 'commercial'
 export const REPEAT_KEY: LeadSourceKey = 'repeat_customer'
 
 export type AttributionRow = {
@@ -34,6 +39,12 @@ export type AttributionRow = {
   lead_source: string | null
   lead_source_key: string | null
   revenue: number
+  /**
+   * True when the customer has a business_name. Commercial accounts are not
+   * marketing-channel leads; they roll into their own reporting bucket so they
+   * stop inflating Other / Unattributed.
+   */
+  is_commercial: boolean
 }
 
 export type ResolvedAttribution = {
@@ -71,6 +82,7 @@ export function resolveAttribution(
 
   for (const row of rows) {
     if (!row.customer_id || !row.appointment_date) continue
+    if (row.is_commercial) continue
     const key = ownKey(row)
     if (!key || key === REPEAT_KEY) continue
     const existing = firstTouch.get(row.customer_id)
@@ -86,6 +98,18 @@ export function resolveAttribution(
   for (const row of rows) {
     const own = ownKey(row)
     const isReturn = own === REPEAT_KEY || own === null
+
+    // Commercial accounts are a customer designation, not a lead source.
+    // They never inherit a residential marketing channel.
+    if (row.is_commercial) {
+      resolved.set(row.id, {
+        key: COMMERCIAL_KEY,
+        inherited: false,
+        isReturn,
+      })
+      continue
+    }
+
     if (own && own !== REPEAT_KEY) {
       resolved.set(row.id, { key: own, inherited: false, isReturn: false })
       continue
@@ -132,8 +156,9 @@ export type AttributionSummary = {
   date_range: { start: string; end: string }
 }
 
-function labelFor(key: string): string {
+export function labelForAttributionKey(key: string): string {
   if (key === UNATTRIBUTED_KEY) return 'Unattributed'
+  if (key === COMMERCIAL_KEY) return 'Commercial'
   const option = CANONICAL_LEAD_SOURCE_OPTIONS.find((o) => o.source_key === key)
   return option?.customer_label ?? key
 }
@@ -192,7 +217,7 @@ export function summarizeAttribution(
   const sources: AttributedSource[] = [...byKey.entries()]
     .map(([key, a]) => ({
       lead_source_key: key,
-      lead_source: labelFor(key),
+      lead_source: labelForAttributionKey(key),
       booking_count: a.bookings,
       completed_count: a.completed,
       total_revenue: Math.round(a.revenue * 100) / 100,
@@ -232,6 +257,7 @@ export async function loadAttributionRows(
       `
       id, customer_id, appointment_date, status, kind,
       lead_source, lead_source_key, quoted_total,
+      ops_customers ( business_name, is_commercial ),
       ops_invoices ( total, ops_invoice_line_items ( line_total ) )
     `,
     )
@@ -249,6 +275,16 @@ export async function loadAttributionRows(
       : inv?.ops_invoice_line_items
         ? [inv.ops_invoice_line_items]
         : []
+    const customer = Array.isArray(a.ops_customers)
+      ? a.ops_customers[0]
+      : a.ops_customers
+    const businessName = String(
+      (customer as { business_name?: string | null } | null)?.business_name ||
+        '',
+    ).trim()
+    const flaggedCommercial = Boolean(
+      (customer as { is_commercial?: boolean | null } | null)?.is_commercial,
+    )
     return {
       id: String(a.id),
       customer_id: a.customer_id ? String(a.customer_id) : null,
@@ -257,6 +293,7 @@ export async function loadAttributionRows(
       kind: a.kind ? String(a.kind) : null,
       lead_source: a.lead_source,
       lead_source_key: a.lead_source_key,
+      is_commercial: flaggedCommercial || businessName.length > 0,
       revenue: effectiveInvoiceAmount({
         invoiceTotal: Number(inv?.total || 0),
         invoiceLineItems: lineItems,
@@ -297,7 +334,8 @@ export async function firstTouchForCustomer(
     return null
   }
   return {
-    lead_source: data.lead_source || labelFor(data.lead_source_key),
+    lead_source:
+      data.lead_source || labelForAttributionKey(data.lead_source_key),
     lead_source_key: data.lead_source_key,
   }
 }

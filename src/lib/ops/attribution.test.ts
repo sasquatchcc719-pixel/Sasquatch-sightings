@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  COMMERCIAL_KEY,
   resolveAttribution,
   summarizeAttribution,
   UNATTRIBUTED_KEY,
@@ -16,6 +17,7 @@ const row = (over: Partial<AttributionRow>): AttributionRow => ({
   lead_source: null,
   lead_source_key: null,
   revenue: 100,
+  is_commercial: false,
   ...over,
 })
 
@@ -97,6 +99,32 @@ describe('resolveAttribution', () => {
     const resolved = resolveAttribution([orphan])
     expect(resolved.get(orphan.id)?.key).toBe(UNATTRIBUTED_KEY)
   })
+
+  it('business-name customers are Commercial even when tagged Other', () => {
+    const r = row({
+      lead_source_key: 'other',
+      is_commercial: true,
+      revenue: 900,
+    })
+    const resolved = resolveAttribution([r])
+    expect(resolved.get(r.id)?.key).toBe(COMMERCIAL_KEY)
+  })
+
+  it('commercial customers never inherit a residential marketing channel', () => {
+    const first = row({
+      appointment_date: '2026-01-01',
+      lead_source_key: 'nextdoor',
+      is_commercial: true,
+    })
+    const later = row({
+      appointment_date: '2026-06-01',
+      lead_source_key: null,
+      is_commercial: true,
+    })
+    const resolved = resolveAttribution([first, later])
+    expect(resolved.get(first.id)?.key).toBe(COMMERCIAL_KEY)
+    expect(resolved.get(later.id)?.key).toBe(COMMERCIAL_KEY)
+  })
 })
 
 describe('summarizeAttribution', () => {
@@ -134,6 +162,30 @@ describe('summarizeAttribution', () => {
     expect(unattributed.total_revenue).toBe(400)
     expect(s.total_revenue).toBe(1000)
     expect(s.attributed_revenue_pct).toBe(60)
+  })
+
+  it('rolls commercial accounts into Commercial, not Other', () => {
+    const rows = [
+      row({
+        customer_id: 'rv',
+        lead_source_key: 'other',
+        is_commercial: true,
+        revenue: 1000,
+      }),
+      row({
+        customer_id: 'home',
+        lead_source_key: 'other',
+        revenue: 200,
+      }),
+    ]
+    const s = summarizeAttribution(rows, WINDOW)
+    const commercial = s.sources.find(
+      (x) => x.lead_source_key === COMMERCIAL_KEY,
+    )!
+    const other = s.sources.find((x) => x.lead_source_key === 'other')!
+    expect(commercial.lead_source).toBe('Commercial')
+    expect(commercial.total_revenue).toBe(1000)
+    expect(other.total_revenue).toBe(200)
   })
 
   it('uses full history for inheritance but only the window for totals', () => {
