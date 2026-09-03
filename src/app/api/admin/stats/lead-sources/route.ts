@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
-import { loadAttributedLeadSources } from '@/lib/ops/attribution'
+import {
+  loadAttributedLeadSources,
+  loadAttributedSourceDetails,
+} from '@/lib/ops/attribution'
 
 /**
  * GET /api/admin/stats/lead-sources
@@ -11,6 +14,8 @@ import { loadAttributedLeadSources } from '@/lib/ops/attribution'
  * recurring revenue credited to the acquisition channel, unattributed revenue
  * kept visible. Replaces the old RPC + raw-text fallback, which grouped by
  * different fields depending on which path ran.
+ *
+ * Optional `source_key` returns the customer/job drill-down for one channel.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -20,6 +25,16 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const startDate = searchParams.get('start_date') || '2020-01-01'
     const endDate = searchParams.get('end_date') || '2099-12-31'
+    const sourceKey = searchParams.get('source_key')?.trim() || ''
+
+    if (sourceKey) {
+      const details = await loadAttributedSourceDetails(supabase, {
+        startDate,
+        endDate,
+        sourceKey,
+      })
+      return NextResponse.json(details)
+    }
 
     const summary = await loadAttributedLeadSources(supabase, {
       startDate,

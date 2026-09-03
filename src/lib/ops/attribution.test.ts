@@ -11,6 +11,7 @@ let seq = 0
 const row = (over: Partial<AttributionRow>): AttributionRow => ({
   id: `a${++seq}`,
   customer_id: 'cust-1',
+  customer_name: 'Test Customer',
   appointment_date: '2026-06-01',
   status: 'completed',
   kind: 'service',
@@ -237,5 +238,13 @@ describe('summarizeAttribution', () => {
     expect(nextdoor.booking_count).toBe(2)
     expect(nextdoor.completed_count).toBe(1)
     expect(nextdoor.total_revenue).toBe(100)
+  })
+
+  it('exposes lead_source_key for drill-down links', () => {
+    const s = summarizeAttribution(
+      [row({ lead_source_key: 'nextdoor', revenue: 100 })],
+      WINDOW,
+    )
+    expect(s.sources[0]?.lead_source_key).toBe('nextdoor')
   })
 })

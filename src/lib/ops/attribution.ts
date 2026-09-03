@@ -33,6 +33,7 @@ export const REPEAT_KEY: LeadSourceKey = 'repeat_customer'
 export type AttributionRow = {
   id: string
   customer_id: string | null
+  customer_name: string
   appointment_date: string | null
   status: string
   kind: string | null
@@ -258,6 +259,7 @@ export async function loadAttributionRows(
       id, customer_id, appointment_date, status, kind,
       lead_source, lead_source_key, quoted_total,
       ops_customers!ops_appointments_customer_id_fkey (
+        full_name,
         business_name,
         is_commercial
       ),
@@ -285,12 +287,16 @@ export async function loadAttributionRows(
       (customer as { business_name?: string | null } | null)?.business_name ||
         '',
     ).trim()
+    const fullName = String(
+      (customer as { full_name?: string | null } | null)?.full_name || '',
+    ).trim()
     const flaggedCommercial = Boolean(
       (customer as { is_commercial?: boolean | null } | null)?.is_commercial,
     )
     return {
       id: String(a.id),
       customer_id: a.customer_id ? String(a.customer_id) : null,
+      customer_name: businessName || fullName || 'Unknown customer',
       appointment_date: a.appointment_date ? String(a.appointment_date) : null,
       status: String(a.status),
       kind: a.kind ? String(a.kind) : null,
@@ -305,6 +311,114 @@ export async function loadAttributionRows(
       }),
     }
   })
+}
+
+export type AttributedJobDetail = {
+  id: string
+  appointment_date: string
+  customer_id: string | null
+  customer_name: string
+  status: string
+  kind: string | null
+  revenue: number
+  inherited: boolean
+  is_return: boolean
+}
+
+export type AttributedCustomerDetail = {
+  customer_id: string | null
+  customer_name: string
+  job_count: number
+  completed_count: number
+  total_revenue: number
+  jobs: AttributedJobDetail[]
+}
+
+export type AttributedSourceDetails = {
+  lead_source_key: string
+  lead_source: string
+  customers: AttributedCustomerDetail[]
+  job_count: number
+  completed_count: number
+  total_revenue: number
+}
+
+/** Jobs attributed to one channel in a window, rolled up by customer. */
+export async function loadAttributedSourceDetails(
+  supabase: SupabaseClient,
+  options: { startDate: string; endDate: string; sourceKey: string },
+): Promise<AttributedSourceDetails> {
+  const rows = await loadAttributionRows(supabase)
+  const resolved = resolveAttribution(rows)
+  const jobs: AttributedJobDetail[] = []
+
+  for (const row of rows) {
+    if (row.kind === 'estimate') continue
+    if (!row.appointment_date) continue
+    if (
+      row.appointment_date < options.startDate ||
+      row.appointment_date > options.endDate
+    ) {
+      continue
+    }
+    const attribution = resolved.get(row.id)
+    if (!attribution || attribution.key !== options.sourceKey) continue
+    jobs.push({
+      id: row.id,
+      appointment_date: row.appointment_date,
+      customer_id: row.customer_id,
+      customer_name: row.customer_name,
+      status: row.status,
+      kind: row.kind,
+      revenue: row.status === 'completed' ? row.revenue : 0,
+      inherited: attribution.inherited,
+      is_return: attribution.isReturn,
+    })
+  }
+
+  const byCustomer = new Map<string, AttributedCustomerDetail>()
+  for (const job of jobs) {
+    const key = job.customer_id || `anon:${job.customer_name}`
+    let customer = byCustomer.get(key)
+    if (!customer) {
+      customer = {
+        customer_id: job.customer_id,
+        customer_name: job.customer_name,
+        job_count: 0,
+        completed_count: 0,
+        total_revenue: 0,
+        jobs: [],
+      }
+      byCustomer.set(key, customer)
+    }
+    customer.job_count++
+    if (job.status === 'completed') {
+      customer.completed_count++
+      customer.total_revenue += job.revenue
+    }
+    customer.jobs.push(job)
+  }
+
+  const customers = [...byCustomer.values()]
+    .map((customer) => ({
+      ...customer,
+      total_revenue: Math.round(customer.total_revenue * 100) / 100,
+      jobs: customer.jobs.sort((a, b) =>
+        b.appointment_date.localeCompare(a.appointment_date),
+      ),
+    }))
+    .sort((a, b) => b.total_revenue - a.total_revenue)
+
+  return {
+    lead_source_key: options.sourceKey,
+    lead_source: labelForAttributionKey(options.sourceKey),
+    customers,
+    job_count: jobs.length,
+    completed_count: jobs.filter((j) => j.status === 'completed').length,
+    total_revenue:
+      Math.round(customers.reduce((sum, c) => sum + c.total_revenue, 0) * 100) /
+      100,
+  }
 }
 
 export async function loadAttributedLeadSources(

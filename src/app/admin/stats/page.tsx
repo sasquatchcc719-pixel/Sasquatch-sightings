@@ -35,6 +35,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { LeadSourceRevenuePanel } from '@/components/admin/stats/LeadSourceRevenuePanel'
 
 type OpsStats = {
   weekStart: string
@@ -251,6 +252,7 @@ type YearOverYear = {
 }
 
 type LeadSourceRevenue = {
+  lead_source_key: string
   lead_source: string
   booking_count: number
   completed_count: number
@@ -1302,9 +1304,9 @@ export default function StatsPage() {
         if (res.ok) {
           const json = (await res.json()) as { sources?: LeadSourceRevenue[] }
           setSourceRevenue(
-            (json.sources || []).sort(
-              (a, b) => b.total_revenue - a.total_revenue,
-            ),
+            (json.sources || [])
+              .filter((s) => Boolean(s.lead_source_key))
+              .sort((a, b) => b.total_revenue - a.total_revenue),
           )
         }
       } catch {
@@ -2904,55 +2906,12 @@ export default function StatsPage() {
 
       {/* Revenue by Lead Source (YTD) */}
       {sourceRevenue.length > 0 && (
-        <div className="mb-8">
-          <div className="mb-1 flex items-center justify-between">
-            <h2 className="text-gradient-blue text-xl font-semibold tracking-tight">
-              Revenue by Lead Source — {new Date().getFullYear()}
-            </h2>
-            <a
-              href="/admin/stats/lead-sources"
-              className="text-xs text-green-600 hover:text-green-700 hover:underline"
-            >
-              View Detailed Analytics →
-            </a>
-          </div>
-          <p className="text-muted-foreground mb-4 max-w-3xl text-sm leading-relaxed">
-            Where the money comes from, not just the job count — use this to
-            decide where marketing dollars go.
-          </p>
-          <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
-            <div className="space-y-2">
-              {(() => {
-                const maxRev = Math.max(
-                  ...sourceRevenue.map((s) => s.total_revenue),
-                  1,
-                )
-                return sourceRevenue.map((s) => (
-                  <div key={s.lead_source} className="flex items-center gap-3">
-                    <div className="w-32 shrink-0 truncate text-sm">
-                      {s.lead_source}
-                    </div>
-                    <div className="bg-muted h-4 flex-1 overflow-hidden rounded-full">
-                      <div
-                        className="flex h-4 items-center rounded-full bg-blue-500/70"
-                        style={{
-                          width: `${Math.max((s.total_revenue / maxRev) * 100, 2)}%`,
-                        }}
-                      />
-                    </div>
-                    <div className="w-20 shrink-0 text-right text-sm font-semibold">
-                      {formatCurrency(s.total_revenue)}
-                    </div>
-                    <div className="text-muted-foreground w-24 shrink-0 text-right text-xs">
-                      {s.booking_count} jobs · {formatCurrency(s.avg_ticket)}{' '}
-                      avg
-                    </div>
-                  </div>
-                ))
-              })()}
-            </div>
-          </Card>
-        </div>
+        <LeadSourceRevenuePanel
+          sources={sourceRevenue}
+          startDate={`${new Date().getFullYear()}-01-01`}
+          endDate={`${new Date().getFullYear()}-12-31`}
+          yearLabel={new Date().getFullYear()}
+        />
       )}
 
       {/* Recurring Base + Booked Out */}
