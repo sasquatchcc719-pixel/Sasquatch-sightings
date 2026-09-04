@@ -200,6 +200,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Weekly marketing spend must reconcile QuickBooks expense lines; never present campaign-linked costs as total spend or remove the spend-versus-revenue graph because the cost feed is incomplete.
 - Marketing range totals must show their exact date window; default the weekly briefing to one year so installment purchases such as vehicle wraps are not mistaken for missing payments.
 - Keep the immediate post-job review request; balance it with assessment-first service-concern language instead of removing the review ask.
+- When improving a conversion funnel, ship a customer-facing recovery action with the measurement fix; reporting alone is not conversion work.
 
 ---
 
