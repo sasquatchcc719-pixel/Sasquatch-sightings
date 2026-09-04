@@ -9,6 +9,7 @@ import {
   addMinutesToTimeWithinDay,
   applyAppointmentBuffer,
   calculateAppointmentDurationFromTotal,
+  DEFAULT_APPOINTMENT_BUFFER_MINUTES,
 } from '@/lib/ops/availability'
 import { findAppointmentConflict } from '@/lib/ops/availability-bundle'
 import { sendOpsLifecycleCommunications } from '@/lib/ops/communications'
@@ -46,11 +47,105 @@ type NormalizedLineItem = {
   notes: string | null
 }
 
+const WARRANTY_RETURN_DURATIONS = new Set([60, 90, 120, 180, 240])
+
+const WARRANTY_CATEGORY_LABELS: Record<string, string> = {
+  unclassified: 'Service Concern',
+  visible_spot: 'Spot / Stain',
+  odor: 'Odor',
+  excess_moisture: 'Excess Moisture',
+  texture: 'Texture / Stiffness',
+  pricing: 'Pricing Concern',
+  technician: 'Technician Concern',
+  damage: 'Possible Damage',
+  other: 'Other Concern',
+}
+
 export async function POST(request: NextRequest) {
   try {
     const access = await requireAnyRole(['admin', 'owner', 'dispatcher'])
     const supabase = createAdminClient()
     const body = await request.json()
+    const serviceConcernId = body.service_concern_id
+      ? String(body.service_concern_id).trim()
+      : null
+    const isWarrantyReturn = Boolean(serviceConcernId)
+    let serviceConcern: {
+      id: string
+      customer_id: string
+      appointment_id: string | null
+      category: string
+    } | null = null
+    let originalWarrantyJob: {
+      id: string
+      service_address_id: string | null
+      lead_source: string | null
+      lead_source_key: string | null
+      lead_source_detail: string | null
+      original_lead_source: string | null
+    } | null = null
+    let warrantyDurationMinutes = 0
+
+    if (serviceConcernId) {
+      warrantyDurationMinutes = Number(body.warranty_duration_minutes)
+      if (!WARRANTY_RETURN_DURATIONS.has(warrantyDurationMinutes)) {
+        return NextResponse.json(
+          { error: 'Choose a valid warranty work duration' },
+          { status: 400 },
+        )
+      }
+      const { data: concern, error: concernError } = await supabase
+        .from('ops_service_concerns')
+        .select('id, customer_id, appointment_id, category, status')
+        .eq('id', serviceConcernId)
+        .maybeSingle()
+      if (concernError) throw concernError
+      if (!concern || concern.status !== 'approved_return') {
+        return NextResponse.json(
+          { error: 'This service concern is not approved for a return' },
+          { status: 409 },
+        )
+      }
+      const { data: existingReturn, error: existingReturnError } =
+        await supabase
+          .from('ops_appointments')
+          .select('id')
+          .eq('service_concern_id', serviceConcernId)
+          .maybeSingle()
+      if (existingReturnError) throw existingReturnError
+      if (existingReturn) {
+        return NextResponse.json(
+          {
+            error: 'A return appointment is already linked to this concern',
+            appointment_id: existingReturn.id,
+          },
+          { status: 409 },
+        )
+      }
+      if (!concern.appointment_id) {
+        return NextResponse.json(
+          { error: 'This concern has no original job to return to' },
+          { status: 409 },
+        )
+      }
+      const { data: originalJob, error: originalJobError } = await supabase
+        .from('ops_appointments')
+        .select(
+          'id, service_address_id, lead_source, lead_source_key, lead_source_detail, original_lead_source',
+        )
+        .eq('id', concern.appointment_id)
+        .eq('customer_id', concern.customer_id)
+        .maybeSingle()
+      if (originalJobError) throw originalJobError
+      if (!originalJob?.service_address_id) {
+        return NextResponse.json(
+          { error: 'The original job has no service address' },
+          { status: 409 },
+        )
+      }
+      serviceConcern = concern
+      originalWarrantyJob = originalJob
+    }
 
     const firstName = String(body.customer?.first_name || '').trim()
     const lastName = String(body.customer?.last_name || '').trim()
@@ -75,7 +170,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const addressId = body.address?.id ? String(body.address.id).trim() : null
+    const addressId =
+      originalWarrantyJob?.service_address_id ||
+      (body.address?.id ? String(body.address.id).trim() : null)
     const street1 = String(body.address?.street_1 || '').trim()
     const city = String(body.address?.city || '').trim()
     const state = String(body.address?.state || 'CO').trim()
@@ -87,9 +184,19 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const lineItems: IncomingLineItem[] = Array.isArray(body.line_items)
-      ? body.line_items
-      : []
+    const lineItems: IncomingLineItem[] = isWarrantyReturn
+      ? [
+          {
+            name_snapshot: `Warranty Return — ${WARRANTY_CATEGORY_LABELS[serviceConcern?.category || ''] || 'Service Concern'}`,
+            quantity: 1,
+            unit_price: 0,
+            duration_minutes: warrantyDurationMinutes,
+            buffer_minutes: DEFAULT_APPOINTMENT_BUFFER_MINUTES,
+          },
+        ]
+      : Array.isArray(body.line_items)
+        ? body.line_items
+        : []
     if (lineItems.length === 0) {
       return NextResponse.json(
         { error: 'At least one service line item is required' },
@@ -162,13 +269,16 @@ export async function POST(request: NextRequest) {
       (sum: number, item: NormalizedLineItem) => sum + item.line_total,
       0,
     )
-    const discountAmount = Math.max(0, Number(body.discount_amount || 0))
+    const discountAmount = isWarrantyReturn
+      ? 0
+      : Math.max(0, Number(body.discount_amount || 0))
     const quotedTotal = Math.max(0, quotedSubtotal - discountAmount)
 
     // Calculate duration based on dollar amount (simple tier system)
     // $0-300 = 2hr, $301-600 = 3hr, $601+ = 4hr
-    const appointmentDuration =
-      calculateAppointmentDurationFromTotal(quotedSubtotal)
+    const appointmentDuration = isWarrantyReturn
+      ? warrantyDurationMinutes
+      : calculateAppointmentDurationFromTotal(quotedSubtotal)
     const totalMinutesWithBuffer = applyAppointmentBuffer(appointmentDuration)
 
     const appointmentDate = String(
@@ -306,6 +416,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    if (serviceConcern && customerId !== serviceConcern.customer_id) {
+      return NextResponse.json(
+        { error: 'The selected customer does not match the service concern' },
+        { status: 400 },
+      )
+    }
+
     let address: {
       id: string
       street_1: string
@@ -348,20 +465,31 @@ export async function POST(request: NextRequest) {
       throw new Error('Failed to resolve service address')
     }
 
-    const normalizedLeadSource = await normalizeLeadSourceForWrite({
-      supabase,
-      sourceKey: body.lead_source_key,
-      legacyValue: body.lead_source,
-      detail: body.lead_source_detail,
-      requireActive: true,
-      requirePublic: false,
-      allowMissingDetail: true,
-    })
-    if (!normalizedLeadSource.ok) {
-      return NextResponse.json(
-        { error: normalizedLeadSource.error },
-        { status: 400 },
-      )
+    let leadSourcePayload: Record<string, string | null>
+    if (originalWarrantyJob) {
+      leadSourcePayload = {
+        lead_source: originalWarrantyJob.lead_source,
+        lead_source_key: originalWarrantyJob.lead_source_key,
+        lead_source_detail: originalWarrantyJob.lead_source_detail,
+        original_lead_source: originalWarrantyJob.original_lead_source,
+      }
+    } else {
+      const normalizedLeadSource = await normalizeLeadSourceForWrite({
+        supabase,
+        sourceKey: body.lead_source_key,
+        legacyValue: body.lead_source,
+        detail: body.lead_source_detail,
+        requireActive: true,
+        requirePublic: false,
+        allowMissingDetail: true,
+      })
+      if (!normalizedLeadSource.ok) {
+        return NextResponse.json(
+          { error: normalizedLeadSource.error },
+          { status: 400 },
+        )
+      }
+      leadSourcePayload = leadSourceUpdatePayload(normalizedLeadSource.source)
     }
 
     const syncStatus = getQuickBooksSyncStatus()
@@ -379,21 +507,33 @@ export async function POST(request: NextRequest) {
           body.appointment?.assigned_staff_user_id || null,
         booking_channel: body.appointment?.booking_channel || 'admin',
         source: body.appointment?.source || 'internal',
-        ...leadSourceUpdatePayload(normalizedLeadSource.source),
+        ...leadSourcePayload,
         status: 'booked',
-        payment_status: 'unpaid',
+        payment_status: isWarrantyReturn ? 'waived' : 'unpaid',
         kind: appointmentKind,
         estimate_status: isEstimate ? 'draft' : null,
         // Estimates never sync to QuickBooks; 'held' is the allowed
         // "do not sync" value on the ops_appointments CHECK constraint.
-        quickbooks_sync_status: isEstimate ? 'held' : syncStatus,
+        quickbooks_sync_status:
+          isEstimate || isWarrantyReturn ? 'held' : syncStatus,
+        service_concern_id: serviceConcernId,
         appointment_date: appointmentDate,
         start_time: `${startTime}:00`.slice(0, 8),
         end_time: addMinutesToTimeWithinDay(startTime, totalMinutesWithBuffer),
         quoted_total: Number(quotedTotal.toFixed(2)),
-        internal_notes: body.appointment?.internal_notes
-          ? String(body.appointment.internal_notes)
-          : null,
+        internal_notes: isWarrantyReturn
+          ? [
+              `Approved warranty return for service concern ${serviceConcernId}.`,
+              `Original job: ${originalWarrantyJob?.id}.`,
+              body.appointment?.internal_notes
+                ? String(body.appointment.internal_notes)
+                : null,
+            ]
+              .filter(Boolean)
+              .join('\n')
+          : body.appointment?.internal_notes
+            ? String(body.appointment.internal_notes)
+            : null,
       })
       .select()
       .single()
@@ -431,11 +571,11 @@ export async function POST(request: NextRequest) {
         .insert({
           appointment_id: appointment.id,
           status: 'draft',
-          payment_status: 'unpaid',
+          payment_status: isWarrantyReturn ? 'waived' : 'unpaid',
           subtotal: Number(quotedSubtotal.toFixed(2)),
           discount_amount: Number(discountAmount.toFixed(2)),
           total: Number(quotedTotal.toFixed(2)),
-          sync_status: syncStatus,
+          sync_status: isWarrantyReturn ? 'held' : syncStatus,
         })
         .select()
         .single()
@@ -460,47 +600,58 @@ export async function POST(request: NextRequest) {
         if (invoiceLinesError) throw invoiceLinesError
       }
 
-      await Promise.all([
+      const creationTasks: Array<PromiseLike<unknown>> = [
         supabase.from('ops_appointment_status_events').insert({
           appointment_id: appointment.id,
           from_status: null,
           to_status: 'booked',
           changed_by: access.id,
-          notes: 'Appointment created from internal operations dashboard',
+          notes: isWarrantyReturn
+            ? 'Approved warranty return scheduled from service concern'
+            : 'Appointment created from internal operations dashboard',
         }),
         supabase.from('ops_invoice_status_events').insert({
           invoice_id: invoice!.id,
           from_status: null,
           to_status: 'draft',
           changed_by: access.id,
-          notes: 'Invoice draft created at booking time',
+          notes: isWarrantyReturn
+            ? 'No-charge warranty invoice held from QuickBooks sync'
+            : 'Invoice draft created at booking time',
         }),
-        ensureCustomerQuickBooksSyncJob(
-          supabase,
-          customerId,
-          buildQuickBooksCustomerPayload({
+      ]
+      if (!isWarrantyReturn) {
+        creationTasks.push(
+          ensureCustomerQuickBooksSyncJob(
+            supabase,
             customerId,
-            fullName,
-            businessName: businessName || null,
-            email,
-            phone,
-            address: {
-              street_1: address.street_1,
-              street_2: address.street_2,
-              city: address.city,
-              state: address.state,
-              zip_code: address.zip_code,
-            },
-          }),
-        ),
-      ])
+            buildQuickBooksCustomerPayload({
+              customerId,
+              fullName,
+              businessName: businessName || null,
+              email,
+              phone,
+              address: {
+                street_1: address.street_1,
+                street_2: address.street_2,
+                city: address.city,
+                state: address.state,
+                zip_code: address.zip_code,
+              },
+            }),
+          ),
+        )
+      }
+      await Promise.all(creationTasks)
 
-      const [commsResult, qbResult] = await Promise.allSettled([
+      const [commsResult, qbResult, reminderResult] = await Promise.allSettled([
         sendOpsLifecycleCommunications({
           event: 'job_scheduled',
           appointmentId: appointment.id,
         }),
-        syncAppointmentToQuickBooks(appointment.id),
+        isWarrantyReturn
+          ? Promise.resolve(null)
+          : syncAppointmentToQuickBooks(appointment.id),
         scheduleJobReminder({
           appointmentId: appointment.id,
           appointmentDate: appointmentDate,
@@ -519,6 +670,12 @@ export async function POST(request: NextRequest) {
         console.error(
           '[ops/appointments][POST] QB sync error:',
           qbResult.reason,
+        )
+      }
+      if (reminderResult.status === 'rejected') {
+        console.error(
+          '[ops/appointments][POST] Reminder error:',
+          reminderResult.reason,
         )
       }
     } else {
@@ -599,11 +756,14 @@ export async function PATCH(request: NextRequest) {
     if (appointmentError) throw appointmentError
 
     const nextStatus = body.status ? String(body.status) : appointment.status
+    const isWarrantyReturn = Boolean(appointment.service_concern_id)
     const skipCustomerCommunications =
       body.skip_customer_communications === true
-    const paymentStatus = body.payment_status
-      ? String(body.payment_status)
-      : appointment.payment_status
+    const paymentStatus = isWarrantyReturn
+      ? 'waived'
+      : body.payment_status
+        ? String(body.payment_status)
+        : appointment.payment_status
     const nowIso = new Date().toISOString()
     const firstOnMyWayAt =
       (appointment as { on_my_way_at?: string | null }).on_my_way_at ?? null
@@ -657,7 +817,7 @@ export async function PATCH(request: NextRequest) {
       const invoiceUpdate = {
         status: nextInvoiceStatus,
         payment_status: paymentStatus,
-        sync_status: getQuickBooksSyncStatus(),
+        sync_status: isWarrantyReturn ? 'held' : getQuickBooksSyncStatus(),
         updated_at: new Date().toISOString(),
       }
 
@@ -690,12 +850,14 @@ export async function PATCH(request: NextRequest) {
         if (invoiceEventError) throw invoiceEventError
       }
 
-      void syncAppointmentToQuickBooks(appointmentId).catch((qbErr) =>
-        console.error('[ops/appointments][PATCH] QB sync:', qbErr),
-      )
+      if (!isWarrantyReturn) {
+        void syncAppointmentToQuickBooks(appointmentId).catch((qbErr) =>
+          console.error('[ops/appointments][PATCH] QB sync:', qbErr),
+        )
+      }
     }
 
-    if (nextStatus === 'completed') {
+    if (nextStatus === 'completed' && !isWarrantyReturn) {
       const customer = Array.isArray(appointment.ops_customers)
         ? appointment.ops_customers[0]
         : appointment.ops_customers
@@ -758,6 +920,17 @@ export async function PATCH(request: NextRequest) {
         appointmentId,
         'manual quiet close - post-job communications skipped',
       )
+    }
+
+    if (
+      nextStatus !== appointment.status &&
+      nextStatus === 'completed' &&
+      appointment.service_concern_id
+    ) {
+      await supabase
+        .from('ops_service_concerns')
+        .update({ status: 'resolved', resolved_at: nowIso, updated_at: nowIso })
+        .eq('id', appointment.service_concern_id)
     }
 
     return NextResponse.json({ success: true })

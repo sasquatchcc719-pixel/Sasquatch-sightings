@@ -3,6 +3,7 @@ import { requireAnyRole } from '@/lib/auth'
 import {
   SERVICE_CONCERN_CATEGORIES,
   SERVICE_CONCERN_STATUSES,
+  openServiceConcern,
   type ServiceConcernCategory,
   type ServiceConcernStatus,
 } from '@/lib/ops/service-concerns'
@@ -40,6 +41,13 @@ const CONCERN_SELECT = `
       state,
       zip_code
     )
+  ),
+  return_appointments:ops_appointments!ops_appointments_service_concern_id_fkey (
+    id,
+    appointment_date,
+    start_time,
+    end_time,
+    status
   )
 `
 
@@ -116,6 +124,87 @@ export async function GET() {
     return NextResponse.json(
       { error: 'Failed to load service concerns' },
       { status },
+    )
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    await requireAnyRole(['admin', 'owner', 'dispatcher'])
+    const body = (await request.json()) as Record<string, unknown>
+    const customerId =
+      typeof body.customer_id === 'string' ? body.customer_id.trim() : ''
+    const appointmentId =
+      typeof body.appointment_id === 'string' ? body.appointment_id.trim() : ''
+    const summary = textOrNull(body.summary)
+    if (!customerId || !appointmentId || !summary) {
+      return NextResponse.json(
+        {
+          error:
+            'Customer, original completed job, and call summary are required',
+        },
+        { status: 400 },
+      )
+    }
+    if (!isAllowedCategory(body.category)) {
+      return NextResponse.json({ error: 'Invalid category' }, { status: 400 })
+    }
+
+    const supabase = createAdminClient()
+    const { data: originalJob, error: jobError } = await supabase
+      .from('ops_appointments')
+      .select('id')
+      .eq('id', appointmentId)
+      .eq('customer_id', customerId)
+      .eq('status', 'completed')
+      .maybeSingle()
+    if (jobError) throw jobError
+    if (!originalJob) {
+      return NextResponse.json(
+        {
+          error: 'The selected completed job does not belong to this customer',
+        },
+        { status: 400 },
+      )
+    }
+
+    const opened = await openServiceConcern({
+      supabase,
+      customerId,
+      appointmentId,
+      initialMessage: summary,
+      category: body.category,
+      source: 'admin',
+    })
+    const { data: concern, error: concernError } = await supabase
+      .from('ops_service_concerns')
+      .select(CONCERN_SELECT)
+      .eq('id', opened.concern.id)
+      .single()
+    if (concernError) throw concernError
+
+    return NextResponse.json(
+      {
+        concern: { ...concern, media: [] },
+        created: opened.created,
+        intake_sent: opened.intakeSent,
+        intake_error: opened.intakeError,
+      },
+      { status: opened.created ? 201 : 200 },
+    )
+  } catch (error) {
+    console.error('[ops/service-concerns][POST] Error:', error)
+    const unauthorized =
+      error instanceof Error && error.message === 'Not authorized'
+    return NextResponse.json(
+      {
+        error: unauthorized
+          ? 'Unauthorized'
+          : error instanceof Error
+            ? error.message
+            : 'Failed to log service concern',
+      },
+      { status: unauthorized ? 401 : 500 },
     )
   }
 }

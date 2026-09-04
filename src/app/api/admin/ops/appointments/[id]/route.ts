@@ -391,9 +391,11 @@ export async function PATCH(
       body.skip_customer_communications === true
     const notifyCustomerOnReschedule =
       body.notify_customer_on_reschedule === true
-    const nextPaymentStatus = body.payment_status
-      ? String(body.payment_status)
-      : current.payment_status
+    const nextPaymentStatus = current.service_concern_id
+      ? 'waived'
+      : body.payment_status
+        ? String(body.payment_status)
+        : current.payment_status
     const normalizedLeadSource =
       body.lead_source !== undefined || body.lead_source_key !== undefined
         ? await normalizeLeadSourceForWrite({

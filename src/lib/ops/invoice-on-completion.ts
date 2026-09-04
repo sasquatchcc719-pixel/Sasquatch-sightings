@@ -39,10 +39,51 @@ export async function promoteInvoiceOnJobCompletion(
   const { data: appt } = await supabase
     .from('ops_appointments')
     .select(
-      'id, kind, visit_type, restoration_project_id, recurring_template_id',
+      'id, kind, visit_type, restoration_project_id, recurring_template_id, service_concern_id',
     )
     .eq('id', appointmentId)
     .maybeSingle()
+
+  if (appt?.service_concern_id) {
+    const completedAt = new Date().toISOString()
+    await supabase
+      .from('ops_service_concerns')
+      .update({
+        status: 'resolved',
+        resolved_at: completedAt,
+        updated_at: completedAt,
+      })
+      .eq('id', appt.service_concern_id)
+
+    const { data: warrantyInvoice } = await supabase
+      .from('ops_invoices')
+      .select('id, status')
+      .eq('appointment_id', appointmentId)
+      .maybeSingle()
+    if (!warrantyInvoice?.id) {
+      return { promoted: false, reason: 'no_invoice' }
+    }
+    if (warrantyInvoice.status !== 'draft') {
+      return { promoted: false, reason: 'not_draft' }
+    }
+    await supabase
+      .from('ops_invoices')
+      .update({
+        status: 'ready',
+        payment_status: 'waived',
+        sync_status: 'held',
+        updated_at: completedAt,
+      })
+      .eq('id', warrantyInvoice.id)
+    await supabase.from('ops_invoice_status_events').insert({
+      invoice_id: warrantyInvoice.id,
+      from_status: 'draft',
+      to_status: 'ready',
+      changed_by: userId,
+      notes: `${note}; no-charge warranty return held from QuickBooks`,
+    })
+    return { promoted: true, invoiceId: warrantyInvoice.id }
+  }
 
   if (
     appt?.kind === 'restoration' ||

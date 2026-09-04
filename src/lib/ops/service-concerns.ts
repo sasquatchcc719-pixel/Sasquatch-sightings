@@ -120,6 +120,7 @@ export async function openServiceConcern(params: {
   appointmentId?: string | null
   conversationId?: string | null
   initialMessage?: string | null
+  category?: ServiceConcernCategory
   source: ConcernSource
   businessNumber?: string | null
   mediaIds?: string[]
@@ -176,6 +177,7 @@ export async function openServiceConcern(params: {
         appointment_id: appointmentId || null,
         conversation_id: conversationId,
         source: params.source,
+        category: params.category || 'unclassified',
         initial_message: initialMessage,
       })
       .select(

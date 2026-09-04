@@ -117,6 +117,13 @@ describe('tech appointment pricing redaction', () => {
     expect(shouldHideTechPricing(row)).toBe(true)
     expect(mapTechAppointment(row).invoice?.total).toBeNull()
   })
+
+  it('hides pricing for no-charge warranty returns', () => {
+    const row = baseAppointment({ service_concern_id: 'concern-1' })
+
+    expect(shouldHideTechPricing(row)).toBe(true)
+    expect(mapTechAppointment(row).invoice?.total).toBeNull()
+  })
 })
 
 describe('tech appointment access', () => {

@@ -120,6 +120,7 @@ const TECH_APPOINTMENT_SELECT = `
   internal_notes,
   assigned_staff_user_id,
   recurring_template_id,
+  service_concern_id,
   restoration_project_id,
   visit_type,
   ops_customers!ops_appointments_customer_id_fkey (
@@ -261,6 +262,7 @@ export function shouldHideTechPricing(row: Record<string, unknown>): boolean {
   )
 
   return (
+    Boolean(row.service_concern_id) ||
     isRecoveryVillageCustomer(customer) ||
     recurringTemplate?.invoice_mode === 'batch_monthly'
   )

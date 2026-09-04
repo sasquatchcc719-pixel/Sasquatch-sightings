@@ -138,6 +138,44 @@ type PastJob = {
   line_items: PastJobLineItem[]
 }
 
+type WarrantyConcernPrefill = {
+  id: string
+  category: string
+  initial_message: string | null
+  internal_notes: string | null
+  customer: CustomerSearchResult | CustomerSearchResult[] | null
+  original_job:
+    | {
+        id: string
+        appointment_date: string
+        service_address_id: string | null
+        lead_source_key: string | null
+        lead_source_detail: string | null
+        original_lead_source: string | null
+      }
+    | Array<{
+        id: string
+        appointment_date: string
+        service_address_id: string | null
+        lead_source_key: string | null
+        lead_source_detail: string | null
+        original_lead_source: string | null
+      }>
+    | null
+}
+
+const WARRANTY_CATEGORY_LABELS: Record<string, string> = {
+  unclassified: 'Service Concern',
+  visible_spot: 'Spot / Stain',
+  odor: 'Odor',
+  excess_moisture: 'Excess Moisture',
+  texture: 'Texture / Stiffness',
+  pricing: 'Pricing Concern',
+  technician: 'Technician Concern',
+  damage: 'Possible Damage',
+  other: 'Other Concern',
+}
+
 function formatPastJobDate(dateKey: string): string {
   return new Date(`${dateKey}T12:00:00Z`).toLocaleDateString('en-US', {
     weekday: 'short',
@@ -235,9 +273,17 @@ function splitFullName(fullName: string): {
 export function NewJobWorkspace() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const serviceConcernId = String(
+    searchParams.get('service_concern_id') || '',
+  ).trim()
   const hasAppliedPrefillRef = useRef(false)
+  const hasAppliedConcernPrefillRef = useRef(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [warrantyPrefillLoading, setWarrantyPrefillLoading] = useState(false)
+  const [warrantyConcern, setWarrantyConcern] =
+    useState<WarrantyConcernPrefill | null>(null)
+  const [warrantyDurationMinutes, setWarrantyDurationMinutes] = useState(60)
   const [error, setError] = useState<string | null>(null)
   const [services, setServices] = useState<ServiceItem[]>([])
   const [selectedCategory, setSelectedCategory] = useState('')
@@ -713,8 +759,9 @@ export function NewJobWorkspace() {
   // Availability MUST be checked against that same block. Sizing it off summed
   // line-item minutes let a 3–4 hour job be offered a 2-hour gap and double-book
   // the next appointment (e.g. a 4-hour 9 AM job slotted in front of an 11 AM).
-  const serviceMinutesForCurrentSelection =
-    totalSelectedUnits > 0
+  const serviceMinutesForCurrentSelection = serviceConcernId
+    ? warrantyDurationMinutes
+    : totalSelectedUnits > 0
       ? calculateAppointmentDurationFromTotal(subtotalQuote)
       : 0
   const bufferMinutesForCurrentSelection =
@@ -768,6 +815,94 @@ export function NewJobWorkspace() {
       })
     }
   }
+
+  useEffect(() => {
+    if (!serviceConcernId || hasAppliedConcernPrefillRef.current) return
+    hasAppliedConcernPrefillRef.current = true
+    setWarrantyPrefillLoading(true)
+    fetch(
+      `/api/admin/ops/service-concerns/${encodeURIComponent(serviceConcernId)}/booking-prefill`,
+      { cache: 'no-store' },
+    )
+      .then(async (response) => {
+        const payload = await response.json()
+        if (!response.ok) {
+          throw new Error(payload.error || 'Failed to load warranty return')
+        }
+        return payload.concern as WarrantyConcernPrefill
+      })
+      .then((concern) => {
+        const customer = unwrapRelation(concern.customer)
+        const originalJob = unwrapRelation(concern.original_job)
+        if (!customer || !originalJob) {
+          throw new Error('The service concern is missing its original job')
+        }
+        const derivedName = splitFullName(customer.full_name)
+        const originalAddress = customer.ops_service_addresses?.find(
+          (address) => address.id === originalJob.service_address_id,
+        )
+        if (!originalAddress) {
+          throw new Error('The original service address could not be loaded')
+        }
+        setWarrantyConcern(concern)
+        setSelectedCustomer(customer)
+        setCustomerQuery(customer.business_name || customer.full_name)
+        setResultsCollapsed(true)
+        setCustomerForm({
+          first_name: customer.first_name || derivedName.firstName,
+          last_name: customer.last_name || derivedName.lastName,
+          business_name: customer.business_name || '',
+          email: customer.email || '',
+          phone: customer.phone || '',
+          notes: customer.notes || '',
+        })
+        setIsCommercial(Boolean(customer.is_commercial))
+        setAddressSelection(originalAddress.id)
+        setAddressForm({
+          label: originalAddress.label || 'Service Address',
+          street_1: originalAddress.street_1,
+          street_2: originalAddress.street_2 || '',
+          city: originalAddress.city,
+          state: originalAddress.state,
+          zip_code: originalAddress.zip_code,
+          gate_code: originalAddress.gate_code || '',
+          notes: originalAddress.notes || '',
+        })
+        setLineItems([
+          {
+            service_catalog_item_id: '',
+            name_snapshot: `Warranty Return — ${WARRANTY_CATEGORY_LABELS[concern.category] || 'Service Concern'}`,
+            quantity: '1',
+            unit_price: '0',
+            duration_minutes: warrantyDurationMinutes,
+            buffer_minutes: DEFAULT_APPOINTMENT_BUFFER_MINUTES,
+          },
+        ])
+        setDiscount('0')
+        setLeadSource(
+          originalJob.lead_source_key || originalJob.original_lead_source || '',
+        )
+        setLeadSourceDetail(originalJob.lead_source_detail || '')
+        setAppointmentForm((current) => ({
+          ...current,
+          internal_notes: [
+            `Warranty return for original job ${originalJob.appointment_date}.`,
+            concern.initial_message,
+            concern.internal_notes,
+          ]
+            .filter(Boolean)
+            .join('\n'),
+        }))
+      })
+      .catch((loadError) => {
+        setError(
+          loadError instanceof Error
+            ? loadError.message
+            : 'Failed to load warranty return',
+        )
+      })
+      .finally(() => setWarrantyPrefillLoading(false))
+  }, [serviceConcernId, warrantyDurationMinutes])
 
   const handleAddressSelectionChange = (value: string) => {
     setAddressSelection(value)
@@ -924,12 +1059,16 @@ export function NewJobWorkspace() {
     setError(null)
     setConflictOverride(null)
 
-    if (!leadSource.trim()) {
+    if (!serviceConcernId && !leadSource.trim()) {
       setError('Please select a lead source before saving.')
       setSaving(false)
       return
     }
-    if (selectedLeadSource?.requires_detail && !leadSourceDetail.trim()) {
+    if (
+      !serviceConcernId &&
+      selectedLeadSource?.requires_detail &&
+      !leadSourceDetail.trim()
+    ) {
       setError(
         selectedLeadSource.detail_label || 'Please add lead source detail.',
       )
@@ -939,6 +1078,10 @@ export function NewJobWorkspace() {
 
     try {
       const payload = {
+        service_concern_id: serviceConcernId || null,
+        warranty_duration_minutes: serviceConcernId
+          ? warrantyDurationMinutes
+          : null,
         customer_id:
           selectedCustomer &&
           customerFormStillMatchesSelection(customerForm, selectedCustomer)
@@ -1088,6 +1231,29 @@ export function NewJobWorkspace() {
 
   return (
     <div className="space-y-6">
+      {serviceConcernId ? (
+        <Card className="border-blue-500/30 bg-blue-500/10 p-4 text-sm">
+          <div className="font-semibold text-blue-200">
+            Scheduling an approved warranty return
+          </div>
+          <p className="text-muted-foreground mt-1">
+            The customer, original address, $0 warranty line, and original lead
+            attribution are linked to the concern. You choose the technician,
+            day, start time, and work duration below.
+          </p>
+          {warrantyPrefillLoading ? (
+            <p className="mt-2 flex items-center gap-2 text-blue-200">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading original job…
+            </p>
+          ) : warrantyConcern ? (
+            <p className="mt-2 text-xs text-blue-200">
+              Concern:{' '}
+              {WARRANTY_CATEGORY_LABELS[warrantyConcern.category] ||
+                'Service concern'}
+            </p>
+          ) : null}
+        </Card>
+      ) : null}
       {error ? (
         <Card className="border-destructive/30 bg-destructive/10 text-destructive p-4 text-sm">
           {error}
@@ -1127,7 +1293,11 @@ export function NewJobWorkspace() {
 
       <form className="grid gap-6" onSubmit={handleSubmit}>
         <div className="mx-auto w-full max-w-4xl min-w-0 space-y-6">
-          <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
+          <Card
+            className={`border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur ${
+              serviceConcernId ? 'hidden' : ''
+            }`}
+          >
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h2 className="text-xl font-semibold">
@@ -1270,7 +1440,9 @@ export function NewJobWorkspace() {
 
           <Card
             ref={jobDetailsRef}
-            className="border-border/60 bg-card/80 scroll-mt-4 p-5 shadow-sm backdrop-blur"
+            className={`border-border/60 bg-card/80 scroll-mt-4 p-5 shadow-sm backdrop-blur ${
+              serviceConcernId ? 'hidden' : ''
+            }`}
           >
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -1545,6 +1717,30 @@ export function NewJobWorkspace() {
           <Card className="border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur">
             <h3 className="text-lg font-semibold">Schedule</h3>
 
+            {serviceConcernId ? (
+              <div className="mt-4">
+                <Label htmlFor="warranty-duration">On-site work time</Label>
+                <select
+                  id="warranty-duration"
+                  className="border-input bg-background mt-1 h-10 w-full rounded-md border px-3 text-sm"
+                  value={warrantyDurationMinutes}
+                  onChange={(event) =>
+                    setWarrantyDurationMinutes(Number(event.target.value))
+                  }
+                >
+                  <option value={60}>1 hour</option>
+                  <option value={90}>1½ hours</option>
+                  <option value={120}>2 hours</option>
+                  <option value={180}>3 hours</option>
+                  <option value={240}>4 hours</option>
+                </select>
+                <p className="text-muted-foreground mt-1 text-xs">
+                  The calendar also reserves the normal 1-hour travel/setup
+                  buffer.
+                </p>
+              </div>
+            ) : null}
+
             <div className="mt-4">
               <Label htmlFor="appointment-tech">Assigned Technician</Label>
               <select
@@ -1606,11 +1802,14 @@ export function NewJobWorkspace() {
 
             <div className="mt-5 grid gap-3 md:grid-cols-2">
               <div>
-                <Label htmlFor="lead-source">Lead Source *</Label>
+                <Label htmlFor="lead-source">
+                  Lead Source {serviceConcernId ? '(from original job)' : '*'}
+                </Label>
                 <select
                   id="lead-source"
                   className="border-input bg-background mt-1 h-10 w-full rounded-md border px-3 text-sm"
                   value={leadSource}
+                  disabled={Boolean(serviceConcernId)}
                   onChange={(event) => {
                     setLeadSource(event.target.value)
                     setLeadSourceDetail('')
@@ -1655,7 +1854,7 @@ export function NewJobWorkspace() {
                   </span>
                 </button>
               </div>
-              {selectedLeadSource?.requires_detail ? (
+              {!serviceConcernId && selectedLeadSource?.requires_detail ? (
                 <div>
                   <Label htmlFor="lead-source-detail">
                     {selectedLeadSource.detail_label || 'Lead Source Detail'} *
@@ -2088,16 +2287,25 @@ export function NewJobWorkspace() {
           </Card>
 
           <div className="flex flex-wrap gap-2">
-            <Button type="submit" disabled={saving || loading}>
+            <Button
+              type="submit"
+              disabled={saving || loading || warrantyPrefillLoading}
+            >
               {saving ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : null}
-              Save Job
+              {serviceConcernId ? 'Schedule Warranty Return' : 'Save Job'}
             </Button>
             <Button
               type="button"
               variant="outline"
-              onClick={() => router.push('/admin/operations')}
+              onClick={() =>
+                router.push(
+                  serviceConcernId
+                    ? '/admin/operations/service-concerns'
+                    : '/admin/operations',
+                )
+              }
             >
               Cancel
             </Button>

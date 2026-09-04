@@ -4,17 +4,20 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
   AlertTriangle,
+  CalendarPlus,
   Camera,
   CheckCircle2,
   Clock3,
   ExternalLink,
   Loader2,
+  PhoneCall,
   RefreshCw,
   ShieldCheck,
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -63,8 +66,17 @@ type Appointment = {
   ops_service_addresses: Address | Address[] | null
 }
 
+type ReturnAppointment = {
+  id: string
+  appointment_date: string
+  start_time: string
+  end_time: string
+  status: string
+}
+
 type Concern = {
   id: string
+  customer_id: string
   appointment_id: string | null
   conversation_id: string | null
   status: ConcernStatus
@@ -80,12 +92,29 @@ type Concern = {
   updated_at: string
   ops_customers: Customer | Customer[] | null
   ops_appointments: Appointment | Appointment[] | null
+  return_appointments: ReturnAppointment | ReturnAppointment[] | null
   media: Array<{
     id: string
     contentType: string
     status: string
     createdAt: string
     signedUrl: string | null
+  }>
+}
+
+type CustomerSearchResult = {
+  id: string
+  full_name: string
+  business_name: string | null
+  phone: string | null
+  jobs?: Array<{
+    id: string
+    status: string
+    appointment_date: string
+    ops_service_addresses:
+      | { street_1: string; city: string }
+      | Array<{ street_1: string; city: string }>
+      | null
   }>
 }
 
@@ -139,6 +168,240 @@ function statusClass(status: ConcernStatus): string {
   return 'bg-purple-600 text-white'
 }
 
+function PhoneConcernIntake({
+  onCreated,
+}: {
+  onCreated: (concern: Concern) => void
+}) {
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<CustomerSearchResult[]>([])
+  const [customer, setCustomer] = useState<CustomerSearchResult | null>(null)
+  const [appointmentId, setAppointmentId] = useState('')
+  const [category, setCategory] = useState<ConcernCategory>('unclassified')
+  const [summary, setSummary] = useState('')
+  const [searching, setSearching] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+  const completedJobs = (customer?.jobs || []).filter(
+    (job) => job.status === 'completed',
+  )
+
+  useEffect(() => {
+    if (!query.trim() || customer) {
+      setResults([])
+      return
+    }
+    const timeout = window.setTimeout(async () => {
+      setSearching(true)
+      try {
+        const response = await fetch(
+          `/api/admin/ops/customers?q=${encodeURIComponent(query)}`,
+          { cache: 'no-store' },
+        )
+        const payload = await response.json()
+        if (!response.ok) throw new Error(payload.error || 'Search failed')
+        setResults(payload.customers || [])
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : 'Search failed')
+      } finally {
+        setSearching(false)
+      }
+    }, 250)
+    return () => window.clearTimeout(timeout)
+  }, [customer, query])
+
+  const chooseCustomer = (next: CustomerSearchResult) => {
+    const jobs = (next.jobs || []).filter((job) => job.status === 'completed')
+    setCustomer(next)
+    setQuery(next.business_name || next.full_name)
+    setAppointmentId(jobs[0]?.id || '')
+    setResults([])
+    setMessage(null)
+  }
+
+  const submit = async () => {
+    if (!customer || !appointmentId || !summary.trim()) {
+      setMessage(
+        'Choose the customer, original completed job, and add a call summary.',
+      )
+      return
+    }
+    setSaving(true)
+    setMessage(null)
+    try {
+      const response = await fetch('/api/admin/ops/service-concerns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer_id: customer.id,
+          appointment_id: appointmentId,
+          category,
+          summary,
+        }),
+      })
+      const payload = await response.json()
+      if (!response.ok) {
+        throw new Error(payload.error || 'The phone call could not be logged.')
+      }
+      onCreated(payload.concern)
+      setMessage(
+        payload.intake_error
+          ? `Case saved, but the photo-request text failed: ${payload.intake_error}`
+          : payload.created
+            ? 'Case saved and the photo-request text was sent.'
+            : 'This customer already had an open case. It is shown below; the intake text was not duplicated.',
+      )
+      setCustomer(null)
+      setQuery('')
+      setAppointmentId('')
+      setCategory('unclassified')
+      setSummary('')
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : 'The phone call could not be logged.',
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Card className="border-cyan-500/25 bg-cyan-500/5 p-4 sm:p-5">
+      <div className="flex items-start gap-3">
+        <div className="rounded-full bg-cyan-500/15 p-2 text-cyan-300">
+          <PhoneCall className="h-5 w-5" />
+        </div>
+        <div>
+          <h2 className="font-semibold">Log a concern from a phone call</h2>
+          <p className="text-muted-foreground mt-1 text-sm">
+            Link the original job and send the standard photo-request text from
+            the business line.
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        <div className="relative">
+          <label
+            htmlFor="concern-customer"
+            className="mb-1 block text-xs font-medium"
+          >
+            Customer
+          </label>
+          <Input
+            id="concern-customer"
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value)
+              setCustomer(null)
+              setAppointmentId('')
+            }}
+            placeholder="Search name, phone, or email"
+          />
+          {searching ? (
+            <Loader2 className="text-muted-foreground absolute top-8 right-3 h-4 w-4 animate-spin" />
+          ) : null}
+          {results.length > 0 ? (
+            <div className="bg-popover absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-md border shadow-lg">
+              {results.map((result) => (
+                <button
+                  key={result.id}
+                  type="button"
+                  className="hover:bg-accent block w-full px-3 py-2 text-left text-sm"
+                  onClick={() => chooseCustomer(result)}
+                >
+                  <span className="font-medium">
+                    {result.business_name || result.full_name}
+                  </span>
+                  <span className="text-muted-foreground block text-xs">
+                    {result.phone || 'No phone'}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+
+        <div>
+          <label
+            htmlFor="concern-job"
+            className="mb-1 block text-xs font-medium"
+          >
+            Original completed job
+          </label>
+          <select
+            id="concern-job"
+            value={appointmentId}
+            onChange={(event) => setAppointmentId(event.target.value)}
+            disabled={!customer}
+            className="border-input bg-background h-10 w-full rounded-md border px-3 text-sm"
+          >
+            <option value="">
+              {customer && completedJobs.length === 0
+                ? 'No completed jobs found'
+                : 'Select completed job'}
+            </option>
+            {completedJobs.map((job) => {
+              const address = unwrap(job.ops_service_addresses)
+              return (
+                <option key={job.id} value={job.id}>
+                  {job.appointment_date}
+                  {address ? ` · ${address.street_1}, ${address.city}` : ''}
+                </option>
+              )
+            })}
+          </select>
+        </div>
+
+        <div>
+          <label
+            htmlFor="concern-category"
+            className="mb-1 block text-xs font-medium"
+          >
+            Concern type
+          </label>
+          <select
+            id="concern-category"
+            value={category}
+            onChange={(event) =>
+              setCategory(event.target.value as ConcernCategory)
+            }
+            className="border-input bg-background h-10 w-full rounded-md border px-3 text-sm"
+          >
+            {Object.entries(CATEGORY_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="lg:col-span-2">
+          <label
+            htmlFor="concern-summary"
+            className="mb-1 block text-xs font-medium"
+          >
+            What the customer reported
+          </label>
+          <Textarea
+            id="concern-summary"
+            value={summary}
+            onChange={(event) => setSummary(event.target.value)}
+            placeholder="Capture the area, symptom, timing, and anything already tried."
+          />
+        </div>
+      </div>
+      {message ? <p className="mt-3 text-sm text-cyan-100">{message}</p> : null}
+      <Button className="mt-4" onClick={submit} disabled={saving}>
+        {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+        Save case and request photos
+      </Button>
+    </Card>
+  )
+}
+
 function ConcernCard({
   concern,
   onSaved,
@@ -158,6 +421,7 @@ function ConcernCard({
   const [error, setError] = useState<string | null>(null)
   const customer = unwrap(concern.ops_customers)
   const appointment = unwrap(concern.ops_appointments)
+  const returnAppointment = unwrap(concern.return_appointments)
   const address = unwrap(appointment?.ops_service_addresses || null)
   const customerName =
     customer?.business_name || customer?.full_name || 'Unknown customer'
@@ -248,6 +512,26 @@ function ConcernCard({
             {customer?.phone ? (
               <Button asChild size="sm" variant="outline">
                 <a href={`sms:${customer.phone}`}>Text customer</a>
+              </Button>
+            ) : null}
+            {concern.status === 'approved_return' && !returnAppointment ? (
+              <Button asChild size="sm">
+                <Link
+                  href={`/admin/operations/new-job?service_concern_id=${concern.id}`}
+                >
+                  <CalendarPlus className="mr-1 h-3.5 w-3.5" /> Schedule return
+                </Link>
+              </Button>
+            ) : null}
+            {returnAppointment ? (
+              <Button asChild size="sm" variant="outline">
+                <Link
+                  href={`/admin/operations/appointments/${returnAppointment.id}`}
+                >
+                  Return {returnAppointment.appointment_date}{' '}
+                  {returnAppointment.start_time.slice(0, 5)}
+                  <ExternalLink className="ml-1 h-3.5 w-3.5" />
+                </Link>
               </Button>
             ) : null}
           </div>
@@ -498,6 +782,15 @@ export default function ServiceConcernsPage() {
         </Card>
       </div>
 
+      <PhoneConcernIntake
+        onCreated={(concern) =>
+          setConcerns((current) => [
+            concern,
+            ...current.filter((item) => item.id !== concern.id),
+          ])
+        }
+      />
+
       <div className="flex gap-2">
         {(['open', 'all', 'closed'] as const).map((value) => (
           <Button
@@ -524,8 +817,8 @@ export default function ServiceConcernsPage() {
           <ShieldCheck className="mx-auto h-8 w-8 text-emerald-400" />
           <p className="mt-3 font-medium">No {filter} service concerns</p>
           <p className="text-muted-foreground mt-1 text-sm">
-            In a customer&apos;s Telegram topic, click “Start service concern”
-            to request the intake details and open a case here.
+            Use the phone-call form above, or click “Start service concern” in a
+            customer&apos;s Telegram topic.
           </p>
         </Card>
       ) : (
