@@ -45,6 +45,17 @@ export type FunnelStepSummary = {
   droppedFromPrevious: number
 }
 
+export type FunnelTrendPoint = {
+  date: string
+  /** Qualified-quote cohorts started during the trailing seven days. */
+  quotes: number
+  /** Those cohorts that eventually completed a booking. */
+  booked: number
+  unbookedQuotes: number
+  quoteToBookRate: number | null
+  unbookedQuoteValue: number
+}
+
 export type BookingFunnelSummary = {
   sinceDate: string | null
   windowDays: number | null
@@ -67,6 +78,8 @@ export type BookingFunnelSummary = {
   biggestDropStep: FunnelStep | null
   biggestDropCount: number
   topAbandonedReferrers: { referrer: string; sessions: number }[]
+  /** Daily points calculated as trailing seven-day qualified-quote cohorts. */
+  trend: FunnelTrendPoint[]
 }
 
 type EventRow = {
@@ -80,6 +93,7 @@ type EventRow = {
 const round1 = (n: number) => Math.round(n * 10) / 10
 const round2 = (n: number) => Math.round(n * 100) / 100
 const ONLINE_BOOKING_MINIMUM = 150
+const TREND_WINDOW_DAYS = 7
 const POST_QUOTE_STEPS = new Set<FunnelStep>([
   'calendar_viewed',
   'details_started',
@@ -101,7 +115,11 @@ function normalizeReferrer(raw: string | null): string {
 
 export function summarizeFunnel(
   rows: EventRow[],
-  options?: { sinceDate?: string | null; windowDays?: number | null },
+  options?: {
+    sinceDate?: string | null
+    endDate?: string | null
+    windowDays?: number | null
+  },
 ): BookingFunnelSummary {
   const stepsBySession = new Map<string, Set<string>>()
   const bestQuoteBySession = new Map<string, number>()
@@ -212,6 +230,80 @@ export function summarizeFunnel(
     .sort((a, b) => b.sessions - a.sessions)
     .slice(0, 5)
 
+  const quoteDateBySession = new Map<string, string>()
+  for (const row of rows) {
+    if (!qualifiedQuoteSessions.has(row.session_id)) continue
+    const provesQualification =
+      (row.step === 'quote_started' &&
+        Number(row.quote_total || 0) >= ONLINE_BOOKING_MINIMUM) ||
+      POST_QUOTE_STEPS.has(row.step as FunnelStep)
+    if (!provesQualification) continue
+
+    const date = row.created_at.slice(0, 10)
+    const current = quoteDateBySession.get(row.session_id)
+    if (!current || date < current) quoteDateBySession.set(row.session_id, date)
+  }
+
+  const dailyCohorts = new Map<
+    string,
+    { quotes: number; booked: number; unbookedQuotes: number; value: number }
+  >()
+  for (const sessionId of qualifiedQuoteSessions) {
+    const date = quoteDateBySession.get(sessionId)
+    if (!date) continue
+    const cohort = dailyCohorts.get(date) ?? {
+      quotes: 0,
+      booked: 0,
+      unbookedQuotes: 0,
+      value: 0,
+    }
+    cohort.quotes++
+    if (stepsBySession.get(sessionId)?.has('booked')) {
+      cohort.booked++
+    } else {
+      cohort.unbookedQuotes++
+      cohort.value += bestQuoteBySession.get(sessionId) ?? 0
+    }
+    dailyCohorts.set(date, cohort)
+  }
+
+  const cohortDates = [...dailyCohorts.keys()].sort()
+  const trendStart = options?.sinceDate ?? cohortDates[0] ?? null
+  const trendEnd =
+    options?.endDate ?? cohortDates[cohortDates.length - 1] ?? trendStart
+  const trend: FunnelTrendPoint[] = []
+  if (trendStart && trendEnd) {
+    const cursor = new Date(`${trendStart}T12:00:00Z`)
+    // Skip the first six partial points so every plotted value represents a
+    // complete seven-day window.
+    cursor.setUTCDate(cursor.getUTCDate() + TREND_WINDOW_DAYS - 1)
+    const end = new Date(`${trendEnd}T12:00:00Z`)
+    for (; cursor <= end; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
+      let quotes = 0
+      let booked = 0
+      let unbookedQuotes = 0
+      let value = 0
+      for (let offset = TREND_WINDOW_DAYS - 1; offset >= 0; offset--) {
+        const day = new Date(cursor)
+        day.setUTCDate(day.getUTCDate() - offset)
+        const cohort = dailyCohorts.get(day.toISOString().slice(0, 10))
+        if (!cohort) continue
+        quotes += cohort.quotes
+        booked += cohort.booked
+        unbookedQuotes += cohort.unbookedQuotes
+        value += cohort.value
+      }
+      trend.push({
+        date: cursor.toISOString().slice(0, 10),
+        quotes,
+        booked,
+        unbookedQuotes,
+        quoteToBookRate: quotes > 0 ? round1((booked / quotes) * 100) : null,
+        unbookedQuoteValue: round2(value),
+      })
+    }
+  }
+
   return {
     sinceDate: options?.sinceDate ?? null,
     windowDays: options?.windowDays ?? null,
@@ -235,6 +327,7 @@ export function summarizeFunnel(
     biggestDropStep,
     biggestDropCount,
     topAbandonedReferrers,
+    trend,
   }
 }
 
@@ -268,6 +361,7 @@ export async function loadBookingFunnel(
 
   return summarizeFunnel(rows, {
     sinceDate: since.slice(0, 10),
+    endDate: new Date().toISOString().slice(0, 10),
     windowDays,
   })
 }

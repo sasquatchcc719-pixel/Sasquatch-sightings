@@ -14,6 +14,16 @@ const ev = (
   created_at: '2026-07-16T12:00:00.000Z',
 })
 
+const datedEv = (
+  session_id: string,
+  step: string,
+  quote_total: number,
+  date: string,
+) => ({
+  ...ev(session_id, step, quote_total),
+  created_at: `${date}T12:00:00.000Z`,
+})
+
 describe('summarizeFunnel', () => {
   it('counts sessions per step and computes quote-to-book rate', () => {
     const s = summarizeFunnel([
@@ -138,11 +148,46 @@ describe('summarizeFunnel', () => {
     })
   })
 
+  it('builds a continuous seven-day trend from qualified-quote cohorts', () => {
+    const s = summarizeFunnel(
+      [
+        datedEv('booked', 'quote_started', 300, '2026-07-02'),
+        datedEv('booked', 'booked', 300, '2026-07-03'),
+        datedEv('lost', 'quote_started', 500, '2026-07-07'),
+        datedEv('partial', 'quote_started', 46, '2026-07-07'),
+      ],
+      {
+        sinceDate: '2026-07-01',
+        endDate: '2026-07-09',
+        windowDays: 9,
+      },
+    )
+
+    expect(s.trend).toHaveLength(3)
+    expect(s.trend.find((point) => point.date === '2026-07-07')).toEqual({
+      date: '2026-07-07',
+      quotes: 2,
+      booked: 1,
+      unbookedQuotes: 1,
+      quoteToBookRate: 50,
+      unbookedQuoteValue: 500,
+    })
+    expect(s.trend.find((point) => point.date === '2026-07-09')).toEqual({
+      date: '2026-07-09',
+      quotes: 1,
+      booked: 0,
+      unbookedQuotes: 1,
+      quoteToBookRate: 0,
+      unbookedQuoteValue: 500,
+    })
+  })
+
   it('handles an empty dataset', () => {
     const s = summarizeFunnel([])
     expect(s.quoteSessions).toBe(0)
     expect(s.quoteToBookRate).toBe(0)
     expect(s.biggestDropStep).toBeNull()
     expect(s.steps).toHaveLength(7)
+    expect(s.trend).toEqual([])
   })
 })

@@ -222,6 +222,14 @@ type BookingFunnel = {
   biggestDropStep: string | null
   biggestDropCount: number
   topAbandonedReferrers: { referrer: string; sessions: number }[]
+  trend: {
+    date: string
+    quotes: number
+    booked: number
+    unbookedQuotes: number
+    quoteToBookRate: number | null
+    unbookedQuoteValue: number
+  }[]
 }
 
 type YearSummary = {
@@ -864,6 +872,200 @@ function DailyProfitabilityChart({ days }: { days: TechDayRow[] }) {
   )
 }
 
+type FunnelTrendPoint = BookingFunnel['trend'][number]
+
+type FunnelTrendTooltipProps = {
+  active?: boolean
+  payload?: { payload: FunnelTrendPoint & { timestamp: number } }[]
+}
+
+function FunnelTrendTooltip({ active, payload }: FunnelTrendTooltipProps) {
+  if (!active || !payload?.length) return null
+  const point = payload[0].payload
+
+  return (
+    <div className="border-border/80 bg-popover min-w-52 rounded-lg border p-3 text-xs shadow-xl">
+      <p className="mb-2 font-semibold">
+        7 days ending{' '}
+        {new Date(`${point.date}T12:00:00`).toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+        })}
+      </p>
+      <div className="text-muted-foreground space-y-1">
+        <div className="flex justify-between gap-5">
+          <span>Qualified quotes</span>
+          <span className="text-foreground font-medium">{point.quotes}</span>
+        </div>
+        <div className="flex justify-between gap-5">
+          <span>Booked</span>
+          <span className="font-medium text-emerald-400">{point.booked}</span>
+        </div>
+        <div className="flex justify-between gap-5">
+          <span>Quote → book</span>
+          <span className="font-medium text-emerald-400">
+            {point.quoteToBookRate === null
+              ? 'No quotes'
+              : `${point.quoteToBookRate.toFixed(1)}%`}
+          </span>
+        </div>
+        <div className="border-border mt-2 flex justify-between gap-5 border-t pt-2">
+          <span>Unbooked value</span>
+          <span className="font-semibold text-red-400">
+            {usd(point.unbookedQuoteValue)}
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function FunnelTrendChart({ points }: { points: BookingFunnel['trend'] }) {
+  const chartData = points.map((point) => ({
+    ...point,
+    timestamp: new Date(`${point.date}T12:00:00`).getTime(),
+  }))
+  const latest = points[points.length - 1]
+
+  return (
+    <Card className="border-border/60 bg-card/80 mt-4 p-4 backdrop-blur">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <h4 className="text-sm font-semibold">Funnel Trend</h4>
+            <span className="flex items-center gap-1 text-[10px] font-medium text-emerald-400">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+              LIVE
+            </span>
+          </div>
+          <p className="text-muted-foreground mt-1 text-xs">
+            Trailing seven days, grouped by the day each qualified quote began.
+          </p>
+        </div>
+        {latest ? (
+          <div className="flex gap-5 text-right">
+            <div>
+              <p className="text-lg leading-none font-bold text-emerald-400">
+                {latest.quoteToBookRate === null
+                  ? '—'
+                  : `${latest.quoteToBookRate.toFixed(1)}%`}
+              </p>
+              <p className="text-muted-foreground mt-1 text-[10px]">
+                quote → book
+              </p>
+            </div>
+            <div>
+              <p className="text-lg leading-none font-bold text-red-400">
+                {usd(latest.unbookedQuoteValue)}
+              </p>
+              <p className="text-muted-foreground mt-1 text-[10px]">
+                unbooked value
+              </p>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-x-5 gap-y-1 text-xs">
+        <span className="flex items-center gap-2 text-emerald-400">
+          <span className="h-0.5 w-5 bg-emerald-400" /> Quote → book rate
+        </span>
+        <span className="flex items-center gap-2 text-red-400">
+          <span className="h-0.5 w-5 bg-red-400" /> Unbooked quote value
+        </span>
+      </div>
+
+      {chartData.length > 0 ? (
+        <div
+          className="mt-3 h-64 w-full"
+          aria-label="Booking funnel trend chart"
+        >
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart
+              data={chartData}
+              margin={{ top: 8, right: 4, left: 4, bottom: 0 }}
+            >
+              <CartesianGrid
+                vertical={false}
+                strokeDasharray="3 3"
+                stroke="rgba(148,163,184,0.14)"
+              />
+              <XAxis
+                dataKey="timestamp"
+                type="number"
+                scale="time"
+                domain={['dataMin', 'dataMax']}
+                tickFormatter={(value: number) =>
+                  new Date(value).toLocaleDateString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                  })
+                }
+                minTickGap={28}
+                axisLine={false}
+                tickLine={false}
+                tick={{ fill: 'currentColor', fontSize: 10 }}
+                className="text-muted-foreground"
+              />
+              <YAxis
+                yAxisId="value"
+                tickFormatter={(value: number) => `$${Math.round(value)}`}
+                width={56}
+                axisLine={false}
+                tickLine={false}
+                tick={{ fill: 'currentColor', fontSize: 10 }}
+                className="text-muted-foreground"
+              />
+              <YAxis
+                yAxisId="rate"
+                orientation="right"
+                domain={[0, 100]}
+                tickFormatter={(value: number) => `${value}%`}
+                width={38}
+                axisLine={false}
+                tickLine={false}
+                tick={{ fill: 'currentColor', fontSize: 10 }}
+                className="text-muted-foreground"
+              />
+              <Tooltip
+                content={<FunnelTrendTooltip />}
+                cursor={{ stroke: 'rgba(148,163,184,0.35)' }}
+              />
+              <Line
+                yAxisId="value"
+                type="monotone"
+                dataKey="unbookedQuoteValue"
+                stroke="#f87171"
+                strokeWidth={2.25}
+                dot={false}
+                activeDot={{ r: 4, fill: '#f87171', strokeWidth: 0 }}
+              />
+              <Line
+                yAxisId="rate"
+                type="monotone"
+                dataKey="quoteToBookRate"
+                stroke="#34d399"
+                strokeWidth={2.5}
+                dot={false}
+                activeDot={{ r: 4, fill: '#34d399', strokeWidth: 0 }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      ) : (
+        <div className="text-muted-foreground flex h-40 items-center justify-center text-sm">
+          Waiting for qualified quotes to establish a trend.
+        </div>
+      )}
+      <p className="text-muted-foreground mt-2 text-[10px]">
+        Refreshes every minute. The seven-day window smooths out one unusually
+        busy or quiet day while still showing changes quickly.
+      </p>
+    </Card>
+  )
+}
+
 function OwnerComparison({
   owner,
   tech,
@@ -1457,6 +1659,8 @@ export default function StatsPage() {
     void fetchSourceRevenue()
     void fetchFunnel()
     void fetchHistory()
+    const funnelInterval = window.setInterval(() => void fetchFunnel(), 60_000)
+    return () => window.clearInterval(funnelInterval)
   }, [])
 
   useEffect(() => {
@@ -2950,6 +3154,8 @@ export default function StatsPage() {
               </p>
             </Card>
           </div>
+
+          <FunnelTrendChart points={funnel.trend || []} />
 
           {/* Step-by-step drop-off */}
           <Card className="border-border/60 bg-card/80 mt-4 p-4 backdrop-blur">
