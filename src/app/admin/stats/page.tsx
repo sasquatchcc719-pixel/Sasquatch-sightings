@@ -26,6 +26,8 @@ import {
   AlertTriangle,
 } from 'lucide-react'
 import {
+  Bar,
+  BarChart,
   CartesianGrid,
   Line,
   LineChart,
@@ -229,6 +231,40 @@ type BookingFunnel = {
     unbookedQuotes: number
     quoteToBookRate: number | null
     unbookedQuoteValue: number
+  }[]
+}
+
+type DiscountAnalytics = {
+  year: number
+  discountedInvoices: number
+  completedInvoices: number
+  scheduledInvoices: number
+  totalDiscount: number
+  completedDiscount: number
+  scheduledDiscount: number
+  averageDiscount: number
+  identifiedInvoices: number
+  codeTrackedInvoices: number
+  manualInvoices: number
+  lifetimeCodeUses: number
+  promoCodes: {
+    code: string
+    useCount: number
+    active: boolean
+  }[]
+  months: {
+    month: number
+    label: string
+    completedAmount: number
+    scheduledAmount: number
+    invoiceCount: number
+  }[]
+  breakdown: {
+    label: string
+    kind: 'promo' | 'automatic' | 'manual'
+    invoiceCount: number
+    completedInvoices: number
+    amount: number
   }[]
 }
 
@@ -1066,6 +1102,286 @@ function FunnelTrendChart({ points }: { points: BookingFunnel['trend'] }) {
   )
 }
 
+type DiscountMonth = DiscountAnalytics['months'][number]
+
+type DiscountTrendTooltipProps = {
+  active?: boolean
+  payload?: { payload: DiscountMonth }[]
+}
+
+function DiscountTrendTooltip({ active, payload }: DiscountTrendTooltipProps) {
+  if (!active || !payload?.length) return null
+  const month = payload[0].payload
+
+  return (
+    <div className="border-border/80 bg-popover min-w-48 rounded-lg border p-3 text-xs shadow-xl">
+      <p className="mb-2 font-semibold">{month.label}</p>
+      <div className="text-muted-foreground space-y-1">
+        <div className="flex justify-between gap-5">
+          <span>Completed</span>
+          <span className="font-medium text-emerald-400">
+            {usd(month.completedAmount)}
+          </span>
+        </div>
+        <div className="flex justify-between gap-5">
+          <span>Scheduled</span>
+          <span className="font-medium text-amber-400">
+            {usd(month.scheduledAmount)}
+          </span>
+        </div>
+        <div className="border-border mt-2 flex justify-between gap-5 border-t pt-2">
+          <span>Discounted invoices</span>
+          <span className="text-foreground font-semibold">
+            {month.invoiceCount}
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function DiscountAnalyticsSection({ data }: { data: DiscountAnalytics }) {
+  const identifiedPct =
+    data.discountedInvoices > 0
+      ? Math.round((data.identifiedInvoices / data.discountedInvoices) * 100)
+      : 0
+
+  return (
+    <div className="mb-8">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-gradient-amber mb-1 text-xl font-semibold tracking-tight">
+            Discount Analytics — {data.year}
+          </h2>
+          <p className="text-muted-foreground max-w-3xl text-sm leading-relaxed">
+            Invoice-backed discounts on completed and scheduled jobs. Coupon
+            names are shown when they were recorded; older custom discounts
+            remain manual / unlabeled.
+          </p>
+        </div>
+        <a
+          href="/admin/promo-codes"
+          className="text-sm font-medium text-emerald-400 hover:underline"
+        >
+          Manage Promo Codes →
+        </a>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+        <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
+          <p className="text-muted-foreground mb-1 text-sm font-medium">
+            Discounted Invoices
+          </p>
+          <p className="stat-value text-2xl font-bold">
+            {data.discountedInvoices}
+          </p>
+          <p className="text-muted-foreground mt-0.5 text-xs">
+            {data.completedInvoices} completed · {data.scheduledInvoices}{' '}
+            scheduled
+          </p>
+        </Card>
+
+        <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
+          <p className="text-muted-foreground mb-1 text-sm font-medium">
+            Total Discounts
+          </p>
+          <p className="stat-value text-2xl font-bold text-amber-300">
+            {usd(data.totalDiscount)}
+          </p>
+          <p className="text-muted-foreground mt-0.5 text-xs">
+            completed + scheduled
+          </p>
+        </Card>
+
+        <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
+          <p className="text-muted-foreground mb-1 text-sm font-medium">
+            Already Given
+          </p>
+          <p className="stat-value text-2xl font-bold text-emerald-300">
+            {usd(data.completedDiscount)}
+          </p>
+          <p className="text-muted-foreground mt-0.5 text-xs">
+            {usd(data.scheduledDiscount)} still scheduled
+          </p>
+        </Card>
+
+        <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
+          <p className="text-muted-foreground mb-1 text-sm font-medium">
+            Average Discount
+          </p>
+          <p className="stat-value text-2xl font-bold">
+            {usd(data.averageDiscount)}
+          </p>
+          <p className="text-muted-foreground mt-0.5 text-xs">
+            per discounted invoice
+          </p>
+        </Card>
+
+        <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
+          <p className="text-muted-foreground mb-1 text-sm font-medium">
+            Recorded Code Uses
+          </p>
+          <p className="stat-value text-2xl font-bold text-cyan-300">
+            {data.lifetimeCodeUses}
+          </p>
+          <p className="text-muted-foreground mt-0.5 text-xs">
+            lifetime · {data.codeTrackedInvoices} tied to {data.year} invoices
+          </p>
+        </Card>
+      </div>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(340px,0.85fr)]">
+        <Card className="border-border/60 bg-card/80 p-4 backdrop-blur">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h4 className="text-sm font-semibold">Discounts by Month</h4>
+              <p className="text-muted-foreground mt-1 text-xs">
+                Completed discounts in green; future scheduled discounts in
+                amber.
+              </p>
+            </div>
+            <div className="flex gap-4 text-xs">
+              <span className="flex items-center gap-2 text-emerald-400">
+                <span className="h-2.5 w-2.5 rounded-sm bg-emerald-400" />
+                Completed
+              </span>
+              <span className="flex items-center gap-2 text-amber-400">
+                <span className="h-2.5 w-2.5 rounded-sm bg-amber-400" />
+                Scheduled
+              </span>
+            </div>
+          </div>
+
+          <div
+            className="mt-4 h-64 w-full"
+            aria-label="Monthly completed and scheduled discount amounts"
+          >
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={data.months}
+                margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+              >
+                <CartesianGrid
+                  vertical={false}
+                  strokeDasharray="3 3"
+                  stroke="rgba(148,163,184,0.14)"
+                />
+                <XAxis
+                  dataKey="label"
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: 'currentColor', fontSize: 10 }}
+                  className="text-muted-foreground"
+                />
+                <YAxis
+                  tickFormatter={(value: number) => `$${Math.round(value)}`}
+                  width={52}
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: 'currentColor', fontSize: 10 }}
+                  className="text-muted-foreground"
+                />
+                <Tooltip
+                  content={<DiscountTrendTooltip />}
+                  cursor={{ fill: 'rgba(148,163,184,0.08)' }}
+                />
+                <Bar
+                  dataKey="completedAmount"
+                  stackId="discount"
+                  fill="#34d399"
+                  radius={[3, 3, 0, 0]}
+                />
+                <Bar
+                  dataKey="scheduledAmount"
+                  stackId="discount"
+                  fill="#fbbf24"
+                  radius={[3, 3, 0, 0]}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
+
+        <Card className="border-border/60 bg-card/80 overflow-hidden backdrop-blur">
+          <div className="border-border/60 border-b p-4">
+            <h4 className="text-sm font-semibold">What Caused the Discount</h4>
+            <p className="text-muted-foreground mt-1 text-xs">
+              {data.identifiedInvoices} of {data.discountedInvoices} invoices (
+              {identifiedPct}%) have a recorded code or automatic label.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-border/60 bg-muted/30 border-b">
+                  <th className="px-4 py-2 text-left font-medium">Source</th>
+                  <th className="px-3 py-2 text-right font-medium">Invoices</th>
+                  <th className="px-4 py-2 text-right font-medium">Discount</th>
+                </tr>
+              </thead>
+              <tbody className="divide-border/40 divide-y">
+                {data.breakdown.map((row) => (
+                  <tr key={`${row.kind}:${row.label}`}>
+                    <td className="px-4 py-3">
+                      <div className="font-medium">{row.label}</div>
+                      <div className="text-muted-foreground mt-0.5 text-[10px] tracking-wide uppercase">
+                        {row.kind === 'promo'
+                          ? 'Promo code'
+                          : row.kind === 'automatic'
+                            ? 'Automatic'
+                            : 'Needs labeling'}
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 text-right">
+                      <div>{row.invoiceCount}</div>
+                      <div className="text-muted-foreground text-[10px]">
+                        {row.completedInvoices} completed
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right font-semibold">
+                      {usd(row.amount)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {data.promoCodes.length > 0 && (
+            <div className="border-border/60 border-t p-4">
+              <p className="text-muted-foreground mb-2 text-[10px] font-medium tracking-wide uppercase">
+                Lifetime promo counters
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {data.promoCodes.map((promo) => (
+                  <span
+                    key={promo.code}
+                    className={`rounded-full border px-2 py-1 text-xs font-medium ${
+                      promo.active
+                        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                        : 'border-border text-muted-foreground'
+                    }`}
+                  >
+                    {promo.code} · {promo.useCount}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </Card>
+      </div>
+
+      {data.manualInvoices > 0 && (
+        <p className="text-muted-foreground mt-3 flex items-start gap-2 text-xs">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
+          {data.manualInvoices} invoices still have a dollar discount without a
+          recorded reason. New quick-coupon bookings are labeled automatically;
+          older discounts stay in “Manual / unlabeled.”
+        </p>
+      )}
+    </div>
+  )
+}
+
 function OwnerComparison({
   owner,
   tech,
@@ -1192,6 +1508,7 @@ export default function StatsPage() {
   const [health, setHealth] = useState<BusinessHealth | null>(null)
   const [sourceRevenue, setSourceRevenue] = useState<LeadSourceRevenue[]>([])
   const [funnel, setFunnel] = useState<BookingFunnel | null>(null)
+  const [discounts, setDiscounts] = useState<DiscountAnalytics | null>(null)
   const [history, setHistory] = useState<YearOverYear | null>(null)
 
   // Quick entry form state
@@ -1643,6 +1960,17 @@ export default function StatsPage() {
         // Non-fatal — section hides
       }
     }
+    async function fetchDiscounts() {
+      try {
+        const year = new Date().getFullYear()
+        const res = await fetch(`/api/admin/stats/discounts?year=${year}`, {
+          cache: 'no-store',
+        })
+        if (res.ok) setDiscounts((await res.json()) as DiscountAnalytics)
+      } catch {
+        // Non-fatal — section hides
+      }
+    }
     async function fetchHistory() {
       try {
         const res = await fetch('/api/admin/stats/year-over-year', {
@@ -1658,9 +1986,13 @@ export default function StatsPage() {
     }
     void fetchSourceRevenue()
     void fetchFunnel()
+    void fetchDiscounts()
     void fetchHistory()
-    const funnelInterval = window.setInterval(() => void fetchFunnel(), 60_000)
-    return () => window.clearInterval(funnelInterval)
+    const liveStatsInterval = window.setInterval(() => {
+      void fetchFunnel()
+      void fetchDiscounts()
+    }, 60_000)
+    return () => window.clearInterval(liveStatsInterval)
   }, [])
 
   useEffect(() => {
@@ -3253,6 +3585,8 @@ export default function StatsPage() {
           )}
         </div>
       )}
+
+      {discounts && <DiscountAnalyticsSection data={discounts} />}
 
       {/* Revenue by Lead Source (YTD) */}
       {sourceRevenue.length > 0 && (
