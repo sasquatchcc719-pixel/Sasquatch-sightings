@@ -68,6 +68,20 @@ function emptyBucket(): SyncBucket {
   return { checked: 0, inserted: 0, updated: 0, skipped: 0, errors: [] }
 }
 
+export function reportKeysToImport(
+  reports: Array<Record<string, unknown>>,
+  existingReportKeys: string[],
+): string[] {
+  const existing = new Set(existingReportKeys)
+  return [
+    ...new Set(
+      reports
+        .map((report) => String(report.report_key || ''))
+        .filter((reportKey) => reportKey && !existing.has(reportKey)),
+    ),
+  ]
+}
+
 type RawPoint = {
   lat?: string | number
   lng?: string | number
@@ -413,12 +427,22 @@ async function syncCompetitorReports(
     const listed = await listCompetitorReports({ limit })
     const reports = lfCollection(listed, 'reports')
     out.checked = reports.length
-    for (const summary of reports) {
-      const reportKey = String(summary.report_key || '')
-      if (!reportKey) {
-        out.skipped++
-        continue
-      }
+    const reportKeys = reportKeysToImport(reports, [])
+    if (!reportKeys.length) return out
+
+    const { data: existing, error: existingError } = await supabase
+      .from('local_falcon_competitor_reports')
+      .select('report_key')
+      .in('report_key', reportKeys)
+    if (existingError) throw existingError
+
+    const toImport = reportKeysToImport(
+      reports,
+      (existing ?? []).map((report) => String(report.report_key)),
+    )
+    out.skipped = Math.max(0, reports.length - toImport.length)
+
+    for (const reportKey of toImport) {
       try {
         const detail = asRecord(await getCompetitorReport(reportKey))
         const r = asRecord(detail.report ?? detail)
@@ -432,15 +456,10 @@ async function syncCompetitorReports(
         }
         const { data: upserted, error } = await supabase
           .from('local_falcon_competitor_reports')
-          .upsert(row, { onConflict: 'report_key' })
+          .insert(row)
           .select('id')
           .single()
         if (error) throw error
-
-        await supabase
-          .from('local_falcon_competitor_points')
-          .delete()
-          .eq('report_id', upserted.id)
 
         // Competitor heatmaps live under businesses / competitors with data_points.
         const businessesRaw = r.businesses ?? r.competitors ?? r.places
@@ -475,7 +494,14 @@ async function syncCompetitorReports(
           const { error: pErr } = await supabase
             .from('local_falcon_competitor_points')
             .insert(pointRows)
-          if (pErr) throw pErr
+          if (pErr) {
+            // Remove the newly-created header so the next sync retries it.
+            await supabase
+              .from('local_falcon_competitor_reports')
+              .delete()
+              .eq('id', upserted.id)
+            throw pErr
+          }
         }
         out.inserted++
       } catch (err) {

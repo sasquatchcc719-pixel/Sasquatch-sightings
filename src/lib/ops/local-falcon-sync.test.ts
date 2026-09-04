@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { lfInt, lfNum, normalizeCompetitors } from './local-falcon-sync'
+import {
+  lfInt,
+  lfNum,
+  normalizeCompetitors,
+  reportKeysToImport,
+} from './local-falcon-sync'
 
 describe('lfNum / lfInt', () => {
   it('turns empty and nullish strings into null, not 0', () => {
@@ -37,5 +42,28 @@ describe('normalizeCompetitors', () => {
 
   it('handles missing results', () => {
     expect(normalizeCompetitors(undefined)).toEqual([])
+  })
+})
+
+describe('reportKeysToImport', () => {
+  it('imports new competitor reports and skips immutable history', () => {
+    const reports = [
+      { report_key: 'already-synced' },
+      { report_key: 'brand-new' },
+      { report_key: '' },
+    ]
+
+    expect(reportKeysToImport(reports, ['already-synced'])).toEqual([
+      'brand-new',
+    ])
+  })
+
+  it('deduplicates repeated report keys from the vendor response', () => {
+    expect(
+      reportKeysToImport(
+        [{ report_key: 'new-report' }, { report_key: 'new-report' }],
+        [],
+      ),
+    ).toEqual(['new-report'])
   })
 })
