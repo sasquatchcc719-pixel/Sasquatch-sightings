@@ -206,7 +206,7 @@ type BookingFunnel = {
     step: string
     label: string
     sessions: number
-    pctOfQuotes: number
+    pctFromPrevious: number
     droppedFromPrevious: number
   }[]
   visitorSessions: number
@@ -2851,7 +2851,7 @@ export default function StatsPage() {
           <p className="text-muted-foreground mb-4 max-w-3xl text-sm leading-relaxed">
             Three numbers, last {funnel.windowDays ?? 90} days:{' '}
             <strong>visitors</strong> to the site, <strong>quotes built</strong>{' '}
-            (they picked services and saw a price), and{' '}
+            (they reached the $150 online minimum), and{' '}
             <strong>jobs booked</strong>. Counts are unique browser sessions,
             not page views. <strong>sasquatchcarpet.com only</strong> — NFC
             cards, partner locations, door hangers, phone and admin bookings are
@@ -2932,20 +2932,21 @@ export default function StatsPage() {
                 {funnel.quoteToBookRate.toFixed(1)}%
               </p>
               <p className="text-muted-foreground mt-0.5 text-xs">
-                {funnel.abandonedQuotes} walked away
+                {funnel.abandonedQuotes} qualified quotes not booked
               </p>
             </Card>
 
             <Card className="card-interactive animate-slide-up-delay-3 border-red-200 bg-red-50 p-4 dark:border-red-900 dark:bg-red-950/40">
               <div className="mb-1 flex items-center gap-2 text-red-700 dark:text-red-400">
                 <TrendingDown className="h-4 w-4" />
-                <p className="text-sm font-medium">Abandoned Quote Value</p>
+                <p className="text-sm font-medium">Unbooked Quote Value</p>
               </div>
               <p className="stat-value text-2xl font-bold text-red-700 dark:text-red-400">
                 {formatCurrency(funnel.abandonedQuoteValue)}
               </p>
               <p className="text-muted-foreground mt-0.5 text-xs">
-                avg {formatCurrency(funnel.avgAbandonedQuote)} per lost quote
+                avg {formatCurrency(funnel.avgAbandonedQuote)} per qualified
+                quote
               </p>
             </Card>
           </div>
@@ -2955,6 +2956,10 @@ export default function StatsPage() {
             <h4 className="mb-3 text-sm font-semibold">
               Where People Drop Off
             </h4>
+            <p className="text-muted-foreground mb-3 text-xs">
+              Each percentage is the share that continued from the step
+              immediately above it.
+            </p>
             <div className="space-y-2">
               {(() => {
                 const maxSessions = Math.max(
@@ -2984,7 +2989,9 @@ export default function StatsPage() {
                         </div>
                       </div>
                       <div className="w-14 shrink-0 text-right text-xs font-medium">
-                        {st.pctOfQuotes > 0 ? `${st.pctOfQuotes}%` : '—'}
+                        {st.pctFromPrevious > 0
+                          ? `${st.pctFromPrevious}%`
+                          : '—'}
                       </div>
                       <div className="w-24 shrink-0 text-right text-xs">
                         {st.droppedFromPrevious > 0 ? (
@@ -3023,7 +3030,7 @@ export default function StatsPage() {
           {funnel.topAbandonedReferrers.length > 0 && (
             <Card className="border-border/60 bg-card/80 mt-4 p-4 backdrop-blur">
               <h4 className="mb-3 text-sm font-semibold">
-                Where Abandoned Quotes Came From
+                Where Unbooked Qualified Quotes Came From
               </h4>
               <div className="space-y-2">
                 {funnel.topAbandonedReferrers.map((r) => (

@@ -25,6 +25,10 @@ import {
   leadSourceUpdatePayload,
   normalizeLeadSourceForWrite,
 } from '@/lib/server/lead-sources'
+import {
+  computePromoDiscountAmount,
+  computeTieredDiscountAmount,
+} from '@/lib/promo-discount'
 
 type IncomingLineItem = {
   service_catalog_item_id?: string | null
@@ -269,9 +273,84 @@ export async function POST(request: NextRequest) {
       (sum: number, item: NormalizedLineItem) => sum + item.line_total,
       0,
     )
-    const discountAmount = isWarrantyReturn
+    const promoCode = isWarrantyReturn
+      ? null
+      : String(body.promo_code || '')
+          .toUpperCase()
+          .trim() || null
+    let promoCodeId: string | null = null
+    let appliedPromoCode: string | null = null
+    let appliedPromoType: string | null = null
+    let discountAmount = isWarrantyReturn
       ? 0
       : Math.max(0, Number(body.discount_amount || 0))
+
+    if (promoCode) {
+      const { data: promo, error: promoError } = await supabase
+        .from('promo_codes')
+        .select(
+          'id, code, discount_type, discount_amount, expires_at, max_uses, use_count',
+        )
+        .eq('code', promoCode)
+        .eq('active', true)
+        .maybeSingle()
+
+      if (promoError) throw promoError
+      if (!promo) {
+        return NextResponse.json(
+          { error: `Coupon code "${promoCode}" is not active.` },
+          { status: 400 },
+        )
+      }
+      if (promo.expires_at && new Date(promo.expires_at) < new Date()) {
+        return NextResponse.json(
+          { error: `Coupon code "${promoCode}" has expired.` },
+          { status: 400 },
+        )
+      }
+      if (promo.max_uses !== null && promo.use_count >= promo.max_uses) {
+        return NextResponse.json(
+          { error: `Coupon code "${promoCode}" has reached its usage limit.` },
+          { status: 400 },
+        )
+      }
+
+      if (promo.discount_type === 'tiered') {
+        const { data: tiers, error: tiersError } = await supabase
+          .from('promo_code_tiers')
+          .select('min_spend, discount_amount')
+          .eq('promo_code_id', promo.id)
+        if (tiersError) throw tiersError
+        discountAmount = computeTieredDiscountAmount(
+          quotedSubtotal,
+          (tiers || []).map((tier) => ({
+            min_spend: Number(tier.min_spend),
+            discount_amount: Number(tier.discount_amount),
+          })),
+        )
+      } else {
+        discountAmount = computePromoDiscountAmount(
+          quotedSubtotal,
+          String(promo.discount_type),
+          Number(promo.discount_amount),
+        )
+      }
+
+      if (discountAmount <= 0) {
+        return NextResponse.json(
+          {
+            error: `The current $${quotedSubtotal.toFixed(2)} subtotal does not qualify for coupon code "${promoCode}".`,
+          },
+          { status: 400 },
+        )
+      }
+
+      promoCodeId = promo.id
+      appliedPromoCode = promo.code
+      appliedPromoType = promo.discount_type
+    }
+
+    discountAmount = Math.min(quotedSubtotal, discountAmount)
     const quotedTotal = Math.max(0, quotedSubtotal - discountAmount)
 
     // Calculate duration based on dollar amount (simple tier system)
@@ -574,6 +653,16 @@ export async function POST(request: NextRequest) {
           payment_status: isWarrantyReturn ? 'waived' : 'unpaid',
           subtotal: Number(quotedSubtotal.toFixed(2)),
           discount_amount: Number(discountAmount.toFixed(2)),
+          discount_metadata: appliedPromoCode
+            ? {
+                promo: {
+                  code: appliedPromoCode,
+                  type: appliedPromoType,
+                  amount: Number(discountAmount.toFixed(2)),
+                  applied_subtotal: Number(quotedSubtotal.toFixed(2)),
+                },
+              }
+            : {},
           total: Number(quotedTotal.toFixed(2)),
           sync_status: isWarrantyReturn ? 'held' : syncStatus,
         })
@@ -643,6 +732,19 @@ export async function POST(request: NextRequest) {
         )
       }
       await Promise.all(creationTasks)
+
+      if (promoCodeId) {
+        const { error: promoCountError } = await supabase.rpc(
+          'increment_promo_use_count',
+          { promo_id: promoCodeId },
+        )
+        if (promoCountError) {
+          console.error(
+            '[ops/appointments][POST] Promo use_count increment failed:',
+            promoCountError,
+          )
+        }
+      }
 
       const [commsResult, qbResult, reminderResult] = await Promise.allSettled([
         sendOpsLifecycleCommunications({

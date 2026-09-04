@@ -21,6 +21,42 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS })
 }
 
+/**
+ * Flag every event in a session when the booking belongs to an internal
+ * (staff/owner) customer.
+ *
+ * Best-effort by design: a failure here must never surface to the widget, and
+ * an unflagged test session is a smaller problem than a booking that errors.
+ */
+async function markSessionIfInternal(
+  supabase: ReturnType<typeof createAdminClient>,
+  sessionId: string,
+  appointmentId: string,
+): Promise<void> {
+  try {
+    const { data: appt } = await supabase
+      .from('ops_appointments')
+      .select('customer_id')
+      .eq('id', appointmentId)
+      .maybeSingle()
+    if (!appt?.customer_id) return
+
+    const { data: customer } = await supabase
+      .from('ops_customers')
+      .select('is_internal')
+      .eq('id', appt.customer_id)
+      .maybeSingle()
+    if (!customer?.is_internal) return
+
+    await supabase
+      .from('booking_funnel_events')
+      .update({ is_test: true })
+      .eq('session_id', sessionId)
+  } catch (error) {
+    console.error('[booking-funnel] internal-session check failed', error)
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as {
@@ -83,6 +119,14 @@ export async function POST(request: NextRequest) {
       referrer: String(body.referrer || '').slice(0, 300) || null,
       landing_path: String(body.landing_path || '').slice(0, 300) || null,
     })
+
+    // A completed booking is the first point at which we learn WHO the session
+    // was. If it's an internal record — the owner testing the widget — retire
+    // the whole session from reporting, not just this event: the visits and
+    // quote steps leading up to it are equally fake.
+    if (step === 'booked' && body.appointment_id) {
+      await markSessionIfInternal(supabase, sessionId, body.appointment_id)
+    }
 
     return NextResponse.json({ ok: true }, { headers: CORS })
   } catch (error) {

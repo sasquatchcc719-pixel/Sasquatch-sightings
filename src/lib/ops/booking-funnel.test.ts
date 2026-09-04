@@ -53,13 +53,13 @@ describe('summarizeFunnel', () => {
   it('identifies the biggest drop-off step after the quote', () => {
     const s = summarizeFunnel([
       ...['a', 'b', 'c', 'd'].flatMap((id) => [
-        ev(id, 'quote_started', 100),
-        ev(id, 'calendar_viewed', 100),
+        ev(id, 'quote_started', 200),
+        ev(id, 'calendar_viewed', 200),
       ]),
       // only one of the four continues past the calendar
-      ev('a', 'details_started', 100),
-      ev('a', 'review_reached', 100),
-      ev('a', 'booked', 100),
+      ev('a', 'details_started', 200),
+      ev('a', 'review_reached', 200),
+      ev('a', 'booked', 200),
     ])
     expect(s.biggestDropStep).toBe('details_started')
     expect(s.biggestDropCount).toBe(3)
@@ -68,11 +68,11 @@ describe('summarizeFunnel', () => {
   it('never blames the browse-to-quote gap for drop-off', () => {
     const s = summarizeFunnel([
       ...Array.from({ length: 20 }, (_, i) => ev(`v${i}`, 'widget_viewed')),
-      ev('a', 'quote_started', 100),
-      ev('a', 'calendar_viewed', 100),
-      ev('a', 'details_started', 100),
-      ev('a', 'review_reached', 100),
-      ev('a', 'booked', 100),
+      ev('a', 'quote_started', 200),
+      ev('a', 'calendar_viewed', 200),
+      ev('a', 'details_started', 200),
+      ev('a', 'review_reached', 200),
+      ev('a', 'booked', 200),
     ])
     // 20 viewers vs 1 quoter is the largest raw gap but must be ignored
     expect(s.biggestDropStep).toBeNull()
@@ -81,10 +81,10 @@ describe('summarizeFunnel', () => {
 
   it('groups abandoned sessions by normalized referrer', () => {
     const s = summarizeFunnel([
-      ev('a', 'quote_started', 100, 'https://nextdoor.com/some/path'),
-      ev('b', 'quote_started', 100, 'https://www.google.com/'),
-      ev('c', 'quote_started', 100, 'https://nextdoor.com/other'),
-      ev('d', 'quote_started', 100, null),
+      ev('a', 'quote_started', 200, 'https://nextdoor.com/some/path'),
+      ev('b', 'quote_started', 200, 'https://www.google.com/'),
+      ev('c', 'quote_started', 200, 'https://nextdoor.com/other'),
+      ev('d', 'quote_started', 200, null),
     ])
     expect(s.topAbandonedReferrers[0]).toEqual({
       referrer: 'nextdoor.com',
@@ -108,6 +108,34 @@ describe('summarizeFunnel', () => {
     expect(s.visitToQuoteRate).toBe(20)
     expect(s.visitToBookRate).toBe(10)
     expect(s.quoteToBookRate).toBe(50)
+  })
+
+  it('does not count a sub-minimum cart click as a built quote', () => {
+    const s = summarizeFunnel([
+      ev('partial', 'site_visit'),
+      ev('partial', 'widget_viewed'),
+      ev('partial', 'quote_started', 46),
+      ev('qualified', 'site_visit'),
+      ev('qualified', 'widget_viewed'),
+      ev('qualified', 'quote_started', 250),
+      ev('qualified', 'calendar_viewed', 250),
+    ])
+
+    expect(s.quoteSessions).toBe(1)
+    expect(s.abandonedQuotes).toBe(1)
+    expect(s.abandonedQuoteValue).toBe(250)
+    expect(s.steps.find((step) => step.step === 'quote_started')).toMatchObject(
+      {
+        sessions: 1,
+        pctFromPrevious: 50,
+      },
+    )
+    expect(
+      s.steps.find((step) => step.step === 'calendar_viewed'),
+    ).toMatchObject({
+      sessions: 1,
+      pctFromPrevious: 100,
+    })
   })
 
   it('handles an empty dataset', () => {

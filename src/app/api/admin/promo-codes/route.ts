@@ -4,7 +4,7 @@ import { createAdminClient } from '@/supabase/server'
 
 export async function GET() {
   try {
-    await requireAnyRole(['admin', 'owner'])
+    await requireAnyRole(['admin', 'owner', 'dispatcher'])
     const supabase = createAdminClient()
 
     const { data, error } = await supabase

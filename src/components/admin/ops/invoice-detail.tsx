@@ -211,6 +211,14 @@ type InvoiceDetail = {
   subtotal: number
   total: number
   discount_amount: number | null
+  discount_metadata: {
+    promo?: {
+      code?: string
+      type?: string
+      amount?: number
+      applied_subtotal?: number
+    }
+  } | null
   percentage_discount_label: string | null
   percentage_discount_percent: number | null
   percentage_discount_scope: string | null
@@ -1459,6 +1467,9 @@ export function InvoiceDetail({
     0,
   )
   const discountAmount = Math.max(0, Number(discount || 0))
+  const appliedPromoCode = String(
+    invoice.discount_metadata?.promo?.code || '',
+  ).trim()
   const percentageDiscountAmount = Math.max(
     0,
     Number(invoice.percentage_discount_amount || 0),
@@ -2593,7 +2604,8 @@ export function InvoiceDetail({
                 htmlFor="invoice-discount"
                 className="text-sm whitespace-nowrap text-slate-500"
               >
-                Dollar Discounts
+                Dollar Discount
+                {appliedPromoCode ? ` · ${appliedPromoCode}` : ''}
               </Label>
               <Input
                 id="invoice-discount"

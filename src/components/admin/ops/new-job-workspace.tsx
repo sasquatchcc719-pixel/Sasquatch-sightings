@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Check, Loader2, Minus, Plus, Search, Trash2 } from 'lucide-react'
+import { Check, Loader2, Minus, Plus, Search, Tag, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -107,6 +107,18 @@ type LineItemForm = {
   buffer_minutes: number
 }
 
+type PromoCode = {
+  id: string
+  code: string
+  discount_type: 'flat' | 'percent' | 'tiered'
+  discount_amount: number
+  description: string | null
+  active: boolean
+  expires_at: string | null
+  max_uses: number | null
+  use_count: number
+}
+
 type PastJobLineItem = {
   service_catalog_item_id: string | null
   name_snapshot: string
@@ -175,6 +187,15 @@ const WARRANTY_CATEGORY_LABELS: Record<string, string> = {
   damage: 'Possible Damage',
   other: 'Other Concern',
 }
+
+const QUICK_PROMO_CODES = [
+  'MILITARY',
+  'PET',
+  'SCC20',
+  'FIRSTCLEAN',
+  'NEXT20',
+  'DOOR20',
+] as const
 
 function formatPastJobDate(dateKey: string): string {
   return new Date(`${dateKey}T12:00:00Z`).toLocaleDateString('en-US', {
@@ -354,6 +375,10 @@ export function NewJobWorkspace() {
   })
 
   const [discount, setDiscount] = useState('0')
+  const [promoCodes, setPromoCodes] = useState<PromoCode[]>([])
+  const [selectedPromoCode, setSelectedPromoCode] = useState('')
+  const [promoPreviewLoading, setPromoPreviewLoading] = useState(false)
+  const [promoMessage, setPromoMessage] = useState<string | null>(null)
   const [leadSource, setLeadSource] = useState('')
   const [leadSourceDetail, setLeadSourceDetail] = useState('')
   const [isCommercial, setIsCommercial] = useState(false)
@@ -537,6 +562,17 @@ export function NewJobWorkspace() {
           getPublicLeadSourceOptions(CANONICAL_LEAD_SOURCE_OPTIONS),
         )
       })
+  }, [])
+
+  useEffect(() => {
+    fetch('/api/admin/promo-codes', { cache: 'no-store' })
+      .then((res) =>
+        res.ok ? res.json() : Promise.reject(new Error('failed')),
+      )
+      .then((data) => {
+        setPromoCodes(Array.isArray(data.promo_codes) ? data.promo_codes : [])
+      })
+      .catch(() => setPromoCodes([]))
   }, [])
 
   const loadSchedulePreview = useCallback(async () => {
@@ -779,6 +815,85 @@ export function NewJobWorkspace() {
   const selectedLeadSource = leadSourceOptions.find(
     (option) => option.key === leadSource,
   )
+
+  const availablePromoCodes = useMemo(() => {
+    const now = Date.now()
+    return promoCodes.filter((promo) => {
+      if (!promo.active) return false
+      if (promo.expires_at && new Date(promo.expires_at).getTime() < now) {
+        return false
+      }
+      return promo.max_uses === null || promo.use_count < promo.max_uses
+    })
+  }, [promoCodes])
+
+  const quickPromoCodes = useMemo(() => {
+    const byCode = new Map(
+      availablePromoCodes.map((promo) => [promo.code, promo]),
+    )
+    return QUICK_PROMO_CODES.map((code) => byCode.get(code)).filter(
+      (promo): promo is PromoCode => Boolean(promo),
+    )
+  }, [availablePromoCodes])
+
+  const otherPromoCodes = useMemo(() => {
+    const quickCodes = new Set(QUICK_PROMO_CODES)
+    return availablePromoCodes
+      .filter(
+        (promo) =>
+          !quickCodes.has(promo.code as (typeof QUICK_PROMO_CODES)[number]),
+      )
+      .sort((a, b) => a.code.localeCompare(b.code))
+  }, [availablePromoCodes])
+
+  useEffect(() => {
+    if (!selectedPromoCode) {
+      setPromoPreviewLoading(false)
+      setPromoMessage(null)
+      return
+    }
+
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(async () => {
+      setPromoPreviewLoading(true)
+      try {
+        const params = new URLSearchParams({
+          code: selectedPromoCode,
+          subtotal: String(subtotalQuote),
+        })
+        const response = await fetch(`/api/public/promo-preview?${params}`, {
+          cache: 'no-store',
+          signal: controller.signal,
+        })
+        const result = await response.json()
+        if (!response.ok || !result.applied) {
+          setDiscount('0')
+          setPromoMessage(`${selectedPromoCode} cannot be applied.`)
+          return
+        }
+
+        const amount = Math.max(0, Number(result.discount_amount || 0))
+        setDiscount(String(amount))
+        setPromoMessage(
+          amount > 0
+            ? `${selectedPromoCode} applied — $${amount.toFixed(2)} off.`
+            : `${selectedPromoCode} selected — increase the subtotal to unlock its first discount tier.`,
+        )
+      } catch (previewError) {
+        if ((previewError as Error).name !== 'AbortError') {
+          setDiscount('0')
+          setPromoMessage('Could not calculate that coupon. Try again.')
+        }
+      } finally {
+        if (!controller.signal.aborted) setPromoPreviewLoading(false)
+      }
+    }, 150)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+      controller.abort()
+    }
+  }, [selectedPromoCode, subtotalQuote])
 
   const handleSelectCustomer = (customer: CustomerSearchResult) => {
     setAddrSearchQuery('')
@@ -1100,7 +1215,10 @@ export function NewJobWorkspace() {
         // guard exists for the silent case (a job that grew past the slot it
         // was given), not to overrule a deliberate choice.
         allow_conflict: allowConflict || useCustomTime,
-        discount_amount: Math.max(0, Number(discount || 0)),
+        promo_code: selectedPromoCode || null,
+        discount_amount: selectedPromoCode
+          ? 0
+          : Math.max(0, Number(discount || 0)),
         lead_source_key: leadSource.trim() || null,
         lead_source_detail: leadSourceDetail.trim() || null,
         is_commercial: isCommercial,
@@ -1687,22 +1805,83 @@ export function NewJobWorkspace() {
                   </div>
                 </div>
               </div>
-              <div className="mt-3 flex items-center gap-2">
-                <label
-                  htmlFor="new-job-discount"
-                  className="text-sm whitespace-nowrap text-slate-500"
-                >
-                  Discount ($)
-                </label>
-                <input
-                  id="new-job-discount"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={discount}
-                  onChange={(e) => setDiscount(e.target.value)}
-                  className="border-input bg-background h-8 w-24 rounded-md border px-2 text-right text-sm"
-                />
+              <div className="border-border/60 mt-3 rounded-xl border p-3">
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <Tag className="h-4 w-4 text-emerald-500" />
+                  Quick coupon
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {quickPromoCodes.map((promo) => (
+                    <Button
+                      key={promo.id}
+                      type="button"
+                      size="sm"
+                      variant={
+                        selectedPromoCode === promo.code ? 'default' : 'outline'
+                      }
+                      title={promo.description || promo.code}
+                      onClick={() => {
+                        const next =
+                          selectedPromoCode === promo.code ? '' : promo.code
+                        setSelectedPromoCode(next)
+                        if (!next) setDiscount('0')
+                      }}
+                    >
+                      {promo.code}
+                    </Button>
+                  ))}
+                  {otherPromoCodes.length > 0 ? (
+                    <select
+                      aria-label="More coupon codes"
+                      className="border-input bg-background h-9 rounded-md border px-3 text-sm"
+                      value={
+                        otherPromoCodes.some(
+                          (promo) => promo.code === selectedPromoCode,
+                        )
+                          ? selectedPromoCode
+                          : ''
+                      }
+                      onChange={(event) => {
+                        setSelectedPromoCode(event.target.value)
+                        if (!event.target.value) setDiscount('0')
+                      }}
+                    >
+                      <option value="">More coupons…</option>
+                      {otherPromoCodes.map((promo) => (
+                        <option key={promo.id} value={promo.code}>
+                          {promo.code}
+                        </option>
+                      ))}
+                    </select>
+                  ) : null}
+                </div>
+                {selectedPromoCode ? (
+                  <p className="text-muted-foreground mt-2 text-xs">
+                    {promoPreviewLoading
+                      ? `Calculating ${selectedPromoCode}…`
+                      : promoMessage}
+                  </p>
+                ) : null}
+                <div className="mt-3 flex items-center gap-2 border-t pt-3">
+                  <label
+                    htmlFor="new-job-discount"
+                    className="text-sm whitespace-nowrap text-slate-500"
+                  >
+                    Custom discount ($)
+                  </label>
+                  <input
+                    id="new-job-discount"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={discount}
+                    onChange={(e) => {
+                      setSelectedPromoCode('')
+                      setDiscount(e.target.value)
+                    }}
+                    className="border-input bg-background h-8 w-24 rounded-md border px-2 text-right text-sm"
+                  />
+                </div>
               </div>
               {unpricedLineItems > 0 ? (
                 <p className="text-muted-foreground mt-2 text-xs">

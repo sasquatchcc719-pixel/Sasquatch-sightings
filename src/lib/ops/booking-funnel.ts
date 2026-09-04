@@ -39,8 +39,8 @@ export type FunnelStepSummary = {
   step: FunnelStep
   label: string
   sessions: number
-  /** % of sessions that built a quote and also reached this step. */
-  pctOfQuotes: number
+  /** % of sessions from the immediately previous step that reached this step. */
+  pctFromPrevious: number
   /** Sessions lost between the previous step and this one. */
   droppedFromPrevious: number
 }
@@ -79,6 +79,13 @@ type EventRow = {
 
 const round1 = (n: number) => Math.round(n * 10) / 10
 const round2 = (n: number) => Math.round(n * 100) / 100
+const ONLINE_BOOKING_MINIMUM = 150
+const POST_QUOTE_STEPS = new Set<FunnelStep>([
+  'calendar_viewed',
+  'details_started',
+  'review_reached',
+  'booked',
+])
 
 function normalizeReferrer(raw: string | null): string {
   const value = String(raw || '').trim()
@@ -117,11 +124,36 @@ export function summarizeFunnel(
     }
   }
 
+  // Older website builds recorded quote_started on the first + button press,
+  // even when the cart was far below the $150 online minimum. Treat a session
+  // as a real quote only once it reached a bookable total (or a later step,
+  // which itself proves the minimum gate was passed).
+  const qualifiedQuoteSessions = new Set<string>()
+  for (const [sessionId, steps] of stepsBySession) {
+    const reachedPostQuoteStep = [...POST_QUOTE_STEPS].some((step) =>
+      steps.has(step),
+    )
+    if (
+      steps.has('quote_started') &&
+      ((bestQuoteBySession.get(sessionId) ?? 0) >= ONLINE_BOOKING_MINIMUM ||
+        reachedPostQuoteStep)
+    ) {
+      qualifiedQuoteSessions.add(sessionId)
+    }
+  }
+
   const counts = new Map<FunnelStep, number>()
   for (const step of FUNNEL_STEPS) counts.set(step, 0)
-  for (const steps of stepsBySession.values()) {
+  for (const [sessionId, steps] of stepsBySession) {
     for (const step of FUNNEL_STEPS) {
-      if (steps.has(step)) counts.set(step, (counts.get(step) ?? 0) + 1)
+      const requiresQualifiedQuote =
+        step === 'quote_started' || POST_QUOTE_STEPS.has(step)
+      if (
+        steps.has(step) &&
+        (!requiresQualifiedQuote || qualifiedQuoteSessions.has(sessionId))
+      ) {
+        counts.set(step, (counts.get(step) ?? 0) + 1)
+      }
     }
   }
 
@@ -145,8 +177,14 @@ export function summarizeFunnel(
       step,
       label: FUNNEL_STEP_LABELS[step],
       sessions,
-      pctOfQuotes:
-        quoteSessions > 0 ? round1((sessions / quoteSessions) * 100) : 0,
+      pctFromPrevious:
+        index === 0
+          ? sessions > 0
+            ? 100
+            : 0
+          : previous > 0
+            ? round1((sessions / previous) * 100)
+            : 0,
       droppedFromPrevious: dropped,
     }
   })
@@ -157,7 +195,7 @@ export function summarizeFunnel(
   const abandonedReferrers = new Map<string, number>()
 
   for (const [sessionId, steps] of stepsBySession) {
-    if (!steps.has('quote_started')) continue
+    if (!qualifiedQuoteSessions.has(sessionId)) continue
     const value = bestQuoteBySession.get(sessionId) ?? 0
     if (steps.has('booked')) {
       bookedQuoteValue += value
@@ -207,15 +245,28 @@ export async function loadBookingFunnel(
   const windowDays = options?.windowDays ?? 90
   const since = new Date(Date.now() - windowDays * 86400000).toISOString()
 
-  const { data, error } = await supabase
-    .from('booking_funnel_events')
-    .select('session_id, step, quote_total, referrer, created_at')
-    .gte('created_at', since)
-    .limit(20000)
+  const rows: EventRow[] = []
+  const pageSize = 1000
 
-  if (error) throw error
+  // Supabase's Data API caps each response at the project's configured row
+  // limit, even when .limit(20000) is requested. Page explicitly so a busy
+  // 90-day window cannot silently turn into a partial funnel.
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await supabase
+      .from('booking_funnel_events')
+      .select('session_id, step, quote_total, referrer, created_at')
+      .gte('created_at', since)
+      // Owner test bookings fire real `booked` events with real dollar values.
+      .eq('is_test', false)
+      .order('created_at', { ascending: true })
+      .range(from, from + pageSize - 1)
 
-  return summarizeFunnel((data || []) as EventRow[], {
+    if (error) throw error
+    rows.push(...((data || []) as EventRow[]))
+    if (!data || data.length < pageSize) break
+  }
+
+  return summarizeFunnel(rows, {
     sinceDate: since.slice(0, 10),
     windowDays,
   })
