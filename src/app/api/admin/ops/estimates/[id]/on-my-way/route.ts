@@ -71,6 +71,14 @@ export async function POST(
 
     return NextResponse.json({ ok: true, status: nextStatus, sms })
   } catch (error) {
+    // An expired session throws here. Say so plainly instead of a generic
+    // failure, so a tech in a driveway knows to log back in.
+    if (error instanceof Error && error.message === 'Not authorized') {
+      return NextResponse.json(
+        { error: 'Your session expired. Log in again and retry.' },
+        { status: 401 },
+      )
+    }
     console.error('[ops/estimates/:id/on-my-way] Error:', error)
     return NextResponse.json(
       { error: 'Failed to update on-my-way status' },
