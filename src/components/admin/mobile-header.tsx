@@ -33,6 +33,7 @@ import {
   LogOut,
   UserRoundSearch,
   Send,
+  ShieldCheck,
 } from 'lucide-react'
 import { createClient } from '@/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -72,6 +73,12 @@ const navSections: NavSection[] = [
         href: '/admin/operations/estimates',
         icon: Ruler,
         description: 'Line-item estimates',
+      },
+      {
+        name: 'Service Concerns',
+        href: '/admin/operations/service-concerns',
+        icon: ShieldCheck,
+        description: 'Review customer evidence',
       },
       {
         name: 'Toolbox',

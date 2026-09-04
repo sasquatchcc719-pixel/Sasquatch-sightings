@@ -23,6 +23,7 @@ export type StoredInboundMedia = {
     | 'estimate'
     | 'job'
     | 'preexisting_damage'
+    | 'service_concern'
   signedUrl: string | null
   customerId: string | null
   appointmentId: string | null

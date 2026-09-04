@@ -22,6 +22,10 @@ import {
   classifyCustomerMedia,
   type StoredInboundMedia,
 } from '@/lib/twilio/inbound-media'
+import {
+  openServiceConcern,
+  openServiceConcernFromPhone,
+} from '@/lib/ops/service-concerns'
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN
 const ADMIN_BASE_URL = 'https://sightings.sasquatchcarpet.com'
@@ -121,7 +125,13 @@ function mediaReplyMarkup(media: StoredInboundMedia) {
 
   if (media.customerId && media.contentType.startsWith('image/')) {
     rows.push([
+      {
+        text: 'Service concern',
+        callback_data: `concern:media:${id}`,
+      },
       { text: 'Job & invoice', callback_data: `media:job:${id}` },
+    ])
+    rows.push([
       {
         text: 'Pre-existing damage',
         callback_data: `media:preexisting_damage:${id}`,
@@ -136,6 +146,41 @@ function mediaReplyMarkup(media: StoredInboundMedia) {
     },
   ])
   return { inline_keyboard: rows }
+}
+
+function textConcernReplyMarkup(threadId: string) {
+  return {
+    inline_keyboard: [
+      [
+        {
+          text: 'Start service concern',
+          callback_data: `concern:thread:${threadId}`,
+        },
+        {
+          text: 'Open concern queue',
+          url: `${ADMIN_BASE_URL}/admin/operations/service-concerns`,
+        },
+      ],
+    ],
+  }
+}
+
+async function postInboundTextToTopic(params: {
+  chatId: number
+  topicId: number
+  text: string
+  concernThreadId?: string | null
+}): Promise<boolean> {
+  const result = await callTelegram('sendMessage', {
+    chat_id: params.chatId,
+    message_thread_id: params.topicId,
+    text: params.text,
+    disable_web_page_preview: true,
+    ...(params.concernThreadId
+      ? { reply_markup: textConcernReplyMarkup(params.concernThreadId) }
+      : {}),
+  })
+  return result !== null
 }
 
 async function postInboundMediaToTopic(params: {
@@ -402,6 +447,7 @@ export async function forwardInboundToRelay(params: {
   isLsa: boolean
   today: string
   media?: StoredInboundMedia[]
+  customerId?: string | null
 }): Promise<{ forwarded: boolean; reason?: string }> {
   const {
     supabase,
@@ -411,6 +457,7 @@ export async function forwardInboundToRelay(params: {
     isLsa,
     today,
     media = [],
+    customerId,
   } = params
   try {
     const thread = await getOrCreateThread({ supabase, phone, isLsa, today })
@@ -438,11 +485,12 @@ export async function forwardInboundToRelay(params: {
         )
       }
     } else {
-      posted = await postToTopic(
-        Number(thread.group_chat_id),
-        thread.topic_id,
-        message,
-      )
+      posted = await postInboundTextToTopic({
+        chatId: Number(thread.group_chat_id),
+        topicId: thread.topic_id,
+        text: message,
+        concernThreadId: customerId ? thread.id : null,
+      })
       if (media.length > 0) {
         await postToTopic(
           Number(thread.group_chat_id),
@@ -486,6 +534,96 @@ export async function handleCustomerMediaCallback(params: {
   topicId?: number
 }): Promise<boolean> {
   const { supabase, callbackQueryId, data, chatId, messageId, topicId } = params
+  const concernMatch = data.match(/^concern:(thread|media):([0-9a-f-]{36})$/i)
+  if (concernMatch) {
+    try {
+      const source = concernMatch[1].toLowerCase()
+      const id = concernMatch[2]
+      const result =
+        source === 'thread'
+          ? await (async () => {
+              const { data: thread, error } = await supabase
+                .from('telegram_relay_threads')
+                .select('phone, business_number')
+                .eq('id', id)
+                .maybeSingle()
+              if (error) throw error
+              if (!thread) throw new Error('Customer topic was not found.')
+              return openServiceConcernFromPhone({
+                supabase,
+                phone: thread.phone,
+                source: 'telegram_text',
+                businessNumber: thread.business_number,
+              })
+            })()
+          : await (async () => {
+              const { data: media, error } = await supabase
+                .from('ops_customer_media')
+                .select('customer_id, business_number')
+                .eq('id', id)
+                .maybeSingle()
+              if (error) throw error
+              if (!media?.customer_id) {
+                throw new Error(
+                  'Identify the customer before opening a concern.',
+                )
+              }
+              return openServiceConcern({
+                supabase,
+                customerId: media.customer_id,
+                source: 'telegram_media',
+                businessNumber: media.business_number,
+                mediaIds: [id],
+              })
+            })()
+
+      if (result.intakeError) {
+        await callTelegram('answerCallbackQuery', {
+          callback_query_id: callbackQueryId,
+          text: `Concern saved, but the intake text failed: ${result.intakeError}`.slice(
+            0,
+            200,
+          ),
+          show_alert: true,
+        })
+        return true
+      }
+
+      await callTelegram('answerCallbackQuery', {
+        callback_query_id: callbackQueryId,
+        text: result.created
+          ? 'Service concern opened and intake text sent.'
+          : result.intakeSent
+            ? 'Existing concern found and intake text sent.'
+            : 'This customer already has an open service concern.',
+      })
+      await callTelegram('editMessageReplyMarkup', {
+        chat_id: chatId,
+        message_id: messageId,
+        reply_markup: { inline_keyboard: [] },
+      })
+      if (typeof topicId === 'number') {
+        await postToTopic(
+          chatId,
+          topicId,
+          `✅ ${result.created ? 'Service concern opened.' : 'Existing service concern updated.'} Review it at ${ADMIN_BASE_URL}/admin/operations/service-concerns`,
+        )
+      }
+      return true
+    } catch (error) {
+      console.error('[relay] Service concern action failed:', error)
+      await callTelegram('answerCallbackQuery', {
+        callback_query_id: callbackQueryId,
+        text:
+          error instanceof Error
+            ? error.message.slice(0, 200)
+            : 'The service concern could not be opened.',
+        show_alert: true,
+      })
+      return true
+    }
+  }
+
   const match = data.match(
     /^media:(customer_file|estimate|job|preexisting_damage):([0-9a-f-]{36})$/i,
   )

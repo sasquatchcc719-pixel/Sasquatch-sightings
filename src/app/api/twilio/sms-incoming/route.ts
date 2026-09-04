@@ -14,6 +14,7 @@ import twilio from 'twilio'
 import { isBlacklisted, notifyBlockedAttempt } from '@/lib/blacklist'
 import { logChatMessage } from '@/lib/ai/logging'
 import { opsPhoneLookupVariants } from '@/lib/ops/phone'
+import { recordInboundServiceConcernActivity } from '@/lib/ops/service-concerns'
 import { sendLSALeadNotification } from '@/lib/telegram'
 import { forwardInboundToRelay } from '@/lib/telegram/relay'
 import {
@@ -690,6 +691,7 @@ export async function POST(request: NextRequest) {
       isLsa: sourceType === 'lsa',
       today: mountainDateIso(),
       media: storedMedia,
+      customerId: linkedCustomerId,
     })
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -699,6 +701,24 @@ export async function POST(request: NextRequest) {
     // context but don't forward/notify on it as a real message.
     const isLsaDisclaimer = isLsaDisclaimerText(messageBody)
     const isSmsReaction = isSmsReactionOnlyMessage(messageBody)
+
+    if (linkedCustomerId && !isLsaDisclaimer && !isSmsReaction) {
+      try {
+        await recordInboundServiceConcernActivity({
+          supabase,
+          customerId: linkedCustomerId,
+          mediaIds: storedMedia
+            .filter((item) => item.status === 'available')
+            .map((item) => item.id),
+        })
+      } catch (concernError) {
+        // A service-concern queue failure must never reject Twilio's webhook.
+        console.error(
+          '[service concerns] Failed to record inbound activity:',
+          concernError,
+        )
+      }
+    }
 
     // If this reply is from a customer whose job a tech is actively on the way
     // to, ping the shared team Telegram so the assigned tech sees it directly

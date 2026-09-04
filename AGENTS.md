@@ -199,6 +199,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Role-lookup SQL functions that read RLS-protected tables (e.g. `current_app_role`, `app_has_role`) must be `SECURITY DEFINER` with `SET search_path = public, pg_temp`, otherwise RLS on the queried tables re-enters the function and Postgres throws `stack depth limit exceeded`, hanging every authenticated query.
 - Weekly marketing spend must reconcile QuickBooks expense lines; never present campaign-linked costs as total spend or remove the spend-versus-revenue graph because the cost feed is incomplete.
 - Marketing range totals must show their exact date window; default the weekly briefing to one year so installment purchases such as vehicle wraps are not mistaken for missing payments.
+- Keep the immediate post-job review request; balance it with assessment-first service-concern language instead of removing the review ask.
 
 ---
 

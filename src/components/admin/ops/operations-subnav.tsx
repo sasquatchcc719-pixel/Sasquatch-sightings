@@ -20,6 +20,7 @@ import {
   Timer,
   Footprints,
   Fuel,
+  ShieldCheck,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -74,6 +75,12 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Work Queue',
     description: 'Approved estimates and maintenance awaiting a slot',
     icon: Wrench,
+  },
+  {
+    href: '/admin/operations/service-concerns',
+    label: 'Service Concerns',
+    description: 'Assess customer evidence before approving a return visit',
+    icon: ShieldCheck,
   },
   {
     href: '/admin/operations/recurring',

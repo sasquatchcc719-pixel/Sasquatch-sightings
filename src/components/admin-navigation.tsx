@@ -36,6 +36,7 @@ import {
   ShieldAlert,
   Search,
   Send,
+  ShieldCheck,
 } from 'lucide-react'
 
 interface NavTab {
@@ -152,6 +153,13 @@ export function AdminNavigation() {
       icon: Ruler,
       active: pathname.startsWith('/admin/operations/estimates'),
       description: 'Measure visits with line items, convert to scheduled jobs',
+    },
+    {
+      name: 'Service Concerns',
+      href: '/admin/operations/service-concerns',
+      icon: ShieldCheck,
+      active: pathname.startsWith('/admin/operations/service-concerns'),
+      description: 'Review evidence before approving a warranty return',
     },
     {
       name: 'Toolbox',
