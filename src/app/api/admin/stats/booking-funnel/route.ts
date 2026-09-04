@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { loadBookingFunnel } from '@/lib/ops/booking-funnel'
+import { loadBookingErrorSummary } from '@/lib/ops/booking-errors'
 
 /**
  * Booking-widget funnel for /admin/stats: quote-to-book conversion and where
@@ -18,8 +19,11 @@ export async function GET(request: NextRequest) {
         ? Math.min(Math.floor(windowParam), 365)
         : 90
 
-    const funnel = await loadBookingFunnel(supabase, { windowDays })
-    return NextResponse.json(funnel)
+    const [funnel, bookingErrors] = await Promise.all([
+      loadBookingFunnel(supabase, { windowDays }),
+      loadBookingErrorSummary(supabase, { windowDays }),
+    ])
+    return NextResponse.json({ ...funnel, bookingErrors })
   } catch (err) {
     console.error('[stats/booking-funnel]', err)
     const message =

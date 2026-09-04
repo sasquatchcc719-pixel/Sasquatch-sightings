@@ -369,6 +369,57 @@ export async function sendScoutEscalationAlert(params: {
 }
 
 /**
+ * A customer-facing booking-widget request failed. Plain text keeps arbitrary
+ * browser/API error messages from breaking Telegram's Markdown parser.
+ */
+export async function sendBookingToolErrorAlert(params: {
+  stageLabel: string
+  errorMessage: string
+  httpStatus?: number | null
+  sessionId: string
+  quoteTotal?: number
+  itemCount?: number
+  appointmentDate?: string | null
+  customerName?: string | null
+  customerPhone?: string | null
+  customerEmail?: string | null
+  landingPath?: string | null
+  device?: string | null
+  occurrenceCount?: number
+}): Promise<boolean> {
+  const contact = [
+    params.customerName ? `👤 ${params.customerName}` : null,
+    params.customerPhone ? `📞 ${params.customerPhone}` : null,
+    params.customerEmail ? `✉️ ${params.customerEmail}` : null,
+  ]
+  const status = params.httpStatus
+    ? `HTTP status: ${params.httpStatus}`
+    : 'HTTP status: unavailable / network failure'
+
+  return sendScoutAlert([
+    '🚨 WEBSITE BOOKING TOOL ERROR',
+    '',
+    `Failed at: ${params.stageLabel}`,
+    `Error: ${params.errorMessage}`,
+    status,
+    params.quoteTotal
+      ? `Quote in progress: $${params.quoteTotal.toFixed(2)} (${params.itemCount || 0} items)`
+      : null,
+    params.appointmentDate ? `Requested date: ${params.appointmentDate}` : null,
+    ...contact,
+    params.device ? `Device: ${params.device}` : null,
+    params.landingPath ? `Page: ${params.landingPath}` : null,
+    params.occurrenceCount && params.occurrenceCount > 1
+      ? `Occurrences this session: ${params.occurrenceCount}`
+      : null,
+    '',
+    'The customer was shown the text/call recovery option.',
+    `Statistics: https://sightings.sasquatchcarpet.com/admin/stats#booking-errors`,
+    `Session: ${params.sessionId}`,
+  ])
+}
+
+/**
  * Schedule a Telegram reminder for 30 minutes before a job.
  * Uses a simple setTimeout approach - for production, consider a job queue.
  */

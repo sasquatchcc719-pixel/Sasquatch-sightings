@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/supabase/server'
 import { isFunnelStep } from '@/lib/ops/booking-funnel'
+import { markBookingErrorsRecovered } from '@/lib/ops/booking-errors'
 
 /**
  * Fire-and-forget funnel tracking for the marketing-site booking widget.
@@ -57,6 +58,18 @@ async function markSessionIfInternal(
   }
 }
 
+async function markBookingRecovery(
+  supabase: ReturnType<typeof createAdminClient>,
+  sessionId: string,
+  appointmentId: string,
+): Promise<void> {
+  try {
+    await markBookingErrorsRecovered(supabase, sessionId, appointmentId)
+  } catch (error) {
+    console.error('[booking-funnel] error-recovery update failed', error)
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as {
@@ -107,6 +120,9 @@ export async function POST(request: NextRequest) {
           })
           .eq('id', existing.id)
       }
+      if (step === 'booked' && body.appointment_id) {
+        await markBookingRecovery(supabase, sessionId, body.appointment_id)
+      }
       return NextResponse.json({ ok: true }, { headers: CORS })
     }
 
@@ -125,7 +141,10 @@ export async function POST(request: NextRequest) {
     // the whole session from reporting, not just this event: the visits and
     // quote steps leading up to it are equally fake.
     if (step === 'booked' && body.appointment_id) {
-      await markSessionIfInternal(supabase, sessionId, body.appointment_id)
+      await Promise.all([
+        markSessionIfInternal(supabase, sessionId, body.appointment_id),
+        markBookingRecovery(supabase, sessionId, body.appointment_id),
+      ])
     }
 
     return NextResponse.json({ ok: true }, { headers: CORS })

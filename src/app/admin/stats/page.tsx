@@ -232,6 +232,41 @@ type BookingFunnel = {
     quoteToBookRate: number | null
     unbookedQuoteValue: number
   }[]
+  bookingErrors: {
+    totalEvents: number
+    affectedSessions: number
+    unresolvedSessions: number
+    last24Hours: number
+    alertDeliveryFailures: number
+    byStage: {
+      stage: string
+      label: string
+      events: number
+      sessions: number
+    }[]
+    recent: {
+      id: string
+      sessionId: string
+      stage: string
+      stageLabel: string
+      errorMessage: string
+      httpStatus: number | null
+      quoteTotal: number
+      itemCount: number
+      appointmentDate: string | null
+      customerName: string | null
+      customerPhone: string | null
+      customerEmail: string | null
+      landingPath: string | null
+      device: string
+      occurrenceCount: number
+      firstSeenAt: string
+      lastSeenAt: string
+      recoveredAt: string | null
+      alertSentAt: string | null
+      alertError: string | null
+    }[]
+  }
 }
 
 type DiscountAnalytics = {
@@ -1098,6 +1133,157 @@ function FunnelTrendChart({ points }: { points: BookingFunnel['trend'] }) {
         Refreshes every minute. The seven-day window smooths out one unusually
         busy or quiet day while still showing changes quickly.
       </p>
+    </Card>
+  )
+}
+
+function BookingErrorPanel({
+  summary,
+  windowDays,
+}: {
+  summary: BookingFunnel['bookingErrors']
+  windowDays: number
+}) {
+  if (summary.totalEvents === 0) {
+    return (
+      <Card
+        id="booking-errors"
+        className="mt-4 border-emerald-900 bg-emerald-950/30 p-4"
+      >
+        <div className="flex items-start gap-3">
+          <CalendarCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400" />
+          <div>
+            <h4 className="text-sm font-semibold text-emerald-300">
+              Booking Tool Errors — none detected
+            </h4>
+            <p className="text-muted-foreground mt-1 text-xs">
+              No blocking customer errors have been recorded in the last{' '}
+              {windowDays} days. Telegram monitoring is active.
+            </p>
+          </div>
+        </div>
+      </Card>
+    )
+  }
+
+  return (
+    <Card id="booking-errors" className="mt-4 border-red-900 bg-red-950/25 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-400" />
+          <div>
+            <h4 className="text-sm font-semibold text-red-300">
+              Booking Tool Errors
+            </h4>
+            <p className="text-muted-foreground mt-1 text-xs">
+              Blocking failures only. Telegram alerts on the first incident;
+              repeats are logged without flooding your phone.
+            </p>
+          </div>
+        </div>
+        {summary.alertDeliveryFailures > 0 ? (
+          <span className="rounded-full border border-red-800 bg-red-950/50 px-2.5 py-1 text-[10px] font-medium text-red-300">
+            {summary.alertDeliveryFailures} Telegram delivery failure
+            {summary.alertDeliveryFailures === 1 ? '' : 's'}
+          </span>
+        ) : (
+          <span className="rounded-full border border-emerald-800 bg-emerald-950/50 px-2.5 py-1 text-[10px] font-medium text-emerald-300">
+            Telegram monitoring active
+          </span>
+        )}
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+        {[
+          ['Last 24 hours', summary.last24Hours],
+          ['Affected sessions', summary.affectedSessions],
+          ['Still unresolved', summary.unresolvedSessions],
+          ['Total failures', summary.totalEvents],
+        ].map(([label, value]) => (
+          <div
+            key={String(label)}
+            className="border-border/60 rounded-lg border p-3"
+          >
+            <p className="text-muted-foreground text-[11px]">{label}</p>
+            <p className="mt-1 text-xl font-bold">{value}</p>
+          </div>
+        ))}
+      </div>
+
+      {summary.byStage.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {summary.byStage.map((stage) => (
+            <span
+              key={stage.stage}
+              className="border-border/60 bg-background/40 rounded-full border px-2.5 py-1 text-[11px]"
+            >
+              {stage.label}: <strong>{stage.events}</strong>
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="border-border/60 mt-4 divide-y rounded-lg border">
+        {summary.recent.map((event) => (
+          <div key={event.id} className="p-3 text-xs">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <p className="font-semibold">{event.stageLabel}</p>
+                <p className="text-muted-foreground mt-0.5">
+                  {event.errorMessage}
+                  {event.httpStatus ? ` (HTTP ${event.httpStatus})` : ''}
+                </p>
+              </div>
+              <span
+                className={
+                  event.recoveredAt
+                    ? 'font-medium text-emerald-400'
+                    : 'font-medium text-red-400'
+                }
+              >
+                {event.recoveredAt
+                  ? 'Recovered — customer booked'
+                  : 'Unresolved'}
+              </span>
+            </div>
+            <div className="text-muted-foreground mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+              <span>
+                {new Date(event.lastSeenAt).toLocaleString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                  hour: 'numeric',
+                  minute: '2-digit',
+                })}
+              </span>
+              <span>{event.device}</span>
+              {event.quoteTotal > 0 && (
+                <span>{usd(event.quoteTotal)} quote</span>
+              )}
+              {event.appointmentDate && (
+                <span>Wanted {event.appointmentDate}</span>
+              )}
+              {event.occurrenceCount > 1 && (
+                <span>{event.occurrenceCount} attempts</span>
+              )}
+              {event.customerName && <span>{event.customerName}</span>}
+              {event.customerPhone && (
+                <a
+                  className="text-blue-400 hover:underline"
+                  href={`tel:${event.customerPhone}`}
+                >
+                  {event.customerPhone}
+                </a>
+              )}
+              {event.customerEmail && <span>{event.customerEmail}</span>}
+              {event.alertError && (
+                <span className="font-medium text-red-400">
+                  Telegram delivery failed; retry pending
+                </span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
     </Card>
   )
 }
@@ -3582,6 +3768,13 @@ export default function StatsPage() {
                 ))}
               </div>
             </Card>
+          )}
+
+          {funnel.bookingErrors && (
+            <BookingErrorPanel
+              summary={funnel.bookingErrors}
+              windowDays={funnel.windowDays ?? 90}
+            />
           )}
         </div>
       )}
