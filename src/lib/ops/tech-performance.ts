@@ -67,6 +67,19 @@ type StoredTimesheetInput = TimesheetInput & {
 const round1 = (n: number) => Math.round(n * 10) / 10
 const round2 = (n: number) => Math.round(n * 100) / 100
 
+export function buildOwnerTimesheets(
+  appointments: ApptInput[],
+  hourlyRate: number,
+): TimesheetInput[] {
+  return appointments
+    .filter((appointment) => appointment.hours > 0)
+    .map((appointment) => ({
+      work_date: appointment.appointment_date.slice(0, 10),
+      payable_minutes: appointment.hours * 60,
+      gross_pay: round2(appointment.hours * hourlyRate),
+    }))
+}
+
 export function timesheetInputAt(
   timesheet: StoredTimesheetInput,
   now: Date,
@@ -255,27 +268,21 @@ export function buildTechMonthRows(
   }
 }
 
-export async function loadTechPerformance(
+type PerformanceStaff = {
+  id: string
+  display_name: string
+}
+
+async function loadStaffPerformance(
   supabase: SupabaseClient,
-  options?: { sinceDate?: string },
-): Promise<TechPerformance[]> {
-  const since = options?.sinceDate ?? null
-
-  const { data: techs } = await supabase
-    .from('staff_users')
-    .select('id, display_name, role, is_active')
-    .eq('is_active', true)
-    .eq('role', 'tech')
-
-  if (!techs || techs.length === 0) return []
-
-  const results: TechPerformance[] = []
-
-  for (const tech of techs) {
-    let apptQuery = supabase
-      .from('ops_appointments')
-      .select(
-        `
+  staff: PerformanceStaff,
+  since: string | null,
+  hourlyRateOverride?: number,
+): Promise<TechPerformance | null> {
+  let apptQuery = supabase
+    .from('ops_appointments')
+    .select(
+      `
         appointment_date,
         start_time,
         end_time,
@@ -289,89 +296,132 @@ export async function loadTechPerformance(
           ops_invoice_line_items ( line_total )
         )
       `,
-      )
-      .eq('assigned_staff_user_id', tech.id)
-      .eq('status', 'completed')
-    if (since) apptQuery = apptQuery.gte('appointment_date', since)
-
-    let tsQuery = supabase
-      .from('ops_timesheet_entries')
-      .select(
-        'work_date, payable_minutes, gross_pay, started_at, break_minutes, hourly_rate, clock_state, break_started_at',
-      )
-      .eq('staff_user_id', tech.id)
-    if (since) tsQuery = tsQuery.gte('work_date', since)
-
-    const [{ data: appts }, { data: timesheets }] = await Promise.all([
-      apptQuery,
-      tsQuery,
-    ])
-
-    const apptInputs: ApptInput[] = (appts || [])
-      .filter((a) => a.appointment_date)
-      .map((a) => {
-        const inv = Array.isArray(a.ops_invoices)
-          ? a.ops_invoices[0]
-          : a.ops_invoices
-        const lineItems = Array.isArray(inv?.ops_invoice_line_items)
-          ? inv.ops_invoice_line_items
-          : inv?.ops_invoice_line_items
-            ? [inv.ops_invoice_line_items]
-            : []
-        /**
-         * A water loss invoices once, at the close, and that invoice hangs off
-         * whichever visit it was closed from. Crediting the assigned tech with
-         * the whole invoice therefore hands an entire flood to whoever
-         * happened to be on the last trip.
-         *
-         * That is exactly what happened on the Benns loss: David was assigned
-         * the two-hour equipment pickup and the report credited him the full
-         * $4,052.46. Charles: "He doesn't deserve any credit for it for
-         * revenue whatsoever. I know he picked up the equipment, but that's
-         * literally all he did."
-         *
-         * The money follows the mitigation day, where the work is. Monitors
-         * and the final pickup still count their hours — the trip happened —
-         * but carry no revenue of their own.
-         */
-        const isRestoration =
-          (a as { kind?: string | null }).kind === 'restoration' ||
-          Boolean((a as { visit_type?: string | null }).visit_type)
-        const isMitigation =
-          (a as { visit_type?: string | null }).visit_type === 'mitigation'
-        const revenue =
-          isRestoration && !isMitigation
-            ? 0
-            : effectiveInvoiceAmount({
-                invoiceTotal: Number(inv?.total || 0),
-                invoiceLineItems: lineItems,
-                quotedTotal: Number(a.quoted_total || 0),
-              })
-
-        return {
-          appointment_date: String(a.appointment_date),
-          revenue,
-          hours: utilizationHoursFromAppointment(a),
-        }
-      })
-
-    const now = new Date()
-    const timesheetInputs = ((timesheets || []) as StoredTimesheetInput[]).map(
-      (timesheet) => timesheetInputAt(timesheet, now),
     )
-    const { months, totals } = buildTechMonthRows(apptInputs, timesheetInputs)
-    const days = buildTechDayRows(apptInputs, timesheetInputs)
+    .eq('assigned_staff_user_id', staff.id)
+    .eq('status', 'completed')
+  if (since) apptQuery = apptQuery.gte('appointment_date', since)
 
-    if (months.length === 0) continue
+  let tsQuery = supabase
+    .from('ops_timesheet_entries')
+    .select(
+      'work_date, payable_minutes, gross_pay, started_at, break_minutes, hourly_rate, clock_state, break_started_at',
+    )
+    .eq('staff_user_id', staff.id)
+  if (since) tsQuery = tsQuery.gte('work_date', since)
 
-    results.push({
-      staffUserId: tech.id,
-      displayName: tech.display_name,
-      days,
-      months,
-      totals,
+  const [{ data: appts }, { data: timesheets }] = await Promise.all([
+    apptQuery,
+    tsQuery,
+  ])
+
+  const apptInputs: ApptInput[] = (appts || [])
+    .filter((a) => a.appointment_date)
+    .map((a) => {
+      const inv = Array.isArray(a.ops_invoices)
+        ? a.ops_invoices[0]
+        : a.ops_invoices
+      const lineItems = Array.isArray(inv?.ops_invoice_line_items)
+        ? inv.ops_invoice_line_items
+        : inv?.ops_invoice_line_items
+          ? [inv.ops_invoice_line_items]
+          : []
+      /**
+       * A water loss invoices once, at the close, and that invoice hangs off
+       * whichever visit it was closed from. Crediting the assigned tech with
+       * the whole invoice therefore hands an entire flood to whoever
+       * happened to be on the last trip.
+       *
+       * That is exactly what happened on the Benns loss: David was assigned
+       * the two-hour equipment pickup and the report credited him the full
+       * $4,052.46. Charles: "He doesn't deserve any credit for it for
+       * revenue whatsoever. I know he picked up the equipment, but that's
+       * literally all he did."
+       *
+       * The money follows the mitigation day, where the work is. Monitors
+       * and the final pickup still count their hours — the trip happened —
+       * but carry no revenue of their own.
+       */
+      const isRestoration =
+        (a as { kind?: string | null }).kind === 'restoration' ||
+        Boolean((a as { visit_type?: string | null }).visit_type)
+      const isMitigation =
+        (a as { visit_type?: string | null }).visit_type === 'mitigation'
+      const revenue =
+        isRestoration && !isMitigation
+          ? 0
+          : effectiveInvoiceAmount({
+              invoiceTotal: Number(inv?.total || 0),
+              invoiceLineItems: lineItems,
+              quotedTotal: Number(a.quoted_total || 0),
+            })
+
+      return {
+        appointment_date: String(a.appointment_date),
+        revenue,
+        hours: utilizationHoursFromAppointment(a),
+      }
     })
-  }
 
-  return results
+  const timesheetInputs =
+    hourlyRateOverride == null
+      ? ((timesheets || []) as StoredTimesheetInput[]).map((timesheet) =>
+          timesheetInputAt(timesheet, new Date()),
+        )
+      : buildOwnerTimesheets(apptInputs, hourlyRateOverride)
+  const { months, totals } = buildTechMonthRows(apptInputs, timesheetInputs)
+  const days = buildTechDayRows(apptInputs, timesheetInputs)
+
+  if (months.length === 0) return null
+
+  return {
+    staffUserId: staff.id,
+    displayName: staff.display_name,
+    days,
+    months,
+    totals,
+  }
+}
+
+export async function loadTechPerformance(
+  supabase: SupabaseClient,
+  options?: { sinceDate?: string },
+): Promise<TechPerformance[]> {
+  const since = options?.sinceDate ?? null
+
+  const { data: techs } = await supabase
+    .from('staff_users')
+    .select('id, display_name')
+    .eq('is_active', true)
+    .eq('role', 'tech')
+
+  if (!techs || techs.length === 0) return []
+
+  const results = await Promise.all(
+    techs.map((tech) => loadStaffPerformance(supabase, tech, since)),
+  )
+
+  return results.filter((result): result is TechPerformance => result !== null)
+}
+
+export async function loadOwnerPerformance(
+  supabase: SupabaseClient,
+  options?: { sinceDate?: string; hourlyRate?: number },
+): Promise<TechPerformance | null> {
+  const { data: owner } = await supabase
+    .from('staff_users')
+    .select('id, display_name')
+    .eq('is_active', true)
+    .eq('role', 'owner')
+    .order('scheduling_priority', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  if (!owner) return null
+
+  return loadStaffPerformance(
+    supabase,
+    owner,
+    options?.sinceDate ?? null,
+    options?.hourlyRate ?? 25,
+  )
 }

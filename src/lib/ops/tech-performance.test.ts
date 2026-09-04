@@ -1,9 +1,30 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildOwnerTimesheets,
   buildTechDayRows,
   buildTechMonthRows,
   timesheetInputAt,
 } from './tech-performance'
+
+describe('buildOwnerTimesheets', () => {
+  it('prices only recorded owner job hours at the assumed hourly rate', () => {
+    expect(
+      buildOwnerTimesheets(
+        [
+          { appointment_date: '2026-08-04', revenue: 500, hours: 2.5 },
+          { appointment_date: '2026-08-06', revenue: 300, hours: 0 },
+        ],
+        25,
+      ),
+    ).toEqual([
+      {
+        work_date: '2026-08-04',
+        payable_minutes: 150,
+        gross_pay: 62.5,
+      },
+    ])
+  })
+})
 
 describe('timesheetInputAt', () => {
   it('calculates live paid time and wages for an open shift', () => {

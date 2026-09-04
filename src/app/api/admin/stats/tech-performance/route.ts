@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
-import { loadTechPerformance } from '@/lib/ops/tech-performance'
+import {
+  loadOwnerPerformance,
+  loadTechPerformance,
+} from '@/lib/ops/tech-performance'
 
 /**
  * Per-tech profitability: completed-job revenue and hours vs timesheet paid
@@ -12,8 +15,11 @@ export async function GET() {
     await requireAnyRole(['admin', 'owner'])
     const supabase = createAdminClient()
 
-    const techs = await loadTechPerformance(supabase)
-    return NextResponse.json({ techs })
+    const [techs, owner] = await Promise.all([
+      loadTechPerformance(supabase),
+      loadOwnerPerformance(supabase, { hourlyRate: 25 }),
+    ])
+    return NextResponse.json({ techs, owner })
   } catch (err) {
     console.error('[stats/tech-performance]', err)
     const message =

@@ -864,6 +864,118 @@ function DailyProfitabilityChart({ days }: { days: TechDayRow[] }) {
   )
 }
 
+function OwnerComparison({
+  owner,
+  tech,
+}: {
+  owner: TechPerformance
+  tech: TechPerformance
+}) {
+  const ownerTotals = owner.totals
+  const techTotals = tech.totals
+  const ownerProfitPerHour =
+    ownerTotals.paidHours > 0
+      ? ownerTotals.profitAfterWages / ownerTotals.paidHours
+      : 0
+  const techProfitPerHour =
+    techTotals.paidHours > 0
+      ? techTotals.profitAfterWages / techTotals.paidHours
+      : 0
+  const revenueDifference =
+    ownerTotals.revenuePerPaidHour - techTotals.revenuePerPaidHour
+  const comparisonLabel =
+    Math.abs(revenueDifference) < 1
+      ? 'Nearly even revenue per hour'
+      : `${owner.displayName} generates ${usd(
+          Math.abs(revenueDifference),
+        )}/hr ${revenueDifference > 0 ? 'more' : 'less'}`
+
+  const rows = [
+    {
+      label: 'Revenue / Hour',
+      tech: usd(techTotals.revenuePerPaidHour),
+      owner: usd(ownerTotals.revenuePerPaidHour),
+    },
+    {
+      label: 'Hourly Wage',
+      tech:
+        techTotals.paidHours > 0
+          ? usd(techTotals.grossWages / techTotals.paidHours)
+          : '—',
+      owner: '$25',
+    },
+    {
+      label: 'Labor % of Revenue',
+      tech: `${techTotals.laborPercent.toFixed(1)}%`,
+      owner: `${ownerTotals.laborPercent.toFixed(1)}%`,
+    },
+    {
+      label: 'Profit / Hour After Wage',
+      tech: usd(techProfitPerHour),
+      owner: usd(ownerProfitPerHour),
+    },
+    {
+      label: 'Hours Counted',
+      tech: `${techTotals.paidHours.toFixed(1)} paid`,
+      owner: `${ownerTotals.jobHours.toFixed(1)} on-job`,
+    },
+  ]
+
+  return (
+    <Card className="border-emerald-500/25 bg-emerald-500/[0.04] p-4 backdrop-blur">
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h4 className="text-sm font-semibold">
+            {tech.displayName} vs {owner.displayName}
+          </h4>
+          <p className="text-muted-foreground mt-1 max-w-2xl text-xs leading-relaxed">
+            Same completed-job window. {tech.displayName} uses paid clock hours
+            and actual gross wages; {owner.displayName} uses recorded on-job
+            hours at an estimated $25/hr owner wage.
+          </p>
+        </div>
+        <span className="w-fit rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-400">
+          {comparisonLabel}
+        </span>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[460px] text-sm">
+          <thead>
+            <tr className="text-muted-foreground border-b text-xs">
+              <th className="pb-2 text-left font-medium">Measure</th>
+              <th className="pb-2 text-right font-medium">
+                {tech.displayName}
+              </th>
+              <th className="pb-2 text-right font-medium">
+                You ({owner.displayName})
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr
+                key={row.label}
+                className="border-b/50 border-b last:border-0"
+              >
+                <td className="text-muted-foreground py-2.5 pr-3 text-xs">
+                  {row.label}
+                </td>
+                <td className="py-2.5 pr-3 text-right font-medium">
+                  {row.tech}
+                </td>
+                <td className="py-2.5 text-right font-semibold text-emerald-300">
+                  {row.owner}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  )
+}
+
 export default function StatsPage() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [stats, setStats] = useState<Stats | null>(null)
@@ -874,6 +986,7 @@ export default function StatsPage() {
   const [pipeline, setPipeline] = useState<CalendarPipeline | null>(null)
   const [pipelineLoading, setPipelineLoading] = useState(true)
   const [techPerf, setTechPerf] = useState<TechPerformance[]>([])
+  const [ownerPerf, setOwnerPerf] = useState<TechPerformance | null>(null)
   const [health, setHealth] = useState<BusinessHealth | null>(null)
   const [sourceRevenue, setSourceRevenue] = useState<LeadSourceRevenue[]>([])
   const [funnel, setFunnel] = useState<BookingFunnel | null>(null)
@@ -1268,8 +1381,12 @@ export default function StatsPage() {
           cache: 'no-store',
         })
         if (res.ok && active) {
-          const json = (await res.json()) as { techs?: TechPerformance[] }
+          const json = (await res.json()) as {
+            techs?: TechPerformance[]
+            owner?: TechPerformance | null
+          }
           setTechPerf(json.techs || [])
+          setOwnerPerf(json.owner || null)
         }
       } catch {
         // Non-fatal — section simply hides
@@ -2553,6 +2670,26 @@ export default function StatsPage() {
               </div>
             )
           })}
+
+          {ownerPerf && techPerf.length > 0 && (
+            <div className="mt-6">
+              <div className="mb-3">
+                <h3 className="text-lg font-semibold">Owner Comparison</h3>
+                <p className="text-muted-foreground mt-1 text-xs">
+                  A direct efficiency benchmark without treating owner time as a
+                  daily shift.
+                </p>
+              </div>
+              <OwnerComparison
+                owner={ownerPerf}
+                tech={
+                  techPerf.find((tech) =>
+                    tech.displayName.toLowerCase().includes('david'),
+                  ) || techPerf[0]
+                }
+              />
+            </div>
+          )}
         </div>
       )}
 
