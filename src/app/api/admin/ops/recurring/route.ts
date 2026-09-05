@@ -123,6 +123,7 @@ export async function POST(request: NextRequest) {
         internal_notes: tpl.internal_notes || null,
         invoice_mode: tpl.invoice_mode || 'per_visit',
         booking_channel: tpl.booking_channel || 'recurring',
+        assigned_staff_user_id: tpl.assigned_staff_user_id || null,
         is_active: tpl.is_active !== false,
         is_subcontracted: tpl.is_subcontracted === true,
         subcontractor_name:

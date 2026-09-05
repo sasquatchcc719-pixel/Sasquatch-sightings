@@ -18,8 +18,9 @@ export type AvailabilityBundle = {
 /**
  * Returns the first active appointment or blocking calendar event that
  * overlaps the proposed window on `date`, or null when the window is clear.
- * When `staffUserId` is given, only that tech's calendar is checked (plus
- * staff-agnostic calendar events); otherwise every appointment counts.
+ * When `staffUserId` is given, that tech's calendar is checked along with
+ * unassigned work and staff-agnostic calendar events; otherwise every
+ * appointment counts.
  */
 export async function findAppointmentConflict(
   supabase: SupabaseClient,
@@ -29,11 +30,13 @@ export async function findAppointmentConflict(
     endTime: string
     excludeAppointmentId?: string
     staffUserId?: string
+    staffAuthUserId?: string | null
   },
 ): Promise<ExistingAppointmentWindow | null> {
   const bundle = await loadAvailabilityBundle(supabase, params.date, {
     excludeAppointmentId: params.excludeAppointmentId,
     staffUserId: params.staffUserId,
+    staffAuthUserId: params.staffAuthUserId,
   })
   const proposedStart = timeToMinutes(params.startTime)
   const proposedEnd = timeToMinutes(params.endTime)
@@ -62,9 +65,23 @@ export async function loadAvailabilityBundle(
   options?: {
     excludeAppointmentId?: string
     staffUserId?: string
+    staffAuthUserId?: string | null
   },
 ): Promise<AvailabilityBundle> {
   const { excludeAppointmentId, staffUserId } = options || {}
+  let staffAuthUserId = options?.staffAuthUserId
+
+  // Appointments point at staff_users.id, while legacy calendar events point
+  // at auth.users.id. Resolve the second ID when a caller does not already
+  // have it so both sources block the same technician's real calendar.
+  if (staffUserId && staffAuthUserId === undefined) {
+    const { data: staff } = await supabase
+      .from('staff_users')
+      .select('user_id')
+      .eq('id', staffUserId)
+      .maybeSingle()
+    staffAuthUserId = staff?.user_id || null
+  }
 
   let templatesQuery = supabase
     .from('availability_templates')
@@ -101,13 +118,17 @@ export async function loadAvailabilityBundle(
     overridesQuery = overridesQuery.or(
       `staff_user_id.eq.${staffUserId},staff_user_id.is.null`,
     )
-    appointmentsQuery = appointmentsQuery.eq(
-      'assigned_staff_user_id',
-      staffUserId,
-    )
-    eventsQuery = eventsQuery.or(
+    appointmentsQuery = appointmentsQuery.or(
       `assigned_staff_user_id.eq.${staffUserId},assigned_staff_user_id.is.null`,
     )
+    const eventStaffFilters = [
+      `assigned_staff_user_id.eq.${staffUserId}`,
+      staffAuthUserId ? `assigned_staff_user_id.eq.${staffAuthUserId}` : null,
+      'assigned_staff_user_id.is.null',
+    ]
+      .filter(Boolean)
+      .join(',')
+    eventsQuery = eventsQuery.or(eventStaffFilters)
   }
 
   const [templatesResult, overridesResult, appointmentsResult, eventsResult] =

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { firstTouchForCustomer } from '@/lib/ops/attribution'
 import {
+  addMinutesToTimeWithinDay,
   applyAppointmentBuffer,
   calculateAppointmentDurationFromTotal,
 } from '@/lib/ops/availability'
@@ -44,6 +45,7 @@ export type RecurringTemplate = {
   is_active: boolean
   is_subcontracted: boolean
   subcontractor_name: string | null
+  assigned_staff_user_id: string | null
 }
 
 export type RecurrenceRule = {
@@ -256,13 +258,6 @@ function shouldSkipRecurringSlot(args: {
   return false
 }
 
-function addMinutesToTime(time: string, minutes: number): string {
-  const parts = time.split(':').map(Number)
-  const total = parts[0] * 60 + parts[1] + minutes
-  const normalized = ((total % 1440) + 1440) % 1440
-  return `${String(Math.floor(normalized / 60)).padStart(2, '0')}:${String(normalized % 60).padStart(2, '0')}:00`
-}
-
 // ─── Preview ────────────────────────────────────────────────────────────
 
 /**
@@ -334,6 +329,23 @@ export async function generateRecurringAppointments(
   if (!template.is_active) {
     result.errors.push('Template is paused')
     return result
+  }
+
+  let assignedStaffAuthUserId: string | null = null
+  if (template.assigned_staff_user_id) {
+    const { data: assignedStaff, error: assignedStaffError } = await supabase
+      .from('staff_users')
+      .select('user_id')
+      .eq('id', template.assigned_staff_user_id)
+      .eq('is_active', true)
+      .maybeSingle()
+    if (assignedStaffError || !assignedStaff) {
+      result.errors.push(
+        'The assigned technician is inactive or missing. Reassign the plan before generating visits.',
+      )
+      return result
+    }
+    assignedStaffAuthUserId = assignedStaff.user_id || null
   }
 
   const { data: rules, error: rulesErr } = await supabase
@@ -519,7 +531,7 @@ export async function generateRecurringAppointments(
 
     try {
       const normalizedStart = `${startTime}:00`.slice(0, 8)
-      const endTime = addMinutesToTime(startTime, bufferedMinutes)
+      const endTime = addMinutesToTimeWithinDay(startTime, bufferedMinutes)
 
       // Subcontracted work is done by an outside crew, so a fixed interval
       // landing on a weekend is only a paperwork problem — move it to Monday.
@@ -536,6 +548,8 @@ export async function generateRecurringAppointments(
           date: scheduledDate,
           startTime: normalizedStart,
           endTime,
+          staffUserId: template.assigned_staff_user_id || undefined,
+          staffAuthUserId: assignedStaffAuthUserId,
         })
         if (conflict) {
           result.errors.push(
@@ -562,6 +576,7 @@ export async function generateRecurringAppointments(
           original_recurring_date: date,
           start_time: normalizedStart,
           end_time: endTime,
+          assigned_staff_user_id: template.assigned_staff_user_id || null,
           quoted_total: Number(quotedTotal.toFixed(2)),
           internal_notes: template.internal_notes,
           is_subcontracted: template.is_subcontracted === true,

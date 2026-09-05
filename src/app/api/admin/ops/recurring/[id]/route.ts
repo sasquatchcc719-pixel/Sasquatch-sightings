@@ -94,6 +94,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
         'internal_notes',
         'invoice_mode',
         'booking_channel',
+        'assigned_staff_user_id',
         'is_active',
         'is_subcontracted',
         'subcontractor_name',
@@ -115,17 +116,27 @@ export async function PATCH(request: NextRequest, { params }: Params) {
       // Flipping the subcontracted flag has to reach the visits already on the
       // books, or the toggle appears to do nothing until the next regeneration.
       // Completed visits are left alone — their history stays as it happened.
-      if (body.template.is_subcontracted !== undefined) {
+      if (
+        body.template.is_subcontracted !== undefined ||
+        body.template.assigned_staff_user_id !== undefined
+      ) {
         const isSub = body.template.is_subcontracted === true
+        const appointmentUpdates: Record<string, unknown> = {
+          updated_at: new Date().toISOString(),
+        }
+        if (body.template.is_subcontracted !== undefined) {
+          appointmentUpdates.is_subcontracted = isSub
+          appointmentUpdates.subcontractor_name = isSub
+            ? body.template.subcontractor_name || null
+            : null
+        }
+        if (body.template.assigned_staff_user_id !== undefined) {
+          appointmentUpdates.assigned_staff_user_id =
+            body.template.assigned_staff_user_id || null
+        }
         const { error: propagateError } = await supabase
           .from('ops_appointments')
-          .update({
-            is_subcontracted: isSub,
-            subcontractor_name: isSub
-              ? body.template.subcontractor_name || null
-              : null,
-            updated_at: new Date().toISOString(),
-          })
+          .update(appointmentUpdates)
           .eq('recurring_template_id', id)
           .not('status', 'in', '("completed","cancelled")')
 

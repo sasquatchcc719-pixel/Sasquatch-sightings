@@ -30,6 +30,7 @@ type DayTimePickerProps = {
   onToggleCustomTime: () => void
   staffClosed?: boolean
   staffUserId?: string
+  allowConflictOverride?: boolean
 }
 
 const DEFAULT_AVAIL_MINUTES = 120
@@ -60,7 +61,6 @@ function formatDateKey(date: Date): string {
   const day = String(date.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
 }
-
 
 export type DayTimelineItem =
   | {
@@ -129,11 +129,13 @@ function MonthCalendar({
   onSelect,
   requiredMinutes,
   staffUserId,
+  allowConflictOverride,
 }: {
   selected: string
   onSelect: (dateKey: string) => void
   requiredMinutes: number
   staffUserId?: string
+  allowConflictOverride: boolean
 }) {
   const today = useMemo(() => {
     const d = new Date()
@@ -295,7 +297,9 @@ function MonthCalendar({
       <p className="text-muted-foreground mt-3 text-center text-xs">
         {loading
           ? 'Checking openings…'
-          : 'Green = open · Red = fully booked (tap to stack work anyway)'}
+          : allowConflictOverride
+            ? 'Green = open · Red = fully booked (tap to stack work anyway)'
+            : 'Green = open · Red = no regular opening long enough'}
       </p>
     </div>
   )
@@ -318,6 +322,7 @@ export function DayTimePicker({
   onToggleCustomTime,
   staffClosed = false,
   staffUserId,
+  allowConflictOverride = true,
 }: DayTimePickerProps) {
   const sortedAppointments = useMemo(
     () =>
@@ -344,7 +349,6 @@ export function DayTimePicker({
     [sortedAppointments, availableSlots],
   )
 
-
   return (
     <div className="space-y-5">
       {/* Month calendar */}
@@ -354,6 +358,7 @@ export function DayTimePicker({
           onSelect={onSelectDate}
           requiredMinutes={requiredMinutes}
           staffUserId={staffUserId}
+          allowConflictOverride={allowConflictOverride}
         />
       </div>
 
@@ -457,8 +462,9 @@ export function DayTimePicker({
               onChange={(event) => onSelectTime(event.target.value)}
             />
             <p className="text-muted-foreground mt-2 text-xs">
-              Admin override — any time accepted, no conflict check. Use this
-              for after-hours and weekend work, or to stack a job on a full day.
+              {allowConflictOverride
+                ? 'Admin override — any time accepted, no conflict check. Use this for after-hours and weekend work, or to stack a job on a full day.'
+                : 'Use this for legitimate after-hours or weekend work. The entire-series preview still checks this time against every existing job and calendar block.'}
             </p>
           </div>
         ) : loadingSlots ? (
@@ -466,8 +472,9 @@ export function DayTimePicker({
         ) : availableSlots.length === 0 ? (
           <p className="text-muted-foreground py-2 text-sm">
             No opening long enough on this day — the gaps above are too short.
-            Tap “Custom time” to book after hours or stack it, or pick another
-            day.
+            {allowConflictOverride
+              ? ' Tap “Custom time” to book after hours or stack it, or pick another day.'
+              : ' Pick another day, or use “Custom time” for after-hours work and then verify the entire series.'}
           </p>
         ) : (
           <p className="text-muted-foreground py-1 text-sm">

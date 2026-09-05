@@ -4,6 +4,8 @@ import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { type AgreementContent } from '@/lib/ops/commercial'
 import { previewDates, type RecurrenceRule } from '@/lib/ops/recurring'
+import { previewRecurringSchedule } from '@/lib/ops/recurring-schedule-preview'
+import { applyAppointmentBuffer } from '@/lib/ops/availability'
 const schema = z.object({
   operation_id: z.uuid(),
   line_ids: z.array(z.uuid()).min(1).max(100),
@@ -14,6 +16,7 @@ const schema = z.object({
   end_date: z.union([z.iso.date(), z.literal('')]),
   start_time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
   duration: z.number().int().min(15).max(720),
+  assigned_staff_user_id: z.uuid(),
   invoice_mode: z.enum(['per_visit', 'batch_monthly']),
   preview: z.boolean().optional(),
 })
@@ -66,8 +69,38 @@ export async function POST(
       effective_until: body.end_date || null,
       override_start_time: null,
     }
-    const dates = previewDates([rule as RecurrenceRule], 8)
-    if (body.preview) return NextResponse.json({ dates })
+    const allDates = previewDates(
+      [rule as RecurrenceRule],
+      400,
+      new Date(`${body.start_date}T00:00:00`),
+    )
+    const schedule = await previewRecurringSchedule(db, {
+      dates: allDates,
+      startTime: body.start_time,
+      durationMinutes: applyAppointmentBuffer(body.duration),
+      staffUserId: body.assigned_staff_user_id,
+    })
+    const conflicts = schedule.occurrences.filter(
+      (occurrence) => occurrence.status === 'conflict',
+    )
+    const dates = allDates.slice(0, 8)
+    if (body.preview) {
+      return NextResponse.json({
+        dates,
+        occurrences: schedule.occurrences,
+        staff: schedule.staff,
+      })
+    }
+    if (conflicts.length > 0) {
+      return NextResponse.json(
+        {
+          error: `${conflicts.length} planned visit${conflicts.length === 1 ? '' : 's'} overlap work already on the selected technician's calendar. Preview the schedule and choose a different first date, time, or technician.`,
+          code: 'recurring_schedule_conflict',
+          occurrences: schedule.occurrences,
+        },
+        { status: 409 },
+      )
+    }
     const { data, error } = await db.rpc('create_commercial_service_plan', {
       p_id: body.operation_id,
       p_agreement_id: id,
@@ -76,6 +109,7 @@ export async function POST(
         service_address_id: c.service_address_id,
         label: body.label,
         start_time: body.start_time,
+        assigned_staff_user_id: body.assigned_staff_user_id,
         scheduled_duration_minutes: body.duration,
         invoice_mode: body.invoice_mode,
         line_items: lines.map((l) => ({
@@ -95,7 +129,16 @@ export async function POST(
       },
     })
     if (error) throw error
-    return NextResponse.json({ id: data, dates, paused: true }, { status: 201 })
+    return NextResponse.json(
+      {
+        id: data,
+        dates,
+        occurrences: schedule.occurrences,
+        staff: schedule.staff,
+        paused: true,
+      },
+      { status: 201 },
+    )
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : 'Unable to save service plan' },

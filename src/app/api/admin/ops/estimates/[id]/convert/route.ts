@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import {
+  addMinutesToTimeWithinDay,
   applyAppointmentBuffer,
   calculateAppointmentDurationFromTotal,
 } from '@/lib/ops/availability'
+import { findAppointmentConflict } from '@/lib/ops/availability-bundle'
 import {
   buildQuickBooksCustomerPayload,
   getQuickBooksSyncStatus,
@@ -14,20 +16,12 @@ import { ensureCustomerQuickBooksSyncJob } from '@/lib/ops/quickbooks-sync-jobs'
 import { syncAppointmentToQuickBooks } from '@/lib/quickbooks-api'
 import { scheduleJobReminder } from '@/lib/onesignal'
 
-function addMinutesToTime(value: string, minutesToAdd: number): string {
-  const [hours, minutes] = value.split(':').map(Number)
-  const total = hours * 60 + minutes + minutesToAdd
-  const normalized = ((total % 1440) + 1440) % 1440
-  const nextHours = Math.floor(normalized / 60)
-  const nextMinutes = normalized % 60
-  return `${String(nextHours).padStart(2, '0')}:${String(nextMinutes).padStart(2, '0')}:00`
-}
-
 /**
  * Convert an estimate into a real service appointment + invoice.
  *
  * Body:
- *   { appointment_date, start_time, end_time?, skip_comms? }
+ *   { appointment_date, start_time, assigned_staff_user_id, end_time?,
+ *     allow_conflict?, skip_comms? }
  *
  * Effect:
  *   1. Creates a NEW ops_appointments row (kind='service') on the chosen date.
@@ -54,9 +48,36 @@ export async function POST(
 
     const appointmentDate = String(body.appointment_date || '').trim()
     const startTime = String(body.start_time || '').trim()
-    if (!appointmentDate || !startTime) {
+    const assignedStaffUserId = String(body.assigned_staff_user_id || '').trim()
+    if (!appointmentDate || !startTime || !assignedStaffUserId) {
       return NextResponse.json(
-        { error: 'appointment_date and start_time are required' },
+        {
+          error:
+            'appointment_date, start_time, and assigned_staff_user_id are required',
+        },
+        { status: 400 },
+      )
+    }
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(appointmentDate) ||
+      !/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime)
+    ) {
+      return NextResponse.json(
+        { error: 'Choose a valid service date and start time.' },
+        { status: 400 },
+      )
+    }
+
+    const { data: assignedStaff, error: assignedStaffError } = await supabase
+      .from('staff_users')
+      .select('id, user_id, display_name')
+      .eq('id', assignedStaffUserId)
+      .eq('is_active', true)
+      .maybeSingle()
+    if (assignedStaffError) throw assignedStaffError
+    if (!assignedStaff) {
+      return NextResponse.json(
+        { error: 'Choose an active technician.' },
         { status: 400 },
       )
     }
@@ -167,8 +188,27 @@ export async function POST(
     const endTime =
       providedEndTime && /^\d{2}:\d{2}/.test(providedEndTime)
         ? `${providedEndTime}:00`.slice(0, 8)
-        : addMinutesToTime(startTime, totalMinutesWithBuffer)
+        : addMinutesToTimeWithinDay(startTime, totalMinutesWithBuffer)
     const syncStatus = getQuickBooksSyncStatus()
+
+    if (body.allow_conflict !== true) {
+      const conflict = await findAppointmentConflict(supabase, {
+        date: appointmentDate,
+        startTime,
+        endTime,
+        staffUserId: assignedStaffUserId,
+        staffAuthUserId: assignedStaff.user_id,
+      })
+      if (conflict) {
+        return NextResponse.json(
+          {
+            error: `That time overlaps existing work from ${String(conflict.start_time).slice(0, 5)} to ${String(conflict.end_time).slice(0, 5)} on ${assignedStaff.display_name}'s calendar. Choose an open window or use Custom time for an intentional override.`,
+            code: 'appointment_conflict',
+          },
+          { status: 409 },
+        )
+      }
+    }
 
     // --- Create the service appointment ---
     const { data: serviceAppt, error: serviceErr } = await supabase
@@ -179,6 +219,7 @@ export async function POST(
         appointment_date: appointmentDate,
         start_time: `${startTime}:00`.slice(0, 8),
         end_time: endTime,
+        assigned_staff_user_id: assignedStaffUserId,
         status: 'booked',
         payment_status: 'unpaid',
         kind: 'service',

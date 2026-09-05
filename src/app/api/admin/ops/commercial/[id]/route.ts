@@ -24,7 +24,9 @@ export async function GET(_request: NextRequest, { params }: Context) {
         .eq('customer_id', id),
       db
         .from('ops_recurring_templates')
-        .select('id,label,is_active,commercial_agreement_id,start_time')
+        .select(
+          'id,label,is_active,commercial_agreement_id,start_time,assigned_staff_user_id,staff_users(display_name)',
+        )
         .eq('customer_id', id)
         .not('commercial_agreement_id', 'is', null)
         .order('created_at', { ascending: false }),

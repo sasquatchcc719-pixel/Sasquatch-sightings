@@ -42,6 +42,7 @@ export async function getStaffPrioritizedSlots(params: {
     const bundle = await loadAvailabilityBundle(supabase, date, {
       excludeAppointmentId,
       staffUserId: staff.id,
+      staffAuthUserId: staff.user_id,
     })
 
     const slots = getAvailableSlots({
@@ -87,6 +88,7 @@ export async function getAllStaffSlots(params: {
   for (const staff of openStaff) {
     const bundle = await loadAvailabilityBundle(supabase, date, {
       staffUserId: staff.id,
+      staffAuthUserId: staff.user_id,
     })
 
     const slots = getAvailableSlots({
@@ -136,11 +138,13 @@ export async function getSlotsForStaff(params: {
   } = params
 
   const openStaff = await getOpenStaffForDate(supabase, date)
-  if (!openStaff.some((s) => s.id === staffUserId)) return []
+  const selectedStaff = openStaff.find((s) => s.id === staffUserId)
+  if (!selectedStaff) return []
 
   const bundle = await loadAvailabilityBundle(supabase, date, {
     excludeAppointmentId,
     staffUserId,
+    staffAuthUserId: selectedStaff.user_id,
   })
 
   return getAvailableSlots({

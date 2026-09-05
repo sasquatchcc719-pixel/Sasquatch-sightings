@@ -1,6 +1,6 @@
 'use client'
 import Link from 'next/link'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Building2,
   FileCheck2,
@@ -33,11 +33,17 @@ import {
 import { formatMoney } from '@/lib/ops/client-portal'
 import { ClientRequestsPanel } from './client-requests-panel'
 import { CustomerDeleteControl } from './customer-delete-control'
+import { DayTimePicker } from './day-time-picker'
 import {
   CommercialSetupEmailReview,
   type CommercialSetupAgreement,
   type CommercialSetupContact,
 } from './commercial-setup-email-review'
+import {
+  applyAppointmentBuffer,
+  resolveSelectedStartTime,
+} from '@/lib/ops/availability'
+import type { RecurringScheduleOccurrence } from '@/lib/ops/recurring-schedule-preview'
 
 type Account = {
   id: string
@@ -69,6 +75,74 @@ type Plan = {
   is_active: boolean
   commercial_agreement_id: string
   start_time: string
+  assigned_staff_user_id: string | null
+  staff_users:
+    | { display_name: string | null }
+    | Array<{ display_name: string | null }>
+    | null
+}
+
+type SchedulingStaff = {
+  id: string
+  user_id?: string | null
+  display_name: string
+  default_open?: boolean | null
+}
+
+type SchedulingAppointment = {
+  id: string
+  appointment_date: string
+  start_time: string
+  end_time: string
+  assigned_staff_user_id: string | null
+  ops_customers:
+    | { full_name: string | null; business_name: string | null }
+    | Array<{ full_name: string | null; business_name: string | null }>
+    | null
+  ops_appointment_line_items: Array<{ name_snapshot: string }>
+}
+
+type SchedulingAvailability = {
+  staff_user_id: string
+  date: string
+  is_open: boolean
+}
+
+type SchedulingEvent = {
+  id: string
+  title: string | null
+  description: string | null
+  event_kind: string | null
+  start_date: string
+  end_date: string
+  start_time: string | null
+  end_time: string | null
+  is_all_day: boolean
+  assigned_staff_user_id: string | null
+}
+
+function formatDateKey(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function startOfWeek(dateValue: string): Date {
+  const date = new Date(`${dateValue}T12:00:00`)
+  date.setDate(date.getDate() - date.getDay())
+  return date
+}
+
+function addDays(date: Date, amount: number): Date {
+  const next = new Date(date)
+  next.setDate(next.getDate() + amount)
+  return next
+}
+
+function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
+  if (!value) return null
+  return Array.isArray(value) ? value[0] || null : value
 }
 
 export function CommercialAccounts() {
@@ -727,7 +801,10 @@ export function CommercialAccount({ customerId }: { customerId: string }) {
               <div className="flex-1">
                 <p>{plan.label}</p>
                 <p className="text-xs text-slate-400">
-                  {plan.is_active ? 'Active' : 'Paused'} · {plan.start_time}
+                  {plan.is_active ? 'Active' : 'Paused'} ·{' '}
+                  {unwrapRelation(plan.staff_users)?.display_name ||
+                    'Unassigned'}{' '}
+                  · {plan.start_time}
                 </p>
               </div>
               <Button
@@ -1354,25 +1431,241 @@ function ServicePlanForm({
   agreement: CommercialAgreement
   onSaved: () => Promise<void>
 }) {
+  const today = formatDateKey(new Date())
+  const firstAllowedDate =
+    agreement.content.effective_from > today
+      ? agreement.content.effective_from
+      : today
   const [operationId, setOperationId] = useState(() => crypto.randomUUID())
   const [lineIds, setLineIds] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [dates, setDates] = useState<string[]>([])
+  const [occurrences, setOccurrences] = useState<RecurringScheduleOccurrence[]>(
+    [],
+  )
   const [saved, setSaved] = useState(false)
+  const [staff, setStaff] = useState<SchedulingStaff[]>([])
+  const [appointments, setAppointments] = useState<SchedulingAppointment[]>([])
+  const [calendarEvents, setCalendarEvents] = useState<SchedulingEvent[]>([])
+  const [dailyAvailability, setDailyAvailability] = useState<
+    SchedulingAvailability[]
+  >([])
+  const [availableSlots, setAvailableSlots] = useState<
+    Array<{ start_time: string; end_time: string }>
+  >([])
+  const [loadingSlots, setLoadingSlots] = useState(false)
+  const [useCustomTime, setUseCustomTime] = useState(false)
+  const [slotWarning, setSlotWarning] = useState('')
   const [form, setForm] = useState({
     label: 'Maintenance cleaning',
     frequency: 'monthly',
     interval_days: 90,
-    start_date: '',
+    start_date: firstAllowedDate,
     end_date: agreement.content.effective_until,
-    start_time: '',
+    start_time: '09:00',
     duration: 120,
+    assigned_staff_user_id: '',
     invoice_mode: 'batch_monthly',
   })
   const recurring = agreement.content.lines.filter(
     (l) => l.phase === 'recurring',
   )
+
+  function updateForm(patch: Partial<typeof form>) {
+    setForm((current) => ({ ...current, ...patch }))
+    setDates([])
+    setOccurrences([])
+  }
+
+  useEffect(() => {
+    if (!form.start_date) return
+    const controller = new AbortController()
+    let ignore = false
+    async function loadSchedule() {
+      const weekStart = startOfWeek(form.start_date)
+      const weekEnd = addDays(weekStart, 6)
+      try {
+        const response = await fetch(
+          `/api/admin/ops/schedule?start_date=${formatDateKey(weekStart)}&end_date=${formatDateKey(weekEnd)}`,
+          { cache: 'no-store', signal: controller.signal },
+        )
+        const result = await response.json()
+        if (!response.ok) {
+          throw new Error(result.error || 'Failed to load calendar')
+        }
+        if (ignore) return
+        const nextStaff = (result.staff || []) as SchedulingStaff[]
+        setStaff(nextStaff)
+        setAppointments(result.appointments || [])
+        setCalendarEvents(result.events || [])
+        setDailyAvailability(result.dailyAvailability || [])
+        setForm((current) => ({
+          ...current,
+          assigned_staff_user_id:
+            current.assigned_staff_user_id || nextStaff[0]?.id || '',
+        }))
+      } catch (e) {
+        if (
+          !ignore &&
+          !(e instanceof DOMException && e.name === 'AbortError')
+        ) {
+          setError(e instanceof Error ? e.message : 'Failed to load calendar')
+        }
+      }
+    }
+    void loadSchedule()
+    return () => {
+      ignore = true
+      controller.abort()
+    }
+  }, [form.start_date])
+
+  const requiredMinutes = useMemo(
+    () => applyAppointmentBuffer(form.duration),
+    [form.duration],
+  )
+
+  useEffect(() => {
+    if (
+      !form.start_date ||
+      !form.assigned_staff_user_id ||
+      requiredMinutes <= 0
+    ) {
+      setAvailableSlots([])
+      return
+    }
+    const controller = new AbortController()
+    let ignore = false
+    async function loadSlots() {
+      setLoadingSlots(true)
+      try {
+        const params = new URLSearchParams({
+          date: form.start_date,
+          required_minutes: String(requiredMinutes),
+          staff_user_id: form.assigned_staff_user_id,
+        })
+        const response = await fetch(`/api/admin/ops/slots?${params}`, {
+          cache: 'no-store',
+          signal: controller.signal,
+        })
+        const result = await response.json()
+        if (!response.ok) {
+          throw new Error(result.error || 'Failed to load openings')
+        }
+        if (ignore) return
+        const slots = Array.isArray(result.slots) ? result.slots : []
+        setAvailableSlots(slots)
+        if (slots.length === 0) {
+          setUseCustomTime(true)
+          setSlotWarning(
+            'No regular opening fits this visit. Choose another day or use a custom time for legitimate after-hours work.',
+          )
+          return
+        }
+        setSlotWarning('')
+        setForm((current) => ({
+          ...current,
+          start_time: resolveSelectedStartTime({
+            slots,
+            currentStartTime: current.start_time,
+            useCustomTime,
+          }),
+        }))
+      } catch (e) {
+        if (
+          !ignore &&
+          !(e instanceof DOMException && e.name === 'AbortError')
+        ) {
+          setError(e instanceof Error ? e.message : 'Failed to load openings')
+        }
+      } finally {
+        if (!ignore) setLoadingSlots(false)
+      }
+    }
+    void loadSlots()
+    return () => {
+      ignore = true
+      controller.abort()
+    }
+  }, [
+    form.assigned_staff_user_id,
+    form.start_date,
+    requiredMinutes,
+    useCustomTime,
+  ])
+
+  const selectedDayAppointments = useMemo(() => {
+    const selectedStaff = staff.find(
+      (member) => member.id === form.assigned_staff_user_id,
+    )
+    const jobs = appointments
+      .filter(
+        (appointment) =>
+          appointment.appointment_date === form.start_date &&
+          (appointment.assigned_staff_user_id === form.assigned_staff_user_id ||
+            appointment.assigned_staff_user_id === null),
+      )
+      .map((appointment) => {
+        const customer = unwrapRelation(appointment.ops_customers)
+        return {
+          id: appointment.id,
+          start_time: appointment.start_time,
+          end_time: appointment.end_time,
+          label:
+            customer?.business_name ||
+            customer?.full_name ||
+            'Booked appointment',
+          detail: appointment.ops_appointment_line_items
+            .map((line) => line.name_snapshot)
+            .join(', '),
+        }
+      })
+    const blocks = calendarEvents
+      .filter(
+        (event) =>
+          (!event.event_kind || event.event_kind === 'block') &&
+          event.start_date <= form.start_date &&
+          event.end_date >= form.start_date &&
+          (event.assigned_staff_user_id === null ||
+            event.assigned_staff_user_id === form.assigned_staff_user_id ||
+            event.assigned_staff_user_id === selectedStaff?.user_id),
+      )
+      .map((event) => ({
+        id: `event-${event.id}`,
+        start_time: event.is_all_day
+          ? '00:00:00'
+          : event.start_time || '00:00:00',
+        end_time: event.is_all_day ? '23:59:00' : event.end_time || '23:59:00',
+        label: event.title || 'Calendar block',
+        detail: event.description || 'Unavailable calendar time',
+      }))
+    return [...jobs, ...blocks]
+  }, [
+    appointments,
+    calendarEvents,
+    form.assigned_staff_user_id,
+    form.start_date,
+    staff,
+  ])
+
+  const selectedStaffClosed = useMemo(() => {
+    const override = dailyAvailability.find(
+      (row) =>
+        row.staff_user_id === form.assigned_staff_user_id &&
+        row.date === form.start_date,
+    )
+    if (override) return !override.is_open
+    return (
+      staff.find((member) => member.id === form.assigned_staff_user_id)
+        ?.default_open === false
+    )
+  }, [dailyAvailability, form.assigned_staff_user_id, form.start_date, staff])
+
+  const conflicts = occurrences.filter(
+    (occurrence) => occurrence.status === 'conflict',
+  )
+
   if (!recurring.length)
     return (
       <p className={panelClass}>
@@ -1391,6 +1684,7 @@ function ServicePlanForm({
         { ...form, operation_id: operationId, line_ids: lineIds, preview },
       )
       setDates(result.dates)
+      setOccurrences(result.occurrences || [])
       if (!preview) {
         setSaved(true)
         await onSaved()
@@ -1408,7 +1702,9 @@ function ServicePlanForm({
       </h3>
       <p className="mt-1 text-sm text-slate-400">
         Choose services with the same frequency and timing. Create separate
-        plans for different seasons or methods. The plan starts paused.
+        plans for different seasons or methods. First inspect the assigned
+        technician&apos;s live calendar, then preview every date in the series.
+        The plan starts paused.
       </p>
       <div className="my-4 space-y-2">
         {recurring.map((l) => (
@@ -1423,46 +1719,45 @@ function ServicePlanForm({
                     : lineIds.filter((id) => id !== l.id),
                 )
                 setDates([])
+                setOccurrences([])
               }}
             />
             {l.name} · {l.frequency} · {l.service_window}
           </label>
         ))}
       </div>
-      <div className="grid gap-3 sm:grid-cols-3">
-        {(
-          [
-            ['label', 'Plan name', 'text'],
-            ['start_date', 'First service date', 'date'],
-            ['end_date', 'Last date / season end', 'date'],
-            ['start_time', 'Arrival time', 'time'],
-            ['duration', 'Working duration (minutes)', 'number'],
-          ] as const
-        ).map(([key, label, type]) => (
-          <Field label={label} key={key}>
-            <Input
-              className={fieldClass}
-              type={type}
-              value={form[key]}
-              onChange={(e) => {
-                setForm({
-                  ...form,
-                  [key]:
-                    type === 'number' ? Number(e.target.value) : e.target.value,
-                })
-                setDates([])
-              }}
-            />
-          </Field>
-        ))}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Field label="Plan name">
+          <Input
+            className={fieldClass}
+            value={form.label}
+            onChange={(e) => updateForm({ label: e.target.value })}
+          />
+        </Field>
+        <Field label="Last date / season end">
+          <Input
+            className={fieldClass}
+            type="date"
+            value={form.end_date}
+            onChange={(e) => updateForm({ end_date: e.target.value })}
+          />
+        </Field>
+        <Field label="Working duration (minutes)">
+          <Input
+            className={fieldClass}
+            type="number"
+            min={15}
+            max={720}
+            step={15}
+            value={form.duration}
+            onChange={(e) => updateForm({ duration: Number(e.target.value) })}
+          />
+        </Field>
         <Field label="Frequency">
           <select
             className={`${fieldClass} rounded-lg border p-2`}
             value={form.frequency}
-            onChange={(e) => {
-              setForm({ ...form, frequency: e.target.value })
-              setDates([])
-            }}
+            onChange={(e) => updateForm({ frequency: e.target.value })}
           >
             <option value="weekly">Weekly</option>
             <option value="biweekly">Every other week</option>
@@ -1477,10 +1772,9 @@ function ServicePlanForm({
               type="number"
               min={1}
               value={form.interval_days}
-              onChange={(e) => {
-                setForm({ ...form, interval_days: Number(e.target.value) })
-                setDates([])
-              }}
+              onChange={(e) =>
+                updateForm({ interval_days: Number(e.target.value) })
+              }
             />
           </Field>
         )}
@@ -1488,18 +1782,150 @@ function ServicePlanForm({
           <select
             className={`${fieldClass} rounded-lg border p-2`}
             value={form.invoice_mode}
-            onChange={(e) => setForm({ ...form, invoice_mode: e.target.value })}
+            onChange={(e) => updateForm({ invoice_mode: e.target.value })}
           >
             <option value="per_visit">Invoice per visit</option>
             <option value="batch_monthly">Monthly consolidated invoice</option>
           </select>
         </Field>
       </div>
-      {dates.length > 0 && (
-        <p className="mt-3 text-sm text-cyan-300">
-          Upcoming dates: {dates.join(' · ')}
-        </p>
-      )}
+
+      <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
+        <div className="space-y-4 rounded-2xl border border-cyan-300/15 bg-slate-950/40 p-4">
+          <div>
+            <p className="text-xs font-semibold tracking-widest text-cyan-300 uppercase">
+              First visit
+            </p>
+            <h4 className="mt-1 text-lg font-semibold">
+              Fit the plan into the live calendar
+            </h4>
+            <p className="mt-1 text-sm text-slate-400">
+              The first date anchors the recurring pattern. Switch technicians
+              to inspect each calendar before choosing an opening.
+            </p>
+          </div>
+          <Field label="Assigned technician">
+            <select
+              aria-label="Assigned technician"
+              className={`${fieldClass} w-full rounded-lg border p-2`}
+              value={form.assigned_staff_user_id}
+              onChange={(e) =>
+                updateForm({ assigned_staff_user_id: e.target.value })
+              }
+            >
+              {staff.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.display_name}
+                </option>
+              ))}
+              {staff.length === 0 ? (
+                <option value="">Loading technicians…</option>
+              ) : null}
+            </select>
+          </Field>
+          {slotWarning ? (
+            <p className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-sm text-amber-200">
+              {slotWarning}
+            </p>
+          ) : null}
+          <DayTimePicker
+            selectedDate={form.start_date}
+            onSelectDate={(date) => updateForm({ start_date: date })}
+            selectedTime={form.start_time}
+            onSelectTime={(time) => updateForm({ start_time: time })}
+            appointments={selectedDayAppointments}
+            availableSlots={availableSlots}
+            requiredMinutes={requiredMinutes}
+            serviceMinutes={form.duration}
+            bufferMinutes={requiredMinutes - form.duration}
+            loadingSlots={loadingSlots}
+            useCustomTime={useCustomTime}
+            onToggleCustomTime={() => setUseCustomTime((current) => !current)}
+            staffClosed={selectedStaffClosed}
+            staffUserId={form.assigned_staff_user_id}
+            allowConflictOverride={false}
+          />
+        </div>
+
+        <div className="space-y-4 rounded-2xl border border-white/10 bg-slate-950/40 p-4 xl:sticky xl:top-4 xl:self-start">
+          <div>
+            <p className="text-xs font-semibold tracking-widest text-slate-400 uppercase">
+              Entire series
+            </p>
+            <h4 className="mt-1 text-lg font-semibold">
+              Check every visit before saving
+            </h4>
+            <p className="mt-1 text-sm text-slate-400">
+              Preview compares all planned dates through the end of the
+              agreement against the selected technician&apos;s appointments and
+              calendar blocks.
+            </p>
+          </div>
+          {occurrences.length > 0 ? (
+            <div
+              className={`rounded-xl border p-3 ${conflicts.length > 0 ? 'border-red-400/30 bg-red-500/10' : 'border-emerald-400/30 bg-emerald-500/10'}`}
+            >
+              <p
+                className={`font-semibold ${conflicts.length > 0 ? 'text-red-200' : 'text-emerald-200'}`}
+              >
+                {conflicts.length > 0
+                  ? `${conflicts.length} conflict${conflicts.length === 1 ? '' : 's'} found`
+                  : `${occurrences.length} visit${occurrences.length === 1 ? '' : 's'} checked · all clear`}
+              </p>
+              <div className="mt-3 max-h-80 space-y-2 overflow-y-auto pr-1 text-xs">
+                {occurrences.slice(0, 20).map((occurrence) => (
+                  <div
+                    key={occurrence.date}
+                    className="flex items-start justify-between gap-3 rounded-lg bg-black/20 px-3 py-2"
+                  >
+                    <span>
+                      {new Date(
+                        `${occurrence.date}T12:00:00`,
+                      ).toLocaleDateString('en-US', {
+                        weekday: 'short',
+                        month: 'short',
+                        day: 'numeric',
+                      })}{' '}
+                      · {occurrence.start_time.slice(0, 5)}
+                      {occurrence.conflict ? (
+                        <span className="mt-1 block text-red-200">
+                          Runs into {occurrence.conflict.label} ·{' '}
+                          {occurrence.conflict.start_time.slice(0, 5)}–
+                          {occurrence.conflict.end_time.slice(0, 5)}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span
+                      className={
+                        occurrence.status === 'clear'
+                          ? 'text-emerald-300'
+                          : 'text-red-300'
+                      }
+                    >
+                      {occurrence.status === 'clear' ? 'Clear' : 'Conflict'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              {occurrences.length > 20 ? (
+                <p className="mt-2 text-xs text-slate-400">
+                  Plus {occurrences.length - 20} later checked visits.
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <p className="rounded-xl border border-dashed border-white/15 p-3 text-sm text-slate-400">
+              Choose the services, technician, first visit, and frequency, then
+              preview the series. Saving stays locked until every date is clear.
+            </p>
+          )}
+          {dates.length > 0 ? (
+            <p className="text-xs text-cyan-300">
+              First dates: {dates.join(' · ')}
+            </p>
+          ) : null}
+        </div>
+      </div>
       {error && (
         <p role="alert" className="mt-3 text-red-300">
           {error}
@@ -1508,13 +1934,22 @@ function ServicePlanForm({
       <div className="mt-4 flex gap-2">
         <Button
           variant="outline"
-          disabled={busy || saved}
+          disabled={
+            busy ||
+            saved ||
+            lineIds.length === 0 ||
+            !form.assigned_staff_user_id ||
+            !form.start_date ||
+            !form.start_time
+          }
           onClick={() => void submit(true)}
         >
-          Preview dates
+          Preview entire series
         </Button>
         <Button
-          disabled={busy || saved || dates.length === 0}
+          disabled={
+            busy || saved || occurrences.length === 0 || conflicts.length > 0
+          }
           onClick={() => void submit(false)}
         >
           {saved ? 'Plan saved paused' : 'Save paused service plan'}
@@ -1526,6 +1961,7 @@ function ServicePlanForm({
               setOperationId(crypto.randomUUID())
               setSaved(false)
               setDates([])
+              setOccurrences([])
               setLineIds([])
             }}
           >

@@ -37,6 +37,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
+import { DayTimePicker } from './day-time-picker'
 import {
   describeSegmentsSummary,
   isAreaUnit,
@@ -45,6 +46,11 @@ import {
   supportsDimensions,
   type AreaSegment,
 } from '@/lib/ops/estimates'
+import {
+  applyAppointmentBuffer,
+  calculateAppointmentDurationFromTotal,
+  resolveSelectedStartTime,
+} from '@/lib/ops/availability'
 
 type ServiceCatalogItem = {
   id: string
@@ -138,6 +144,45 @@ type EstimateDetailProps = {
   openSchedule?: boolean
 }
 
+type SchedulingStaff = {
+  id: string
+  user_id?: string | null
+  display_name: string
+  default_open?: boolean | null
+}
+
+type SchedulingAppointment = {
+  id: string
+  appointment_date: string
+  start_time: string
+  end_time: string
+  assigned_staff_user_id: string | null
+  ops_customers:
+    | { full_name: string | null; business_name: string | null }
+    | Array<{ full_name: string | null; business_name: string | null }>
+    | null
+  ops_appointment_line_items: Array<{ name_snapshot: string }>
+}
+
+type SchedulingAvailability = {
+  staff_user_id: string
+  date: string
+  is_open: boolean
+}
+
+type SchedulingEvent = {
+  id: string
+  title: string | null
+  description: string | null
+  event_kind: string | null
+  start_date: string
+  end_date: string
+  start_time: string | null
+  end_time: string | null
+  is_all_day: boolean
+  assigned_staff_user_id: string | null
+}
+
 function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
   if (!value) return null
   return Array.isArray(value) ? value[0] || null : value
@@ -164,6 +209,25 @@ function nextBusinessDay(iso: string, offsetDays = 7): string {
     dt.setUTCDate(dt.getUTCDate() + 1)
   }
   return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`
+}
+
+function startOfWeek(dateValue: string): Date {
+  const date = new Date(`${dateValue}T12:00:00`)
+  date.setDate(date.getDate() - date.getDay())
+  return date
+}
+
+function addDays(date: Date, amount: number): Date {
+  const next = new Date(date)
+  next.setDate(next.getDate() + amount)
+  return next
+}
+
+function formatDateKey(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 function makeRowKey(): string {
@@ -345,6 +409,23 @@ export function EstimateDetail({
   const [showConvertDialog, setShowConvertDialog] = useState(openSchedule)
   const [convertDate, setConvertDate] = useState('')
   const [convertStart, setConvertStart] = useState('09:00')
+  const [convertStaffId, setConvertStaffId] = useState('')
+  const [convertStaff, setConvertStaff] = useState<SchedulingStaff[]>([])
+  const [convertAppointments, setConvertAppointments] = useState<
+    SchedulingAppointment[]
+  >([])
+  const [convertEvents, setConvertEvents] = useState<SchedulingEvent[]>([])
+  const [convertDailyAvailability, setConvertDailyAvailability] = useState<
+    SchedulingAvailability[]
+  >([])
+  const [convertSlots, setConvertSlots] = useState<
+    Array<{ start_time: string; end_time: string }>
+  >([])
+  const [convertSlotsLoading, setConvertSlotsLoading] = useState(false)
+  const [convertUseCustomTime, setConvertUseCustomTime] = useState(false)
+  const [convertSlotWarning, setConvertSlotWarning] = useState<string | null>(
+    null,
+  )
   const [convertSubmitting, setConvertSubmitting] = useState(false)
   const [convertError, setConvertError] = useState<string | null>(null)
 
@@ -477,6 +558,176 @@ export function EstimateDetail({
       return sum + qty * price
     }, 0)
   }, [lineItems])
+
+  const convertServiceMinutes = useMemo(
+    () => calculateAppointmentDurationFromTotal(subtotal),
+    [subtotal],
+  )
+  const convertRequiredMinutes = useMemo(
+    () => applyAppointmentBuffer(convertServiceMinutes),
+    [convertServiceMinutes],
+  )
+
+  const loadConvertSchedule = useCallback(async () => {
+    if (!showConvertDialog || !convertDate) return
+    const weekStart = startOfWeek(convertDate)
+    const weekEnd = addDays(weekStart, 6)
+    try {
+      const res = await fetch(
+        `/api/admin/ops/schedule?start_date=${formatDateKey(weekStart)}&end_date=${formatDateKey(weekEnd)}`,
+        { cache: 'no-store' },
+      )
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to load calendar')
+      const staff = (data.staff || []) as SchedulingStaff[]
+      setConvertAppointments(data.appointments || [])
+      setConvertEvents(data.events || [])
+      setConvertDailyAvailability(data.dailyAvailability || [])
+      setConvertStaff(staff)
+      setConvertStaffId((current) => current || staff[0]?.id || '')
+    } catch (err) {
+      setConvertError(
+        err instanceof Error ? err.message : 'Failed to load calendar',
+      )
+    }
+  }, [convertDate, showConvertDialog])
+
+  useEffect(() => {
+    void loadConvertSchedule()
+  }, [loadConvertSchedule])
+
+  useEffect(() => {
+    if (
+      !showConvertDialog ||
+      !convertDate ||
+      !convertStaffId ||
+      convertRequiredMinutes <= 0
+    ) {
+      setConvertSlots([])
+      return
+    }
+    const controller = new AbortController()
+    let ignore = false
+    async function loadSlots() {
+      setConvertSlotsLoading(true)
+      try {
+        const params = new URLSearchParams({
+          date: convertDate,
+          required_minutes: String(convertRequiredMinutes),
+          staff_user_id: convertStaffId,
+        })
+        const res = await fetch(`/api/admin/ops/slots?${params}`, {
+          cache: 'no-store',
+          signal: controller.signal,
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'Failed to load openings')
+        if (ignore) return
+        const slots = Array.isArray(data.slots) ? data.slots : []
+        setConvertSlots(slots)
+        if (slots.length === 0) {
+          setConvertUseCustomTime(true)
+          setConvertSlotWarning(
+            'No open window is long enough on this day. Pick another day or use a custom time only if you intend to override the conflict.',
+          )
+          return
+        }
+        setConvertSlotWarning(null)
+        setConvertStart((current) =>
+          resolveSelectedStartTime({
+            slots,
+            currentStartTime: current,
+            useCustomTime: convertUseCustomTime,
+          }),
+        )
+      } catch (err) {
+        if (
+          !ignore &&
+          !(err instanceof DOMException && err.name === 'AbortError')
+        ) {
+          setConvertError(
+            err instanceof Error ? err.message : 'Failed to load openings',
+          )
+        }
+      } finally {
+        if (!ignore) setConvertSlotsLoading(false)
+      }
+    }
+    void loadSlots()
+    return () => {
+      ignore = true
+      controller.abort()
+    }
+  }, [
+    convertDate,
+    convertRequiredMinutes,
+    convertStaffId,
+    convertUseCustomTime,
+    showConvertDialog,
+  ])
+
+  const convertDayAppointments = useMemo(() => {
+    const staff = convertStaff.find((member) => member.id === convertStaffId)
+    const jobs = convertAppointments
+      .filter(
+        (appointment) =>
+          appointment.appointment_date === convertDate &&
+          (appointment.assigned_staff_user_id === convertStaffId ||
+            appointment.assigned_staff_user_id === null),
+      )
+      .map((appointment) => {
+        const appointmentCustomer = unwrapRelation(appointment.ops_customers)
+        return {
+          id: appointment.id,
+          start_time: appointment.start_time,
+          end_time: appointment.end_time,
+          label:
+            appointmentCustomer?.business_name ||
+            appointmentCustomer?.full_name ||
+            'Booked appointment',
+          detail: appointment.ops_appointment_line_items
+            .map((line) => line.name_snapshot)
+            .join(', '),
+        }
+      })
+    const blocks = convertEvents
+      .filter(
+        (event) =>
+          (!event.event_kind || event.event_kind === 'block') &&
+          event.start_date <= convertDate &&
+          event.end_date >= convertDate &&
+          (event.assigned_staff_user_id === null ||
+            event.assigned_staff_user_id === convertStaffId ||
+            event.assigned_staff_user_id === staff?.user_id),
+      )
+      .map((event) => ({
+        id: `event-${event.id}`,
+        start_time: event.is_all_day
+          ? '00:00:00'
+          : event.start_time || '00:00:00',
+        end_time: event.is_all_day ? '23:59:00' : event.end_time || '23:59:00',
+        label: event.title || 'Calendar block',
+        detail: event.description || 'Unavailable calendar time',
+      }))
+    return [...jobs, ...blocks]
+  }, [
+    convertAppointments,
+    convertDate,
+    convertEvents,
+    convertStaff,
+    convertStaffId,
+  ])
+
+  const convertStaffClosed = useMemo(() => {
+    const override = convertDailyAvailability.find(
+      (row) => row.staff_user_id === convertStaffId && row.date === convertDate,
+    )
+    if (override) return !override.is_open
+    return (
+      convertStaff.find((member) => member.id === convertStaffId)
+        ?.default_open === false
+    )
+  }, [convertDailyAvailability, convertDate, convertStaff, convertStaffId])
 
   const totalMeasureMinutes = useMemo(() => {
     return lineItems.reduce((sum, line) => {
@@ -854,6 +1105,8 @@ export function EstimateDetail({
           body: JSON.stringify({
             appointment_date: convertDate,
             start_time: convertStart,
+            assigned_staff_user_id: convertStaffId,
+            allow_conflict: convertUseCustomTime,
           }),
         },
       )
@@ -862,7 +1115,8 @@ export function EstimateDetail({
         throw new Error(payload?.error || 'Failed to convert estimate')
       }
       if (payload?.appointment_id) {
-        router.push(`/admin/operations/appointments/${payload.appointment_id}`)
+        router.push(`/admin/operations?date=${convertDate}`)
+        router.refresh()
       } else {
         setShowConvertDialog(false)
         await loadEstimate()
@@ -873,7 +1127,16 @@ export function EstimateDetail({
       )
       setConvertSubmitting(false)
     }
-  }, [convertDate, convertStart, estimateId, handleSave, loadEstimate, router])
+  }, [
+    convertDate,
+    convertStaffId,
+    convertStart,
+    convertUseCustomTime,
+    estimateId,
+    handleSave,
+    loadEstimate,
+    router,
+  ])
 
   const handleSendEmail = useCallback(
     async (type: 'booking_confirmation' | 'quote') => {
@@ -1930,15 +2193,16 @@ export function EstimateDetail({
           }}
         >
           <div
-            className="bg-background w-full max-w-md rounded-lg border p-5 shadow-xl"
+            className="bg-background max-h-[92vh] w-full max-w-6xl overflow-y-auto rounded-2xl border p-5 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between">
               <div>
                 <h3 className="text-lg font-semibold">Schedule the work</h3>
                 <p className="text-muted-foreground mt-1 text-sm">
-                  Create a new service appointment and invoice from this
-                  estimate. Line items will be copied over.
+                  Choose the technician, then pick an opening while seeing what
+                  is already on that calendar. The estimate lines transfer
+                  automatically.
                 </p>
               </div>
               <Button
@@ -1951,84 +2215,132 @@ export function EstimateDetail({
               </Button>
             </div>
 
-            <div className="mt-4 space-y-3">
-              <div>
-                <Label htmlFor="convert-date" className="text-xs">
-                  Service date
-                </Label>
-                <Input
-                  id="convert-date"
-                  type="date"
-                  value={convertDate}
-                  onChange={(e) => setConvertDate(e.target.value)}
+            <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(280px,0.7fr)]">
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="convert-staff">Assigned technician</Label>
+                  <select
+                    id="convert-staff"
+                    className="border-input bg-background mt-1 h-11 w-full rounded-lg border px-3 text-sm"
+                    value={convertStaffId}
+                    onChange={(event) => {
+                      setConvertStaffId(event.target.value)
+                      setConvertError(null)
+                    }}
+                  >
+                    {convertStaff.map((staff) => (
+                      <option key={staff.id} value={staff.id}>
+                        {staff.display_name}
+                      </option>
+                    ))}
+                    {convertStaff.length === 0 ? (
+                      <option value="">Loading technicians…</option>
+                    ) : null}
+                  </select>
+                </div>
+
+                {convertSlotWarning ? (
+                  <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
+                    {convertSlotWarning}
+                  </p>
+                ) : null}
+
+                <DayTimePicker
+                  selectedDate={convertDate}
+                  onSelectDate={(date) => {
+                    setConvertDate(date)
+                    setConvertError(null)
+                  }}
+                  selectedTime={convertStart}
+                  onSelectTime={(time) => {
+                    setConvertStart(time)
+                    setConvertError(null)
+                  }}
+                  appointments={convertDayAppointments}
+                  availableSlots={convertSlots}
+                  requiredMinutes={convertRequiredMinutes}
+                  serviceMinutes={convertServiceMinutes}
+                  bufferMinutes={convertRequiredMinutes - convertServiceMinutes}
+                  loadingSlots={convertSlotsLoading}
+                  useCustomTime={convertUseCustomTime}
+                  onToggleCustomTime={() =>
+                    setConvertUseCustomTime((current) => !current)
+                  }
+                  staffClosed={convertStaffClosed}
+                  staffUserId={convertStaffId}
                 />
               </div>
-              <div>
-                <Label htmlFor="convert-start" className="text-xs">
-                  Start time
-                </Label>
-                <Input
-                  id="convert-start"
-                  type="time"
-                  value={convertStart}
-                  onChange={(e) => setConvertStart(e.target.value)}
-                />
-              </div>
 
-              <div className="border-border/60 bg-muted/40 rounded-md border p-3 text-sm">
-                <p className="font-medium">Copying these line items:</p>
-                <ul className="mt-2 space-y-1 text-xs">
-                  {lineItems.map((line) => (
-                    <li
-                      key={line.id}
-                      className="flex items-center justify-between gap-2"
-                    >
-                      <span className="truncate">
-                        {line.name_snapshot || '(unnamed)'} ·{' '}
-                        {toNumber(line.quantity, 1)}
-                        {isAreaUnit(line.pricing_unit_snapshot)
-                          ? ' sqft'
-                          : isLinearUnit(line.pricing_unit_snapshot)
-                            ? ' linear ft'
-                            : ''}
-                      </span>
-                      <span className="tabular-nums">
-                        $
-                        {(
-                          toNumber(line.quantity, 1) *
-                          toNumber(line.unit_price, 0)
-                        ).toFixed(2)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-                <div className="border-border/60 mt-2 flex justify-between border-t pt-2 font-semibold">
-                  <span>Total</span>
-                  <span className="tabular-nums">${subtotal.toFixed(2)}</span>
+              <div className="space-y-4 lg:sticky lg:top-0 lg:self-start">
+                <div className="border-border/60 bg-muted/40 rounded-xl border p-4 text-sm">
+                  <p className="font-semibold">Appointment being created</p>
+                  <p className="text-muted-foreground mt-1 text-xs">
+                    {convertServiceMinutes / 60}-hour calendar block · draft
+                    invoice created automatically
+                  </p>
+                  <ul className="mt-3 space-y-2 text-xs">
+                    {lineItems.map((line) => (
+                      <li
+                        key={line.id}
+                        className="flex items-start justify-between gap-3"
+                      >
+                        <span>
+                          {line.name_snapshot || '(unnamed)'} ·{' '}
+                          {toNumber(line.quantity, 1)}
+                          {isAreaUnit(line.pricing_unit_snapshot)
+                            ? ' sqft'
+                            : isLinearUnit(line.pricing_unit_snapshot)
+                              ? ' linear ft'
+                              : ''}
+                        </span>
+                        <span className="shrink-0 tabular-nums">
+                          $
+                          {(
+                            toNumber(line.quantity, 1) *
+                            toNumber(line.unit_price, 0)
+                          ).toFixed(2)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="border-border/60 mt-3 flex justify-between border-t pt-3 font-semibold">
+                    <span>Total</span>
+                    <span className="tabular-nums">${subtotal.toFixed(2)}</span>
+                  </div>
                 </div>
-              </div>
 
-              {convertError ? (
-                <div className="rounded-md border border-rose-200 bg-rose-50 p-2 text-xs text-rose-700">
-                  {convertError}
-                </div>
-              ) : null}
+                {convertError ? (
+                  <div className="rounded-lg border border-rose-300 bg-rose-50 p-3 text-sm text-rose-700">
+                    {convertError}
+                  </div>
+                ) : null}
 
-              <div className="flex gap-2 pt-1">
                 <Button
-                  className="flex-1 gap-2 bg-emerald-600 text-white hover:bg-emerald-700"
-                  disabled={convertSubmitting}
+                  className="h-12 w-full gap-2 bg-emerald-600 text-white hover:bg-emerald-700"
+                  disabled={
+                    convertSubmitting ||
+                    !convertDate ||
+                    !convertStart ||
+                    !convertStaffId
+                  }
                   onClick={() => void handleConvert()}
                 >
                   {convertSubmitting ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : null}
+                  ) : (
+                    <CalendarCheck className="h-4 w-4" />
+                  )}
                   {convertSubmitting
                     ? 'Creating service job…'
-                    : 'Create service appointment'}
+                    : 'Book this appointment'}
                 </Button>
+                <p className="text-muted-foreground text-center text-xs">
+                  A normal opening is protected against conflicts. Custom time
+                  is an intentional admin override.
+                </p>
                 <Button
                   variant="ghost"
+                  className="w-full"
                   onClick={() => setShowConvertDialog(false)}
                   disabled={convertSubmitting}
                 >
