@@ -838,12 +838,6 @@ export function ClientCommercialDetails({
             ],
             [
               '02',
-              'Review your services',
-              'See the scope and pricing currently on file',
-              'commercial-agreements',
-            ],
-            [
-              '03',
               'Check your appointments',
               'See your confirmed service dates',
               'commercial-visits',

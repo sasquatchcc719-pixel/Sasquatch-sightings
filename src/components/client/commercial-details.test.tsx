@@ -278,6 +278,23 @@ describe('commercial customer experience', () => {
     ).toBeDisabled()
     scroll.mockRestore()
   })
+  it('shows only the two distinct customer steps', () => {
+    render(
+      <ClientCommercialDetails
+        initialData={{ ...data, agreements: [agreement('published')] }}
+        schedule={schedule}
+      />,
+    )
+    const steps = screen.getByLabelText('How to use your account')
+    expect(within(steps).getAllByRole('button')).toHaveLength(2)
+    expect(
+      within(steps).getByRole('button', { name: /Review your agreement/ }),
+    ).toBeInTheDocument()
+    expect(
+      within(steps).getByRole('button', { name: /Check your appointments/ }),
+    ).toBeInTheDocument()
+    expect(within(steps).queryByText('Review your services')).toBeNull()
+  })
   it('does not ask a customer with billing contacts to repeat setup while an agreement is being prepared', () => {
     render(
       <ClientCommercialDetails
