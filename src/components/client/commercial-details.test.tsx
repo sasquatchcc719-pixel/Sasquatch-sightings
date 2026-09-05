@@ -15,7 +15,7 @@ import {
   vi,
 } from 'vitest'
 import { ClientCommercialDetails } from './commercial-details'
-import { ClientPortal, RequestForm } from './client-portal'
+import { ClientPortal } from './client-portal'
 import { CommercialClientPreview } from '@/components/admin/ops/commercial-client-preview'
 import {
   emptyProfile,
@@ -69,27 +69,34 @@ describe('commercial customer experience', () => {
   it('lets a non-signer send version-linked feedback without signing', async () => {
     const fetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ request: { id: 'request-a' } }),
+      json: async () => ({
+        request: { id: 'request-a' },
+        telegram_sent: true,
+      }),
     })
     vi.stubGlobal('fetch', fetch)
-    const submitted = vi.fn()
     render(
       <ClientCommercialDetails
         initialData={{ ...data, agreements: [agreement('published')] }}
-        onRequestSubmitted={submitted}
       />,
     )
     fireEvent.click(
       screen.getByText('Private agreement', { selector: 'strong' }),
     )
-    fireEvent.click(screen.getByRole('button', { name: 'Request changes' }))
-    fireEvent.change(
-      screen.getByLabelText('What would you like changed in version 1?'),
-      { target: { value: 'Please remove upholstery.' } },
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Send a note or request changes' }),
     )
-    fireEvent.click(screen.getByRole('button', { name: 'Send change request' }))
+    fireEvent.change(screen.getByLabelText('Note about version 1'), {
+      target: { value: 'Please remove upholstery.' },
+    })
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Send note to Charles' }),
+    )
     expect(await screen.findByRole('status')).toHaveTextContent(
-      'Change request sent for version 1.',
+      'Note sent for version 1.',
+    )
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Charles was alerted in Telegram.',
     )
     expect(fetch).toHaveBeenCalledTimes(1)
     expect(fetch.mock.calls[0][0]).toBe('/api/client/requests')
@@ -98,7 +105,6 @@ describe('commercial customer experience', () => {
       agreement_id: 'agreement-a',
       message: 'Please remove upholstery.',
     })
-    expect(submitted).toHaveBeenCalledOnce()
     expect(
       screen.queryByRole('button', { name: 'Sign and accept agreement' }),
     ).not.toBeInTheDocument()
@@ -119,45 +125,45 @@ describe('commercial customer experience', () => {
     fireEvent.click(
       screen.getByText('Private agreement', { selector: 'strong' }),
     )
-    fireEvent.click(screen.getByRole('button', { name: 'Request changes' }))
-    fireEvent.change(
-      screen.getByLabelText('What would you like changed in version 1?'),
-      { target: { value: 'Quarterly please.' } },
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Send a note or request changes' }),
     )
-    fireEvent.click(screen.getByRole('button', { name: 'Send change request' }))
+    fireEvent.change(screen.getByLabelText('Note about version 1'), {
+      target: { value: 'Quarterly please.' },
+    })
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Send note to Charles' }),
+    )
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Unable to send. Please retry.',
     )
+    expect(screen.getByLabelText('Note about version 1')).toHaveValue(
+      'Quarterly please.',
+    )
     expect(
-      screen.getByLabelText('What would you like changed in version 1?'),
-    ).toHaveValue('Quarterly please.')
-    expect(
-      screen.getByRole('button', { name: 'Send change request' }),
+      screen.getByRole('button', { name: 'Send note to Charles' }),
     ).toBeEnabled()
   })
   it.each([false, true])(
-    'offers auto scrubbing without changing agreement scope (has agreement: %s)',
+    'shows auto scrubbing without offering a portal request (has agreement: %s)',
     (hasAgreement) => {
-      const request = vi.fn()
       render(
         <ClientCommercialDetails
           initialData={{
             ...data,
             agreements: hasAgreement ? [agreement('published')] : [],
           }}
-          onRequestService={request}
         />,
       )
       const card = screen
         .getByRole('heading', { name: 'Hard-surface auto scrubbing' })
         .closest('article')!
       expect(
-        within(card).getByText('Quoted separately before service'),
+        within(card).getByText('Contact Sasquatch for a quote'),
       ).toBeInTheDocument()
-      fireEvent.click(
-        within(card).getByRole('button', { name: 'Request this service' }),
-      )
-      expect(request).toHaveBeenCalledWith('Hard-surface auto scrubbing')
+      expect(
+        within(card).queryByRole('button', { name: 'Request this service' }),
+      ).not.toBeInTheDocument()
     },
   )
   it('does not duplicate auto scrubbing already listed in an agreement', () => {
@@ -179,7 +185,7 @@ describe('commercial customer experience', () => {
         screen
           .getAllByRole('heading', { name: 'Hard-surface auto scrubbing' })[0]
           .closest('article')!,
-      ).queryByText('Quoted separately before service'),
+      ).queryByText('Contact Sasquatch for a quote'),
     ).not.toBeInTheDocument()
   })
   it('shows the earliest same-day visit without mutating the shared schedule', () => {
@@ -286,7 +292,7 @@ describe('commercial customer experience', () => {
       />,
     )
     expect(
-      screen.getByRole('button', { name: 'Explore services' }),
+      screen.getByRole('button', { name: 'View agreement status' }),
     ).toBeInTheDocument()
     expect(
       screen.queryByRole('button', { name: 'Add business details' }),
@@ -304,13 +310,11 @@ describe('commercial customer experience', () => {
     expect(screen.queryByText('$350.00')).not.toBeInTheDocument()
   })
   it('exposes published terms and downloads but prevents preview signing or requests', () => {
-    const request = vi.fn()
     render(
       <ClientCommercialDetails
         initialData={{ ...data, agreements: [agreement('published')] }}
         readOnly
         canSign
-        onRequestService={request}
       />,
     )
     fireEvent.click(
@@ -325,7 +329,9 @@ describe('commercial customer experience', () => {
     ).not.toBeInTheDocument()
     expect(screen.queryByText('Request this service')).not.toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: 'Request changes' }),
+      screen.getByRole('button', {
+        name: 'Send a note or request changes',
+      }),
     ).toBeDisabled()
   })
   it('keeps password and consent requirements for an authorized signer', () => {
@@ -344,77 +350,16 @@ describe('commercial customer experience', () => {
       screen.getByRole('button', { name: 'Sign and accept agreement' }),
     ).toBeDisabled()
   })
-  it('passes the selected service into a request without submitting anything', () => {
-    const request = vi.fn()
-    render(
-      <ClientCommercialDetails initialData={data} onRequestService={request} />,
-    )
-    fireEvent.click(
-      screen.getAllByRole('button', { name: 'Request this service' })[0],
-    )
-    expect(request).toHaveBeenCalledWith('Carpet care')
-  })
-  it('lets the staff test drive open service requests without enabling real preview submissions', () => {
-    const request = vi.fn()
-    render(
-      <ClientCommercialDetails
-        initialData={data}
-        readOnly
-        previewServiceRequests
-        onRequestService={request}
-      />,
-    )
-    fireEvent.click(
-      screen.getAllByRole('button', { name: 'Request this service' })[0],
-    )
-    expect(request).toHaveBeenCalledWith('Carpet care')
-  })
-  it('runs the complete staff request simulation without calling the API', async () => {
+  it('keeps staff preview read-only without a browser request simulation', () => {
     const fetch = vi.fn()
     vi.stubGlobal('fetch', fetch)
-    let stored: string | null = null
-    const storage = {
-      getItem: vi.fn(() => stored),
-      setItem: vi.fn((_key: string, value: string) => {
-        stored = value
-      }),
-      removeItem: vi.fn(() => {
-        stored = null
-      }),
-    }
-    vi.stubGlobal('localStorage', storage)
-    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 1)
-    render(
-      <CommercialClientPreview
-        commercial={data}
-        schedule={schedule}
-        customerId="customer-a"
-      />,
-    )
-    fireEvent.click(
-      screen.getAllByRole('button', { name: 'Request this service' })[0],
-    )
-    expect(screen.getByLabelText('Service needed')).toHaveValue('Carpet care')
-    fireEvent.change(screen.getByLabelText('Details'), {
-      target: { value: 'Please clean the lobby.' },
-    })
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Test request (nothing sent)' }),
-    )
-    expect(await screen.findByRole('status')).toHaveTextContent(
-      'Test record saved in this browser. See the customer receipt and staff review below. Nothing was sent.',
-    )
-    expect(screen.getByText('Browser-only test records')).toBeTruthy()
-    expect(screen.getByText('TEST')).toBeTruthy()
-    expect(storage.setItem).toHaveBeenCalledWith(
-      'sasquatch:commercial-test-requests:v1',
-      expect.stringContaining('Carpet care'),
-    )
+    render(<CommercialClientPreview commercial={data} schedule={schedule} />)
+    expect(screen.getByText(/agreement notes are disabled/i)).toBeTruthy()
+    expect(screen.queryByText('Browser-only test records')).toBeNull()
+    expect(screen.queryByText('Request this service')).toBeNull()
     expect(fetch).not.toHaveBeenCalled()
-    vi.restoreAllMocks()
   })
-  it('opens the real request form with a selected service from the landing page', () => {
-    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 1)
+  it('keeps the schedule focused on confirmed work and direct contact', () => {
     render(
       <ClientPortal
         businessName="Example Business"
@@ -425,104 +370,29 @@ describe('commercial customer experience', () => {
         mustChangePassword={false}
       />,
     )
-    fireEvent.click(
-      screen.getAllByRole('button', { name: 'Request this service' })[1],
-    )
-    expect(screen.getByLabelText('Service needed')).toHaveValue('Tile & grout')
+    fireEvent.click(screen.getByRole('button', { name: 'Schedule' }))
     expect(
-      screen.getByRole('button', { name: 'Schedule & requests' }),
-    ).toHaveAttribute('aria-pressed', 'true')
-    vi.restoreAllMocks()
+      screen.getByRole('link', { name: 'Text Sasquatch' }),
+    ).toHaveAttribute('href', 'sms:7192498791')
+    expect(screen.queryByText('New request')).toBeNull()
+    expect(screen.queryByText('My requests')).toBeNull()
   })
-  it('keeps tile and upholstery requestable beside a carpet agreement without adding them to its scope', () => {
+  it('keeps tile and upholstery visible beside a carpet agreement without adding them to its scope', () => {
     const published = agreement('published')
     render(
       <ClientCommercialDetails
         initialData={{ ...data, agreements: [published] }}
-        onRequestService={vi.fn()}
       />,
     )
     for (const name of ['Tile & grout', 'Upholstery care']) {
       const card = screen.getByRole('heading', { name }).closest('article')!
       expect(
-        within(card).getByText('Quoted separately before service'),
+        within(card).getByText('Contact Sasquatch for a quote'),
       ).toBeInTheDocument()
       expect(
-        within(card).getByRole('button', { name: 'Request this service' }),
-      ).toBeEnabled()
+        within(card).queryByRole('button', { name: 'Request this service' }),
+      ).not.toBeInTheDocument()
     }
     expect(published.content.lines).toHaveLength(1)
-  })
-  it('sends custom frequency and start date through the real request payload without requiring duplicate notes', async () => {
-    const fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ request: { id: 'request-a' } }),
-    })
-    vi.stubGlobal('fetch', fetch)
-    render(<RequestForm appointments={[]} initialService="Tile & grout" />)
-    fireEvent.change(
-      screen.getByLabelText('How often do you need this service?'),
-      { target: { value: 'Custom / seasonal' } },
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'Submit request' }))
-    expect(screen.getByRole('alert')).toHaveTextContent(
-      'Describe your preferred frequency',
-    )
-    expect(fetch).not.toHaveBeenCalled()
-    fireEvent.change(
-      screen.getByLabelText('Describe your frequency or season'),
-      { target: { value: 'Every 6 weeks, October–March' } },
-    )
-    fireEvent.change(screen.getByLabelText('Preferred date'), {
-      target: { value: '2099-10-01' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'Submit request' }))
-    expect(await screen.findByRole('status')).toHaveTextContent(
-      'Request received',
-    )
-    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual(
-      expect.objectContaining({
-        request_type: 'add_visit',
-        details: expect.objectContaining({
-          service: 'Tile & grout',
-          frequency: 'Every 6 weeks, October–March',
-          preferred_date: '2099-10-01',
-        }),
-      }),
-    )
-  })
-  it('opens cancellation for the selected signed-contract visit without calling the direct skip API', () => {
-    const fetch = vi.fn()
-    vi.stubGlobal('fetch', fetch)
-    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 1)
-    const appointment = {
-      id: 'visit-a',
-      appointment_date: '2099-09-04',
-      start_time: '09:00',
-      end_time: '11:00',
-      status: 'confirmed',
-      client_note: null,
-      recurring_template_id: null,
-      template_label: null,
-      line_items: [],
-    }
-    render(
-      <ClientPortal
-        businessName="Example Business"
-        managerName="Manager"
-        initialData={{ ...schedule, appointments: [appointment] }}
-        initialCommercialData={{ ...data, agreements: [agreement('signed')] }}
-        canSign={false}
-        mustChangePassword={false}
-      />,
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'Schedule & requests' }))
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Request cancellation' }),
-    )
-    expect(screen.getByLabelText('Type of request')).toHaveValue('skip_visit')
-    expect(screen.getByLabelText('Which visit?')).toHaveValue('visit-a')
-    expect(fetch).not.toHaveBeenCalled()
-    vi.restoreAllMocks()
   })
 })

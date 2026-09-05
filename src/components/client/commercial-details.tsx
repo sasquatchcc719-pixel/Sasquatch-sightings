@@ -210,7 +210,7 @@ export function AgreementView({
       </p>
       <p className="text-xs text-slate-400">
         Each service has its own frequency and price. Optional services require
-        a separate request; the prices below are not an annual commitment.
+        separate approval; the prices below are not an annual commitment.
       </p>
       {c.lines.map((line) => (
         <div
@@ -307,43 +307,36 @@ export function AgreementView({
 function AgreementFeedback({
   agreement,
   readOnly,
-  onSubmitted,
-  onViewRequests,
 }: {
   agreement: CommercialAgreement
   readOnly: boolean
-  onSubmitted?: () => void
-  onViewRequests?: () => void
 }) {
   const [open, setOpen] = useState(false)
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [sent, setSent] = useState(false)
+  const [telegramSent, setTelegramSent] = useState(false)
   const [error, setError] = useState('')
   return (
-    <section className={styles.feedback} aria-label="Request agreement changes">
-      <h4>Want something changed? You don’t have to sign yet.</h4>
+    <section className={styles.feedback} aria-label="Send an agreement note">
+      <h4>Have a question or want something changed?</h4>
       <p>
-        Tell us what you’d like to change—services, frequency, pricing, or
-        terms. We’ll review your feedback and reply. If we agree on changes,
-        we’ll publish an updated version for you to review and sign.
+        Send Charles a note about services, frequency, pricing, or terms. He’ll
+        receive it immediately and publish an updated version if anything needs
+        to change.
       </p>
       <p>
-        Sending a request does not accept or change this agreement. Wait to sign
-        until your questions and requested changes are resolved.
+        A note does not accept this agreement. Wait to sign until your questions
+        are resolved and everything looks right.
       </p>
       {sent ? (
         <div role="status">
-          <strong>Change request sent for version {agreement.version}.</strong>
+          <strong>Note sent for version {agreement.version}.</strong>
           <p>
-            We’ll review it before making any changes. You can track the request
-            and our reply under Schedule &amp; requests → My requests.
+            {telegramSent
+              ? 'Charles was alerted in Telegram.'
+              : 'Your note was saved, but the Telegram alert could not be confirmed. Please call or text Sasquatch if it is urgent.'}
           </p>
-          {onViewRequests && (
-            <Button type="button" onClick={onViewRequests}>
-              View my requests
-            </Button>
-          )}
         </div>
       ) : open ? (
         <form
@@ -353,13 +346,17 @@ function AgreementFeedback({
             setBusy(true)
             setError('')
             try {
-              await commercialFetch('/api/client/requests', 'POST', {
-                request_type: 'scope_change',
-                agreement_id: agreement.id,
-                message: message.trim(),
-              })
+              const result = await commercialFetch(
+                '/api/client/requests',
+                'POST',
+                {
+                  request_type: 'scope_change',
+                  agreement_id: agreement.id,
+                  message: message.trim(),
+                },
+              )
+              setTelegramSent(result.telegram_sent === true)
               setSent(true)
-              onSubmitted?.()
             } catch (err) {
               setError(
                 err instanceof Error
@@ -371,9 +368,7 @@ function AgreementFeedback({
             }
           }}
         >
-          <Field
-            label={`What would you like changed in version ${agreement.version}?`}
-          >
+          <Field label={`Note about version ${agreement.version}`}>
             <Textarea
               autoFocus
               required
@@ -382,13 +377,13 @@ function AgreementFeedback({
               disabled={busy}
               onChange={(event) => setMessage(event.target.value)}
               className={fieldClass}
-              placeholder="For example: Please remove upholstery cleaning and change carpet cleaning to quarterly."
+              placeholder="For example: Please change carpet cleaning to quarterly, or call me about the upholstery price."
             />
           </Field>
           {error && <p role="alert">{error}</p>}
           <div className="mt-3 flex flex-wrap gap-2">
             <Button disabled={busy || !message.trim()}>
-              {busy ? 'Sending request…' : 'Send change request'}
+              {busy ? 'Sending note…' : 'Send note to Charles'}
             </Button>
             <Button
               type="button"
@@ -402,7 +397,7 @@ function AgreementFeedback({
         </form>
       ) : (
         <Button type="button" disabled={readOnly} onClick={() => setOpen(true)}>
-          Request changes
+          Send a note or request changes
         </Button>
       )}
       {readOnly && (
@@ -458,8 +453,8 @@ function SignatureForm({
     >
       <h4 className="font-semibold">Sign this agreement</h4>
       <p className="text-sm text-slate-300">
-        Everything looks right? Sign below. If you want changes, use “Request
-        changes” above instead.
+        Everything looks right? Sign below. If you have a question or want
+        changes, send Charles a note above instead.
       </p>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Your full legal name">
@@ -518,18 +513,12 @@ export function ClientCommercialDetails({
   canSign = false,
   schedule,
   onViewSchedule,
-  onRequestService,
-  onRequestSubmitted,
-  previewServiceRequests = false,
 }: {
   initialData?: CommercialData
   readOnly?: boolean
   canSign?: boolean
   schedule?: ClientPortalData
   onViewSchedule?: () => void
-  onRequestService?: (service: string) => void
-  onRequestSubmitted?: () => void
-  previewServiceRequests?: boolean
 }) {
   const [data, setData] = useState<
     (CommercialData & { canSign?: boolean }) | null
@@ -574,7 +563,7 @@ export function ClientCommercialDetails({
     ? {
         title: 'Your agreement is ready.',
         description:
-          'Open your agreement to review the services, prices, and terms. Request changes if needed, or sign at the bottom when everything looks right.',
+          'Open your agreement to review the services, prices, and terms. Send Charles a note if needed, or sign at the bottom when everything looks right.',
         label:
           (data.canSign ?? canSign) && !readOnly
             ? 'Review & sign agreement'
@@ -593,19 +582,21 @@ export function ClientCommercialDetails({
         ? {
             title: 'We’re preparing your agreement.',
             description:
-              'Your billing contact is on file. There’s nothing to sign yet. You can browse services while we prepare your scope and pricing.',
-            label: 'Explore services',
-            target: 'commercial-care',
+              'Your billing contact is on file. There’s nothing to sign yet. We’ll publish your scope and pricing here when it is ready.',
+            label: 'View agreement status',
+            target: 'commercial-agreements',
           }
         : {
             title: nextVisit
               ? 'Your next visit is scheduled.'
-              : 'Ready to schedule a service?',
+              : 'Your agreement is on file.',
             description: nextVisit
-              ? 'Check your upcoming visits or send us a change request. We’ll confirm any changes with you.'
-              : 'Choose a service below, tell us your preferred date, and send a request. We’ll confirm the details with you.',
-            label: nextVisit ? 'View appointments' : 'Choose a service',
-            target: nextVisit ? 'commercial-visits' : 'commercial-care',
+              ? 'Check your upcoming visits below. Call or text Sasquatch if the schedule needs to change.'
+              : 'There are no upcoming visits yet. Call or text Sasquatch when you are ready to schedule.',
+            label: nextVisit ? 'View appointments' : 'View agreement',
+            target: nextVisit
+              ? 'commercial-visits'
+              : `commercial-agreement-${currentAgreement.id}`,
           }
   const goToSection = (id: string) => {
     if (id === 'commercial-visits' && onViewSchedule) {
@@ -684,7 +675,7 @@ export function ClientCommercialDetails({
       match: /tile|grout/i,
       icon: Grid2X2,
       description:
-        'Cleaning for tile, grout lines, and high-traffic areas. Tell us which rooms or floor areas need attention.',
+        'Cleaning for tile, grout lines, and high-traffic commercial areas.',
     },
     {
       id: 'upholstery',
@@ -692,7 +683,7 @@ export function ClientCommercialDetails({
       match: /upholstery|upholstered|(?:chair|sofa|seat).*clean/i,
       icon: Armchair,
       description:
-        'Cleaning for upholstered chairs, booths, sofas, and other furnishings. Tell us the furniture type and approximate number of pieces.',
+        'Cleaning for upholstered chairs, booths, sofas, and other furnishings.',
     },
   ]) {
     if (!serviceCards.some((service) => extra.match.test(service.name))) {
@@ -701,8 +692,8 @@ export function ClientCommercialDetails({
         name: extra.name,
         description: extra.description,
         icon: extra.icon,
-        label: 'Additional service · By request',
-        meta: 'Quoted separately before service',
+        label: 'Available separately',
+        meta: 'Contact Sasquatch for a quote',
         frequency: '',
       })
     }
@@ -712,11 +703,11 @@ export function ClientCommercialDetails({
       id: 'auto-scrubbing',
       name: 'Hard-surface auto scrubbing',
       label: currentAgreement
-        ? 'Additional service · By request'
+        ? 'Available separately'
         : 'Machine-scrubbed floor care',
       description:
         'Machine scrubbing for hard-surface floors and high-traffic commercial areas. We’ll confirm the floor material, area, and cleaning needs before service.',
-      meta: 'Quoted separately before service',
+      meta: 'Contact Sasquatch for a quote',
       frequency: '',
       icon: Grid2X2,
     })
@@ -754,8 +745,8 @@ export function ClientCommercialDetails({
             </p>
             <h1 className={styles.title}>{data.businessName}</h1>
             <p className={styles.heroCopy}>
-              Review your agreement, request cleaning, and check your
-              appointments—all right here.
+              Review and sign your agreement, update business details, and check
+              confirmed appointments—all right here.
             </p>
             {address && (
               <p className={styles.address}>
@@ -783,7 +774,7 @@ export function ClientCommercialDetails({
             {readOnly && (
               <p className={styles.previewHint}>
                 Staff preview: you can explore, but only the customer can save
-                details or send requests here.
+                details, send agreement notes, or sign here.
               </p>
             )}
             {nextVisit && (
@@ -798,7 +789,7 @@ export function ClientCommercialDetails({
             )}
             {onViewSchedule ? (
               <button className={styles.visitLink} onClick={onViewSchedule}>
-                View schedule & requests <ArrowUpRight size={15} />
+                View schedule <ArrowUpRight size={15} />
               </button>
             ) : (
               <a className={styles.visitLink} href="#commercial-visits">
@@ -839,7 +830,7 @@ export function ClientCommercialDetails({
               currentAgreement?.status === 'signed'
                 ? 'Signed · View your saved terms'
                 : needsReview
-                  ? 'Ready · Review, request changes, or sign'
+                  ? 'Ready · Review, send a note, or sign'
                   : 'Being prepared · Nothing to sign yet',
               currentAgreement
                 ? `commercial-agreement-${currentAgreement.id}`
@@ -847,14 +838,14 @@ export function ClientCommercialDetails({
             ],
             [
               '02',
-              'Request a service',
-              'Choose a service, frequency, and preferred start date',
-              'commercial-care',
+              'Review your services',
+              'See the scope and pricing currently on file',
+              'commercial-agreements',
             ],
             [
               '03',
               'Check your appointments',
-              'See visits and request changes',
+              'See your confirmed service dates',
               'commercial-visits',
             ],
           ].map(([n, title, detail, target]) => (
@@ -878,22 +869,16 @@ export function ClientCommercialDetails({
               <p className={`${styles.eyebrow} ${styles.overline}`}>
                 01 / The care of your space
               </p>
-              <h2 className={styles.sectionTitle}>
-                Choose the service you need.
-              </h2>
+              <h2 className={styles.sectionTitle}>Commercial services.</h2>
               <p className={styles.sub}>
                 {currentAgreement
-                  ? 'Services listed in your agreement and additional options. Check the agreement status before treating its pricing as accepted. Additional services are quoted separately.'
+                  ? 'Your agreement controls the services, frequency, and pricing currently approved for your business. Other capabilities are shown for reference.'
                   : 'Explore our commercial services. Your tailored scope and pricing will appear once your agreement is ready.'}
               </p>
               <p className={styles.instructions}>
-                {readOnly
-                  ? 'Try “Request this service” to explore the request form. Choose how often you need cleaning and your preferred start date.'
-                  : 'Click “Request this service,” choose how often you need cleaning and your preferred start date, then send your request.'}{' '}
-                A request is not a confirmed appointment. We’ll confirm
-                availability and pricing before scheduling. Each service can
-                have its own frequency—for example, monthly carpet care and
-                quarterly upholstery cleaning.
+                Call or text Sasquatch for additional work or schedule changes.
+                We’ll send updated scope and pricing here for review and
+                signature when needed.
               </p>
             </div>
           </div>
@@ -921,24 +906,15 @@ export function ClientCommercialDetails({
                       {service.frequency && <span>{service.frequency}</span>}
                     </div>
                   </div>
-                  {onRequestService && (!readOnly || previewServiceRequests) ? (
-                    <button
-                      className={styles.serviceAction}
-                      onClick={() => onRequestService(service.name)}
-                    >
-                      Request this service <ArrowUpRight size={15} />
-                    </button>
-                  ) : (
-                    <a
-                      className={styles.serviceAction}
-                      href="#commercial-agreements"
-                    >
-                      {currentAgreement
-                        ? 'View agreement details'
-                        : 'About your agreement'}
-                      <ArrowUpRight size={15} />
-                    </a>
-                  )}
+                  <a
+                    className={styles.serviceAction}
+                    href="#commercial-agreements"
+                  >
+                    {currentAgreement
+                      ? 'View agreement details'
+                      : 'About your agreement'}
+                    <ArrowUpRight size={15} />
+                  </a>
                 </article>
               )
             })}
@@ -954,8 +930,9 @@ export function ClientCommercialDetails({
                 <h2 className={styles.sectionTitle}>Your service agreement.</h2>
                 <p className={styles.sub}>
                   Open your agreement and review the services, prices, and
-                  terms. Want something changed? Use “Request changes” inside
-                  the agreement. Only sign when everything looks right.
+                  terms. Have a question or want something changed? Send Charles
+                  a note inside the agreement. Only sign when everything looks
+                  right.
                 </p>
               </div>
             </div>
@@ -971,8 +948,8 @@ export function ClientCommercialDetails({
                   <h3>No agreement to sign yet.</h3>
                   <p className={styles.sub}>
                     We’re preparing your service agreement. Once published, you
-                    can review the full scope, request changes, download a copy,
-                    and sign when everything looks right.
+                    can review the full scope, send Charles a note, download a
+                    copy, and sign when everything looks right.
                   </p>
                 </div>
               </div>
@@ -994,7 +971,7 @@ export function ClientCommercialDetails({
                     <small>
                       Version {a.version} ·{' '}
                       {a.status === 'published'
-                        ? 'Review · Request changes · Sign'
+                        ? 'Review · Send a note · Sign'
                         : a.status === 'signed'
                           ? 'Signed agreement'
                           : 'Withdrawn · For your records'}
@@ -1005,12 +982,7 @@ export function ClientCommercialDetails({
                 <div className={styles.document}>
                   <AgreementView agreement={a} />
                   {a.status === 'published' && (
-                    <AgreementFeedback
-                      agreement={a}
-                      readOnly={readOnly}
-                      onSubmitted={onRequestSubmitted}
-                      onViewRequests={onViewSchedule}
-                    />
+                    <AgreementFeedback agreement={a} readOnly={readOnly} />
                   )}
                   {a.status === 'published' &&
                     !readOnly &&

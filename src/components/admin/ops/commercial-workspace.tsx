@@ -262,7 +262,7 @@ export function CommercialAccount({ customerId }: { customerId: string }) {
             className="rounded-lg border border-amber-400/30 px-3 py-2 text-sm text-amber-200"
             href="/admin/operations/commercial#client-requests"
           >
-            Client requests
+            Agreement notes
           </Link>
           <Link
             className="rounded-lg border border-white/15 px-3 py-2 text-sm"

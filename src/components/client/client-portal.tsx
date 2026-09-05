@@ -32,8 +32,6 @@ import {
   MapPin,
   Repeat,
   StickyNote,
-  CircleSlash,
-  Send,
   X,
 } from 'lucide-react'
 
@@ -72,14 +70,6 @@ function isoToDate(iso: string) {
   return new Date(y, m - 1, d)
 }
 
-const REQUEST_TYPES = [
-  { value: 'skip_visit', label: 'Request cancellation of a visit' },
-  { value: 'reschedule', label: 'Reschedule a visit' },
-  { value: 'add_visit', label: 'Request cleaning — one-time or repeating' },
-  { value: 'scope_change', label: 'Change cleaning scope' },
-  { value: 'other', label: 'Other request' },
-] as const
-
 export function ClientPortal({
   businessName,
   managerName,
@@ -90,12 +80,6 @@ export function ClientPortal({
 }: Props) {
   const [data, setData] = useState<ClientPortalData>(initialData)
   const [tab, setTab] = useState<'schedule' | 'business'>('business')
-  const [serviceRequest, setServiceRequest] = useState<{
-    service: string
-    key: number
-    appointmentId?: string
-    requestType?: string
-  } | null>(null)
   const [refreshError, setRefreshError] = useState('')
   const [refreshing, setRefreshing] = useState(false)
   const today = todayStr()
@@ -168,23 +152,6 @@ export function ClientPortal({
     setViewMonth(d.getMonth())
   }
 
-  const pendingCount = data.requests.filter(
-    (r) => r.status === 'pending',
-  ).length
-  function openRequest(
-    service: string,
-    appointmentId?: string,
-    requestType = 'add_visit',
-  ) {
-    setServiceRequest({ service, appointmentId, requestType, key: Date.now() })
-    setTab('schedule')
-    requestAnimationFrame(() =>
-      document
-        .getElementById('client-service-request')
-        ?.scrollIntoView({ behavior: 'instant', block: 'start' }),
-    )
-  }
-
   return (
     <div className="space-y-6 text-slate-100">
       {showPasswordGate && (
@@ -217,7 +184,7 @@ export function ClientPortal({
           aria-pressed={tab === 'schedule'}
           onClick={() => setTab('schedule')}
         >
-          Schedule & requests
+          Schedule
         </Button>
         <Button
           variant={tab === 'business' ? 'default' : 'outline'}
@@ -232,44 +199,34 @@ export function ClientPortal({
           initialData={initialCommercialData}
           canSign={canSign}
           schedule={data}
-          onRequestSubmitted={refresh}
           onViewSchedule={() => setTab('schedule')}
-          onRequestService={(service) => {
-            setServiceRequest({ service, key: Date.now() })
-            setTab('schedule')
-            requestAnimationFrame(() =>
-              document
-                .getElementById('client-service-request')
-                ?.scrollIntoView({
-                  behavior: window.matchMedia(
-                    '(prefers-reduced-motion: reduce)',
-                  ).matches
-                    ? 'instant'
-                    : 'smooth',
-                  block: 'start',
-                }),
-            )
-          }}
         />
       </div>
       <div className="space-y-6" hidden={tab !== 'schedule'}>
         <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-4 text-sm">
           <p>
-            After you request cleaning, Charles reviews the service, frequency,
-            pricing, and available dates. Check “My requests” below for his
-            reply. Confirmed visits appear on this calendar once scheduled.
+            Confirmed visits appear on this calendar. For additional work,
+            cancellations, or rescheduling, call or text Sasquatch directly.
           </p>
           <p className="mt-2 text-slate-400">
-            For cancellations or rescheduling, please give at least 24 hours’
-            notice.
+            Please give at least 24 hours’ notice for cancellations or
+            rescheduling.
           </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button asChild variant="outline">
+              <a href="tel:7192498791">Call (719) 249-8791</a>
+            </Button>
+            <Button asChild variant="outline">
+              <a href="sms:7192498791">Text Sasquatch</a>
+            </Button>
+          </div>
           <Button
             className="mt-3"
             variant="outline"
             disabled={refreshing}
             onClick={() => void refresh()}
           >
-            {refreshing ? 'Refreshing…' : 'Refresh appointments & replies'}
+            {refreshing ? 'Refreshing…' : 'Refresh appointments'}
           </Button>
           {refreshError && (
             <p role="alert" className="mt-2 text-red-300">
@@ -459,110 +416,14 @@ export function ClientPortal({
                     appt={a}
                     isPast={a.appointment_date < today}
                     onChanged={refresh}
-                    onRequestCancellation={
-                      initialCommercialData.agreements.some(
-                        (a) => a.status === 'signed',
-                      )
-                        ? () => openRequest('', a.id, 'skip_visit')
-                        : undefined
-                    }
                   />
                 ))}
               </div>
             )}
           </Card>
         </div>
-
-        {/* Request a change */}
-        <div id="client-service-request" className="scroll-mt-6">
-          <RequestForm
-            key={serviceRequest?.key ?? 'default'}
-            initialService={serviceRequest?.service}
-            initialAppointmentId={serviceRequest?.appointmentId}
-            initialRequestType={serviceRequest?.requestType}
-            appointments={data.appointments}
-            onSubmitted={refresh}
-          />
-        </div>
-
-        {/* My requests */}
-        <Card className="border-white/10 bg-white/5 p-5 backdrop-blur">
-          <h2 className="mb-3 text-lg font-semibold">
-            My requests{' '}
-            {pendingCount > 0 && (
-              <span className="text-sm font-normal text-amber-300">
-                ({pendingCount} pending)
-              </span>
-            )}
-          </h2>
-          {data.requests.length === 0 ? (
-            <p className="text-sm text-slate-400">No requests yet.</p>
-          ) : (
-            <div className="space-y-2">
-              {data.requests.map((r) => (
-                <div
-                  key={r.id}
-                  className="flex items-start justify-between gap-3 rounded-lg border border-white/10 bg-black/20 p-3 text-sm"
-                >
-                  <div>
-                    <p className="font-medium capitalize">
-                      {r.details.agreement_id
-                        ? 'Agreement changes'
-                        : REQUEST_TYPES.find(
-                            (type) => type.value === r.request_type,
-                          )?.label || r.request_type.replaceAll('_', ' ')}
-                    </p>
-                    {r.message && <p className="text-slate-400">{r.message}</p>}
-                    {Object.entries(r.details)
-                      .filter(
-                        ([k, v]) =>
-                          k !== 'agreement_id' && typeof v === 'string' && v,
-                      )
-                      .map(([k, v]) => (
-                        <p key={k} className="text-xs text-slate-400">
-                          {k.replaceAll('_', ' ')}: {String(v)}
-                        </p>
-                      ))}
-                    {r.admin_notes && (
-                      <p className="mt-1 text-xs text-emerald-300">
-                        Reply: {r.admin_notes}
-                      </p>
-                    )}
-                    <p className="mt-1 text-xs text-slate-500">
-                      {new Date(r.created_at).toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                        hour: 'numeric',
-                        minute: '2-digit',
-                      })}
-                    </p>
-                  </div>
-                  <StatusBadge status={r.status} />
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
       </div>
     </div>
-  )
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    pending: 'bg-amber-500/15 text-amber-300',
-    approved: 'bg-emerald-500/15 text-emerald-300',
-    declined: 'bg-red-500/15 text-red-300',
-    done: 'bg-slate-500/15 text-slate-300',
-  }
-  return (
-    <Badge variant="secondary" className={map[status] ?? 'bg-white/10'}>
-      {status === 'approved'
-        ? 'Approved · awaiting update'
-        : status === 'done'
-          ? 'Applied'
-          : status}
-    </Badge>
   )
 }
 
@@ -570,12 +431,10 @@ function VisitCard({
   appt,
   isPast,
   onChanged,
-  onRequestCancellation,
 }: {
   appt: ClientAppointment
   isPast: boolean
   onChanged: () => void
-  onRequestCancellation?: () => void
 }) {
   const [note, setNote] = useState(appt.client_note ?? '')
   const [editingNote, setEditingNote] = useState(false)
@@ -597,29 +456,6 @@ function VisitCard({
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed')
     } finally {
-      setBusy(null)
-    }
-  }
-
-  async function skip() {
-    const reason = window.prompt(
-      'Skip this visit? Optionally add a reason (e.g. building closed):',
-      '',
-    )
-    if (reason === null) return // cancelled the prompt
-    setBusy('skip')
-    setError(null)
-    try {
-      const res = await fetch(`/api/client/visits/${appt.id}/skip`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason }),
-      })
-      const d = (await res.json()) as { error?: string }
-      if (!res.ok) throw new Error(d.error || 'Failed to skip visit')
-      onChanged()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed')
       setBusy(null)
     }
   }
@@ -757,408 +593,10 @@ function VisitCard({
               {appt.client_note ? 'Edit note' : 'Add note'}
             </Button>
           )}
-          <Button
-            size="sm"
-            variant="outline"
-            className="border-red-500/30 bg-transparent text-red-300 hover:bg-red-500/10"
-            onClick={onRequestCancellation || skip}
-            disabled={busy === 'skip'}
-          >
-            {busy === 'skip' ? (
-              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <CircleSlash className="mr-1 h-3.5 w-3.5" />
-            )}
-            {onRequestCancellation ? 'Request cancellation' : 'Skip this visit'}
-          </Button>
         </div>
       )}
       {error && <p className="mt-2 text-xs text-red-300">{error}</p>}
     </div>
-  )
-}
-
-export function RequestForm({
-  appointments,
-  onSubmitted,
-  initialService,
-  preview = false,
-  initialAppointmentId,
-  initialRequestType,
-  onPreviewSubmitted,
-}: {
-  appointments: ClientAppointment[]
-  onSubmitted?: () => void
-  initialService?: string
-  preview?: boolean
-  initialAppointmentId?: string
-  initialRequestType?: string
-  onPreviewSubmitted?: (request: {
-    request_type: string
-    message: string
-    details: Record<string, string>
-    appointment_id: string | null
-  }) => void
-}) {
-  const [open, setOpen] = useState(!!initialService || !!initialAppointmentId)
-  const [type, setType] = useState<string>(
-    initialRequestType || (initialService ? 'add_visit' : 'reschedule'),
-  )
-  const [apptId, setApptId] = useState<string>(initialAppointmentId || '')
-  const [message, setMessage] = useState('')
-  const [frequencyChoice, setFrequencyChoice] = useState('One-time')
-  const [details, setDetails] = useState({
-    service: initialService || '',
-    area: '',
-    frequency: 'One-time',
-    preferred_date: '',
-    preferred_time: '',
-  })
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [done, setDone] = useState(false)
-
-  const today = todayStr()
-  const upcoming = appointments.filter(
-    (a) =>
-      a.appointment_date >= today &&
-      !['cancelled', 'completed'].includes(a.status),
-  )
-
-  async function submit() {
-    if (type === 'add_visit' && !details.service.trim()) {
-      setError('Choose or describe the service you need.')
-      return
-    }
-    if (type === 'add_visit' && !details.frequency.trim()) {
-      setError('Describe your preferred frequency or season.')
-      return
-    }
-    if (!message.trim() && type !== 'add_visit') {
-      setError('Please describe what you need.')
-      return
-    }
-    if (preview) {
-      try {
-        onPreviewSubmitted?.({
-          request_type: type,
-          message:
-            message.trim() ||
-            `Please arrange ${details.service} (${details.frequency}).`,
-          details: { ...details },
-          appointment_id: apptId || null,
-        })
-        setError(null)
-        setDone(true)
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'Could not save test record.')
-      }
-      return
-    }
-    setBusy(true)
-    setError(null)
-    try {
-      const res = await fetch('/api/client/requests', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          request_type: type,
-          message:
-            message.trim() ||
-            `Please arrange ${details.service} (${details.frequency}).`,
-          details,
-          appointment_id: apptId || undefined,
-        }),
-      })
-      const d = (await res.json()) as { error?: string }
-      if (!res.ok) throw new Error(d.error || 'Failed to submit')
-      setDone(true)
-      setMessage('')
-      setDetails({
-        service: '',
-        area: '',
-        frequency: 'One-time',
-        preferred_date: '',
-        preferred_time: '',
-      })
-      setApptId('')
-      setFrequencyChoice('One-time')
-      onSubmitted?.()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <Card className="border-white/10 bg-white/5 p-5 backdrop-blur">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold">
-            {initialService ? 'Request a service' : 'Request a change'}
-          </h2>
-          <p className="text-sm text-slate-400">
-            {preview
-              ? onPreviewSubmitted
-                ? 'Submit to create a labeled browser-only test record. No real request, appointment, or notification will be created.'
-                : 'Test the customer form here. Nothing entered in this preview will be saved or sent.'
-              : "Reschedules, extra visits, and scope changes go to Charles for approval — they won't change your schedule until he confirms."}
-          </p>
-        </div>
-        {!open && (
-          <Button
-            onClick={() => {
-              setOpen(true)
-              setDone(false)
-            }}
-          >
-            <Send className="mr-1.5 h-4 w-4" />
-            New request
-          </Button>
-        )}
-      </div>
-
-      {open && (
-        <div className="mt-4 space-y-3">
-          <div>
-            <Label htmlFor="client-request-type" className="text-slate-300">
-              Type of request
-            </Label>
-            <select
-              id="client-request-type"
-              value={type}
-              onChange={(e) => {
-                setType(e.target.value)
-                setApptId('')
-                setError(null)
-                setDone(false)
-              }}
-              className="mt-1 w-full rounded-md border border-white/15 bg-black/30 px-3 py-2 text-sm"
-            >
-              {REQUEST_TYPES.map((t) => (
-                <option key={t.value} value={t.value} className="bg-slate-900">
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {(type === 'reschedule' ||
-            type === 'scope_change' ||
-            type === 'skip_visit') &&
-            upcoming.length > 0 && (
-              <div>
-                <Label
-                  htmlFor="client-request-visit"
-                  className="text-slate-300"
-                >
-                  Which visit?
-                </Label>
-                <select
-                  id="client-request-visit"
-                  value={apptId}
-                  onChange={(e) => setApptId(e.target.value)}
-                  className="mt-1 w-full rounded-md border border-white/15 bg-black/30 px-3 py-2 text-sm"
-                >
-                  <option value="" className="bg-slate-900">
-                    (optional) select a visit
-                  </option>
-                  {upcoming.map((a) => (
-                    <option key={a.id} value={a.id} className="bg-slate-900">
-                      {isoToDate(a.appointment_date).toLocaleDateString(
-                        'en-US',
-                        {
-                          month: 'short',
-                          day: 'numeric',
-                        },
-                      )}{' '}
-                      · {formatTime(a.start_time)}
-                      {a.template_label ? ` · ${a.template_label}` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-          {type !== 'skip_visit' && (
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Service needed">
-                <Input
-                  list="commercial-service-options"
-                  className={fieldClass}
-                  value={details.service}
-                  onChange={(e) =>
-                    setDetails({ ...details, service: e.target.value })
-                  }
-                />
-                <datalist id="commercial-service-options">
-                  {[
-                    'Carpet — hot water extraction',
-                    'Carpet — low moisture maintenance',
-                    'Tile and grout cleaning',
-                    'Upholstery cleaning',
-                    'Hard-surface auto scrubbing',
-                    'Spot / stain treatment',
-                    'Odor treatment',
-                    'Floor protection',
-                    'Furniture handling',
-                  ].map((s) => (
-                    <option key={s} value={s} />
-                  ))}
-                </datalist>
-              </Field>
-              <Field label="How often do you need this service?">
-                <select
-                  className={`${fieldClass} h-10 w-full rounded-md border px-3`}
-                  value={frequencyChoice}
-                  onChange={(e) => {
-                    setFrequencyChoice(e.target.value)
-                    setDetails({
-                      ...details,
-                      frequency:
-                        e.target.value === 'Custom / seasonal'
-                          ? ''
-                          : e.target.value,
-                    })
-                  }}
-                >
-                  {[
-                    'One-time',
-                    'Weekly',
-                    'Every 2 weeks',
-                    'Monthly',
-                    'Every 3 months',
-                    'Every 6 months',
-                    'Yearly',
-                    'Custom / seasonal',
-                    'Help me choose',
-                  ].map((frequency) => (
-                    <option key={frequency} value={frequency}>
-                      {frequency}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              {frequencyChoice === 'Custom / seasonal' && (
-                <Field label="Describe your frequency or season">
-                  <Input
-                    className={fieldClass}
-                    maxLength={300}
-                    placeholder="Every 6 weeks, October–March; or list specific dates"
-                    value={details.frequency}
-                    onChange={(e) =>
-                      setDetails({ ...details, frequency: e.target.value })
-                    }
-                  />
-                </Field>
-              )}
-              <Field label="Area / approximate measurements">
-                <Input
-                  placeholder="Lobby, dining room, 12 chairs—or ask us to measure"
-                  className={fieldClass}
-                  value={details.area}
-                  onChange={(e) =>
-                    setDetails({ ...details, area: e.target.value })
-                  }
-                />
-              </Field>
-              <div>
-                <Field label="Preferred date">
-                  <Input
-                    type="date"
-                    min={today}
-                    className={fieldClass}
-                    value={details.preferred_date}
-                    onChange={(e) =>
-                      setDetails({ ...details, preferred_date: e.target.value })
-                    }
-                  />
-                </Field>
-                <p className="mt-1 text-xs text-slate-400">
-                  First visit for repeating service. Leave blank if flexible.
-                </p>
-              </div>
-              <Field label="Preferred time / access window">
-                <Input
-                  className={fieldClass}
-                  value={details.preferred_time}
-                  onChange={(e) =>
-                    setDetails({ ...details, preferred_time: e.target.value })
-                  }
-                />
-              </Field>
-            </div>
-          )}
-          <div>
-            <Label htmlFor="client-request-details" className="text-slate-300">
-              Details
-            </Label>
-            <Textarea
-              id="client-request-details"
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder={
-                type === 'add_visit'
-                  ? 'Optional: preferred weekdays, areas to focus on, or questions…'
-                  : 'Tell Charles what you would like changed…'
-              }
-              className="mt-1 border-white/15 bg-black/30 text-sm"
-              rows={3}
-            />
-          </div>
-
-          {type === 'skip_visit' ? (
-            <p className="text-sm text-slate-300">
-              Please give at least 24 hours’ notice. Charles will review your
-              cancellation request; the visit remains scheduled until the
-              cancellation is confirmed.
-            </p>
-          ) : (
-            <p className="rounded-lg border border-white/10 p-3 text-sm text-slate-300">
-              Your request: {details.service || 'Choose a service'} ·{' '}
-              {details.frequency || 'Choose a frequency'} ·{' '}
-              {details.preferred_date || 'Start date flexible'}. We’ll confirm
-              pricing and dates before scheduling. Request each service
-              separately if it needs a different frequency.
-            </p>
-          )}
-          {error && (
-            <p role="alert" className="text-sm text-red-300">
-              {error}
-            </p>
-          )}
-          {done && (
-            <p role="status" className="text-sm text-emerald-300">
-              {preview
-                ? onPreviewSubmitted
-                  ? 'Test record saved in this browser. See the customer receipt and staff review below. Nothing was sent.'
-                  : 'Preview complete. No request was sent.'
-                : 'Request received. Check “My requests” for status and replies. Your appointment is confirmed once it appears on the calendar.'}
-            </p>
-          )}
-
-          <div className="flex gap-2">
-            <Button onClick={submit} disabled={busy || done}>
-              {busy ? (
-                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-              ) : null}
-              {preview ? 'Test request (nothing sent)' : 'Submit request'}
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setOpen(false)
-                setError(null)
-                setDone(false)
-              }}
-            >
-              {done ? 'Close' : 'Cancel'}
-            </Button>
-          </div>
-        </div>
-      )}
-    </Card>
   )
 }
 

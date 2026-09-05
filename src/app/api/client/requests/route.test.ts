@@ -101,10 +101,10 @@ describe('agreement feedback through client requests', () => {
       }),
     )
     expect(mocks.telegram).toHaveBeenCalledWith(
-      expect.stringContaining('Request changes to agreement'),
+      expect.stringContaining('AGREEMENT NOTE'),
     )
     expect(mocks.telegram).toHaveBeenCalledWith(
-      expect.stringContaining('agreement version: 2'),
+      expect.stringContaining('Commercial maintenance · version 2'),
     )
   })
   it('rejects missing or other-customer agreements', async () => {
@@ -134,42 +134,13 @@ describe('agreement feedback through client requests', () => {
     ).toBe(400)
     expect(insert).not.toHaveBeenCalled()
   })
-  it('preserves the existing service request path', async () => {
-    expect(
-      (
-        await POST(
-          request({
-            agreement_id: undefined,
-            request_type: 'add_visit',
-            details: { service: 'Carpet care' },
-          }),
-        )
-      ).status,
-    ).toBe(201)
-    expect(insert).toHaveBeenCalledWith(
-      expect.objectContaining({ details: { service: 'Carpet care' } }),
-    )
-  })
-  it('alerts on additional work with frequency, date, and a direct inbox link', async () => {
+  it('rejects the removed additional-work request path', async () => {
     const res = await POST(
-      request({
-        agreement_id: undefined,
-        request_type: 'add_visit',
-        details: {
-          service: 'Tile & grout',
-          frequency: 'Monthly',
-          preferred_date: '2026-09-15',
-        },
-      }),
+      request({ agreement_id: undefined, request_type: 'add_visit' }),
     )
-    expect((await res.json()).telegram_sent).toBe(true)
-    expect(mocks.telegram).toHaveBeenCalledTimes(1)
-    const text = mocks.telegram.mock.calls[0][0]
-    expect(text).toContain('Additional service / cleaning request')
-    expect(text).toContain('Tile & grout')
-    expect(text).toContain('Monthly')
-    expect(text).toContain('2026-09-15')
-    expect(text).toContain('/commercial#client-request-request-a')
+    expect(res.status).toBe(400)
+    expect(insert).not.toHaveBeenCalled()
+    expect(mocks.telegram).not.toHaveBeenCalled()
   })
   it('retries a failed Telegram delivery without inserting another request', async () => {
     mocks.telegram.mockResolvedValueOnce(false).mockResolvedValueOnce(true)
@@ -192,17 +163,10 @@ describe('agreement feedback through client requests', () => {
     )
     log.mockRestore()
   })
-  it('keeps long requests within Telegram message limits without losing the link', async () => {
+  it('keeps long notes within Telegram message limits without losing the link', async () => {
     await POST(
       request({
-        agreement_id: undefined,
-        request_type: 'add_visit',
         message: 'x'.repeat(2000),
-        details: {
-          service: 's'.repeat(500),
-          area: 'a'.repeat(1000),
-          frequency: 'f'.repeat(300),
-        },
       }),
     )
     const text = mocks.telegram.mock.calls[0][0]

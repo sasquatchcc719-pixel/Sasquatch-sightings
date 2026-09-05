@@ -7,10 +7,6 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Loader2, Inbox } from 'lucide-react'
-import {
-  useCommercialTestRequests,
-  type TestRequest,
-} from './use-commercial-test-requests'
 
 type ClientRequest = {
   id: string
@@ -43,12 +39,6 @@ export function ClientRequestsPanel() {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [notes, setNotes] = useState<Record<string, string>>({})
   const [error, setError] = useState('')
-  const {
-    records: testRecords,
-    error: testError,
-    resolve: resolveTest,
-    clear: clearTests,
-  } = useCommercialTestRequests()
 
   async function load() {
     setLoading(true)
@@ -57,11 +47,11 @@ export function ClientRequestsPanel() {
         cache: 'no-store',
       })
       const d = (await res.json()) as { requests?: ClientRequest[] }
-      if (!res.ok) throw new Error('Unable to load client requests')
+      if (!res.ok) throw new Error('Unable to load agreement notes')
       setRequests(d.requests || [])
       setError('')
     } catch {
-      setError('Unable to load client requests. Refresh to try again.')
+      setError('Unable to load agreement notes. Refresh to try again.')
     } finally {
       setLoading(false)
     }
@@ -86,10 +76,10 @@ export function ClientRequestsPanel() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status, admin_notes: notes[id] || undefined }),
       })
-      if (!response.ok) throw new Error('Unable to update request')
+      if (!response.ok) throw new Error('Unable to update note')
       await load()
     } catch {
-      setError('Request was not updated. Please try again.')
+      setError('The note was not updated. Please try again.')
     } finally {
       setBusyId(null)
     }
@@ -120,7 +110,7 @@ export function ClientRequestsPanel() {
       )}
       <div className="mb-3 flex items-center gap-2">
         <Inbox className="h-4 w-4 text-amber-500" />
-        <h2 className="text-lg font-semibold">Client requests</h2>
+        <h2 className="text-lg font-semibold">Agreement notes</h2>
         {pending.length > 0 && (
           <Badge className="bg-amber-500 text-black">
             {pending.length} need action
@@ -133,53 +123,20 @@ export function ClientRequestsPanel() {
           disabled={loading}
           onClick={() => void load()}
         >
-          Refresh requests
+          Refresh notes
         </Button>
       </div>
       <p className="text-muted-foreground mb-3 text-sm">
-        Customer requests for extra work, schedule changes, and agreement
-        revisions appear here. Real submissions trigger a Telegram alert. Staff
-        test-drive records are browser-only and never enter production.
+        Notes customers send while reviewing an agreement appear here and
+        trigger a Telegram alert. Historical requests remain visible below.
       </p>
-      {testError && (
-        <p role="alert" className="mb-3 text-sm text-red-300">
-          {testError}
-        </p>
-      )}
-
-      {testRecords.length > 0 && (
-        <div className="mb-4 rounded-lg border border-amber-200/25 bg-amber-200/5 p-3">
-          <div className="mb-2 flex flex-wrap items-center gap-2">
-            <Badge className="bg-amber-200 text-slate-950">Browser tests</Badge>
-            <span className="text-xs text-amber-50/75">
-              Visible only in this browser; never sent to the production API.
-            </span>
-            <button
-              className="ml-auto text-xs text-amber-100 underline"
-              type="button"
-              onClick={() => clearTests()}
-            >
-              Clear tests
-            </button>
-          </div>
-          <div className="space-y-2">
-            {testRecords.map((record) => (
-              <TestRequestRow
-                key={record.id}
-                record={record}
-                onResolve={resolveTest}
-              />
-            ))}
-          </div>
-        </div>
-      )}
 
       {loading ? (
         <p className="text-muted-foreground text-sm">Loading…</p>
       ) : (
         <div className="space-y-3">
           {requests.length === 0 && !error && (
-            <p className="text-sm">No customer requests yet.</p>
+            <p className="text-sm">No agreement notes yet.</p>
           )}
           {pending.map((r) => (
             <div
@@ -190,7 +147,7 @@ export function ClientRequestsPanel() {
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="secondary">
                   {r.details.agreement_id
-                    ? 'Agreement changes'
+                    ? 'Agreement note'
                     : (TYPE_LABEL[r.request_type] ?? r.request_type)}
                 </Badge>
                 <span className="text-sm font-medium">{customerName(r)}</span>
@@ -233,7 +190,7 @@ export function ClientRequestsPanel() {
                 ))}
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <Input
-                  placeholder="Optional reply to client…"
+                  placeholder="Optional internal response note…"
                   value={notes[r.id] ?? ''}
                   onChange={(e) =>
                     setNotes((n) => ({ ...n, [r.id]: e.target.value }))
@@ -250,7 +207,13 @@ export function ClientRequestsPanel() {
                   {busyId === r.id ? (
                     <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
                   ) : null}
-                  {r.status === 'approved' ? 'Mark applied' : 'Approve request'}
+                  {r.details.agreement_id
+                    ? r.status === 'approved'
+                      ? 'Mark resolved'
+                      : 'Acknowledge note'
+                    : r.status === 'approved'
+                      ? 'Mark applied'
+                      : 'Approve request'}
                 </Button>
                 <Button
                   size="sm"
@@ -258,7 +221,7 @@ export function ClientRequestsPanel() {
                   disabled={busyId === r.id}
                   onClick={() => resolve(r.id, 'declined')}
                 >
-                  Decline
+                  {r.details.agreement_id ? 'No change needed' : 'Decline'}
                 </Button>
               </div>
               {r.appointment_id && (
@@ -279,7 +242,7 @@ export function ClientRequestsPanel() {
               )}
               <p className="text-muted-foreground mt-2 text-xs">
                 {r.details.agreement_id
-                  ? 'Approval records your decision; it does not change the contract. Withdraw the unsigned version, create and publish the revision, then mark this request applied. The customer reviews and signs the updated version.'
+                  ? 'Acknowledging records that you reviewed the note; it does not change the agreement. If needed, withdraw the unsigned version, publish the revision, and then mark the note resolved.'
                   : r.status === 'approved'
                     ? 'Approved, awaiting the actual change. Update the visit or service plan, then mark this request applied.'
                     : 'Approval records your decision. Apply the schedule change with Operations, then mark it applied.'}
@@ -297,7 +260,7 @@ export function ClientRequestsPanel() {
                   <div key={r.id} className="flex items-center gap-2 text-sm">
                     <Badge variant="outline" className="text-xs">
                       {r.details.agreement_id
-                        ? 'Agreement changes'
+                        ? 'Agreement note'
                         : (TYPE_LABEL[r.request_type] ?? r.request_type)}
                     </Badge>
                     <span className="text-muted-foreground">
@@ -327,60 +290,5 @@ export function ClientRequestsPanel() {
         </div>
       )}
     </Card>
-  )
-}
-
-function TestRequestRow({
-  record,
-  onResolve,
-}: {
-  record: TestRequest
-  onResolve: (id: string, status: TestRequest['status'], notes?: string) => void
-}) {
-  return (
-    <div className="rounded-lg border border-amber-200/20 bg-slate-950/40 p-3">
-      <div className="flex flex-wrap items-center gap-2 text-sm">
-        <Badge variant="outline" className="border-amber-200/40 text-amber-100">
-          TEST · {record.request_type.replaceAll('_', ' ')}
-        </Badge>
-        <span className="font-medium">{record.business_name}</span>
-        <span className="text-muted-foreground ml-auto text-xs">
-          {record.status}
-        </span>
-      </div>
-      <p className="mt-2 text-sm">{record.message}</p>
-      {Object.entries(record.details)
-        .filter(([, value]) => value)
-        .map(([key, value]) => (
-          <p key={key} className="text-muted-foreground mt-1 text-xs">
-            {key.replaceAll('_', ' ')}: {value}
-          </p>
-        ))}
-      {record.admin_notes && (
-        <p className="mt-1 text-xs text-emerald-300">
-          Reply: {record.admin_notes}
-        </p>
-      )}
-      {record.status === 'pending' && (
-        <button
-          className="mt-2 rounded-md border border-amber-200/30 px-2 py-1 text-xs text-amber-100"
-          type="button"
-          onClick={() =>
-            onResolve(
-              record.id,
-              'approved',
-              'Approved in the staff test drive. Awaiting scheduling.',
-            )
-          }
-        >
-          Approve test request
-        </button>
-      )}
-      {record.status === 'approved' && (
-        <p className="mt-1 text-xs text-amber-50/70">
-          Approved — awaiting scheduling.
-        </p>
-      )}
-    </div>
   )
 }

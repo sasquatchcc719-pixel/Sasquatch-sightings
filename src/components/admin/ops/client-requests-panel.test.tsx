@@ -21,7 +21,7 @@ function stubStorage() {
   })
 }
 
-it('keeps an empty request inbox visible and refreshes into an actionable request', async () => {
+it('keeps an empty note inbox visible and refreshes into an actionable note', async () => {
   stubStorage()
   const fetch = vi
     .fn()
@@ -33,10 +33,10 @@ it('keeps an empty request inbox visible and refreshes into an actionable reques
           {
             id: 'request-a',
             customer_id: 'customer-a',
-            request_type: 'add_visit',
+            request_type: 'scope_change',
             status: 'pending',
-            message: 'Please clean our tile monthly',
-            details: { service: 'Tile & grout', frequency: 'Monthly' },
+            message: 'Please change carpet cleaning to quarterly',
+            details: { agreement_id: 'agreement-a', agreement_version: '2' },
             created_at: '2026-09-05T04:00:00Z',
             ops_customers: { business_name: 'Example Business' },
           },
@@ -45,9 +45,11 @@ it('keeps an empty request inbox visible and refreshes into an actionable reques
     })
   vi.stubGlobal('fetch', fetch)
   render(<ClientRequestsPanel />)
-  expect(await screen.findByText('No customer requests yet.')).toBeTruthy()
-  fireEvent.click(screen.getByRole('button', { name: 'Refresh requests' }))
-  expect(await screen.findByText('Please clean our tile monthly')).toBeTruthy()
+  expect(await screen.findByText('No agreement notes yet.')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh notes' }))
+  expect(
+    await screen.findByText('Please change carpet cleaning to quarterly'),
+  ).toBeTruthy()
   expect(
     screen
       .getByRole('link', { name: 'Open customer account →' })
@@ -65,7 +67,7 @@ it('clears a fetch error after a successful refresh', async () => {
   vi.stubGlobal('fetch', fetch)
   render(<ClientRequestsPanel />)
   expect(await screen.findByRole('alert')).toBeTruthy()
-  fireEvent.click(screen.getByRole('button', { name: 'Refresh requests' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh notes' }))
   await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
-  expect(screen.getByText('No customer requests yet.')).toBeTruthy()
+  expect(screen.getByText('No agreement notes yet.')).toBeTruthy()
 })

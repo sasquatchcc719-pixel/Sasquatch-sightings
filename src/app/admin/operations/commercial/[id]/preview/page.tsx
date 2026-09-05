@@ -24,11 +24,7 @@ export default async function Page({
       >
         ← Back to account
       </Link>
-      <CommercialClientPreview
-        commercial={commercial}
-        schedule={schedule}
-        customerId={id}
-      />
+      <CommercialClientPreview commercial={commercial} schedule={schedule} />
     </div>
   )
 }
