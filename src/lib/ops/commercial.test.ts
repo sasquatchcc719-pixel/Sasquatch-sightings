@@ -14,6 +14,16 @@ import { agreementHash } from './commercial-server'
 import { commercialDocument } from './commercial-document'
 
 describe('commercial agreement integrity', () => {
+  it('requests 24 hours notice in new drafts without adding fees or penalties', () => {
+    const content = newAgreementContent('Example Business')
+    expect(content.cancellation_terms).toContain(
+      'We request at least 24 hours’ notice',
+    )
+    expect(content.cancellation_terms).not.toMatch(/fee|penalt/i)
+    expect(publicationIssues({ ...content, cancellation_terms: '' })).toContain(
+      'Confirm cancellation and rescheduling terms.',
+    )
+  })
   it('preserves the actual Saltgrass arithmetic and keeps optional maintenance out of the initial total', () => {
     const c = newAgreementContent('Saltgrass')
     c.lines = [

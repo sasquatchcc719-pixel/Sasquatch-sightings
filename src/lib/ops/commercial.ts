@@ -185,7 +185,8 @@ export function newAgreementContent(businessName: string): AgreementContent {
     effective_until: '',
     provider_name: '',
     payment_terms: '',
-    cancellation_terms: '',
+    cancellation_terms:
+      'We request at least 24 hours’ notice for cancellations or rescheduling. If plans change on shorter notice, please contact Sasquatch as soon as possible. New appointment times are subject to availability and confirmation.',
     access_terms:
       'The client will provide agreed access, notify the on-site team, and identify restricted areas and known floor conditions before service. Furniture handling is included only where listed in the service scope. The crew will communicate drying and safe re-entry instructions before leaving.',
     quality_standards:
