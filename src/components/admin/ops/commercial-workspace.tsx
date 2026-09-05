@@ -213,8 +213,13 @@ export function CommercialAccount({ customerId }: { customerId: string }) {
   const [estimateId, setEstimateId] = useState('')
   const base = `/api/admin/ops/commercial/${customerId}`
   const load = useCallback(async () => {
-    const next = await commercialFetch(base)
+    const next = (await commercialFetch(base)) as AccountData
     setData(next)
+    setSelected((current) =>
+      current && next.agreements.some((item) => item.id === current)
+        ? current
+        : next.agreements[0]?.id || '',
+    )
   }, [base])
   useEffect(() => {
     void load().catch((e) => setError(e.message))
@@ -247,6 +252,42 @@ export function CommercialAccount({ customerId }: { customerId: string }) {
   const acceptedEstimates = data.estimates.filter(
     (estimate) => estimate.estimate_status === 'accepted',
   )
+  const signedRecurringAgreement = data.agreements.find(
+    (item) =>
+      item.status === 'signed' &&
+      item.content.lines.some((line) => line.phase === 'recurring'),
+  )
+  const pendingRecurringAgreement = data.agreements.find(
+    (item) =>
+      ['draft', 'published'].includes(item.status) &&
+      item.content.lines.some((line) => line.phase === 'recurring'),
+  )
+  const recurringAgreement =
+    signedRecurringAgreement ||
+    pendingRecurringAgreement ||
+    data.agreements.find((item) => item.status === 'signed') ||
+    data.agreements[0]
+  const recurringLineCount =
+    recurringAgreement?.content.lines.filter(
+      (line) => line.phase === 'recurring',
+    ).length || 0
+  const recurringPlanCount = signedRecurringAgreement
+    ? data.plans.filter(
+        (plan) => plan.commercial_agreement_id === signedRecurringAgreement.id,
+      ).length
+    : 0
+  function openRecurringWorkflow() {
+    if (recurringAgreement) setSelected(recurringAgreement.id)
+    window.setTimeout(() => {
+      document
+        .getElementById(
+          signedRecurringAgreement
+            ? 'recurring-schedule-builder'
+            : 'agreement-workflow',
+        )
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 0)
+  }
   return (
     <div className="space-y-5 text-slate-100">
       <Link
@@ -326,53 +367,143 @@ export function CommercialAccount({ customerId }: { customerId: string }) {
           </div>
         ))}
       </div>
-      {acceptedEstimates.length > 0 && (
-        <section className="rounded-2xl border border-emerald-400/35 bg-emerald-500/10 p-5 text-slate-100 shadow-sm">
-          <div className="flex items-start gap-3">
-            <CheckCircle2 className="mt-0.5 h-6 w-6 shrink-0 text-emerald-300" />
-            <div>
-              <h3 className="text-lg font-semibold">
-                Customer-approved work is ready to schedule
-              </h3>
-              <p className="mt-1 text-sm text-slate-300">
-                The emailed estimate approval is already recorded. Choose a
-                service date and time below; the estimate line items transfer
-                automatically. This schedules the approved initial work but does
-                not replace the customer signature required for recurring
-                agreement terms.
-              </p>
+      <section
+        aria-labelledby="scheduling-center-heading"
+        className="overflow-hidden rounded-2xl border border-cyan-300/20 bg-gradient-to-br from-slate-900 via-slate-900 to-cyan-950/60 shadow-lg shadow-cyan-950/20"
+      >
+        <div className="border-b border-white/10 px-5 py-4">
+          <p className="text-xs font-semibold tracking-[0.18em] text-cyan-300 uppercase">
+            Scheduling center
+          </p>
+          <h3 id="scheduling-center-heading" className="mt-1 text-xl font-bold">
+            What are you scheduling?
+          </h3>
+          <p className="mt-1 text-sm text-slate-400">
+            Choose one visit from an accepted estimate or build an ongoing plan
+            from signed recurring terms.
+          </p>
+        </div>
+        <div className="grid gap-px bg-white/10 md:grid-cols-2">
+          <div className="bg-slate-950/70 p-5">
+            <div className="flex items-start gap-3">
+              <span className="rounded-xl bg-emerald-400/10 p-2 text-emerald-300">
+                <CalendarDays className="h-5 w-5" />
+              </span>
+              <div>
+                <h4 className="font-semibold">Schedule a single visit</h4>
+                <p className="mt-1 text-sm text-slate-400">
+                  Creates one service appointment and copies the approved
+                  estimate line items and measurements.
+                </p>
+              </div>
             </div>
-          </div>
-          <div className="mt-4 space-y-2">
-            {acceptedEstimates.map((estimate) => (
-              <div
-                key={estimate.id}
-                className="flex flex-wrap items-center gap-3 rounded-xl border border-emerald-300/20 bg-slate-950/35 p-3"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium">
+            <div className="mt-4 space-y-2">
+              {acceptedEstimates.map((estimate) => (
+                <div
+                  key={estimate.id}
+                  className="rounded-xl border border-emerald-300/20 bg-emerald-500/5 p-3"
+                >
+                  <p className="flex items-center gap-2 font-medium">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-300" />
                     Accepted estimate · {formatMoney(estimate.quoted_total)}
                   </p>
-                  <p className="text-xs text-slate-400">
+                  <p className="mt-1 text-xs text-slate-400">
                     Estimate visit {estimate.appointment_date}
                   </p>
-                </div>
-                <Button
-                  asChild
-                  className="bg-emerald-500 text-emerald-950 hover:bg-emerald-400"
-                >
-                  <Link
-                    href={`/admin/operations/estimates/${estimate.id}?schedule=1`}
+                  <Button
+                    asChild
+                    className="mt-3 w-full bg-emerald-500 text-emerald-950 hover:bg-emerald-400"
                   >
-                    <CalendarDays className="mr-1 h-4 w-4" />
-                    Schedule approved work
+                    <Link
+                      href={`/admin/operations/estimates/${estimate.id}?schedule=1`}
+                    >
+                      Schedule one-time visit
+                    </Link>
+                  </Button>
+                </div>
+              ))}
+              {acceptedEstimates.length === 0 && (
+                <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm text-slate-400">
+                  <p>No accepted estimate is waiting to be scheduled.</p>
+                  <Link
+                    className="mt-2 inline-block text-cyan-300"
+                    href="/admin/operations/estimates"
+                  >
+                    Open estimates →
                   </Link>
-                </Button>
-              </div>
-            ))}
+                </div>
+              )}
+            </div>
           </div>
-        </section>
-      )}
+          <div className="bg-slate-950/70 p-5">
+            <div className="flex items-start gap-3">
+              <span className="rounded-xl bg-cyan-400/10 p-2 text-cyan-300">
+                <FileCheck2 className="h-5 w-5" />
+              </span>
+              <div>
+                <h4 className="font-semibold">Schedule recurring visits</h4>
+                <p className="mt-1 text-sm text-slate-400">
+                  Creates an ongoing service plan, previews its dates, and then
+                  sends generated visits into Recurring Work.
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 rounded-xl border border-cyan-300/20 bg-cyan-500/5 p-3">
+              {signedRecurringAgreement ? (
+                <>
+                  <p className="font-medium text-cyan-100">
+                    Ready · {recurringLineCount} recurring service
+                    {recurringLineCount === 1 ? '' : 's'} approved
+                  </p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    {recurringPlanCount > 0
+                      ? `${recurringPlanCount} plan${recurringPlanCount === 1 ? '' : 's'} already created. You can add another for a different frequency or service window.`
+                      : 'Choose the frequency, first date, service time, and monthly billing below.'}
+                  </p>
+                  <Button
+                    className="mt-3 w-full"
+                    onClick={openRecurringWorkflow}
+                  >
+                    {recurringPlanCount > 0
+                      ? 'Add another recurring plan'
+                      : 'Build recurring schedule'}
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <p className="font-medium text-amber-200">
+                    {recurringAgreement?.status === 'published'
+                      ? 'Customer signature required'
+                      : recurringAgreement?.status === 'draft'
+                        ? 'Recurring agreement must be finished'
+                        : recurringAgreement?.status === 'signed'
+                          ? 'Recurring services are not in the agreement'
+                          : 'Recurring agreement required'}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    {recurringAgreement?.status === 'published'
+                      ? 'The recurring terms are published. After the customer signs, scheduling unlocks here.'
+                      : recurringAgreement?.status === 'draft'
+                        ? 'Finish the recurring services and terms, then publish them for the customer to sign.'
+                        : recurringAgreement?.status === 'signed'
+                          ? 'Create a new agreement version containing services marked as recurring.'
+                          : 'Create an agreement containing recurring services, publish it, and collect the customer signature.'}
+                  </p>
+                  <Button
+                    variant="outline"
+                    className="mt-3 w-full"
+                    onClick={openRecurringWorkflow}
+                  >
+                    {recurringAgreement
+                      ? 'Go to agreement'
+                      : 'Create agreement'}
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
       <details className={panelClass}>
         <summary className="cursor-pointer font-semibold">
           Business profile & service locations
@@ -405,7 +536,7 @@ export function CommercialAccount({ customerId }: { customerId: string }) {
           </Link>
         </div>
       </details>
-      <section className={panelClass}>
+      <section id="agreement-workflow" className={panelClass}>
         <h3 className="mb-3 text-lg font-semibold">Agreements</h3>
         <div className="flex flex-wrap gap-2">
           <select
@@ -456,15 +587,17 @@ export function CommercialAccount({ customerId }: { customerId: string }) {
         />
       )}
       {agreement?.status === 'signed' && (
-        <ServicePlanForm
-          agreement={agreement}
-          onSaved={async () => {
-            await load()
-            setNotice(
-              'Service plan saved paused. Review it below, then activate and generate visits when you are ready.',
-            )
-          }}
-        />
+        <div id="recurring-schedule-builder" className="scroll-mt-4">
+          <ServicePlanForm
+            agreement={agreement}
+            onSaved={async () => {
+              await load()
+              setNotice(
+                'Service plan saved paused. Review it below, then activate and generate visits when you are ready.',
+              )
+            }}
+          />
+        </div>
       )}
       <section className={panelClass}>
         <h3 className="text-lg font-semibold">Agreement service plans</h3>

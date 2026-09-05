@@ -215,6 +215,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Do not present duplicate customer steps that lead to the same destination; collapse them into one clear action and renumber the remaining flow.
 - Keep commercial customer navigation to two real views—Agreement and Appointments—and do not stack anchor menus, step cards, or repeated same-page links beneath those tabs.
 - Surface accepted commercial estimates as ready-to-schedule initial work inside the commercial workspace; do not treat estimate acceptance as a signature on recurring agreement terms.
+- Keep one-time and recurring scheduling decisions together at the top of each commercial workspace; show the approval required for either path and send generated recurring visits into Recurring Work.
 - Customer deletion must be owner/admin-only, show linked-record impact first, and refuse to erase appointments, agreements, service concerns, or restoration history.
 
 ---

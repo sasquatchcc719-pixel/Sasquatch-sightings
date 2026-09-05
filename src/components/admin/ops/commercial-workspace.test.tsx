@@ -68,7 +68,7 @@ describe('commercial agreement approval', () => {
     expect(publish).toBeEnabled()
   })
 
-  it('surfaces accepted estimates as the manual scheduling handoff', async () => {
+  it('offers a one-time path from an accepted estimate', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -103,15 +103,69 @@ describe('commercial agreement approval', () => {
     render(<CommercialAccount customerId="customer-a" />)
 
     const schedule = await screen.findByRole('link', {
-      name: /schedule approved work/i,
+      name: /schedule one-time visit/i,
     })
     expect(schedule).toHaveAttribute(
       'href',
       '/admin/operations/estimates/estimate-a?schedule=1',
     )
     expect(
-      screen.getByText(/estimate line items transfer automatically/i),
+      screen.getByText(/copies the approved estimate line items/i),
     ).toBeInTheDocument()
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
+  })
+
+  it('offers recurring setup from a signed agreement at the same hub', async () => {
+    const agreement = draft()
+    agreement.status = 'signed'
+    agreement.content.lines[0].phase = 'recurring'
+    agreement.content.lines[0].frequency = 'Monthly'
+    agreement.signed_at = '2026-09-05T12:00:00Z'
+    agreement.signed_name = 'Client Signer'
+    agreement.signed_title = 'Manager'
+    agreement.signed_email = 'client@example.com'
+    agreement.signature_consent = 'Electronic signature accepted.'
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          businessName: 'Example Business',
+          profile: {
+            legal_name: '',
+            billing_contact: '',
+            billing_email: '',
+            purchase_order: '',
+            access_instructions: '',
+            service_windows: '',
+            site_notes: '',
+          },
+          agreements: [agreement],
+          addresses: [],
+          estimates: [],
+          users: [],
+          plans: [],
+        }),
+      }),
+    )
+
+    render(<CommercialAccount customerId="customer-a" />)
+
+    const recurring = await screen.findByRole('button', {
+      name: 'Build recurring schedule',
+    })
+    expect(
+      screen.getByText(/1 recurring service approved/i),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(/sends generated visits into Recurring Work/i),
+    ).toBeInTheDocument()
+    expect(recurring).toBeEnabled()
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Build a service schedule from this agreement',
+      }),
+    ).toBeInTheDocument()
   })
 })
