@@ -27,7 +27,10 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { appointmentDisplayRevenue } from '@/lib/ops/utilization-metrics'
+import {
+  appointmentDisplayRevenue,
+  appointmentScheduleRevenue,
+} from '@/lib/ops/utilization-metrics'
 
 type ScheduleView = 'week' | 'day' | 'month'
 
@@ -1440,7 +1443,7 @@ export function OperationsSchedule() {
   const selectedDayAppointments =
     gridAppointmentsByDate.get(selectedDateKey) || []
   const teamDayTotal = selectedDayAppointments.reduce(
-    (sum, appointment) => sum + appointmentDisplayRevenue(appointment),
+    (sum, appointment) => sum + appointmentScheduleRevenue(appointment),
     0,
   )
   const myDayTotal = myStaff
@@ -1452,7 +1455,7 @@ export function OperationsSchedule() {
               myStaff.id === staffList[0]?.id),
         )
         .reduce(
-          (sum, appointment) => sum + appointmentDisplayRevenue(appointment),
+          (sum, appointment) => sum + appointmentScheduleRevenue(appointment),
           0,
         )
     : 0
@@ -1464,7 +1467,7 @@ export function OperationsSchedule() {
       return gridAppointmentsByDate.get(dateKey) || []
     })
     return weekAppointments.reduce(
-      (sum, appt) => sum + appointmentDisplayRevenue(appt),
+      (sum, appt) => sum + appointmentScheduleRevenue(appt),
       0,
     )
   }, [anchorDate, view, gridAppointmentsByDate])
@@ -4014,7 +4017,7 @@ export function OperationsSchedule() {
                             )
                             .reduce(
                               (sum, appt) =>
-                                sum + appointmentDisplayRevenue(appt),
+                                sum + appointmentScheduleRevenue(appt),
                               0,
                             )
                           const color =
@@ -4085,7 +4088,7 @@ export function OperationsSchedule() {
                             gridAppointmentsByDate.get(dk) || []
                           ).reduce(
                             (sum, appt) =>
-                              sum + appointmentDisplayRevenue(appt),
+                              sum + appointmentScheduleRevenue(appt),
                             0,
                           )
                           if (isSunday && !sundayOpen) {

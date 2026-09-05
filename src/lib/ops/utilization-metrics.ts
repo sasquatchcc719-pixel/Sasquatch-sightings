@@ -102,3 +102,14 @@ export function appointmentDisplayRevenue(appt: {
     kind: appt.kind,
   })
 }
+
+/**
+ * Revenue contribution for calendar summaries. Estimate appointments may show
+ * their quote on the card, but the proposed work is not booked revenue yet.
+ */
+export function appointmentScheduleRevenue(
+  appt: Parameters<typeof appointmentDisplayRevenue>[0],
+): number {
+  if (appt.kind === 'estimate') return 0
+  return appointmentDisplayRevenue(appt)
+}

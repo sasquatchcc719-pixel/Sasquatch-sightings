@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { effectiveInvoiceAmount } from './utilization-metrics'
+import {
+  appointmentDisplayRevenue,
+  appointmentScheduleRevenue,
+  effectiveInvoiceAmount,
+} from './utilization-metrics'
 
 describe('effectiveInvoiceAmount', () => {
   it('prefers invoice total over quote', () => {
@@ -40,5 +44,27 @@ describe('effectiveInvoiceAmount', () => {
         kind: 'restoration',
       }),
     ).toBe(4052.46)
+  })
+})
+
+describe('appointmentScheduleRevenue', () => {
+  it('keeps an estimate value visible without counting it as revenue', () => {
+    const estimate = {
+      kind: 'estimate',
+      quoted_total: 1049.94,
+      ops_appointment_line_items: [{ line_total: 1049.94 }],
+    }
+
+    expect(appointmentDisplayRevenue(estimate)).toBe(1049.94)
+    expect(appointmentScheduleRevenue(estimate)).toBe(0)
+  })
+
+  it('counts ordinary service appointments', () => {
+    expect(
+      appointmentScheduleRevenue({
+        kind: 'service',
+        quoted_total: 230,
+      }),
+    ).toBe(230)
   })
 })
