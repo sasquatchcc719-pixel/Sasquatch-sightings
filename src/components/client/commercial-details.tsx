@@ -9,9 +9,7 @@ import {
   Printer,
   ShieldCheck,
   ArrowUpRight,
-  CalendarDays,
   ChevronDown,
-  Check,
   Layers3,
   Grid2X2,
   Armchair,
@@ -451,6 +449,61 @@ export function ClientCommercialDetails({
       ),
     )
   const nextVisit = upcoming[0]
+  const needsReview = currentAgreement?.status === 'published'
+  const needsContact =
+    !data.profile.billing_contact.trim() || !data.profile.billing_email.trim()
+  const nextStep = needsReview
+    ? {
+        title: 'Your agreement is ready.',
+        description:
+          'Open your agreement to review the services, prices, and terms. An authorized signer can sign at the bottom.',
+        label:
+          (data.canSign ?? canSign) && !readOnly
+            ? 'Review & sign agreement'
+            : 'Review your agreement',
+        target: `commercial-agreement-${currentAgreement.id}`,
+      }
+    : needsContact
+      ? {
+          title: 'Start with your business details.',
+          description:
+            'Add your billing contact and email, then tell us how to access your building. Save your details when you’re finished.',
+          label: readOnly ? 'View business details' : 'Add business details',
+          target: 'commercial-profile',
+        }
+      : !currentAgreement
+        ? {
+            title: 'We’re preparing your agreement.',
+            description:
+              'Your billing contact is on file. There’s nothing to sign yet. You can browse services while we prepare your scope and pricing.',
+            label: 'Explore services',
+            target: 'commercial-care',
+          }
+        : {
+            title: nextVisit
+              ? 'Your next visit is scheduled.'
+              : 'Ready to schedule a service?',
+            description: nextVisit
+              ? 'Check your upcoming visits or send us a change request. We’ll confirm any changes with you.'
+              : 'Choose a service below, tell us your preferred date, and send a request. We’ll confirm the details with you.',
+            label: nextVisit ? 'View appointments' : 'Choose a service',
+            target: nextVisit ? 'commercial-visits' : 'commercial-care',
+          }
+  const goToSection = (id: string) => {
+    if (id === 'commercial-visits' && onViewSchedule) {
+      onViewSchedule()
+      return
+    }
+    const section = document.getElementById(id)
+    if (!section) return
+    if (section instanceof HTMLDetailsElement) section.open = true
+    const focusTarget = section.querySelector<HTMLElement>('summary, h2')
+    if (focusTarget) {
+      if (focusTarget.tagName !== 'SUMMARY') focusTarget.tabIndex = -1
+      focusTarget.focus({ preventScroll: true })
+    }
+    section.scrollIntoView({ block: 'start', behavior: 'instant' })
+  }
   const address = data.addresses[0]
   const serviceCards = currentAgreement
     ? currentAgreement.content.lines.map((line) => ({
@@ -519,11 +572,14 @@ export function ClientCommercialDetails({
         />
         <div className={styles.brandRow}>
           <div className={styles.brand}>
-            <Image src="/proudsquatch.png" width={35} height={43} alt="" />
-            <div>
-              <strong>SASQUATCH</strong>
-              <p className={styles.eyebrow}>Commercial care · Colorado</p>
-            </div>
+            <Image
+              src="/sasquatch-website-logo.png"
+              width={2723}
+              height={1155}
+              sizes="(max-width: 760px) 210px, 260px"
+              alt="Sasquatch Carpet Cleaning"
+              priority
+            />
           </div>
           <span className={styles.private}>
             <LockKeyhole size={12} /> Your private workspace
@@ -532,13 +588,12 @@ export function ClientCommercialDetails({
         <div className={styles.heroGrid}>
           <div>
             <p className={`${styles.eyebrow} ${styles.kicker}`}>
-              A better place to do business
+              Your commercial service account
             </p>
             <h1 className={styles.title}>{data.businessName}</h1>
             <p className={styles.heroCopy}>
-              Exceptional care for your space.
-              <br />
-              Every service, every detail, all in one place.
+              Review your agreement, request cleaning, and check your
+              appointments—all right here.
             </p>
             {address && (
               <p className={styles.address}>
@@ -549,24 +604,34 @@ export function ClientCommercialDetails({
           </div>
           <div className={styles.visitCard}>
             <div className={styles.visitTop}>
-              <span className={styles.eyebrow}>Next on the calendar</span>
-              <CalendarDays size={19} strokeWidth={1.4} />
+              <span className={styles.eyebrow}>
+                Start here · Your next step
+              </span>
+              <ArrowUpRight size={19} strokeWidth={1.4} />
             </div>
-            <h2 className={styles.visitTitle}>
-              {nextVisit
-                ? commercialDate(nextVisit.appointment_date)
-                : 'Your next clean starts here.'}
-            </h2>
-            <p className={styles.visitSub}>
-              {nextVisit
-                ? `${formatTime(nextVisit.start_time)} – ${formatTime(nextVisit.end_time)}`
-                : 'No service visit is scheduled yet. We’ll confirm your scope and find the right time.'}
-            </p>
+            <h2 className={styles.visitTitle}>{nextStep.title}</h2>
+            <p className={styles.visitSub}>{nextStep.description}</p>
+            <button
+              type="button"
+              className={styles.nextAction}
+              onClick={() => goToSection(nextStep.target)}
+            >
+              {nextStep.label} <ArrowUpRight size={17} />
+            </button>
+            {readOnly && (
+              <p className={styles.previewHint}>
+                Staff preview: you can explore, but only the customer can save
+                details or send requests here.
+              </p>
+            )}
             {nextVisit && (
               <p className={styles.visitSub}>
-                {nextVisit.template_label ||
-                  nextVisit.line_items.map((l) => l.name_snapshot).join(', ') ||
-                  'Scheduled service'}
+                Next visit: {commercialDate(nextVisit.appointment_date)}
+                <br />
+                <span>
+                  {formatTime(nextVisit.start_time)} –{' '}
+                  {formatTime(nextVisit.end_time)}
+                </span>
               </p>
             )}
             {onViewSchedule ? (
@@ -583,12 +648,18 @@ export function ClientCommercialDetails({
       </header>
       <nav className={styles.nav} aria-label="Account overview">
         <a href="#commercial-care">
-          <Layers3 size={14} /> Your care plan
+          <Layers3 size={14} /> Services
         </a>
         <a href="#commercial-agreements">
           <FileCheck2 size={14} /> Agreements
         </a>
-        <a href="#commercial-profile">
+        <a
+          href="#commercial-profile"
+          onClick={(event) => {
+            event.preventDefault()
+            goToSection('commercial-profile')
+          }}
+        >
           <SlidersHorizontal size={14} /> Business details
         </a>
       </nav>
@@ -598,37 +669,45 @@ export function ClientCommercialDetails({
             {error}
           </p>
         )}
-        <div className={styles.steps} aria-label="Your service journey">
+        <div className={styles.steps} aria-label="How to use your account">
           {[
             [
               '01',
-              'Your agreement',
+              'Review your agreement',
               currentAgreement?.status === 'signed'
-                ? 'Signed and on file'
-                : currentAgreement
-                  ? 'Ready for your review'
-                  : 'Being prepared',
-              currentAgreement?.status === 'signed',
+                ? 'Signed · View your saved terms'
+                : needsReview
+                  ? 'Ready · Open to review and sign'
+                  : 'Being prepared · Nothing to sign yet',
+              currentAgreement
+                ? `commercial-agreement-${currentAgreement.id}`
+                : 'commercial-agreements',
             ],
             [
               '02',
-              'Your schedule',
-              nextVisit
-                ? `${upcoming.length} upcoming visit${upcoming.length === 1 ? '' : 's'}`
-                : 'Set around your business',
-              !!nextVisit,
+              'Request a service',
+              'Choose a service and preferred date',
+              'commercial-care',
             ],
-            ['03', 'Your space', 'Care that keeps you moving', false],
-          ].map(([n, title, detail, complete]) => (
-            <div key={String(n)} className={styles.step}>
-              <span className={styles.stepNumber}>
-                {complete ? <Check size={15} /> : n}
-              </span>
+            [
+              '03',
+              'Check your appointments',
+              'See visits and request changes',
+              'commercial-visits',
+            ],
+          ].map(([n, title, detail, target]) => (
+            <button
+              type="button"
+              key={n}
+              className={styles.step}
+              onClick={() => goToSection(target)}
+            >
+              <span className={styles.stepNumber}>{n}</span>
               <div>
                 <strong>{title}</strong>
                 <span>{detail}</span>
               </div>
-            </div>
+            </button>
           ))}
         </div>
         <section id="commercial-care">
@@ -638,14 +717,19 @@ export function ClientCommercialDetails({
                 01 / The care of your space
               </p>
               <h2 className={styles.sectionTitle}>
-                {currentAgreement
-                  ? 'Your service collection.'
-                  : 'Big care. Every square foot.'}
+                Choose the service you need.
               </h2>
               <p className={styles.sub}>
                 {currentAgreement
                   ? 'Your service scope and available options. Each service has its own price and frequency.'
                   : 'Explore our commercial services. Your tailored scope and pricing will appear once your agreement is ready.'}
+              </p>
+              <p className={styles.instructions}>
+                {readOnly
+                  ? 'In the customer account, each service has a “Request this service” button. The customer chooses a preferred date and sends a request.'
+                  : 'Click “Request this service,” choose your preferred date, then send your request.'}{' '}
+                A request is not a confirmed appointment. We’ll confirm
+                availability and pricing before scheduling.
               </p>
             </div>
           </div>
@@ -701,11 +785,11 @@ export function ClientCommercialDetails({
                 <p className={`${styles.eyebrow} ${styles.overline}`}>
                   02 / Clear from the start
                 </p>
-                <h2 className={styles.sectionTitle}>
-                  A handshake. In writing.
-                </h2>
+                <h2 className={styles.sectionTitle}>Your service agreement.</h2>
                 <p className={styles.sub}>
-                  Your scope, pricing, and service terms—always within reach.
+                  Open an agreement below to read the services, prices, and
+                  terms. When it’s ready, an authorized signer can sign at the
+                  bottom.
                 </p>
               </div>
             </div>
@@ -718,7 +802,7 @@ export function ClientCommercialDetails({
                 />
                 <div>
                   <span className={styles.tag}>Preparation in progress</span>
-                  <h3>A plan made for your business.</h3>
+                  <h3>No agreement to sign yet.</h3>
                   <p className={styles.sub}>
                     We’re preparing your service agreement. Once published, you
                     can review the full scope, download a copy, and sign
@@ -728,7 +812,11 @@ export function ClientCommercialDetails({
               </div>
             )}
             {agreements.map((a) => (
-              <details key={a.id} className={styles.agreement}>
+              <details
+                key={a.id}
+                id={`commercial-agreement-${a.id}`}
+                className={styles.agreement}
+              >
                 <summary>
                   <FileCheck2
                     size={24}
@@ -789,9 +877,7 @@ export function ClientCommercialDetails({
             <p className={`${styles.eyebrow} ${styles.overline}`}>
               03 / On the calendar
             </p>
-            <h2 className={styles.sectionTitle}>
-              Room in your day. Care in ours.
-            </h2>
+            <h2 className={styles.sectionTitle}>Your upcoming appointments.</h2>
             {upcoming.length ? (
               upcoming.map((a) => (
                 <div key={a.id} className={styles.visitRow}>
@@ -826,10 +912,10 @@ export function ClientCommercialDetails({
           <summary>
             <Building2 size={24} strokeWidth={1.4} />
             <div>
-              <strong>The details that make a visit seamless.</strong>
+              <strong>Business details & access instructions</strong>
               <small>
-                Billing contacts, access instructions, and preferences for your
-                team.
+                Click to open. Add your billing contact, building access, and
+                preferred service times, then save.
               </small>
             </div>
             <ChevronDown size={18} className={styles.chevron} />

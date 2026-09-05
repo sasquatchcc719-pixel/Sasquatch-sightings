@@ -23,22 +23,15 @@ export default async function ClientLayout({
     <main className="min-h-screen bg-[#112c29]">
       <nav className="border-b border-white/10 bg-black/20 backdrop-blur-sm">
         <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-5 sm:px-8">
-          <div className="flex items-center gap-2">
+          <div className="rounded-lg bg-white px-2 py-1">
             <Image
-              src="/proudsquatch.png"
-              className="mix-blend-screen"
-              width={26}
-              height={32}
-              alt=""
+              src="/sasquatch-website-logo.png"
+              className="h-auto w-36"
+              width={2723}
+              height={1155}
+              sizes="144px"
+              alt="Sasquatch Carpet Cleaning"
             />
-            <div className="leading-tight">
-              <span className="block text-base font-bold text-white">
-                Sasquatch
-              </span>
-              <span className="block text-xs text-white/60">
-                COMMERCIAL CLIENT PORTAL
-              </span>
-            </div>
           </div>
           <LogoutButton />
         </div>

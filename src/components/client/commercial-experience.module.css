@@ -51,29 +51,23 @@
   padding-bottom: 34px;
 }
 .brand {
-  display: flex;
-  gap: 12px;
-  align-items: center;
+  width: 260px;
+  max-width: calc(100% - 50px);
+  padding: 6px 10px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px #001b2220;
 }
 .brand img {
   object-fit: contain;
-  mix-blend-mode: screen;
-}
-.brand strong {
-  display: block;
-  font-size: 15px;
-  letter-spacing: 0.035em;
+  width: 100%;
+  height: auto;
 }
 .eyebrow {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.2em;
   font-weight: 700;
-}
-.brand .eyebrow {
-  color: #b9cdbb;
-  font-size: 9px;
-  margin-top: 3px;
 }
 .private {
   display: flex;
@@ -170,6 +164,47 @@
   cursor: pointer;
   padding: 0;
 }
+.nextAction {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 48px;
+  padding: 13px 16px;
+  margin: 20px 0 14px;
+  border: 1px solid #e1edba;
+  border-radius: 10px;
+  background: #e1edba;
+  color: #193b35;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+.nextAction:hover {
+  background: #f1f6db;
+}
+.nextAction svg {
+  flex-shrink: 0;
+}
+.previewHint {
+  color: #c0d0c5;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.instructions {
+  max-width: 760px;
+  padding-left: 12px;
+  border-left: 3px solid #9bac80;
+  margin-top: 14px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink);
+}
+.portal :is(section, details)[id] {
+  scroll-margin-top: 24px;
+}
 .nav {
   display: flex;
   align-items: center;
@@ -238,7 +273,15 @@
   align-items: center;
   gap: 12px;
   padding: 18px 20px;
+  text-align: left;
+  color: var(--ink);
+  background: transparent;
+  cursor: pointer;
+  border: 0;
   border-right: 1px solid var(--line);
+}
+.step:hover {
+  background: #edf1e4;
 }
 .step:last-child {
   border: 0;
@@ -671,6 +714,9 @@
   }
   .brandRow {
     padding-bottom: 28px;
+  }
+  .brand {
+    width: 210px;
   }
   .visitCard {
     padding: 20px;

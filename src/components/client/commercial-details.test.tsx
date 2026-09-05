@@ -5,7 +5,15 @@ import {
   screen,
   within,
 } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest'
 import { ClientCommercialDetails } from './commercial-details'
 import { ClientPortal } from './client-portal'
 import {
@@ -16,6 +24,13 @@ import {
 } from '@/lib/ops/commercial'
 
 vi.mock('@/supabase/client', () => ({ createClient: vi.fn() }))
+// jsdom does not implement scrolling; browser verification covers actual movement.
+beforeAll(() => {
+  HTMLElement.prototype.scrollIntoView = vi.fn()
+})
+afterAll(() => {
+  Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView')
+})
 afterEach(cleanup)
 const data: CommercialData = {
   businessName: 'Example Business',
@@ -85,11 +100,76 @@ describe('commercial customer experience', () => {
     expect(screen.getByText('Preparation in progress')).toBeInTheDocument()
     expect(
       screen
-        .getByText('The details that make a visit seamless.')
+        .getByText('Business details & access instructions')
         .closest('details'),
     ).not.toHaveAttribute('open')
     expect(
       screen.queryByText('Sign and accept agreement'),
+    ).not.toBeInTheDocument()
+  })
+  it('uses the website logo and opens the profile from the first-time action', () => {
+    const scroll = vi
+      .spyOn(HTMLElement.prototype, 'scrollIntoView')
+      .mockImplementation(() => {})
+    render(<ClientCommercialDetails initialData={data} />)
+    expect(
+      screen.getByAltText('Sasquatch Carpet Cleaning').getAttribute('src'),
+    ).toContain('sasquatch-website-logo.png')
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Add business details' }),
+    )
+    const profile = screen
+      .getByText('Business details & access instructions')
+      .closest('details')
+    expect(profile).toHaveAttribute('open')
+    expect(profile?.querySelector('summary')).toHaveFocus()
+    expect(profile?.querySelector('summary')).not.toHaveAttribute(
+      'tabindex',
+      '-1',
+    )
+    scroll.mockRestore()
+  })
+  it('prioritizes a published agreement and opens its terms without signing', () => {
+    const scroll = vi
+      .spyOn(HTMLElement.prototype, 'scrollIntoView')
+      .mockImplementation(() => {})
+    render(
+      <ClientCommercialDetails
+        initialData={{ ...data, agreements: [agreement('published')] }}
+        canSign
+      />,
+    )
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Review & sign agreement' }),
+    )
+    expect(
+      screen
+        .getByText('Private agreement', { selector: 'strong' })
+        .closest('details'),
+    ).toHaveAttribute('open')
+    expect(
+      screen.getByRole('button', { name: 'Sign and accept agreement' }),
+    ).toBeDisabled()
+    scroll.mockRestore()
+  })
+  it('does not ask a customer with billing contacts to repeat setup while an agreement is being prepared', () => {
+    render(
+      <ClientCommercialDetails
+        initialData={{
+          ...data,
+          profile: {
+            ...emptyProfile,
+            billing_contact: 'Manager',
+            billing_email: 'manager@example.com',
+          },
+        }}
+      />,
+    )
+    expect(
+      screen.getByRole('button', { name: 'Explore services' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Add business details' }),
     ).not.toBeInTheDocument()
   })
   it('never renders draft agreement names, prices, or services in the customer preview', () => {
