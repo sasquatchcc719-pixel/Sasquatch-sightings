@@ -135,6 +135,7 @@ type EstimateDetail = {
 
 type EstimateDetailProps = {
   estimateId: string
+  openSchedule?: boolean
 }
 
 function unwrapRelation<T>(value: T | T[] | null | undefined): T | null {
@@ -301,7 +302,10 @@ const STATUS_BADGE: Record<string, { label: string; className: string }> = {
   },
 }
 
-export function EstimateDetail({ estimateId }: EstimateDetailProps) {
+export function EstimateDetail({
+  estimateId,
+  openSchedule = false,
+}: EstimateDetailProps) {
   const router = useRouter()
 
   const [loading, setLoading] = useState(true)
@@ -338,7 +342,7 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
   const [catalog, setCatalog] = useState<ServiceCatalogItem[]>([])
   const [linePickerCategory, setLinePickerCategory] = useState<string>('')
 
-  const [showConvertDialog, setShowConvertDialog] = useState(false)
+  const [showConvertDialog, setShowConvertDialog] = useState(openSchedule)
   const [convertDate, setConvertDate] = useState('')
   const [convertStart, setConvertStart] = useState('09:00')
   const [convertSubmitting, setConvertSubmitting] = useState(false)

@@ -7,6 +7,7 @@ import {
   Plus,
   ArrowUpRight,
   CalendarDays,
+  CheckCircle2,
   Users,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -243,6 +244,9 @@ export function CommercialAccount({ customerId }: { customerId: string }) {
       <div className={panelClass}>{error || 'Loading commercial account…'}</div>
     )
   const agreement = data.agreements.find((a) => a.id === selected)
+  const acceptedEstimates = data.estimates.filter(
+    (estimate) => estimate.estimate_status === 'accepted',
+  )
   return (
     <div className="space-y-5 text-slate-100">
       <Link
@@ -322,6 +326,53 @@ export function CommercialAccount({ customerId }: { customerId: string }) {
           </div>
         ))}
       </div>
+      {acceptedEstimates.length > 0 && (
+        <section className="rounded-2xl border border-emerald-400/35 bg-emerald-500/10 p-5 text-slate-100 shadow-sm">
+          <div className="flex items-start gap-3">
+            <CheckCircle2 className="mt-0.5 h-6 w-6 shrink-0 text-emerald-300" />
+            <div>
+              <h3 className="text-lg font-semibold">
+                Customer-approved work is ready to schedule
+              </h3>
+              <p className="mt-1 text-sm text-slate-300">
+                The emailed estimate approval is already recorded. Choose a
+                service date and time below; the estimate line items transfer
+                automatically. This schedules the approved initial work but does
+                not replace the customer signature required for recurring
+                agreement terms.
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 space-y-2">
+            {acceptedEstimates.map((estimate) => (
+              <div
+                key={estimate.id}
+                className="flex flex-wrap items-center gap-3 rounded-xl border border-emerald-300/20 bg-slate-950/35 p-3"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium">
+                    Accepted estimate · {formatMoney(estimate.quoted_total)}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    Estimate visit {estimate.appointment_date}
+                  </p>
+                </div>
+                <Button
+                  asChild
+                  className="bg-emerald-500 text-emerald-950 hover:bg-emerald-400"
+                >
+                  <Link
+                    href={`/admin/operations/estimates/${estimate.id}?schedule=1`}
+                  >
+                    <CalendarDays className="mr-1 h-4 w-4" />
+                    Schedule approved work
+                  </Link>
+                </Button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
       <details className={panelClass}>
         <summary className="cursor-pointer font-semibold">
           Business profile & service locations

@@ -1,13 +1,22 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { AgreementEditor } from './commercial-workspace'
+import { AgreementEditor, CommercialAccount } from './commercial-workspace'
 import {
   newAgreementContent,
   type CommercialAgreement,
 } from '@/lib/ops/commercial'
 
 vi.mock('@/supabase/client', () => ({ createClient: vi.fn() }))
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
 
 function draft(): CommercialAgreement {
   const content = newAgreementContent('Example Business')
@@ -57,5 +66,52 @@ describe('commercial agreement approval', () => {
     expect(review).not.toBeChecked()
     fireEvent.click(review)
     expect(publish).toBeEnabled()
+  })
+
+  it('surfaces accepted estimates as the manual scheduling handoff', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          businessName: 'Example Business',
+          profile: {
+            legal_name: '',
+            billing_contact: '',
+            billing_email: '',
+            purchase_order: '',
+            access_instructions: '',
+            service_windows: '',
+            site_notes: '',
+          },
+          agreements: [],
+          addresses: [],
+          estimates: [
+            {
+              id: 'estimate-a',
+              appointment_date: '2026-09-04',
+              quoted_total: 1049.94,
+              estimate_status: 'accepted',
+            },
+          ],
+          users: [],
+          plans: [],
+        }),
+      }),
+    )
+
+    render(<CommercialAccount customerId="customer-a" />)
+
+    const schedule = await screen.findByRole('link', {
+      name: /schedule approved work/i,
+    })
+    expect(schedule).toHaveAttribute(
+      'href',
+      '/admin/operations/estimates/estimate-a?schedule=1',
+    )
+    expect(
+      screen.getByText(/estimate line items transfer automatically/i),
+    ).toBeInTheDocument()
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
   })
 })
