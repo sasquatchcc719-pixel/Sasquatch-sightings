@@ -29,6 +29,8 @@ export default async function ClientPortalPage() {
       businessName={commercial.businessName}
       managerName={client.display_name}
       initialData={data}
+      initialCommercialData={commercial}
+      canSign={client.can_sign_agreements === true}
       mustChangePassword={mustChangePassword}
     />
   )

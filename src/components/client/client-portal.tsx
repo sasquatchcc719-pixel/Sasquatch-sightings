@@ -22,6 +22,7 @@ import {
   type ClientTemplate,
 } from '@/lib/ops/client-portal'
 import { getFloorPlanMap } from '@/lib/ops/floor-plan-maps'
+import type { CommercialData } from '@/lib/ops/commercial'
 import {
   CalendarDays,
   ChevronLeft,
@@ -41,6 +42,8 @@ type Props = {
   managerName: string
   initialData: ClientPortalData
   mustChangePassword: boolean
+  initialCommercialData: CommercialData
+  canSign: boolean
 }
 
 const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
@@ -82,9 +85,15 @@ export function ClientPortal({
   managerName,
   initialData,
   mustChangePassword,
+  initialCommercialData,
+  canSign,
 }: Props) {
   const [data, setData] = useState<ClientPortalData>(initialData)
-  const [tab, setTab] = useState<'schedule' | 'business'>('schedule')
+  const [tab, setTab] = useState<'schedule' | 'business'>('business')
+  const [serviceRequest, setServiceRequest] = useState<{
+    service: string
+    key: number
+  } | null>(null)
   const today = todayStr()
 
   // Default the calendar to the month of the next upcoming visit, else current month.
@@ -170,29 +179,54 @@ export function ClientPortal({
       )}
 
       {/* Intro */}
-      <div>
-        <h1 className="text-2xl font-bold">Welcome, {managerName}</h1>
-        <p className="text-sm text-slate-400">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-[#c4d1bf]">Welcome, {managerName}</p>
+        <p className="sr-only">
           {businessName} · Your service schedule, business details, and
           agreements.
         </p>
       </div>
 
-      <div className="flex gap-2" aria-label="Portal sections">
+      <div className="flex flex-wrap gap-2" aria-label="Portal sections">
         <Button
           variant={tab === 'schedule' ? 'default' : 'outline'}
+          aria-pressed={tab === 'schedule'}
           onClick={() => setTab('schedule')}
         >
           Schedule & requests
         </Button>
         <Button
           variant={tab === 'business' ? 'default' : 'outline'}
+          aria-pressed={tab === 'business'}
           onClick={() => setTab('business')}
         >
-          Business & agreements
+          Your account overview
         </Button>
       </div>
-      {tab === 'business' && <ClientCommercialDetails />}
+      <div hidden={tab !== 'business'}>
+        <ClientCommercialDetails
+          initialData={initialCommercialData}
+          canSign={canSign}
+          schedule={data}
+          onViewSchedule={() => setTab('schedule')}
+          onRequestService={(service) => {
+            setServiceRequest({ service, key: Date.now() })
+            setTab('schedule')
+            requestAnimationFrame(() =>
+              document
+                .getElementById('client-service-request')
+                ?.scrollIntoView({
+                  behavior: window.matchMedia(
+                    '(prefers-reduced-motion: reduce)',
+                  ).matches
+                    ? 'instant'
+                    : 'smooth',
+                  block: 'start',
+                }),
+            )
+          }}
+        />
+      </div>
       <div className="space-y-6" hidden={tab !== 'schedule'}>
         {/* Recurring intervals */}
         <Card className="border-white/10 bg-white/5 p-5 backdrop-blur">
@@ -384,7 +418,14 @@ export function ClientPortal({
         </div>
 
         {/* Request a change */}
-        <RequestForm appointments={data.appointments} onSubmitted={refresh} />
+        <div id="client-service-request" className="scroll-mt-6">
+          <RequestForm
+            key={serviceRequest?.key ?? 'default'}
+            initialService={serviceRequest?.service}
+            appointments={data.appointments}
+            onSubmitted={refresh}
+          />
+        </div>
 
         {/* My requests */}
         <Card className="border-white/10 bg-white/5 p-5 backdrop-blur">
@@ -673,16 +714,20 @@ function VisitCard({
 function RequestForm({
   appointments,
   onSubmitted,
+  initialService,
 }: {
   appointments: ClientAppointment[]
   onSubmitted: () => void
+  initialService?: string
 }) {
-  const [open, setOpen] = useState(false)
-  const [type, setType] = useState<string>('reschedule')
+  const [open, setOpen] = useState(!!initialService)
+  const [type, setType] = useState<string>(
+    initialService ? 'add_visit' : 'reschedule',
+  )
   const [apptId, setApptId] = useState<string>('')
   const [message, setMessage] = useState('')
   const [details, setDetails] = useState({
-    service: '',
+    service: initialService || '',
     area: '',
     frequency: '',
     preferred_date: '',
