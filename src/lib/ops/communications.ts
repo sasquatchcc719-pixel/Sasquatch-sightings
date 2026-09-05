@@ -7,6 +7,7 @@ import { isBlacklisted, normalizePhone } from '@/lib/blacklist'
 export const OPS_TEMPLATE_KEYS = [
   'job_scheduled_sms',
   'on_my_way_sms',
+  'on_my_way_estimate_sms',
   'job_finished_sms',
   'job_rescheduled_sms',
   'job_rescheduled_email',
@@ -302,6 +303,11 @@ export function getOpsTemplateKeysForEvent(
   lineItems?: Array<{ name_snapshot: string | null }> | null,
   visit?: LifecycleVisit | null,
 ): OpsTemplateKey[] {
+  // An estimate is a walkthrough, not a cleaning: no "what to expect" video.
+  if (visit?.kind === 'estimate' && event === 'on_my_way') {
+    return ['on_my_way_estimate_sms']
+  }
+
   if (isRestorationVisit(visit)) {
     if (event === 'on_my_way') return ['on_my_way_restoration_sms']
     if (event === 'job_rescheduled') return ['job_rescheduled_restoration_sms']
@@ -822,7 +828,8 @@ export async function sendOpsLifecycleCommunications(params: {
       : appointment.ops_appointment_line_items,
     {
       kind: (appointment as { kind?: string | null }).kind ?? null,
-      visitType: (appointment as { visit_type?: string | null }).visit_type ?? null,
+      visitType:
+        (appointment as { visit_type?: string | null }).visit_type ?? null,
     },
   )
   if (templates.length === 0) return { sent: [] }
@@ -1286,7 +1293,8 @@ export async function sendDayBeforeReminderSms(params?: {
     const templateKey = dayBeforeTemplateKey(
       {
         kind: (appointment as { kind?: string | null }).kind ?? null,
-        visitType: (appointment as { visit_type?: string | null }).visit_type ?? null,
+        visitType:
+          (appointment as { visit_type?: string | null }).visit_type ?? null,
       },
       customer?.business_name ?? null,
     )

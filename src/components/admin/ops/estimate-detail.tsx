@@ -14,6 +14,7 @@ import {
   Mail,
   MapPin,
   MessageSquare,
+  Navigation,
   Phone,
   Plus,
   Ruler,
@@ -106,6 +107,7 @@ type EstimateDetail = {
   start_time: string
   end_time: string
   status: string
+  on_my_way_at: string | null
   estimate_status: string | null
   lead_source_key: string | null
   lead_source_detail: string | null
@@ -347,6 +349,8 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
   const [quoteEmailSending, setQuoteEmailSending] = useState(false)
   const [quoteEmailSent, setQuoteEmailSent] = useState(false)
   const [emailError, setEmailError] = useState<string | null>(null)
+  const [onMyWayLoading, setOnMyWayLoading] = useState(false)
+  const [onMyWaySms, setOnMyWaySms] = useState<string | null>(null)
 
   const loadEstimate = useCallback(async () => {
     setLoading(true)
@@ -764,6 +768,45 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
     [estimateId, loadEstimate],
   )
 
+  /**
+   * Same quick action as the job screen: flip to on_my_way and text the
+   * customer. Undo puts it back to confirmed without texting.
+   */
+  const handleOnMyWay = useCallback(
+    async (undo: boolean) => {
+      setOnMyWayLoading(true)
+      setError(null)
+      try {
+        const res = await fetch(
+          `/api/admin/ops/estimates/${estimateId}/on-my-way`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ undo }),
+          },
+        )
+        const payload = (await res.json().catch(() => null)) as {
+          error?: string
+          sms?: { body: string } | null
+        } | null
+        if (!res.ok) {
+          throw new Error(payload?.error || 'Failed to update on-my-way status')
+        }
+        setOnMyWaySms(undo ? null : (payload?.sms?.body ?? null))
+        await loadEstimate()
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : 'Failed to update on-my-way status',
+        )
+      } finally {
+        setOnMyWayLoading(false)
+      }
+    },
+    [estimateId, loadEstimate],
+  )
+
   const handleDelete = useCallback(async () => {
     const isConvertedEstimate = !!estimate?.converted_appointment_id
     const warningMessage = isConvertedEstimate
@@ -897,6 +940,7 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
   const statusKey = estimate.estimate_status || 'draft'
   const badge = STATUS_BADGE[statusKey] || STATUS_BADGE.draft
   const isConverted = !!estimate.converted_appointment_id
+  const isOnMyWay = estimate.status === 'on_my_way'
   const serviceAddress: ServiceAddressLike | null =
     addrStreet1 && addrCity
       ? {
@@ -983,6 +1027,48 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
             </p>
           </div>
         </div>
+
+        {!isConverted ? (
+          <div className="relative mt-5 flex flex-wrap items-center gap-3">
+            <Button
+              size="lg"
+              disabled={onMyWayLoading || !contactPhone}
+              title={
+                contactPhone
+                  ? undefined
+                  : 'Add the customer phone number to send an on-my-way text.'
+              }
+              className={
+                isOnMyWay
+                  ? 'gap-2 bg-white font-bold text-emerald-900 hover:bg-emerald-50'
+                  : 'gap-2 bg-emerald-500 font-bold text-white shadow-lg shadow-emerald-900/40 hover:bg-emerald-400'
+              }
+              onClick={() => void handleOnMyWay(isOnMyWay)}
+            >
+              {onMyWayLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Navigation className="h-4 w-4" />
+              )}
+              {isOnMyWay ? 'Back to Scheduled' : 'On My Way'}
+            </Button>
+            {isOnMyWay ? (
+              <span className="text-sm text-emerald-100">
+                On the way
+                {estimate.on_my_way_at
+                  ? ` since ${new Date(estimate.on_my_way_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+                  : ''}
+                {onMyWaySms ? ' · customer texted' : ''}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+        {onMyWaySms && isOnMyWay ? (
+          <p className="relative mt-3 rounded-xl border border-emerald-300/30 bg-emerald-500/10 p-3 text-xs text-emerald-50">
+            <span className="font-semibold">Text sent to customer:</span>{' '}
+            {onMyWaySms}
+          </p>
+        ) : null}
 
         {isConverted ? (
           <div className="relative mt-5 rounded-xl border border-violet-300/40 bg-violet-500/15 p-3 text-sm text-violet-100">

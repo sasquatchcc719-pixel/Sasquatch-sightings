@@ -95,20 +95,23 @@ describe('which day-before text a customer gets', () => {
 
   it('sends the mitigation day the restoration wording', () => {
     expect(
-      dayBeforeTemplateKey({ kind: 'restoration', visitType: 'mitigation' }, null),
+      dayBeforeTemplateKey(
+        { kind: 'restoration', visitType: 'mitigation' },
+        null,
+      ),
     ).toBe('day_before_restoration_sms')
   })
 
   it('still recognises a restoration visit that lost its kind', () => {
-    expect(dayBeforeTemplateKey({ kind: null, visitType: 'monitor' }, null)).toBe(
-      'day_before_restoration_monitor_sms',
-    )
+    expect(
+      dayBeforeTemplateKey({ kind: null, visitType: 'monitor' }, null),
+    ).toBe('day_before_restoration_monitor_sms')
   })
 
   it('leaves ordinary cleaning appointments alone', () => {
-    expect(dayBeforeTemplateKey({ kind: 'cleaning', visitType: null }, null)).toBe(
-      'day_before_residential_sms',
-    )
+    expect(
+      dayBeforeTemplateKey({ kind: 'cleaning', visitType: null }, null),
+    ).toBe('day_before_residential_sms')
     expect(
       dayBeforeTemplateKey({ kind: null, visitType: null }, 'Recovery Village'),
     ).toBe('day_before_recovery_village_sms')
@@ -143,19 +146,28 @@ describe('which lifecycle messages a restoration visit sends', () => {
   })
 
   it('tells the mitigation day it is not finished, it is drying', () => {
-    expect(getOpsTemplateKeysForEvent('job_finished', null, mitigation)).toEqual([
-      'job_finished_restoration_sms',
-    ])
+    expect(
+      getOpsTemplateKeysForEvent('job_finished', null, mitigation),
+    ).toEqual(['job_finished_restoration_sms'])
   })
 
   it('reschedules without quoting a total the visit does not have', () => {
-    expect(getOpsTemplateKeysForEvent('job_rescheduled', null, monitor)).toEqual([
-      'job_rescheduled_restoration_sms',
-    ])
+    expect(
+      getOpsTemplateKeysForEvent('job_rescheduled', null, monitor),
+    ).toEqual(['job_rescheduled_restoration_sms'])
   })
 
   it('says nothing when a restoration visit is scheduled', () => {
-    expect(getOpsTemplateKeysForEvent('job_scheduled', null, monitor)).toEqual([])
+    expect(getOpsTemplateKeysForEvent('job_scheduled', null, monitor)).toEqual(
+      [],
+    )
+  })
+
+  it('sends the walkthrough text, not the cleaning video, on the way to an estimate', () => {
+    const estimate = { kind: 'estimate', visitType: null }
+    expect(getOpsTemplateKeysForEvent('on_my_way', null, estimate)).toEqual([
+      'on_my_way_estimate_sms',
+    ])
   })
 
   it('leaves cleaning jobs exactly as they were', () => {
@@ -163,8 +175,8 @@ describe('which lifecycle messages a restoration visit sends', () => {
       'on_my_way_sms',
     ])
     expect(getOpsTemplateKeysForEvent('on_my_way')).toEqual(['on_my_way_sms'])
-    expect(getOpsTemplateKeysForEvent('job_finished', null, cleaning)).toContain(
-      'satisfaction_checkin_email',
-    )
+    expect(
+      getOpsTemplateKeysForEvent('job_finished', null, cleaning),
+    ).toContain('satisfaction_checkin_email')
   })
 })
