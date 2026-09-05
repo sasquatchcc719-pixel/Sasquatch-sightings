@@ -304,6 +304,116 @@ export function AgreementView({
     </div>
   )
 }
+function AgreementFeedback({
+  agreement,
+  readOnly,
+  onSubmitted,
+  onViewRequests,
+}: {
+  agreement: CommercialAgreement
+  readOnly: boolean
+  onSubmitted?: () => void
+  onViewRequests?: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [message, setMessage] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [sent, setSent] = useState(false)
+  const [error, setError] = useState('')
+  return (
+    <section className={styles.feedback} aria-label="Request agreement changes">
+      <h4>Want something changed? You don’t have to sign yet.</h4>
+      <p>
+        Tell us what you’d like to change—services, frequency, pricing, or
+        terms. We’ll review your feedback and reply. If we agree on changes,
+        we’ll publish an updated version for you to review and sign.
+      </p>
+      <p>
+        Sending a request does not accept or change this agreement. Wait to sign
+        until your questions and requested changes are resolved.
+      </p>
+      {sent ? (
+        <div role="status">
+          <strong>Change request sent for version {agreement.version}.</strong>
+          <p>
+            We’ll review it before making any changes. You can track the request
+            and our reply under Schedule &amp; requests → My requests.
+          </p>
+          {onViewRequests && (
+            <Button type="button" onClick={onViewRequests}>
+              View my requests
+            </Button>
+          )}
+        </div>
+      ) : open ? (
+        <form
+          onSubmit={async (event) => {
+            event.preventDefault()
+            if (!message.trim() || busy) return
+            setBusy(true)
+            setError('')
+            try {
+              await commercialFetch('/api/client/requests', 'POST', {
+                request_type: 'scope_change',
+                agreement_id: agreement.id,
+                message: message.trim(),
+              })
+              setSent(true)
+              onSubmitted?.()
+            } catch (err) {
+              setError(
+                err instanceof Error
+                  ? err.message
+                  : 'Unable to send your request. Please try again.',
+              )
+            } finally {
+              setBusy(false)
+            }
+          }}
+        >
+          <Field
+            label={`What would you like changed in version ${agreement.version}?`}
+          >
+            <Textarea
+              autoFocus
+              required
+              maxLength={2000}
+              value={message}
+              disabled={busy}
+              onChange={(event) => setMessage(event.target.value)}
+              className={fieldClass}
+              placeholder="For example: Please remove upholstery cleaning and change carpet cleaning to quarterly."
+            />
+          </Field>
+          {error && <p role="alert">{error}</p>}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button disabled={busy || !message.trim()}>
+              {busy ? 'Sending request…' : 'Send change request'}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy}
+              onClick={() => setOpen(false)}
+            >
+              Cancel
+            </Button>
+          </div>
+        </form>
+      ) : (
+        <Button type="button" disabled={readOnly} onClick={() => setOpen(true)}>
+          Request changes
+        </Button>
+      )}
+      {readOnly && (
+        <p>
+          Read-only staff preview. Customers can use this button in their
+          account.
+        </p>
+      )}
+    </section>
+  )
+}
 function SignatureForm({
   agreement,
   onSigned,
@@ -347,6 +457,10 @@ function SignatureForm({
       }}
     >
       <h4 className="font-semibold">Sign this agreement</h4>
+      <p className="text-sm text-slate-300">
+        Everything looks right? Sign below. If you want changes, use “Request
+        changes” above instead.
+      </p>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Your full legal name">
           <Input
@@ -405,6 +519,7 @@ export function ClientCommercialDetails({
   schedule,
   onViewSchedule,
   onRequestService,
+  onRequestSubmitted,
 }: {
   initialData?: CommercialData
   readOnly?: boolean
@@ -412,6 +527,7 @@ export function ClientCommercialDetails({
   schedule?: ClientPortalData
   onViewSchedule?: () => void
   onRequestService?: (service: string) => void
+  onRequestSubmitted?: () => void
 }) {
   const [data, setData] = useState<
     (CommercialData & { canSign?: boolean }) | null
@@ -456,7 +572,7 @@ export function ClientCommercialDetails({
     ? {
         title: 'Your agreement is ready.',
         description:
-          'Open your agreement to review the services, prices, and terms. An authorized signer can sign at the bottom.',
+          'Open your agreement to review the services, prices, and terms. Request changes if needed, or sign at the bottom when everything looks right.',
         label:
           (data.canSign ?? canSign) && !readOnly
             ? 'Review & sign agreement'
@@ -691,7 +807,7 @@ export function ClientCommercialDetails({
               currentAgreement?.status === 'signed'
                 ? 'Signed · View your saved terms'
                 : needsReview
-                  ? 'Ready · Open to review and sign'
+                  ? 'Ready · Review, request changes, or sign'
                   : 'Being prepared · Nothing to sign yet',
               currentAgreement
                 ? `commercial-agreement-${currentAgreement.id}`
@@ -803,9 +919,9 @@ export function ClientCommercialDetails({
                 </p>
                 <h2 className={styles.sectionTitle}>Your service agreement.</h2>
                 <p className={styles.sub}>
-                  Open an agreement below to read the services, prices, and
-                  terms. When it’s ready, an authorized signer can sign at the
-                  bottom.
+                  Open your agreement and review the services, prices, and
+                  terms. Want something changed? Use “Request changes” inside
+                  the agreement. Only sign when everything looks right.
                 </p>
               </div>
             </div>
@@ -821,8 +937,8 @@ export function ClientCommercialDetails({
                   <h3>No agreement to sign yet.</h3>
                   <p className={styles.sub}>
                     We’re preparing your service agreement. Once published, you
-                    can review the full scope, download a copy, and sign
-                    securely right here.
+                    can review the full scope, request changes, download a copy,
+                    and sign when everything looks right.
                   </p>
                 </div>
               </div>
@@ -844,7 +960,7 @@ export function ClientCommercialDetails({
                     <small>
                       Version {a.version} ·{' '}
                       {a.status === 'published'
-                        ? 'Ready to review & sign'
+                        ? 'Review · Request changes · Sign'
                         : a.status === 'signed'
                           ? 'Signed agreement'
                           : 'Withdrawn · For your records'}
@@ -854,6 +970,14 @@ export function ClientCommercialDetails({
                 </summary>
                 <div className={styles.document}>
                   <AgreementView agreement={a} />
+                  {a.status === 'published' && (
+                    <AgreementFeedback
+                      agreement={a}
+                      readOnly={readOnly}
+                      onSubmitted={onRequestSubmitted}
+                      onViewRequests={onViewSchedule}
+                    />
+                  )}
                   {a.status === 'published' &&
                     !readOnly &&
                     ((data.canSign ?? canSign) ? (

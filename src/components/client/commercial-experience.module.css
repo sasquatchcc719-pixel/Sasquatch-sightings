@@ -202,6 +202,25 @@
   line-height: 1.7;
   color: var(--ink);
 }
+.feedback {
+  margin-top: 24px;
+  padding: 20px;
+  border: 1px solid #adbd9b;
+  border-radius: 12px;
+  background: #edf2e4;
+}
+.feedback h4 {
+  font-size: 16px;
+  font-weight: 700;
+}
+.feedback p {
+  margin: 10px 0 14px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.feedback [role='alert'] {
+  color: #a32a26;
+}
 .portal :is(section, details)[id] {
   scroll-margin-top: 24px;
 }

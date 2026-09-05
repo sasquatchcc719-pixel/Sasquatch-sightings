@@ -208,6 +208,7 @@ export function ClientPortal({
           initialData={initialCommercialData}
           canSign={canSign}
           schedule={data}
+          onRequestSubmitted={refresh}
           onViewSchedule={() => setTab('schedule')}
           onRequestService={(service) => {
             setServiceRequest({ service, key: Date.now() })
@@ -448,11 +449,16 @@ export function ClientPortal({
                 >
                   <div>
                     <p className="font-medium capitalize">
-                      {r.request_type.replace('_', ' ')}
+                      {r.details.agreement_id
+                        ? 'Agreement changes'
+                        : r.request_type.replace('_', ' ')}
                     </p>
                     {r.message && <p className="text-slate-400">{r.message}</p>}
                     {Object.entries(r.details)
-                      .filter(([, v]) => typeof v === 'string' && v)
+                      .filter(
+                        ([k, v]) =>
+                          k !== 'agreement_id' && typeof v === 'string' && v,
+                      )
                       .map(([k, v]) => (
                         <p key={k} className="text-xs text-slate-400">
                           {k.replaceAll('_', ' ')}: {String(v)}

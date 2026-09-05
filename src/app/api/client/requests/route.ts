@@ -3,6 +3,7 @@ import { requireClientManager } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { sendTelegramNotification } from '@/lib/telegram'
 import { serviceRequestDetailsSchema } from '@/lib/ops/commercial'
+import { z } from 'zod'
 
 const REQUESTABLE_TYPES = [
   'skip_visit',
@@ -95,7 +96,47 @@ export async function POST(request: NextRequest) {
         { error: 'Check the requested service and date fields.' },
         { status: 400 },
       )
-    const details = parsedDetails.data
+    const details: Record<string, string | undefined> = {
+      ...parsedDetails.data,
+    }
+    // Link feedback only to an unsigned agreement owned by this customer.
+    // Use server-held title/version, never client-supplied contract metadata.
+    if (body.agreement_id !== undefined) {
+      const agreementId = z.string().uuid().safeParse(body.agreement_id)
+      if (
+        !agreementId.success ||
+        requestType !== 'scope_change' ||
+        appointmentId
+      ) {
+        return NextResponse.json(
+          { error: 'Invalid agreement change request.' },
+          { status: 400 },
+        )
+      }
+      const { data: agreement, error: agreementError } = await supabase
+        .from('ops_commercial_agreements')
+        .select('id, version, status, content')
+        .eq('id', agreementId.data)
+        .eq('customer_id', client.customer_id)
+        .maybeSingle()
+      if (agreementError) throw agreementError
+      if (!agreement || agreement.status === 'draft')
+        return NextResponse.json(
+          { error: 'Agreement not found.' },
+          { status: 404 },
+        )
+      if (agreement.status !== 'published')
+        return NextResponse.json(
+          {
+            error:
+              'This version is no longer open for review. Reload your account to view the current agreement.',
+          },
+          { status: 409 },
+        )
+      details.agreement_id = agreement.id
+      details.agreement_title = agreement.content.title
+      details.agreement_version = String(agreement.version)
+    }
 
     const { data: inserted, error } = await supabase
       .from('ops_client_change_requests')
@@ -114,7 +155,9 @@ export async function POST(request: NextRequest) {
 
     if (error) throw error
 
-    const label = TYPE_LABELS[requestType as RequestableType]
+    const label = details.agreement_id
+      ? 'Request changes to agreement'
+      : TYPE_LABELS[requestType as RequestableType]
     const { data: customer } = await supabase
       .from('ops_customers')
       .select('business_name,full_name')
@@ -126,7 +169,7 @@ export async function POST(request: NextRequest) {
 ${customer?.business_name || customer?.full_name || 'Commercial client'}
 ${label}${message ? `\n${message}` : ''}
 ${Object.entries(details)
-  .filter(([, v]) => v)
+  .filter(([k, v]) => k !== 'agreement_id' && v)
   .map(([k, v]) => `${k.replaceAll('_', ' ')}: ${v}`)
   .join('\n')}
 

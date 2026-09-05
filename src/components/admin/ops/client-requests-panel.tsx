@@ -10,6 +10,7 @@ import { Loader2, Inbox } from 'lucide-react'
 
 type ClientRequest = {
   id: string
+  customer_id: string
   request_type: string
   status: string
   message: string | null
@@ -117,7 +118,9 @@ export function ClientRequestsPanel() {
             >
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="secondary">
-                  {TYPE_LABEL[r.request_type] ?? r.request_type}
+                  {r.details.agreement_id
+                    ? 'Agreement changes'
+                    : (TYPE_LABEL[r.request_type] ?? r.request_type)}
                 </Badge>
                 <span className="text-sm font-medium">{customerName(r)}</span>
                 {r.ops_appointments && (
@@ -142,7 +145,10 @@ export function ClientRequestsPanel() {
               </div>
               {r.message && <p className="mt-2 text-sm">{r.message}</p>}
               {Object.entries(r.details || {})
-                .filter(([, v]) => typeof v === 'string' && v)
+                .filter(
+                  ([key, v]) =>
+                    key !== 'agreement_id' && typeof v === 'string' && v,
+                )
                 .map(([key, value]) => (
                   <p key={key} className="text-muted-foreground mt-1 text-sm">
                     {key.replaceAll('_', ' ')}: {String(value)}
@@ -186,10 +192,20 @@ export function ClientRequestsPanel() {
                   Open visit to apply the change →
                 </Link>
               )}
+              {typeof r.details.agreement_id === 'string' && (
+                <Link
+                  className="mt-2 inline-block text-sm text-cyan-400"
+                  href={`/admin/operations/commercial/${r.customer_id}`}
+                >
+                  Open commercial account to revise agreement →
+                </Link>
+              )}
               <p className="text-muted-foreground mt-2 text-xs">
-                {r.status === 'approved'
-                  ? 'Approved, awaiting the actual change. Update the visit or service plan, then mark this request applied.'
-                  : 'Approval records your decision. Apply the schedule change with Operations, then mark it applied.'}
+                {r.details.agreement_id
+                  ? 'Approval records your decision; it does not change the contract. Withdraw the unsigned version, create and publish the revision, then mark this request applied. The customer reviews and signs the updated version.'
+                  : r.status === 'approved'
+                    ? 'Approved, awaiting the actual change. Update the visit or service plan, then mark this request applied.'
+                    : 'Approval records your decision. Apply the schedule change with Operations, then mark it applied.'}
               </p>
             </div>
           ))}
@@ -203,7 +219,9 @@ export function ClientRequestsPanel() {
                 {resolved.map((r) => (
                   <div key={r.id} className="flex items-center gap-2 text-sm">
                     <Badge variant="outline" className="text-xs">
-                      {TYPE_LABEL[r.request_type] ?? r.request_type}
+                      {r.details.agreement_id
+                        ? 'Agreement changes'
+                        : (TYPE_LABEL[r.request_type] ?? r.request_type)}
                     </Badge>
                     <span className="text-muted-foreground">
                       {customerName(r)}

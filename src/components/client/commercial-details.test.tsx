@@ -31,7 +31,10 @@ beforeAll(() => {
 afterAll(() => {
   Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView')
 })
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
 const data: CommercialData = {
   businessName: 'Example Business',
   profile: { ...emptyProfile },
@@ -62,6 +65,75 @@ const agreement = (status: CommercialAgreement['status']) =>
   }) as CommercialAgreement
 
 describe('commercial customer experience', () => {
+  it('lets a non-signer send version-linked feedback without signing', async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ request: { id: 'request-a' } }),
+    })
+    vi.stubGlobal('fetch', fetch)
+    const submitted = vi.fn()
+    render(
+      <ClientCommercialDetails
+        initialData={{ ...data, agreements: [agreement('published')] }}
+        onRequestSubmitted={submitted}
+      />,
+    )
+    fireEvent.click(
+      screen.getByText('Private agreement', { selector: 'strong' }),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Request changes' }))
+    fireEvent.change(
+      screen.getByLabelText('What would you like changed in version 1?'),
+      { target: { value: 'Please remove upholstery.' } },
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Send change request' }))
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Change request sent for version 1.',
+    )
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(fetch.mock.calls[0][0]).toBe('/api/client/requests')
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({
+      request_type: 'scope_change',
+      agreement_id: 'agreement-a',
+      message: 'Please remove upholstery.',
+    })
+    expect(submitted).toHaveBeenCalledOnce()
+    expect(
+      screen.queryByRole('button', { name: 'Sign and accept agreement' }),
+    ).not.toBeInTheDocument()
+  })
+  it('preserves feedback after a failed send and allows retry', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        json: async () => ({ error: 'Unable to send. Please retry.' }),
+      }),
+    )
+    render(
+      <ClientCommercialDetails
+        initialData={{ ...data, agreements: [agreement('published')] }}
+      />,
+    )
+    fireEvent.click(
+      screen.getByText('Private agreement', { selector: 'strong' }),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Request changes' }))
+    fireEvent.change(
+      screen.getByLabelText('What would you like changed in version 1?'),
+      { target: { value: 'Quarterly please.' } },
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Send change request' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Unable to send. Please retry.',
+    )
+    expect(
+      screen.getByLabelText('What would you like changed in version 1?'),
+    ).toHaveValue('Quarterly please.')
+    expect(
+      screen.getByRole('button', { name: 'Send change request' }),
+    ).toBeEnabled()
+  })
   it.each([false, true])(
     'offers auto scrubbing without changing agreement scope (has agreement: %s)',
     (hasAgreement) => {
@@ -247,6 +319,9 @@ describe('commercial customer experience', () => {
       screen.queryByText('Sign and accept agreement'),
     ).not.toBeInTheDocument()
     expect(screen.queryByText('Request this service')).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Request changes' }),
+    ).toBeDisabled()
   })
   it('keeps password and consent requirements for an authorized signer', () => {
     render(
