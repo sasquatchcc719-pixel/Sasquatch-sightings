@@ -7,7 +7,6 @@ import { requireAnyRole } from '@/lib/auth'
 import { buildEmailHtml } from '@/lib/ops/communications'
 import type { CommercialAgreement } from '@/lib/ops/commercial'
 import { AGREEMENT_SELECT } from '@/lib/ops/commercial-server'
-import { opsEmailBcc } from '@/lib/ops/email-bcc'
 import { CommercialAgreementPDF } from '@/lib/ops/pdf/commercial-agreement'
 import { createAdminClient } from '@/supabase/server'
 
@@ -193,7 +192,6 @@ export async function POST(request: NextRequest, { params }: Context) {
             process.env.OPS_EMAIL_FROM ||
             'Sasquatch Carpet Cleaning <onboarding@resend.dev>',
           to: contact.email,
-          bcc: opsEmailBcc(),
           subject: body.subject,
           html: buildEmailHtml(body.body, 'commercial_portal_setup', {
             cta: {

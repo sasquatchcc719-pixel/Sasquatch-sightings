@@ -23,9 +23,6 @@ vi.mock('@react-pdf/renderer', async (importOriginal) => {
 vi.mock('@/lib/ops/communications', () => ({
   buildEmailHtml: mocks.buildEmailHtml,
 }))
-vi.mock('@/lib/ops/email-bcc', () => ({
-  opsEmailBcc: () => 'owner@example.com',
-}))
 vi.mock('resend', () => ({
   Resend: class {
     emails = { send: mocks.send }
@@ -228,7 +225,6 @@ describe('commercial customer setup delivery', () => {
     expect(mocks.send).toHaveBeenCalledWith(
       expect.objectContaining({
         to: 'alex@example.com',
-        bcc: 'owner@example.com',
         attachments: [
           expect.objectContaining({
             filename: 'saltgrass-colorado-springs-service-agreement-v1.pdf',
@@ -245,6 +241,8 @@ describe('commercial customer setup delivery', () => {
         resend_id: 'resend-1',
       }),
     )
+    expect(mocks.send.mock.calls[0][0]).not.toHaveProperty('bcc')
+    expect(mocks.send.mock.calls[0][0]).not.toHaveProperty('cc')
   })
 
   it('refuses to send to a contact who cannot sign', async () => {
