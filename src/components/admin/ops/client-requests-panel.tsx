@@ -7,6 +7,10 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Loader2, Inbox } from 'lucide-react'
+import {
+  useCommercialTestRequests,
+  type TestRequest,
+} from './use-commercial-test-requests'
 
 type ClientRequest = {
   id: string
@@ -39,6 +43,12 @@ export function ClientRequestsPanel() {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [notes, setNotes] = useState<Record<string, string>>({})
   const [error, setError] = useState('')
+  const {
+    records: testRecords,
+    error: testError,
+    resolve: resolveTest,
+    clear: clearTests,
+  } = useCommercialTestRequests()
 
   async function load() {
     setLoading(true)
@@ -131,6 +141,38 @@ export function ClientRequestsPanel() {
         revisions appear here. Real submissions trigger a Telegram alert; staff
         test-drive submissions are not saved or sent.
       </p>
+      {testError && (
+        <p role="alert" className="mb-3 text-sm text-red-300">
+          {testError}
+        </p>
+      )}
+
+      {testRecords.length > 0 && (
+        <div className="mb-4 rounded-lg border border-amber-200/25 bg-amber-200/5 p-3">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <Badge className="bg-amber-200 text-slate-950">Browser tests</Badge>
+            <span className="text-xs text-amber-50/75">
+              Visible only in this browser; never sent to the production API.
+            </span>
+            <button
+              className="ml-auto text-xs text-amber-100 underline"
+              type="button"
+              onClick={() => clearTests()}
+            >
+              Clear tests
+            </button>
+          </div>
+          <div className="space-y-2">
+            {testRecords.map((record) => (
+              <TestRequestRow
+                key={record.id}
+                record={record}
+                onResolve={resolveTest}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <p className="text-muted-foreground text-sm">Loading…</p>
@@ -285,5 +327,60 @@ export function ClientRequestsPanel() {
         </div>
       )}
     </Card>
+  )
+}
+
+function TestRequestRow({
+  record,
+  onResolve,
+}: {
+  record: TestRequest
+  onResolve: (id: string, status: TestRequest['status'], notes?: string) => void
+}) {
+  return (
+    <div className="rounded-lg border border-amber-200/20 bg-slate-950/40 p-3">
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <Badge variant="outline" className="border-amber-200/40 text-amber-100">
+          TEST · {record.request_type.replaceAll('_', ' ')}
+        </Badge>
+        <span className="font-medium">{record.business_name}</span>
+        <span className="text-muted-foreground ml-auto text-xs">
+          {record.status}
+        </span>
+      </div>
+      <p className="mt-2 text-sm">{record.message}</p>
+      {Object.entries(record.details)
+        .filter(([, value]) => value)
+        .map(([key, value]) => (
+          <p key={key} className="text-muted-foreground mt-1 text-xs">
+            {key.replaceAll('_', ' ')}: {value}
+          </p>
+        ))}
+      {record.admin_notes && (
+        <p className="mt-1 text-xs text-emerald-300">
+          Reply: {record.admin_notes}
+        </p>
+      )}
+      {record.status === 'pending' && (
+        <button
+          className="mt-2 rounded-md border border-amber-200/30 px-2 py-1 text-xs text-amber-100"
+          type="button"
+          onClick={() =>
+            onResolve(
+              record.id,
+              'approved',
+              'Approved in the staff test drive. Awaiting scheduling.',
+            )
+          }
+        >
+          Approve test request
+        </button>
+      )}
+      {record.status === 'approved' && (
+        <p className="mt-1 text-xs text-amber-50/70">
+          Approved — awaiting scheduling.
+        </p>
+      )}
+    </div>
   )
 }

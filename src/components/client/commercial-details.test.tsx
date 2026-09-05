@@ -372,8 +372,25 @@ describe('commercial customer experience', () => {
   it('runs the complete staff request simulation without calling the API', async () => {
     const fetch = vi.fn()
     vi.stubGlobal('fetch', fetch)
+    let stored: string | null = null
+    const storage = {
+      getItem: vi.fn(() => stored),
+      setItem: vi.fn((_key: string, value: string) => {
+        stored = value
+      }),
+      removeItem: vi.fn(() => {
+        stored = null
+      }),
+    }
+    vi.stubGlobal('localStorage', storage)
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 1)
-    render(<CommercialClientPreview commercial={data} schedule={schedule} />)
+    render(
+      <CommercialClientPreview
+        commercial={data}
+        schedule={schedule}
+        customerId="customer-a"
+      />,
+    )
     fireEvent.click(
       screen.getAllByRole('button', { name: 'Request this service' })[0],
     )
@@ -385,7 +402,13 @@ describe('commercial customer experience', () => {
       screen.getByRole('button', { name: 'Test request (nothing sent)' }),
     )
     expect(await screen.findByRole('status')).toHaveTextContent(
-      'Preview complete. No request was sent.',
+      'Test record saved in this browser. See the customer receipt and staff review below. Nothing was sent.',
+    )
+    expect(screen.getByText('Browser-only test records')).toBeTruthy()
+    expect(screen.getByText('TEST')).toBeTruthy()
+    expect(storage.setItem).toHaveBeenCalledWith(
+      'sasquatch:commercial-test-requests:v1',
+      expect.stringContaining('Carpet care'),
     )
     expect(fetch).not.toHaveBeenCalled()
     vi.restoreAllMocks()

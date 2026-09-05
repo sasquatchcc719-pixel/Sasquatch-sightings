@@ -121,12 +121,14 @@ For every task:
 ## 8. When to ask, when to proceed
 
 **Ask before proceeding when:**
+
 - The request has two plausible interpretations and the choice materially affects the output.
 - The change touches something you've been told is load-bearing, versioned, or has a migration path.
 - You need a credential, a secret, or a production resource you don't have access to.
 - The user's stated goal and the literal request appear to conflict.
 
 **Proceed without asking when:**
+
 - The task is trivial and reversible (typo, rename a local variable, add a log line).
 - The ambiguity can be resolved by reading the code or running a command.
 - The user has already answered the question once in this session.
@@ -153,12 +155,14 @@ Boris Cherny (creator of Claude Code) keeps his team's file around 100 lines. Un
 **Fill this in per project. Keep it specific. Delete sections that don't apply.**
 
 ### Stack
+
 - Language and version:
 - Framework(s):
 - Package manager:
 - Runtime / deployment target:
 
 ### Commands
+
 - Install: `TODO`
 - Build: `TODO`
 - Test (all): `TODO`
@@ -170,17 +174,20 @@ Boris Cherny (creator of Claude Code) keeps his team's file around 100 lines. Un
 Prefer single-file or single-test runs during iteration. Full suites are for the final verification pass.
 
 ### Layout
+
 - Source lives in: `TODO`
 - Tests live in: `TODO`
 - Do not modify: `TODO` (generated code, vendored deps, legacy areas)
 
 ### Conventions specific to this repo
+
 - Naming: `TODO`
 - Import style: `TODO`
 - Error handling pattern: `TODO`
 - Testing pattern and framework: `TODO`
 
 ### Forbidden
+
 - `TODO`: things that look reasonable but will break this project.
 
 ---
@@ -202,7 +209,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Keep the immediate post-job review request; balance it with assessment-first service-concern language instead of removing the review ask.
 - When improving a conversion funnel, ship a customer-facing recovery action with the measurement fix; reporting alone is not conversion work.
 - Use the official website logo for customer-facing branding, not a mascot paired with a recreated text wordmark; make the next action explicit and place every action-blocking field beside that action.
-- Staff previews of customer portals must be non-persisting test drives: customer actions should open their real forms and state clearly that preview data is not saved or sent.
+- Staff previews of customer portals must never persist to production: customer actions may create clearly labeled browser-local test records, and must state that no real request, appointment, invoice, or notification is sent.
 - Commercial service discovery must retain additional service categories alongside contract-specific scope; verify request frequency, staff response, actual scheduling, and billing handoffs before describing the customer journey as complete.
 - Keep the client-request inbox visible when empty, link staff previews to it, and check Telegram's boolean delivery result rather than relying on rejected promises.
 
@@ -211,6 +218,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 ## 12. How this file was built
 
 This boilerplate synthesizes:
+
 - Sean Donahoe's IJFW ("It Just F\*cking Works") principles: one install, working code, no ceremony.
 - Andrej Karpathy's observations on LLM coding pitfalls (the four principles: think-first, simplicity, surgical changes, goal-driven execution).
 - Boris Cherny's public Claude Code workflow (reactive pruning, keep it ~100 lines, only rules that fix real mistakes).

@@ -785,6 +785,7 @@ export function RequestForm({
   preview = false,
   initialAppointmentId,
   initialRequestType,
+  onPreviewSubmitted,
 }: {
   appointments: ClientAppointment[]
   onSubmitted?: () => void
@@ -792,6 +793,12 @@ export function RequestForm({
   preview?: boolean
   initialAppointmentId?: string
   initialRequestType?: string
+  onPreviewSubmitted?: (request: {
+    request_type: string
+    message: string
+    details: Record<string, string>
+    appointment_id: string | null
+  }) => void
 }) {
   const [open, setOpen] = useState(!!initialService || !!initialAppointmentId)
   const [type, setType] = useState<string>(
@@ -832,8 +839,20 @@ export function RequestForm({
       return
     }
     if (preview) {
-      setError(null)
-      setDone(true)
+      try {
+        onPreviewSubmitted?.({
+          request_type: type,
+          message:
+            message.trim() ||
+            `Please arrange ${details.service} (${details.frequency}).`,
+          details: { ...details },
+          appointment_id: apptId || null,
+        })
+        setError(null)
+        setDone(true)
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Could not save test record.')
+      }
       return
     }
     setBusy(true)
@@ -881,7 +900,9 @@ export function RequestForm({
           </h2>
           <p className="text-sm text-slate-400">
             {preview
-              ? 'Test the customer form here. Nothing entered in this preview will be saved or sent.'
+              ? onPreviewSubmitted
+                ? 'Submit to create a labeled browser-only test record. No real request, appointment, or notification will be created.'
+                : 'Test the customer form here. Nothing entered in this preview will be saved or sent.'
               : "Reschedules, extra visits, and scope changes go to Charles for approval — they won't change your schedule until he confirms."}
           </p>
         </div>
@@ -1110,7 +1131,9 @@ export function RequestForm({
           {done && (
             <p role="status" className="text-sm text-emerald-300">
               {preview
-                ? 'Preview complete. No request was sent.'
+                ? onPreviewSubmitted
+                  ? 'Test record saved in this browser. See the customer receipt and staff review below. Nothing was sent.'
+                  : 'Preview complete. No request was sent.'
                 : 'Request received. Check “My requests” for status and replies. Your appointment is confirmed once it appears on the calendar.'}
             </p>
           )}

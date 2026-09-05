@@ -13,7 +13,16 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+function stubStorage() {
+  vi.stubGlobal('localStorage', {
+    getItem: vi.fn(() => null),
+    setItem: vi.fn(),
+    removeItem: vi.fn(),
+  })
+}
+
 it('keeps an empty request inbox visible and refreshes into an actionable request', async () => {
+  stubStorage()
   const fetch = vi
     .fn()
     .mockResolvedValueOnce({ ok: true, json: async () => ({ requests: [] }) })
@@ -48,6 +57,7 @@ it('keeps an empty request inbox visible and refreshes into an actionable reques
 })
 
 it('clears a fetch error after a successful refresh', async () => {
+  stubStorage()
   const fetch = vi
     .fn()
     .mockRejectedValueOnce(new Error('Offline'))
