@@ -1,5 +1,5 @@
 import { Resend } from 'resend'
-import { sendCustomerSMS } from '@/lib/twilio'
+import { sendCustomerSMS, sendCustomerSMSWithResult } from '@/lib/twilio'
 import { createAdminClient } from '@/supabase/server'
 import { isDeliverableCustomerEmail } from '@/lib/ops/email'
 import { isBlacklisted, normalizePhone } from '@/lib/blacklist'
@@ -882,7 +882,12 @@ export async function sendOpsLifecycleCommunications(params: {
 
     if (template.channel === 'sms') {
       if (!customerPhone) continue
-      await sendCustomerSMS(
+      // Estimate quick actions must not claim success when Twilio rejects a text.
+      const sendSms =
+        template.template_key === 'on_my_way_estimate_sms'
+          ? sendCustomerSMSWithResult
+          : sendCustomerSMS
+      await sendSms(
         customerPhone,
         body,
         undefined,

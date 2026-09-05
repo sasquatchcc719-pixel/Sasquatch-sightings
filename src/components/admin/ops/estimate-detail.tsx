@@ -351,6 +351,7 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
   const [emailError, setEmailError] = useState<string | null>(null)
   const [onMyWayLoading, setOnMyWayLoading] = useState(false)
   const [onMyWaySms, setOnMyWaySms] = useState<string | null>(null)
+  const [onMyWayWarning, setOnMyWayWarning] = useState<string | null>(null)
 
   const loadEstimate = useCallback(async () => {
     setLoading(true)
@@ -776,6 +777,7 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
     async (undo: boolean) => {
       setOnMyWayLoading(true)
       setError(null)
+      setOnMyWayWarning(null)
       try {
         const res = await fetch(
           `/api/admin/ops/estimates/${estimateId}/on-my-way`,
@@ -788,12 +790,14 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
         const payload = (await res.json().catch(() => null)) as {
           error?: string
           sms?: { body: string } | null
+          warning?: string | null
         } | null
         if (!res.ok) {
           throw new Error(payload?.error || 'Failed to update on-my-way status')
         }
         setOnMyWaySms(undo ? null : (payload?.sms?.body ?? null))
         await loadEstimate()
+        setOnMyWayWarning(payload?.warning ?? null)
       } catch (err) {
         setError(
           err instanceof Error
@@ -1032,7 +1036,7 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
           <div className="relative mt-5 flex flex-wrap items-center gap-3">
             <Button
               size="lg"
-              disabled={onMyWayLoading || !contactPhone}
+              disabled={onMyWayLoading || (!isOnMyWay && !contactPhone)}
               title={
                 contactPhone
                   ? undefined
@@ -1067,6 +1071,14 @@ export function EstimateDetail({ estimateId }: EstimateDetailProps) {
           <p className="relative mt-3 rounded-xl border border-emerald-300/30 bg-emerald-500/10 p-3 text-xs text-emerald-50">
             <span className="font-semibold">Text sent to customer:</span>{' '}
             {onMyWaySms}
+          </p>
+        ) : null}
+        {onMyWayWarning ? (
+          <p
+            role="alert"
+            className="relative mt-3 rounded-xl border border-amber-300/40 bg-amber-500/10 p-3 text-sm text-amber-100"
+          >
+            {onMyWayWarning}
           </p>
         ) : null}
 
