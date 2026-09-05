@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { CityQuickPick } from './city-quick-pick'
 import { nextZipForCityPick } from '@/lib/ops/service-cities'
+import { CustomerDeleteControl } from './customer-delete-control'
 
 type CustomerAddress = {
   id: string
@@ -193,7 +194,11 @@ function formatJobAddress(
   return [address.street_1, address.city].filter(Boolean).join(', ') || null
 }
 
-export function CustomersDirectory() {
+export function CustomersDirectory({
+  canDeleteCustomers = false,
+}: {
+  canDeleteCustomers?: boolean
+}) {
   const [loading, setLoading] = useState(true)
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -773,6 +778,17 @@ export function CustomersDirectory() {
                           <Pencil className="h-3.5 w-3.5" />
                           Edit
                         </Button>
+                        {canDeleteCustomers ? (
+                          <CustomerDeleteControl
+                            customerId={customer.id}
+                            label={customer.business_name || customer.full_name}
+                            onDeleted={(customerId) =>
+                              setCustomers((current) =>
+                                current.filter((row) => row.id !== customerId),
+                              )
+                            }
+                          />
+                        ) : null}
                         <Badge variant="outline">
                           {customer.ops_service_addresses?.length || 0} address
                           {(customer.ops_service_addresses?.length || 0) === 1

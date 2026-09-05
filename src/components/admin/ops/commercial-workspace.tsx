@@ -30,6 +30,7 @@ import {
 } from '@/lib/ops/commercial'
 import { formatMoney } from '@/lib/ops/client-portal'
 import { ClientRequestsPanel } from './client-requests-panel'
+import { CustomerDeleteControl } from './customer-delete-control'
 
 type Account = {
   id: string
@@ -258,6 +259,11 @@ export function CommercialAccount({ customerId }: { customerId: string }) {
           <h2 className="text-3xl font-bold">{data.businessName}</h2>
         </div>
         <div className="flex flex-wrap gap-2">
+          <CustomerDeleteControl
+            customerId={customerId}
+            label={data.businessName}
+            redirectTo="/admin/operations/commercial"
+          />
           <Link
             className="rounded-lg border border-amber-400/30 px-3 py-2 text-sm text-amber-200"
             href="/admin/operations/commercial#client-requests"
