@@ -94,7 +94,7 @@ export async function GET(request: NextRequest) {
     const { data: appts, error: apptError } = await supabase
       .from('ops_appointments')
       .select(
-        'id, appointment_date, status, quoted_total, customer_id, created_at',
+        'id, appointment_date, status, kind, quoted_total, customer_id, created_at',
       )
       .eq('lead_source_key', 'google_lsa')
       .gte('appointment_date', sinceKey)
@@ -122,7 +122,9 @@ export async function GET(request: NextRequest) {
       const messages: ThreadMessage[] = Array.isArray(c.messages)
         ? (c.messages as ThreadMessage[])
         : []
-      const found = extractPhones(messages.map((m) => m.content || '').join(' '))
+      const found = extractPhones(
+        messages.map((m) => m.content || '').join(' '),
+      )
       phonesByConvo.set(c.id as string, found)
       found.forEach((p) => allPhones.add(p))
     }
@@ -133,13 +135,17 @@ export async function GET(request: NextRequest) {
     const customerByPhone = new Map<string, { id: string; name: string }>()
     const jobsByCustomer = new Map<
       string,
-      { id: string; date: string; status: string; revenue: number; source: string }[]
+      {
+        id: string
+        date: string
+        status: string
+        revenue: number
+        source: string
+      }[]
     >()
 
     if (allPhones.size > 0) {
-      const orFilter = [...allPhones]
-        .map((p) => `phone.ilike.%${p}%`)
-        .join(',')
+      const orFilter = [...allPhones].map((p) => `phone.ilike.%${p}%`).join(',')
       const { data: matchedCustomers } = await supabase
         .from('ops_customers')
         .select('id, full_name, phone')
@@ -160,12 +166,13 @@ export async function GET(request: NextRequest) {
         const { data: theirJobs } = await supabase
           .from('ops_appointments')
           .select(
-            'id, customer_id, appointment_date, status, quoted_total, lead_source_key',
+            'id, customer_id, appointment_date, status, kind, quoted_total, lead_source_key',
           )
           .in('customer_id', matchedIds)
           .order('appointment_date', { ascending: false })
 
         for (const j of theirJobs || []) {
+          if (j.kind === 'estimate') continue
           const list = jobsByCustomer.get(j.customer_id as string) || []
           list.push({
             id: j.id as string,
@@ -190,9 +197,7 @@ export async function GET(request: NextRequest) {
         ? outbound[outbound.length - 1].timestamp || null
         : null
       const repliedAfterUs = lastOutboundAt
-        ? inbound.some(
-            (m) => (m.timestamp || '') > (lastOutboundAt as string),
-          )
+        ? inbound.some((m) => (m.timestamp || '') > (lastOutboundAt as string))
         : false
 
       let status: 'never_answered' | 'ghosted' | 'engaged'
@@ -286,7 +291,9 @@ export async function GET(request: NextRequest) {
     const totalSpend = ledger.reduce((s, r) => s + r.cost, 0)
     const totalCredits = ledger.reduce((s, r) => s + r.credits, 0)
     const totalLeads = ledger.reduce((s, r) => s + r.leads, 0)
-    const bookedJobs = (appts || []).filter((a) => a.status !== 'cancelled')
+    const bookedJobs = (appts || []).filter(
+      (a) => a.status !== 'cancelled' && a.kind !== 'estimate',
+    )
     const revenue = bookedJobs.reduce(
       (s, a) => s + Number(a.quoted_total || 0),
       0,
@@ -306,7 +313,9 @@ export async function GET(request: NextRequest) {
         jobs: bookedJobs.length,
         revenue: Math.round(revenue * 100) / 100,
         roas:
-          totalSpend > 0 ? Math.round((revenue / totalSpend) * 100) / 100 : null,
+          totalSpend > 0
+            ? Math.round((revenue / totalSpend) * 100) / 100
+            : null,
         costPerJob:
           bookedJobs.length > 0
             ? Math.round((totalSpend / bookedJobs.length) * 100) / 100

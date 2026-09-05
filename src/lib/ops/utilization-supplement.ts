@@ -55,6 +55,7 @@ export async function loadUtilizationSupplementRows(
       appointment_date,
       start_time,
       end_time,
+      kind,
       quoted_total,
       on_my_way_at,
       completed_at,
@@ -141,6 +142,7 @@ export async function loadUtilizationSupplementRows(
       quotedTotal: Number(
         (appt as { quoted_total?: number }).quoted_total || 0,
       ),
+      kind: (appt as { kind?: string | null }).kind,
     })
 
     const hw = utilizationHoursFromAppointment({

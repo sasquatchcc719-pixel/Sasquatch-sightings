@@ -38,7 +38,7 @@ export async function loadPartnerLiveStats(
       .from('ops_appointments')
       .select(
         `
-        partner_id, status, quoted_total,
+        partner_id, status, kind, quoted_total,
         ops_invoices ( total, ops_invoice_line_items ( line_total ) )
       `,
       )
@@ -90,6 +90,7 @@ export async function loadPartnerLiveStats(
         invoiceTotal: Number(inv?.total || 0),
         invoiceLineItems: lineItems,
         quotedTotal: Number(appt.quoted_total || 0),
+        kind: appt.kind ? String(appt.kind) : null,
       })
     }
   }

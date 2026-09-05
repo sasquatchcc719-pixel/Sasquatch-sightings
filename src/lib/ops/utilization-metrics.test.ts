@@ -36,6 +36,17 @@ describe('effectiveInvoiceAmount', () => {
     ).toBe(0)
   })
 
+  it('never counts an estimate as revenue', () => {
+    expect(
+      effectiveInvoiceAmount({
+        invoiceTotal: 0,
+        invoiceLineItems: [{ line_total: 1049.94 }],
+        quotedTotal: 1049.94,
+        kind: 'estimate',
+      }),
+    ).toBe(0)
+  })
+
   it('counts the restoration closing invoice once', () => {
     expect(
       effectiveInvoiceAmount({

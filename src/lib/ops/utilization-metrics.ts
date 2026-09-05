@@ -56,6 +56,8 @@ export function effectiveInvoiceAmount(params: {
   quotedTotal?: number | null
   kind?: string | null
 }): number {
+  if (params.kind === 'estimate') return 0
+
   const inv = Number(params.invoiceTotal || 0)
   if (inv > 0) return inv
 
@@ -99,7 +101,9 @@ export function appointmentDisplayRevenue(appt: {
     invoiceTotal: Number(inv?.total || 0),
     invoiceLineItems,
     quotedTotal: appt.quoted_total,
-    kind: appt.kind,
+    // Estimate cards still show their proposed value. Reporting callers use
+    // effectiveInvoiceAmount with the actual kind and receive zero revenue.
+    kind: appt.kind === 'estimate' ? null : appt.kind,
   })
 }
 

@@ -61,6 +61,7 @@ export async function recordRevenueFromOpsInvoice(
         appointment_date,
         start_time,
         end_time,
+        kind,
         quoted_total,
         on_my_way_at,
         completed_at,
@@ -103,6 +104,7 @@ export async function recordRevenueFromOpsInvoice(
     quotedTotal: Number(
       (appointment as { quoted_total?: number }).quoted_total || 0,
     ),
+    kind: (appointment as { kind?: string | null }).kind,
   })
 
   const override = params.hoursWorkedOverride

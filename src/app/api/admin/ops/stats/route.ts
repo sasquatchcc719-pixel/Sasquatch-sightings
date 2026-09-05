@@ -37,6 +37,7 @@ export async function GET() {
         id,
         appointment_date,
         status,
+        kind,
         lead_source,
         quoted_total,
         ops_invoices (
@@ -78,6 +79,7 @@ export async function GET() {
           quotedTotal: Number(
             (appt as { quoted_total?: number }).quoted_total || 0,
           ),
+          kind: (appt as { kind?: string | null }).kind,
         })
         invoicedJobCount++
         const ps = String(inv.payment_status || 'unpaid')
