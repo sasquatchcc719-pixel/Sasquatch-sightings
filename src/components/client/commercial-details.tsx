@@ -521,7 +521,7 @@ export function ClientCommercialDetails({
               : 'Initial service',
         meta: `${formatMoney(lineAmount(line))} · ${line.quantity.toLocaleString('en-US')} ${commercialUnit(line.unit)}`,
         frequency: line.frequency,
-        icon: /tile|grout|floor/i.test(line.name)
+        icon: /tile|grout|floor|scrub/i.test(line.name)
           ? Grid2X2
           : /chair|upholstery|furniture/i.test(line.name)
             ? Armchair
@@ -559,6 +559,20 @@ export function ClientCommercialDetails({
           icon: Armchair,
         },
       ]
+  if (!serviceCards.some((service) => /auto[\s-]*scrub/i.test(service.name))) {
+    serviceCards.push({
+      id: 'auto-scrubbing',
+      name: 'Hard-surface auto scrubbing',
+      label: currentAgreement
+        ? 'Additional service · By request'
+        : 'Machine-scrubbed floor care',
+      description:
+        'Machine scrubbing for hard-surface floors and high-traffic commercial areas. We’ll confirm the floor material, area, and cleaning needs before service.',
+      meta: 'Quoted separately before service',
+      frequency: '',
+      icon: Grid2X2,
+    })
+  }
   return (
     <div className={styles.portal}>
       <header className={styles.hero}>
@@ -721,7 +735,7 @@ export function ClientCommercialDetails({
               </h2>
               <p className={styles.sub}>
                 {currentAgreement
-                  ? 'Your service scope and available options. Each service has its own price and frequency.'
+                  ? 'Your agreed services and additional options. Additional services are quoted separately and are not included in your agreement.'
                   : 'Explore our commercial services. Your tailored scope and pricing will appear once your agreement is ready.'}
               </p>
               <p className={styles.instructions}>
@@ -733,7 +747,9 @@ export function ClientCommercialDetails({
               </p>
             </div>
           </div>
-          <div className={styles.serviceGrid}>
+          <div
+            className={`${styles.serviceGrid} ${serviceCards.length === 4 ? styles.fourServices : ''}`}
+          >
             {serviceCards.map((service, i) => {
               const Icon = service.icon
               return (

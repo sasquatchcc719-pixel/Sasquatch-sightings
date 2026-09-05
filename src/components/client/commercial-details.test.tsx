@@ -62,6 +62,49 @@ const agreement = (status: CommercialAgreement['status']) =>
   }) as CommercialAgreement
 
 describe('commercial customer experience', () => {
+  it.each([false, true])(
+    'offers auto scrubbing without changing agreement scope (has agreement: %s)',
+    (hasAgreement) => {
+      const request = vi.fn()
+      render(
+        <ClientCommercialDetails
+          initialData={{
+            ...data,
+            agreements: hasAgreement ? [agreement('published')] : [],
+          }}
+          onRequestService={request}
+        />,
+      )
+      const card = screen
+        .getByRole('heading', { name: 'Hard-surface auto scrubbing' })
+        .closest('article')!
+      expect(
+        within(card).getByText('Quoted separately before service'),
+      ).toBeInTheDocument()
+      fireEvent.click(
+        within(card).getByRole('button', { name: 'Request this service' }),
+      )
+      expect(request).toHaveBeenCalledWith('Hard-surface auto scrubbing')
+    },
+  )
+  it('does not duplicate auto scrubbing already listed in an agreement', () => {
+    const existing = agreement('published')
+    existing.content.lines[0].name = 'Hard-surface auto scrubbing'
+    render(
+      <ClientCommercialDetails
+        initialData={{ ...data, agreements: [existing] }}
+      />,
+    )
+    expect(
+      within(document.getElementById('commercial-care')!).getAllByRole(
+        'heading',
+        { name: 'Hard-surface auto scrubbing' },
+      ),
+    ).toHaveLength(1)
+    expect(
+      screen.queryByText('Quoted separately before service'),
+    ).not.toBeInTheDocument()
+  })
   it('shows the earliest same-day visit without mutating the shared schedule', () => {
     const appointments = ['14:00', '09:00'].map((time) => ({
       id: time,
