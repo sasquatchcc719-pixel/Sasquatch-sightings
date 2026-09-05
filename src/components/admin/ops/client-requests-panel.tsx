@@ -138,8 +138,8 @@ export function ClientRequestsPanel() {
       </div>
       <p className="text-muted-foreground mb-3 text-sm">
         Customer requests for extra work, schedule changes, and agreement
-        revisions appear here. Real submissions trigger a Telegram alert; staff
-        test-drive submissions are not saved or sent.
+        revisions appear here. Real submissions trigger a Telegram alert. Staff
+        test-drive records are browser-only and never enter production.
       </p>
       {testError && (
         <p role="alert" className="mb-3 text-sm text-red-300">
