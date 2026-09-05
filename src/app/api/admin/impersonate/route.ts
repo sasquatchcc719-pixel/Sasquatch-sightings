@@ -15,9 +15,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'userId required' }, { status: 400 })
     }
 
+    if (portal === 'client') {
+      const { data: client } = await supabase
+        .from('ops_client_users')
+        .select('customer_id')
+        .eq('user_id', userId)
+        .eq('is_active', true)
+        .maybeSingle()
+      if (!client)
+        return NextResponse.json({ error: 'Client not found' }, { status: 404 })
+      return NextResponse.json({
+        url: `/admin/operations/commercial/${client.customer_id}/preview`,
+      })
+    }
+
     // Whitelist the landing route — never accept an arbitrary redirect target.
-    const previewPath =
-      portal === 'client' ? '/client-preview' : '/tech-preview'
+    const previewPath = '/tech-preview'
 
     const { data: authUser, error: userError } =
       await supabase.auth.admin.getUserById(userId)

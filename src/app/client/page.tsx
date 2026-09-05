@@ -3,6 +3,7 @@ import { createAdminClient, createClient } from '@/supabase/server'
 import { loadClientPortalData } from '@/lib/ops/client-portal'
 import { ClientPortal } from '@/components/client/client-portal'
 import { redirect } from 'next/navigation'
+import { loadCommercialData } from '@/lib/ops/commercial-server'
 
 export default async function ClientPortalPage() {
   const { user, role, client } = await getUserWithRole()
@@ -12,6 +13,7 @@ export default async function ClientPortalPage() {
 
   const admin = createAdminClient()
   const data = await loadClientPortalData(admin, client.customer_id)
+  const commercial = await loadCommercialData(admin, client.customer_id)
 
   // Read the temporary-password flag from the session user's metadata.
   const sb = await createClient()
@@ -24,7 +26,7 @@ export default async function ClientPortalPage() {
 
   return (
     <ClientPortal
-      businessName="Recovery Village"
+      businessName={commercial.businessName}
       managerName={client.display_name}
       initialData={data}
       mustChangePassword={mustChangePassword}

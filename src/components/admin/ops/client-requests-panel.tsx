@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -15,6 +16,7 @@ type ClientRequest = {
   admin_notes: string | null
   created_at: string
   appointment_id: string | null
+  details: Record<string, unknown>
   ops_customers: {
     business_name: string | null
     full_name: string | null
@@ -26,7 +28,7 @@ const TYPE_LABEL: Record<string, string> = {
   reschedule: 'Reschedule',
   add_visit: 'Add visit',
   scope_change: 'Scope change',
-  skip_visit: 'Skipped visit',
+  skip_visit: 'Cancellation / skipped visit',
   other: 'Other',
 }
 
@@ -35,14 +37,16 @@ export function ClientRequestsPanel() {
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [notes, setNotes] = useState<Record<string, string>>({})
+  const [error, setError] = useState('')
 
   async function load() {
     try {
       const res = await fetch('/api/admin/ops/client-requests')
       const d = (await res.json()) as { requests?: ClientRequest[] }
+      if (!res.ok) throw new Error('Unable to load client requests')
       setRequests(d.requests || [])
     } catch {
-      // ignore
+      setError('Unable to load client requests. Refresh to try again.')
     } finally {
       setLoading(false)
     }
@@ -55,22 +59,29 @@ export function ClientRequestsPanel() {
   async function resolve(id: string, status: string) {
     setBusyId(id)
     try {
-      await fetch(`/api/admin/ops/client-requests/${id}`, {
+      const response = await fetch(`/api/admin/ops/client-requests/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status, admin_notes: notes[id] || undefined }),
       })
+      if (!response.ok) throw new Error('Unable to update request')
       await load()
+    } catch {
+      setError('Request was not updated. Please try again.')
     } finally {
       setBusyId(null)
     }
   }
 
-  const pending = requests.filter((r) => r.status === 'pending')
-  const resolved = requests.filter((r) => r.status !== 'pending').slice(0, 10)
+  const pending = requests.filter(
+    (r) => r.status === 'pending' || r.status === 'approved',
+  )
+  const resolved = requests
+    .filter((r) => r.status !== 'pending' && r.status !== 'approved')
+    .slice(0, 10)
 
   // Hide the panel entirely when there's nothing to show (keeps the page clean).
-  if (!loading && requests.length === 0) return null
+  if (!loading && requests.length === 0 && !error) return null
 
   function customerName(r: ClientRequest) {
     return (
@@ -80,12 +91,17 @@ export function ClientRequestsPanel() {
 
   return (
     <Card className="mb-6 border-amber-500/30 bg-amber-500/5 p-5">
+      {error && (
+        <p role="alert" className="mb-3 text-sm text-red-300">
+          {error}
+        </p>
+      )}
       <div className="mb-3 flex items-center gap-2">
         <Inbox className="h-4 w-4 text-amber-500" />
         <h2 className="text-lg font-semibold">Client requests</h2>
         {pending.length > 0 && (
           <Badge className="bg-amber-500 text-black">
-            {pending.length} pending
+            {pending.length} need action
           </Badge>
         )}
       </div>
@@ -125,6 +141,13 @@ export function ClientRequestsPanel() {
                 </span>
               </div>
               {r.message && <p className="mt-2 text-sm">{r.message}</p>}
+              {Object.entries(r.details || {})
+                .filter(([, v]) => typeof v === 'string' && v)
+                .map(([key, value]) => (
+                  <p key={key} className="text-muted-foreground mt-1 text-sm">
+                    {key.replaceAll('_', ' ')}: {String(value)}
+                  </p>
+                ))}
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <Input
                   placeholder="Optional reply to client…"
@@ -137,12 +160,14 @@ export function ClientRequestsPanel() {
                 <Button
                   size="sm"
                   disabled={busyId === r.id}
-                  onClick={() => resolve(r.id, 'approved')}
+                  onClick={() =>
+                    resolve(r.id, r.status === 'approved' ? 'done' : 'approved')
+                  }
                 >
                   {busyId === r.id ? (
                     <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
                   ) : null}
-                  Approve
+                  {r.status === 'approved' ? 'Mark applied' : 'Approve request'}
                 </Button>
                 <Button
                   size="sm"
@@ -153,9 +178,18 @@ export function ClientRequestsPanel() {
                   Decline
                 </Button>
               </div>
+              {r.appointment_id && (
+                <Link
+                  className="mt-2 inline-block text-sm text-cyan-400"
+                  href={`/admin/operations/appointments/${r.appointment_id}`}
+                >
+                  Open visit to apply the change →
+                </Link>
+              )}
               <p className="text-muted-foreground mt-2 text-xs">
-                Approving just records your decision — apply the actual change
-                with the tools below.
+                {r.status === 'approved'
+                  ? 'Approved, awaiting the actual change. Update the visit or service plan, then mark this request applied.'
+                  : 'Approval records your decision. Apply the schedule change with Operations, then mark it applied.'}
               </p>
             </div>
           ))}

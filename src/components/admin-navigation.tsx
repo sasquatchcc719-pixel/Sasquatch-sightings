@@ -141,6 +141,13 @@ export function AdminNavigation() {
   // Operations group (Jobs + Stats)
   const operationsTabs: NavTab[] = [
     {
+      name: 'Commercial Accounts',
+      href: '/admin/operations/commercial',
+      icon: Briefcase,
+      active: pathname.startsWith('/admin/operations/commercial'),
+      description: 'Business agreements, signatures, and service plans',
+    },
+    {
       name: 'Operations',
       href: '/admin/operations',
       icon: Calendar,

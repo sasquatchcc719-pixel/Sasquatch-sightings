@@ -31,6 +31,7 @@ export type StaffUserData = {
 }
 
 export type ClientUserData = {
+  can_sign_agreements?: boolean
   id: string
   user_id: string
   customer_id: string

@@ -16,6 +16,10 @@ import { scheduleJobReminder } from '@/lib/onesignal'
 // ─── Types ──────────────────────────────────────────────────────────────
 
 export type TemplateLineItem = {
+  pricing_unit_snapshot?: string | null
+  length_value?: number | null
+  width_value?: number | null
+  area_segments?: { length: number; width: number }[] | null
   service_catalog_item_id?: string | null
   name_snapshot: string
   quantity: number
@@ -574,6 +578,10 @@ export async function generateRecurringAppointments(
       }
 
       const apptLinePayload = lineItems.map((item) => ({
+        pricing_unit_snapshot: item.pricing_unit_snapshot || null,
+        length_value: item.length_value ?? null,
+        width_value: item.width_value ?? null,
+        area_segments: item.area_segments ?? null,
         appointment_id: appointment.id,
         service_catalog_item_id: item.service_catalog_item_id || null,
         name_snapshot: item.name_snapshot,

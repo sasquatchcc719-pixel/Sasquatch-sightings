@@ -155,7 +155,7 @@ export async function loadClientPortalData(
   customerId: string,
 ): Promise<ClientPortalData> {
   // Active recurring templates (the "intervals") for this customer.
-  const { data: templateRows } = await supabase
+  const { data: templateRows, error: templateError } = await supabase
     .from('ops_recurring_templates')
     .select(
       `id, label, start_time, is_active, line_items, discount_amount,
@@ -165,6 +165,7 @@ export async function loadClientPortalData(
     .eq('customer_id', customerId)
     .eq('is_active', true)
     .order('label')
+  if (templateError) throw templateError
 
   const templates: ClientTemplate[] = (templateRows || []).map((t) => {
     const addr = pickOne(t.ops_service_addresses) as {
@@ -212,7 +213,7 @@ export async function loadClientPortalData(
   })
 
   // All appointments for this customer (recurring + one-off), recent + upcoming.
-  const { data: apptRows } = await supabase
+  const { data: apptRows, error: appointmentError } = await supabase
     .from('ops_appointments')
     .select(
       `id, appointment_date, start_time, end_time, status, client_note, recurring_template_id,
@@ -220,8 +221,10 @@ export async function loadClientPortalData(
        ops_appointment_line_items ( id, name_snapshot, quantity, unit_price, line_total, duration_minutes, notes )`,
     )
     .eq('customer_id', customerId)
+    .eq('kind', 'service')
     .neq('status', 'cancelled')
     .order('appointment_date')
+  if (appointmentError) throw appointmentError
 
   const appointments: ClientAppointment[] = (apptRows || []).map((a) => {
     const tpl = pickOne(a.ops_recurring_templates) as {
@@ -251,7 +254,7 @@ export async function loadClientPortalData(
   })
 
   // This client's change requests / activity log.
-  const { data: requestRows } = await supabase
+  const { data: requestRows, error: requestError } = await supabase
     .from('ops_client_change_requests')
     .select(
       'id, request_type, status, message, details, admin_notes, appointment_id, created_at, resolved_at',
@@ -259,6 +262,7 @@ export async function loadClientPortalData(
     .eq('customer_id', customerId)
     .order('created_at', { ascending: false })
     .limit(50)
+  if (requestError) throw requestError
 
   const requests: ClientRequest[] = (requestRows || []).map((r) => ({
     id: r.id as string,

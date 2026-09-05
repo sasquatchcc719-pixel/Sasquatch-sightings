@@ -63,6 +63,12 @@ const navSections: NavSection[] = [
     icon: Truck,
     items: [
       {
+        name: 'Commercial Accounts',
+        href: '/admin/operations/commercial',
+        icon: Briefcase,
+        description: 'Agreements & service plans',
+      },
+      {
         name: 'Schedule',
         href: '/admin/operations',
         icon: Calendar,

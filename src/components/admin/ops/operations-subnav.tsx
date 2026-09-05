@@ -41,6 +41,12 @@ type NavItem = {
 
 const NAV_ITEMS: NavItem[] = [
   {
+    href: '/admin/operations/commercial',
+    label: 'Commercial Accounts',
+    description: 'Business profiles, agreements, signatures, and service plans',
+    icon: FileText,
+  },
+  {
     href: '/admin/operations',
     label: 'Schedule',
     description: 'Week, day, month, and blocked time',
@@ -151,6 +157,8 @@ const NAV_ITEMS: NavItem[] = [
 ]
 
 function getSectionLabel(pathname: string): string {
+  if (pathname.startsWith('/admin/operations/commercial/'))
+    return 'Commercial Account'
   const exactMatch = NAV_ITEMS.find((item) => item.href === pathname)
   if (exactMatch) return exactMatch.label
 

@@ -19,6 +19,21 @@ export async function POST(request: NextRequest, { params }: Params) {
     const { id } = await params
     const supabase = createAdminClient()
     const body = await request.json().catch(() => ({}))
+    const { data: agreements, error: agreementError } = await supabase
+      .from('ops_commercial_agreements')
+      .select('id')
+      .eq('customer_id', client.customer_id)
+      .eq('status', 'signed')
+      .limit(1)
+    if (agreementError) throw agreementError
+    if (agreements?.length)
+      return NextResponse.json(
+        {
+          error:
+            'Please use Request a change → Request cancellation so we can review the notice and payment terms in your agreement.',
+        },
+        { status: 409 },
+      )
     const reason =
       typeof body.reason === 'string' ? body.reason.slice(0, 1000) : null
 

@@ -10,6 +10,11 @@ import { Label } from '@/components/ui/label'
 import Image from 'next/image'
 import { createClient } from '@/supabase/client'
 import {
+  ClientCommercialDetails,
+  Field,
+  fieldClass,
+} from '@/components/client/commercial-details'
+import {
   formatTime,
   formatMoney,
   type ClientPortalData,
@@ -65,6 +70,7 @@ function isoToDate(iso: string) {
 }
 
 const REQUEST_TYPES = [
+  { value: 'skip_visit', label: 'Request cancellation of a visit' },
   { value: 'reschedule', label: 'Reschedule a visit' },
   { value: 'add_visit', label: 'Add an extra visit' },
   { value: 'scope_change', label: 'Change cleaning scope' },
@@ -78,6 +84,7 @@ export function ClientPortal({
   mustChangePassword,
 }: Props) {
   const [data, setData] = useState<ClientPortalData>(initialData)
+  const [tab, setTab] = useState<'schedule' | 'business'>('schedule')
   const today = todayStr()
 
   // Default the calendar to the month of the next upcoming visit, else current month.
@@ -166,247 +173,271 @@ export function ClientPortal({
       <div>
         <h1 className="text-2xl font-bold">Welcome, {managerName}</h1>
         <p className="text-sm text-slate-400">
-          {businessName} recurring cleaning schedule. View your visits, leave
-          notes for the crew, skip a date, or request a change.
+          {businessName} · Your service schedule, business details, and
+          agreements.
         </p>
       </div>
 
-      {/* Recurring intervals */}
-      <Card className="border-white/10 bg-white/5 p-5 backdrop-blur">
-        <div className="mb-3 flex items-center gap-2">
-          <Repeat className="h-4 w-4 text-emerald-400" />
-          <h2 className="text-lg font-semibold">Recurring schedule</h2>
-        </div>
-        {data.templates.length === 0 ? (
-          <p className="text-sm text-slate-400">No active recurring jobs.</p>
-        ) : (
-          <div className="grid gap-3 sm:grid-cols-2">
-            {data.templates.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => setDatesTemplate(t)}
-                className="rounded-lg border border-white/10 bg-black/20 p-3 text-left transition hover:border-emerald-500/40 hover:bg-black/30"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <p className="font-medium">{t.label}</p>
-                  <span className="flex shrink-0 items-center gap-1 text-xs whitespace-nowrap text-emerald-400">
-                    <CalendarDays className="h-3 w-3" /> View dates
-                  </span>
-                </div>
-                <div className="mt-1 flex flex-wrap gap-1.5">
-                  {t.schedule.map((s, i) => (
-                    <Badge
-                      key={i}
-                      variant="secondary"
-                      className="bg-emerald-500/15 text-emerald-300"
-                    >
-                      {s}
-                    </Badge>
-                  ))}
-                  {t.start_time && (
-                    <Badge
-                      variant="secondary"
-                      className="bg-white/10 text-slate-300"
-                    >
-                      <Clock className="mr-1 h-3 w-3" />
-                      {formatTime(t.start_time)}
-                    </Badge>
-                  )}
-                </div>
-                {t.lineItems.length > 0 && (
-                  <ul className="mt-2 space-y-1.5">
-                    {t.lineItems.map((li, i) => (
-                      <li key={i} className="text-xs">
-                        <div className="flex justify-between gap-2">
-                          <span className="font-medium text-slate-200">
-                            {li.name}
-                          </span>
-                          <span className="shrink-0 text-slate-300">
-                            {formatMoney(li.quantity * li.unitPrice)}
-                          </span>
-                        </div>
-                        {li.notes && (
-                          <span className="block text-slate-400">
-                            {li.notes}
-                          </span>
-                        )}
-                        <span className="block text-slate-500">
-                          {li.quantity.toLocaleString()} ×{' '}
-                          {formatMoney(li.unitPrice)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {(t.total > 0 || t.discount > 0) && (
-                  <div className="mt-2 border-t border-white/10 pt-2 text-xs">
-                    {t.discount > 0 && (
-                      <div className="flex justify-between text-slate-400">
-                        <span>Discount</span>
-                        <span>−{formatMoney(t.discount)}</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between font-semibold text-emerald-300">
-                      <span>Per visit</span>
-                      <span>{formatMoney(t.total)}</span>
-                    </div>
-                  </div>
-                )}
-                {t.address && (
-                  <p className="mt-2 flex items-center gap-1 text-xs text-slate-500">
-                    <MapPin className="h-3 w-3" /> {t.address}
-                  </p>
-                )}
-              </button>
-            ))}
-          </div>
-        )}
-      </Card>
-
-      {/* Calendar + day detail */}
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="flex gap-2" aria-label="Portal sections">
+        <Button
+          variant={tab === 'schedule' ? 'default' : 'outline'}
+          onClick={() => setTab('schedule')}
+        >
+          Schedule & requests
+        </Button>
+        <Button
+          variant={tab === 'business' ? 'default' : 'outline'}
+          onClick={() => setTab('business')}
+        >
+          Business & agreements
+        </Button>
+      </div>
+      {tab === 'business' && <ClientCommercialDetails />}
+      <div className="space-y-6" hidden={tab !== 'schedule'}>
+        {/* Recurring intervals */}
         <Card className="border-white/10 bg-white/5 p-5 backdrop-blur">
-          <div className="mb-3 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <CalendarDays className="h-4 w-4 text-emerald-400" />
-              <h2 className="text-lg font-semibold">
-                {MONTHS[viewMonth]} {viewYear}
-              </h2>
-            </div>
-            <div className="flex gap-1">
-              <Button
-                size="sm"
-                variant="outline"
-                className="border-white/15 bg-transparent px-2"
-                onClick={() => shiftMonth(-1)}
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="border-white/15 bg-transparent px-2"
-                onClick={() => shiftMonth(1)}
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
+          <div className="mb-3 flex items-center gap-2">
+            <Repeat className="h-4 w-4 text-emerald-400" />
+            <h2 className="text-lg font-semibold">Recurring schedule</h2>
           </div>
-          <div className="grid grid-cols-7 gap-1 text-center text-xs text-slate-500">
-            {WEEKDAYS.map((d) => (
-              <div key={d} className="py-1 font-medium">
-                {d}
-              </div>
-            ))}
-            {grid.map((iso, i) => {
-              if (!iso) return <div key={`e${i}`} />
-              const has = byDate.has(iso)
-              const isToday = iso === today
-              const isSelected = iso === selectedDate
-              const dayNum = Number(iso.split('-')[2])
-              return (
+          {data.templates.length === 0 ? (
+            <p className="text-sm text-slate-400">No active recurring jobs.</p>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {data.templates.map((t) => (
                 <button
-                  key={iso}
-                  onClick={() => setSelectedDate(iso)}
-                  className={[
-                    'relative aspect-square rounded-md text-sm transition',
-                    isSelected
-                      ? 'bg-emerald-500 font-semibold text-black'
-                      : has
-                        ? 'bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/30'
-                        : 'text-slate-400 hover:bg-white/5',
-                    isToday && !isSelected ? 'ring-1 ring-white/40' : '',
-                  ].join(' ')}
+                  key={t.id}
+                  type="button"
+                  onClick={() => setDatesTemplate(t)}
+                  className="rounded-lg border border-white/10 bg-black/20 p-3 text-left transition hover:border-emerald-500/40 hover:bg-black/30"
                 >
-                  {dayNum}
-                  {has && !isSelected && (
-                    <span className="absolute bottom-1 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-emerald-400" />
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="font-medium">{t.label}</p>
+                    <span className="flex shrink-0 items-center gap-1 text-xs whitespace-nowrap text-emerald-400">
+                      <CalendarDays className="h-3 w-3" /> View dates
+                    </span>
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    {t.schedule.map((s, i) => (
+                      <Badge
+                        key={i}
+                        variant="secondary"
+                        className="bg-emerald-500/15 text-emerald-300"
+                      >
+                        {s}
+                      </Badge>
+                    ))}
+                    {t.start_time && (
+                      <Badge
+                        variant="secondary"
+                        className="bg-white/10 text-slate-300"
+                      >
+                        <Clock className="mr-1 h-3 w-3" />
+                        {formatTime(t.start_time)}
+                      </Badge>
+                    )}
+                  </div>
+                  {t.lineItems.length > 0 && (
+                    <ul className="mt-2 space-y-1.5">
+                      {t.lineItems.map((li, i) => (
+                        <li key={i} className="text-xs">
+                          <div className="flex justify-between gap-2">
+                            <span className="font-medium text-slate-200">
+                              {li.name}
+                            </span>
+                            <span className="shrink-0 text-slate-300">
+                              {formatMoney(li.quantity * li.unitPrice)}
+                            </span>
+                          </div>
+                          {li.notes && (
+                            <span className="block text-slate-400">
+                              {li.notes}
+                            </span>
+                          )}
+                          <span className="block text-slate-500">
+                            {li.quantity.toLocaleString()} ×{' '}
+                            {formatMoney(li.unitPrice)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {(t.total > 0 || t.discount > 0) && (
+                    <div className="mt-2 border-t border-white/10 pt-2 text-xs">
+                      {t.discount > 0 && (
+                        <div className="flex justify-between text-slate-400">
+                          <span>Discount</span>
+                          <span>−{formatMoney(t.discount)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between font-semibold text-emerald-300">
+                        <span>Per visit</span>
+                        <span>{formatMoney(t.total)}</span>
+                      </div>
+                    </div>
+                  )}
+                  {t.address && (
+                    <p className="mt-2 flex items-center gap-1 text-xs text-slate-500">
+                      <MapPin className="h-3 w-3" /> {t.address}
+                    </p>
                   )}
                 </button>
-              )
-            })}
-          </div>
-          <p className="mt-3 text-xs text-slate-500">
-            Highlighted days have scheduled visits. Tap a day to see details.
-          </p>
+              ))}
+            </div>
+          )}
         </Card>
 
-        {/* Day detail */}
+        {/* Calendar + day detail */}
+        <div className="grid gap-6 md:grid-cols-2">
+          <Card className="border-white/10 bg-white/5 p-5 backdrop-blur">
+            <div className="mb-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CalendarDays className="h-4 w-4 text-emerald-400" />
+                <h2 className="text-lg font-semibold">
+                  {MONTHS[viewMonth]} {viewYear}
+                </h2>
+              </div>
+              <div className="flex gap-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-white/15 bg-transparent px-2"
+                  onClick={() => shiftMonth(-1)}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-white/15 bg-transparent px-2"
+                  onClick={() => shiftMonth(1)}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+            <div className="grid grid-cols-7 gap-1 text-center text-xs text-slate-500">
+              {WEEKDAYS.map((d) => (
+                <div key={d} className="py-1 font-medium">
+                  {d}
+                </div>
+              ))}
+              {grid.map((iso, i) => {
+                if (!iso) return <div key={`e${i}`} />
+                const has = byDate.has(iso)
+                const isToday = iso === today
+                const isSelected = iso === selectedDate
+                const dayNum = Number(iso.split('-')[2])
+                return (
+                  <button
+                    key={iso}
+                    onClick={() => setSelectedDate(iso)}
+                    className={[
+                      'relative aspect-square rounded-md text-sm transition',
+                      isSelected
+                        ? 'bg-emerald-500 font-semibold text-black'
+                        : has
+                          ? 'bg-emerald-500/20 text-emerald-200 hover:bg-emerald-500/30'
+                          : 'text-slate-400 hover:bg-white/5',
+                      isToday && !isSelected ? 'ring-1 ring-white/40' : '',
+                    ].join(' ')}
+                  >
+                    {dayNum}
+                    {has && !isSelected && (
+                      <span className="absolute bottom-1 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-emerald-400" />
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+            <p className="mt-3 text-xs text-slate-500">
+              Highlighted days have scheduled visits. Tap a day to see details.
+            </p>
+          </Card>
+
+          {/* Day detail */}
+          <Card className="border-white/10 bg-white/5 p-5 backdrop-blur">
+            <h2 className="mb-3 text-lg font-semibold">
+              {isoToDate(selectedDate).toLocaleDateString('en-US', {
+                weekday: 'long',
+                month: 'long',
+                day: 'numeric',
+              })}
+            </h2>
+            {selectedAppts.length === 0 ? (
+              <p className="text-sm text-slate-400">
+                No visits scheduled this day.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {selectedAppts.map((a) => (
+                  <VisitCard
+                    key={a.id}
+                    appt={a}
+                    isPast={a.appointment_date < today}
+                    onChanged={refresh}
+                  />
+                ))}
+              </div>
+            )}
+          </Card>
+        </div>
+
+        {/* Request a change */}
+        <RequestForm appointments={data.appointments} onSubmitted={refresh} />
+
+        {/* My requests */}
         <Card className="border-white/10 bg-white/5 p-5 backdrop-blur">
           <h2 className="mb-3 text-lg font-semibold">
-            {isoToDate(selectedDate).toLocaleDateString('en-US', {
-              weekday: 'long',
-              month: 'long',
-              day: 'numeric',
-            })}
+            My requests{' '}
+            {pendingCount > 0 && (
+              <span className="text-sm font-normal text-amber-300">
+                ({pendingCount} pending)
+              </span>
+            )}
           </h2>
-          {selectedAppts.length === 0 ? (
-            <p className="text-sm text-slate-400">
-              No visits scheduled this day.
-            </p>
+          {data.requests.length === 0 ? (
+            <p className="text-sm text-slate-400">No requests yet.</p>
           ) : (
-            <div className="space-y-3">
-              {selectedAppts.map((a) => (
-                <VisitCard
-                  key={a.id}
-                  appt={a}
-                  isPast={a.appointment_date < today}
-                  onChanged={refresh}
-                />
+            <div className="space-y-2">
+              {data.requests.map((r) => (
+                <div
+                  key={r.id}
+                  className="flex items-start justify-between gap-3 rounded-lg border border-white/10 bg-black/20 p-3 text-sm"
+                >
+                  <div>
+                    <p className="font-medium capitalize">
+                      {r.request_type.replace('_', ' ')}
+                    </p>
+                    {r.message && <p className="text-slate-400">{r.message}</p>}
+                    {Object.entries(r.details)
+                      .filter(([, v]) => typeof v === 'string' && v)
+                      .map(([k, v]) => (
+                        <p key={k} className="text-xs text-slate-400">
+                          {k.replaceAll('_', ' ')}: {String(v)}
+                        </p>
+                      ))}
+                    {r.admin_notes && (
+                      <p className="mt-1 text-xs text-emerald-300">
+                        Reply: {r.admin_notes}
+                      </p>
+                    )}
+                    <p className="mt-1 text-xs text-slate-500">
+                      {new Date(r.created_at).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      })}
+                    </p>
+                  </div>
+                  <StatusBadge status={r.status} />
+                </div>
               ))}
             </div>
           )}
         </Card>
       </div>
-
-      {/* Request a change */}
-      <RequestForm appointments={data.appointments} onSubmitted={refresh} />
-
-      {/* My requests */}
-      <Card className="border-white/10 bg-white/5 p-5 backdrop-blur">
-        <h2 className="mb-3 text-lg font-semibold">
-          My requests{' '}
-          {pendingCount > 0 && (
-            <span className="text-sm font-normal text-amber-300">
-              ({pendingCount} pending)
-            </span>
-          )}
-        </h2>
-        {data.requests.length === 0 ? (
-          <p className="text-sm text-slate-400">No requests yet.</p>
-        ) : (
-          <div className="space-y-2">
-            {data.requests.map((r) => (
-              <div
-                key={r.id}
-                className="flex items-start justify-between gap-3 rounded-lg border border-white/10 bg-black/20 p-3 text-sm"
-              >
-                <div>
-                  <p className="font-medium capitalize">
-                    {r.request_type.replace('_', ' ')}
-                  </p>
-                  {r.message && <p className="text-slate-400">{r.message}</p>}
-                  {r.admin_notes && (
-                    <p className="mt-1 text-xs text-emerald-300">
-                      Reply: {r.admin_notes}
-                    </p>
-                  )}
-                  <p className="mt-1 text-xs text-slate-500">
-                    {new Date(r.created_at).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: 'numeric',
-                      minute: '2-digit',
-                    })}
-                  </p>
-                </div>
-                <StatusBadge status={r.status} />
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
     </div>
   )
 }
@@ -420,7 +451,11 @@ function StatusBadge({ status }: { status: string }) {
   }
   return (
     <Badge variant="secondary" className={map[status] ?? 'bg-white/10'}>
-      {status}
+      {status === 'approved'
+        ? 'Approved · awaiting update'
+        : status === 'done'
+          ? 'Applied'
+          : status}
     </Badge>
   )
 }
@@ -646,6 +681,13 @@ function RequestForm({
   const [type, setType] = useState<string>('reschedule')
   const [apptId, setApptId] = useState<string>('')
   const [message, setMessage] = useState('')
+  const [details, setDetails] = useState({
+    service: '',
+    area: '',
+    frequency: '',
+    preferred_date: '',
+    preferred_time: '',
+  })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState(false)
@@ -667,6 +709,7 @@ function RequestForm({
         body: JSON.stringify({
           request_type: type,
           message,
+          details,
           appointment_id: apptId || undefined,
         }),
       })
@@ -674,6 +717,13 @@ function RequestForm({
       if (!res.ok) throw new Error(d.error || 'Failed to submit')
       setDone(true)
       setMessage('')
+      setDetails({
+        service: '',
+        area: '',
+        frequency: '',
+        preferred_date: '',
+        preferred_time: '',
+      })
       setApptId('')
       onSubmitted()
       setTimeout(() => {
@@ -722,7 +772,9 @@ function RequestForm({
             </select>
           </div>
 
-          {(type === 'reschedule' || type === 'scope_change') &&
+          {(type === 'reschedule' ||
+            type === 'scope_change' ||
+            type === 'skip_visit') &&
             upcoming.length > 0 && (
               <div>
                 <Label className="text-slate-300">Which visit?</Label>
@@ -751,6 +803,71 @@ function RequestForm({
               </div>
             )}
 
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Service needed">
+              <Input
+                list="commercial-service-options"
+                className={fieldClass}
+                value={details.service}
+                onChange={(e) =>
+                  setDetails({ ...details, service: e.target.value })
+                }
+              />
+              <datalist id="commercial-service-options">
+                {[
+                  'Carpet — hot water extraction',
+                  'Carpet — low moisture maintenance',
+                  'Tile and grout cleaning',
+                  'Upholstery cleaning',
+                  'Spot / stain treatment',
+                  'Odor treatment',
+                  'Floor protection',
+                  'Furniture handling',
+                ].map((s) => (
+                  <option key={s} value={s} />
+                ))}
+              </datalist>
+            </Field>
+            <Field label="Area / approximate measurements">
+              <Input
+                className={fieldClass}
+                value={details.area}
+                onChange={(e) =>
+                  setDetails({ ...details, area: e.target.value })
+                }
+              />
+            </Field>
+            <Field label="Preferred date">
+              <Input
+                type="date"
+                min={today}
+                className={fieldClass}
+                value={details.preferred_date}
+                onChange={(e) =>
+                  setDetails({ ...details, preferred_date: e.target.value })
+                }
+              />
+            </Field>
+            <Field label="Preferred time / access window">
+              <Input
+                className={fieldClass}
+                value={details.preferred_time}
+                onChange={(e) =>
+                  setDetails({ ...details, preferred_time: e.target.value })
+                }
+              />
+            </Field>
+            <Field label="Frequency / season">
+              <Input
+                placeholder="One-time, monthly, winter only…"
+                className={fieldClass}
+                value={details.frequency}
+                onChange={(e) =>
+                  setDetails({ ...details, frequency: e.target.value })
+                }
+              />
+            </Field>
+          </div>
           <div>
             <Label className="text-slate-300">Details</Label>
             <Textarea
