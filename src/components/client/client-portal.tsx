@@ -42,6 +42,7 @@ type Props = {
   mustChangePassword: boolean
   initialCommercialData: CommercialData
   canSign: boolean
+  readOnly?: boolean
 }
 
 const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
@@ -77,6 +78,7 @@ export function ClientPortal({
   mustChangePassword,
   initialCommercialData,
   canSign,
+  readOnly = false,
 }: Props) {
   const [data, setData] = useState<ClientPortalData>(initialData)
   const [tab, setTab] = useState<'schedule' | 'business'>('business')
@@ -109,9 +111,7 @@ export function ClientPortal({
       if (!res.ok) throw new Error('Unable to refresh')
       setData((await res.json()) as ClientPortalData)
     } catch {
-      setRefreshError(
-        'Could not refresh appointments and replies. Please try again.',
-      )
+      setRefreshError('Could not refresh appointments. Please try again.')
     } finally {
       setRefreshing(false)
     }
@@ -154,7 +154,7 @@ export function ClientPortal({
 
   return (
     <div className="space-y-6 text-slate-100">
-      {showPasswordGate && (
+      {showPasswordGate && !readOnly && (
         <PasswordGate onDone={() => setShowPasswordGate(false)} />
       )}
 
@@ -184,22 +184,21 @@ export function ClientPortal({
           aria-pressed={tab === 'schedule'}
           onClick={() => setTab('schedule')}
         >
-          Schedule
+          Appointments
         </Button>
         <Button
           variant={tab === 'business' ? 'default' : 'outline'}
           aria-pressed={tab === 'business'}
           onClick={() => setTab('business')}
         >
-          Your account overview
+          Agreement
         </Button>
       </div>
       <div hidden={tab !== 'business'}>
         <ClientCommercialDetails
           initialData={initialCommercialData}
           canSign={canSign}
-          schedule={data}
-          onViewSchedule={() => setTab('schedule')}
+          readOnly={readOnly}
         />
       </div>
       <div className="space-y-6" hidden={tab !== 'schedule'}>
@@ -220,14 +219,16 @@ export function ClientPortal({
               <a href="sms:7192498791">Text Sasquatch</a>
             </Button>
           </div>
-          <Button
-            className="mt-3"
-            variant="outline"
-            disabled={refreshing}
-            onClick={() => void refresh()}
-          >
-            {refreshing ? 'Refreshing…' : 'Refresh appointments'}
-          </Button>
+          {!readOnly && (
+            <Button
+              className="mt-3"
+              variant="outline"
+              disabled={refreshing}
+              onClick={() => void refresh()}
+            >
+              {refreshing ? 'Refreshing…' : 'Refresh appointments'}
+            </Button>
+          )}
           {refreshError && (
             <p role="alert" className="mt-2 text-red-300">
               {refreshError}
@@ -416,6 +417,7 @@ export function ClientPortal({
                     appt={a}
                     isPast={a.appointment_date < today}
                     onChanged={refresh}
+                    readOnly={readOnly}
                   />
                 ))}
               </div>
@@ -431,10 +433,12 @@ function VisitCard({
   appt,
   isPast,
   onChanged,
+  readOnly,
 }: {
   appt: ClientAppointment
   isPast: boolean
   onChanged: () => void
+  readOnly: boolean
 }) {
   const [note, setNote] = useState(appt.client_note ?? '')
   const [editingNote, setEditingNote] = useState(false)
@@ -580,7 +584,7 @@ function VisitCard({
         </div>
       )}
 
-      {!isPast && (
+      {!isPast && !readOnly && (
         <div className="mt-3 flex flex-wrap gap-2">
           {!editingNote && (
             <Button

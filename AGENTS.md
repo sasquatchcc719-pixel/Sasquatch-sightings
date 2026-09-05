@@ -213,6 +213,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Keep the commercial portal agreement-first: customers review and sign published agreements or send agreement-linked notes that alert Charles in Telegram; additional work and schedule changes are handled by phone or text, not a portal request workflow.
 - Keep the agreement-note inbox visible when empty, link commercial workspaces to it, and check Telegram's boolean delivery result rather than relying on rejected promises.
 - Do not present duplicate customer steps that lead to the same destination; collapse them into one clear action and renumber the remaining flow.
+- Keep commercial customer navigation to two real views—Agreement and Appointments—and do not stack anchor menus, step cards, or repeated same-page links beneath those tabs.
 
 ---
 

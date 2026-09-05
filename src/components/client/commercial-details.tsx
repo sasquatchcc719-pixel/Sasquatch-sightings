@@ -8,7 +8,6 @@ import {
   Download,
   Printer,
   ShieldCheck,
-  ArrowUpRight,
   ChevronDown,
   Layers3,
   Grid2X2,
@@ -17,7 +16,6 @@ import {
   LockKeyhole,
   ReceiptText,
   Leaf,
-  SlidersHorizontal,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -30,11 +28,7 @@ import {
   lineAmount,
   commercialUnit,
 } from '@/lib/ops/commercial'
-import {
-  formatMoney,
-  formatTime,
-  type ClientPortalData,
-} from '@/lib/ops/client-portal'
+import { formatMoney } from '@/lib/ops/client-portal'
 
 export const panelClass =
   'rounded-2xl border border-white/10 bg-slate-900/80 p-5 text-slate-100 shadow-sm'
@@ -511,14 +505,10 @@ export function ClientCommercialDetails({
   initialData,
   readOnly = false,
   canSign = false,
-  schedule,
-  onViewSchedule,
 }: {
   initialData?: CommercialData
   readOnly?: boolean
   canSign?: boolean
-  schedule?: ClientPortalData
-  onViewSchedule?: () => void
 }) {
   const [data, setData] = useState<
     (CommercialData & { canSign?: boolean }) | null
@@ -541,78 +531,6 @@ export function ClientCommercialDetails({
   const currentAgreement =
     agreements.find((a) => a.status === 'published') ||
     agreements.find((a) => a.status === 'signed')
-  const today = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Denver',
-  }).format(new Date())
-  const upcoming = (schedule?.appointments || [])
-    .filter(
-      (a) =>
-        a.appointment_date >= today &&
-        !['completed', 'cancelled'].includes(a.status),
-    )
-    .sort((a, b) =>
-      `${a.appointment_date} ${a.start_time}`.localeCompare(
-        `${b.appointment_date} ${b.start_time}`,
-      ),
-    )
-  const nextVisit = upcoming[0]
-  const needsReview = currentAgreement?.status === 'published'
-  const needsContact =
-    !data.profile.billing_contact.trim() || !data.profile.billing_email.trim()
-  const nextStep = needsReview
-    ? {
-        title: 'Your agreement is ready.',
-        description:
-          'Open your agreement to review the services, prices, and terms. Send Charles a note if needed, or sign at the bottom when everything looks right.',
-        label:
-          (data.canSign ?? canSign) && !readOnly
-            ? 'Review & sign agreement'
-            : 'Review your agreement',
-        target: `commercial-agreement-${currentAgreement.id}`,
-      }
-    : needsContact
-      ? {
-          title: 'Start with your business details.',
-          description:
-            'Add your billing contact and email, then tell us how to access your building. Save your details when you’re finished.',
-          label: readOnly ? 'View business details' : 'Add business details',
-          target: 'commercial-profile',
-        }
-      : !currentAgreement
-        ? {
-            title: 'We’re preparing your agreement.',
-            description:
-              'Your billing contact is on file. There’s nothing to sign yet. We’ll publish your scope and pricing here when it is ready.',
-            label: 'View agreement status',
-            target: 'commercial-agreements',
-          }
-        : {
-            title: nextVisit
-              ? 'Your next visit is scheduled.'
-              : 'Your agreement is on file.',
-            description: nextVisit
-              ? 'Check your upcoming visits below. Call or text Sasquatch if the schedule needs to change.'
-              : 'There are no upcoming visits yet. Call or text Sasquatch when you are ready to schedule.',
-            label: nextVisit ? 'View appointments' : 'View agreement',
-            target: nextVisit
-              ? 'commercial-visits'
-              : `commercial-agreement-${currentAgreement.id}`,
-          }
-  const goToSection = (id: string) => {
-    if (id === 'commercial-visits' && onViewSchedule) {
-      onViewSchedule()
-      return
-    }
-    const section = document.getElementById(id)
-    if (!section) return
-    if (section instanceof HTMLDetailsElement) section.open = true
-    const focusTarget = section.querySelector<HTMLElement>('summary, h2')
-    if (focusTarget) {
-      if (focusTarget.tagName !== 'SUMMARY') focusTarget.tabIndex = -1
-      focusTarget.focus({ preventScroll: true })
-    }
-    section.scrollIntoView({ block: 'start', behavior: 'instant' })
-  }
   const address = data.addresses[0]
   const serviceCards = currentAgreement
     ? currentAgreement.content.lines.map((line) => ({
@@ -738,7 +656,7 @@ export function ClientCommercialDetails({
             <LockKeyhole size={12} /> Your private workspace
           </span>
         </div>
-        <div className={styles.heroGrid}>
+        <div>
           <div>
             <p className={`${styles.eyebrow} ${styles.kicker}`}>
               Your commercial service account
@@ -755,108 +673,14 @@ export function ClientCommercialDetails({
               </p>
             )}
           </div>
-          <div className={styles.visitCard}>
-            <div className={styles.visitTop}>
-              <span className={styles.eyebrow}>
-                Start here · Your next step
-              </span>
-              <ArrowUpRight size={19} strokeWidth={1.4} />
-            </div>
-            <h2 className={styles.visitTitle}>{nextStep.title}</h2>
-            <p className={styles.visitSub}>{nextStep.description}</p>
-            <button
-              type="button"
-              className={styles.nextAction}
-              onClick={() => goToSection(nextStep.target)}
-            >
-              {nextStep.label} <ArrowUpRight size={17} />
-            </button>
-            {readOnly && (
-              <p className={styles.previewHint}>
-                Staff preview: you can explore, but only the customer can save
-                details, send agreement notes, or sign here.
-              </p>
-            )}
-            {nextVisit && (
-              <p className={styles.visitSub}>
-                Next visit: {commercialDate(nextVisit.appointment_date)}
-                <br />
-                <span>
-                  {formatTime(nextVisit.start_time)} –{' '}
-                  {formatTime(nextVisit.end_time)}
-                </span>
-              </p>
-            )}
-            {onViewSchedule ? (
-              <button className={styles.visitLink} onClick={onViewSchedule}>
-                View schedule <ArrowUpRight size={15} />
-              </button>
-            ) : (
-              <a className={styles.visitLink} href="#commercial-visits">
-                View service schedule <ArrowUpRight size={15} />
-              </a>
-            )}
-          </div>
         </div>
       </header>
-      <nav className={styles.nav} aria-label="Account overview">
-        <a href="#commercial-care">
-          <Layers3 size={14} /> Services
-        </a>
-        <a href="#commercial-agreements">
-          <FileCheck2 size={14} /> Agreements
-        </a>
-        <a
-          href="#commercial-profile"
-          onClick={(event) => {
-            event.preventDefault()
-            goToSection('commercial-profile')
-          }}
-        >
-          <SlidersHorizontal size={14} /> Business details
-        </a>
-      </nav>
       <div className={styles.body}>
         {error && (
           <p role="alert" className="text-red-300">
             {error}
           </p>
         )}
-        <div className={styles.steps} aria-label="How to use your account">
-          {[
-            [
-              '01',
-              'Review your agreement',
-              currentAgreement?.status === 'signed'
-                ? 'Signed · View your saved terms'
-                : needsReview
-                  ? 'Ready · Review, send a note, or sign'
-                  : 'Being prepared · Nothing to sign yet',
-              currentAgreement
-                ? `commercial-agreement-${currentAgreement.id}`
-                : 'commercial-agreements',
-            ],
-            [
-              '02',
-              'Check your appointments',
-              'See your confirmed service dates',
-              'commercial-visits',
-            ],
-          ].map(([n, title, detail, target]) => (
-            <button
-              type="button"
-              key={n}
-              className={styles.step}
-              onClick={() => goToSection(target)}
-            >
-              <span className={styles.stepNumber}>{n}</span>
-              <div>
-                <strong>{title}</strong>
-                <span>{detail}</span>
-              </div>
-            </button>
-          ))}
-        </div>
         <section id="commercial-care">
           <div className={styles.intro}>
             <div>
@@ -900,15 +724,6 @@ export function ClientCommercialDetails({
                       {service.frequency && <span>{service.frequency}</span>}
                     </div>
                   </div>
-                  <a
-                    className={styles.serviceAction}
-                    href="#commercial-agreements"
-                  >
-                    {currentAgreement
-                      ? 'View agreement details'
-                      : 'About your agreement'}
-                    <ArrowUpRight size={15} />
-                  </a>
                 </article>
               )
             })}
@@ -1012,42 +827,6 @@ export function ClientCommercialDetails({
             </div>
           </aside>
         </div>
-        {!onViewSchedule && (
-          <section id="commercial-visits" className={styles.schedule}>
-            <p className={`${styles.eyebrow} ${styles.overline}`}>
-              03 / On the calendar
-            </p>
-            <h2 className={styles.sectionTitle}>Your upcoming appointments.</h2>
-            {upcoming.length ? (
-              upcoming.map((a) => (
-                <div key={a.id} className={styles.visitRow}>
-                  <div className={styles.dateBlock}>
-                    <span>{commercialDate(a.appointment_date, 'month')}</span>
-                    <strong>{a.appointment_date.slice(8)}</strong>
-                  </div>
-                  <div>
-                    <h3>
-                      {a.template_label ||
-                        a.line_items.map((l) => l.name_snapshot).join(', ') ||
-                        'Service visit'}
-                    </h3>
-                    <p>
-                      {commercialDate(a.appointment_date)} ·{' '}
-                      {formatTime(a.start_time)} ·{' '}
-                      {a.status.replaceAll('_', ' ')}
-                    </p>
-                    {a.client_note && <p>{a.client_note}</p>}
-                  </div>
-                </div>
-              ))
-            ) : (
-              <p className={styles.sub}>
-                No upcoming service visits. Your confirmed appointments will
-                appear here.
-              </p>
-            )}
-          </section>
-        )}
         <details id="commercial-profile" className={styles.profile}>
           <summary>
             <Building2 size={24} strokeWidth={1.4} />
@@ -1078,13 +857,4 @@ export function ClientCommercialDetails({
       </footer>
     </div>
   )
-}
-
-function commercialDate(date: string, part?: 'month') {
-  return new Intl.DateTimeFormat(
-    'en-US',
-    part
-      ? { month: 'short', timeZone: 'UTC' }
-      : { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' },
-  ).format(new Date(`${date}T12:00:00Z`))
 }

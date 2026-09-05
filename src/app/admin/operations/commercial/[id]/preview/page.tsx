@@ -16,6 +16,11 @@ export default async function Page({
     loadCommercialData(db, id),
     loadClientPortalData(db, id),
   ])
+  const sampleDate = new Date(
+    // The authenticated staff preview needs a current-looking example date on each request.
+    // eslint-disable-next-line react-hooks/purity
+    Date.now() + 7 * 24 * 60 * 60 * 1000,
+  ).toLocaleDateString('en-CA', { timeZone: 'America/Denver' })
   return (
     <div className="space-y-5 text-slate-100">
       <Link
@@ -24,7 +29,11 @@ export default async function Page({
       >
         ← Back to account
       </Link>
-      <CommercialClientPreview commercial={commercial} schedule={schedule} />
+      <CommercialClientPreview
+        commercial={commercial}
+        schedule={schedule}
+        sampleDate={sampleDate}
+      />
     </div>
   )
 }

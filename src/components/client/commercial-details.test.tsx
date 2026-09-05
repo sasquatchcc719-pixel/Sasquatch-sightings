@@ -3,6 +3,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from '@testing-library/react'
 import {
@@ -188,38 +189,8 @@ describe('commercial customer experience', () => {
       ).queryByText('Contact Sasquatch for a quote'),
     ).not.toBeInTheDocument()
   })
-  it('shows the earliest same-day visit without mutating the shared schedule', () => {
-    const appointments = ['14:00', '09:00'].map((time) => ({
-      id: time,
-      appointment_date: '2099-09-04',
-      start_time: time,
-      end_time: '15:00',
-      status: 'confirmed',
-      client_note: null,
-      recurring_template_id: null,
-      template_label: null,
-      line_items: [],
-    }))
-    render(
-      <ClientCommercialDetails
-        initialData={data}
-        schedule={{ ...schedule, appointments }}
-        readOnly
-      />,
-    )
-    expect(
-      within(screen.getByRole('banner')).getByText('9:00 AM – 3:00 PM'),
-    ).toBeInTheDocument()
-    expect(appointments[0].start_time).toBe('14:00')
-  })
   it('leads with the account, keeps profile fields collapsed, and gives honest empty states', () => {
-    render(
-      <ClientCommercialDetails
-        initialData={data}
-        schedule={schedule}
-        readOnly
-      />,
-    )
+    render(<ClientCommercialDetails initialData={data} readOnly />)
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
       'Example Business',
     )
@@ -233,32 +204,20 @@ describe('commercial customer experience', () => {
       screen.queryByText('Sign and accept agreement'),
     ).not.toBeInTheDocument()
   })
-  it('uses the website logo and opens the profile from the first-time action', () => {
-    const scroll = vi
-      .spyOn(HTMLElement.prototype, 'scrollIntoView')
-      .mockImplementation(() => {})
+  it('uses the website logo and keeps business details directly accessible', () => {
     render(<ClientCommercialDetails initialData={data} />)
     expect(
       screen.getByAltText('Sasquatch Carpet Cleaning').getAttribute('src'),
     ).toContain('sasquatch-website-logo.png')
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Add business details' }),
-    )
     const profile = screen
       .getByText('Business details & access instructions')
       .closest('details')
-    expect(profile).toHaveAttribute('open')
-    expect(profile?.querySelector('summary')).toHaveFocus()
-    expect(profile?.querySelector('summary')).not.toHaveAttribute(
-      'tabindex',
-      '-1',
+    fireEvent.click(
+      within(profile!).getByText('Business details & access instructions'),
     )
-    scroll.mockRestore()
+    expect(profile).toHaveAttribute('open')
   })
   it('prioritizes a published agreement and opens its terms without signing', () => {
-    const scroll = vi
-      .spyOn(HTMLElement.prototype, 'scrollIntoView')
-      .mockImplementation(() => {})
     render(
       <ClientCommercialDetails
         initialData={{ ...data, agreements: [agreement('published')] }}
@@ -266,7 +225,7 @@ describe('commercial customer experience', () => {
       />,
     )
     fireEvent.click(
-      screen.getByRole('button', { name: 'Review & sign agreement' }),
+      screen.getByText('Private agreement', { selector: 'strong' }),
     )
     expect(
       screen
@@ -276,24 +235,31 @@ describe('commercial customer experience', () => {
     expect(
       screen.getByRole('button', { name: 'Sign and accept agreement' }),
     ).toBeDisabled()
-    scroll.mockRestore()
   })
-  it('shows only the two distinct customer steps', () => {
+  it('uses only two real portal tabs without duplicate in-page navigation', () => {
     render(
-      <ClientCommercialDetails
-        initialData={{ ...data, agreements: [agreement('published')] }}
-        schedule={schedule}
+      <ClientPortal
+        businessName="Example Business"
+        managerName="Manager"
+        initialData={schedule}
+        initialCommercialData={{
+          ...data,
+          agreements: [agreement('published')],
+        }}
+        canSign={false}
+        mustChangePassword={false}
       />,
     )
-    const steps = screen.getByLabelText('How to use your account')
-    expect(within(steps).getAllByRole('button')).toHaveLength(2)
+    const tabs = screen.getByLabelText('Portal sections')
+    expect(within(tabs).getAllByRole('button')).toHaveLength(2)
     expect(
-      within(steps).getByRole('button', { name: /Review your agreement/ }),
+      within(tabs).getByRole('button', { name: 'Agreement' }),
     ).toBeInTheDocument()
     expect(
-      within(steps).getByRole('button', { name: /Check your appointments/ }),
+      within(tabs).getByRole('button', { name: 'Appointments' }),
     ).toBeInTheDocument()
-    expect(within(steps).queryByText('Review your services')).toBeNull()
+    expect(screen.queryByLabelText('Account overview')).toBeNull()
+    expect(screen.queryByLabelText('How to use your account')).toBeNull()
   })
   it('does not ask a customer with billing contacts to repeat setup while an agreement is being prepared', () => {
     render(
@@ -308,9 +274,7 @@ describe('commercial customer experience', () => {
         }}
       />,
     )
-    expect(
-      screen.getByRole('button', { name: 'View agreement status' }),
-    ).toBeInTheDocument()
+    expect(screen.getByText('No agreement to sign yet.')).toBeInTheDocument()
     expect(
       screen.queryByRole('button', { name: 'Add business details' }),
     ).not.toBeInTheDocument()
@@ -367,13 +331,29 @@ describe('commercial customer experience', () => {
       screen.getByRole('button', { name: 'Sign and accept agreement' }),
     ).toBeDisabled()
   })
-  it('keeps staff preview read-only without a browser request simulation', () => {
+  it('keeps staff preview read-only and shows a safe schedule example', async () => {
     const fetch = vi.fn()
     vi.stubGlobal('fetch', fetch)
-    render(<CommercialClientPreview commercial={data} schedule={schedule} />)
+    render(
+      <CommercialClientPreview
+        commercial={data}
+        schedule={schedule}
+        sampleDate="2099-09-10"
+      />,
+    )
     expect(screen.getByText(/agreement notes are disabled/i)).toBeTruthy()
     expect(screen.queryByText('Browser-only test records')).toBeNull()
     expect(screen.queryByText('Request this service')).toBeNull()
+    await waitFor(() =>
+      expect(
+        screen.getByText(/one clearly labeled preview example/i),
+      ).toBeTruthy(),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Appointments' }))
+    expect(
+      screen.getAllByText('Example monthly maintenance plan').length,
+    ).toBeGreaterThan(0)
+    expect(screen.queryByRole('button', { name: 'Add note' })).toBeNull()
     expect(fetch).not.toHaveBeenCalled()
   })
   it('keeps the schedule focused on confirmed work and direct contact', () => {
@@ -387,7 +367,7 @@ describe('commercial customer experience', () => {
         mustChangePassword={false}
       />,
     )
-    fireEvent.click(screen.getByRole('button', { name: 'Schedule' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Appointments' }))
     expect(
       screen.getByRole('link', { name: 'Text Sasquatch' }),
     ).toHaveAttribute('href', 'sms:7192498791')
