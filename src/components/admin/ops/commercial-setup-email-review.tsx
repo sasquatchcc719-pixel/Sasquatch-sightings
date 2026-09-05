@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { CheckCircle2, Loader2, Mail, ShieldCheck, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -49,6 +50,13 @@ export function CommercialSetupEmailReview({
   const [portalContactId, setPortalContactId] = useState(contact.id)
   const [attempted, setAttempted] = useState(false)
   const [warning, setWarning] = useState('')
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [])
 
   async function send() {
     setBusy(true)
@@ -88,7 +96,10 @@ export function CommercialSetupEmailReview({
     }
   }
 
-  return (
+  // The workspace shell uses a backdrop filter, which otherwise makes a fixed
+  // dialog anchor to the scrolled page instead of the viewport.
+  if (typeof document === 'undefined') return null
+  return createPortal(
     <div
       className="fixed inset-0 z-[240] overflow-y-auto bg-black/75 p-4 backdrop-blur-sm"
       role="dialog"
@@ -238,6 +249,7 @@ export function CommercialSetupEmailReview({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
