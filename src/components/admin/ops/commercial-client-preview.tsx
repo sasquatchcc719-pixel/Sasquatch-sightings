@@ -33,11 +33,11 @@ export function CommercialClientPreview({
   return (
     <>
       <div className="rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-4 py-3 text-sm text-cyan-50">
-        <strong>Customer test drive:</strong> open agreements and
-        service-request forms exactly as the customer will see them. Nothing
-        entered here is saved or sent. When you are ready, return to the account
-        and create her portal login under “Portal contacts &amp; signing
-        access.”
+        <strong>Customer test drive:</strong> review published agreements and
+        try the service-request form, including frequency and preferred dates.
+        Signing and profile changes are disabled here. Nothing entered here is
+        saved or sent. When you are ready, return to the account and create the
+        customer’s portal login under “Portal contacts &amp; signing access.”
       </div>
       <ClientCommercialDetails
         initialData={commercial}

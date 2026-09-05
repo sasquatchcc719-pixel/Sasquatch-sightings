@@ -1061,7 +1061,7 @@ function ServicePlanForm({
     end_date: agreement.content.effective_until,
     start_time: '',
     duration: 120,
-    invoice_mode: 'per_visit',
+    invoice_mode: 'batch_monthly',
   })
   const recurring = agreement.content.lines.filter(
     (l) => l.phase === 'recurring',

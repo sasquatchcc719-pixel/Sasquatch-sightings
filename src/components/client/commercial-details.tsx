@@ -677,6 +677,36 @@ export function ClientCommercialDetails({
           icon: Armchair,
         },
       ]
+  for (const extra of [
+    {
+      id: 'tile',
+      name: 'Tile & grout',
+      match: /tile|grout/i,
+      icon: Grid2X2,
+      description:
+        'Cleaning for tile, grout lines, and high-traffic areas. Tell us which rooms or floor areas need attention.',
+    },
+    {
+      id: 'upholstery',
+      name: 'Upholstery care',
+      match: /upholstery|upholstered|(?:chair|sofa|seat).*clean/i,
+      icon: Armchair,
+      description:
+        'Cleaning for upholstered chairs, booths, sofas, and other furnishings. Tell us the furniture type and approximate number of pieces.',
+    },
+  ]) {
+    if (!serviceCards.some((service) => extra.match.test(service.name))) {
+      serviceCards.push({
+        id: extra.id,
+        name: extra.name,
+        description: extra.description,
+        icon: extra.icon,
+        label: 'Additional service · By request',
+        meta: 'Quoted separately before service',
+        frequency: '',
+      })
+    }
+  }
   if (!serviceCards.some((service) => /auto[\s-]*scrub/i.test(service.name))) {
     serviceCards.push({
       id: 'auto-scrubbing',
@@ -818,7 +848,7 @@ export function ClientCommercialDetails({
             [
               '02',
               'Request a service',
-              'Choose a service and preferred date',
+              'Choose a service, frequency, and preferred start date',
               'commercial-care',
             ],
             [
@@ -853,15 +883,17 @@ export function ClientCommercialDetails({
               </h2>
               <p className={styles.sub}>
                 {currentAgreement
-                  ? 'Your agreed services and additional options. Additional services are quoted separately and are not included in your agreement.'
+                  ? 'Services listed in your agreement and additional options. Check the agreement status before treating its pricing as accepted. Additional services are quoted separately.'
                   : 'Explore our commercial services. Your tailored scope and pricing will appear once your agreement is ready.'}
               </p>
               <p className={styles.instructions}>
                 {readOnly
-                  ? 'In the customer account, each service has a “Request this service” button. The customer chooses a preferred date and sends a request.'
-                  : 'Click “Request this service,” choose your preferred date, then send your request.'}{' '}
+                  ? 'Try “Request this service” to explore the request form. Choose how often you need cleaning and your preferred start date.'
+                  : 'Click “Request this service,” choose how often you need cleaning and your preferred start date, then send your request.'}{' '}
                 A request is not a confirmed appointment. We’ll confirm
-                availability and pricing before scheduling.
+                availability and pricing before scheduling. Each service can
+                have its own frequency—for example, monthly carpet care and
+                quarterly upholstery cleaning.
               </p>
             </div>
           </div>
