@@ -209,7 +209,7 @@ describe('commercial agreement approval', () => {
 
     fireEvent.click(
       await screen.findByRole('button', {
-        name: 'Review customer setup email',
+        name: 'Review & send customer setup email',
       }),
     )
     expect(
@@ -219,5 +219,71 @@ describe('commercial agreement approval', () => {
     ).toBeInTheDocument()
     expect(screen.getByText('alex@example.com')).toBeInTheDocument()
     expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('creates the signing contact at the top and opens email review immediately', async () => {
+    const agreement = draft()
+    agreement.status = 'published'
+    const account = {
+      businessName: 'Example Business',
+      profile: {
+        legal_name: '',
+        billing_contact: 'Alex Manager',
+        billing_email: 'alex@example.com',
+        purchase_order: '',
+        access_instructions: '',
+        service_windows: '',
+        site_notes: '',
+      },
+      agreements: [agreement],
+      addresses: [],
+      estimates: [],
+      plans: [],
+    }
+    const contact = {
+      id: '33333333-3333-4333-8333-333333333333',
+      display_name: 'Alex Manager',
+      email: 'alex@example.com',
+      is_active: true,
+      can_sign_agreements: true,
+    }
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ...account, users: [] }),
+      })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true }) })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ...account, users: [contact] }),
+      })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<CommercialAccount customerId="customer-a" />)
+
+    expect(await screen.findByLabelText('Customer contact name')).toHaveValue(
+      'Alex Manager',
+    )
+    expect(screen.getByLabelText('Customer email')).toHaveValue(
+      'alex@example.com',
+    )
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Create contact & review email',
+      }),
+    )
+
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Review setup email before sending',
+      }),
+    ).toBeInTheDocument()
+    expect(screen.getByText('alex@example.com')).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+    expect(fetchMock.mock.calls[2][0]).toBe(
+      '/api/admin/ops/commercial/customer-a/users',
+    )
   })
 })

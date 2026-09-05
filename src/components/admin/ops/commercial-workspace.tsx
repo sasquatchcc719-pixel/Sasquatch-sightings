@@ -292,6 +292,10 @@ export function CommercialAccount({ customerId }: { customerId: string }) {
   const [selected, setSelected] = useState('')
   const [estimateId, setEstimateId] = useState('')
   const [setupContactId, setSetupContactId] = useState('')
+  const [setupContactName, setSetupContactName] = useState('')
+  const [setupContactEmail, setSetupContactEmail] = useState('')
+  const [setupContactBusy, setSetupContactBusy] = useState(false)
+  const [setupContactError, setSetupContactError] = useState('')
   const [setupReview, setSetupReview] = useState<{
     contact: CommercialSetupContact
     agreement: CommercialSetupAgreement
@@ -315,6 +319,13 @@ export function CommercialAccount({ customerId }: { customerId: string }) {
         : next.users.find((user) => user.is_active && user.can_sign_agreements)
             ?.id || '',
     )
+    setSetupContactName(
+      (current) => current || next.profile.billing_contact || '',
+    )
+    setSetupContactEmail(
+      (current) => current || next.profile.billing_email || '',
+    )
+    return next
   }, [base])
   useEffect(() => {
     void load().catch((e) => setError(e.message))
@@ -337,6 +348,42 @@ export function CommercialAccount({ customerId }: { customerId: string }) {
       setError(e instanceof Error ? e.message : 'Failed')
     } finally {
       setBusy(false)
+    }
+  }
+  async function createSetupContact() {
+    setSetupContactBusy(true)
+    setSetupContactError('')
+    try {
+      await commercialFetch('/api/admin/ops/commercial', 'POST', {
+        customer_id: customerId,
+      })
+      await commercialFetch(`${base}/users`, 'POST', {
+        display_name: setupContactName,
+        email: setupContactEmail,
+        can_sign_agreements: true,
+      })
+      const next = await load()
+      const contact = next.users.find(
+        (user) =>
+          user.is_active &&
+          user.can_sign_agreements &&
+          user.email.toLowerCase() === setupContactEmail.trim().toLowerCase(),
+      )
+      const agreement = next.agreements.find(
+        (item) => item.status === 'published',
+      )
+      if (!contact || !agreement)
+        throw new Error(
+          'The contact was created, but email review could not open.',
+        )
+      setSetupContactId(contact.id)
+      setSetupReview({ contact, agreement })
+    } catch (e) {
+      setSetupContactError(
+        e instanceof Error ? e.message : 'Could not create the signing contact',
+      )
+    } finally {
+      setSetupContactBusy(false)
     }
   }
   if (!data)
@@ -670,26 +717,74 @@ export function CommercialAccount({ customerId }: { customerId: string }) {
                 }}
               >
                 <Mail className="mr-2 h-4 w-4" />
-                Review customer setup email
+                Review & send customer setup email
               </Button>
             </div>
-          ) : (
+          ) : !publishedAgreement ? (
             <Button
               variant="outline"
               onClick={() =>
                 document
-                  .getElementById(
-                    publishedAgreement ? 'portal-access' : 'agreement-workflow',
-                  )
+                  .getElementById('agreement-workflow')
                   ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
               }
             >
-              {publishedAgreement
-                ? 'Add signing contact'
-                : 'Finish and publish agreement'}
+              Finish and publish agreement
             </Button>
-          )}
+          ) : null}
         </div>
+        {publishedAgreement && authorizedContacts.length === 0 && (
+          <form
+            className="border-t border-white/10 bg-black/15 p-5"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void createSetupContact()
+            }}
+          >
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
+              <Field label="Customer contact name">
+                <Input
+                  required
+                  minLength={2}
+                  autoComplete="name"
+                  className={fieldClass}
+                  value={setupContactName}
+                  onChange={(event) => setSetupContactName(event.target.value)}
+                  placeholder="Restaurant manager or authorized signer"
+                />
+              </Field>
+              <Field label="Customer email">
+                <Input
+                  required
+                  type="email"
+                  autoComplete="email"
+                  className={fieldClass}
+                  value={setupContactEmail}
+                  onChange={(event) => setSetupContactEmail(event.target.value)}
+                  placeholder="manager@business.com"
+                />
+              </Field>
+              <Button
+                className="min-w-64 bg-emerald-500 text-emerald-950 hover:bg-emerald-400"
+                disabled={setupContactBusy}
+              >
+                <Mail className="mr-2 h-4 w-4" />
+                {setupContactBusy
+                  ? 'Creating secure access…'
+                  : 'Create contact & review email'}
+              </Button>
+            </div>
+            <p className="mt-3 text-xs text-slate-400">
+              Step 1 creates secure portal access. Step 2 opens the complete
+              email for your approval. Nothing is sent until you press Send.
+            </p>
+            {setupContactError && (
+              <p role="alert" className="mt-3 text-sm text-red-300">
+                {setupContactError}
+              </p>
+            )}
+          </form>
+        )}
       </section>
       <details className={panelClass}>
         <summary className="cursor-pointer font-semibold">
@@ -862,7 +957,9 @@ export function CommercialAccount({ customerId }: { customerId: string }) {
         customerId={customerId}
         users={data.users}
         publishedAgreement={publishedAgreement}
-        onChange={load}
+        onChange={async () => {
+          await load()
+        }}
         onReview={(contact) => {
           if (publishedAgreement)
             setSetupReview({ contact, agreement: publishedAgreement })
@@ -1287,9 +1384,6 @@ function PortalUsers({
   onChange: () => Promise<void>
   onReview: (contact: PortalUser) => void
 }) {
-  const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
-  const [canSign, setCanSign] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const endpoint = `/api/admin/ops/commercial/${customerId}/users`
@@ -1356,65 +1450,12 @@ function PortalUsers({
           </div>
         ))}
       </div>
-      <form
-        className="space-y-3"
-        onSubmit={async (e) => {
-          e.preventDefault()
-          setBusy(true)
-          setError('')
-          try {
-            await commercialFetch('/api/admin/ops/commercial', 'POST', {
-              customer_id: customerId,
-            })
-            await commercialFetch(endpoint, 'POST', {
-              display_name: name,
-              email,
-              can_sign_agreements: canSign,
-            })
-            setName('')
-            setEmail('')
-            await onChange()
-          } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed')
-          } finally {
-            setBusy(false)
-          }
-        }}
-      >
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Contact name">
-            <Input
-              required
-              minLength={2}
-              className={fieldClass}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </Field>
-          <Field label="Contact email">
-            <Input
-              required
-              type="email"
-              className={fieldClass}
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </Field>
-        </div>
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={canSign}
-            onChange={(e) => setCanSign(e.target.checked)}
-          />
-          Authorized to sign service agreements
-        </label>
-        <Button disabled={busy}>Create portal login</Button>
-        <p className="text-xs text-slate-400">
-          This creates access only; it does not send anything. Afterward, use
-          Review setup email to send the secure first-visit link and agreement.
+      {users.length === 0 && (
+        <p className="text-sm text-slate-400">
+          No portal contacts yet. Add the customer in Customer Setup Delivery
+          above; the email review opens immediately afterward.
         </p>
-      </form>
+      )}
       {error && (
         <p role="alert" className="mt-3 text-red-300">
           {error}
