@@ -36,6 +36,7 @@ const TEMPLATE_LABELS: Record<string, string> = {
   job_finished_email: 'Job Completed',
   job_finished_email_urine: 'Job Completed (Urine Treatment)',
   satisfaction_checkin_email: 'Satisfaction Check-in',
+  commercial_portal_setup: 'Commercial Customer Setup',
 }
 
 const SOURCE_META: Record<string, { label: string; className: string }> = {

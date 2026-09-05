@@ -168,4 +168,56 @@ describe('commercial agreement approval', () => {
       }),
     ).toBeInTheDocument()
   })
+
+  it('opens a pre-send review for a published agreement and signer', async () => {
+    const agreement = draft()
+    agreement.status = 'published'
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          businessName: 'Example Business',
+          profile: {
+            legal_name: '',
+            billing_contact: '',
+            billing_email: '',
+            purchase_order: '',
+            access_instructions: '',
+            service_windows: '',
+            site_notes: '',
+          },
+          agreements: [agreement],
+          addresses: [],
+          estimates: [],
+          users: [
+            {
+              id: '33333333-3333-4333-8333-333333333333',
+              display_name: 'Alex Manager',
+              email: 'alex@example.com',
+              is_active: true,
+              can_sign_agreements: true,
+            },
+          ],
+          plans: [],
+        }),
+      }),
+    )
+
+    render(<CommercialAccount customerId="customer-a" />)
+
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: 'Review customer setup email',
+      }),
+    )
+    expect(
+      screen.getByRole('heading', {
+        name: 'Review setup email before sending',
+      }),
+    ).toBeInTheDocument()
+    expect(screen.getByText('alex@example.com')).toBeInTheDocument()
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
 })

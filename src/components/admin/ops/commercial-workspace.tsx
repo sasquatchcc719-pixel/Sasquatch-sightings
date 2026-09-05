@@ -8,6 +8,7 @@ import {
   ArrowUpRight,
   CalendarDays,
   CheckCircle2,
+  Mail,
   Users,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -32,6 +33,11 @@ import {
 import { formatMoney } from '@/lib/ops/client-portal'
 import { ClientRequestsPanel } from './client-requests-panel'
 import { CustomerDeleteControl } from './customer-delete-control'
+import {
+  CommercialSetupEmailReview,
+  type CommercialSetupAgreement,
+  type CommercialSetupContact,
+} from './commercial-setup-email-review'
 
 type Account = {
   id: string
@@ -211,6 +217,11 @@ export function CommercialAccount({ customerId }: { customerId: string }) {
   const [busy, setBusy] = useState(false)
   const [selected, setSelected] = useState('')
   const [estimateId, setEstimateId] = useState('')
+  const [setupContactId, setSetupContactId] = useState('')
+  const [setupReview, setSetupReview] = useState<{
+    contact: CommercialSetupContact
+    agreement: CommercialSetupAgreement
+  } | null>(null)
   const base = `/api/admin/ops/commercial/${customerId}`
   const load = useCallback(async () => {
     const next = (await commercialFetch(base)) as AccountData
@@ -219,6 +230,16 @@ export function CommercialAccount({ customerId }: { customerId: string }) {
       current && next.agreements.some((item) => item.id === current)
         ? current
         : next.agreements[0]?.id || '',
+    )
+    setSetupContactId((current) =>
+      current &&
+      next.users.some(
+        (user) =>
+          user.id === current && user.is_active && user.can_sign_agreements,
+      )
+        ? current
+        : next.users.find((user) => user.is_active && user.can_sign_agreements)
+            ?.id || '',
     )
   }, [base])
   useEffect(() => {
@@ -252,6 +273,15 @@ export function CommercialAccount({ customerId }: { customerId: string }) {
   const acceptedEstimates = data.estimates.filter(
     (estimate) => estimate.estimate_status === 'accepted',
   )
+  const publishedAgreement = data.agreements.find(
+    (item) => item.status === 'published',
+  )
+  const authorizedContacts = data.users.filter(
+    (user) => user.is_active && user.can_sign_agreements,
+  )
+  const setupContact =
+    authorizedContacts.find((contact) => contact.id === setupContactId) ||
+    authorizedContacts[0]
   const signedRecurringAgreement = data.agreements.find(
     (item) =>
       item.status === 'signed' &&
@@ -504,6 +534,89 @@ export function CommercialAccount({ customerId }: { customerId: string }) {
           </div>
         </div>
       </section>
+      <section
+        aria-labelledby="customer-setup-heading"
+        className="overflow-hidden rounded-2xl border border-emerald-300/20 bg-gradient-to-br from-emerald-950/60 via-slate-900 to-slate-950 shadow-lg shadow-emerald-950/20"
+      >
+        <div className="grid gap-5 p-5 lg:grid-cols-[1fr_auto] lg:items-end">
+          <div>
+            <p className="text-xs font-semibold tracking-[0.18em] text-emerald-300 uppercase">
+              Customer setup delivery
+            </p>
+            <h3 id="customer-setup-heading" className="mt-1 text-xl font-bold">
+              Review everything before it reaches the customer
+            </h3>
+            <p className="mt-2 max-w-3xl text-sm text-slate-300">
+              The email explains the portal, the recurring agreement, the
+              one-time-service option, and what happens after signing. You can
+              edit the exact message before sending it with the agreement copy
+              and secure sign-in button.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2 text-xs">
+              <span
+                className={`rounded-full border px-3 py-1.5 ${publishedAgreement ? 'border-emerald-300/30 bg-emerald-400/10 text-emerald-200' : 'border-amber-300/30 bg-amber-400/10 text-amber-200'}`}
+              >
+                {publishedAgreement
+                  ? `Ready: published agreement v${publishedAgreement.version}`
+                  : 'Needed: publish an agreement'}
+              </span>
+              <span
+                className={`rounded-full border px-3 py-1.5 ${authorizedContacts.length ? 'border-emerald-300/30 bg-emerald-400/10 text-emerald-200' : 'border-amber-300/30 bg-amber-400/10 text-amber-200'}`}
+              >
+                {authorizedContacts.length
+                  ? `Ready: ${authorizedContacts.length} signing contact${authorizedContacts.length === 1 ? '' : 's'}`
+                  : 'Needed: add an authorized signing contact'}
+              </span>
+            </div>
+          </div>
+          {publishedAgreement && authorizedContacts.length ? (
+            <div className="min-w-72 space-y-2">
+              <label className="block text-xs text-slate-400">
+                Send to
+                <select
+                  value={setupContact?.id || ''}
+                  onChange={(event) => setSetupContactId(event.target.value)}
+                  className={`${fieldClass} mt-1 w-full rounded-lg border p-2 text-sm`}
+                >
+                  {authorizedContacts.map((contact) => (
+                    <option key={contact.id} value={contact.id}>
+                      {contact.display_name} · {contact.email}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <Button
+                className="w-full bg-emerald-500 text-emerald-950 hover:bg-emerald-400"
+                onClick={() => {
+                  if (setupContact)
+                    setSetupReview({
+                      contact: setupContact,
+                      agreement: publishedAgreement,
+                    })
+                }}
+              >
+                <Mail className="mr-2 h-4 w-4" />
+                Review customer setup email
+              </Button>
+            </div>
+          ) : (
+            <Button
+              variant="outline"
+              onClick={() =>
+                document
+                  .getElementById(
+                    publishedAgreement ? 'portal-access' : 'agreement-workflow',
+                  )
+                  ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+              }
+            >
+              {publishedAgreement
+                ? 'Add signing contact'
+                : 'Finish and publish agreement'}
+            </Button>
+          )}
+        </div>
+      </section>
       <details className={panelClass}>
         <summary className="cursor-pointer font-semibold">
           Business profile & service locations
@@ -668,7 +781,25 @@ export function CommercialAccount({ customerId }: { customerId: string }) {
           )}
         </div>
       </section>
-      <PortalUsers customerId={customerId} users={data.users} onChange={load} />
+      <PortalUsers
+        customerId={customerId}
+        users={data.users}
+        publishedAgreement={publishedAgreement}
+        onChange={load}
+        onReview={(contact) => {
+          if (publishedAgreement)
+            setSetupReview({ contact, agreement: publishedAgreement })
+        }}
+      />
+      {setupReview && (
+        <CommercialSetupEmailReview
+          businessName={data.businessName}
+          customerId={customerId}
+          contact={setupReview.contact}
+          agreement={setupReview.agreement}
+          onClose={() => setSetupReview(null)}
+        />
+      )}
     </div>
   )
 }
@@ -1069,22 +1200,21 @@ export function AgreementEditor({
 function PortalUsers({
   customerId,
   users,
+  publishedAgreement,
   onChange,
+  onReview,
 }: {
   customerId: string
   users: PortalUser[]
+  publishedAgreement: CommercialAgreement | undefined
   onChange: () => Promise<void>
+  onReview: (contact: PortalUser) => void
 }) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
-  const [canSign, setCanSign] = useState(false)
+  const [canSign, setCanSign] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [credentials, setCredentials] = useState<{
-    email: string
-    temporary_password: string
-    login_url: string
-  } | null>(null)
   const endpoint = `/api/admin/ops/commercial/${customerId}/users`
   async function change(user: PortalUser, updates: Partial<PortalUser>) {
     setBusy(true)
@@ -1104,7 +1234,7 @@ function PortalUsers({
     }
   }
   return (
-    <section className={panelClass}>
+    <section id="portal-access" className={`${panelClass} scroll-mt-4`}>
       <h3 className="flex items-center gap-2 text-lg font-semibold">
         <Users className="h-5 w-5 text-cyan-400" />
         Portal contacts & signing access
@@ -1140,6 +1270,12 @@ function PortalUsers({
             >
               {u.is_active ? 'Disable access' : 'Enable access'}
             </Button>
+            {u.is_active && u.can_sign_agreements && publishedAgreement && (
+              <Button size="sm" onClick={() => onReview(u)}>
+                <Mail className="mr-2 h-4 w-4" />
+                Review setup email
+              </Button>
+            )}
           </div>
         ))}
       </div>
@@ -1153,13 +1289,11 @@ function PortalUsers({
             await commercialFetch('/api/admin/ops/commercial', 'POST', {
               customer_id: customerId,
             })
-            setCredentials(
-              await commercialFetch(endpoint, 'POST', {
-                display_name: name,
-                email,
-                can_sign_agreements: canSign,
-              }),
-            )
+            await commercialFetch(endpoint, 'POST', {
+              display_name: name,
+              email,
+              can_sign_agreements: canSign,
+            })
             setName('')
             setEmail('')
             await onChange()
@@ -1200,33 +1334,10 @@ function PortalUsers({
         </label>
         <Button disabled={busy}>Create portal login</Button>
         <p className="text-xs text-slate-400">
-          Creates a temporary password for you to share. No invitation is sent
-          automatically. The contact must choose their own password before
-          signing.
+          This creates access only; it does not send anything. Afterward, use
+          Review setup email to send the secure first-visit link and agreement.
         </p>
       </form>
-      {credentials && (
-        <div className="mt-4 rounded-xl border border-amber-400/30 bg-amber-500/10 p-4">
-          <p className="font-medium">
-            Save these login details before leaving this page
-          </p>
-          <p className="mt-2 text-sm break-all">
-            {credentials.login_url}
-            <br />
-            {credentials.email}
-            <br />
-            Temporary password: <code>{credentials.temporary_password}</code>
-          </p>
-          <Button
-            variant="outline"
-            size="sm"
-            className="mt-3"
-            onClick={() => setCredentials(null)}
-          >
-            Dismiss credentials
-          </Button>
-        </div>
-      )}
       {error && (
         <p role="alert" className="mt-3 text-red-300">
           {error}

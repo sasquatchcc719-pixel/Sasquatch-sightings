@@ -216,6 +216,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Keep commercial customer navigation to two real views—Agreement and Appointments—and do not stack anchor menus, step cards, or repeated same-page links beneath those tabs.
 - Surface accepted commercial estimates as ready-to-schedule initial work inside the commercial workspace; do not treat estimate acceptance as a signature on recurring agreement terms.
 - Keep one-time and recurring scheduling decisions together at the top of each commercial workspace; show the approval required for either path and send generated recurring visits into Recurring Work.
+- Commercial setup emails must be reviewed before sending, require a published agreement and signing-authorized contact, use a one-time secure portal link, attach the exact agreement, and write to the email log.
 - Customer deletion must be owner/admin-only, show linked-record impact first, and refuse to erase appointments, agreements, service concerns, or restoration history.
 
 ---
