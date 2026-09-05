@@ -17,7 +17,7 @@ type RequestableType = (typeof REQUESTABLE_TYPES)[number]
 const TYPE_LABELS: Record<RequestableType, string> = {
   skip_visit: 'Request to cancel a visit',
   reschedule: 'Reschedule a visit',
-  add_visit: 'Add an extra visit',
+  add_visit: 'Additional service / cleaning request',
   scope_change: 'Change cleaning scope',
   other: 'Other request',
 }
@@ -163,22 +163,39 @@ export async function POST(request: NextRequest) {
       .select('business_name,full_name')
       .eq('id', client.customer_id)
       .single()
-    await sendTelegramNotification(
-      `CLIENT REQUEST — ${client.display_name}
+    const notificationText = `CLIENT REQUEST — ${client.display_name}
 
 ${customer?.business_name || customer?.full_name || 'Commercial client'}
 ${label}${message ? `\n${message}` : ''}
 ${Object.entries(details)
   .filter(([k, v]) => k !== 'agreement_id' && v)
   .map(([k, v]) => `${k.replaceAll('_', ' ')}: ${v}`)
-  .join('\n')}
+  .join('\n')}`
+    // Keep the review link even when a customer provides very long details.
+    const notification = `${notificationText.slice(0, 3400)}
 
-Review: https://sightings.sasquatchcarpet.com/admin/operations/commercial`,
-    ).catch((error) =>
-      console.error('[client/requests] Telegram notification failed', error),
+Request ID: ${inserted.id}
+Review: https://sightings.sasquatchcarpet.com/admin/operations/commercial#client-request-${inserted.id}`
+    let telegramSent = false
+    for (let attempt = 1; attempt <= 2 && !telegramSent; attempt++) {
+      telegramSent = await sendTelegramNotification(notification).catch(
+        () => false,
+      )
+    }
+    if (!telegramSent) {
+      console.error(
+        '[client/requests] Telegram delivery failed after 2 attempts',
+        {
+          requestId: inserted.id,
+          customerId: client.customer_id,
+        },
+      )
+    }
+
+    return NextResponse.json(
+      { request: inserted, telegram_sent: telegramSent },
+      { status: 201 },
     )
-
-    return NextResponse.json({ request: inserted }, { status: 201 })
   } catch (error) {
     const status =
       error instanceof Error && error.message === 'Not a client manager'

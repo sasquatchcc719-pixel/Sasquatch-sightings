@@ -41,11 +41,15 @@ export function ClientRequestsPanel() {
   const [error, setError] = useState('')
 
   async function load() {
+    setLoading(true)
     try {
-      const res = await fetch('/api/admin/ops/client-requests')
+      const res = await fetch('/api/admin/ops/client-requests', {
+        cache: 'no-store',
+      })
       const d = (await res.json()) as { requests?: ClientRequest[] }
       if (!res.ok) throw new Error('Unable to load client requests')
       setRequests(d.requests || [])
+      setError('')
     } catch {
       setError('Unable to load client requests. Refresh to try again.')
     } finally {
@@ -56,6 +60,13 @@ export function ClientRequestsPanel() {
   useEffect(() => {
     void load()
   }, [])
+
+  useEffect(() => {
+    const id = window.location.hash.slice(1)
+    if (id.startsWith('client-request-')) {
+      document.getElementById(id)?.scrollIntoView({ block: 'start' })
+    }
+  }, [requests])
 
   async function resolve(id: string, status: string) {
     setBusyId(id)
@@ -81,9 +92,6 @@ export function ClientRequestsPanel() {
     .filter((r) => r.status !== 'pending' && r.status !== 'approved')
     .slice(0, 10)
 
-  // Hide the panel entirely when there's nothing to show (keeps the page clean).
-  if (!loading && requests.length === 0 && !error) return null
-
   function customerName(r: ClientRequest) {
     return (
       r.ops_customers?.business_name || r.ops_customers?.full_name || 'Client'
@@ -91,7 +99,10 @@ export function ClientRequestsPanel() {
   }
 
   return (
-    <Card className="mb-6 border-amber-500/30 bg-amber-500/5 p-5">
+    <Card
+      id="client-requests"
+      className="mb-6 scroll-mt-6 border-amber-500/30 bg-amber-500/5 p-5"
+    >
       {error && (
         <p role="alert" className="mb-3 text-sm text-red-300">
           {error}
@@ -105,16 +116,34 @@ export function ClientRequestsPanel() {
             {pending.length} need action
           </Badge>
         )}
+        <Button
+          className="ml-auto"
+          size="sm"
+          variant="outline"
+          disabled={loading}
+          onClick={() => void load()}
+        >
+          Refresh requests
+        </Button>
       </div>
+      <p className="text-muted-foreground mb-3 text-sm">
+        Customer requests for extra work, schedule changes, and agreement
+        revisions appear here. Real submissions trigger a Telegram alert; staff
+        test-drive submissions are not saved or sent.
+      </p>
 
       {loading ? (
         <p className="text-muted-foreground text-sm">Loading…</p>
       ) : (
         <div className="space-y-3">
+          {requests.length === 0 && !error && (
+            <p className="text-sm">No customer requests yet.</p>
+          )}
           {pending.map((r) => (
             <div
               key={r.id}
-              className="bg-background/60 rounded-lg border border-amber-500/30 p-3"
+              id={`client-request-${r.id}`}
+              className="bg-background/60 scroll-mt-6 rounded-lg border border-amber-500/30 p-3 target:ring-2 target:ring-cyan-400"
             >
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="secondary">
@@ -144,6 +173,12 @@ export function ClientRequestsPanel() {
                 </span>
               </div>
               {r.message && <p className="mt-2 text-sm">{r.message}</p>}
+              <Link
+                className="mt-2 inline-block text-sm text-cyan-400"
+                href={`/admin/operations/commercial/${r.customer_id}`}
+              >
+                Open customer account →
+              </Link>
               {Object.entries(r.details || {})
                 .filter(
                   ([key, v]) =>

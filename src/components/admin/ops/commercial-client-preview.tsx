@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { ClientCommercialDetails } from '@/components/client/commercial-details'
 import { RequestForm } from '@/components/client/client-portal'
 import type { CommercialData } from '@/lib/ops/commercial'
@@ -51,6 +52,17 @@ export function CommercialClientPreview({
           id="preview-service-request"
           className="scroll-mt-6 rounded-2xl border border-cyan-400/30 bg-slate-950/50 p-2"
         >
+          <p className="px-5 pt-4 text-sm text-cyan-100">
+            This test will not appear in the inbox or notify Charles. Real
+            customer submissions appear in{' '}
+            <Link
+              className="underline"
+              href="/admin/operations/commercial#client-requests"
+            >
+              Client requests
+            </Link>{' '}
+            and trigger a Telegram alert.
+          </p>
           <RequestForm
             key={request.key}
             initialService={request.service}

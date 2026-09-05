@@ -257,7 +257,13 @@ export function CommercialAccount({ customerId }: { customerId: string }) {
           </p>
           <h2 className="text-3xl font-bold">{data.businessName}</h2>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Link
+            className="rounded-lg border border-amber-400/30 px-3 py-2 text-sm text-amber-200"
+            href="/admin/operations/commercial#client-requests"
+          >
+            Client requests
+          </Link>
           <Link
             className="rounded-lg border border-white/15 px-3 py-2 text-sm"
             href={`/admin/operations/commercial/${customerId}/preview`}

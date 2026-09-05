@@ -204,6 +204,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Use the official website logo for customer-facing branding, not a mascot paired with a recreated text wordmark; make the next action explicit and place every action-blocking field beside that action.
 - Staff previews of customer portals must be non-persisting test drives: customer actions should open their real forms and state clearly that preview data is not saved or sent.
 - Commercial service discovery must retain additional service categories alongside contract-specific scope; verify request frequency, staff response, actual scheduling, and billing handoffs before describing the customer journey as complete.
+- Keep the client-request inbox visible when empty, link staff previews to it, and check Telegram's boolean delivery result rather than relying on rejected promises.
 
 ---
 

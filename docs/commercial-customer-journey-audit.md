@@ -39,3 +39,7 @@ This is a code-path and UI review, not proof that a real customer has completed 
 ## Verification
 
 Targeted component/API tests cover service visibility alongside a published agreement, no scope mutation, custom-frequency/date payloads, missing custom-frequency validation, preview submissions making no API calls, and cancellation opening the correct visit-linked form. Production browser checks cover the visible service cards and frequency form; they do not submit real business records.
+
+## Request inbox follow-up
+
+Charles confirmed his test used the staff test drive; a read-only database check found no saved requests. The Commercial accounts inbox now stays visible when empty, has a refresh button, and is linked from each commercial workspace and the preview request form. Real request alerts include a direct request anchor and are capped below Telegram's message limit. A failed Telegram result gets one retry and an explicit log with the saved request ID; this is not a durable background retry queue. A clearly labeled Telegram-only test was accepted by Telegram, without creating a customer request or appointment.
