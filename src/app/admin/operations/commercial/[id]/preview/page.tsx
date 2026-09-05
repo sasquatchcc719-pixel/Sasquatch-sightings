@@ -3,7 +3,7 @@ import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { loadCommercialData } from '@/lib/ops/commercial-server'
 import { loadClientPortalData } from '@/lib/ops/client-portal'
-import { ClientCommercialDetails } from '@/components/client/commercial-details'
+import { CommercialClientPreview } from '@/components/admin/ops/commercial-client-preview'
 export default async function Page({
   params,
 }: {
@@ -24,15 +24,7 @@ export default async function Page({
       >
         ← Back to account
       </Link>
-      <p className="rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-xs text-slate-300">
-        Read-only client preview. You are still signed in as staff. Draft
-        agreements are private; only published and signed versions appear here.
-      </p>
-      <ClientCommercialDetails
-        initialData={commercial}
-        schedule={schedule}
-        readOnly
-      />
+      <CommercialClientPreview commercial={commercial} schedule={schedule} />
     </div>
   )
 }

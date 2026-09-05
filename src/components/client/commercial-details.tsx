@@ -520,6 +520,7 @@ export function ClientCommercialDetails({
   onViewSchedule,
   onRequestService,
   onRequestSubmitted,
+  previewServiceRequests = false,
 }: {
   initialData?: CommercialData
   readOnly?: boolean
@@ -528,6 +529,7 @@ export function ClientCommercialDetails({
   onViewSchedule?: () => void
   onRequestService?: (service: string) => void
   onRequestSubmitted?: () => void
+  previewServiceRequests?: boolean
 }) {
   const [data, setData] = useState<
     (CommercialData & { canSign?: boolean }) | null
@@ -887,7 +889,7 @@ export function ClientCommercialDetails({
                       {service.frequency && <span>{service.frequency}</span>}
                     </div>
                   </div>
-                  {onRequestService && !readOnly ? (
+                  {onRequestService && (!readOnly || previewServiceRequests) ? (
                     <button
                       className={styles.serviceAction}
                       onClick={() => onRequestService(service.name)}

@@ -16,6 +16,7 @@ import {
 } from 'vitest'
 import { ClientCommercialDetails } from './commercial-details'
 import { ClientPortal } from './client-portal'
+import { CommercialClientPreview } from '@/components/admin/ops/commercial-client-preview'
 import {
   emptyProfile,
   newAgreementContent,
@@ -348,6 +349,42 @@ describe('commercial customer experience', () => {
       screen.getAllByRole('button', { name: 'Request this service' })[0],
     )
     expect(request).toHaveBeenCalledWith('Carpet care')
+  })
+  it('lets the staff test drive open service requests without enabling real preview submissions', () => {
+    const request = vi.fn()
+    render(
+      <ClientCommercialDetails
+        initialData={data}
+        readOnly
+        previewServiceRequests
+        onRequestService={request}
+      />,
+    )
+    fireEvent.click(
+      screen.getAllByRole('button', { name: 'Request this service' })[0],
+    )
+    expect(request).toHaveBeenCalledWith('Carpet care')
+  })
+  it('runs the complete staff request simulation without calling the API', async () => {
+    const fetch = vi.fn()
+    vi.stubGlobal('fetch', fetch)
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 1)
+    render(<CommercialClientPreview commercial={data} schedule={schedule} />)
+    fireEvent.click(
+      screen.getAllByRole('button', { name: 'Request this service' })[0],
+    )
+    expect(screen.getByLabelText('Service needed')).toHaveValue('Carpet care')
+    fireEvent.change(screen.getByLabelText('Details'), {
+      target: { value: 'Please clean the lobby.' },
+    })
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Test request (nothing sent)' }),
+    )
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Preview complete. No request was sent.',
+    )
+    expect(fetch).not.toHaveBeenCalled()
+    vi.restoreAllMocks()
   })
   it('opens the real request form with a selected service from the landing page', () => {
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 1)

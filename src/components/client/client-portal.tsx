@@ -717,14 +717,16 @@ function VisitCard({
   )
 }
 
-function RequestForm({
+export function RequestForm({
   appointments,
   onSubmitted,
   initialService,
+  preview = false,
 }: {
   appointments: ClientAppointment[]
-  onSubmitted: () => void
+  onSubmitted?: () => void
   initialService?: string
+  preview?: boolean
 }) {
   const [open, setOpen] = useState(!!initialService)
   const [type, setType] = useState<string>(
@@ -749,6 +751,11 @@ function RequestForm({
   async function submit() {
     if (!message.trim()) {
       setError('Please describe what you need.')
+      return
+    }
+    if (preview) {
+      setError(null)
+      setDone(true)
       return
     }
     setBusy(true)
@@ -776,7 +783,7 @@ function RequestForm({
         preferred_time: '',
       })
       setApptId('')
-      onSubmitted()
+      onSubmitted?.()
       setTimeout(() => {
         setDone(false)
         setOpen(false)
@@ -792,10 +799,13 @@ function RequestForm({
     <Card className="border-white/10 bg-white/5 p-5 backdrop-blur">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold">Request a change</h2>
+          <h2 className="text-lg font-semibold">
+            {initialService ? 'Request a service' : 'Request a change'}
+          </h2>
           <p className="text-sm text-slate-400">
-            Reschedules, extra visits, and scope changes go to Charles for
-            approval — they won&apos;t change your schedule until he confirms.
+            {preview
+              ? 'Test the customer form here. Nothing entered in this preview will be saved or sent.'
+              : "Reschedules, extra visits, and scope changes go to Charles for approval — they won't change your schedule until he confirms."}
           </p>
         </div>
         {!open && (
@@ -920,8 +930,11 @@ function RequestForm({
             </Field>
           </div>
           <div>
-            <Label className="text-slate-300">Details</Label>
+            <Label htmlFor="client-request-details" className="text-slate-300">
+              Details
+            </Label>
             <Textarea
+              id="client-request-details"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               placeholder="Tell Charles what you'd like changed…"
@@ -932,8 +945,10 @@ function RequestForm({
 
           {error && <p className="text-sm text-red-300">{error}</p>}
           {done && (
-            <p className="text-sm text-emerald-300">
-              Sent! Charles has been notified.
+            <p role="status" className="text-sm text-emerald-300">
+              {preview
+                ? 'Preview complete. No request was sent.'
+                : 'Sent! Charles has been notified.'}
             </p>
           )}
 
@@ -942,7 +957,7 @@ function RequestForm({
               {busy ? (
                 <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
               ) : null}
-              Submit request
+              {preview ? 'Test request (nothing sent)' : 'Submit request'}
             </Button>
             <Button
               variant="ghost"
