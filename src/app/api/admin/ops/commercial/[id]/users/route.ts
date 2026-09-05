@@ -11,7 +11,7 @@ export async function POST(request: NextRequest, { params }: Context) {
     const body = z
       .object({
         display_name: z.string().trim().min(2).max(200),
-        email: z.email(),
+        email: z.string().trim().toLowerCase().pipe(z.email()),
         can_sign_agreements: z.boolean(),
       })
       .parse(await request.json())
@@ -27,6 +27,30 @@ export async function POST(request: NextRequest, { params }: Context) {
         { error: 'Commercial account not found' },
         { status: 404 },
       )
+    const { data: existing, error: existingError } = await db
+      .from('ops_client_users')
+      .select('id,display_name,email,is_active,can_sign_agreements')
+      .eq('customer_id', id)
+      .ilike('email', body.email.replaceAll('%', '\\%').replaceAll('_', '\\_'))
+      .maybeSingle()
+    if (existingError) throw existingError
+    if (existing) {
+      if (
+        !existing.is_active ||
+        (body.can_sign_agreements && !existing.can_sign_agreements)
+      )
+        return NextResponse.json(
+          {
+            error:
+              'This contact already exists but does not have active signing access. Update their portal permissions before sending.',
+          },
+          { status: 409 },
+        )
+      return NextResponse.json(
+        { contact: existing },
+        { headers: { 'Cache-Control': 'no-store' } },
+      )
+    }
     const password = randomBytes(18).toString('base64url') + 'aA1!'
     const { data: created, error } = await db.auth.admin.createUser({
       email: body.email,
@@ -42,18 +66,18 @@ export async function POST(request: NextRequest, { params }: Context) {
         },
         { status: 409 },
       )
-    const { error: linkError } = await db
+    const { data: contact, error: linkError } = await db
       .from('ops_client_users')
       .insert({ ...body, user_id: created.user.id, customer_id: id })
+      .select('id,display_name,email,is_active,can_sign_agreements')
+      .single()
     if (linkError) {
       await db.auth.admin.deleteUser(created.user.id)
       throw linkError
     }
     return NextResponse.json(
       {
-        email: body.email,
-        temporary_password: password,
-        login_url: 'https://sightings.sasquatchcarpet.com/auth/login',
+        contact,
       },
       { status: 201, headers: { 'Cache-Control': 'no-store' } },
     )

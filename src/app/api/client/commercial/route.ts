@@ -25,9 +25,7 @@ export async function GET() {
 export async function PATCH(request: NextRequest) {
   try {
     const { user, client } = await requireClientManager()
-    const fields = commercialProfileSchema
-      .omit({ legal_name: true })
-      .parse(await request.json())
+    const fields = commercialProfileSchema.parse(await request.json())
     const db = createAdminClient()
     const { error } = await db.from('ops_commercial_profiles').upsert({
       ...fields,

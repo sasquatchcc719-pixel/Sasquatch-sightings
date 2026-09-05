@@ -98,6 +98,7 @@ export type CommercialAgreement = {
   created_at: string
 }
 export type CommercialData = {
+  customerContact?: { display_name: string; email: string }
   profile: CommercialProfile
   agreements: CommercialAgreement[]
   businessName: string
@@ -109,6 +110,17 @@ export type CommercialData = {
     state: string
     zip_code: string
   }[]
+}
+// Estimate intake can leave a placeholder where a person's name would be.
+export function commercialContactName(
+  name: string | null | undefined,
+  businessName: string,
+) {
+  const value = name?.trim() || ''
+  return /^(new estimate|new customer|unknown|estimate)$/i.test(value) ||
+    value.toLowerCase() === businessName.trim().toLowerCase()
+    ? ''
+    : value
 }
 export const SIGNATURE_CONSENT =
   'I am authorized to sign for this business. I have reviewed this agreement, agree to its terms, consent to electronic records and signatures, and intend my typed name to be my signature. I can download and retain a copy. I may request a paper signing process before signing by contacting Sasquatch Carpet Cleaning.'

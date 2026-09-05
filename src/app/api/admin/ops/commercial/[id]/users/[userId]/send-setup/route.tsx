@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createHash } from 'node:crypto'
 import { renderToBuffer } from '@react-pdf/renderer'
 import { Resend } from 'resend'
 import { z } from 'zod'
@@ -79,97 +80,200 @@ export async function POST(request: NextRequest, { params }: Context) {
         { status: 409 },
       )
 
-    const { data: link, error: linkError } = await db.auth.admin.generateLink({
-      type: 'magiclink',
-      email: contact.email,
-    })
-    if (linkError || !link.properties.hashed_token)
-      return NextResponse.json(
-        { error: 'Could not create a secure portal link.' },
-        { status: 502 },
-      )
-
-    const origin = (
-      process.env.NEXT_PUBLIC_SITE_URL ||
-      process.env.SITE_URL ||
-      request.nextUrl.origin
-    ).replace(/\/$/, '')
-    const setupUrl = new URL('/auth/confirm', origin)
-    setupUrl.searchParams.set('token_hash', link.properties.hashed_token)
-    setupUrl.searchParams.set('type', 'magiclink')
-    setupUrl.searchParams.set('next', '/client')
-
-    const agreement = agreementResult.data as CommercialAgreement
-    const pdf = Buffer.from(
-      await renderToBuffer(<CommercialAgreementPDF agreement={agreement} />),
-    )
     const resendKey = process.env.RESEND_API_KEY
     if (!resendKey)
       return NextResponse.json(
         { error: 'Email service not configured.' },
         { status: 503 },
       )
+    const requestHash = createHash('sha256')
+      .update(
+        JSON.stringify([
+          customerId,
+          userId,
+          body.agreement_id,
+          contact.email,
+          body.subject,
+          body.body,
+        ]),
+      )
+      .digest('hex')
+    const { data: previous, error: previousError } = await db
+      .from('ops_commercial_setup_deliveries')
+      .select('*')
+      .eq('operation_id', body.operation_id)
+      .maybeSingle()
+    if (previousError) throw previousError
+    if (previous && previous.request_hash !== requestHash)
+      return NextResponse.json(
+        {
+          error:
+            'This send was already started with different details. Reopen email review to prepare a different message.',
+        },
+        { status: 409 },
+      )
+    let payload = previous?.payload
+    let deliveredId: string | null = previous?.resend_id || null
+    let sentAt: string | null = previous?.sent_at || null
+    if (previous && !payload && !deliveredId)
+      return NextResponse.json(
+        {
+          error:
+            'This email is still being prepared. Retry shortly. If preparation was interrupted, close and reopen email review; no email was sent from this preparation.',
+        },
+        { status: 409 },
+      )
+    // Resend retains idempotency keys for 24 hours. Never retry beyond that
+    // horizon, where delivery might be duplicated and the link has expired.
+    if (
+      previous &&
+      !deliveredId &&
+      Date.now() - Date.parse(previous.created_at) > 23 * 60 * 60 * 1000
+    )
+      return NextResponse.json(
+        {
+          error:
+            'This send attempt is too old to retry safely. Check the email history before reopening review for a fresh setup link.',
+        },
+        { status: 409 },
+      )
 
+    if (!previous) {
+      const { error: reserveError } = await db
+        .from('ops_commercial_setup_deliveries')
+        .insert({
+          operation_id: body.operation_id,
+          customer_id: customerId,
+          contact_id: userId,
+          agreement_id: body.agreement_id,
+          request_hash: requestHash,
+        })
+      if (reserveError)
+        return NextResponse.json(
+          {
+            error:
+              'Could not reserve this send. Retry shortly; no email has been sent by this request.',
+          },
+          { status: 409 },
+        )
+      try {
+        const { data: link, error: linkError } =
+          await db.auth.admin.generateLink({
+            type: 'magiclink',
+            email: contact.email,
+          })
+        if (linkError || !link.properties.hashed_token)
+          throw new Error('Could not create a secure portal link.')
+
+        const origin = (
+          process.env.NEXT_PUBLIC_SITE_URL ||
+          process.env.SITE_URL ||
+          request.nextUrl.origin
+        ).replace(/\/$/, '')
+        const setupUrl = new URL('/auth/portal-access', origin)
+        setupUrl.searchParams.set('token_hash', link.properties.hashed_token)
+
+        const agreement = agreementResult.data as CommercialAgreement
+        const pdf = Buffer.from(
+          await renderToBuffer(
+            <CommercialAgreementPDF agreement={agreement} />,
+          ),
+        )
+        const safeBusinessName = (
+          customerResult.data.business_name ||
+          customerResult.data.full_name ||
+          'commercial-account'
+        )
+          .replace(/[^a-z0-9]+/gi, '-')
+          .replace(/^-|-$/g, '')
+          .toLowerCase()
+
+        payload = {
+          from:
+            process.env.OPS_EMAIL_FROM ||
+            'Sasquatch Carpet Cleaning <onboarding@resend.dev>',
+          to: contact.email,
+          bcc: opsEmailBcc(),
+          subject: body.subject,
+          html: buildEmailHtml(body.body, 'commercial_portal_setup', {
+            cta: {
+              label: 'Open portal and review agreement',
+              url: setupUrl.toString(),
+            },
+          }),
+          attachments: [
+            {
+              filename: `${safeBusinessName}-service-agreement-v${agreement.version}.pdf`,
+              content: pdf.toString('base64'),
+            },
+          ],
+        }
+        const { error: saveError } = await db
+          .from('ops_commercial_setup_deliveries')
+          .update({ payload })
+          .eq('operation_id', body.operation_id)
+        if (saveError) throw saveError
+      } catch (error) {
+        await db
+          .from('ops_commercial_setup_deliveries')
+          .delete()
+          .eq('operation_id', body.operation_id)
+          .is('payload', null)
+          .is('resend_id', null)
+        throw error
+      }
+    }
     const logRow = {
+      id: body.operation_id,
       customer_id: customerId,
       template_key: 'commercial_portal_setup',
       to_email: contact.email,
       subject: body.subject,
       body_text: body.body,
     }
-    const safeBusinessName = (
-      customerResult.data.business_name ||
-      customerResult.data.full_name ||
-      'commercial-account'
-    )
-      .replace(/[^a-z0-9]+/gi, '-')
-      .replace(/^-|-$/g, '')
-      .toLowerCase()
-
-    const { data: delivery, error: deliveryError } = await new Resend(
-      resendKey,
-    ).emails.send(
-      {
-        from:
-          process.env.OPS_EMAIL_FROM ||
-          'Sasquatch Carpet Cleaning <onboarding@resend.dev>',
-        to: contact.email,
-        bcc: opsEmailBcc(),
-        subject: body.subject,
-        html: buildEmailHtml(body.body, 'commercial_portal_setup', {
-          cta: {
-            label: 'Open portal and review agreement',
-            url: setupUrl.toString(),
-          },
-        }),
-        attachments: [
-          {
-            filename: `${safeBusinessName}-service-agreement-v${agreement.version}.pdf`,
-            content: pdf,
-          },
-        ],
-      },
-      { idempotencyKey: `commercial-setup-${body.operation_id}` },
-    )
-
-    if (deliveryError) {
-      const message =
-        typeof deliveryError === 'object' &&
-        deliveryError !== null &&
-        'message' in deliveryError &&
-        typeof deliveryError.message === 'string'
-          ? deliveryError.message
-          : 'Email provider rejected the message.'
-      await db
-        .from('ops_email_log')
-        .insert({ ...logRow, status: 'failed', error_message: message })
-      return NextResponse.json({ error: message }, { status: 502 })
+    if (!deliveredId) {
+      const { data: delivery, error: deliveryError } = await new Resend(
+        resendKey,
+      ).emails.send(payload, {
+        idempotencyKey: `commercial-setup-${body.operation_id}`,
+      })
+      if (deliveryError) {
+        const message =
+          typeof deliveryError === 'object' &&
+          deliveryError !== null &&
+          'message' in deliveryError &&
+          typeof deliveryError.message === 'string'
+            ? deliveryError.message
+            : 'Email provider rejected the message.'
+        await db
+          .from('ops_email_log')
+          .upsert(
+            { ...logRow, status: 'failed', error_message: message },
+            { onConflict: 'id', ignoreDuplicates: true },
+          )
+        return NextResponse.json({ error: message }, { status: 502 })
+      }
+      if (!delivery?.id)
+        throw new Error(
+          'Email provider did not confirm delivery. Retry this same send.',
+        )
+      deliveredId = delivery.id
+      sentAt = new Date().toISOString()
+      const { error: recordError } = await db
+        .from('ops_commercial_setup_deliveries')
+        .update({ resend_id: deliveredId, sent_at: sentAt, payload: null })
+        .eq('operation_id', body.operation_id)
+      if (recordError)
+        throw new Error(
+          'Email accepted, but confirmation could not be saved. Retry this same send to finish recording it without sending a duplicate.',
+        )
     }
-
-    const { error: logError } = await db.from('ops_email_log').insert({
+    const { error: logError } = await db.from('ops_email_log').upsert({
       ...logRow,
       status: 'sent',
-      resend_id: delivery?.id || null,
+      error_message: null,
+      resend_id: deliveredId,
+      sent_at: sentAt,
     })
     if (logError) {
       console.error(
@@ -184,7 +288,7 @@ export async function POST(request: NextRequest, { params }: Context) {
         { status: 500 },
       )
     }
-    return NextResponse.json({ ok: true, to: contact.email, id: delivery?.id })
+    return NextResponse.json({ ok: true, to: contact.email, id: deliveredId })
   } catch (error) {
     const message =
       error instanceof Error ? error.message : 'Unable to send customer setup'

@@ -14,6 +14,54 @@ afterEach(() => {
 })
 
 describe('CommercialSetupEmailReview', () => {
+  it('creates saved-customer access only on Send and reuses it after a delivery failure', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ contact: { id: 'contact-a' } }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        json: async () => ({ error: 'Delivery temporarily unavailable' }),
+      })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true }) })
+    vi.stubGlobal('fetch', fetchMock)
+    render(
+      <CommercialSetupEmailReview
+        businessName="Example Business"
+        customerId="customer-a"
+        contact={{
+          display_name: 'Example Business',
+          email: 'manager@example.com',
+        }}
+        agreement={{
+          id: 'agreement-a',
+          version: 1,
+          content: { title: 'Service terms' },
+        }}
+        onClose={vi.fn()}
+      />,
+    )
+    expect(fetchMock).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Send customer setup' }))
+    expect(
+      await screen.findByText('Delivery temporarily unavailable'),
+    ).toBeInTheDocument()
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      '/api/admin/ops/commercial/customer-a/users',
+    )
+    expect(screen.getByLabelText('Message')).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Send customer setup' }))
+    expect(
+      await screen.findByText('Customer setup email sent'),
+    ).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      '/api/admin/ops/commercial/customer-a/users/contact-a/send-setup',
+    )
+    expect(fetchMock.mock.calls[2]).toEqual(fetchMock.mock.calls[1])
+  })
   it('shows the exact message and sends only after final approval', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

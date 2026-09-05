@@ -725,11 +725,12 @@ function TemplateDatesModal({
   )
 }
 
-function PasswordGate({ onDone }: { onDone: () => void }) {
+export function PasswordGate({ onDone }: { onDone: () => void }) {
   const [pw, setPw] = useState('')
   const [confirm, setConfirm] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [passwordSaved, setPasswordSaved] = useState(false)
 
   async function submit() {
     if (pw.length < 8) {
@@ -743,10 +744,21 @@ function PasswordGate({ onDone }: { onDone: () => void }) {
     setBusy(true)
     setError(null)
     try {
-      const supabase = createClient()
-      const { error: updErr } = await supabase.auth.updateUser({ password: pw })
-      if (updErr) throw new Error(updErr.message)
-      await fetch('/api/client/password-flag', { method: 'POST' })
+      if (!passwordSaved) {
+        const supabase = createClient()
+        const { error: updErr } = await supabase.auth.updateUser({
+          password: pw,
+        })
+        if (updErr) throw new Error(updErr.message)
+        setPasswordSaved(true)
+      }
+      const response = await fetch('/api/client/password-flag', {
+        method: 'POST',
+      })
+      if (!response.ok)
+        throw new Error(
+          'Your password was saved, but account setup could not finish. Press Continue to retry; you do not need to change it again.',
+        )
       onDone()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to set password')
@@ -756,17 +768,35 @@ function PasswordGate({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="portal-password-title"
+      className="fixed inset-0 z-[250] flex items-center justify-center bg-black/70 p-4 backdrop-blur"
+    >
       <Card className="w-full max-w-md border-white/10 bg-slate-900 p-6 text-slate-100">
-        <h2 className="text-lg font-semibold">Set your password</h2>
+        <h2 id="portal-password-title" className="text-lg font-semibold">
+          Set your password
+        </h2>
         <p className="mt-1 text-sm text-slate-400">
-          You&apos;re using a temporary password. Please choose a new one to
-          continue.
+          Welcome to your customer account. Choose a password for future visits
+          and signing your agreement. Next, confirm your business details.
         </p>
-        <div className="mt-4 space-y-3">
+        <form
+          className="mt-4 space-y-3"
+          onSubmit={(event) => {
+            event.preventDefault()
+            void submit()
+          }}
+        >
           <div>
-            <Label className="text-slate-300">New password</Label>
+            <Label htmlFor="portal-new-password" className="text-slate-300">
+              New password
+            </Label>
             <Input
+              id="portal-new-password"
+              autoComplete="new-password"
+              disabled={passwordSaved || busy}
               type="password"
               value={pw}
               onChange={(e) => setPw(e.target.value)}
@@ -774,8 +804,13 @@ function PasswordGate({ onDone }: { onDone: () => void }) {
             />
           </div>
           <div>
-            <Label className="text-slate-300">Confirm password</Label>
+            <Label htmlFor="portal-confirm-password" className="text-slate-300">
+              Confirm password
+            </Label>
             <Input
+              id="portal-confirm-password"
+              autoComplete="new-password"
+              disabled={passwordSaved || busy}
               type="password"
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
@@ -783,11 +818,11 @@ function PasswordGate({ onDone }: { onDone: () => void }) {
             />
           </div>
           {error && <p className="text-sm text-red-300">{error}</p>}
-          <Button onClick={submit} disabled={busy} className="w-full">
+          <Button disabled={busy} className="w-full">
             {busy ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
             Save and continue
           </Button>
-        </div>
+        </form>
       </Card>
     </div>
   )

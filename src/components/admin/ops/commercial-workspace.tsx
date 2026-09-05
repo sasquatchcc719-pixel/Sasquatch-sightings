@@ -294,8 +294,6 @@ export function CommercialAccount({ customerId }: { customerId: string }) {
   const [setupContactId, setSetupContactId] = useState('')
   const [setupContactName, setSetupContactName] = useState('')
   const [setupContactEmail, setSetupContactEmail] = useState('')
-  const [setupContactBusy, setSetupContactBusy] = useState(false)
-  const [setupContactError, setSetupContactError] = useState('')
   const [setupReview, setSetupReview] = useState<{
     contact: CommercialSetupContact
     agreement: CommercialSetupAgreement
@@ -320,10 +318,18 @@ export function CommercialAccount({ customerId }: { customerId: string }) {
             ?.id || '',
     )
     setSetupContactName(
-      (current) => current || next.profile.billing_contact || '',
+      (current) =>
+        current ||
+        next.customerContact?.display_name ||
+        next.profile.billing_contact ||
+        '',
     )
     setSetupContactEmail(
-      (current) => current || next.profile.billing_email || '',
+      (current) =>
+        current ||
+        next.customerContact?.email ||
+        next.profile.billing_email ||
+        '',
     )
     return next
   }, [base])
@@ -348,42 +354,6 @@ export function CommercialAccount({ customerId }: { customerId: string }) {
       setError(e instanceof Error ? e.message : 'Failed')
     } finally {
       setBusy(false)
-    }
-  }
-  async function createSetupContact() {
-    setSetupContactBusy(true)
-    setSetupContactError('')
-    try {
-      await commercialFetch('/api/admin/ops/commercial', 'POST', {
-        customer_id: customerId,
-      })
-      await commercialFetch(`${base}/users`, 'POST', {
-        display_name: setupContactName,
-        email: setupContactEmail,
-        can_sign_agreements: true,
-      })
-      const next = await load()
-      const contact = next.users.find(
-        (user) =>
-          user.is_active &&
-          user.can_sign_agreements &&
-          user.email.toLowerCase() === setupContactEmail.trim().toLowerCase(),
-      )
-      const agreement = next.agreements.find(
-        (item) => item.status === 'published',
-      )
-      if (!contact || !agreement)
-        throw new Error(
-          'The contact was created, but email review could not open.',
-        )
-      setSetupContactId(contact.id)
-      setSetupReview({ contact, agreement })
-    } catch (e) {
-      setSetupContactError(
-        e instanceof Error ? e.message : 'Could not create the signing contact',
-      )
-    } finally {
-      setSetupContactBusy(false)
     }
   }
   if (!data)
@@ -623,22 +593,26 @@ export function CommercialAccount({ customerId }: { customerId: string }) {
               ) : (
                 <>
                   <p className="font-medium text-amber-200">
-                    {recurringAgreement?.status === 'published'
-                      ? 'Customer signature required'
-                      : recurringAgreement?.status === 'draft'
-                        ? 'Recurring agreement must be finished'
-                        : recurringAgreement?.status === 'signed'
-                          ? 'Recurring services are not in the agreement'
-                          : 'Recurring agreement required'}
+                    {recurringAgreement && recurringLineCount === 0
+                      ? 'Choose the recurring services first'
+                      : recurringAgreement?.status === 'published'
+                        ? 'Customer signature required'
+                        : recurringAgreement?.status === 'draft'
+                          ? 'Recurring agreement must be finished'
+                          : recurringAgreement?.status === 'signed'
+                            ? 'Recurring services are not in the agreement'
+                            : 'Recurring agreement required'}
                   </p>
                   <p className="mt-1 text-xs text-slate-400">
-                    {recurringAgreement?.status === 'published'
-                      ? 'The recurring terms are published. After the customer signs, scheduling unlocks here.'
-                      : recurringAgreement?.status === 'draft'
-                        ? 'Finish the recurring services and terms, then publish them for the customer to sign.'
-                        : recurringAgreement?.status === 'signed'
-                          ? 'Create a new agreement version containing services marked as recurring.'
-                          : 'Create an agreement containing recurring services, publish it, and collect the customer signature.'}
+                    {recurringAgreement && recurringLineCount === 0
+                      ? 'This version covers initial or optional work only. Agree on the maintenance service and frequency, then add them as recurring in a new version for signature. Signing optional work does not create a recurring commitment.'
+                      : recurringAgreement?.status === 'published'
+                        ? 'The recurring terms are published. After the customer signs, scheduling unlocks here.'
+                        : recurringAgreement?.status === 'draft'
+                          ? 'Finish the recurring services and terms, then publish them for the customer to sign.'
+                          : recurringAgreement?.status === 'signed'
+                            ? 'Create a new agreement version containing services marked as recurring.'
+                            : 'Create an agreement containing recurring services, publish it, and collect the customer signature.'}
                   </p>
                   <Button
                     variant="outline"
@@ -686,7 +660,9 @@ export function CommercialAccount({ customerId }: { customerId: string }) {
               >
                 {authorizedContacts.length
                   ? `Ready: ${authorizedContacts.length} signing contact${authorizedContacts.length === 1 ? '' : 's'}`
-                  : 'Needed: add an authorized signing contact'}
+                  : setupContactEmail
+                    ? 'Ready: saved customer email'
+                    : 'Needed: customer email'}
               </span>
             </div>
           </div>
@@ -738,51 +714,74 @@ export function CommercialAccount({ customerId }: { customerId: string }) {
             className="border-t border-white/10 bg-black/15 p-5"
             onSubmit={(event) => {
               event.preventDefault()
-              void createSetupContact()
+              setSetupReview({
+                contact: {
+                  display_name: setupContactName || data.businessName,
+                  email: setupContactEmail.trim().toLowerCase(),
+                },
+                agreement: publishedAgreement,
+              })
             }}
           >
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
-              <Field label="Customer contact name">
-                <Input
-                  required
-                  minLength={2}
-                  autoComplete="name"
-                  className={fieldClass}
-                  value={setupContactName}
-                  onChange={(event) => setSetupContactName(event.target.value)}
-                  placeholder="Restaurant manager or authorized signer"
-                />
-              </Field>
-              <Field label="Customer email">
-                <Input
-                  required
-                  type="email"
-                  autoComplete="email"
-                  className={fieldClass}
-                  value={setupContactEmail}
-                  onChange={(event) => setSetupContactEmail(event.target.value)}
-                  placeholder="manager@business.com"
-                />
-              </Field>
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <p className="text-xs text-slate-400">Send to this customer</p>
+                <p className="mt-1 font-semibold">
+                  {setupContactName || data.businessName}
+                </p>
+                <p className="text-emerald-200">
+                  {setupContactEmail || 'Add an email below'}
+                </p>
+              </div>
               <Button
                 className="min-w-64 bg-emerald-500 text-emerald-950 hover:bg-emerald-400"
-                disabled={setupContactBusy}
+                disabled={!setupContactEmail.trim()}
               >
                 <Mail className="mr-2 h-4 w-4" />
-                {setupContactBusy
-                  ? 'Creating secure access…'
-                  : 'Create contact & review email'}
+                Review & send customer setup email
               </Button>
             </div>
+            <details
+              className="mt-3"
+              open={!data.customerContact?.email && !data.profile.billing_email}
+            >
+              <summary className="cursor-pointer text-xs text-cyan-300">
+                Change recipient or add a contact name
+              </summary>
+              <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                <Field label="Contact name (optional)">
+                  <Input
+                    autoComplete="name"
+                    className={fieldClass}
+                    value={setupContactName}
+                    onChange={(event) =>
+                      setSetupContactName(event.target.value)
+                    }
+                    placeholder="They will enter their full name when signing"
+                  />
+                </Field>
+                <Field label="Customer email">
+                  <Input
+                    required
+                    type="email"
+                    autoComplete="email"
+                    className={fieldClass}
+                    value={setupContactEmail}
+                    onChange={(event) =>
+                      setSetupContactEmail(event.target.value)
+                    }
+                    placeholder="manager@business.com"
+                  />
+                </Field>
+              </div>
+            </details>
             <p className="mt-3 text-xs text-slate-400">
-              Step 1 creates secure portal access. Step 2 opens the complete
-              email for your approval. Nothing is sent until you press Send.
+              Uses the email already saved with this customer. Confirm the
+              recipient in the preview; Send creates their signing access and
+              delivers the setup link. They choose their own password and enter
+              their business details. Nothing is created or sent while
+              reviewing.
             </p>
-            {setupContactError && (
-              <p role="alert" className="mt-3 text-sm text-red-300">
-                {setupContactError}
-              </p>
-            )}
           </form>
         )}
       </section>
@@ -971,7 +970,10 @@ export function CommercialAccount({ customerId }: { customerId: string }) {
           customerId={customerId}
           contact={setupReview.contact}
           agreement={setupReview.agreement}
-          onClose={() => setSetupReview(null)}
+          onClose={() => {
+            setSetupReview(null)
+            void load().catch((e) => setError(e.message))
+          }}
         />
       )}
     </div>
@@ -1452,8 +1454,8 @@ function PortalUsers({
       </div>
       {users.length === 0 && (
         <p className="text-sm text-slate-400">
-          No portal contacts yet. Add the customer in Customer Setup Delivery
-          above; the email review opens immediately afterward.
+          No portal contacts yet. Use Customer Setup Delivery above. Sending the
+          reviewed email creates their access using the saved customer contact.
         </p>
       )}
       {error && (

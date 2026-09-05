@@ -22,6 +22,8 @@ export function UpdatePasswordForm({
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [passwordSaved, setPasswordSaved] = useState(false)
+  const [needsSetupCompletion, setNeedsSetupCompletion] = useState(false)
   const router = useRouter()
 
   const handleForgotPassword = async (e: React.FormEvent) => {
@@ -31,8 +33,23 @@ export function UpdatePasswordForm({
     setError(null)
 
     try {
-      const { error } = await supabase.auth.updateUser({ password })
-      if (error) throw error
+      let finishSetup = needsSetupCompletion
+      if (!passwordSaved) {
+        const { data, error } = await supabase.auth.updateUser({ password })
+        if (error) throw error
+        setPasswordSaved(true)
+        finishSetup = data.user?.app_metadata?.must_change_password === true
+        setNeedsSetupCompletion(finishSetup)
+      }
+      if (finishSetup) {
+        const response = await fetch('/api/client/password-flag', {
+          method: 'POST',
+        })
+        if (!response.ok)
+          throw new Error(
+            'Your password was saved, but account setup could not finish. Press Save again to retry without changing your password.',
+          )
+      }
       router.push('/redirect')
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : 'An error occurred')
@@ -60,6 +77,7 @@ export function UpdatePasswordForm({
                   type="password"
                   placeholder="New password"
                   required
+                  disabled={passwordSaved || isLoading}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                 />

@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgreementEditor, CommercialAccount } from './commercial-workspace'
@@ -217,19 +218,22 @@ describe('commercial agreement approval', () => {
         name: 'Review setup email before sending',
       }),
     ).toBeInTheDocument()
-    expect(screen.getByText('alex@example.com')).toBeInTheDocument()
+    expect(
+      within(screen.getByRole('dialog')).getByText('alex@example.com'),
+    ).toBeInTheDocument()
     expect(fetch).toHaveBeenCalledTimes(1)
   })
 
-  it('creates the signing contact at the top and opens email review immediately', async () => {
+  it('uses the saved customer email with no billing profile and opens review without creating anything', async () => {
     const agreement = draft()
     agreement.status = 'published'
     const account = {
       businessName: 'Example Business',
+      customerContact: { display_name: '', email: 'alex@example.com' },
       profile: {
         legal_name: '',
-        billing_contact: 'Alex Manager',
-        billing_email: 'alex@example.com',
+        billing_contact: '',
+        billing_email: '',
         purchase_order: '',
         access_instructions: '',
         service_windows: '',
@@ -263,15 +267,15 @@ describe('commercial agreement approval', () => {
 
     render(<CommercialAccount customerId="customer-a" />)
 
-    expect(await screen.findByLabelText('Customer contact name')).toHaveValue(
-      'Alex Manager',
+    expect(await screen.findByLabelText('Contact name (optional)')).toHaveValue(
+      '',
     )
     expect(screen.getByLabelText('Customer email')).toHaveValue(
       'alex@example.com',
     )
     fireEvent.click(
       screen.getByRole('button', {
-        name: 'Create contact & review email',
+        name: 'Review & send customer setup email',
       }),
     )
 
@@ -280,10 +284,12 @@ describe('commercial agreement approval', () => {
         name: 'Review setup email before sending',
       }),
     ).toBeInTheDocument()
-    expect(screen.getByText('alex@example.com')).toBeInTheDocument()
-    expect(fetchMock).toHaveBeenCalledTimes(4)
-    expect(fetchMock.mock.calls[2][0]).toBe(
-      '/api/admin/ops/commercial/customer-a/users',
-    )
+    expect(
+      within(screen.getByRole('dialog')).getByText('alex@example.com'),
+    ).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(
+      screen.getByText('Choose the recurring services first'),
+    ).toBeInTheDocument()
   })
 })

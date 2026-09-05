@@ -74,7 +74,6 @@ const PROFILE_LABELS: Record<keyof CommercialProfile, string> = {
 export function ProfileForm({
   profile,
   onSave,
-  admin = false,
   readOnly = false,
 }: {
   profile: CommercialProfile
@@ -127,7 +126,7 @@ export function ProfileForm({
                 <Input
                   type={key === 'billing_email' ? 'email' : 'text'}
                   className={fieldClass}
-                  disabled={readOnly || (key === 'legal_name' && !admin)}
+                  disabled={readOnly}
                   value={value[key]}
                   onChange={(e) =>
                     setValue({ ...value, [key]: e.target.value })
@@ -139,8 +138,9 @@ export function ProfileForm({
         )}
       </div>
       <p className="mt-3 text-xs text-slate-400">
-        Preferences help us plan your visits. Changes to signed pricing, scope,
-        or dates require confirmation.
+        These details update your business profile, not the text of an agreement
+        already published or signed. If the business name or service terms in
+        your agreement need changing, send Charles a note before signing.
       </p>
       {!readOnly && (
         <Button className="mt-4" disabled={busy}>
@@ -514,6 +514,11 @@ export function ClientCommercialDetails({
     (CommercialData & { canSign?: boolean }) | null
   >(initialData || null)
   const [error, setError] = useState('')
+  const [profileOpen, setProfileOpen] = useState(
+    !initialData?.profile.legal_name ||
+      !initialData?.profile.billing_contact ||
+      !initialData?.profile.access_instructions,
+  )
   const refresh = () =>
     commercialFetch('/api/client/commercial')
       .then(setData)
@@ -681,6 +686,39 @@ export function ClientCommercialDetails({
             {error}
           </p>
         )}
+        <details
+          id="commercial-profile"
+          className={styles.profile}
+          open={profileOpen}
+          onToggle={(event) => setProfileOpen(event.currentTarget.open)}
+        >
+          <summary>
+            <Building2 size={24} strokeWidth={1.4} />
+            <div>
+              <strong>Business details & access instructions</strong>
+              <small>
+                Start here: confirm your billing and building access details,
+                then save and review your agreement below. Leave anything that
+                does not apply blank.
+              </small>
+            </div>
+            <ChevronDown size={18} className={styles.chevron} />
+          </summary>
+          <ProfileForm
+            profile={data.profile}
+            readOnly={readOnly}
+            onSave={async (p) => {
+              await commercialFetch('/api/client/commercial', 'PATCH', p)
+              await refresh()
+              setProfileOpen(false)
+              const document = window.document.getElementById(
+                `commercial-agreement-${currentAgreement?.id}`,
+              )
+              if (document instanceof HTMLDetailsElement) document.open = true
+              document?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            }}
+          />
+        </details>
         <section id="commercial-care">
           <div className={styles.intro}>
             <div>
@@ -790,6 +828,17 @@ export function ClientCommercialDetails({
                 </summary>
                 <div className={styles.document}>
                   <AgreementView agreement={a} />
+                  {a.status === 'signed' && (
+                    <p
+                      role="status"
+                      className="mt-5 rounded-xl border border-emerald-400/20 bg-emerald-500/10 p-4 text-sm text-emerald-200"
+                    >
+                      Your signature is recorded. Charles will confirm service
+                      dates with you; scheduled visits will appear in
+                      Appointments. Optional services still require separate
+                      approval before being added to a recurring plan.
+                    </p>
+                  )}
                   {a.status === 'published' && (
                     <AgreementFeedback agreement={a} readOnly={readOnly} />
                   )}
@@ -827,27 +876,6 @@ export function ClientCommercialDetails({
             </div>
           </aside>
         </div>
-        <details id="commercial-profile" className={styles.profile}>
-          <summary>
-            <Building2 size={24} strokeWidth={1.4} />
-            <div>
-              <strong>Business details & access instructions</strong>
-              <small>
-                Click to open. Add your billing contact, building access, and
-                preferred service times, then save.
-              </small>
-            </div>
-            <ChevronDown size={18} className={styles.chevron} />
-          </summary>
-          <ProfileForm
-            profile={data.profile}
-            readOnly={readOnly}
-            onSave={async (p) => {
-              await commercialFetch('/api/client/commercial', 'PATCH', p)
-              await refresh()
-            }}
-          />
-        </details>
       </div>
       <footer className={styles.footer}>
         <strong>

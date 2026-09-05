@@ -19,8 +19,23 @@ describe('buildCommercialSetupEmailDraft', () => {
     )
     expect(draft.body).toContain('monthly invoicing')
     expect(draft.body).toContain('only the approved one-time service')
-    expect(draft.body).toContain('Review the Agreement tab')
+    expect(draft.body).toContain('save your business details')
+    expect(draft.body).toContain('not yet a recurring commitment')
     expect(draft.body).toContain('Use the Appointments tab')
     expect(draft.body).toContain('does not schedule anything automatically')
   })
+  it.each(['New Estimate', 'Saltgrass Colorado Springs'])(
+    'does not greet a placeholder name (%s)',
+    (contactName) => {
+      expect(
+        buildCommercialSetupEmailDraft({
+          businessName: 'Saltgrass Colorado Springs',
+          contactName,
+          contactEmail: 'test@example.com',
+          agreementTitle: 'Terms',
+          agreementVersion: 1,
+        }).body,
+      ).toMatch(/^Hello,/)
+    },
+  )
 })

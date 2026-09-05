@@ -98,6 +98,36 @@ function query(data: unknown) {
   builder.eq = vi.fn(() => builder)
   builder.maybeSingle = vi.fn(async () => ({ data, error: null }))
   builder.insert = mocks.insert
+  builder.upsert = mocks.insert
+  return builder
+}
+
+let deliveryRecord: Record<string, unknown> | null = null
+function outbox() {
+  const builder = {
+    select: vi.fn(() => builder),
+    eq: vi.fn(() => builder),
+    is: vi.fn(() => builder),
+    maybeSingle: vi.fn(async () => ({
+      data: deliveryRecord ? { ...deliveryRecord } : null,
+      error: null,
+    })),
+    insert: vi.fn(async (row: Record<string, unknown>) => {
+      if (deliveryRecord) return { error: { code: '23505' } }
+      deliveryRecord = { ...row, created_at: new Date().toISOString() }
+      return { error: null }
+    }),
+    update: vi.fn((row: Record<string, unknown>) => {
+      deliveryRecord = { ...deliveryRecord, ...row }
+      return builder
+    }),
+    delete: vi.fn(() => {
+      deliveryRecord = null
+      return builder
+    }),
+    then: (resolve: (result: { error: null }) => unknown) =>
+      Promise.resolve(resolve({ error: null })),
+  }
   return builder
 }
 
@@ -121,6 +151,7 @@ function database(contactCanSign = true) {
         })
       if (table === 'ops_commercial_agreements') return query(agreement)
       if (table === 'ops_email_log') return query(null)
+      if (table === 'ops_commercial_setup_deliveries') return outbox()
       throw new Error(`Unexpected table ${table}`)
     }),
     auth: {
@@ -154,6 +185,7 @@ function request() {
 describe('commercial customer setup delivery', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    deliveryRecord = null
     vi.stubEnv('RESEND_API_KEY', 'test-key')
     vi.stubEnv('NEXT_PUBLIC_SITE_URL', 'https://sightings.sasquatchcarpet.com')
     createAdminClient.mockReturnValue(database())
@@ -188,7 +220,7 @@ describe('commercial customer setup delivery', () => {
         cta: {
           label: 'Open portal and review agreement',
           url: expect.stringContaining(
-            '/auth/confirm?token_hash=secure-hash&type=magiclink&next=%2Fclient',
+            '/auth/portal-access?token_hash=secure-hash',
           ),
         },
       },
@@ -243,5 +275,41 @@ describe('commercial customer setup delivery', () => {
     expect(mocks.send).toHaveBeenCalledWith(expect.any(Object), {
       idempotencyKey: `commercial-setup-${ids.operation}`,
     })
+    const retry = await POST(request(), {
+      params: Promise.resolve({ id: ids.customer, userId: ids.contact }),
+    })
+    expect(retry.status).toBe(200)
+    expect(mocks.send).toHaveBeenCalledTimes(1)
+    expect(mocks.generateLink).toHaveBeenCalledTimes(1)
+    expect(deliveryRecord?.payload).toBeNull()
+  })
+  it('retries an uncertain provider failure with the exact persisted link, attachment, and idempotency key', async () => {
+    mocks.send.mockRejectedValueOnce(new Error('network interrupted'))
+    const first = await POST(request(), {
+      params: Promise.resolve({ id: ids.customer, userId: ids.contact }),
+    })
+    expect(first.status).toBe(400)
+    expect(deliveryRecord?.payload).toBeTruthy()
+    const retry = await POST(request(), {
+      params: Promise.resolve({ id: ids.customer, userId: ids.contact }),
+    })
+    expect(retry.status).toBe(200)
+    expect(mocks.generateLink).toHaveBeenCalledTimes(1)
+    expect(mocks.renderToBuffer).toHaveBeenCalledTimes(1)
+    expect(mocks.send.mock.calls[1]).toEqual(mocks.send.mock.calls[0])
+  })
+  it('does not retry an uncertain delivery after the idempotency retention window', async () => {
+    mocks.send.mockRejectedValueOnce(new Error('network interrupted'))
+    await POST(request(), {
+      params: Promise.resolve({ id: ids.customer, userId: ids.contact }),
+    })
+    deliveryRecord!.created_at = new Date(
+      Date.now() - 25 * 60 * 60 * 1000,
+    ).toISOString()
+    const retry = await POST(request(), {
+      params: Promise.resolve({ id: ids.customer, userId: ids.contact }),
+    })
+    expect(retry.status).toBe(409)
+    expect(mocks.send).toHaveBeenCalledTimes(1)
   })
 })

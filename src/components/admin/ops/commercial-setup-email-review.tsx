@@ -9,7 +9,7 @@ import { commercialFetch } from '@/components/client/commercial-details'
 import { buildCommercialSetupEmailDraft } from '@/lib/ops/commercial-setup-email'
 
 export type CommercialSetupContact = {
-  id: string
+  id?: string
   display_name: string
   email: string
 }
@@ -46,13 +46,31 @@ export function CommercialSetupEmailReview({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [sent, setSent] = useState(false)
+  const [portalContactId, setPortalContactId] = useState(contact.id)
+  const [attempted, setAttempted] = useState(false)
+  const [warning, setWarning] = useState('')
 
   async function send() {
     setBusy(true)
     setError('')
     try {
-      await commercialFetch(
-        `/api/admin/ops/commercial/${customerId}/users/${contact.id}/send-setup`,
+      let contactId = portalContactId
+      if (!contactId) {
+        const result = await commercialFetch(
+          `/api/admin/ops/commercial/${customerId}/users`,
+          'POST',
+          {
+            display_name: contact.display_name || businessName,
+            email: contact.email,
+            can_sign_agreements: true,
+          },
+        )
+        contactId = result.contact.id
+        setPortalContactId(contactId)
+      }
+      setAttempted(true)
+      const result = await commercialFetch(
+        `/api/admin/ops/commercial/${customerId}/users/${contactId}/send-setup`,
         'POST',
         {
           agreement_id: agreement.id,
@@ -61,6 +79,7 @@ export function CommercialSetupEmailReview({
           body,
         },
       )
+      setWarning(result.warning || '')
       setSent(true)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unable to send setup email')
@@ -110,9 +129,15 @@ export function CommercialSetupEmailReview({
               Customer setup email sent
             </h3>
             <p className="mt-2 text-slate-300">
-              {contact.display_name} received the agreement instructions and a
-              secure one-time portal link at {contact.email}.
+              Sent the agreement PDF, setup instructions, and secure portal link
+              to {contact.email}. They choose their password, save business
+              details, and sign in their own account.
             </p>
+            {warning && (
+              <p role="status" className="mt-3 text-amber-300">
+                {warning}
+              </p>
+            )}
             <Button className="mt-6" onClick={onClose}>
               Done
             </Button>
@@ -138,6 +163,7 @@ export function CommercialSetupEmailReview({
                 <span className="mb-1 block text-slate-300">Subject</span>
                 <Input
                   value={subject}
+                  disabled={attempted || busy}
                   onChange={(event) => setSubject(event.target.value)}
                   maxLength={200}
                   className="border-white/15 bg-black/30"
@@ -147,6 +173,7 @@ export function CommercialSetupEmailReview({
                 <span className="mb-1 block text-slate-300">Message</span>
                 <Textarea
                   value={body}
+                  disabled={attempted || busy}
                   onChange={(event) => setBody(event.target.value)}
                   rows={21}
                   maxLength={10000}
@@ -187,8 +214,8 @@ export function CommercialSetupEmailReview({
           <div className="flex flex-col gap-3 border-t border-white/10 bg-slate-900/80 px-6 py-4 sm:flex-row sm:items-center">
             <p className="flex flex-1 items-center gap-2 text-xs text-slate-400">
               <ShieldCheck className="h-4 w-4 text-cyan-300" />
-              The link signs in only this authorized contact and expires after a
-              limited time.
+              Sending authorizes this recipient to sign for this business. Their
+              legal name and consent are collected at signing.
             </p>
             {error && <p className="text-sm text-red-300">{error}</p>}
             <Button variant="outline" onClick={onClose} disabled={busy}>

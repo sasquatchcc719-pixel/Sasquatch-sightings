@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   emptyProfile,
+  commercialContactName,
   newAgreementContent,
   type AgreementContent,
   type CommercialData,
@@ -32,7 +33,7 @@ export async function loadCommercialData(
   const queries = await Promise.all([
     db
       .from('ops_customers')
-      .select('business_name,full_name')
+      .select('business_name,full_name,email')
       .eq('id', customerId)
       .single(),
     db
@@ -58,9 +59,27 @@ export async function loadCommercialData(
   ])
   for (const result of queries) if (result.error) throw result.error
   const [customer, profile, agreements, addresses] = queries
+  const businessName = customer.data!.business_name || customer.data!.full_name
+  const contactName = commercialContactName(
+    customer.data!.full_name,
+    businessName,
+  )
+  const savedProfile = { ...emptyProfile, ...profile.data }
   return {
-    businessName: customer.data!.business_name || customer.data!.full_name,
-    profile: { ...emptyProfile, ...profile.data },
+    businessName,
+    customerContact: {
+      display_name:
+        commercialContactName(savedProfile.billing_contact, businessName) ||
+        contactName,
+      email: (customer.data!.email || savedProfile.billing_email || '')
+        .trim()
+        .toLowerCase(),
+    },
+    profile: {
+      ...savedProfile,
+      billing_contact: savedProfile.billing_contact || contactName,
+      billing_email: savedProfile.billing_email || customer.data!.email || '',
+    },
     agreements: agreements.data || [],
     addresses: addresses.data || [],
   } as CommercialData

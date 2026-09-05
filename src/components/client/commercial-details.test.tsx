@@ -67,6 +67,45 @@ const agreement = (status: CommercialAgreement['status']) =>
   }) as CommercialAgreement
 
 describe('commercial customer experience', () => {
+  it('saves customer-entered business and access details before opening the agreement', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true }) })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ...data, agreements: [agreement('published')] }),
+      })
+    vi.stubGlobal('fetch', fetchMock)
+    render(
+      <ClientCommercialDetails
+        initialData={{ ...data, agreements: [agreement('published')] }}
+        canSign
+      />,
+    )
+    expect(screen.getByLabelText('Legal business name')).toBeEnabled()
+    fireEvent.change(screen.getByLabelText('Legal business name'), {
+      target: { value: 'Example Legal LLC' },
+    })
+    fireEvent.change(
+      screen.getByLabelText('Access and preparation instructions'),
+      { target: { value: 'Use the loading entrance after 9pm' } },
+    )
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Save business details' }),
+    )
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/client/commercial')
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
+      legal_name: 'Example Legal LLC',
+      access_instructions: 'Use the loading entrance after 9pm',
+    })
+    await waitFor(() =>
+      expect(
+        document.getElementById('commercial-agreement-agreement-a'),
+      ).toHaveAttribute('open'),
+    )
+    expect(data.profile.legal_name).toBe('')
+  })
   it('lets a non-signer send version-linked feedback without signing', async () => {
     const fetch = vi.fn().mockResolvedValue({
       ok: true,
@@ -189,7 +228,7 @@ describe('commercial customer experience', () => {
       ).queryByText('Contact Sasquatch for a quote'),
     ).not.toBeInTheDocument()
   })
-  it('leads with the account, keeps profile fields collapsed, and gives honest empty states', () => {
+  it('leads with the account, opens incomplete profile fields, and gives honest empty states', () => {
     render(<ClientCommercialDetails initialData={data} readOnly />)
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
       'Example Business',
@@ -199,7 +238,7 @@ describe('commercial customer experience', () => {
       screen
         .getByText('Business details & access instructions')
         .closest('details'),
-    ).not.toHaveAttribute('open')
+    ).toHaveAttribute('open')
     expect(
       screen.queryByText('Sign and accept agreement'),
     ).not.toBeInTheDocument()
@@ -212,9 +251,6 @@ describe('commercial customer experience', () => {
     const profile = screen
       .getByText('Business details & access instructions')
       .closest('details')
-    fireEvent.click(
-      within(profile!).getByText('Business details & access instructions'),
-    )
     expect(profile).toHaveAttribute('open')
   })
   it('prioritizes a published agreement and opens its terms without signing', () => {
