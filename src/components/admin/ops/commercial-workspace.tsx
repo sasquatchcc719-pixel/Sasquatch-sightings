@@ -477,7 +477,7 @@ export function CommercialAccount({ customerId }: { customerId: string }) {
   )
 }
 
-function AgreementEditor({
+export function AgreementEditor({
   agreement,
   addresses,
   onChange,
@@ -587,13 +587,6 @@ function AgreementEditor({
                   </option>
                 ))}
               </select>
-            </Field>
-            <Field label="Sasquatch approving representative">
-              <Input
-                className={fieldClass}
-                value={content.provider_name}
-                onChange={(e) => update('provider_name', e.target.value)}
-              />
             </Field>
             <Field label="Effective start">
               <Input
@@ -794,6 +787,21 @@ function AgreementEditor({
             names, pricing, and terms before publishing. Publishing makes the
             exact version available to the client; it does not send a message.
           </p>
+          <div className="max-w-md rounded-xl border border-cyan-400/30 bg-cyan-500/5 p-4">
+            <Field label="Sasquatch approving representative (required)">
+              <Input
+                className={fieldClass}
+                value={content.provider_name}
+                onChange={(e) => update('provider_name', e.target.value)}
+                placeholder="Enter your full name"
+                autoComplete="name"
+              />
+            </Field>
+            <p className="mt-2 text-xs text-slate-400">
+              This name appears on the agreement as the Sasquatch representative
+              approving the terms for customer review.
+            </p>
+          </div>
           <label className="flex items-start gap-2 text-sm">
             <input
               type="checkbox"
