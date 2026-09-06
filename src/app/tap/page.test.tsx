@@ -18,6 +18,9 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => navigation.params,
   useRouter: () => navigation.router,
 }))
+vi.mock('./tap-forest', () => ({
+  TapForest: () => <div data-testid="forest" />,
+}))
 vi.mock('next/image', () => ({
   default: ({ src, alt }: { src: string; alt: string }) =>
     createElement('img', { src, alt }),
@@ -50,6 +53,11 @@ const response = (data: Record<string, unknown>) =>
   })
 
 beforeEach(() => {
+  vi.stubGlobal(
+    'matchMedia',
+    vi.fn(() => ({ matches: true })),
+  )
+  Element.prototype.scrollIntoView = vi.fn()
   navigation.params = new URLSearchParams()
   vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
     response({ tapId: 'tap-test', couponCode: 'SCC20' }),
@@ -223,5 +231,6 @@ describe('mobile NFC card', () => {
       'data-placement',
       'inline',
     )
+    expect(screen.getByTestId('forest')).toBeInTheDocument()
   })
 })

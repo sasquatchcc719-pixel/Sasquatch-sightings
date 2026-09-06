@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import styles from './booking-forest.module.css'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -49,6 +50,8 @@ interface BookingResult {
 }
 
 export interface NfcBookingWidgetProps {
+  /** Quiet companion to the cabin-style NFC landing page; other entry points keep their theme. */
+  appearance?: 'forest'
   couponCode: string
   cardId: string | null
   onTrackClick: (buttonType: string) => void
@@ -189,13 +192,21 @@ const labelCls = 'mb-1.5 block text-xs font-semibold text-white/70'
 
 function StepBar({ current }: { current: number }) {
   return (
-    <div className="mb-6 flex items-center justify-center gap-0">
+    <div
+      data-step-bar
+      className="mb-6 flex items-center justify-center gap-0"
+      aria-label={`Step ${current} of 4: ${STEPS[current - 1]}`}
+    >
       {STEPS.map((label, i) => {
         const stepNum = i + 1
         const done = current > stepNum
         const active = current === stepNum
         return (
-          <div key={label} className="flex items-center">
+          <div
+            key={label}
+            className="flex items-center"
+            aria-current={active ? 'step' : undefined}
+          >
             <div className="flex flex-col items-center">
               <div
                 className={`flex h-8 w-8 items-center justify-center rounded-full border-2 text-xs font-bold transition-colors ${
@@ -225,6 +236,7 @@ function StepBar({ current }: { current: number }) {
                 )}
               </div>
               <span
+                data-step-label
                 className={`mt-1 hidden text-[10px] font-medium sm:block ${active ? 'text-green-300' : done ? 'text-green-500' : 'text-white/30'}`}
               >
                 {label}
@@ -279,6 +291,7 @@ function CategorySection({
     return (
       <div
         key={item.id}
+        data-service-row
         className="flex items-center justify-between px-4 py-3"
       >
         <div className="min-w-0 flex-1 pr-4">
@@ -303,6 +316,7 @@ function CategorySection({
         {qty === 0 ? (
           <button
             type="button"
+            aria-label={`Add ${item.name}`}
             onClick={() => onAdd(item)}
             className="flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-1.5 text-sm font-medium whitespace-nowrap text-white transition-colors hover:bg-green-500"
           >
@@ -325,6 +339,7 @@ function CategorySection({
           <div className="flex items-center gap-2">
             <button
               type="button"
+              aria-label={`Remove one ${item.name}`}
               onClick={() => onRemove(item)}
               className="flex h-7 w-7 items-center justify-center rounded-full border border-white/20 text-white/60 transition-colors hover:border-red-400 hover:text-red-400"
             >
@@ -345,6 +360,7 @@ function CategorySection({
             {needsDirectInput(item.pricing_unit) ? (
               <input
                 type="number"
+                aria-label={`Quantity for ${item.name}`}
                 inputMode="numeric"
                 min="1"
                 value={qty}
@@ -369,6 +385,7 @@ function CategorySection({
             )}
             <button
               type="button"
+              aria-label={`Add one ${item.name}`}
               onClick={() => onAdd(item)}
               className="flex h-7 w-7 items-center justify-center rounded-full border border-green-500 text-green-400 transition-colors hover:bg-green-600 hover:text-white"
             >
@@ -393,9 +410,13 @@ function CategorySection({
   }
 
   return (
-    <div className="mb-3 overflow-hidden rounded-xl border border-white/10">
+    <div
+      data-service-category
+      className="mb-3 overflow-hidden rounded-xl border border-white/10"
+    >
       <button
         type="button"
+        aria-expanded={open}
         className="flex w-full items-center justify-between bg-white/5 px-4 py-3 text-left transition-colors hover:bg-white/10"
         onClick={() => setOpen((o) => !o)}
       >
@@ -422,6 +443,7 @@ function CategorySection({
             <div className="bg-white/[0.03]">
               <button
                 type="button"
+                aria-expanded={leatherOpen}
                 className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-white/5"
                 onClick={() => setLeatherOpen((value) => !value)}
               >
@@ -572,10 +594,11 @@ function MiniCalendar({
   }, [daysInMonth, endDate, month, requiredMinutes, startDate, year])
 
   return (
-    <div className="select-none">
+    <div data-calendar className="select-none">
       <div className="mb-3 flex items-center justify-between">
         <button
           type="button"
+          aria-label="Previous month"
           onClick={() => setViewMonth(new Date(year, month - 1, 1))}
           className="rounded-lg p-1.5 text-white/60 transition-colors hover:bg-white/10 hover:text-white"
         >
@@ -596,6 +619,7 @@ function MiniCalendar({
         <span className="text-sm font-semibold text-white">{monthLabel}</span>
         <button
           type="button"
+          aria-label="Next month"
           onClick={() => setViewMonth(new Date(year, month + 1, 1))}
           className="rounded-lg p-1.5 text-white/60 transition-colors hover:bg-white/10 hover:text-white"
         >
@@ -649,6 +673,10 @@ function MiniCalendar({
             <button
               key={iso}
               type="button"
+              data-calendar-day
+              data-available={hasAvailableSlots && !isPast && !isSunday}
+              aria-pressed={isSelected}
+              aria-label={`${formatDateDisplay(iso)} — ${isPast ? 'Past date' : isSunday ? 'Closed' : isFullyBooked ? 'Fully booked' : hasAvailableSlots ? 'Available' : 'Checking availability'}`}
               disabled={isPast || isSunday || isFullyBooked}
               onClick={() => onSelect(iso)}
               className={`flex min-h-[54px] w-full flex-col items-center justify-center rounded-xl border px-1 text-center transition-all ${
@@ -667,12 +695,18 @@ function MiniCalendar({
             >
               <span className="text-xs leading-none font-bold">{day}</span>
               {hasAvailableSlots && (
-                <span className="mt-1 text-[8px] leading-[0.65rem] font-extrabold tracking-normal">
+                <span
+                  data-calendar-status
+                  className="mt-1 text-[8px] leading-[0.65rem] font-extrabold tracking-normal"
+                >
                   Available
                 </span>
               )}
               {isFullyBooked && (
-                <span className="mt-1 text-[8px] leading-[0.65rem] font-extrabold tracking-normal">
+                <span
+                  data-calendar-status
+                  className="mt-1 text-[8px] leading-[0.65rem] font-extrabold tracking-normal"
+                >
                   Fully booked
                 </span>
               )}
@@ -690,6 +724,7 @@ function MiniCalendar({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function NfcBookingWidget({
+  appearance,
   couponCode,
   partnerId,
   cardId,
@@ -697,6 +732,17 @@ export function NfcBookingWidget({
   leadSourceDetail,
 }: NfcBookingWidgetProps) {
   const [step, setStep] = useState(1)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const formId = useId()
+  const forest = appearance === 'forest'
+  const themeClass = forest ? styles.forest : ''
+
+  useEffect(() => {
+    if (forest && step > 1) {
+      panelRef.current?.scrollIntoView({ block: 'start', behavior: 'instant' })
+      panelRef.current?.focus({ preventScroll: true })
+    }
+  }, [forest, step])
 
   // Services
   const [services, setServices] = useState<ServiceItem[]>([])
@@ -1015,7 +1061,11 @@ export function NfcBookingWidget({
   // ── Success screen ──────────────────────────────────────────────────────────
   if (step === 5 && result) {
     return (
-      <div className="rounded-2xl border border-white/10 bg-black/60 p-6 text-center backdrop-blur-sm">
+      <div
+        ref={panelRef}
+        tabIndex={-1}
+        className={`${themeClass} ${forest ? styles.panel : ''} rounded-2xl border border-white/10 bg-black/60 p-6 text-center backdrop-blur-sm`}
+      >
         <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-500/20">
           <svg
             className="h-8 w-8 text-green-400"
@@ -1093,7 +1143,11 @@ export function NfcBookingWidget({
   // ── Step layout ─────────────────────────────────────────────────────────────
   return (
     <>
-      <div className="rounded-2xl border border-white/10 bg-black/60 p-4 backdrop-blur-sm">
+      <div
+        ref={panelRef}
+        tabIndex={-1}
+        className={`${themeClass} ${forest ? styles.panel : ''} rounded-2xl border border-white/10 bg-black/60 p-4 backdrop-blur-sm`}
+      >
         <StepBar current={step} />
 
         {/* ── Step 1: Services ── */}
@@ -1129,6 +1183,10 @@ export function NfcBookingWidget({
                   {category === 'Carpet Cleaning' && freeUvInspection ? (
                     <button
                       type="button"
+                      data-upsell
+                      aria-pressed={selectedUpsellIds.includes(
+                        freeUvInspection.id,
+                      )}
                       onClick={() => toggleUpsell(freeUvInspection)}
                       className={`mb-3 w-full rounded-xl border p-4 text-left shadow-[0_0_18px_rgba(250,204,21,0.22)] transition-all ${
                         selectedUpsellIds.includes(freeUvInspection.id)
@@ -1243,6 +1301,9 @@ export function NfcBookingWidget({
                       <button
                         key={slot.start_time}
                         type="button"
+                        aria-pressed={
+                          selectedSlot?.start_time === slot.start_time
+                        }
                         onClick={() => setSelectedSlot(slot)}
                         className={`rounded-xl border py-2.5 text-sm font-medium transition-all ${
                           selectedSlot?.start_time === slot.start_time
@@ -1291,8 +1352,11 @@ export function NfcBookingWidget({
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className={labelCls}>First Name *</label>
+                  <label htmlFor={`${formId}-first`} className={labelCls}>
+                    First Name *
+                  </label>
                   <input
+                    id={`${formId}-first`}
                     type="text"
                     autoComplete="given-name"
                     value={form.first_name}
@@ -1302,8 +1366,11 @@ export function NfcBookingWidget({
                   />
                 </div>
                 <div>
-                  <label className={labelCls}>Last Name *</label>
+                  <label htmlFor={`${formId}-last`} className={labelCls}>
+                    Last Name *
+                  </label>
                   <input
+                    id={`${formId}-last`}
                     type="text"
                     autoComplete="family-name"
                     value={form.last_name}
@@ -1315,8 +1382,11 @@ export function NfcBookingWidget({
               </div>
 
               <div>
-                <label className={labelCls}>Email *</label>
+                <label htmlFor={`${formId}-email`} className={labelCls}>
+                  Email *
+                </label>
                 <input
+                  id={`${formId}-email`}
                   type="email"
                   autoComplete="email"
                   value={form.email}
@@ -1327,8 +1397,11 @@ export function NfcBookingWidget({
               </div>
 
               <div>
-                <label className={labelCls}>Phone *</label>
+                <label htmlFor={`${formId}-phone`} className={labelCls}>
+                  Phone *
+                </label>
                 <input
+                  id={`${formId}-phone`}
                   type="tel"
                   autoComplete="tel"
                   value={form.phone}
@@ -1346,15 +1419,17 @@ export function NfcBookingWidget({
                   <input
                     type="text"
                     autoComplete="street-address"
+                    aria-label="Street address"
                     value={form.street_1}
                     onChange={(e) => setField('street_1', e.target.value)}
                     className={inputCls}
                     placeholder="Street address *"
                   />
-                  <div className="grid grid-cols-2 gap-2">
+                  <div data-address-line className="grid grid-cols-2 gap-2">
                     <input
                       type="text"
                       autoComplete="address-level2"
+                      aria-label="City"
                       value={form.city}
                       onChange={(e) => setField('city', e.target.value)}
                       className={inputCls}
@@ -1362,6 +1437,7 @@ export function NfcBookingWidget({
                     />
                     <div className="flex gap-2">
                       <select
+                        aria-label="State"
                         value={form.state}
                         onChange={(e) => setField('state', e.target.value)}
                         className="w-14 rounded-xl border border-white/20 bg-white/10 px-2 py-2.5 text-sm text-white focus:border-green-400 focus:outline-none"
@@ -1377,6 +1453,8 @@ export function NfcBookingWidget({
                       <input
                         type="text"
                         autoComplete="postal-code"
+                        aria-label="ZIP code"
+                        inputMode="numeric"
                         value={form.zip_code}
                         onChange={(e) => setField('zip_code', e.target.value)}
                         className={inputCls}
@@ -1389,11 +1467,12 @@ export function NfcBookingWidget({
               </div>
 
               <div>
-                <label className={labelCls}>
+                <label htmlFor={`${formId}-notes`} className={labelCls}>
                   Notes{' '}
                   <span className="font-normal text-white/30">(optional)</span>
                 </label>
                 <textarea
+                  id={`${formId}-notes`}
                   value={form.notes}
                   onChange={(e) => setField('notes', e.target.value)}
                   rows={2}
@@ -1450,7 +1529,7 @@ export function NfcBookingWidget({
                 {cart.map((ci) => (
                   <div
                     key={ci.service.id}
-                    className="flex justify-between text-sm"
+                    className="flex justify-between gap-3 text-sm"
                   >
                     <span className="text-white/80">
                       {ci.service.name}
@@ -1460,7 +1539,7 @@ export function NfcBookingWidget({
                         </span>
                       )}
                     </span>
-                    <span className="font-medium text-white">
+                    <span className="shrink-0 font-medium text-white">
                       {formatPrice(ci.service.base_price * ci.quantity)}
                     </span>
                   </div>
@@ -1670,8 +1749,15 @@ export function NfcBookingWidget({
       {mobileSubtotalHost &&
         showRugUpsell &&
         createPortal(
-          <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-            <div className="w-full max-w-md rounded-2xl border border-green-500/30 bg-zinc-950 p-5 shadow-2xl">
+          <div
+            className={`${themeClass} fixed inset-0 z-[120] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm`}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Multi-rug offer"
+              className={`${forest ? styles.offerDialog : ''} w-full max-w-md rounded-2xl border border-green-500/30 bg-zinc-950 p-5 shadow-2xl`}
+            >
               <p className="mb-1 text-xs font-semibold tracking-[0.2em] text-green-300 uppercase">
                 Checkout offer
               </p>
@@ -1687,6 +1773,7 @@ export function NfcBookingWidget({
                   Rug size
                 </label>
                 <select
+                  aria-label="Rug size"
                   value={selectedRugOfferService?.id ?? ''}
                   onChange={(event) => {
                     setSelectedRugUpsellId(event.target.value)
@@ -1711,6 +1798,7 @@ export function NfcBookingWidget({
                     : 'Quantity'}
                 </label>
                 <input
+                  aria-label="Rug quantity"
                   type="number"
                   inputMode="numeric"
                   min="1"
@@ -1788,13 +1876,13 @@ export function NfcBookingWidget({
         cart.length > 0 &&
         createPortal(
           <div
-            className="fixed right-0 bottom-0 left-0 z-[100] flex min-h-12 border-t border-white/15 bg-black/90 px-4 py-2.5 shadow-[0_-4px_20px_rgba(0,0,0,0.45)] backdrop-blur-sm md:hidden"
+            className={`${themeClass} ${forest ? styles.dock : ''} fixed right-0 bottom-0 left-0 z-[100] flex min-h-12 border-t border-white/15 bg-black/90 px-4 py-2.5 shadow-[0_-4px_20px_rgba(0,0,0,0.45)] backdrop-blur-sm md:hidden`}
             style={{
               paddingBottom: 'max(0.625rem, env(safe-area-inset-bottom))',
             }}
           >
             <div className="mx-auto flex w-full max-w-xl items-center justify-between gap-3 text-base leading-tight text-white/85">
-              <span className="min-w-0 truncate">
+              <span className="min-w-0">
                 <span className="text-white/55">Subtotal</span>{' '}
                 <span className="font-bold text-green-400 tabular-nums">
                   {formatPrice(subtotal)}

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Image from 'next/image'
 import Link from 'next/link'
@@ -16,7 +16,9 @@ import {
   CalendarCheck,
   MapPin,
   Wrench,
+  ChevronRight,
 } from 'lucide-react'
+import { TapForest } from './tap-forest'
 import { RecentJobsCarousel } from '@/components/nfc/recent-jobs-carousel'
 import { NfcBookingWidget } from '@/components/nfc/NfcBookingWidget'
 import { PushOptInBanner } from '@/components/push-opt-in-banner'
@@ -33,7 +35,19 @@ export default function TapLandingPage() {
   const [couponCode, setCouponCode] = useState<string>('SCC20')
   const [showWidget, setShowWidget] = useState(false)
   const [showShareToast, setShowShareToast] = useState(false)
+  const estimatorRef = useRef<HTMLElement>(null)
   const isRedirecting = !!partnerId
+
+  useEffect(() => {
+    if (showWidget) {
+      estimatorRef.current?.scrollIntoView({
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches
+          ? 'instant'
+          : 'smooth',
+        block: 'start',
+      })
+    }
+  }, [showWidget])
 
   // Redirect logic moved to trackTap to support placard configuration
 
@@ -155,15 +169,7 @@ export default function TapLandingPage() {
 
   return (
     <main className={styles.page}>
-      <div className={styles.backdrop} aria-hidden="true">
-        <Image
-          src="/hero-layer-forest.png"
-          alt=""
-          fill
-          sizes="100vw"
-          className={styles.forest}
-        />
-      </div>
+      <TapForest />
 
       <div className={styles.container}>
         <header className={styles.header}>
@@ -173,13 +179,14 @@ export default function TapLandingPage() {
               alt="Sasquatch Carpet Cleaning"
               width={2723}
               height={1155}
-              sizes="232px"
+              sizes="(max-width: 560px) 88vw, 480px"
               className={styles.logo}
               priority
             />
           </div>
-          <p className={styles.eyebrow}>Your local cleaning crew</p>
-          <h1>How can we help?</h1>
+          <h1 className="sr-only">
+            Sasquatch Carpet Cleaning — your digital card
+          </h1>
         </header>
 
         <section
@@ -196,22 +203,21 @@ export default function TapLandingPage() {
               if (!showWidget) void trackButtonClick('booking_widget_open')
             }}
           >
-            <span className={styles.panelTop}>
-              <CalendarCheck size={22} aria-hidden="true" />
-              <span className={styles.offer}>$20 OFF CLEANING</span>
+            <span className={styles.actionIcon}>
+              <CalendarCheck aria-hidden="true" />
             </span>
-            <span className={styles.panelTitle}>
-              {showWidget ? 'Your cleaning estimate' : 'Get a free estimate'}
-            </span>
-            <span className={styles.panelDescription}>
-              See prices & book your cleaning.
-            </span>
-            <span className={styles.panelBottom}>
-              <span>{couponCode} auto-applied</span>
-              <span className={styles.arrowCircle}>
-                <ArrowRight size={20} aria-hidden="true" />
+            <span className={styles.actionCopy}>
+              <span className={styles.panelTitle}>
+                Get a free
+                <br />
+                estimate
+              </span>
+              <span className={styles.offer}>$20 off cleaning</span>
+              <span className={styles.panelDescription}>
+                {couponCode} auto-applied
               </span>
             </span>
+            <ChevronRight className={styles.actionArrow} aria-hidden="true" />
           </button>
 
           <a
@@ -219,20 +225,18 @@ export default function TapLandingPage() {
             onClick={() => void trackButtonClick('call')}
             className={`${styles.actionPanel} ${styles.emergency}`}
           >
-            <span className={styles.emergencyHeading}>
-              <Droplets size={23} aria-hidden="true" />
+            <span className={styles.actionIcon}>
+              <Droplets aria-hidden="true" />
+            </span>
+            <span className={styles.actionCopy}>
               <span className={styles.emergencyTitle}>
-                Water damage emergency
+                Water damage
+                <br />
+                emergency
               </span>
+              <span className={styles.emergencyCta}>Tap to call for help</span>
             </span>
-            <span className={styles.panelDescription}>
-              Burst pipes · Leaks · Flooding
-            </span>
-            <span className={styles.emergencyCta}>
-              <Phone size={17} aria-hidden="true" />
-              Tap to call for help
-              <ArrowUpRight size={20} aria-hidden="true" />
-            </span>
+            <ChevronRight className={styles.actionArrow} aria-hidden="true" />
           </a>
         </section>
 
@@ -241,8 +245,16 @@ export default function TapLandingPage() {
             <section
               className={styles.estimator}
               aria-label="Cleaning estimator"
+              ref={estimatorRef}
             >
+              <div className={styles.estimatorHeader}>
+                <span>Your cleaning estimate</span>
+                <button type="button" onClick={() => setShowWidget(false)}>
+                  Close
+                </button>
+              </div>
               <NfcBookingWidget
+                appearance="forest"
                 couponCode={couponCode}
                 cardId={cardId}
                 onTrackClick={trackButtonClick}
@@ -257,38 +269,45 @@ export default function TapLandingPage() {
         >
           <a
             href="tel:719-249-8791"
+            aria-label="Call the office — 719-249-8791"
             onClick={() => void trackButtonClick('call')}
           >
             <Phone aria-hidden="true" />
-            <span>
-              Call the office<small>719-249-8791</small>
-            </span>
+            <span>Call</span>
           </a>
           <a
             href={`sms:719-249-8791?body=${encodeURIComponent(textMessage)}`}
+            aria-label="Text us"
             onClick={() => void trackButtonClick('text')}
           >
             <MessageSquare aria-hidden="true" />
-            <span>
-              Text us<small>Send a message</small>
-            </span>
+            <span>Text</span>
           </a>
           <a
             href={`/api/sasquatch-contact?code=${encodeURIComponent(couponCode)}`}
+            aria-label="Save contact"
             onClick={() => void trackButtonClick('save_contact')}
           >
             <UserPlus aria-hidden="true" />
-            <span>
-              Save contact<small>Keep us handy</small>
-            </span>
+            <span>Save</span>
           </a>
-          <button type="button" onClick={handleShare}>
+          <button
+            type="button"
+            onClick={handleShare}
+            aria-label="Share this card"
+          >
             <Share2 aria-hidden="true" />
-            <span>
-              Share this card<small>Pass along $20 off</small>
-            </span>
+            <span>Share</span>
           </button>
         </nav>
+
+        <a
+          href="tel:719-249-8791"
+          className={styles.officeNumber}
+          onClick={() => void trackButtonClick('call')}
+        >
+          719-249-8791
+        </a>
 
         <a
           className={styles.review}
@@ -309,28 +328,33 @@ export default function TapLandingPage() {
           </p>
         )}
 
-        <section
-          className={styles.recentWork}
-          aria-label="Recent work in your area"
-        >
-          <div className={styles.sectionHeading}>
-            <h2>Fresh from the field</h2>
-            <span>RECENT WORK</span>
-          </div>
-          <RecentJobsCarousel compact />
-        </section>
-
         <Link
           href="/recommended-contractors"
           className={styles.contractors}
           onClick={() => void trackButtonClick('recommended_contractors')}
         >
-          <Wrench size={21} aria-hidden="true" />
+          <Wrench size={30} aria-hidden="true" />
           <span>
-            Local pros we trust<small>Our recommended contractors</small>
+            <strong>Local pros we trust</strong>
+            <small>Recommended contractors</small>
+            <span className={styles.directoryCta}>
+              View contractors <ArrowRight size={16} aria-hidden="true" />
+            </span>
           </span>
-          <ArrowUpRight size={20} aria-hidden="true" />
+          <ChevronRight size={22} aria-hidden="true" />
         </Link>
+
+        <section
+          className={styles.recentWork}
+          aria-label="Recent work in your area"
+        >
+          <div className={styles.sectionHeading}>
+            <h2>Recent work</h2>
+          </div>
+          <div className={styles.galleryFrame}>
+            <RecentJobsCarousel compact />
+          </div>
+        </section>
 
         <PushOptInBanner
           placement="inline"

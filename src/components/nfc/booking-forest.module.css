@@ -1,0 +1,298 @@
+/* Opt-in theme: partner/rebook widgets retain their existing appearance. */
+.forest {
+  color: #f4f0e3;
+  color-scheme: dark;
+  font-size: 15px;
+  line-height: 1.5;
+}
+.forest.panel {
+  padding: 20px 18px;
+  border: 1px solid #53705b66;
+  border-radius: 14px;
+  background: #10251e;
+  backdrop-filter: none;
+  scroll-margin-top: 16px;
+  outline: none;
+}
+.forest h3 {
+  color: #f4f0e3;
+  font-size: 22px;
+  line-height: 1.25;
+  letter-spacing: -0.025em;
+}
+.forest [class~='text-xs'] {
+  font-size: 13px;
+  line-height: 1.5;
+}
+.forest [class~='text-sm'] {
+  font-size: 15px;
+  line-height: 1.5;
+}
+.forest [class*='text-white/'] {
+  color: #bacbbe;
+}
+.forest [class~='text-white'] {
+  color: #f4f0e3;
+}
+.forest [class~='text-green-400'],
+.forest [class~='text-green-300'] {
+  color: #b8dfaa;
+}
+.forest [class~='bg-white/5'] {
+  background-color: #1b3228;
+}
+.forest [class~='border-white/10'] {
+  border-color: #4c68554d;
+}
+.forest button {
+  min-height: 44px;
+  cursor: pointer;
+}
+.forest button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.forest button[class~='bg-green-600'] {
+  border: 1px solid #8fa775;
+  border-radius: 9px;
+  background: linear-gradient(#3e7046, #2b5834);
+  color: #fff9e9;
+  box-shadow:
+    inset 0 1px #dbe4b830,
+    0 2px 2px #0003;
+}
+.forest button[class~='bg-green-600']:not(:disabled):hover {
+  background: #426f45;
+}
+.forest button:not(:disabled):active {
+  transform: translateY(1px);
+}
+.forest :is(button, input, select, textarea):focus-visible {
+  outline: 2px solid #ddc48a;
+  outline-offset: 3px;
+}
+.forest :is(input, select, textarea) {
+  min-height: 48px;
+  border: 1px solid #748d7970;
+  border-radius: 8px;
+  background: #1b3329;
+  color: #f8f5ed;
+  font-size: 16px;
+  box-shadow: inset 0 2px 3px #0002;
+}
+.forest :is(input, textarea)::placeholder {
+  color: #9bb0a1;
+  opacity: 1;
+}
+.forest label {
+  color: #dce5d8;
+  font-size: 14px;
+}
+.forest select {
+  min-width: 64px;
+}
+.forest [data-step-bar] {
+  justify-content: space-between;
+  margin-bottom: 25px;
+}
+.forest [data-step-bar] > div {
+  flex: 1;
+}
+.forest [data-step-bar] > div:last-child {
+  flex: 0;
+}
+.forest [data-step-bar] > div > div:first-child {
+  min-width: 49px;
+}
+.forest [data-step-bar] > div > div:last-child:not(:first-child) {
+  flex: 1;
+  width: 12px;
+  margin: 0 4px 21px;
+  background: #44614e;
+}
+.forest [data-step-label] {
+  display: block;
+  color: #b5c8b8;
+  font-size: 11px;
+  line-height: 17px;
+  white-space: nowrap;
+}
+.forest [aria-current='step'] [data-step-label] {
+  color: #f1e8cd;
+}
+.forest [data-step-bar] [class~='bg-green-500'] {
+  background: #4f7550;
+  border-color: #819c71;
+}
+.forest [data-step-bar] [class~='border-green-400'] {
+  border-color: #bacd93;
+  color: #f1e8cd;
+  background: #405e40;
+}
+.forest [data-service-category] {
+  border-radius: 9px;
+}
+.forest [data-service-category] > button {
+  padding: 17px 14px;
+  background: #203c2e;
+  gap: 10px;
+}
+.forest [data-service-category] > button > span {
+  font-size: 16px;
+}
+.forest [data-service-category] > button > svg {
+  flex-shrink: 0;
+}
+.forest [data-service-row] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  padding: 17px 13px;
+  background: #122a20;
+}
+.forest [data-service-row] > div:first-child {
+  padding-right: 0;
+}
+.forest [data-service-row] > div:first-child > p:first-child {
+  font-size: 16px;
+  line-height: 1.35;
+}
+.forest [data-service-row] > div:first-child > p:nth-child(2) {
+  -webkit-line-clamp: unset;
+  line-height: 1.5;
+  margin-top: 6px;
+}
+.forest [data-service-row] > div:last-child:not(:first-child) {
+  gap: 3px;
+}
+.forest [data-service-row] button {
+  min-width: 36px;
+}
+.forest [data-service-row] button[class~='bg-green-600'] {
+  padding-left: 10px;
+  padding-right: 10px;
+}
+.forest [data-service-row] input {
+  width: 52px;
+}
+.forest [data-upsell] {
+  animation: none;
+  box-shadow: none;
+  border-color: #94815470;
+  background: #2b3321;
+  padding: 14px;
+}
+.forest [data-upsell] [class*='text-yellow'] {
+  color: #e6d5a4;
+}
+.forest [data-upsell][aria-pressed='true'] {
+  border-color: #b6c987;
+  background: #344b2d;
+}
+.forest [data-calendar] {
+  margin: -3px;
+}
+.forest [data-calendar] [class~='grid-cols-7'] {
+  gap: 4px;
+}
+.forest [data-calendar] [class~='text-[10px]'] {
+  font-size: 12px;
+  color: #adc2b1;
+}
+.forest [data-calendar] [data-calendar-day] {
+  min-height: 44px;
+  padding: 4px 0;
+  border-radius: 7px;
+  box-shadow: none;
+  gap: 5px;
+}
+.forest [data-calendar-day] > span:first-child {
+  font-size: 15px;
+  color: inherit;
+  line-height: 1;
+}
+.forest [data-calendar-status] {
+  display: none;
+}
+.forest [data-calendar-day][data-available='true'] {
+  background: #2d4b32;
+  color: #e4edd3;
+  border-color: #8ea66b;
+}
+.forest [data-calendar-day][data-available='true']::after {
+  content: '';
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #c7e19f;
+}
+.forest button[data-calendar-day][aria-pressed='true'] {
+  background: #8caa70;
+  border-color: #e8e1ba;
+  color: #102619;
+  font-weight: 800;
+}
+.forest [data-calendar-day][aria-pressed='true']::after {
+  background: #102619;
+}
+.forest [data-calendar-day]:disabled {
+  opacity: 0.5;
+}
+.forest [data-calendar] > p {
+  font-size: 12px;
+  color: #b4c8b9;
+  line-height: 1.5;
+  margin-top: 14px;
+}
+.forest.dock {
+  background: #152d22f7;
+  border-color: #8ba37480;
+  backdrop-filter: blur(12px);
+}
+.forest.dock > div {
+  max-width: 524px;
+}
+.forest.dock > div > span {
+  font-size: 13px;
+}
+.forest.dock [class~='text-red-300/90'] {
+  display: block;
+  color: #f1beae;
+}
+.forest.offerDialog,
+.forest .offerDialog {
+  background: #142c22;
+  border-color: #779469;
+  max-height: 90svh;
+  overflow-y: auto;
+}
+@media (max-width: 359px) {
+  .forest [data-address-line] {
+    grid-template-columns: 1fr;
+  }
+  .forest.panel {
+    padding: 18px 12px;
+  }
+  .forest [data-service-row] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .forest [data-service-row] > button,
+  .forest [data-service-row] > div:last-child:not(:first-child) {
+    justify-self: end;
+  }
+  .forest [data-step-bar] > div > div:first-child {
+    min-width: 43px;
+  }
+  .forest [data-step-label] {
+    font-size: 10px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .forest *,
+  .forest *::before,
+  .forest *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
