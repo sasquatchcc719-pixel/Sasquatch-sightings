@@ -5,3 +5,6 @@
  */
 export const CONTEST_SMS_NUMBER = '866-536-7148'
 export const CONTEST_SMS_NUMBER_E164 = '+18665367148'
+
+// Direct water-damage destination for NFC cards, separate from the office menu.
+export const WATER_DAMAGE_PHONE_E164 = '+17197498807'

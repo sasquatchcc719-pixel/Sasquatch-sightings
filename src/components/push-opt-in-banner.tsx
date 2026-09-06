@@ -10,11 +10,14 @@ interface PushOptInBannerProps {
   /** Value proposition shown in the banner. Customize per page. */
   headline?: string
   subline?: string
+  /** Keep the NFC card's main actions clear; other pages retain the floating banner. */
+  placement?: 'floating' | 'inline'
 }
 
 export function PushOptInBanner({
   headline = 'Get exclusive deals & promos',
   subline = 'Tap Allow for occasional notifications — we promise not to spam.',
+  placement = 'floating',
 }: PushOptInBannerProps) {
   const [visible, setVisible] = useState(false)
   const [subscribed, setSubscribed] = useState(false)
@@ -80,10 +83,22 @@ export function PushOptInBanner({
   if (!visible || subscribed) return null
 
   return (
-    <div className="animate-in slide-in-from-bottom-4 fixed bottom-4 left-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 duration-300">
+    <div
+      className={
+        placement === 'inline'
+          ? 'relative my-6 w-full'
+          : 'animate-in slide-in-from-bottom-4 fixed bottom-4 left-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 duration-300'
+      }
+    >
       <div className="flex items-start gap-3 rounded-2xl border border-white/20 bg-black/90 px-4 py-4 shadow-2xl backdrop-blur-md">
         {/* Icon */}
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-600">
+        <div
+          className={
+            placement === 'inline'
+              ? 'hidden'
+              : 'flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-600'
+          }
+        >
           <Bell className="h-5 w-5 text-white" />
         </div>
 
@@ -91,11 +106,15 @@ export function PushOptInBanner({
         <div className="min-w-0 flex-1">
           <p className="text-sm font-bold text-white">{headline}</p>
           <p className="mt-0.5 text-xs text-white/70">{subline}</p>
-          <div className="mt-3 flex gap-2">
+          <div className="mt-3 flex flex-wrap gap-2">
             <Button
               size="sm"
               onClick={handleAllow}
-              className="h-8 bg-green-600 px-4 text-xs font-semibold hover:bg-green-700"
+              className={
+                placement === 'inline'
+                  ? 'min-h-11 bg-green-700 px-4 text-xs font-semibold hover:bg-green-800'
+                  : 'h-8 bg-green-600 px-4 text-xs font-semibold hover:bg-green-700'
+              }
             >
               Allow Notifications
             </Button>
@@ -103,7 +122,11 @@ export function PushOptInBanner({
               size="sm"
               variant="ghost"
               onClick={handleDismiss}
-              className="h-8 px-3 text-xs text-white/60 hover:text-white"
+              className={
+                placement === 'inline'
+                  ? 'min-h-11 px-3 text-xs text-white/75 hover:text-white'
+                  : 'h-8 px-3 text-xs text-white/60 hover:text-white'
+              }
             >
               No thanks
             </Button>
@@ -113,7 +136,11 @@ export function PushOptInBanner({
         {/* Close */}
         <button
           onClick={handleDismiss}
-          className="text-white/40 hover:text-white/80"
+          className={
+            placement === 'inline'
+              ? 'flex min-h-11 min-w-11 items-center justify-center text-white/60 hover:text-white'
+              : 'text-white/40 hover:text-white/80'
+          }
           aria-label="Dismiss"
         >
           <X className="h-4 w-4" />

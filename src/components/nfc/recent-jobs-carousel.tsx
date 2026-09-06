@@ -17,11 +17,11 @@ type Job = {
   detail_url: string
 }
 
-export function RecentJobsCarousel() {
+export function RecentJobsCarousel({ compact = false }: { compact?: boolean }) {
   const [jobs, setJobs] = useState<Job[]>([])
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
-  const [isAutoPlaying, setIsAutoPlaying] = useState(true)
+  const [isAutoPlaying, setIsAutoPlaying] = useState(!compact)
 
   useEffect(() => {
     fetchJobs()
@@ -81,7 +81,13 @@ export function RecentJobsCarousel() {
   return (
     <div className="space-y-4">
       {/* Carousel */}
-      <Card className="relative overflow-hidden">
+      <Card
+        className={
+          compact
+            ? 'relative overflow-hidden rounded-2xl border-white/10 bg-[#122820] text-[#f5f5ee]'
+            : 'relative overflow-hidden'
+        }
+      >
         {/* Image */}
         <div className="relative aspect-[4/3] w-full bg-gray-200 dark:bg-gray-700">
           {currentJob.image_url ? (
@@ -108,14 +114,14 @@ export function RecentJobsCarousel() {
             <>
               <button
                 onClick={handlePrev}
-                className="absolute top-1/2 left-2 -translate-y-1/2 rounded-full bg-black/50 p-2 text-white transition-all hover:bg-black/70"
+                className="absolute top-1/2 left-2 min-h-11 min-w-11 -translate-y-1/2 rounded-full bg-black/50 p-2 text-white transition-all hover:bg-black/70"
                 aria-label="Previous job"
               >
                 <ChevronLeft className="h-6 w-6" />
               </button>
               <button
                 onClick={handleNext}
-                className="absolute top-1/2 right-2 -translate-y-1/2 rounded-full bg-black/50 p-2 text-white transition-all hover:bg-black/70"
+                className="absolute top-1/2 right-2 min-h-11 min-w-11 -translate-y-1/2 rounded-full bg-black/50 p-2 text-white transition-all hover:bg-black/70"
                 aria-label="Next job"
               >
                 <ChevronRight className="h-6 w-6" />
@@ -140,19 +146,31 @@ export function RecentJobsCarousel() {
         <div className="p-4">
           <div className="mb-2 flex items-start justify-between">
             <div>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
+              <p
+                className={
+                  compact
+                    ? 'text-xs text-[#b0c3b7]'
+                    : 'text-sm text-gray-600 dark:text-gray-400'
+                }
+              >
                 {currentJob.neighborhood || currentJob.city}
               </p>
               <h3 className="font-bold">{currentJob.title}</h3>
             </div>
           </div>
-          <p className="text-sm text-gray-600 dark:text-gray-400">
+          <p
+            className={
+              compact
+                ? 'line-clamp-3 text-sm leading-6 text-[#b0c3b7]'
+                : 'text-sm text-gray-600 dark:text-gray-400'
+            }
+          >
             {currentJob.description}
           </p>
         </div>
 
         {/* Progress Dots */}
-        {jobs.length > 1 && (
+        {jobs.length > 1 && !compact && (
           <div className="flex justify-center gap-2 pb-4">
             {jobs.map((_, index) => (
               <button
@@ -178,7 +196,11 @@ export function RecentJobsCarousel() {
         href="/"
         target="_blank"
         rel="noopener noreferrer"
-        className="flex items-center justify-center gap-2 text-sm font-semibold text-blue-600 transition-colors hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+        className={
+          compact
+            ? 'flex min-h-11 items-center justify-center gap-2 text-sm font-medium text-[#bfd7b5] hover:text-white'
+            : 'flex items-center justify-center gap-2 text-sm font-semibold text-blue-600 transition-colors hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300'
+        }
       >
         View All Our Work
         <ExternalLink className="h-4 w-4" />
