@@ -127,9 +127,12 @@ export function normalizeBookingErrorInput(
     return null
   }
 
-  const rawStatus = Number(body.http_status)
+  const rawStatus = body.http_status
   const httpStatus =
-    Number.isInteger(rawStatus) && rawStatus >= 0 && rawStatus <= 599
+    typeof rawStatus === 'number' &&
+    Number.isInteger(rawStatus) &&
+    rawStatus >= 0 &&
+    rawStatus <= 599
       ? rawStatus
       : null
   const appointmentDate = cleanText(body.appointment_date, 10)
@@ -213,7 +216,8 @@ export async function recordBookingError(
     if (error) throw error
     return {
       event: data as BookingErrorRow,
-      shouldAlert: reopened || Boolean(existing.alert_error),
+      shouldAlert:
+        reopened || !existing.alert_sent_at || Boolean(existing.alert_error),
     }
   }
 

@@ -31,6 +31,37 @@ function row(overrides: Partial<BookingErrorRow> = {}): BookingErrorRow {
 }
 
 describe('normalizeBookingErrorInput', () => {
+  it.each([null, undefined, '', ' ', false])(
+    'does not turn an unavailable HTTP status (%s) into a network status',
+    (status) => {
+      expect(
+        normalizeBookingErrorInput(
+          {
+            session_id: 's_example_123',
+            stage: 'services',
+            error_message: 'Failed to load services',
+            http_status: status,
+          },
+          null,
+        )?.httpStatus,
+      ).toBeNull()
+    },
+  )
+
+  it.each([0, 503])('preserves the reported HTTP status %s', (status) => {
+    expect(
+      normalizeBookingErrorInput(
+        {
+          session_id: 's_example_123',
+          stage: 'services',
+          error_message: 'Failed to load services',
+          http_status: status,
+        },
+        null,
+      )?.httpStatus,
+    ).toBe(status)
+  })
+
   it('sanitizes a valid public error report', () => {
     expect(
       normalizeBookingErrorInput(

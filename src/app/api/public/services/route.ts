@@ -9,7 +9,6 @@ const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
-  'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
 }
 
 const CHECKOUT_UPSELL_CATEGORY = 'Checkout Upsells'
@@ -31,6 +30,7 @@ export async function GET() {
       .eq('is_active', true)
       .order('sort_order', { ascending: true, nullsFirst: false })
       .order('base_price')
+      .abortSignal(AbortSignal.timeout(8_000))
 
     if (error) throw error
 
@@ -43,12 +43,20 @@ export async function GET() {
       (item) => item.category === CHECKOUT_UPSELL_CATEGORY,
     )
 
-    return NextResponse.json({ services, checkoutUpsells }, { headers: CORS })
+    return NextResponse.json(
+      { services, checkoutUpsells },
+      {
+        headers: {
+          ...CORS,
+          'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
+        },
+      },
+    )
   } catch (error) {
     console.error('[public/services] Error:', error)
     return NextResponse.json(
       { error: 'Failed to load services' },
-      { status: 500, headers: CORS },
+      { status: 500, headers: { ...CORS, 'Cache-Control': 'no-store' } },
     )
   }
 }
