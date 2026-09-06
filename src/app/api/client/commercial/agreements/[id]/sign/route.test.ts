@@ -58,8 +58,13 @@ beforeEach(() => {
       filters.push(args)
       return builder
     }),
+    is: vi.fn((...args: unknown[]) => {
+      filters.push(args)
+      return builder
+    }),
     maybeSingle: vi
       .fn()
+      .mockResolvedValue({ data: null, error: null })
       .mockResolvedValueOnce({
         data: { status: 'published', content, content_hash: hash, revision: 3 },
         error: null,
@@ -87,6 +92,7 @@ describe('commercial signature endpoint', () => {
   it('scopes reads and atomic signing to the authenticated customer', async () => {
     expect((await POST(request(), context)).status).toBe(200)
     expect(filters.filter((f) => f[0] === 'customer_id')).toEqual([
+      ['customer_id', 'customer-a'],
       ['customer_id', 'customer-a'],
       ['customer_id', 'customer-a'],
     ])

@@ -4,6 +4,7 @@ import { requireClientManager } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { agreementHash } from '@/lib/ops/commercial-server'
 import { SIGNATURE_CONSENT, type AgreementContent } from '@/lib/ops/commercial'
+import { sendTelegramNotification } from '@/lib/telegram'
 import { z } from 'zod'
 export async function POST(
   request: NextRequest,
@@ -107,6 +108,35 @@ export async function POST(
         { error: 'Agreement changed before signing. Reload to review it.' },
         { status: 409 },
       )
+
+    // Signing is the final customer action. The password was just verified and
+    // the profile must exist before we tell Charles that setup is complete.
+    const { data: profile } = await db
+      .from('ops_commercial_profiles')
+      .select('legal_name,billing_email,access_instructions')
+      .eq('customer_id', client.customer_id)
+      .maybeSingle()
+    if (profile) {
+      const { data: customer } = await db
+        .from('ops_customers')
+        .select('business_name,full_name')
+        .eq('id', client.customer_id)
+        .maybeSingle()
+      const customerName =
+        customer?.business_name || customer?.full_name || 'Commercial customer'
+      const reviewUrl = `https://sightings.sasquatchcarpet.com/admin/operations/commercial/${client.customer_id}`
+      const telegramSent = await sendTelegramNotification(
+        `✅ COMMERCIAL CUSTOMER SETUP COMPLETE\n\n${customerName}\nAgreement signed by ${body.name} (${body.title})\nProfile, billing, and access details are saved.\n\nReview: ${reviewUrl}`,
+      )
+      if (telegramSent) {
+        await db
+          .from('ops_commercial_agreements')
+          .update({ setup_completed_notified_at: new Date().toISOString() })
+          .eq('id', id)
+          .eq('customer_id', client.customer_id)
+          .is('setup_completed_notified_at', null)
+      }
+    }
     return NextResponse.json({ ok: true })
   } catch (e) {
     return NextResponse.json(
