@@ -37,7 +37,7 @@ Deploy via Vercel CLI (`vercel --prod`). Apply DB migrations via Supabase CLI (`
 - **Rabecca** (`src/lib/retell/`) — Voice AI (Retell). Gated by `REBECCA_VOICE_ENABLED` env var. Never wired into live call routing — only gates the `/api/retell/functions` endpoint.
 
 **Call routing flow:**
-Twilio inbound → `/api/twilio/call-router` → business hours check (9am–5pm MT Mon–Fri from `phone_settings`) → IVR menu (press 1: scheduling forward, press 2: Charles + browser client) → `/api/twilio/ivr-menu`. After hours or no input → `/api/twilio/call-after-hours` (voicemail + Harry SMS). All forward numbers and business hours come from the `phone_settings` table, not hardcoded values.
+Twilio inbound → `/api/twilio/call-router` → business hours check (9am–5pm MT Mon–Fri from `phone_settings`) → IVR menu (press 1: book/change an appointment, press 2: active water damage routed to Charles + browser client) → `/api/twilio/ivr-menu`. After hours, callers can still press 2 for active water damage; no input or any other selection goes to `/api/twilio/call-after-hours` (voicemail + SMS). All forward numbers and business hours come from the `phone_settings` table, not hardcoded values.
 
 **Cron jobs** (13 total in `vercel.json`): job reminders every 5 min, Gmail intake + task worker every 10 min, daily SERP tracking, QuickBooks sync, booking cleanup, and more.
 

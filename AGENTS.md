@@ -219,6 +219,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Estimate conversions and recurring plans must use the staff-aware live calendar, preview conflicts before saving, and recheck conflicts server-side before writing appointments.
 - Commercial setup emails must reuse the saved customer email, preview before creating access or sending, and collect missing details from the customer. Require a published agreement and authorized signer, protect one-time links from email scanners, attach the exact agreement, and persist retry-safe delivery. Never say optional maintenance unlocks recurring scheduling just by signing.
 - Customer deletion must be owner/admin-only, show linked-record impact first, and refuse to erase appointments, agreements, service concerns, or restoration history.
+- Keep the public brand name Sasquatch Carpet Cleaning; water-damage NFC and phone flows must use the existing business line and must not invent a separate brand, text keyword, pricing CTA, or response promise.
 
 ---
 

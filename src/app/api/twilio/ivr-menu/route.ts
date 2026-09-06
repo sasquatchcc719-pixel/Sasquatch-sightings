@@ -15,6 +15,8 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData()
     const digits = formData.get('Digits') as string
     const callerPhone = formData.get('From') as string
+    const isAfterHours =
+      request.nextUrl.searchParams.get('context') === 'after-hours'
     const routingConfig = await getCallRoutingConfig()
 
     console.log(`[IVR Menu] Selection: ${digits} from ${callerPhone}`)
@@ -25,7 +27,7 @@ export async function POST(request: NextRequest) {
 
     let twimlResponse
 
-    if (digits === '1') {
+    if (digits === '1' && !isAfterHours) {
       console.log(
         `[IVR Menu] Option 1 -> Dialing primary scheduling number first`,
       )
@@ -37,11 +39,11 @@ export async function POST(request: NextRequest) {
 </Response>`
     } else if (digits === '2') {
       console.log(
-        `[IVR Menu] Option 2 -> Dialing primary technical number first`,
+        `[IVR Menu] Option 2 -> Dialing primary water-damage number first`,
       )
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial timeout="${routingConfig.ivrTechnicalTimeoutSeconds}" action="${failoverUrl}?mode=technical" callerId="${callerPhone}" answerOnBridge="true">
+  <Dial timeout="${routingConfig.ivrTechnicalTimeoutSeconds}" action="${failoverUrl}?mode=water-damage" callerId="${callerPhone}" answerOnBridge="true">
     <Number>${routingConfig.primaryForwardNumber}</Number>
   </Dial>
 </Response>`

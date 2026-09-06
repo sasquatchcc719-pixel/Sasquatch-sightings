@@ -24,7 +24,7 @@ Current position: 68 five-star Google reviews as of June 2026, strong review vel
 
 **Rabecca** (`src/lib/retell/`) — Voice AI via Retell. Gated by `REBECCA_VOICE_ENABLED`. Not wired into live call routing — only gates the `/api/retell/functions` endpoint.
 
-**Call Routing** — Twilio inbound calls route through `/api/twilio/call-router`. Business hours (9am–5pm MT Mon–Fri) and all forward numbers come from the `phone_settings` table. IVR menu: press 1 for scheduling forward, press 2 for Charles + browser client. After hours → voicemail + Harry SMS follow-up.
+**Call Routing** — Twilio inbound calls route through `/api/twilio/call-router`. Business hours (9am–5pm MT Mon–Fri) and all forward numbers come from the `phone_settings` table. IVR menu: press 1 to book/change an appointment, press 2 for active water damage routed to Charles + browser client. After hours, press 2 remains available for water damage; all other calls go to voicemail + SMS follow-up.
 
 **Job / Invoice System** — Core operational workflow. Invoices are created and published via `/api/admin/ops/invoices/[id]/publish`. Publishing a job: creates a job record with city, service, line items, before/after images, and an AI-generated description. This is the trigger point for Echo.
 

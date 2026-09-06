@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   createAdminClientMock,
@@ -71,6 +71,10 @@ describe('POST /api/twilio/call-router', () => {
     })
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('dials the primary phone before the open-line failover', async () => {
     const response = await POST(twilioRequest())
     const twiml = await response.text()
@@ -78,5 +82,43 @@ describe('POST /api/twilio/call-router', () => {
     expect(twiml).toContain('<Number>+17206447577</Number>')
     expect(twiml).not.toContain('<Number>+17197498807</Number>')
     expect(twiml).toContain('/api/twilio/dial-failover?mode=open-line')
+  })
+
+  it('uses option 2 for water damage during business hours', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-07T16:00:00Z'))
+    getCallRoutingConfigMock.mockResolvedValue({
+      ...routingConfig,
+      temporaryOpenLineMode: false,
+    })
+
+    const response = await POST(twilioRequest())
+    const twiml = await response.text()
+
+    expect(twiml).toContain('To book or change an appointment, press 1.')
+    expect(twiml).toContain(
+      'For active water damage, a burst pipe, or flooding, press 2.',
+    )
+    expect(twiml).not.toContain('technical help')
+    expect(twiml).toContain('/api/twilio/ivr-menu')
+  })
+
+  it('offers the water-damage option before voicemail after hours', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-06T16:00:00Z'))
+    getCallRoutingConfigMock.mockResolvedValue({
+      ...routingConfig,
+      temporaryOpenLineMode: false,
+    })
+
+    const response = await POST(twilioRequest())
+    const twiml = await response.text()
+
+    expect(twiml).toContain(
+      'If you have active water damage, a burst pipe, or flooding, press 2 now.',
+    )
+    expect(twiml).not.toContain('press 1')
+    expect(twiml).toContain('/api/twilio/ivr-menu?context=after-hours')
+    expect(twiml).toContain('/api/twilio/call-after-hours')
   })
 })

@@ -130,14 +130,19 @@ export async function POST(request: NextRequest) {
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather action="${ivrMenuUrl}" numDigits="1" timeout="10">
-    <Say>Thank you for calling Sasquatch Carpet Cleaning. For scheduling, press 1. For Charles or technical help, press 2.</Say>
+    <Say>Thank you for calling Sasquatch Carpet Cleaning. To book or change an appointment, press 1. For active water damage, a burst pipe, or flooding, press 2.</Say>
   </Gather>
   <Redirect method="POST">${afterHoursUrl}</Redirect>
 </Response>`
     } else {
-      console.log('[Call Router] After hours - voicemail flow')
+      console.log(
+        '[Call Router] After hours - water-damage option then voicemail',
+      )
       twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
+  <Gather action="${ivrMenuUrl}?context=after-hours" numDigits="1" timeout="10">
+    <Say>Thank you for calling Sasquatch Carpet Cleaning. If you have active water damage, a burst pipe, or flooding, press 2 now. For anything else, stay on the line to leave a message.</Say>
+  </Gather>
   <Redirect method="POST">${afterHoursUrl}</Redirect>
 </Response>`
     }

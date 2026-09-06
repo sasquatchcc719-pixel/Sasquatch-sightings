@@ -24,13 +24,20 @@ const routingConfig = {
   ivrTechnicalTimeoutSeconds: 20,
 }
 
-function twilioRequest(digits: string): NextRequest {
+function twilioRequest(
+  digits: string,
+  { context }: { context?: string } = {},
+): NextRequest {
   const body = new URLSearchParams()
   body.set('Digits', digits)
   body.set('From', '+17195550123')
 
+  const query = new URLSearchParams()
+  if (context) query.set('context', context)
+  const search = query.size ? `?${query}` : ''
+
   return new NextRequest(
-    'https://sightings.sasquatchcarpet.com/api/twilio/ivr-menu',
+    `https://sightings.sasquatchcarpet.com/api/twilio/ivr-menu${search}`,
     {
       method: 'POST',
       body,
@@ -54,13 +61,21 @@ describe('POST /api/twilio/ivr-menu', () => {
     expect(twiml).toContain('/api/twilio/dial-failover?mode=schedule')
   })
 
-  it('dials the primary technical phone before the secondary-stage softphone', async () => {
-    const response = await POST(twilioRequest('2'))
+  it('dials the primary water-damage phone before the secondary-stage softphone', async () => {
+    const response = await POST(twilioRequest('2', { context: 'after-hours' }))
     const twiml = await response.text()
 
     expect(twiml).toContain('<Number>+17206447577</Number>')
     expect(twiml).not.toContain('<Number>+17197498807</Number>')
-    expect(twiml).toContain('/api/twilio/dial-failover?mode=technical')
+    expect(twiml).toContain('/api/twilio/dial-failover?mode=water-damage')
     expect(twiml).not.toContain('<Client>admin_charles</Client>')
+  })
+
+  it('does not route scheduling calls from the after-hours menu', async () => {
+    const response = await POST(twilioRequest('1', { context: 'after-hours' }))
+    const twiml = await response.text()
+
+    expect(twiml).toContain('/api/twilio/call-after-hours')
+    expect(twiml).not.toContain('<Dial')
   })
 })

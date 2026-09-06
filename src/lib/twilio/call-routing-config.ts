@@ -11,6 +11,7 @@ export type CallRoutingConfig = {
   failoverForwardNumber: string
   openLineTimeoutSeconds: number
   ivrScheduleTimeoutSeconds: number
+  /** Legacy database field name; now controls the water-damage option timeout. */
   ivrTechnicalTimeoutSeconds: number
 }
 

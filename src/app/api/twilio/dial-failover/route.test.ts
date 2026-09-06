@@ -76,8 +76,8 @@ describe('POST /api/twilio/dial-failover', () => {
     expect(twiml).toContain('/api/twilio/dial-failover?stage=secondary')
   })
 
-  it('keeps the browser softphone on the secondary technical call', async () => {
-    const response = await POST(twilioRequest('busy', { mode: 'technical' }))
+  it('keeps the browser softphone on the secondary water-damage call', async () => {
+    const response = await POST(twilioRequest('busy', { mode: 'water-damage' }))
     const twiml = await response.text()
 
     expect(twiml).toContain('<Number>+17197498807</Number>')

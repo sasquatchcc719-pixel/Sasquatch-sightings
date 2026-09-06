@@ -54,6 +54,7 @@ export async function POST(request: NextRequest) {
 
     const routingConfig = await getCallRoutingConfig()
     const [, secondaryForwardNumber] = getForwardNumbers(routingConfig)
+    const isWaterDamageMode = mode === 'water-damage' || mode === 'technical'
 
     if (!secondaryForwardNumber) {
       console.log(
@@ -73,11 +74,12 @@ export async function POST(request: NextRequest) {
     const timeout =
       mode === 'open-line'
         ? routingConfig.openLineTimeoutSeconds
-        : mode === 'technical'
+        : isWaterDamageMode
           ? routingConfig.ivrTechnicalTimeoutSeconds
           : routingConfig.ivrScheduleTimeoutSeconds
-    const browserClient =
-      mode === 'technical' ? '\n    <Client>admin_charles</Client>' : ''
+    const browserClient = isWaterDamageMode
+      ? '\n    <Client>admin_charles</Client>'
+      : ''
     const secondaryActionUrl = `${baseUrl}/api/twilio/dial-failover?stage=secondary`
 
     console.log(
