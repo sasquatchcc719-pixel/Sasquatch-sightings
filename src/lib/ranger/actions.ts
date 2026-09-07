@@ -4,6 +4,10 @@ import { buildRangerScreeningDraft } from './intake'
 import { parseRangerNameAndValue } from './skills'
 import { sendRangerApplicantSms } from './sms'
 import type { RangerApplicant } from './types'
+import {
+  parseNextdoorMetricsInput,
+  saveNextdoorPublicMetrics,
+} from '@/lib/nextdoor-stats'
 
 type RangerTelegramAction =
   | 'followup'
@@ -818,7 +822,19 @@ export async function runRangerTextAction(params: {
 }): Promise<string | null> {
   const [command, ...rest] = params.text.trim().split(/\s+/)
   const query = rest.join(' ')
-  const normalized = command?.toLowerCase()
+  const normalized = command?.toLowerCase().split('@')[0]
+
+  if (normalized === '/nextdoor') {
+    const parsed = parseNextdoorMetricsInput(query)
+    if (!parsed.ok) return parsed.message
+
+    const metrics = await saveNextdoorPublicMetrics({
+      supabase: params.supabase,
+      counts: parsed.counts,
+      source: params.actor,
+    })
+    return `Updated Nextdoor: ${metrics.faves} Faves, ${metrics.recommendations} recommendations, ${metrics.mentions} mentions, and ${metrics.pageViews} page views. The website and AI-readable business facts will use the public reputation numbers automatically.`
+  }
 
   const actionByCommand: Record<string, RangerTelegramAction> = {
     '/research': 'deep',

@@ -7,6 +7,10 @@
  */
 
 import { NextResponse } from 'next/server'
+import {
+  DEFAULT_NEXTDOOR_PUBLIC_METRICS,
+  getNextdoorPublicMetrics,
+} from '@/lib/nextdoor-stats'
 import { createAdminClient } from '@/supabase/server'
 
 const GOOGLE_LISTING_URL = 'https://maps.google.com/?cid=9526859716651434570'
@@ -14,16 +18,23 @@ const GOOGLE_LISTING_URL = 'https://maps.google.com/?cid=9526859716651434570'
 export async function GET() {
   try {
     const supabase = createAdminClient()
-    const [{ count }, { data: ratings }, { data: latest }] = await Promise.all([
-      supabase.from('gbp_reviews').select('*', { count: 'exact', head: true }),
-      supabase.from('gbp_reviews').select('rating').not('rating', 'is', null),
-      supabase
-        .from('gbp_reviews')
-        .select('first_seen_at')
-        .order('first_seen_at', { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-    ])
+    const [{ count }, { data: ratings }, { data: latest }, nextdoor] =
+      await Promise.all([
+        supabase
+          .from('gbp_reviews')
+          .select('*', { count: 'exact', head: true }),
+        supabase.from('gbp_reviews').select('rating').not('rating', 'is', null),
+        supabase
+          .from('gbp_reviews')
+          .select('first_seen_at')
+          .order('first_seen_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        getNextdoorPublicMetrics(supabase).catch((error) => {
+          console.error('[review-stats] Nextdoor fallback:', error)
+          return DEFAULT_NEXTDOOR_PUBLIC_METRICS
+        }),
+      ])
 
     const values = (ratings || []).map((r) => Number(r.rating))
     const avg =
@@ -46,6 +57,7 @@ export async function GET() {
         url: GOOGLE_LISTING_URL,
         source: 'gbp_reviews_daily_sync',
         lastSyncedAt: latest?.first_seen_at ?? null,
+        nextdoor,
       },
       {
         headers: {
