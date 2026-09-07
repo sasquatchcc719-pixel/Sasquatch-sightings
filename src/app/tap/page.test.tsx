@@ -231,7 +231,10 @@ describe('mobile NFC card', () => {
     render(<TapLandingPage />)
     expect(
       screen.getByRole('link', { name: /Leave us a review/ }),
-    ).toHaveAttribute('href', 'https://g.page/r/CVAp5EYpgMFLEBM/review')
+    ).toHaveAttribute(
+      'href',
+      'https://search.google.com/local/writereview?placeid=ChIJw1Fmyv9_EQIRSsL80280NoQ',
+    )
     expect(
       screen.getByRole('link', { name: /Local pros we trust/ }),
     ).toHaveAttribute('href', '/recommended-contractors')

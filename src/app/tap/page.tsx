@@ -336,7 +336,7 @@ export default function TapLandingPage() {
 
         <a
           className={styles.review}
-          href="https://g.page/r/CVAp5EYpgMFLEBM/review"
+          href="https://search.google.com/local/writereview?placeid=ChIJw1Fmyv9_EQIRSsL80280NoQ"
           target="_blank"
           rel="noopener noreferrer"
           onClick={() => void trackButtonClick('review')}
