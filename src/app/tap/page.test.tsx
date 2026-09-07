@@ -86,6 +86,18 @@ describe('mobile NFC card', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('keeps the water decorative and the emergency action accessible', () => {
+    vi.mocked(fetch).mockImplementation(() => new Promise(() => {}))
+    render(<TapLandingPage />)
+    const emergency = screen.getByRole('link', {
+      name: 'Water damage emergency Tap to call for help',
+    })
+    expect(emergency.firstElementChild).toHaveAttribute('aria-hidden', 'true')
+    expect(emergency.querySelectorAll('svg[focusable="false"]')).toHaveLength(2)
+    expect(emergency).toHaveAttribute('href', 'tel:+17197498807')
+    expect(emergency.querySelector('button, input, [tabindex]')).toBeNull()
+  })
+
   it('does not prevent dialing when click tracking fails', async () => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
     render(<TapLandingPage />)

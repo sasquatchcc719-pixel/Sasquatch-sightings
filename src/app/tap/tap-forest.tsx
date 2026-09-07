@@ -60,9 +60,8 @@ export function TapForest() {
       <button
         type="button"
         className={styles.motionToggle}
-        aria-label={
-          moving ? 'Pause background animation' : 'Play background animation'
-        }
+        data-motion={moving ? 'playing' : 'paused'}
+        aria-label={moving ? 'Pause animations' : 'Play animations'}
         onClick={() => {
           setCanLoadVideo(true)
           setMoving((value) => !value)
@@ -73,7 +72,7 @@ export function TapForest() {
         ) : (
           <Play size={12} aria-hidden="true" />
         )}
-        {moving ? 'Pause scenery' : 'Play scenery'}
+        {moving ? 'Pause motion' : 'Play motion'}
       </button>
     </>
   )

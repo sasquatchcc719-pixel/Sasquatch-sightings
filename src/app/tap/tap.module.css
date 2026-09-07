@@ -206,32 +206,48 @@
 }
 .emergency {
   min-height: 125px;
+  --water-play-state: paused;
+}
+.page:has([data-motion='playing']) .emergency {
+  --water-play-state: running;
 }
 .emergency::before {
   background: linear-gradient(
     135deg,
     #f7d79d,
     #654221 18%,
-    #68451d 70%,
-    #e3a544
+    #276175 70%,
+    #78d7ee
   );
 }
 .emergency::after {
   background:
-    radial-gradient(ellipse at 15% 0, #a67d3530, transparent 75%),
-    linear-gradient(135deg, #303324, #151e19 70%, #333322);
+    radial-gradient(ellipse at 15% 25%, #18b9e23b, transparent 65%),
+    linear-gradient(135deg, #183a36, #102628 70%, #143c46);
   box-shadow:
     inset 0 2px #ffc778b3,
-    inset 0 -2px #865a2b;
+    inset 0 -2px #73d9ffb0,
+    inset 0 -16px 25px #079ce52b;
+}
+.emergency > .actionIcon,
+.emergency > .actionCopy,
+.emergency > .actionArrow {
+  position: relative;
+  z-index: 1;
 }
 .emergency .actionIcon {
-  color: #f5dba7;
-  border-color: #d8b47380;
-  background: linear-gradient(145deg, #99865933, #221d1380);
+  color: #a4edff;
+  border-color: #7ddcf5b0;
+  background: linear-gradient(145deg, #18799666, #092e42);
   box-shadow:
     inset 0 2px 2px #fff3,
-    0 3px 0 #0009;
+    0 3px 0 #0009,
+    0 0 18px #15baff45;
   height: 65px;
+}
+.emergency .actionIcon svg {
+  fill: #149ddd;
+  filter: drop-shadow(0 0 5px #35bfff80);
 }
 .emergencyTitle {
   display: block;
@@ -245,13 +261,131 @@
 .emergencyCta {
   display: block;
   margin-top: 10px;
-  color: #f5cb85;
+  color: #adebff;
   font-size: clamp(12px, 3.3vw, 16px);
   font-weight: 600;
 }
 .emergency .actionArrow {
-  color: #ffd28b;
-  filter: drop-shadow(0 0 5px #df9c51a6);
+  color: #a2e9ff;
+  filter: drop-shadow(0 0 5px #28bfff80);
+}
+/* Decorative water is clipped inside the frame, beneath the live link content. */
+.waterScene {
+  position: absolute;
+  inset: 7px;
+  z-index: 0;
+  overflow: hidden;
+  clip-path: var(--cut);
+  pointer-events: none;
+}
+.waterLevel {
+  position: absolute;
+  inset: auto 0 0;
+  height: 24px;
+  animation: waterRise 8s ease-in-out infinite;
+}
+.waterWave {
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  width: 200%;
+  height: 100%;
+  fill: #139bd9a6;
+  stroke: #a3eeff;
+  stroke-width: 1.5px;
+  filter: drop-shadow(0 -2px 4px #2dc5ff40);
+  animation: waterFlow 5s linear infinite;
+}
+.waterWaveRear {
+  bottom: 4px;
+  opacity: 0.4;
+  animation-duration: 7s;
+  animation-direction: reverse;
+}
+.waterWave svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.waterDrop {
+  position: absolute;
+  left: 44px;
+  bottom: 40px;
+  width: 6px;
+  height: 10px;
+  border-radius: 65% 65% 55% 55%;
+  background: linear-gradient(100deg, #c8f5ff, #21baff 65%);
+  box-shadow: 0 0 5px #37caff80;
+  opacity: 0;
+  animation: waterDrip 3s ease-in infinite;
+}
+.waterDropSecond {
+  left: 59px;
+  width: 4px;
+  height: 7px;
+  animation-delay: 1.4s;
+}
+.waterRipple {
+  position: absolute;
+  left: 33px;
+  top: 5px;
+  width: 30px;
+  height: 6px;
+  border: 1px solid #b6f1ff;
+  border-radius: 50%;
+  opacity: 0;
+  animation: waterSplash 3s ease-out infinite;
+}
+.waterScene * {
+  animation-play-state: var(--water-play-state);
+}
+@keyframes waterFlow {
+  to {
+    transform: translateX(-50%);
+  }
+}
+@keyframes waterRise {
+  0%,
+  100% {
+    transform: translateY(8px);
+  }
+  50% {
+    transform: translateY(0);
+  }
+}
+@keyframes waterDrip {
+  0%,
+  12% {
+    opacity: 0;
+    transform: translateY(0) scale(0.7);
+  }
+  18% {
+    opacity: 1;
+  }
+  55% {
+    opacity: 1;
+    transform: translateY(28px) scale(1);
+  }
+  60%,
+  100% {
+    opacity: 0;
+    transform: translateY(31px) scale(0.3);
+  }
+}
+@keyframes waterSplash {
+  0%,
+  54% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  58% {
+    opacity: 0.8;
+  }
+  90%,
+  100% {
+    opacity: 0;
+    transform: scale(1.5);
+  }
 }
 .contactGrid {
   display: grid;
@@ -536,6 +670,15 @@
   }
   .emergencyTitle {
     font-size: 17px;
+  }
+  .waterDrop {
+    left: 32px;
+  }
+  .waterDropSecond {
+    left: 43px;
+  }
+  .waterRipple {
+    left: 20px;
   }
   .contactGrid {
     gap: 7px;

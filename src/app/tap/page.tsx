@@ -225,6 +225,31 @@ export default function TapLandingPage() {
             onClick={() => void trackButtonClick('call')}
             className={`${styles.actionPanel} ${styles.emergency}`}
           >
+            <span className={styles.waterScene} aria-hidden="true">
+              <span className={styles.waterDrop} />
+              <span className={`${styles.waterDrop} ${styles.waterDropSecond}`} />
+              <span className={styles.waterLevel}>
+                <span className={`${styles.waterWave} ${styles.waterWaveRear}`}>
+                  <svg
+                    viewBox="0 0 800 40"
+                    preserveAspectRatio="none"
+                    focusable="false"
+                  >
+                    <path d="M0 8 Q50 0 100 8 T200 8 T300 8 T400 8 T500 8 T600 8 T700 8 T800 8 V40 H0Z" />
+                  </svg>
+                </span>
+                <span className={styles.waterWave}>
+                  <svg
+                    viewBox="0 0 800 40"
+                    preserveAspectRatio="none"
+                    focusable="false"
+                  >
+                    <path d="M0 8 Q50 0 100 8 T200 8 T300 8 T400 8 T500 8 T600 8 T700 8 T800 8 V40 H0Z" />
+                  </svg>
+                </span>
+                <span className={styles.waterRipple} />
+              </span>
+            </span>
             <span className={styles.actionIcon}>
               <Droplets aria-hidden="true" />
             </span>

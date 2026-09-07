@@ -32,28 +32,31 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-it('plays the original muted inline loop and provides an immediate pause', () => {
+it('plays the original forest and exposes a shared pause state for the water', () => {
   const { container } = render(<TapForest />)
   const video = container.querySelector('video')!
   expect(video).toHaveAttribute('src', '/forest-loop-2.mp4')
   expect(video.muted).toBe(true)
   expect(video).toHaveAttribute('playsinline')
-  fireEvent.click(
-    screen.getByRole('button', { name: 'Pause background animation' }),
-  )
+  const motion = screen.getByRole('button', { name: 'Pause animations' })
+  expect(motion).toHaveAttribute('data-motion', 'playing')
+  fireEvent.click(motion)
   expect(HTMLMediaElement.prototype.pause).toHaveBeenCalled()
   expect(
-    screen.getByRole('button', { name: 'Play background animation' }),
-  ).toBeInTheDocument()
+    screen.getByRole('button', { name: 'Play animations' }),
+  ).toHaveAttribute('data-motion', 'paused')
+  fireEvent.click(motion)
+  expect(motion).toHaveAttribute('data-motion', 'playing')
 })
 
 it('does not load the video for reduced motion until explicitly requested', () => {
   reduced = true
   const { container } = render(<TapForest />)
   expect(container.querySelector('video')).toBeNull()
-  fireEvent.click(
-    screen.getByRole('button', { name: 'Play background animation' }),
-  )
+  expect(
+    screen.getByRole('button', { name: 'Play animations' }),
+  ).toHaveAttribute('data-motion', 'paused')
+  fireEvent.click(screen.getByRole('button', { name: 'Play animations' }))
   expect(container.querySelector('video')).not.toBeNull()
   act(() => change())
   expect(HTMLMediaElement.prototype.pause).toHaveBeenCalled()
