@@ -2,21 +2,16 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
-import { Pause, Play } from 'lucide-react'
 import styles from './tap.module.css'
 
-/** The original lightweight forest loop, with a still fallback and motion control. */
+/** The original lightweight forest loop, with a still fallback. */
 export function TapForest() {
   const video = useRef<HTMLVideoElement>(null)
-  const [moving, setMoving] = useState(false)
   const [canLoadVideo, setCanLoadVideo] = useState(false)
 
   useEffect(() => {
     const preference = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const sync = () => {
-      setMoving(!preference.matches)
-      if (!preference.matches) setCanLoadVideo(true)
-    }
+    const sync = () => setCanLoadVideo(!preference.matches)
     sync()
     preference.addEventListener('change', sync)
     return () => preference.removeEventListener('change', sync)
@@ -24,8 +19,8 @@ export function TapForest() {
 
   useEffect(() => {
     const syncPlayback = () => {
-      if (moving && !document.hidden) {
-        video.current?.play()?.catch(() => setMoving(false))
+      if (canLoadVideo && !document.hidden) {
+        video.current?.play()?.catch(() => {})
       } else {
         video.current?.pause()
       }
@@ -33,47 +28,28 @@ export function TapForest() {
     syncPlayback()
     document.addEventListener('visibilitychange', syncPlayback)
     return () => document.removeEventListener('visibilitychange', syncPlayback)
-  }, [moving, canLoadVideo])
+  }, [canLoadVideo])
 
   return (
-    <>
-      <div className={styles.backdrop} aria-hidden="true">
-        <Image
-          src="/hero-layer-forest.png"
-          alt=""
-          fill
-          sizes="100vw"
-          className={styles.forest}
+    <div className={styles.backdrop} aria-hidden="true">
+      <Image
+        src="/hero-layer-forest.png"
+        alt=""
+        fill
+        sizes="100vw"
+        className={styles.forest}
+      />
+      {canLoadVideo && (
+        <video
+          ref={video}
+          src="/forest-loop-2.mp4"
+          muted
+          loop
+          playsInline
+          preload="metadata"
+          className={styles.forestVideo}
         />
-        {canLoadVideo && (
-          <video
-            ref={video}
-            src="/forest-loop-2.mp4"
-            muted
-            loop
-            playsInline
-            preload="metadata"
-            className={styles.forestVideo}
-          />
-        )}
-      </div>
-      <button
-        type="button"
-        className={styles.motionToggle}
-        data-motion={moving ? 'playing' : 'paused'}
-        aria-label={moving ? 'Pause animations' : 'Play animations'}
-        onClick={() => {
-          setCanLoadVideo(true)
-          setMoving((value) => !value)
-        }}
-      >
-        {moving ? (
-          <Pause size={12} aria-hidden="true" />
-        ) : (
-          <Play size={12} aria-hidden="true" />
-        )}
-        {moving ? 'Pause motion' : 'Play motion'}
-      </button>
-    </>
+      )}
+    </div>
   )
 }

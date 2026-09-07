@@ -1,5 +1,5 @@
 import { createElement } from 'react'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { TapForest } from './tap-forest'
 
@@ -32,32 +32,21 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-it('plays the original forest and exposes a shared pause state for the water', () => {
+it('plays the original muted inline forest without showing a motion control', () => {
   const { container } = render(<TapForest />)
   const video = container.querySelector('video')!
   expect(video).toHaveAttribute('src', '/forest-loop-2.mp4')
   expect(video.muted).toBe(true)
   expect(video).toHaveAttribute('playsinline')
-  const motion = screen.getByRole('button', { name: 'Pause animations' })
-  expect(motion).toHaveAttribute('data-motion', 'playing')
-  fireEvent.click(motion)
-  expect(HTMLMediaElement.prototype.pause).toHaveBeenCalled()
-  expect(
-    screen.getByRole('button', { name: 'Play animations' }),
-  ).toHaveAttribute('data-motion', 'paused')
-  fireEvent.click(motion)
-  expect(motion).toHaveAttribute('data-motion', 'playing')
+  expect(screen.queryByRole('button')).not.toBeInTheDocument()
 })
 
-it('does not load the video for reduced motion until explicitly requested', () => {
+it('does not load the video when reduced motion is requested', () => {
   reduced = true
   const { container } = render(<TapForest />)
   expect(container.querySelector('video')).toBeNull()
-  expect(
-    screen.getByRole('button', { name: 'Play animations' }),
-  ).toHaveAttribute('data-motion', 'paused')
-  fireEvent.click(screen.getByRole('button', { name: 'Play animations' }))
-  expect(container.querySelector('video')).not.toBeNull()
+  expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  reduced = false
   act(() => change())
-  expect(HTMLMediaElement.prototype.pause).toHaveBeenCalled()
+  expect(container.querySelector('video')).not.toBeNull()
 })

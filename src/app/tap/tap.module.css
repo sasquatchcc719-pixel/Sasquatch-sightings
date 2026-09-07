@@ -52,21 +52,6 @@
   margin: auto;
   padding: 76px 18px 36px;
 }
-.motionToggle {
-  position: absolute;
-  top: max(12px, env(safe-area-inset-top));
-  right: max(18px, calc((100vw - 524px) / 2));
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 44px;
-  padding: 8px 12px;
-  color: #e0e9df;
-  font-size: 12px;
-  border-radius: 24px;
-  background: #0b1c1b80;
-  cursor: pointer;
-}
 .header {
   margin-bottom: 28px;
 }
@@ -206,10 +191,6 @@
 }
 .emergency {
   min-height: 125px;
-  --water-play-state: paused;
-}
-.page:has([data-motion='playing']) .emergency {
-  --water-play-state: running;
 }
 .emergency::before {
   background: linear-gradient(
@@ -335,9 +316,6 @@
   border-radius: 50%;
   opacity: 0;
   animation: waterSplash 3s ease-out infinite;
-}
-.waterScene * {
-  animation-play-state: var(--water-play-state);
 }
 @keyframes waterFlow {
   to {
