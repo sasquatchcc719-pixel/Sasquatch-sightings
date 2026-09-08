@@ -53,6 +53,31 @@ export async function GET(request: NextRequest) {
         : DEFAULT_DURATION_MINUTES,
     )
 
+    const { data: commercialAppointments, error: commercialError } =
+      await supabase
+        .from('ops_appointments')
+        .select(
+          'appointment_date,kind,status,ops_customers!ops_appointments_customer_id_fkey(is_commercial)',
+        )
+        .gte('appointment_date', startDate)
+        .lte('appointment_date', endDate)
+        .neq('status', 'cancelled')
+
+    if (commercialError) throw commercialError
+
+    const commercialDays = (commercialAppointments || []).reduce<
+      Record<string, number>
+    >((days, appointment) => {
+      const customer = Array.isArray(appointment.ops_customers)
+        ? appointment.ops_customers[0]
+        : appointment.ops_customers
+      if (appointment.kind !== 'estimate' && customer?.is_commercial === true) {
+        days[appointment.appointment_date] =
+          (days[appointment.appointment_date] || 0) + 1
+      }
+      return days
+    }, {})
+
     const now = new Date()
     const todayMT = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'America/Denver',
@@ -96,7 +121,12 @@ export async function GET(request: NextRequest) {
       }),
     )
 
-    return NextResponse.json({ days, start_date: startDate, end_date: endDate })
+    return NextResponse.json({
+      days,
+      commercial_days: commercialDays,
+      start_date: startDate,
+      end_date: endDate,
+    })
   } catch (error) {
     console.error('[admin/ops/month-availability] Error:', error)
     return NextResponse.json(

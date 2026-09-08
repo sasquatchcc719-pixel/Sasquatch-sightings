@@ -76,6 +76,11 @@ describe('commercial agreement approval', () => {
         ok: true,
         json: async () => ({
           businessName: 'Example Business',
+          customerContact: {
+            display_name: 'Alex Manager',
+            email: 'alex@example.com',
+            phone: '+17195551234',
+          },
           profile: {
             legal_name: '',
             billing_contact: '',
@@ -109,6 +114,15 @@ describe('commercial agreement approval', () => {
     expect(schedule).toHaveAttribute(
       'href',
       '/admin/operations/estimates/estimate-a?schedule=1',
+    )
+    expect(screen.getByText('(719) 555-1234')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Call' })).toHaveAttribute(
+      'href',
+      'tel:+17195551234',
+    )
+    expect(screen.getByRole('link', { name: 'Text' })).toHaveAttribute(
+      'href',
+      'sms:+17195551234',
     )
     expect(
       screen.getByText(/copies the approved estimate line items/i),

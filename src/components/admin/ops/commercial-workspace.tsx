@@ -9,6 +9,8 @@ import {
   CalendarDays,
   CheckCircle2,
   Mail,
+  MessageSquare,
+  Phone,
   Users,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -31,6 +33,7 @@ import {
   publicationIssues,
 } from '@/lib/ops/commercial'
 import { formatMoney } from '@/lib/ops/client-portal'
+import { formatPaymentTextPhone } from '@/lib/ops/payment-texts'
 import { ClientRequestsPanel } from './client-requests-panel'
 import { CustomerDeleteControl } from './customer-delete-control'
 import { DayTimePicker } from './day-time-picker'
@@ -488,6 +491,84 @@ export function CommercialAccount({ customerId }: { customerId: string }) {
           </div>
         ))}
       </div>
+      <section
+        aria-labelledby="contact-information-heading"
+        className={panelClass}
+      >
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold tracking-[0.18em] text-cyan-300 uppercase">
+              Contact information
+            </p>
+            <h3
+              id="contact-information-heading"
+              className="mt-1 text-xl font-bold"
+            >
+              Reach {data.businessName}
+            </h3>
+          </div>
+          {data.customerContact?.phone ? (
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                className="gap-2 bg-emerald-500 text-emerald-950 hover:bg-emerald-400"
+                asChild
+              >
+                <a href={`tel:${data.customerContact.phone}`}>
+                  <Phone className="h-4 w-4" />
+                  Call
+                </a>
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-2 border-cyan-300/30 text-cyan-200 hover:bg-cyan-400/10"
+                asChild
+              >
+                <a href={`sms:${data.customerContact.phone}`}>
+                  <MessageSquare className="h-4 w-4" />
+                  Text
+                </a>
+              </Button>
+            </div>
+          ) : null}
+        </div>
+        <div className="mt-4 grid gap-4 text-sm sm:grid-cols-3">
+          <div>
+            <p className="text-xs text-slate-400">Primary contact</p>
+            <p className="mt-1 font-medium">
+              {data.customerContact?.display_name || 'No contact name saved'}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-slate-400">Phone</p>
+            {data.customerContact?.phone ? (
+              <a
+                className="mt-1 inline-flex items-center gap-2 font-medium text-cyan-200 hover:underline"
+                href={`tel:${data.customerContact.phone}`}
+              >
+                <Phone className="h-4 w-4" />
+                {formatPaymentTextPhone(data.customerContact.phone)}
+              </a>
+            ) : (
+              <p className="mt-1 text-slate-500">No phone on file</p>
+            )}
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs text-slate-400">Email</p>
+            {data.customerContact?.email ? (
+              <a
+                className="mt-1 block truncate font-medium text-cyan-200 hover:underline"
+                href={`mailto:${data.customerContact.email}`}
+              >
+                {data.customerContact.email}
+              </a>
+            ) : (
+              <p className="mt-1 text-slate-500">No email on file</p>
+            )}
+          </div>
+        </div>
+      </section>
       <section
         aria-labelledby="scheduling-center-heading"
         className="overflow-hidden rounded-2xl border border-cyan-300/20 bg-gradient-to-br from-slate-900 via-slate-900 to-cyan-950/60 shadow-lg shadow-cyan-950/20"

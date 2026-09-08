@@ -98,7 +98,7 @@ export type CommercialAgreement = {
   created_at: string
 }
 export type CommercialData = {
-  customerContact?: { display_name: string; email: string }
+  customerContact?: { display_name: string; email: string; phone?: string }
   profile: CommercialProfile
   agreements: CommercialAgreement[]
   businessName: string

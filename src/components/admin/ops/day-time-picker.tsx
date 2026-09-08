@@ -147,6 +147,9 @@ function MonthCalendar({
   const [availabilityByDate, setAvailabilityByDate] = useState<
     Record<string, number>
   >({})
+  const [commercialDays, setCommercialDays] = useState<Record<string, number>>(
+    {},
+  )
   const [loading, setLoading] = useState(false)
 
   const [viewMonth, setViewMonth] = useState<Date>(() => {
@@ -194,6 +197,7 @@ function MonthCalendar({
         if (!res.ok) throw new Error('availability failed')
         const data = (await res.json()) as {
           days?: { date: string; slots?: number }[]
+          commercial_days?: Record<string, number>
         }
         if (ignore) return
         setAvailabilityByDate(
@@ -202,8 +206,12 @@ function MonthCalendar({
             return acc
           }, {}),
         )
+        setCommercialDays(data.commercial_days || {})
       } catch {
-        if (!ignore) setAvailabilityByDate({})
+        if (!ignore) {
+          setAvailabilityByDate({})
+          setCommercialDays({})
+        }
       } finally {
         if (!ignore) setLoading(false)
       }
@@ -257,6 +265,8 @@ function MonthCalendar({
           const slotsForDay = availabilityByDate[iso]
           const hasSlots = typeof slotsForDay === 'number' && slotsForDay > 0
           const isFull = typeof slotsForDay === 'number' && slotsForDay === 0
+          const commercialJobsForDay = commercialDays[iso] || 0
+          const hasCommercialWork = commercialJobsForDay > 0
           const isSelected = iso === selected
           const isToday = iso === todayKey
 
@@ -266,6 +276,7 @@ function MonthCalendar({
               type="button"
               disabled={isPast}
               onClick={() => onSelect(iso)}
+              aria-label={`${iso}${hasCommercialWork ? ' — commercial cleaning scheduled' : ''}`}
               className={`flex min-h-[56px] w-full flex-col items-center justify-center rounded-xl border px-0.5 text-center transition-all ${
                 isSelected
                   ? 'border-primary bg-primary text-primary-foreground shadow-sm'
@@ -279,6 +290,19 @@ function MonthCalendar({
               } ${isToday && !isSelected ? 'ring-primary/40 ring-1' : ''}`}
             >
               <span className="text-base leading-none font-bold">{day}</span>
+              {hasCommercialWork ? (
+                <span
+                  title={`${commercialJobsForDay} commercial cleaning ${commercialJobsForDay === 1 ? 'job' : 'jobs'} scheduled`}
+                  className={`mt-1 inline-flex h-4 w-4 items-center justify-center rounded-full border text-[9px] leading-none font-black ${
+                    isSelected
+                      ? 'border-amber-200 bg-amber-300 text-slate-950'
+                      : 'border-amber-400/80 bg-amber-400/15 text-amber-300'
+                  }`}
+                  aria-hidden="true"
+                >
+                  C
+                </span>
+              ) : null}
               {!isSelected && hasSlots ? (
                 <span className="mt-1 text-[9px] leading-none font-bold">
                   Open
@@ -298,8 +322,8 @@ function MonthCalendar({
         {loading
           ? 'Checking openings…'
           : allowConflictOverride
-            ? 'Green = open · Red = fully booked (tap to stack work anyway)'
-            : 'Green = open · Red = no regular opening long enough'}
+            ? 'Green = open · Red = fully booked · C = commercial cleaning (tap to stack work anyway)'
+            : 'Green = open · Red = no regular opening long enough · C = commercial cleaning'}
       </p>
     </div>
   )

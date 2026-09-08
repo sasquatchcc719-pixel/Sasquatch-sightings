@@ -33,7 +33,7 @@ export async function loadCommercialData(
   const queries = await Promise.all([
     db
       .from('ops_customers')
-      .select('business_name,full_name,email')
+      .select('business_name,full_name,email,phone')
       .eq('id', customerId)
       .single(),
     db
@@ -74,6 +74,7 @@ export async function loadCommercialData(
       email: (customer.data!.email || savedProfile.billing_email || '')
         .trim()
         .toLowerCase(),
+      phone: customer.data!.phone || '',
     },
     profile: {
       ...savedProfile,
