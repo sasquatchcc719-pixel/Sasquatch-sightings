@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getCallRoutingConfig } from '@/lib/twilio/call-routing-config'
 import { getForwardNumbers } from '@/lib/twilio/forward-numbers'
+import {
+  classifyCallOutcome,
+  parseDialCallDuration,
+} from '@/lib/twilio/call-outcome'
+import { createAdminClient } from '@/supabase/server'
 
 function getBaseUrl(): string {
   const url = (
@@ -14,20 +19,35 @@ function getBaseUrl(): string {
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
-    const dialCallStatus = formData.get('DialCallStatus') as string
-    const callerPhone = formData.get('Caller') || formData.get('From') // Use From/Caller to maintain Caller ID
+    const callSid = String(formData.get('CallSid') || '').trim()
+    const dialCallStatus = String(formData.get('DialCallStatus') || '')
+      .trim()
+      .toLowerCase()
+    const dialCallDuration = parseDialCallDuration(
+      formData.get('DialCallDuration') || formData.get('CallDuration'),
+    )
+    const callerPhone = String(
+      formData.get('Caller') || formData.get('From') || '',
+    ).trim() // Use From/Caller to maintain Caller ID
     const mode = request.nextUrl.searchParams.get('mode')
     const stage = request.nextUrl.searchParams.get('stage')
 
-    // Check query params for next destination logic if we want generic
-    // const searchParams = request.nextUrl.searchParams
-    // const next = searchParams.get('next')
+    const callOutcome = classifyCallOutcome(dialCallStatus, dialCallDuration)
 
-    console.log(`[Dial Failover] Status: ${dialCallStatus}`)
+    console.log(
+      `[Dial Failover] Status: ${dialCallStatus || 'unknown'}, Duration: ${dialCallDuration ?? 'unknown'}s, Stage: ${stage || 'primary'}`,
+    )
 
-    // If the call was completed (answered), we don't need to do anything else.
-    // Twilio will naturally end the call when the parties hang up.
-    if (dialCallStatus === 'completed' || dialCallStatus === 'answered') {
+    // A sustained completed leg was handled. Record it before allowing
+    // Twilio to end the parent call.
+    if (callOutcome === 'answered') {
+      await updateCallLog({
+        callSid,
+        callerPhone,
+        outcome: 'answered',
+        dialCallStatus,
+        dialCallDuration,
+      })
       return new NextResponse('<Response><Hangup/></Response>', {
         status: 200,
         headers: {
@@ -41,6 +61,13 @@ export async function POST(request: NextRequest) {
 
     if (stage === 'secondary') {
       console.log('[Dial Failover] Secondary leg did not answer — voicemail')
+      await updateCallLog({
+        callSid,
+        callerPhone,
+        outcome: 'no-answer',
+        dialCallStatus,
+        dialCallDuration,
+      })
       return new NextResponse(
         `<?xml version="1.0" encoding="UTF-8"?><Response><Redirect method="POST">${afterHoursUrl}</Redirect></Response>`,
         {
@@ -113,5 +140,39 @@ export async function POST(request: NextRequest) {
         headers: { 'Content-Type': 'text/xml' },
       },
     )
+  }
+}
+
+async function updateCallLog(params: {
+  callSid: string
+  callerPhone: string
+  outcome: 'answered' | 'no-answer'
+  dialCallStatus: string
+  dialCallDuration: number | null
+}): Promise<void> {
+  if (!params.callSid) return
+
+  try {
+    const { error } = await createAdminClient()
+      .from('call_logs')
+      .upsert(
+        {
+          call_sid: params.callSid,
+          caller_phone: params.callerPhone || null,
+          outcome: params.outcome,
+          duration_seconds: params.dialCallDuration,
+          raw_dial_status: params.dialCallStatus || null,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'call_sid' },
+      )
+
+    if (error) {
+      console.error('[Dial Failover] Failed to update call log:', error)
+    }
+  } catch (error) {
+    // A logging failure must never prevent Twilio from completing the call
+    // routing response.
+    console.error('[Dial Failover] Call log update error:', error)
   }
 }

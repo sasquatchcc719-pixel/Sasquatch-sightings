@@ -1,12 +1,17 @@
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { getCallRoutingConfigMock } = vi.hoisted(() => ({
+const { createAdminClientMock, getCallRoutingConfigMock } = vi.hoisted(() => ({
+  createAdminClientMock: vi.fn(),
   getCallRoutingConfigMock: vi.fn(),
 }))
 
 vi.mock('@/lib/twilio/call-routing-config', () => ({
   getCallRoutingConfig: getCallRoutingConfigMock,
+}))
+
+vi.mock('@/supabase/server', () => ({
+  createAdminClient: createAdminClientMock,
 }))
 
 import { POST } from './route'
@@ -26,10 +31,22 @@ const routingConfig = {
 
 function twilioRequest(
   status: string,
-  { mode, stage }: { mode?: string; stage?: string } = {},
+  {
+    mode,
+    stage,
+    duration,
+    callSid = 'CA123',
+  }: {
+    mode?: string
+    stage?: string
+    duration?: number
+    callSid?: string
+  } = {},
 ): NextRequest {
   const body = new URLSearchParams()
+  body.set('CallSid', callSid)
   body.set('DialCallStatus', status)
+  if (duration !== undefined) body.set('DialCallDuration', String(duration))
   body.set('From', '+17195550123')
   const query = new URLSearchParams()
   if (mode) query.set('mode', mode)
@@ -50,6 +67,11 @@ describe('POST /api/twilio/dial-failover', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     getCallRoutingConfigMock.mockResolvedValue(routingConfig)
+    createAdminClientMock.mockReturnValue({
+      from: vi.fn(() => ({
+        upsert: vi.fn(() => Promise.resolve({ error: null })),
+      })),
+    })
   })
 
   it('does not dial the secondary phone after the primary call was handled', async () => {
@@ -59,6 +81,27 @@ describe('POST /api/twilio/dial-failover', () => {
 
     expect(await response.text()).toBe('<Response><Hangup/></Response>')
     expect(getCallRoutingConfigMock).not.toHaveBeenCalled()
+    expect(createAdminClientMock).toHaveBeenCalled()
+  })
+
+  it('records an answered primary call before hanging up', async () => {
+    const upsert = vi.fn(() => Promise.resolve({ error: null }))
+    createAdminClientMock.mockReturnValue({ from: vi.fn(() => ({ upsert })) })
+
+    const response = await POST(
+      twilioRequest('completed', { mode: 'schedule', duration: 45 }),
+    )
+
+    expect(await response.text()).toBe('<Response><Hangup/></Response>')
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        call_sid: 'CA123',
+        outcome: 'answered',
+        duration_seconds: 45,
+        raw_dial_status: 'completed',
+      }),
+      { onConflict: 'call_sid' },
+    )
   })
 
   it('dials the secondary phone after the primary phone does not answer', async () => {
@@ -99,6 +142,9 @@ describe('POST /api/twilio/dial-failover', () => {
   })
 
   it('sends an unanswered secondary call to voicemail', async () => {
+    const upsert = vi.fn(() => Promise.resolve({ error: null }))
+    createAdminClientMock.mockReturnValue({ from: vi.fn(() => ({ upsert })) })
+
     const response = await POST(
       twilioRequest('no-answer', { stage: 'secondary' }),
     )
@@ -107,5 +153,13 @@ describe('POST /api/twilio/dial-failover', () => {
     expect(twiml).toContain('/api/twilio/call-after-hours')
     expect(twiml).not.toContain('<Dial')
     expect(getCallRoutingConfigMock).not.toHaveBeenCalled()
+    expect(upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        call_sid: 'CA123',
+        outcome: 'no-answer',
+        raw_dial_status: 'no-answer',
+      }),
+      { onConflict: 'call_sid' },
+    )
   })
 })

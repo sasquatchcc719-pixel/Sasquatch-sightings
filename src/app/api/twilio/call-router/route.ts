@@ -49,7 +49,8 @@ export async function POST(request: NextRequest) {
 
     console.log(`[Call Router] Incoming call from: ${callerPhone}`)
 
-    // Log every non-blacklisted inbound call — outcome updated later at call-after-hours
+    // Log every non-blacklisted inbound call. The forwarding and voicemail
+    // callbacks update this row with the final outcome later.
     const supabaseLog = createAdminClient()
     supabaseLog
       .from('call_logs')
