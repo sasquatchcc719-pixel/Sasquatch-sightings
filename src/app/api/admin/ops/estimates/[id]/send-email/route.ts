@@ -126,13 +126,38 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  let access
   try {
-    await requireAnyRole(['admin', 'owner', 'dispatcher'])
+    access = await requireAnyRole(['admin', 'owner', 'dispatcher'])
+  } catch {
+    return NextResponse.json({ error: 'Not authorized' }, { status: 401 })
+  }
+  try {
     const supabase = createAdminClient()
     const { id } = await params
     const body = await request.json()
     const emailType: EmailType =
       body.type === 'quote' ? 'quote' : 'booking_confirmation'
+    const reason = typeof body.reason === 'string' ? body.reason.trim() : ''
+    const requestId = body.request_id
+    const requestedAt =
+      typeof requestId === 'string' ? Number(requestId.split('-')[0]) : NaN
+    if (
+      requestId !== undefined &&
+      (typeof requestId !== 'string' ||
+        !/^\d{13}-[0-9a-f-]{36}$/i.test(requestId) ||
+        !Number.isFinite(requestedAt) ||
+        requestedAt < Date.now() - 86400000 ||
+        requestedAt > Date.now() + 300000)
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            'This send confirmation has expired. Close it and review the estimate again.',
+        },
+        { status: 400 },
+      )
+    }
 
     // Load the estimate with customer, address, and line items
     const { data: estimate, error: estimateError } = await supabase
@@ -144,6 +169,8 @@ export async function POST(
         start_time,
         end_time,
         quoted_total,
+        estimate_status,
+        converted_appointment_id,
         ops_customers!ops_appointments_customer_id_fkey (
           id, full_name, first_name, email, phone, email_opt_out
         ),
@@ -168,6 +195,60 @@ export async function POST(
       return NextResponse.json({ error: 'Estimate not found' }, { status: 404 })
     }
 
+    const previousStatus = estimate.estimate_status || 'draft'
+    const needsReopen =
+      previousStatus === 'accepted' || previousStatus === 'declined'
+    if (emailType === 'quote') {
+      if (estimate.converted_appointment_id || previousStatus === 'converted') {
+        return NextResponse.json(
+          {
+            error:
+              'This estimate has already been converted to a job and cannot be reopened or resent.',
+          },
+          { status: 409 },
+        )
+      }
+      if (
+        body.expected_status !== undefined &&
+        body.expected_status !== previousStatus
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              'The estimate status changed. Refresh and review it before sending.',
+          },
+          { status: 409 },
+        )
+      }
+      if (needsReopen && body.reopen !== true) {
+        return NextResponse.json(
+          {
+            error:
+              'Use Reopen & resend to request a new decision on this estimate.',
+          },
+          { status: 409 },
+        )
+      }
+      if (needsReopen && (!reason || reason.length > 1000)) {
+        return NextResponse.json(
+          { error: 'Enter a reason for reopening (up to 1,000 characters).' },
+          { status: 400 },
+        )
+      }
+      if (
+        body.expected_total !== undefined &&
+        Number(body.expected_total) !== Number(estimate.quoted_total ?? 0)
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              'The estimate total changed. Refresh and review the saved pricing before sending.',
+          },
+          { status: 409 },
+        )
+      }
+    }
+
     const customer = Array.isArray(estimate.ops_customers)
       ? estimate.ops_customers[0]
       : estimate.ops_customers
@@ -179,6 +260,20 @@ export async function POST(
       return NextResponse.json(
         { error: 'Customer has no email address — add one first.' },
         { status: 400 },
+      )
+    }
+    if (
+      body.expected_email !== undefined &&
+      (typeof body.expected_email !== 'string' ||
+        body.expected_email.trim().toLowerCase() !==
+          customer.email.trim().toLowerCase())
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            'The saved customer email differs from the confirmation. Refresh and check the recipient before sending.',
+        },
+        { status: 409 },
       )
     }
 
@@ -257,19 +352,30 @@ export async function POST(
               label: 'Accept this estimate',
               url: buildEstimateDecisionUrl(
                 publicSiteOrigin(request),
-                createEstimateDecisionToken({ estimateId: id }),
+                createEstimateDecisionToken({
+                  estimateId: id,
+                  // A retry must generate exactly the same email payload.
+                  expiresAt: requestId
+                    ? new Date(requestedAt + 30 * 86400000)
+                    : undefined,
+                }),
               ),
             }
           : null,
     })
 
-    const { data: sent, error: sendError } = await resend.emails.send({
-      from: fromEmail,
-      to: customer.email,
-      bcc,
-      subject,
-      html,
-    })
+    const { data: sent, error: sendError } = await resend.emails.send(
+      {
+        from: fromEmail,
+        to: customer.email,
+        bcc,
+        subject,
+        html,
+      },
+      requestId
+        ? { idempotencyKey: `estimate-${emailType}/${id}/${requestId}` }
+        : undefined,
+    )
 
     if (sendError) {
       console.error('[estimates/send-email] Resend error:', sendError)
@@ -279,30 +385,86 @@ export async function POST(
       )
     }
 
-    // Log to ops_email_log so it appears in the email outbox
-    await supabase.from('ops_email_log').insert({
-      appointment_id: id,
-      customer_id: customer.id,
-      template_key: emailType,
-      to_email: customer.email,
-      subject,
-      body_text: bodyText,
-      resend_id: (sent as { id?: string } | null)?.id ?? null,
-    })
-
-    // Mark the estimate status as 'sent' when a quote email goes out
-    if (emailType === 'quote') {
-      await supabase
-        .from('ops_appointments')
-        .update({
-          estimate_status: 'sent',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', id)
-        .eq('kind', 'estimate')
+    // Once the provider accepts the email, never return a generic send failure
+    // for a database error: that would encourage sending the customer a duplicate.
+    const warnings: string[] = []
+    try {
+      const { error: logError } = await supabase.from('ops_email_log').insert({
+        appointment_id: id,
+        customer_id: customer.id,
+        template_key: emailType,
+        to_email: customer.email,
+        subject,
+        body_text: bodyText,
+        resend_id: (sent as { id?: string } | null)?.id ?? null,
+      })
+      if (logError) throw logError
+    } catch (error) {
+      console.error('[estimates/send-email] Email history error:', error)
+      warnings.push(
+        'Email was sent, but email history could not be saved. Check the email outbox before resending.',
+      )
     }
 
-    return NextResponse.json({ success: true, email_type: emailType })
+    if (emailType === 'quote') {
+      try {
+        let update = supabase
+          .from('ops_appointments')
+          .update({
+            estimate_status: 'sent',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', id)
+          .eq('kind', 'estimate')
+          .is('converted_appointment_id', null)
+        update =
+          estimate.estimate_status === null
+            ? update.is('estimate_status', null)
+            : update.eq('estimate_status', estimate.estimate_status)
+        const { data: changed, error: statusError } = await update
+          .select('id')
+          .maybeSingle()
+        if (statusError || !changed) {
+          console.error(
+            '[estimates/send-email] Status not updated:',
+            statusError,
+          )
+          warnings.push(
+            'Email was sent, but the estimate status could not be updated or changed during sending. Refresh and check the status before scheduling; do not resend just to fix it.',
+          )
+        } else if (previousStatus !== 'sent') {
+          const { error: auditError } = await supabase
+            .from('ops_appointment_status_events')
+            .insert({
+              appointment_id: id,
+              from_status: previousStatus,
+              to_status: 'sent',
+              changed_by: access.id,
+              notes: needsReopen
+                ? `Estimate reopened and emailed to ${customer.email}. Reason: ${reason}`
+                : `Estimate emailed to ${customer.email}`,
+            })
+          if (auditError) {
+            console.error('[estimates/send-email] Audit error:', auditError)
+            warnings.push(
+              'Email was sent and status updated, but the status history could not be saved. Record the reopening reason in internal notes.',
+            )
+          }
+        }
+      } catch (error) {
+        console.error('[estimates/send-email] Status history error:', error)
+        warnings.push(
+          'Email was sent, but the status/history update could not be confirmed. Refresh and check the estimate; do not resend just to fix it.',
+        )
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      email_type: emailType,
+      to_email: customer.email,
+      warning: warnings.join(' ') || null,
+    })
   } catch (error) {
     console.error('[estimates/send-email] Error:', error)
     return NextResponse.json(

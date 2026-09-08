@@ -18,7 +18,6 @@ import {
   Phone,
   Plus,
   Ruler,
-  Send,
   Trash2,
   User,
   X,
@@ -38,6 +37,11 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { DayTimePicker } from './day-time-picker'
+import {
+  EstimateDeliveryPanel,
+  type EstimateSendConfirmation,
+  type LastQuoteEmail,
+} from './estimate-delivery-panel'
 import {
   describeSegmentsSummary,
   isAreaUnit,
@@ -432,7 +436,10 @@ export function EstimateDetail({
   const [scheduleEmailSending, setScheduleEmailSending] = useState(false)
   const [scheduleEmailSent, setScheduleEmailSent] = useState(false)
   const [quoteEmailSending, setQuoteEmailSending] = useState(false)
-  const [quoteEmailSent, setQuoteEmailSent] = useState(false)
+  const [lastQuoteEmail, setLastQuoteEmail] = useState<LastQuoteEmail | null>(
+    null,
+  )
+  const [emailHistoryUnavailable, setEmailHistoryUnavailable] = useState(false)
   const [emailError, setEmailError] = useState<string | null>(null)
   const [onMyWayLoading, setOnMyWayLoading] = useState(false)
   const [onMyWaySms, setOnMyWaySms] = useState<string | null>(null)
@@ -447,8 +454,14 @@ export function EstimateDetail({
         const body = await res.json().catch(() => null)
         throw new Error(body?.error || 'Failed to load estimate')
       }
-      const data: { estimate: EstimateDetail } = await res.json()
+      const data: {
+        estimate: EstimateDetail
+        last_quote_email?: LastQuoteEmail | null
+        email_history_unavailable?: boolean
+      } = await res.json()
       setEstimate(data.estimate)
+      setLastQuoteEmail(data.last_quote_email ?? null)
+      setEmailHistoryUnavailable(data.email_history_unavailable === true)
       setInternalNotes(data.estimate.internal_notes || '')
       setScheduleDate(data.estimate.appointment_date)
       setScheduleStart(data.estimate.start_time.slice(0, 5))
@@ -972,8 +985,10 @@ export function EstimateDetail({
         throw new Error(payload?.error || 'Failed to save estimate')
       }
       await loadEstimate()
+      return true
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save')
+      return false
     } finally {
       setSaving(false)
     }
@@ -1095,7 +1110,8 @@ export function EstimateDetail({
     setConvertError(null)
     try {
       // Save current edits first so the conversion sees the latest line items.
-      await handleSave()
+      if (!(await handleSave()))
+        throw new Error('Save failed. The estimate was not converted.')
 
       const res = await fetch(
         `/api/admin/ops/estimates/${estimateId}/convert`,
@@ -1139,37 +1155,56 @@ export function EstimateDetail({
   ])
 
   const handleSendEmail = useCallback(
-    async (type: 'booking_confirmation' | 'quote') => {
+    async (
+      type: 'booking_confirmation' | 'quote',
+      confirmation?: EstimateSendConfirmation,
+    ) => {
       const setSending =
         type === 'booking_confirmation'
           ? setScheduleEmailSending
           : setQuoteEmailSending
-      const setSent =
-        type === 'booking_confirmation'
-          ? setScheduleEmailSent
-          : setQuoteEmailSent
       setSending(true)
       setEmailError(null)
       try {
         // Save current edits first so the email reflects the latest details
-        await handleSave()
+        if (!(await handleSave()))
+          throw new Error(
+            'Save failed. No email was sent. Check the estimate details and try again.',
+          )
         const res = await fetch(
           `/api/admin/ops/estimates/${estimateId}/send-email`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ type }),
+            body: JSON.stringify({
+              type,
+              ...confirmation,
+              expected_email: contactEmail.trim(),
+              ...(type === 'quote'
+                ? {
+                    expected_status: estimate?.estimate_status || 'draft',
+                    expected_total: Number(subtotal.toFixed(2)),
+                  }
+                : {}),
+            }),
           },
         )
         const payload = await res.json().catch(() => null)
         if (!res.ok) {
           throw new Error(payload?.error || 'Failed to send email')
         }
-        setSent(true)
         // After quote is sent, reload to reflect the new 'sent' status badge
         if (type === 'quote') await loadEstimate()
-        setTimeout(() => setSent(false), 4000)
+        else {
+          setScheduleEmailSent(true)
+          setTimeout(() => setScheduleEmailSent(false), 4000)
+        }
+        return {
+          to_email: payload.to_email as string,
+          warning: (payload.warning ?? null) as string | null,
+        }
       } catch (err) {
+        if (type === 'quote') throw err
         setEmailError(
           err instanceof Error ? err.message : 'Failed to send email',
         )
@@ -1177,7 +1212,14 @@ export function EstimateDetail({
         setSending(false)
       }
     },
-    [estimateId, handleSave, loadEstimate],
+    [
+      estimateId,
+      handleSave,
+      loadEstimate,
+      contactEmail,
+      estimate?.estimate_status,
+      subtotal,
+    ],
   )
 
   // ── Render ──────────────────────────────────────────────────────────────
@@ -1366,6 +1408,36 @@ export function EstimateDetail({
           </div>
         ) : null}
       </Card>
+
+      <EstimateDeliveryPanel
+        status={statusKey}
+        converted={isConverted || statusKey === 'converted'}
+        email={contactEmail}
+        total={subtotal}
+        blockedReason={
+          !contactEmail.trim()
+            ? 'Add the customer email in contact information below.'
+            : lineItems.length === 0
+              ? 'Add at least one line item before sending.'
+              : notReadyReason
+        }
+        busy={
+          saving ||
+          quoteEmailSending ||
+          scheduleEmailSending ||
+          actionLoading !== null
+        }
+        lastEmail={lastQuoteEmail}
+        historyUnavailable={emailHistoryUnavailable}
+        onSend={async (confirmation) => {
+          const result = await handleSendEmail('quote', confirmation)
+          if (!result)
+            throw new Error(
+              'Unable to confirm sending. Check email history before resending.',
+            )
+          return result
+        }}
+      />
 
       {/* ── Street View ──────────────────────────────────────────── */}
       <StreetViewCard address={serviceAddress} />
@@ -2069,30 +2141,7 @@ export function EstimateDetail({
 
         {!isConverted ? (
           <>
-            {/* Send Quote — appears when there are line items and a customer email */}
-            {lineItems.length > 0 && contactEmail ? (
-              <Button
-                className="gap-2 bg-sky-600 font-semibold text-white hover:bg-sky-500"
-                disabled={quoteEmailSending || !readyToSend}
-                title={notReadyReason ?? undefined}
-                onClick={() => void handleSendEmail('quote')}
-              >
-                {quoteEmailSending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : quoteEmailSent ? (
-                  <CheckCircle2 className="h-4 w-4" />
-                ) : (
-                  <Send className="h-4 w-4" />
-                )}
-                {quoteEmailSending
-                  ? 'Sending quote…'
-                  : quoteEmailSent
-                    ? 'Quote sent!'
-                    : 'Send Quote'}
-              </Button>
-            ) : null}
-
-            {statusKey !== 'sent' ? (
+            {statusKey === 'draft' ? (
               <Button
                 variant="outline"
                 className="border-sky-400/60 text-sky-700 hover:bg-sky-50 hover:text-sky-800 dark:text-sky-300 dark:hover:bg-sky-500/10"
@@ -2102,7 +2151,7 @@ export function EstimateDetail({
                 {actionLoading === 'sent' ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : null}
-                Mark sent
+                Mark sent (no email)
               </Button>
             ) : null}
             {statusKey !== 'accepted' ? (

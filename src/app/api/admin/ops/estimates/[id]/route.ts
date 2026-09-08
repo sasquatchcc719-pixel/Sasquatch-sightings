@@ -107,7 +107,20 @@ export async function GET(
     const { id } = await params
 
     const estimate = await loadEstimate(supabase, id)
-    return NextResponse.json({ estimate })
+    const { data: lastQuoteEmail, error: emailHistoryError } = await supabase
+      .from('ops_email_log')
+      .select('to_email, sent_at')
+      .eq('appointment_id', id)
+      .eq('template_key', 'quote')
+      .eq('status', 'sent')
+      .order('sent_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    return NextResponse.json({
+      estimate,
+      last_quote_email: lastQuoteEmail,
+      email_history_unavailable: !!emailHistoryError,
+    })
   } catch (error) {
     console.error('[ops/estimates/:id][GET] Error:', error)
     return NextResponse.json(
@@ -159,10 +172,11 @@ export async function PATCH(
       if (c.notes !== undefined) cu.notes = c.notes || null
       if (Object.keys(cu).length > 0) {
         cu.updated_at = new Date().toISOString()
-        await supabase
+        const { error: customerError } = await supabase
           .from('ops_customers')
           .update(cu)
           .eq('id', current.customer_id)
+        if (customerError) throw customerError
       }
     }
 
@@ -178,10 +192,11 @@ export async function PATCH(
       if (a.notes !== undefined) au.notes = a.notes || null
       if (Object.keys(au).length > 0) {
         au.updated_at = new Date().toISOString()
-        await supabase
+        const { error: addressError } = await supabase
           .from('ops_service_addresses')
           .update(au)
           .eq('id', current.service_address_id)
+        if (addressError) throw addressError
       }
     }
 
