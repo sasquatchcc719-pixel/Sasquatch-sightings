@@ -196,6 +196,8 @@ Prefer single-file or single-test runs during iteration. Full suites are for the
 
 **Accumulated corrections. This section is for the agent to maintain, not just the human.**
 
+- Call-log repairs include backfilling existing affected records from Twilio child-call and recording evidence; verify the repaired production history before declaring completion. Parent-call duration alone does not prove an answered call or a voicemail.
+
 When the user corrects your approach, append a one-line rule here before ending the session. Write it concretely ("Always use X for Y"), never abstractly ("be careful with Y"). If an existing line already covers the correction, tighten it instead of adding a new one. Remove lines when the underlying issue goes away (model upgrades, refactors, process changes).
 
 - Keep each AI agent's orchestration layer isolated; reuse shared low-level business primitives, not another agent's executor or wrapper.

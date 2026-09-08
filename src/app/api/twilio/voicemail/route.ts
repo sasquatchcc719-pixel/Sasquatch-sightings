@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { Resend } from 'resend'
 import twilio from 'twilio'
 import { createAdminClient } from '@/supabase/server'
+import { writeCallLog } from '@/lib/twilio/call-history'
 
 /** Twilio may run 120s+; default Vercel timeout would kill the SMS send. */
 export const maxDuration = 300
@@ -202,6 +203,34 @@ export async function POST(request: NextRequest) {
       audioUrl || priorVoicemail?.metadata?.recording_url || null
     const alreadyEmailed = priorVoicemail?.metadata?.email_sent === true
 
+    // Persist before notification work. Callback omissions must never erase
+    // the saved recording, duration, or transcription.
+    if (callSid) {
+      try {
+        const hasRecording = Boolean(
+          mergedAudioUrl &&
+          (Number(mergedDuration) > 0 ||
+            hasMeaningfulTranscription(mergedTranscription)),
+        )
+        await writeCallLog(createAdminClient(), {
+          call_sid: callSid,
+          ...(callerPhone ? { caller_phone: normalizedPhone } : {}),
+          outcome: hasRecording ? 'voicemail' : 'no-answer',
+          ...(hasRecording && Number(mergedDuration) > 0
+            ? { duration_seconds: Number(mergedDuration) }
+            : {}),
+          ...(hasRecording && mergedAudioUrl
+            ? { recording_url: mergedAudioUrl }
+            : {}),
+          ...(mergedTranscription
+            ? { transcription: mergedTranscription }
+            : {}),
+        })
+      } catch (error) {
+        console.error('[Voicemail] Could not save call log:', error)
+      }
+    }
+
     // Notify exactly once, when transcription has finished (success or
     // failure). Only the transcribe callback sets TranscriptionStatus, so the
     // earlier recording callbacks are skipped — this is what kills the old
@@ -332,25 +361,6 @@ export async function POST(request: NextRequest) {
         '[Voicemail] Failed after-hours SMS fallback:',
         fallbackSmsError,
       )
-    }
-
-    // Update call_logs with voicemail recording details — fire-and-forget
-    if (callSid) {
-      const supabaseLog = createAdminClient()
-      supabaseLog
-        .from('call_logs')
-        .upsert(
-          {
-            call_sid: callSid,
-            caller_phone: normalizedPhone,
-            outcome: 'voicemail',
-            recording_url: audioUrl || null,
-            transcription: transcriptionText || null,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'call_sid' },
-        )
-        .then()
     }
 
     // Log to sms_logs for tracking (using it as general message log)

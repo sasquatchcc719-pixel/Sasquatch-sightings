@@ -6,6 +6,7 @@ import {
   parseDialCallDuration,
 } from '@/lib/twilio/call-outcome'
 import { createAdminClient } from '@/supabase/server'
+import { writeCallLog } from '@/lib/twilio/call-history'
 
 function getBaseUrl(): string {
   const url = (
@@ -32,14 +33,14 @@ export async function POST(request: NextRequest) {
     const mode = request.nextUrl.searchParams.get('mode')
     const stage = request.nextUrl.searchParams.get('stage')
 
-    const callOutcome = classifyCallOutcome(dialCallStatus, dialCallDuration)
+    const callOutcome = classifyCallOutcome(dialCallStatus)
 
     console.log(
       `[Dial Failover] Status: ${dialCallStatus || 'unknown'}, Duration: ${dialCallDuration ?? 'unknown'}s, Stage: ${stage || 'primary'}`,
     )
 
-    // A sustained completed leg was handled. Record it before allowing
-    // Twilio to end the parent call.
+    // Any completed leg connected. Duration cannot distinguish a short human
+    // conversation from carrier voicemail and must not trigger a second dial.
     if (callOutcome === 'answered') {
       await updateCallLog({
         callSid,
@@ -87,6 +88,13 @@ export async function POST(request: NextRequest) {
       console.log(
         '[Dial Failover] No secondary number — redirecting to voicemail',
       )
+      await updateCallLog({
+        callSid,
+        callerPhone,
+        outcome: 'no-answer',
+        dialCallStatus,
+        dialCallDuration,
+      })
       return new NextResponse(
         `<?xml version="1.0" encoding="UTF-8"?><Response><Redirect method="POST">${afterHoursUrl}</Redirect></Response>`,
         {
@@ -153,23 +161,13 @@ async function updateCallLog(params: {
   if (!params.callSid) return
 
   try {
-    const { error } = await createAdminClient()
-      .from('call_logs')
-      .upsert(
-        {
-          call_sid: params.callSid,
-          caller_phone: params.callerPhone || null,
-          outcome: params.outcome,
-          duration_seconds: params.dialCallDuration,
-          raw_dial_status: params.dialCallStatus || null,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'call_sid' },
-      )
-
-    if (error) {
-      console.error('[Dial Failover] Failed to update call log:', error)
-    }
+    await writeCallLog(createAdminClient(), {
+      call_sid: params.callSid,
+      ...(params.callerPhone ? { caller_phone: params.callerPhone } : {}),
+      outcome: params.outcome,
+      duration_seconds: params.dialCallDuration,
+      raw_dial_status: params.dialCallStatus || null,
+    })
   } catch (error) {
     // A logging failure must never prevent Twilio from completing the call
     // routing response.

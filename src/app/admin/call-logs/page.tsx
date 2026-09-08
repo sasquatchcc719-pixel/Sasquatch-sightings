@@ -26,6 +26,7 @@ interface CallLog {
   recording_url: string | null
   transcription: string | null
   created_at: string
+  needs_sync: boolean
 }
 
 interface Summary {
@@ -34,6 +35,7 @@ interface Summary {
   voicemail: number
   missed: number
   blacklisted: number
+  unresolved: number
 }
 
 function formatPhone(phone: string | null): string {
@@ -99,13 +101,19 @@ const OUTCOME_CONFIG: Record<
     icon: ShieldX,
   },
   inbound: {
-    label: 'Pending',
+    label: 'Checking outcome',
     className: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
     icon: PhoneCall,
   },
 }
 
-function OutcomeBadge({ outcome }: { outcome: string }) {
+function OutcomeBadge({
+  outcome,
+  needsSync,
+}: {
+  outcome: string
+  needsSync: boolean
+}) {
   const cfg = OUTCOME_CONFIG[outcome] ?? OUTCOME_CONFIG['inbound']
   const Icon = cfg.icon
   return (
@@ -113,7 +121,7 @@ function OutcomeBadge({ outcome }: { outcome: string }) {
       className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${cfg.className}`}
     >
       <Icon className="h-3 w-3" />
-      {cfg.label}
+      {needsSync ? 'Needs sync' : cfg.label}
     </span>
   )
 }
@@ -234,13 +242,14 @@ export default function CallLogsPage() {
       })
       const data = (await res.json()) as {
         inserted?: number
-        with_recordings?: number
+        updated?: number
+        skipped?: number
+        unavailable?: number
         error?: string
       }
       if (!res.ok) throw new Error(data.error ?? 'Backfill failed')
-      const rec = data.with_recordings ?? 0
       setBackfillResult(
-        `Imported ${data.inserted ?? 0} calls from Twilio history${rec > 0 ? ` · ${rec} with playable voicemails` : ''}`,
+        `Synced history: ${data.updated ?? 0} updated · ${data.inserted ?? 0} added${data.skipped ? ` · ${data.skipped} changed during sync; refresh and retry` : ''}${data.unavailable ? ` · ${data.unavailable} unavailable from Twilio` : ''}`,
       )
       void load(days)
     } catch (e) {
@@ -301,14 +310,14 @@ export default function CallLogsPage() {
             onClick={() => void handleBackfill()}
             disabled={backfilling}
             className="gap-1.5"
-            title="Import historical call data from Twilio (last 45 days)"
+            title="Repair saved outcomes and import missing calls using Twilio history"
           >
             {backfilling ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
               <Download className="h-3.5 w-3.5" />
             )}
-            {backfilling ? 'Importing...' : 'Import History'}
+            {backfilling ? 'Syncing...' : 'Sync History'}
           </Button>
         </div>
       </div>
@@ -372,6 +381,18 @@ export default function CallLogsPage() {
       )}
 
       {/* Loading */}
+      <p className="text-muted-foreground text-xs">
+        Answered means the forwarding phone connected; carrier voicemail can
+        also answer. Voicemail means a recording was saved here. Missed means no
+        forwarding connection or saved message.
+      </p>
+      {summary && summary.unresolved > 0 && (
+        <p className="text-sm text-amber-400">
+          {summary.unresolved}{' '}
+          {summary.unresolved === 1 ? 'call is' : 'calls are'} still awaiting a
+          final outcome. Use Sync History if the calls have ended.
+        </p>
+      )}
       {loading && (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="text-muted-foreground h-6 w-6 animate-spin" />
@@ -390,7 +411,7 @@ export default function CallLogsPage() {
           <PhoneCall className="text-muted-foreground mx-auto mb-3 h-8 w-8" />
           <p className="mb-1 font-medium">No calls recorded yet</p>
           <p className="text-muted-foreground mb-4 text-sm">
-            New calls will appear here automatically. Use &quot;Import
+            New calls will appear here automatically. Use &quot;Sync
             History&quot; to pull in past calls from Twilio.
           </p>
           <Button
@@ -404,7 +425,7 @@ export default function CallLogsPage() {
             ) : (
               <Download className="h-4 w-4" />
             )}
-            Import History from Twilio
+            Sync History from Twilio
           </Button>
         </Card>
       )}
@@ -455,7 +476,10 @@ export default function CallLogsPage() {
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <OutcomeBadge outcome={call.outcome} />
+                        <OutcomeBadge
+                          outcome={call.outcome}
+                          needsSync={call.needs_sync}
+                        />
                       </td>
                       <td className="text-muted-foreground px-4 py-3">
                         {formatDuration(call.duration_seconds)}

@@ -1,10 +1,12 @@
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { createAdminClientMock, getCallRoutingConfigMock } = vi.hoisted(() => ({
-  createAdminClientMock: vi.fn(),
-  getCallRoutingConfigMock: vi.fn(),
-}))
+const { createAdminClientMock, getCallRoutingConfigMock, writeCallLogMock } =
+  vi.hoisted(() => ({
+    writeCallLogMock: vi.fn(),
+    createAdminClientMock: vi.fn(),
+    getCallRoutingConfigMock: vi.fn(),
+  }))
 
 vi.mock('@/lib/twilio/call-routing-config', () => ({
   getCallRoutingConfig: getCallRoutingConfigMock,
@@ -13,6 +15,7 @@ vi.mock('@/lib/twilio/call-routing-config', () => ({
 vi.mock('@/supabase/server', () => ({
   createAdminClient: createAdminClientMock,
 }))
+vi.mock('@/lib/twilio/call-history', () => ({ writeCallLog: writeCallLogMock }))
 
 import { POST } from './route'
 
@@ -66,6 +69,7 @@ function twilioRequest(
 describe('POST /api/twilio/dial-failover', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    writeCallLogMock.mockResolvedValue(undefined)
     getCallRoutingConfigMock.mockResolvedValue(routingConfig)
     createAdminClientMock.mockReturnValue({
       from: vi.fn(() => ({
@@ -93,14 +97,14 @@ describe('POST /api/twilio/dial-failover', () => {
     )
 
     expect(await response.text()).toBe('<Response><Hangup/></Response>')
-    expect(upsert).toHaveBeenCalledWith(
+    expect(writeCallLogMock).toHaveBeenCalledWith(
+      expect.anything(),
       expect.objectContaining({
         call_sid: 'CA123',
         outcome: 'answered',
         duration_seconds: 45,
         raw_dial_status: 'completed',
       }),
-      { onConflict: 'call_sid' },
     )
   })
 
@@ -153,13 +157,23 @@ describe('POST /api/twilio/dial-failover', () => {
     expect(twiml).toContain('/api/twilio/call-after-hours')
     expect(twiml).not.toContain('<Dial')
     expect(getCallRoutingConfigMock).not.toHaveBeenCalled()
-    expect(upsert).toHaveBeenCalledWith(
+    expect(writeCallLogMock).toHaveBeenCalledWith(
+      expect.anything(),
       expect.objectContaining({
         call_sid: 'CA123',
         outcome: 'no-answer',
         raw_dial_status: 'no-answer',
       }),
-      { onConflict: 'call_sid' },
+    )
+  })
+
+  it('ends a short answered call without dialing the secondary phone', async () => {
+    const response = await POST(twilioRequest('completed', { duration: 7 }))
+    expect(await response.text()).toBe('<Response><Hangup/></Response>')
+    expect(getCallRoutingConfigMock).not.toHaveBeenCalled()
+    expect(writeCallLogMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ outcome: 'answered', duration_seconds: 7 }),
     )
   })
 })

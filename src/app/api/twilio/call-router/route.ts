@@ -26,18 +26,15 @@ export async function POST(request: NextRequest) {
 
     if (await isBlacklisted(callerPhone)) {
       const supabase = createAdminClient()
-      supabase
-        .from('call_logs')
-        .upsert(
-          {
-            call_sid: formData.get('CallSid') as string,
-            caller_phone: callerPhone,
-            outcome: 'blacklisted',
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'call_sid' },
-        )
-        .then()
+      await supabase.from('call_logs').upsert(
+        {
+          call_sid: formData.get('CallSid') as string,
+          caller_phone: callerPhone,
+          outcome: 'blacklisted',
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'call_sid' },
+      )
       notifyBlockedAttempt(callerPhone, 'call')
       return new NextResponse(
         '<?xml version="1.0" encoding="UTF-8"?><Response><Reject/></Response>',
@@ -52,18 +49,17 @@ export async function POST(request: NextRequest) {
     // Log every non-blacklisted inbound call. The forwarding and voicemail
     // callbacks update this row with the final outcome later.
     const supabaseLog = createAdminClient()
-    supabaseLog
-      .from('call_logs')
-      .upsert(
-        {
-          call_sid: formData.get('CallSid') as string,
-          caller_phone: callerPhone,
-          outcome: 'inbound',
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'call_sid' },
-      )
-      .then()
+    const { error: logError } = await supabaseLog.from('call_logs').upsert(
+      {
+        call_sid: formData.get('CallSid') as string,
+        caller_phone: callerPhone,
+        outcome: 'inbound',
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'call_sid', ignoreDuplicates: true },
+    )
+    if (logError)
+      console.error('[Call Router] Could not save inbound call:', logError)
 
     // Fire push notification immediately (don't await — must not delay TwiML)
     const displayPhone = callerPhone.replace(

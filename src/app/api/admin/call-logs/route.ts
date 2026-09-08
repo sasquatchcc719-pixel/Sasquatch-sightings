@@ -45,6 +45,9 @@ export async function GET(request: NextRequest) {
 
     const callsWithNames = calls.map((c) => ({
       ...c,
+      needs_sync:
+        c.outcome === 'inbound' &&
+        Date.now() - Date.parse(c.created_at) > 5 * 60 * 1000,
       customer_name: c.caller_phone
         ? (customerMap[c.caller_phone] ?? null)
         : null,
@@ -56,6 +59,7 @@ export async function GET(request: NextRequest) {
       voicemail: calls.filter((r) => r.outcome === 'voicemail').length,
       missed: calls.filter((r) => r.outcome === 'no-answer').length,
       blacklisted: calls.filter((r) => r.outcome === 'blacklisted').length,
+      unresolved: calls.filter((r) => r.outcome === 'inbound').length,
     }
 
     return NextResponse.json({ calls: callsWithNames, summary })

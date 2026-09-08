@@ -67,7 +67,9 @@ describe('POST /api/twilio/call-router', () => {
     isBlacklistedMock.mockResolvedValue(false)
     sendOneSignalNotificationMock.mockResolvedValue(undefined)
     createAdminClientMock.mockReturnValue({
-      from: vi.fn(() => ({ upsert: vi.fn(() => Promise.resolve()) })),
+      from: vi.fn(() => ({
+        upsert: vi.fn(() => Promise.resolve({ error: null })),
+      })),
     })
   })
 

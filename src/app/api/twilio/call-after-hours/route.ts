@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import twilio from 'twilio'
 import { createAdminClient } from '@/supabase/server'
+import { writeCallLog } from '@/lib/twilio/call-history'
 import {
   classifyCallOutcome,
   parseDialCallDuration,
@@ -30,7 +31,6 @@ export async function POST(request: NextRequest) {
     )
     const forwardedCallWasHandled = wasForwardedCallHandled(
       normalizedDialCallStatus,
-      dialCallDuration,
     )
 
     if (!callerPhone) {
@@ -73,28 +73,26 @@ export async function POST(request: NextRequest) {
       `[Call Handler] Caller: ${normalizedPhone}, Status: ${callStatus}, DialStatus: ${dialCallStatus}, DialDuration: ${dialCallDuration ?? 'unknown'}s, SID: ${callSid}`,
     )
 
-    // Update call_logs with final outcome — fire-and-forget, never block TwiML
+    // Save before responding; entering voicemail alone is still a missed call.
     if (callSid) {
-      const callOutcome = classifyCallOutcome(
-        normalizedDialCallStatus,
-        dialCallDuration,
-      )
-      const supabaseLog = createAdminClient()
-      supabaseLog
-        .from('call_logs')
-        .upsert(
-          {
-            call_sid: callSid,
-            caller_phone: normalizedPhone,
-            outcome: callOutcome,
-            duration_seconds: dialCallDuration,
-            raw_dial_status: dialCallStatus || null,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'call_sid' },
-        )
-        .then()
+      const callOutcome = classifyCallOutcome(normalizedDialCallStatus)
+      try {
+        await writeCallLog(createAdminClient(), {
+          call_sid: callSid,
+          caller_phone: normalizedPhone,
+          outcome: callOutcome,
+          duration_seconds: dialCallDuration,
+          raw_dial_status: dialCallStatus || null,
+        })
+      } catch (error) {
+        console.error('[Call Handler] Could not save call log:', error)
+      }
     }
+
+    if (forwardedCallWasHandled)
+      return new NextResponse('<Response><Hangup/></Response>', {
+        headers: { 'Content-Type': 'text/xml' },
+      })
 
     // Deterministic missed-call auto-text (no LLM). Off by default; set
     // MISSED_CALL_AUTO_SMS_ENABLED=true to send it. The caller's reply lands
@@ -105,8 +103,6 @@ export async function POST(request: NextRequest) {
     // Send the missed-call text any time this handler owns a non-answered call.
     // After-hours/LSA fallback redirects often arrive without DialCallStatus,
     // so missing status is treated as a missed/voicemail call here.
-    // Very short completed forwarding legs are commonly carrier voicemail or
-    // another automated pickup, not a person actually handling the caller.
     const shouldSendSMS = canSendMissedCallSms && !forwardedCallWasHandled
 
     if (shouldSendSMS) {
