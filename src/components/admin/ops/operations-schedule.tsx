@@ -583,7 +583,7 @@ function getAppointmentPlacement(
 }
 
 /**
- * Sunday, kept as a sliver but not as a wall.
+ * Weekends stay narrow without hiding visits or preventing drops.
  *
  * We do not book Sundays, so the column is collapsed to a label. Restoration
  * disagrees: drying does not pause for the weekend, and a monitor visit lands
@@ -624,8 +624,9 @@ function customerNameOf(appointment: Appointment): string {
   return customer?.business_name || customer?.full_name || 'Visit'
 }
 
-function SundaySliver({
+function WeekendSliver({
   dateKey,
+  dayName,
   appointments,
   onOpen,
   onDragOver,
@@ -633,6 +634,7 @@ function SundaySliver({
   onDrop,
 }: {
   dateKey: string
+  dayName: 'Sunday' | 'Saturday'
   appointments: Appointment[]
   onOpen: () => void
   onDragOver: (e: React.DragEvent<HTMLDivElement>) => void
@@ -645,8 +647,8 @@ function SundaySliver({
       className="relative border-r border-slate-200 bg-slate-100/70 transition-colors hover:bg-sky-50"
       title={
         appointments.length > 0
-          ? `${appointments.length} on Sunday — click to open the day`
-          : 'Sunday — click to open, or drag a visit here'
+          ? `${appointments.length} on ${dayName} — click to open the day`
+          : `${dayName} — click to open, or drag a visit here`
       }
       onClick={onOpen}
       onDragOver={onDragOver}
@@ -876,6 +878,7 @@ export function OperationsSchedule() {
    * has to be worked around.
    */
   const [sundayOpen, setSundayOpen] = useState(false)
+  const [saturdayOpen, setSaturdayOpen] = useState(false)
   const [recurringFreqMap, setRecurringFreqMap] = useState<
     Record<string, RecurringFrequencyInfo>
   >({})
@@ -3988,17 +3991,13 @@ export function OperationsSchedule() {
                           ? activeDayStaff
                             ? '72px 1fr'
                             : `72px repeat(${Math.max(staffList.length, 1)}, minmax(400px, 1fr))`
-                          : sundayOpen
-                            ? '72px repeat(7, minmax(270px, 1fr))'
-                            : '72px 56px repeat(6, minmax(270px, 1fr))',
+                          : `72px ${sundayOpen ? 'minmax(270px, 1fr)' : '56px'} repeat(5, minmax(270px, 1fr)) ${saturdayOpen ? 'minmax(270px, 1fr)' : '56px'}`,
                       minWidth:
                         view === 'day'
                           ? activeDayStaff
                             ? undefined
                             : `${72 + Math.max(staffList.length, 1) * 400}px`
-                          : sundayOpen
-                            ? `${72 + 7 * 270}px`
-                            : `${72 + 56 + 6 * 270}px`,
+                          : `${72 + 5 * 270 + (sundayOpen ? 270 : 56) + (saturdayOpen ? 270 : 56)}px`,
                     }}
                   >
                     <div className="border-r border-b border-slate-200 bg-slate-100 p-3" />
@@ -4084,6 +4083,11 @@ export function OperationsSchedule() {
                       : displayedDays.map((date) => {
                           const dk = formatDateKey(date)
                           const isSunday = date.getDay() === 0
+                          const isSaturday = date.getDay() === 6
+                          const weekendDay = isSunday ? 'Sunday' : 'Saturday'
+                          const setWeekendOpen = isSunday
+                            ? setSundayOpen
+                            : setSaturdayOpen
                           const dayTotal = (
                             gridAppointmentsByDate.get(dk) || []
                           ).reduce(
@@ -4091,17 +4095,23 @@ export function OperationsSchedule() {
                               sum + appointmentScheduleRevenue(appt),
                             0,
                           )
-                          if (isSunday && !sundayOpen) {
+                          if (
+                            view === 'week' &&
+                            ((isSunday && !sundayOpen) ||
+                              (isSaturday && !saturdayOpen))
+                          ) {
                             return (
                               <button
                                 key={dk}
                                 type="button"
-                                title="Open Sunday"
-                                onClick={() => setSundayOpen(true)}
+                                title={`Open ${weekendDay}`}
+                                aria-label={`Open ${weekendDay}`}
+                                aria-expanded={false}
+                                onClick={() => setWeekendOpen(true)}
                                 className="flex flex-col items-center justify-center gap-0.5 border-r border-b border-slate-200 bg-slate-100 p-1 hover:bg-sky-50"
                               >
                                 <span className="text-[10px] font-medium tracking-widest text-slate-400 uppercase">
-                                  Sun
+                                  {WEEKDAY_LABELS[date.getDay()]}
                                 </span>
                                 <span className="text-xs font-semibold text-slate-500">
                                   {date.toLocaleDateString('en-US', {
@@ -4125,19 +4135,19 @@ export function OperationsSchedule() {
                                 <span className="text-xs font-medium tracking-[0.2em] text-slate-500 uppercase">
                                   {WEEKDAY_LABELS[date.getDay()]}
                                 </span>
-                                {isSunday && (
-                                  // The way back. Sunday is open because a
-                                  // monitor landed on it, not because we sell
-                                  // it, so closing again is one click.
-                                  <button
-                                    type="button"
-                                    title="Collapse Sunday"
-                                    onClick={() => setSundayOpen(false)}
-                                    className="text-[10px] font-medium tracking-wide text-slate-400 uppercase hover:text-slate-600"
-                                  >
-                                    Hide
-                                  </button>
-                                )}
+                                {view === 'week' &&
+                                  (isSunday || isSaturday) && (
+                                    <button
+                                      type="button"
+                                      title={`Collapse ${weekendDay}`}
+                                      aria-label={`Collapse ${weekendDay}`}
+                                      aria-expanded={true}
+                                      onClick={() => setWeekendOpen(false)}
+                                      className="text-[10px] font-medium tracking-wide text-slate-400 uppercase hover:text-slate-600"
+                                    >
+                                      Hide
+                                    </button>
+                                  )}
                               </div>
                               <div className="mt-1 flex items-baseline justify-between gap-2">
                                 <span className="text-lg font-semibold text-slate-700">
@@ -4407,12 +4417,21 @@ export function OperationsSchedule() {
                         ? displayedDays.map((date) => {
                             const dateKey = formatDateKey(date)
                             const isSunday = date.getDay() === 0
-                            if (isSunday && !sundayOpen) {
+                            const isSaturday = date.getDay() === 6
+                            if (
+                              (isSunday && !sundayOpen) ||
+                              (isSaturday && !saturdayOpen)
+                            ) {
                               return (
-                                <SundaySliver
+                                <WeekendSliver
                                   key={dateKey}
                                   dateKey={dateKey}
-                                  onOpen={() => setSundayOpen(true)}
+                                  dayName={isSunday ? 'Sunday' : 'Saturday'}
+                                  onOpen={() =>
+                                    isSunday
+                                      ? setSundayOpen(true)
+                                      : setSaturdayOpen(true)
+                                  }
                                   appointments={
                                     gridAppointmentsByDate.get(dateKey) || []
                                   }
@@ -4660,12 +4679,22 @@ export function OperationsSchedule() {
                         : displayedDays.map((date) => {
                             const dateKey = formatDateKey(date)
                             const isSunday = date.getDay() === 0
-                            if (isSunday && !sundayOpen) {
+                            const isSaturday = date.getDay() === 6
+                            if (
+                              view === 'week' &&
+                              ((isSunday && !sundayOpen) ||
+                                (isSaturday && !saturdayOpen))
+                            ) {
                               return (
-                                <SundaySliver
+                                <WeekendSliver
                                   key={dateKey}
                                   dateKey={dateKey}
-                                  onOpen={() => setSundayOpen(true)}
+                                  dayName={isSunday ? 'Sunday' : 'Saturday'}
+                                  onOpen={() =>
+                                    isSunday
+                                      ? setSundayOpen(true)
+                                      : setSaturdayOpen(true)
+                                  }
                                   appointments={
                                     appointmentsByDate.get(dateKey) || []
                                   }
