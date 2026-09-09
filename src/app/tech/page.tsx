@@ -1,5 +1,11 @@
 import Link from 'next/link'
-import { CalendarDays, ChevronLeft, ChevronRight, Clock } from 'lucide-react'
+import {
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Truck,
+} from 'lucide-react'
 import { requireAnyRole } from '@/lib/auth'
 import { createAdminClient } from '@/supabase/server'
 import { getAssignedTechAppointments } from '@/lib/tech/appointments'
@@ -70,6 +76,22 @@ export default async function TechHomePage({
           </Link>
         </div>
       </section>
+
+      <Link
+        href="/tech/vehicle-help"
+        className="flex items-center gap-3 rounded-2xl border border-amber-300/25 bg-amber-300/[0.06] p-4 transition hover:bg-amber-300/10"
+      >
+        <Truck className="h-6 w-6 shrink-0 text-amber-200" />
+        <span className="flex-1">
+          <span className="block font-semibold text-amber-100">
+            Vehicle Help
+          </span>
+          <span className="mt-1 block text-sm text-slate-300">
+            Roadside help, box truck towing, and our mechanic
+          </span>
+        </span>
+        <ChevronRight className="h-5 w-5 shrink-0 text-amber-200" />
+      </Link>
 
       {appointments.length === 0 ? (
         <section className="rounded-2xl border border-white/10 bg-white/5 p-8 text-center">

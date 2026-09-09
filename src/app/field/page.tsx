@@ -33,6 +33,12 @@ export default async function FieldPage() {
       <div className="mx-auto max-w-2xl space-y-4 px-4 py-5">
         <div className="grid grid-cols-2 gap-2">
           <Link
+            href="/tech/vehicle-help"
+            className="col-span-2 rounded-xl border border-amber-300/30 bg-amber-300/10 px-3 py-4 text-center text-sm font-semibold text-amber-200"
+          >
+            Vehicle Help · Roadside, towing & repairs
+          </Link>
+          <Link
             href="/field/canvass"
             className="rounded-xl border border-green-500/30 bg-green-500/10 px-3 py-3 text-center text-sm font-semibold text-green-300"
           >

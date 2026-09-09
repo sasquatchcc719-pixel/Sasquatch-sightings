@@ -9,6 +9,7 @@ import { SquarePaymentPushSetup } from '@/components/tech/square-payment-push-se
 
 const techNavItems = [
   { href: '/tech', label: 'Jobs' },
+  { href: '/tech/vehicle-help', label: 'Vehicle Help' },
   { href: '/tech/receipts', label: 'Receipts' },
   { href: '/tech/profile', label: 'Profile' },
   { href: '/field/canvass', label: '🚶 Canvassing' },
