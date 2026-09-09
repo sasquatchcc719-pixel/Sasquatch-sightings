@@ -110,7 +110,11 @@ export async function GET(request: NextRequest) {
     if (appointmentsResult.error) throw appointmentsResult.error
     if (eventsResult.error) throw eventsResult.error
 
-    const appointments = appointmentsResult.data || []
+    // Cancelled estimates remain in history, but are no longer measuring visits.
+    const appointments = (appointmentsResult.data || []).filter(
+      (appointment) =>
+        appointment.kind !== 'estimate' || appointment.status !== 'cancelled',
+    )
     const customerIds = [
       ...new Set(
         appointments
