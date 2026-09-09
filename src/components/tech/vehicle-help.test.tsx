@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { VehicleHelp } from './vehicle-help'
+import { EmergencyScheduleHelp } from './emergency-schedule-help'
 
 let onPosition: PositionCallback
 let onError: PositionErrorCallback
@@ -60,7 +61,7 @@ afterEach(() => {
 
 describe('vehicle help workflow', () => {
   it('opens without requesting GPS or sending anything, with Jeff as the roadside contact', () => {
-    render(<VehicleHelp />)
+    render(<VehicleHelp scheduleHelp={<EmergencyScheduleHelp />} />)
     expect(getCurrentPosition).not.toHaveBeenCalled()
     expect(share).not.toHaveBeenCalled()
     expect(screen.getByRole('link', { name: /Call.*Jeff/ })).toHaveAttribute(
@@ -74,7 +75,7 @@ describe('vehicle help workflow', () => {
   })
 
   it('routes the box truck tow to Randy’s and makes the friend’s shop the destination', () => {
-    render(<VehicleHelp />)
+    render(<VehicleHelp scheduleHelp={<EmergencyScheduleHelp />} />)
     fireEvent.click(screen.getByRole('button', { name: 'Need a tow' }))
     expect(screen.getByRole('link', { name: /Call.*Randy/ })).toHaveAttribute(
       'href',
@@ -122,7 +123,7 @@ describe('vehicle help workflow', () => {
   })
 
   it('requests fresh GPS and includes the actual pickup separately from the mechanic address', async () => {
-    render(<VehicleHelp />)
+    render(<VehicleHelp scheduleHelp={<EmergencyScheduleHelp />} />)
     fireEvent.click(screen.getByRole('button', { name: 'Need a tow' }))
     fireEvent.click(screen.getByRole('button', { name: 'Get my GPS location' }))
     expect(getCurrentPosition).toHaveBeenCalledWith(
@@ -152,7 +153,7 @@ describe('vehicle help workflow', () => {
   })
 
   it('keeps a manual fallback after permission denial', async () => {
-    render(<VehicleHelp />)
+    render(<VehicleHelp scheduleHelp={<EmergencyScheduleHelp />} />)
     fireEvent.click(screen.getByRole('button', { name: 'Get my GPS location' }))
     act(() => onError({ code: 1 } as GeolocationPositionError))
     expect(screen.getByRole('alert')).toHaveTextContent('permission was denied')
@@ -172,7 +173,7 @@ describe('vehicle help workflow', () => {
   })
 
   it('discards the previous fix when a refresh times out', () => {
-    render(<VehicleHelp />)
+    render(<VehicleHelp scheduleHelp={<EmergencyScheduleHelp />} />)
     fireEvent.click(screen.getByRole('button', { name: 'Get my GPS location' }))
     gps()
     fireEvent.click(
@@ -189,7 +190,7 @@ describe('vehicle help workflow', () => {
   })
 
   it('does not overwrite a manual location with a late GPS response', () => {
-    render(<VehicleHelp />)
+    render(<VehicleHelp scheduleHelp={<EmergencyScheduleHelp />} />)
     fireEvent.click(screen.getByRole('button', { name: 'Get my GPS location' }))
     enterManualLocation()
     gps()
@@ -207,7 +208,7 @@ describe('vehicle help workflow', () => {
 
   it('rechecks GPS age at sharing time even if phone timers were suspended', async () => {
     vi.useFakeTimers()
-    render(<VehicleHelp />)
+    render(<VehicleHelp scheduleHelp={<EmergencyScheduleHelp />} />)
     fireEvent.click(screen.getByRole('button', { name: 'Get my GPS location' }))
     gps()
     vi.setSystemTime(Date.now() + 6 * 60_000)
@@ -221,7 +222,7 @@ describe('vehicle help workflow', () => {
   })
 
   it('flags low accuracy and allows a corrected manual pin', () => {
-    render(<VehicleHelp />)
+    render(<VehicleHelp scheduleHelp={<EmergencyScheduleHelp />} />)
     fireEvent.click(screen.getByRole('button', { name: 'Get my GPS location' }))
     gps(800)
     expect(screen.getByText(/GPS accuracy is low/)).toBeVisible()
@@ -237,7 +238,7 @@ describe('vehicle help workflow', () => {
 
   it('uses clipboard when native sharing is unavailable and keeps text selectable if copying fails', async () => {
     Object.defineProperty(navigator, 'share', { value: undefined })
-    render(<VehicleHelp />)
+    render(<VehicleHelp scheduleHelp={<EmergencyScheduleHelp />} />)
     enterManualLocation()
     await act(async () =>
       fireEvent.click(
@@ -259,7 +260,7 @@ describe('vehicle help workflow', () => {
 
   it('does not claim delivery when sharing is canceled', async () => {
     share.mockRejectedValueOnce(new DOMException('Canceled', 'AbortError'))
-    render(<VehicleHelp />)
+    render(<VehicleHelp scheduleHelp={<EmergencyScheduleHelp />} />)
     enterManualLocation()
     await act(async () =>
       fireEvent.click(

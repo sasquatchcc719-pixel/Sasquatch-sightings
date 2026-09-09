@@ -36,7 +36,7 @@ export default async function FieldPage() {
             href="/tech/vehicle-help"
             className="col-span-2 rounded-xl border border-amber-300/30 bg-amber-300/10 px-3 py-4 text-center text-sm font-semibold text-amber-200"
           >
-            Vehicle Help · Roadside, towing & repairs
+            Vehicle Help · Breakdowns & schedule changes
           </Link>
           <Link
             href="/field/canvass"

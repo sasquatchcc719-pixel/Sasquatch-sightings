@@ -1,9 +1,10 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   ArrowUpRight,
+  CalendarClock,
   Check,
   Copy,
   LocateFixed,
@@ -37,6 +38,7 @@ const choices = [
   { value: 'roadside', label: 'Roadside help', icon: Wrench },
   { value: 'tow', label: 'Need a tow', icon: Truck },
   { value: 'repair', label: 'Repair shop', icon: MapPin },
+  { value: 'schedule', label: 'Schedule changes', icon: CalendarClock },
 ] as const
 
 function ContactCard({ kind }: { kind: VehicleHelpKind }) {
@@ -81,8 +83,8 @@ function ContactCard({ kind }: { kind: VehicleHelpKind }) {
   )
 }
 
-export function VehicleHelp() {
-  const [kind, setKind] = useState<VehicleHelpKind>('roadside')
+export function VehicleHelp({ scheduleHelp }: { scheduleHelp: ReactNode }) {
+  const [kind, setKind] = useState<VehicleHelpKind | 'schedule'>('roadside')
   const [vehicle, setVehicle] = useState<VehicleKind>('box-truck')
   const [otherVehicle, setOtherVehicle] = useState('')
   const [issue, setIssue] = useState('')
@@ -110,7 +112,7 @@ export function VehicleHelp() {
     ? !!manualLocation.trim()
     : !!activeLocation && !stale && !locating
   const message =
-    kind === 'repair'
+    kind === 'repair' || kind === 'schedule'
       ? ''
       : buildVehicleHelpMessage({
           kind,
@@ -230,7 +232,7 @@ export function VehicleHelp() {
       <section className="rounded-3xl border border-emerald-400/20 bg-gradient-to-br from-emerald-500/15 to-cyan-500/10 p-5">
         <h1 className="text-3xl font-bold tracking-tight">Vehicle help</h1>
         <p className="mt-2 text-sm leading-relaxed text-slate-300">
-          Roadside help, towing, and repairs.
+          Roadside help, towing, repairs, and schedule changes.
         </p>
         <p className="mt-4 rounded-xl border border-amber-300/20 bg-amber-300/5 p-3 text-sm leading-relaxed text-amber-100">
           <ShieldAlert className="mr-2 inline h-4 w-4" />
@@ -245,10 +247,12 @@ export function VehicleHelp() {
 
       <section className={panel} aria-labelledby="help-heading">
         <h2 id="help-heading" className="text-lg font-semibold">
-          1. Choose the help you need
+          {kind === 'schedule'
+            ? 'Choose the help you need'
+            : '1. Choose the help you need'}
         </h2>
         <div
-          className="mt-4 grid grid-cols-3 gap-2"
+          className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4"
           aria-label="Type of vehicle help"
         >
           {choices.map(({ value, label, icon: Icon }) => (
@@ -267,82 +271,91 @@ export function VehicleHelp() {
             </button>
           ))}
         </div>
-        <label className="mt-4 block text-sm font-medium">
-          Vehicle
-          <select
-            className={field}
-            value={vehicle}
-            onChange={(event) => setVehicle(event.target.value as VehicleKind)}
-          >
-            <option value="box-truck">
-              2007 E-350 box truck · former Penske
-            </option>
-            <option value="other">Another company vehicle</option>
-          </select>
-        </label>
-        {vehicle === 'other' ? (
-          <label className="mt-3 block text-sm font-medium">
-            Vehicle description
-            <input
-              value={otherVehicle}
-              onChange={(event) => setOtherVehicle(event.target.value)}
-              className={field}
-              placeholder="Year, make, model, color"
-              maxLength={180}
-            />
-          </label>
-        ) : null}
-        <div className="mt-4">
-          <ContactCard kind={kind} />
-        </div>
-        <p className="mt-3 text-sm leading-relaxed text-slate-300">
-          Introduce yourself: “{DRIVER_INTRODUCTION}”
-        </p>
-        {kind === 'roadside' ? (
-          <p className="mt-3 text-sm leading-relaxed text-slate-300">
-            Tell Jeff what happened and which truck you have. If it needs
-            towing, switch to Need a tow.
-          </p>
-        ) : null}
-        {kind === 'tow' ? (
-          <div className="mt-4 space-y-4">
-            <div className="rounded-xl border border-amber-300/25 bg-amber-300/5 p-4 text-sm leading-relaxed text-amber-100">
-              <p className="font-bold">
-                {vehicle === 'box-truck'
-                  ? 'Confirm a truck large enough before dispatch.'
-                  : 'Confirm suitable towing equipment before dispatch.'}
-              </p>
-              <p className="mt-2">
-                {vehicle === 'box-truck'
-                  ? `Tell Randy’s: “It’s Charles Sewell’s ${BOX_TRUCK}. You’ve towed it before.” Confirm they can handle its size and loaded weight. Height and weight are not saved here; check the vehicle labels/specifications if asked. Do not guess.`
-                  : 'Describe the vehicle and ask dispatch to confirm the tow equipment they will send.'}
-              </p>
-            </div>
-            <div className="rounded-xl border border-white/10 p-4 text-sm leading-relaxed text-slate-300">
-              <p className="font-semibold text-slate-100">
-                Tow destination: Mountain Motorsport
-              </p>
-              <p className="mt-1">{REPAIR_ADDRESS}</p>
-              <p className="mt-2">
-                Confirm drop-off with Matt before dispatch. This is the
-                destination; the GPS pin below is where Randy’s picks you up.
-              </p>
-              <button
-                type="button"
-                className={`${button} mt-3`}
-                onClick={() => {
-                  setKind('repair')
-                  setShareStatus('')
-                }}
+        {kind !== 'schedule' ? (
+          <>
+            <label className="mt-4 block text-sm font-medium">
+              Vehicle
+              <select
+                className={field}
+                value={vehicle}
+                onChange={(event) =>
+                  setVehicle(event.target.value as VehicleKind)
+                }
               >
-                Repair shop details & directions
-              </button>
+                <option value="box-truck">
+                  2007 E-350 box truck · former Penske
+                </option>
+                <option value="other">Another company vehicle</option>
+              </select>
+            </label>
+            {vehicle === 'other' ? (
+              <label className="mt-3 block text-sm font-medium">
+                Vehicle description
+                <input
+                  value={otherVehicle}
+                  onChange={(event) => setOtherVehicle(event.target.value)}
+                  className={field}
+                  placeholder="Year, make, model, color"
+                  maxLength={180}
+                />
+              </label>
+            ) : null}
+            <div className="mt-4">
+              <ContactCard kind={kind} />
             </div>
-          </div>
+            <p className="mt-3 text-sm leading-relaxed text-slate-300">
+              Introduce yourself: “{DRIVER_INTRODUCTION}”
+            </p>
+            {kind === 'roadside' ? (
+              <p className="mt-3 text-sm leading-relaxed text-slate-300">
+                Tell Jeff what happened and which truck you have. If it needs
+                towing, switch to Need a tow.
+              </p>
+            ) : null}
+            {kind === 'tow' ? (
+              <div className="mt-4 space-y-4">
+                <div className="rounded-xl border border-amber-300/25 bg-amber-300/5 p-4 text-sm leading-relaxed text-amber-100">
+                  <p className="font-bold">
+                    {vehicle === 'box-truck'
+                      ? 'Confirm a truck large enough before dispatch.'
+                      : 'Confirm suitable towing equipment before dispatch.'}
+                  </p>
+                  <p className="mt-2">
+                    {vehicle === 'box-truck'
+                      ? `Tell Randy’s: “It’s Charles Sewell’s ${BOX_TRUCK}. You’ve towed it before.” Confirm they can handle its size and loaded weight. Height and weight are not saved here; check the vehicle labels/specifications if asked. Do not guess.`
+                      : 'Describe the vehicle and ask dispatch to confirm the tow equipment they will send.'}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-white/10 p-4 text-sm leading-relaxed text-slate-300">
+                  <p className="font-semibold text-slate-100">
+                    Tow destination: Mountain Motorsport
+                  </p>
+                  <p className="mt-1">{REPAIR_ADDRESS}</p>
+                  <p className="mt-2">
+                    Confirm drop-off with Matt before dispatch. This is the
+                    destination; the GPS pin below is where Randy’s picks you
+                    up.
+                  </p>
+                  <button
+                    type="button"
+                    className={`${button} mt-3`}
+                    onClick={() => {
+                      setKind('repair')
+                      setShareStatus('')
+                    }}
+                  >
+                    Repair shop details & directions
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </>
         ) : null}
       </section>
 
-      {kind === 'repair' ? (
+      {kind === 'schedule' ? (
+        scheduleHelp
+      ) : kind === 'repair' ? (
         <section className={panel} aria-labelledby="repair-heading">
           <h2 id="repair-heading" className="text-lg font-semibold">
             2. Arrange repairs and drop-off
@@ -620,30 +633,33 @@ export function VehicleHelp() {
 
       <details className={`${panel} text-sm`}>
         <summary className="cursor-pointer font-semibold">
-          All three contacts
+          Roadside & repair contacts
         </summary>
         <div className="mt-4 space-y-4">
-          {choices.map(({ value }) => (
-            <div key={value}>
-              <a
-                className="font-semibold text-emerald-200 underline underline-offset-4"
-                href={VEHICLE_CONTACTS[value].href}
-              >
-                {VEHICLE_CONTACTS[value].name} · {VEHICLE_CONTACTS[value].phone}
-              </a>
-              <p className="mt-1 text-slate-300">
-                {VEHICLE_CONTACTS[value].role}
-              </p>
-              <a
-                href={VEHICLE_CONTACTS[value].website}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-1 inline-block text-xs text-slate-400 underline"
-              >
-                Provider website
-              </a>
-            </div>
-          ))}
+          {choices
+            .filter((choice) => choice.value !== 'schedule')
+            .map(({ value }) => (
+              <div key={value}>
+                <a
+                  className="font-semibold text-emerald-200 underline underline-offset-4"
+                  href={VEHICLE_CONTACTS[value].href}
+                >
+                  {VEHICLE_CONTACTS[value].name} ·{' '}
+                  {VEHICLE_CONTACTS[value].phone}
+                </a>
+                <p className="mt-1 text-slate-300">
+                  {VEHICLE_CONTACTS[value].role}
+                </p>
+                <a
+                  href={VEHICLE_CONTACTS[value].website}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1 inline-block text-xs text-slate-400 underline"
+                >
+                  Provider website
+                </a>
+              </div>
+            ))}
         </div>
         <p className="mt-4 text-xs text-slate-400">
           Contacts supplied by Charles; phone numbers checked September 9, 2026.

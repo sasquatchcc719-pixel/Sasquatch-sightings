@@ -12,6 +12,52 @@ vi.mock('@/lib/auth', () => ({
 afterEach(cleanup)
 
 describe('David’s vehicle help viewed from Charles’s account', () => {
+  it('separates emergency schedule coordination from GPS and vendor dispatch', async () => {
+    render(await VehicleHelpPage())
+    fireEvent.click(screen.getByRole('button', { name: 'Schedule changes' }))
+    expect(
+      screen.getByRole('heading', { name: 'Emergency schedule changes' }),
+    ).toBeVisible()
+    expect(
+      screen.getByRole('link', { name: 'Call 719-367-4806' }),
+    ).toHaveAttribute('href', 'tel:+17193674806')
+    expect(
+      screen.getByText(
+        /She will call that customer and arrange the reschedule/,
+      ),
+    ).toBeVisible()
+    expect(screen.getByText(/It’s David/)).toBeVisible()
+    expect(screen.getByText(/take an Uber or ask a buddy/)).toBeVisible()
+    expect(
+      screen.getByText(/switch into the other truck with working equipment/),
+    ).toBeVisible()
+    expect(
+      screen.getByText(/Aim to lose only the affected appointment/),
+    ).toBeVisible()
+    expect(
+      screen.getByRole('link', { name: 'Open today’s jobs' }),
+    ).toHaveAttribute('href', '/tech')
+    expect(
+      screen.queryByRole('button', { name: 'Get my GPS location' }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('textbox', {
+        name: 'Message to share or read by phone',
+      }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('combobox', { name: 'Vehicle' }),
+    ).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Need a tow' }))
+    expect(screen.getByRole('link', { name: /Call.*Randy/ })).toBeVisible()
+    expect(
+      screen.getByRole('button', { name: 'Get my GPS location' }),
+    ).toBeVisible()
+    expect(
+      screen.queryByRole('link', { name: 'Call 719-367-4806' }),
+    ).not.toBeInTheDocument()
+  })
+
   it('identifies David as the caller and Charles Sewell as the account holder in every tab', async () => {
     render(await VehicleHelpPage())
     for (const tab of ['Roadside help', 'Need a tow', 'Repair shop']) {

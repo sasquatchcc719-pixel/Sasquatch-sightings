@@ -87,7 +87,7 @@ export default async function TechHomePage({
             Vehicle Help
           </span>
           <span className="mt-1 block text-sm text-slate-300">
-            Roadside help, box truck towing, and our mechanic
+            Roadside help, towing, repairs, and schedule changes
           </span>
         </span>
         <ChevronRight className="h-5 w-5 shrink-0 text-amber-200" />
